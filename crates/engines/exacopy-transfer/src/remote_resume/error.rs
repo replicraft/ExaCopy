@@ -17,12 +17,14 @@ pub enum RestartRefusal {
 	TargetOccupied,
 	/// The destination observation could not establish an absent name.
 	TargetUnknown,
-	/// The held live pass is stale or reuses the previous source epoch.
+	/// The held live pass differs from the allocation or reuses a consumed source epoch.
 	StaleSource,
-	/// Replay did not establish a nonempty verified chain with a usable successor.
+	/// The allocation heads do not match the selected chain or allow no successor.
 	JournalBoundary,
 	/// The run generation is invalid or has no representable successor.
 	RunEpoch,
+	/// The previous physical stage conflicts with the latest consumed allocation.
+	AllocationBinding,
 	/// The new stage is the physical stage already recorded for the old attempt.
 	RetainedStage,
 	/// The held stage and the captured stream have different declared extents.
@@ -50,7 +52,8 @@ impl fmt::Display for RestartRefusal {
 			Self::TargetUnknown => "remote restart destination cannot be confirmed absent",
 			Self::StaleSource => "remote restart requires a fresh held source pass",
 			Self::JournalBoundary => "remote restart journal boundary cannot advance",
-			Self::RunEpoch => "remote restart run epoch cannot advance",
+			Self::RunEpoch => "remote restart requires the next allocated run epoch",
+			Self::AllocationBinding => "retained stage conflicts with the consumed allocation",
 			Self::RetainedStage => "remote restart requires a distinct private stage",
 			Self::StageExtent { .. } => "remote restart source and private stage extents differ",
 			Self::SourceLimit { .. } => "remote restart stream exceeds the authorized length",

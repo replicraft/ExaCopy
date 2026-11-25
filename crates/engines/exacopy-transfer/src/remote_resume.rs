@@ -7,21 +7,21 @@
 //! and checkpoints. It returns private data evidence for later metadata and
 //! publication work, and has no public-name effect or publication authority.
 
-use exacopy_content::validate_stream_input;
-use exacopy_journal::JournalEpoch;
-
 use crate::remote_capture::{
 	CaptureCheckpoint, CaptureCheckpoints, CapturedReadAt, CapturedStream, CheckpointStage,
-	SourceEpoch, capture_live,
+	capture_live,
 };
+use exacopy_content::validate_stream_input;
 
 mod error;
 mod replay;
 
+const FIRST_ALLOCATION_SEQUENCE: u64 = 2;
+
 pub use error::{RestartCheckpointError, RestartError, RestartRefusal};
 pub use replay::{
-	CaptureAttempt, RemoteScopeDigest, ReplayState, RestartAdmission, RestartJournal,
-	RestartRecord, ResumeHistory, ResumeScope, SyncedRestart, TargetState,
+	AllocatedCapture, CaptureAttempt, RemoteScopeDigest, ReplayState, RestartAdmission,
+	RestartJournal, RestartRecord, ResumeHistory, ResumeScope, SyncedRestart, TargetState,
 };
 
 /// A fresh writer that can confirm the native stage identity before and after capture.
@@ -45,16 +45,14 @@ pub trait RestartStage: CheckpointStage {
 #[derive(Debug)]
 pub struct RestartPlan<B> {
 	history: ResumeHistory<B>,
-	source: SourceEpoch,
-	next_run: JournalEpoch,
 	next_sequence: u64,
 }
 
-/// Admits a fresh restart from an authenticated, clean, pre-intent history.
+/// Admits binding one freshly synchronized allocation in a clean pre-intent history.
 ///
 /// # Errors
 /// Refuses unresolved publication, an incumbent or unknown target, a changed
-/// scope, reused source epoch, or exhausted journal and generation boundaries.
+/// scope, mismatched allocation or source epoch, or an exhausted journal boundary.
 /// Admission issues no effect. The current destination must still be protected
 /// by qualified exclusive publication if a later workflow attempts to publish.
 pub fn plan_restart<B>(
@@ -72,29 +70,64 @@ pub fn plan_restart<B>(
 		TargetState::Occupied => return Err(RestartRefusal::TargetOccupied),
 		TargetState::Unknown => return Err(RestartRefusal::TargetUnknown),
 	}
-	if admission.source.get() <= history.previous.source.get() {
+	let pending = history.pending_allocation;
+	if admission.source != pending.source {
 		return Err(RestartRefusal::StaleSource);
 	}
-	let next_sequence = history
-		.predecessor
+	if history.predecessor != pending.head {
+		return Err(RestartRefusal::JournalBoundary);
+	}
+	let next_sequence = pending
+		.head
 		.sequence()
 		.checked_add(1)
-		.filter(|sequence| *sequence > 1)
+		.filter(|sequence| *sequence > FIRST_ALLOCATION_SEQUENCE)
 		.ok_or(RestartRefusal::JournalBoundary)?;
-	let next_run = history
-		.previous
-		.run
-		.get()
-		.checked_add(1)
-		.filter(|epoch| *epoch > 1)
-		.map(JournalEpoch::new)
-		.ok_or(RestartRefusal::RunEpoch)?;
+	validate_allocations(&history)?;
 	Ok(RestartPlan {
 		history,
-		source: admission.source,
-		next_run,
 		next_sequence,
 	})
+}
+
+fn validate_allocations<B>(history: &ResumeHistory<B>) -> Result<(), RestartRefusal> {
+	let pending = history.pending_allocation;
+	let Some(prior) = history.previous_allocation else {
+		if history.previous.is_some() {
+			return Err(RestartRefusal::AllocationBinding);
+		}
+		if pending.head.sequence() != FIRST_ALLOCATION_SEQUENCE {
+			return Err(RestartRefusal::JournalBoundary);
+		}
+		if pending.run.get() != 1 {
+			return Err(RestartRefusal::RunEpoch);
+		}
+		return Ok(());
+	};
+	if prior.head.sequence() < FIRST_ALLOCATION_SEQUENCE
+		|| prior.head.sequence() >= pending.head.sequence()
+	{
+		return Err(RestartRefusal::JournalBoundary);
+	}
+	if prior.run.get() == 0 || prior.run.get().checked_add(1) != Some(pending.run.get()) {
+		return Err(RestartRefusal::RunEpoch);
+	}
+	if prior.source.get() >= pending.source.get() {
+		return Err(RestartRefusal::StaleSource);
+	}
+	if let Some(bound) = &history.previous {
+		let valid = match bound.run.get().cmp(&prior.run.get()) {
+			std::cmp::Ordering::Less => {
+				bound.run.get() != 0 && bound.source.get() < prior.source.get()
+			}
+			std::cmp::Ordering::Equal => bound.source == prior.source,
+			std::cmp::Ordering::Greater => false,
+		};
+		if !valid {
+			return Err(RestartRefusal::AllocationBinding);
+		}
+	}
+	Ok(())
 }
 
 /// Independently verified private data and the synchronized restart bound to it.
@@ -140,7 +173,8 @@ where
 	W::Binding: Eq,
 	J: RestartJournal<W::Binding>,
 {
-	if source.epoch() != plan.source {
+	let pending = plan.history.pending_allocation;
+	if source.epoch() != pending.source {
 		return Err(RestartError::Refused(RestartRefusal::StaleSource));
 	}
 	let length = source.length();
@@ -158,7 +192,12 @@ where
 		.min(source.max_window_bytes().get());
 	validate_stream_input(length, width).map_err(RestartError::Input)?;
 	let binding = stage.held_binding().map_err(RestartError::Stage)?;
-	if binding == plan.history.previous.stage {
+	if plan
+		.history
+		.previous
+		.as_ref()
+		.is_some_and(|prior| binding == prior.stage)
+	{
 		return Err(RestartError::Refused(RestartRefusal::RetainedStage));
 	}
 	let stage_length = stage.unwritten_length().map_err(RestartError::Stage)?;
@@ -170,11 +209,11 @@ where
 	}
 	let record = RestartRecord {
 		scope: plan.history.scope,
-		predecessor: plan.history.predecessor,
+		predecessor: pending.head,
 		previous: plan.history.previous,
 		next: CaptureAttempt {
-			run: plan.next_run,
-			source: plan.source,
+			run: pending.run,
+			source: pending.source,
 			stage: binding,
 		},
 		length,
@@ -189,7 +228,7 @@ where
 		journal,
 		attempt: record.next,
 	};
-	let capture = capture_live(source, plan.source, stage, &mut checkpoints, scratch)
+	let capture = capture_live(source, pending.source, stage, &mut checkpoints, scratch)
 		.await
 		.map_err(RestartError::Capture)?;
 	let (stage, stream) = capture.into_parts();

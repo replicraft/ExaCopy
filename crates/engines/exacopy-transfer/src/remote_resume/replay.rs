@@ -66,20 +66,37 @@ pub enum ReplayState {
 	Uncertain,
 }
 
-/// Authenticated replay of one existing remote job under its exclusive lease.
+/// Exact durable allocation and the consumed run and source epochs it declares.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AllocatedCapture {
+	/// Journal anchor of the accepted private filename allocation.
+	pub head: ChainHead,
+	/// Run generation declared by the allocation.
+	pub run: JournalEpoch,
+	/// Live source pass reserved by the allocation.
+	pub source: SourceEpoch,
+}
+
+/// Selected replay and fresh allocation for one existing remote job under its lease.
 ///
-/// Only the application journal owner can establish authenticity, boundary
-/// completeness and current lease ownership. A clean prefix within a torn
-/// journal is still uncertain. A pre-create orphan with no recorded physical
-/// stage must be preserved and reconciled outside this restart path.
+/// The application authenticates the job owner, selects its complete journal under
+/// the exclusive lease, and preserves all prior allocations and private material.
+/// An unbound allocation in a recovered prefix still consumes its epochs. The
+/// application cannot infer absence from missing stage identity or adopt an orphan.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ResumeHistory<B> {
 	/// Exact scope of the persisted job and entry.
 	pub scope: ResumeScope,
-	/// Last accepted complete frame of that job.
+	/// Last accepted complete frame of that job, rechecked in the held writer.
 	pub predecessor: ChainHead,
-	/// Last known stage and read pass, preserved if restart is admitted.
-	pub previous: CaptureAttempt<B>,
+	/// Last recorded physical stage from before the pending allocation, if any.
+	pub previous: Option<CaptureAttempt<B>>,
+	/// Latest consumed allocation before `pending_allocation`, including unbound attempts.
+	pub previous_allocation: Option<AllocatedCapture>,
+	/// Fresh allocation synchronized by the current operation before creating its stage.
+	///
+	/// An unbound allocation found after a restart belongs in the consumed history.
+	pub pending_allocation: AllocatedCapture,
 	/// Whether journal replay permits pre-intent restart.
 	pub state: ReplayState,
 }
@@ -111,10 +128,10 @@ pub struct RestartAdmission {
 pub struct RestartRecord<B> {
 	/// The authorized scope carried forward by this restart.
 	pub scope: ResumeScope,
-	/// Exact previous chain head, including digest and frame sequence.
+	/// Exact synchronized pending allocation, including digest and frame sequence.
 	pub predecessor: ChainHead,
-	/// The earlier private attempt whose material is retained.
-	pub previous: CaptureAttempt<B>,
+	/// The last earlier physical stage whose material is retained, when one was bound.
+	pub previous: Option<CaptureAttempt<B>>,
 	/// The new private stage and held live pass.
 	pub next: CaptureAttempt<B>,
 	/// Length freshly observed on the new live pass.

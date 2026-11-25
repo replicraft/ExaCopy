@@ -48,7 +48,7 @@ fn replay_admits_only_the_same_authorized_clean_preintent_job() {
 		RestartRefusal::ScopeChanged
 	);
 	changed = current;
-	changed.source = prior.previous.source;
+	changed.source = prior.previous_allocation.unwrap().source;
 	assert_eq!(
 		plan_restart(prior, changed).expect_err("old live pass"),
 		RestartRefusal::StaleSource
@@ -74,7 +74,7 @@ fn replay_admits_only_the_same_authorized_clean_preintent_job() {
 	}
 	for epoch in [0, u64::MAX] {
 		let mut blocked = prior;
-		blocked.previous.run = JournalEpoch::new(epoch);
+		blocked.previous_allocation.as_mut().unwrap().run = JournalEpoch::new(epoch);
 		assert_eq!(
 			plan_restart(blocked, current).expect_err("invalid run epoch"),
 			RestartRefusal::RunEpoch
@@ -102,10 +102,10 @@ fn restart_commits_new_stage_before_reading_every_byte_from_zero() {
 	assert_eq!(stream.stage_digest.as_bytes(), &stream.source_digest);
 	assert_eq!(synced.record.scope, history().scope);
 	assert_eq!(synced.record.predecessor, history().predecessor);
-	assert_eq!(synced.record.previous.stage, OLD);
+	assert_eq!(synced.record.previous.unwrap().stage, OLD);
 	assert_eq!(synced.record.next.stage, NEW);
 	assert_eq!(synced.record.next.run, JournalEpoch::new(6));
-	assert_eq!(synced.head.sequence(), 7);
+	assert_eq!(synced.head.sequence(), 12);
 	assert_eq!(journal.records, [synced.record]);
 	let [(stage, checkpoint)] = journal.checkpoints.as_slice() else {
 		panic!("one final checkpoint expected");
@@ -391,3 +391,6 @@ fn source_finish_failure_after_local_read_back_leaves_only_private_evidence() {
 	assert!(tape.borrow().contains(&Step::ReadBack));
 	assert_eq!(tape.borrow().last(), Some(&Step::FinishSource));
 }
+
+#[path = "remote_resume/allocations.rs"]
+mod allocations;

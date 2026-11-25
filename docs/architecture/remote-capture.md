@@ -29,17 +29,29 @@ journal replay, efficient range reuse and exclusive publication require their
 own adapters and admission. This helper does not enable a CLI command or
 issue a publication permit.
 
-The separate `remote_resume` coordinator admits a fresh pass only from a
+The separate `remote_resume` coordinator admits a fresh pass from a
 matching authenticated scope and a clean pre-intent history with an absent
-target. It requires newer source and run epochs and a distinct physical stage.
-The application first durably allocates the new private filename, creates and
-synchronizes it, then supplies that allocation head as the exact predecessor
-for the observed stage-binding record. Capture cannot read or write before the
-record's synchronization succeeds. An uncertain append requires reconciliation.
-The journal adapter must verify the actual predecessor digest, kind and bytes;
-a returned sequence number alone does not establish durable evidence.
+target. Restart uses the latest consumed allocation to check consecutive run
+and strictly increasing source epochs. Every accepted allocation consumes its
+epochs, including one left unbound after interruption. The last physically
+bound stage is tracked separately for preservation and may be absent.
 
-This first restart path rereads the source from byte zero and preserves all
-earlier stages. It does not implement efficient range reuse. Native replay,
-required metadata and publication remain separate. Nine deterministic restart
-tests and independent source review cover its private capability protocol.
+Under the exclusive job lease, the application first synchronizes a fresh
+private filename allocation, then creates the stage exclusively and
+synchronizes its namespace. It passes the fresh allocation's exact chain head
+and epochs, and the preceding consumed allocation, into restart planning. A
+replayed allocation without a recorded physical binding remains consumed, and
+its name and any discovered material require inventory. Missing identity does
+not establish absence or permission to adopt an orphan.
+
+The journal adapter appends one stage-binding record as the immediate
+successor of the fresh allocation. That record uses the allocated epochs and
+the actual held stage identity. Capture cannot read or write before the
+record's synchronization succeeds. An uncertain append requires reconciliation.
+The adapter verifies the actual predecessor digest, record kind and bytes under
+the lease. A returned sequence number alone supplies no durable evidence.
+
+This restart path rereads the source from byte zero and preserves all earlier
+stages. Efficient range reuse, qualified native publication and required
+metadata remain separate. Tests cover interrupted allocation sequences,
+exhaustion and head mismatches alongside the existing private capture protocol.
