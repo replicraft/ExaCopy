@@ -1,5 +1,10 @@
 # Engineering standards
 
+The [consolidated architecture reconciliation](architecture-reconciliation.md)
+records the superseding ExaCopy-specific repository and foundational-library
+requirements and the initial implementation audit. Adopt those corrections
+without weakening the safety or evidence obligations below.
+
 ExaCopy adopts the complete applicable requirements of EES-1 and EVS-1
 from the local ExaCopy Architecture Pack baseline 2.1, dated 2026-11-25.
 The following fingerprints identify that adoption. The pack remains under
