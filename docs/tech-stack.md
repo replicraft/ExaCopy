@@ -13,6 +13,7 @@ the platform contracts linked in the [architecture guide](architecture.md).
 | `minicbor` | 2.3.1 | Bounded binary records with explicit deterministic CBOR encoding. Generic serialization remains useful for tooling and interchange where its compatibility contract permits it. |
 | `serde`, `serde_json` | 1.0.229, 1.0.154 | Typed encodable CLI reports and JSON projections. Private authenticated records use their own bounded binary codecs. |
 | `uuid` | 1.29.3 | Typed identifiers with explicit validation and stable byte representation. Callers bind identifiers to the actual capability and attempt. |
+| `getrandom` | 0.4.3 | Obtain stage-attempt entropy from macOS through its fallible system random API. |
 | `rustix`, `libc` | 1.1.6, 0.2.191 | Prefer typed OS wrappers where they cover required effects. Keep unsupported native primitives behind reviewed platform-specific bindings. |
 
 The [supply-chain policy](../supply-chain/README.md) describes license, advisory
@@ -47,3 +48,6 @@ flush results. The reader's clone/shared-extent, compression and snapshot
 profiles also need implementation before broader image fidelity is claimed.
 ExaCopy retains copy authorization, journal sequencing and recovery policy.
 These are proposed ownership boundaries and introduce no Pomologie dependency.
+The [APFS library accounting](architecture/apfs-library-requirements.md)
+details the mounted API, current native bindings, engine ownership and
+qualification required for that extraction.
