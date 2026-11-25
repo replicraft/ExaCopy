@@ -1,7 +1,5 @@
 use exacopy_content::validate_stream_input;
 use exacopy_endpoint::UnixComponent;
-use exacopy_journal::frame::FrameKind;
-use exacopy_journal::{DurableJournal, SyncedFrame};
 use exacopy_platform::linux::{DestinationRoot, RecoveryFile, RecoveryWriteLease};
 
 use super::super::CopyReceipt;
@@ -70,16 +68,6 @@ pub(super) fn sync_receipt(
 
 pub(super) fn required<T>(value: Option<T>) -> Result<T, RecoveryFinishError> {
 	value.ok_or(RecoveryFinishError::IncompleteEvidence)
-}
-
-pub(super) fn append(
-	journal: &mut DurableJournal,
-	kind: FrameKind,
-	payload: &[u8],
-) -> Result<SyncedFrame, RecoveryFinishError> {
-	journal
-		.append(kind, payload)
-		.map_err(|source| RecoveryFinishError::Journal { kind, source })
 }
 
 pub(super) fn completion(

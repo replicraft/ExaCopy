@@ -1,7 +1,6 @@
 use ed25519_dalek::SigningKey;
 use exacopy_content::validate_stream_input;
 use exacopy_endpoint::UnixComponent;
-use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{
 	DestinationRootBinding, DurableJournal, OwnerProfileId, OwnerTimestamp, OwnerToken,
 	RootCapabilityId, SyncedFrame,
@@ -27,7 +26,7 @@ pub(super) mod crash_tests;
 
 use checkpoints::StageRecords;
 pub use error::LocalCopyError;
-use protocol::ProtocolError;
+pub(super) use protocol::ProtocolError;
 pub(super) use protocol::Publication;
 use records::{EntryEvidence, SealEvidence};
 
@@ -269,14 +268,4 @@ impl From<ProtocolError<ReadError, StageError, PublishError>> for LocalCopyError
 			ProtocolError::ReceiptIo(error) => Self::ReceiptIo(error),
 		}
 	}
-}
-
-fn append(
-	journal: &mut DurableJournal,
-	kind: FrameKind,
-	payload: &[u8],
-) -> Result<SyncedFrame, LocalCopyError> {
-	journal
-		.append(kind, payload)
-		.map_err(|source| LocalCopyError::Journal { kind, source })
 }

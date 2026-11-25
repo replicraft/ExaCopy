@@ -34,10 +34,7 @@ pub use replay::{
 };
 
 pub use crate::linux_staging::StageRequest;
-use crate::linux_staging::{
-	begin_stage_reads, check_source, complete_stage_metadata, flush_written_stage, observe,
-	verify_stage_readback,
-};
+use crate::linux_staging::{check_source, observe};
 
 /// A private stage with independent source-stream and destination read-back agreement.
 ///

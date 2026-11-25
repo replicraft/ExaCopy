@@ -1,16 +1,18 @@
+use exacopy_content::ContentDigest;
 use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{
-	BasicMetadata, DurableJournal, EntryPreparation, EntryPrepared, JournalContext, JournalEntryId,
-	LinuxFileIdentity, LiveSourceView, MetadataRecorded, ObservedTimestamp, OwnerTimestamp,
-	PreparedError, PreparedTarget, SourceInodeMetadata, SourceMeasurementId, SourceTimes,
-	StageSealed, StreamDigest, StreamEvidence, StreamLength, SyncedFrame, TargetObservation,
+	BasicMetadata, DurableJournal, DurableJournalError, EntryPreparation, EntryPrepared,
+	JournalContext, JournalEntryId, LinuxFileIdentity, LiveSourceView, MetadataRecorded,
+	ObservedTimestamp, OwnerError, OwnerTimestamp, PreparedError, PreparedTarget,
+	SourceInodeMetadata, SourceMeasurementId, SourceTimes, StageSealed, StreamDigest,
+	StreamEvidence, StreamLength, SyncedFrame, TargetObservation, VerificationRecordError,
 	VerificationRecorded,
 };
 use exacopy_platform::linux::{SourceObservation, SourceTimestamp};
 
 use super::super::job::native_identity;
 use super::super::{DestinationPlanBinding, StageFailure, VerifiedStage};
-use super::{LocalCopyError, append};
+use super::LocalCopyError;
 
 pub(super) fn timestamp(value: SourceTimestamp) -> Result<ObservedTimestamp, PreparedError> {
 	ObservedTimestamp::new(value.seconds(), value.nanoseconds())
@@ -104,26 +106,37 @@ impl<'name> EntryEvidence<'name> {
 	pub(in crate::linux) fn seal(
 		&self,
 		stage: &VerifiedStage<'_>,
-	) -> Result<SealEvidence, LocalCopyError> {
+	) -> Result<SealEvidence, SealError> {
+		self.seal_stream(
+			native_identity(stage.identity()),
+			stage.length(),
+			stage.digest(),
+		)
+	}
+
+	pub(in crate::linux) fn seal_stream(
+		&self,
+		identity: LinuxFileIdentity,
+		length: u64,
+		digest: ContentDigest,
+	) -> Result<SealEvidence, SealError> {
 		let stage_evidence = StreamEvidence {
-			identity: native_identity(stage.identity()),
-			length: StreamLength::new(stage.length()).map_err(LocalCopyError::Verification)?,
-			digest: StreamDigest::from_bytes(*stage.digest().as_bytes()),
+			identity,
+			length: StreamLength::new(length).map_err(SealError::Verification)?,
+			digest: StreamDigest::from_bytes(*digest.as_bytes()),
 		};
 		let source_evidence = StreamEvidence {
 			identity: self.source.identity(),
-			length: StreamLength::new(self.source.length())
-				.map_err(LocalCopyError::Verification)?,
-			// VerifiedStage exists only when the independently measured digests agreed.
+			length: StreamLength::new(self.source.length()).map_err(SealError::Verification)?,
+			// The caller established independent agreement between these streams.
 			digest: stage_evidence.digest,
 		};
 		let verification =
 			VerificationRecorded::new(self.context, self.entry, source_evidence, stage_evidence)
-				.map_err(LocalCopyError::Verification)?;
+				.map_err(SealError::Verification)?;
 		let times = self.source.times();
 		let time = |value: ObservedTimestamp| {
-			OwnerTimestamp::new(value.seconds(), value.nanoseconds())
-				.map_err(LocalCopyError::Timestamp)
+			OwnerTimestamp::new(value.seconds(), value.nanoseconds()).map_err(SealError::Timestamp)
 		};
 		let metadata = BasicMetadata::new(
 			self.metadata.mode(),
@@ -132,7 +145,7 @@ impl<'name> EntryEvidence<'name> {
 			time(times.accessed_at)?,
 			time(times.modified_at)?,
 		)
-		.map_err(LocalCopyError::Verification)?;
+		.map_err(SealError::Verification)?;
 		Ok(SealEvidence {
 			sealed: StageSealed {
 				context: self.context,
@@ -161,7 +174,7 @@ impl SealEvidence {
 	pub(in crate::linux) fn record(
 		&self,
 		journal: &mut DurableJournal,
-	) -> Result<SyncedFrame, LocalCopyError> {
+	) -> Result<SyncedFrame, SealError> {
 		let _ = append(journal, FrameKind::StageSealed, &self.sealed.encode())?;
 		let _ = append(
 			journal,
@@ -174,4 +187,34 @@ impl SealEvidence {
 			&self.metadata.encode(),
 		)
 	}
+}
+
+#[derive(Debug)]
+pub(in crate::linux) enum SealError {
+	Verification(VerificationRecordError),
+	Timestamp(OwnerError),
+	Journal {
+		kind: FrameKind,
+		source: DurableJournalError,
+	},
+}
+
+impl From<SealError> for LocalCopyError {
+	fn from(error: SealError) -> Self {
+		match error {
+			SealError::Verification(error) => Self::Verification(error),
+			SealError::Timestamp(error) => Self::Timestamp(error),
+			SealError::Journal { kind, source } => Self::Journal { kind, source },
+		}
+	}
+}
+
+fn append(
+	journal: &mut DurableJournal,
+	kind: FrameKind,
+	payload: &[u8],
+) -> Result<SyncedFrame, SealError> {
+	journal
+		.append(kind, payload)
+		.map_err(|source| SealError::Journal { kind, source })
 }

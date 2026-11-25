@@ -19,7 +19,7 @@ use super::super::{CopyReceipt, LocalCopyPlan};
 use super::records::SealEvidence;
 
 #[derive(Debug)]
-pub(super) enum ProtocolError<R, S, P> {
+pub(in crate::linux) enum ProtocolError<R, S, P> {
 	Journal {
 		kind: FrameKind,
 		source: DurableJournalError,
@@ -52,7 +52,7 @@ impl Publication<'_, '_> {
 		}
 	}
 
-	pub(super) fn complete_with<R, S, P: ExclusivePublication>(
+	pub(in crate::linux) fn complete_with<R, S, P: ExclusivePublication>(
 		&self,
 		journal: &mut DurableJournal,
 		session: &mut CopySession,
