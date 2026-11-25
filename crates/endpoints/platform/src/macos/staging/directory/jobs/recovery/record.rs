@@ -9,8 +9,8 @@ use rustix::fs::{self, FileType, Mode, OFlags, Stat};
 
 use super::super::super::super::super::{FILE_MODE, PhysicalFsid, file::same_observation};
 use super::{
-	DirectoryLease, JOURNAL, JobArtifact, ManagedObjectIdentity, RecoveryDirectory, RecoveryError,
-	RecoveryJob, acl, component, name, named_stat, with_materialization_disabled,
+	DirectoryLease, JobArtifact, ManagedObjectIdentity, RecoveryDirectory, RecoveryError,
+	RecoveryJob, acl, check_absent, component, name, named_stat, with_materialization_disabled,
 };
 
 pub(super) const RECORD_LIMIT: u64 = super::super::record::MAX_RECORD_BYTES as u64;
@@ -23,9 +23,10 @@ const READ_RECORD: OFlags = OFlags::RDONLY
 
 pub(super) enum RecordParent<'job> {
 	Job(&'job RecoveryJob<'job>),
-	Journal {
+	Child {
 		job: &'job RecoveryJob<'job>,
-		journal: RecoveryDirectory,
+		directory: RecoveryDirectory,
+		name: &'static [u8],
 	},
 }
 
@@ -33,16 +34,20 @@ impl RecordParent<'_> {
 	fn lease(&self) -> &DirectoryLease {
 		match self {
 			Self::Job(job) => &job.directory.lease,
-			Self::Journal { journal, .. } => &journal.lease,
+			Self::Child { directory, .. } => &directory.lease,
 		}
 	}
 
 	fn check_current(&self) -> Result<(), RecoveryError> {
 		match self {
 			Self::Job(job) => job.check_current(),
-			Self::Journal { job, journal } => {
+			Self::Child {
+				job,
+				directory,
+				name,
+			} => {
 				job.check_current()?;
-				journal.check_current(&job.directory.lease, JOURNAL)
+				directory.check_current(&job.directory.lease, name)
 			}
 		}
 	}
@@ -73,8 +78,37 @@ impl<'job> RecoveryRecord<'job> {
 	) -> Result<Self, RecoveryError> {
 		parent.check_current()?;
 		let component = component(raw_name, artifact)?;
+		let initial = named_stat(parent.lease(), component, artifact)?;
+		Self::bind(parent, artifact, component, limit, initial)
+	}
+
+	pub(super) fn open_optional(
+		parent: RecordParent<'job>,
+		artifact: JobArtifact,
+		raw_name: &'static [u8],
+		limit: u64,
+	) -> Result<Option<Self>, RecoveryError> {
+		parent.check_current()?;
+		let component = component(raw_name, artifact)?;
+		match named_stat(parent.lease(), component, artifact) {
+			Ok(initial) => Self::bind(parent, artifact, component, limit, initial).map(Some),
+			Err(RecoveryError::Missing(_)) => {
+				parent.check_current()?;
+				check_absent(parent.lease(), component, artifact)?;
+				Ok(None)
+			}
+			Err(error) => Err(error),
+		}
+	}
+
+	fn bind(
+		parent: RecordParent<'job>,
+		artifact: JobArtifact,
+		component: UnixComponent<'static>,
+		limit: u64,
+		initial: Stat,
+	) -> Result<Self, RecoveryError> {
 		let lease = parent.lease();
-		let initial = named_stat(lease, component, artifact)?;
 		if !private_regular_file(&initial, lease.owner) {
 			return Err(RecoveryError::InvalidObject(artifact));
 		}
@@ -91,7 +125,7 @@ impl<'job> RecoveryRecord<'job> {
 			.ok_or(RecoveryError::InvalidObject(artifact))?;
 		let file = File::from(fs::openat(
 			&lease.file,
-			raw_name,
+			component.as_bytes(),
 			READ_RECORD,
 			Mode::empty(),
 		)?);

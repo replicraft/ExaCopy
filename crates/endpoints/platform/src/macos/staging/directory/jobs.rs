@@ -22,7 +22,10 @@ mod tests;
 
 pub use error::{JobArtifact, JobError, JobStep};
 pub use identity::JobName;
-pub use recovery::{RecoveryError, RecoveryJob, RecoveryRecord};
+pub use recovery::{
+	RecoveryError, RecoveryFileObservation, RecoveryInventory, RecoveryJob, RecoveryName,
+	RecoveryRecord,
+};
 
 const JOURNAL: &[u8] = b"journal";
 const RECEIPTS: &[u8] = b"receipts";

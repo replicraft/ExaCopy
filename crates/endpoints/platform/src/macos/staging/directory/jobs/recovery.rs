@@ -3,25 +3,27 @@ use std::fs::File;
 use std::os::fd::AsFd as _;
 
 use exacopy_endpoint::UnixComponent;
-use rustix::fs::{self, FileType, Mode, Stat};
+use rustix::fs::{self, AtFlags, FileType, Mode, Stat};
 use rustix::io::Errno;
 
 use self::record::{FIRST_SEGMENT_LIMIT, RECORD_LIMIT, RecordParent};
 use super::super::super::super::{
-	DIRECTORY_MODE, DIRECTORY_OPEN, acl, with_materialization_disabled,
+	DIRECTORY_MODE, DIRECTORY_OPEN, PhysicalFsid, acl, with_materialization_disabled,
 };
-use super::record::{FIRST_SEGMENT, OWNER, PLAN};
+use super::record::{FIRST_SEGMENT, OWNER, PLAN, RECEIPT};
 use super::{
 	DirectoryIdentity, DirectoryLease, JOURNAL, JobArtifact, JobName, ManagedObjectIdentity,
-	StageDirectory, StageError, checked_component,
+	RECEIPTS, StageDirectory, StageError, checked_component,
 };
 
 mod error;
+mod inventory;
 #[allow(unsafe_code, reason = "bounded Darwin descriptor name attribute")]
 mod name;
 mod record;
 
 pub use error::RecoveryError;
+pub use inventory::{RecoveryFileObservation, RecoveryInventory, RecoveryName};
 pub use record::RecoveryRecord;
 
 impl StageDirectory<'_> {
@@ -120,11 +122,48 @@ impl RecoveryJob<'_> {
 			let journal =
 				RecoveryDirectory::open(&self.directory.lease, JOURNAL, JobArtifact::Journal)?;
 			RecoveryRecord::open(
-				RecordParent::Journal { job: self, journal },
+				RecordParent::Child {
+					job: self,
+					directory: journal,
+					name: JOURNAL,
+				},
 				JobArtifact::FirstSegment,
 				FIRST_SEGMENT,
 				FIRST_SEGMENT_LIMIT,
 			)
+		})
+	}
+
+	/// Observes and opens the fixed initial receipt under a private receipt directory lease.
+	///
+	/// An absent receipt or absent private receipt directory returns `None`.
+	/// The result contains opaque bytes awaiting interpretation by the caller.
+	///
+	/// # Errors
+	/// Rejects unsafe or rebound names, invalid record extents and lease conflicts.
+	pub fn open_receipt(&self) -> Result<Option<RecoveryRecord<'_>>, RecoveryError> {
+		with_materialization_disabled(|| {
+			self.check_current()?;
+			let Some(directory) = RecoveryDirectory::open_optional(
+				&self.directory.lease,
+				RECEIPTS,
+				JobArtifact::Receipts,
+			)?
+			else {
+				self.check_current()?;
+				check_absent(
+					&self.directory.lease,
+					component(RECEIPTS, JobArtifact::Receipts)?,
+					JobArtifact::Receipts,
+				)?;
+				return Ok(None);
+			};
+			let parent = RecordParent::Child {
+				job: self,
+				directory,
+				name: RECEIPTS,
+			};
+			RecoveryRecord::open_optional(parent, JobArtifact::Receipt, RECEIPT, RECORD_LIMIT)
 		})
 	}
 
@@ -168,9 +207,31 @@ impl RecoveryDirectory {
 	) -> Result<Self, RecoveryError> {
 		let component = component(raw_name, artifact)?;
 		let named = named_stat(parent, component, artifact)?;
-		let expected = DirectoryIdentity::from_stat(&named, parent.identity.physical_fsid)
+		Self::bind(parent, raw_name, artifact, &named)
+	}
+
+	fn open_optional(
+		parent: &DirectoryLease,
+		raw_name: &[u8],
+		artifact: JobArtifact,
+	) -> Result<Option<Self>, RecoveryError> {
+		let component = component(raw_name, artifact)?;
+		match named_stat(parent, component, artifact) {
+			Ok(named) => Self::bind(parent, raw_name, artifact, &named).map(Some),
+			Err(RecoveryError::Missing(_)) => Ok(None),
+			Err(error) => Err(error),
+		}
+	}
+
+	fn bind(
+		parent: &DirectoryLease,
+		raw_name: &[u8],
+		artifact: JobArtifact,
+		named: &Stat,
+	) -> Result<Self, RecoveryError> {
+		let expected = DirectoryIdentity::from_stat(named, parent.identity.physical_fsid)
 			.map_err(|_| RecoveryError::InvalidObject(artifact))?;
-		if !private_directory(&named, parent.owner) {
+		if !private_directory(named, parent.owner) {
 			return Err(RecoveryError::InvalidObject(artifact));
 		}
 		let file = File::from(fs::openat(
@@ -227,11 +288,35 @@ fn named_stat(
 	name: UnixComponent<'_>,
 	artifact: JobArtifact,
 ) -> Result<Stat, RecoveryError> {
-	parent.named_stat(name).map_err(|error| match error {
-		StageError::DirectoryChanged => RecoveryError::InvalidObject(artifact),
-		StageError::System(error) if error.raw_os_error() == Some(Errno::NOENT.raw_os_error()) => {
-			RecoveryError::Missing(artifact)
-		}
-		error => error.into(),
-	})
+	lookup_stat(parent, name, RecoveryError::InvalidObject(artifact))?
+		.ok_or(RecoveryError::Missing(artifact))
+}
+
+fn check_absent(
+	parent: &DirectoryLease,
+	name: UnixComponent<'_>,
+	artifact: JobArtifact,
+) -> Result<(), RecoveryError> {
+	if lookup_stat(parent, name, RecoveryError::InvalidObject(artifact))?.is_some() {
+		return Err(RecoveryError::InvalidObject(artifact));
+	}
+	Ok(())
+}
+
+fn lookup_stat(
+	parent: &DirectoryLease,
+	name: UnixComponent<'_>,
+	mismatch: RecoveryError,
+) -> Result<Option<Stat>, RecoveryError> {
+	let observed = match fs::statat(&parent.file, name.as_bytes(), AtFlags::SYMLINK_NOFOLLOW) {
+		Ok(stat) => stat,
+		Err(Errno::NOENT) => return Ok(None),
+		Err(error) => return Err(error.into()),
+	};
+	if observed.st_dev != parent.identity.device
+		|| PhysicalFsid::named(parent.file.as_fd(), name)? != Some(parent.identity.physical_fsid)
+	{
+		return Err(mismatch);
+	}
+	Ok(Some(observed))
 }

@@ -8,6 +8,7 @@ use super::{
 	UUID, job_name, job_path, open_staging,
 };
 
+mod namespace;
 const OWNER_BYTES: &[u8] = b"opaque owner fixture";
 const PLAN_BYTES: &[u8] = b"opaque canonical plan fixture";
 const JOURNAL_BYTES: &[u8] = b"opaque journal prefix";

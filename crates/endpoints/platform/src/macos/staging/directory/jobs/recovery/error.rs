@@ -4,7 +4,7 @@ use rustix::io::Errno;
 
 use super::super::super::super::super::ManagedReadError;
 use super::super::super::super::super::thread_policy::PolicyError;
-use super::{JobArtifact, StageError};
+use super::{JobArtifact, RecoveryName, StageError};
 
 /// Failure observing one read-only managed APFS recovery job.
 #[derive(Debug)]
@@ -18,6 +18,8 @@ pub enum RecoveryError {
 	Missing(JobArtifact),
 	/// A fixed object could not be admitted or no longer matches its binding.
 	InvalidObject(JobArtifact),
+	/// A selected stage or target cannot be admitted or its observation changed.
+	InvalidEntry(RecoveryName),
 	/// An independently acquired directory lease would conflict with another actor.
 	DirectoryBusy(JobArtifact),
 	/// A record's extent falls outside the selected fixed artifact's bounds.
@@ -43,6 +45,12 @@ impl fmt::Display for RecoveryError {
 				write!(
 					formatter,
 					"private recovery {artifact:?} identity or metadata is invalid"
+				)
+			}
+			Self::InvalidEntry(name) => {
+				write!(
+					formatter,
+					"recovery {name:?} identity or metadata is invalid"
 				)
 			}
 			Self::DirectoryBusy(artifact) => {
