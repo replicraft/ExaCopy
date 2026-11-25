@@ -9,6 +9,8 @@ The order below expresses safety dependencies, not a requirement to finish
 all platforms before starting remote or synchronization work. Independent
 slices can proceed together. The [CLI guide](../apps/exacopy-cli/README.md)
 and platform work packages describe implemented behavior and evidence.
+The [remote transfer readiness record](engineering/remote-transfer-readiness.md)
+separates integrated components from the remaining complete-operation gates.
 
 | Order | Milestone | Acceptance dependency |
 | --- | --- | --- |
