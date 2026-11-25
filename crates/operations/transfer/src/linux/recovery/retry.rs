@@ -15,8 +15,8 @@ use exacopy_platform::linux::{DestinationRoot, ReadRoot, RecoveryInventory, Reco
 #[cfg(test)]
 use super::super::local_copy::crash_tests::{Checkpoint, pause_at};
 use super::super::{LocalCopyPlan, StageFailure, check_source, observe};
-use super::classify::verify;
 use super::finish::{acquire_lease, append, completion, finish_leased, required};
+use super::native::verify;
 use super::source::open_source;
 use super::{
 	RecoveryDisposition, RecoveryFinishError, RecoveryHistory, RecoveryInspectError,

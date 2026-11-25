@@ -8,22 +8,27 @@ use exacopy_platform::linux::{DestinationRoot, RecoveryFile, RecoveryInventory, 
 
 use super::job::native_identity;
 use super::{
-	JournalBoundary, JournalReplay, JournalTail, LocalCopyPlan, MAX_LOCAL_COPY_PLAN_BYTES,
-	replay_journal,
+	JournalBoundary, JournalReplay, JournalTail, LocalCopyPlan, MAX_COPY_RECEIPT_BYTES,
+	MAX_LOCAL_COPY_PLAN_BYTES, replay_journal,
 };
 
 mod artifacts;
 mod classify;
 mod error;
 mod finish;
+mod native;
 mod resume;
 mod retry;
 mod source;
 
-use artifacts::{load_range_pages, open_receipt, read_artifact, recheck_receipt, recheck_record};
+use artifacts::{check_receipt, load_range_pages};
 use classify::classify;
 pub use error::{RecoveryInspectError, RecoveryStep};
 pub use finish::{RecoveryFinishError, finish_recovery};
+use native::{
+	observe_names, open_receipt, read_artifact, read_checkpoint, recheck_receipt, recheck_record,
+	verify,
+};
 pub use resume::resume_recovery;
 pub use retry::{RecoveryRetryError, RecoverySource, retry_recovery};
 
@@ -191,10 +196,13 @@ impl RecoveryHistory {
 			.map_err(RecoveryStep::Journal.platform())?;
 		let journal = replay_journal(&mut journal_file, &plan, &owner)
 			.map_err(RecoveryInspectError::Journal)?;
-		let ranges = load_range_pages(job, &journal, plan.source().length)?;
+		let ranges = load_range_pages(&journal, plan.source().length, |page| {
+			read_checkpoint(job, page)
+		})?;
 		let receipt = open_receipt(job)?;
 		if let Some(file) = &receipt {
-			artifacts::check_receipt(file, &plan, &journal)?;
+			let bytes = read_artifact(file, RecoveryStep::Receipt, MAX_COPY_RECEIPT_BYTES)?;
+			check_receipt(&bytes, &plan, &journal)?;
 		}
 		Ok(Self {
 			owner_file,
@@ -218,7 +226,12 @@ impl RecoveryHistory {
 		names: &RecoveryInventory<'_>,
 		scratch: &mut [u8],
 	) -> Result<RecoveryInspection, RecoveryInspectError> {
-		let disposition = classify(names, &self.journal, self.receipt.is_some(), scratch)?;
+		let disposition = classify(
+			observe_names(names),
+			&self.journal,
+			self.receipt.is_some(),
+			|file, stream, metadata| verify(file, stream, metadata, scratch),
+		)?;
 		recheck_record(&self.owner_file, job.open_owner(), RecoveryStep::Owner)?;
 		recheck_record(&self.plan_file, job.open_plan(), RecoveryStep::Plan)?;
 		recheck_record(

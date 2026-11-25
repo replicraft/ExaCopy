@@ -1,32 +1,50 @@
-use exacopy_content::measure_at;
-use exacopy_journal::{MetadataRecorded, PublicationOutcome, StreamEvidence};
-use exacopy_platform::linux::{ExtendedAttributes, RecoveryFile, RecoveryInventory};
+use exacopy_journal::{LinuxFileIdentity, MetadataRecorded, PublicationOutcome, StreamEvidence};
 
-use super::super::job::native_identity;
 use super::super::{JournalReplay, JournalTail};
-use super::{RecoveryDisposition, RecoveryInspectError, RecoveryIssue, RecoveryStep};
+use super::{RecoveryDisposition, RecoveryIssue};
 
-pub(super) fn classify(
-	names: &RecoveryInventory<'_>,
+#[cfg(test)]
+mod tests;
+
+// Pair an identity observed from an open file with its held read capability.
+pub(super) struct ObservedFile<'file, F> {
+	identity: LinuxFileIdentity,
+	file: &'file F,
+}
+
+impl<'file, F> ObservedFile<'file, F> {
+	pub(super) fn new(identity: LinuxFileIdentity, file: &'file F) -> Self {
+		Self { identity, file }
+	}
+}
+
+pub(super) struct ObservedNames<'file, F> {
+	pub(super) stage: Option<ObservedFile<'file, F>>,
+	pub(super) target: Option<ObservedFile<'file, F>>,
+	pub(super) stage_directory: Option<LinuxFileIdentity>,
+}
+
+// Only matching stage inodes are eligible for read-back. The caller rechecks
+// the live namespace and artifact bindings before returning this disposition.
+pub(super) fn classify<F, E>(
+	names: ObservedNames<'_, F>,
 	journal: &JournalReplay,
 	receipt_present: bool,
-	scratch: &mut [u8],
-) -> Result<RecoveryDisposition, RecoveryInspectError> {
+	verify: impl FnOnce(
+		&F,
+		StreamEvidence,
+		Option<MetadataRecorded>,
+	) -> Result<Option<RecoveryIssue>, E>,
+) -> Result<RecoveryDisposition, E> {
 	use RecoveryDisposition::RequiresReconciliation as unresolved;
 
-	let stage = names.stage();
-	let target = names.target();
-	let stage_matches =
-		stage.is_some_and(|file| Some(native_identity(file.identity())) == journal.stage);
-	let target_matches =
-		target.is_some_and(|file| Some(native_identity(file.identity())) == journal.stage);
-	let current = if stage_matches {
-		stage
-	} else {
-		target.filter(|_| target_matches)
-	};
-	if let (Some(file), Some(verification)) = (current, journal.verification)
-		&& let Some(issue) = verify(file, verification.stage(), journal.metadata, scratch)?
+	let stage = names.stage.as_ref();
+	let target = names.target.as_ref();
+	let known_stage = stage.filter(|file| Some(file.identity) == journal.stage);
+	let known_target = target.filter(|file| Some(file.identity) == journal.stage);
+	if let (Some(current), Some(verification)) =
+		(known_stage.or(known_target), journal.verification)
+		&& let Some(issue) = verify(current.file, verification.stage(), journal.metadata)?
 	{
 		return Ok(unresolved(issue));
 	}
@@ -34,15 +52,15 @@ pub(super) fn classify(
 	if journal.boundary.head.sequence() == 0 {
 		return Ok(unresolved(RecoveryIssue::MissingPreparation));
 	}
-	if target.is_some() && !target_matches {
+	if target.is_some() && known_target.is_none() {
 		return Ok(RecoveryDisposition::Conflict);
 	}
-	if stage.is_some() && !stage_matches {
+	if stage.is_some() && known_stage.is_none() {
 		return Ok(unresolved(RecoveryIssue::UnrecognizedStage));
 	}
-	let changed_directory = journal.recovery_stage_directory.is_some_and(|identity| {
-		Some(identity) != names.stage_directory_identity().map(native_identity)
-	});
+	let changed_directory = journal
+		.recovery_stage_directory
+		.is_some_and(|identity| Some(identity) != names.stage_directory);
 	if journal.intent.is_none() {
 		if changed_directory {
 			return Ok(unresolved(RecoveryIssue::StageDirectoryBinding));
@@ -60,7 +78,11 @@ pub(super) fn classify(
 			Ok(unresolved(RecoveryIssue::StageDirectoryBinding))
 		}
 		(Some(_), None) => Ok(private_stage(journal)),
-		(None, Some(_)) => Ok(published_stage(names, journal, receipt_present)),
+		(None, Some(_)) => Ok(published_stage(
+			names.stage_directory,
+			journal,
+			receipt_present,
+		)),
 		(Some(_), Some(_)) => Ok(unresolved(RecoveryIssue::ContradictoryNames)),
 		(None, None) => Ok(unresolved(RecoveryIssue::MissingStageAndTarget)),
 	}
@@ -90,7 +112,7 @@ fn private_stage(journal: &JournalReplay) -> RecoveryDisposition {
 }
 
 fn published_stage(
-	names: &RecoveryInventory<'_>,
+	stage_directory: Option<LinuxFileIdentity>,
 	journal: &JournalReplay,
 	receipt_present: bool,
 ) -> RecoveryDisposition {
@@ -102,7 +124,7 @@ fn published_stage(
 	) {
 		return unresolved(RecoveryIssue::ContradictoryOutcome);
 	}
-	let Some(stage_directory) = names.stage_directory_identity().map(native_identity) else {
+	let Some(stage_directory) = stage_directory else {
 		return unresolved(RecoveryIssue::StageDirectoryBinding);
 	};
 	if journal
@@ -129,43 +151,4 @@ fn published_stage(
 		JournalTail::Clean => RecoveryDisposition::Complete,
 		JournalTail::Torn { .. } => unresolved(RecoveryIssue::TornJournal),
 	}
-}
-
-pub(super) fn verify(
-	file: &RecoveryFile,
-	expected: StreamEvidence,
-	metadata: Option<MetadataRecorded>,
-	scratch: &mut [u8],
-) -> Result<Option<RecoveryIssue>, RecoveryInspectError> {
-	if file.len() != expected.length.get() {
-		return Ok(Some(RecoveryIssue::StreamMismatch));
-	}
-	let digest = measure_at(file.len(), scratch, |offset, bytes| {
-		file.read_exact_at(offset, bytes)
-	})
-	.map_err(RecoveryInspectError::ReadBack)?;
-	file.check_logical_eof()
-		.map_err(RecoveryStep::Stream.read())?;
-	if digest.as_bytes() != expected.digest.as_bytes() {
-		return Ok(Some(RecoveryIssue::StreamMismatch));
-	}
-	if let Some(recorded) = metadata {
-		let observed = file.observation();
-		let modified = observed.modified_at();
-		let expected = recorded.metadata;
-		let attributes = file
-			.extended_attributes()
-			.map_err(RecoveryStep::Stream.read())?;
-		if observed.mode() != expected.mode()
-			|| observed.owner() != expected.uid
-			|| observed.group() != expected.gid
-			|| observed.link_count() != 1
-			|| modified.seconds() != expected.modified_at.seconds()
-			|| modified.nanoseconds() != expected.modified_at.nanoseconds()
-			|| attributes != ExtendedAttributes::NoneVisible
-		{
-			return Ok(Some(RecoveryIssue::MetadataMismatch));
-		}
-	}
-	Ok(None)
 }
