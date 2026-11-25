@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# cc-rs appends the Rust target spelling when it recognizes Clang.
+# Zig takes the equivalent target without the vendor component.
+arguments=()
+for argument in "$@"; do
+	case "$argument" in
+		--target=x86_64-unknown-linux-gnu) ;;
+		*) arguments+=("$argument") ;;
+	esac
+done
+exec "${EXACOPY_ZIG:-zig}" cc -target x86_64-linux-gnu "${arguments[@]}"

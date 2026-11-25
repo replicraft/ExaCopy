@@ -40,6 +40,37 @@ file verification to the Linux integration tests.
 The canonical Plan body lane also exercises opaque extension admission,
 including its 1 MiB body limit and a generated oversized input.
 
+## Linux x86-64 cross-checks from macOS
+
+Use official Rust 1.100.0 with its `x86_64-unknown-linux-gnu` target standard
+library and the [pinned Pomologie source](../specs/dependencies/README.md).
+Zig 0.17.1 has completed compile checks for this configuration. The optional
+developer wrappers select Zig's Linux GNU C driver and archiver. They use
+`zig` from PATH unless `EXACOPY_ZIG` names an executable explicitly.
+
+Run from the repository root.
+
+```sh
+(
+  set -eu
+  exacopy_cross=$(mktemp -d)
+  trap 'rm -rf "$exacopy_cross"' EXIT
+  export ZIG_GLOBAL_CACHE_DIR="$exacopy_cross/zig-global"
+  export ZIG_LOCAL_CACHE_DIR="$exacopy_cross/zig-local"
+  export CARGO_TARGET_DIR="$exacopy_cross/target"
+  export CC_x86_64_unknown_linux_gnu="$PWD/tools/development/zig-linux-x86_64-cc"
+  export AR_x86_64_unknown_linux_gnu="$PWD/tools/development/zig-linux-x86_64-ar"
+
+  rustup run 1.100.0 cargo check --locked --workspace \
+    --target x86_64-unknown-linux-gnu --all-targets --all-features
+  rustup run 1.100.0 cargo clippy --locked --workspace \
+    --target x86_64-unknown-linux-gnu --all-targets --all-features -- -D warnings
+)
+```
+
+These commands check compilation and lints for Linux. Runtime behavior and
+release qualification use the native Linux workflows.
+
 ## Offline CLI installer fixtures
 
 The [installer workflow](../.github/workflows/installers.yml) builds the
