@@ -13,7 +13,7 @@ mod packet;
 mod tests;
 
 use clock::GenerationClock;
-use packet::{addresses, admitted_counter, is_literal_unicast};
+use packet::{addresses, admitted_counter, handshake_ephemeral, is_literal_unicast};
 
 /// Maximum inner packet size in this fixed-MTU experimental profile.
 pub const INNER_MTU: usize = 1420;
@@ -26,6 +26,10 @@ const SINGLE_PEER_INDEX: u32 = 1;
 // One operation produces at most one transport message in Tunn 0.7.1. Count
 // control operations too because the handshake and timer paths can emit keepalives.
 const MAX_GENERATION_OPERATIONS: u32 = 1 << 20;
+// A public X25519 probe uses 2^254 after clamping. A power-of-two scalar
+// kills the cofactor component while retaining every nontrivial odd-order component.
+const EPHEMERAL_PROBE_SCALAR: [u8; 32] = [0; 32];
+const MAX_INCOMING_HANDSHAKES: u16 = 256;
 
 /// Route-owner binding carried with protocol status to its owning actor.
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -88,6 +92,7 @@ pub struct ProtocolPeer {
 	tunnel: Tunn,
 	clock: GenerationClock,
 	operations_remaining: u32,
+	handshakes_remaining: u16,
 }
 
 impl ProtocolPeer {
@@ -134,6 +139,7 @@ impl ProtocolPeer {
 			tunnel,
 			clock,
 			operations_remaining: MAX_GENERATION_OPERATIONS,
+			handshakes_remaining: MAX_INCOMING_HANDSHAKES,
 		})
 	}
 
@@ -177,7 +183,8 @@ impl ProtocolPeer {
 	/// A returned control packet does not establish a fresh peer observation.
 	/// # Errors
 	/// Refuses foreign senders, invalid datagrams, failed authentication and
-	/// decrypted packets outside the approved inner address pair.
+	/// decrypted packets outside the approved inner address pair. A fixed
+	/// budget caps unauthenticated ephemeral checks before library processing.
 	pub fn receive<'buffer>(
 		&mut self,
 		sender: SocketAddr,
@@ -193,7 +200,23 @@ impl ProtocolPeer {
 		if !admitted_counter(datagram) {
 			return Err(ProtocolError::CounterLimit);
 		}
+		let ephemeral = handshake_ephemeral(datagram)?;
+		if ephemeral.is_some() && self.handshakes_remaining == 0 {
+			self.require_active()?;
+			return Err(ProtocolError::HandshakeLimit);
+		}
+
 		self.reserve_operation()?;
+		if let Some(public_bytes) = ephemeral {
+			self.handshakes_remaining -= 1;
+			let public_key = PublicKey::from(*public_bytes);
+			// This public probe is independent of the tunnel's private key.
+			let probe = StaticSecret::from(EPHEMERAL_PROBE_SCALAR);
+			if !probe.diffie_hellman(&public_key).was_contributory() {
+				return Err(ProtocolError::NonContributoryEphemeral);
+			}
+			self.clock.advance()?;
+		}
 		let result = self.tunnel.decapsulate(Some(sender.ip()), datagram, output);
 		self.translate(result)
 	}
@@ -300,6 +323,10 @@ pub enum ProtocolError {
 	NoSession,
 	/// The WireGuard transport counter is outside the protocol limit.
 	CounterLimit,
+	/// The received handshake ephemeral is not contributory under X25519.
+	NonContributoryEphemeral,
+	/// This generation exhausted its incoming handshake allowance.
+	HandshakeLimit,
 	/// This generation or its underlying protocol has expired.
 	Expired,
 	/// A monotonic observation failed or moved backwards.
@@ -321,6 +348,10 @@ impl fmt::Display for ProtocolError {
 			Self::InnerScope => "inner addresses are outside the approved peer scope",
 			Self::NoSession => "the WireGuard transport-key session is unavailable",
 			Self::CounterLimit => "the WireGuard transport counter reached its protocol limit",
+			Self::NonContributoryEphemeral => "invalid WireGuard handshake ephemeral key",
+			Self::HandshakeLimit => {
+				"the WireGuard peer generation exhausted its handshake allowance"
+			}
 			Self::Expired => "the WireGuard peer generation has expired",
 			Self::ClockUnavailable => "the WireGuard monotonic clock is unavailable",
 			Self::OperationLimit => "the WireGuard peer generation exhausted its operation budget",

@@ -1,5 +1,13 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
+use super::ProtocolError;
+
+const HANDSHAKE_INITIATION: [u8; 4] = 1_u32.to_le_bytes();
+const HANDSHAKE_RESPONSE: [u8; 4] = 2_u32.to_le_bytes();
+const INITIATION_BYTES: usize = 148;
+const RESPONSE_BYTES: usize = 92;
+const INITIATION_EPHEMERAL_OFFSET: usize = 8;
+const RESPONSE_EPHEMERAL_OFFSET: usize = 12;
 const TRANSPORT_MESSAGE: [u8; 4] = 4_u32.to_le_bytes();
 // WireGuard whitepaper section 6.1. A key serves counters zero through limit - 1.
 pub(super) const REJECT_AFTER_MESSAGES: u64 = u64::MAX - (1 << 13);
@@ -12,6 +20,24 @@ pub(super) fn admitted_counter(datagram: &[u8]) -> bool {
 		return false;
 	};
 	u64::from_le_bytes(*counter) < REJECT_AFTER_MESSAGES
+}
+
+// BoringTun 0.7.1's parser requires this same type and whole packet length.
+// Only project the public ephemeral. Authentication stays inside Tunn.
+pub(super) fn handshake_ephemeral(datagram: &[u8]) -> Result<Option<&[u8; 32]>, ProtocolError> {
+	let (length, offset) = match datagram.first_chunk::<4>() {
+		Some(&HANDSHAKE_INITIATION) => (INITIATION_BYTES, INITIATION_EPHEMERAL_OFFSET),
+		Some(&HANDSHAKE_RESPONSE) => (RESPONSE_BYTES, RESPONSE_EPHEMERAL_OFFSET),
+		_ => return Ok(None),
+	};
+	if datagram.len() != length {
+		return Err(ProtocolError::Rejected);
+	}
+	datagram
+		.get(offset..)
+		.and_then(<[u8]>::first_chunk::<32>)
+		.map(Some)
+		.ok_or(ProtocolError::Rejected)
 }
 
 const IPV4_BASE_HEADER: usize = 20;

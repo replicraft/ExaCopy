@@ -9,7 +9,12 @@ socket, DNS resolver, interface or system route API.
 A peer owns one approved outer address/port and one local/remote inner IP
 pair. Caller-owned buffers bound inner packets to 1,420 bytes and encrypted
 datagrams to 1,456 bytes. Only literal unicast addresses are admitted.
-Configured static keys must be distinct and contributory. Application
+Configured static keys must be distinct and contributory. Incoming initiation
+and response ephemerals are also checked through the existing X25519 library
+with a fixed public probe scalar before BoringTun handles the unchanged packet.
+At most 256 incoming handshake attempts per generation can perform that check.
+Exhaustion blocks further handshakes while established transport can continue.
+Application
 payloads require an existing session and are not queued before handshake.
 Transport counters at or beyond the protocol rejection threshold are
 refused before entering the library. Every library action consumes one
@@ -29,9 +34,11 @@ route confinement. Inner checks cover IP addresses and packet lengths;
 TCP/UDP port, DNS-purpose and flow admission require the future stack and
 actor. The [application route policy](remote-admission.md) remains separate.
 
-Seven native macOS tests passed with real keyed two-peer IPv4/IPv6
+Eleven native macOS tests passed with real keyed two-peer IPv4/IPv6
 exchanges, authentication/replay rejection, bounds, expiry, operation budget
-and clock boundary checks. An independent raw BoringTun peer probe passed
+and clock boundary checks. Low-order coordinates and their high-bit aliases
+are refused in both handshake shapes; the independent peer probe also passed
+with this guard. The scalar is public validation data, never a tunnel key. An independent raw BoringTun peer probe passed
 in both directions at full MTU. Linux x86-64 feature-enabled checking also
 compiled Ring C and assembly using Zig. Windows feature-off checking passed;
 feature-enabled checking reached Ring and stopped at unavailable MSVC SDK
@@ -41,10 +48,10 @@ The exact package archive matches the index/lock checksum and its packaged
 upstream revision 051c9d47dc9c5cb36e461b7d36dcd673820dc98b. The
 [upstream notice](../supply-chain/licenses/boringtun-0.7.1.md) is preserved
 because the published package omits its license file. Narrow exact-version
-license exceptions do not grant dependency audit criteria. Upstream
-incoming ephemeral shared-secret validation, transitive whole-version
-admission, kernel interoperability, sustained lifecycle and real egress
-qualification remain open. No production support or tunnel availability is
+license exceptions do not grant dependency audit criteria. The selected wrapper guards the identified counter and contributory input
+paths. The original upstream API still lacks those checks for other consumers;
+whole-version admission, kernel interoperability, sustained lifecycle and real
+egress qualification remain open. No production support or tunnel availability is
 claimed. Exact input hashes, raw failures and final results remain under
 `/private/tmp/exacopy-boringtun-backend.qJjVePen` and the independent review
 under `/private/tmp/exacopy-boringtun-review.Auk7zq0S`.
