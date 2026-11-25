@@ -40,6 +40,21 @@ file verification to the Linux integration tests.
 The canonical Plan body lane also exercises opaque extension admission,
 including its 1 MiB body limit and a generated oversized input.
 
+## Offline CLI installer fixtures
+
+The [installer workflow](../.github/workflows/installers.yml) builds the
+locked release-profile CLI with Rust 1.100.0 on Ubuntu x86-64, macOS arm64
+and Windows x86-64. The POSIX job tests install and uninstall in a
+disposable home. The Windows job checks the PowerShell parser, signed
+artifact and refusal fixtures on the hosted runner. Unprivileged Windows
+installation and uninstallation need separate lifecycle evidence.
+
+The fixtures sign the newly built CLI with a disposable test certificate.
+The workflow retains the commit, tree, lockfile and CLI hashes, platform
+and verifier identities, and exit logs. A fixture failure also retains its
+unsigned CLI input as workflow evidence. Test keys remain in the disposable
+fixture directories. A distributable release has separate publishing gates.
+
 ## Windows held-directory NTFS qualification
 
 The [manual Windows workflow](../.github/workflows/windows-ntfs-qualification.yml)
