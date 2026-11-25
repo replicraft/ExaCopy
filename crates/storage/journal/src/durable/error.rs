@@ -13,9 +13,9 @@ pub enum DurableJournalError {
 	NotRegularFile,
 	/// The supplied resume boundary does not identify an existing frame.
 	EmptyPrefix,
-	/// The supplied segment length exceeded the resume scan limit.
+	/// The supplied or prospective segment length exceeded the limit.
 	SegmentTooLarge {
-		/// Supplied segment length in bytes.
+		/// Supplied or prospective segment length in bytes.
 		length: u64,
 		/// Maximum accepted length in bytes.
 		limit: u64,

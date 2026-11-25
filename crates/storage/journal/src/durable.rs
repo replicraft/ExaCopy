@@ -9,11 +9,10 @@ use std::io::{self, BufReader, Read as _, Seek as _, SeekFrom};
 
 use crate::frame::{
 	ChainHead, FRAME_OVERHEAD_BYTES, FrameKind, FrameReader, FrameWriteError, FrameWriter,
+	MAX_PAYLOAD_BYTES,
 };
 
 pub use error::DurableJournalError;
-
-const MAX_FIRST_SEGMENT_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Owns the sole writer for a journal file and barriers each complete frame.
 pub struct DurableJournal {
@@ -22,6 +21,9 @@ pub struct DurableJournal {
 }
 
 impl DurableJournal {
+	/// Maximum size in bytes for the local first segment supported by this writer.
+	pub const MAX_FIRST_SEGMENT_BYTES: u64 = 64 * 1024 * 1024;
+
 	/// Takes an already authorized, exclusively created file for the first segment.
 	///
 	/// The caller establishes creation provenance, private namespace ownership and exclusive
@@ -69,10 +71,10 @@ impl DurableJournal {
 		if expected_head == ChainHead::start() || expected_end == 0 {
 			return Err(DurableJournalError::EmptyPrefix);
 		}
-		if expected_end > MAX_FIRST_SEGMENT_BYTES {
+		if expected_end > Self::MAX_FIRST_SEGMENT_BYTES {
 			return Err(DurableJournalError::SegmentTooLarge {
 				length: expected_end,
-				limit: MAX_FIRST_SEGMENT_BYTES,
+				limit: Self::MAX_FIRST_SEGMENT_BYTES,
 			});
 		}
 		check_length(&file, expected_end)?;
@@ -114,9 +116,10 @@ impl DurableJournal {
 	///
 	/// # Errors
 	///
-	/// Reports a rejected frame, invalid file state, write failure, or barrier failure. An
-	/// inspection, file-state, write or barrier failure permanently retires this writer. Any
-	/// bytes that reached the file remain in place for reconciliation.
+	/// Reports a rejected frame, a frame that would exceed the segment limit, invalid file state,
+	/// write failure, or barrier failure. An inspection, file-state, write or barrier failure
+	/// permanently retires this writer. Any bytes that reached the file remain in place for
+	/// reconciliation.
 	pub fn append(
 		&mut self,
 		kind: FrameKind,
@@ -137,6 +140,19 @@ impl DurableJournal {
 			return Err(DurableJournalError::OffsetOverflow);
 		};
 		check_file(writer.sink_mut(), self.end)?;
+		if payload.len() > MAX_PAYLOAD_BYTES {
+			self.writer = Some(writer);
+			return Err(DurableJournalError::Frame(
+				FrameWriteError::PayloadTooLarge(payload.len()),
+			));
+		}
+		if end > Self::MAX_FIRST_SEGMENT_BYTES {
+			self.writer = Some(writer);
+			return Err(DurableJournalError::SegmentTooLarge {
+				length: end,
+				limit: Self::MAX_FIRST_SEGMENT_BYTES,
+			});
+		}
 		let head = match writer.append(kind, payload) {
 			Ok(head) => head,
 			Err(error) => {

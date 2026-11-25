@@ -3,9 +3,10 @@ use std::io::{self, Seek as _, SeekFrom, Write as _};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use super::{DurableJournal, DurableJournalError, MAX_FIRST_SEGMENT_BYTES};
+use super::{DurableJournal, DurableJournalError};
 use crate::frame::{
-	ChainHead, FrameKind, FrameReadError, FrameReader, FrameWriteError, MAX_PAYLOAD_BYTES,
+	ChainHead, FRAME_OVERHEAD_BYTES, FrameKind, FrameReadError, FrameReader, FrameWriteError,
+	FrameWriter, MAX_PAYLOAD_BYTES,
 };
 
 const OWNER_PAYLOAD: &[u8] = b"fixture owner record";
@@ -166,12 +167,12 @@ fn resumption_requires_a_nonempty_prefix_within_the_segment_limit() {
 	assert!(scratch.bytes().is_empty());
 	let (scratch, head, _) = synced_owner();
 	let file = scratch.reopen();
-	let length = MAX_FIRST_SEGMENT_BYTES + 1;
+	let length = DurableJournal::MAX_FIRST_SEGMENT_BYTES + 1;
 	file.set_len(length).expect("seed an oversized sparse file");
 	assert!(matches!(
 		DurableJournal::resume_first_segment(file, head, length),
 		Err(DurableJournalError::SegmentTooLarge { length: actual, limit })
-			if actual == length && limit == MAX_FIRST_SEGMENT_BYTES
+			if actual == length && limit == DurableJournal::MAX_FIRST_SEGMENT_BYTES
 	));
 	assert_eq!(
 		scratch.reopen().metadata().expect("inspect size").len(),
@@ -315,6 +316,45 @@ fn rejecting_an_oversized_payload_leaves_the_writer_at_its_boundary() {
 		.append(FrameKind::JobPrepared, OWNER_PAYLOAD)
 		.expect("valid append after an input rejection");
 	assert_eq!(synced.head().sequence(), 1);
+}
+
+#[test]
+fn rejecting_a_frame_past_the_segment_limit_preserves_space_for_a_smaller_frame() {
+	let (scratch, mut file) = ScratchFile::create();
+	let limit = DurableJournal::MAX_FIRST_SEGMENT_BYTES;
+	let end = limit - u64::try_from(FRAME_OVERHEAD_BYTES).expect("frame overhead fits in u64");
+	file.set_len(end).expect("make a sparse prefix fixture");
+	file.seek(SeekFrom::Start(end))
+		.expect("seek to the prefix end");
+	let mut journal = DurableJournal {
+		writer: Some(FrameWriter::new(file, ChainHead::start())),
+		end,
+	};
+	assert!(matches!(
+		journal.append_with_barrier(FrameKind::PublishIntent, b"x", |_| {
+			panic!("an oversized segment reached the barrier")
+		}),
+		Err(DurableJournalError::SegmentTooLarge { length, limit: maximum })
+			if length == limit + 1 && maximum == limit
+	));
+	let mut read = File::open(&scratch.0).expect("open an independent reader");
+	assert_eq!(
+		read.metadata().expect("inspect unaffected extent").len(),
+		end
+	);
+	let last = journal
+		.append(FrameKind::PublishIntent, b"")
+		.expect("a smaller frame fits exactly at the limit");
+	assert_eq!(read.metadata().expect("inspect full extent").len(), limit);
+	read.seek(SeekFrom::Start(end))
+		.expect("seek to the fixture frame");
+	let mut reader = FrameReader::new(read, ChainHead::start());
+	let frame = reader
+		.next_frame()
+		.expect("read fixture frame")
+		.expect("fixture frame");
+	assert_eq!(frame.head(), last.head());
+	assert_eq!(reader.next_frame().expect("check end of fixture"), None);
 }
 
 #[test]
