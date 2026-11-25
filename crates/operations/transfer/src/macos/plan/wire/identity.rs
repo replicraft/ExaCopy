@@ -2,12 +2,10 @@ use std::num::{NonZeroU32, NonZeroU64};
 
 use exacopy_journal::{DarwinFileIdentity, DarwinVolumeIdentity, OwnerTimestamp};
 use minicbor::data::Type;
+use minicbor::encode::{self, Write};
 use minicbor::{Decoder, Encoder};
 
-use super::{
-	DarwinCopyPlanError, EncodeError, MAX_TIMESTAMP_BYTES, MAX_UINT32_BYTES, PlanCursor,
-	fixed_bytes,
-};
+use super::{DarwinCopyPlanError, MAX_TIMESTAMP_BYTES, MAX_UINT32_BYTES, fixed_bytes};
 
 const DARWIN_PLATFORM: u64 = 2;
 const INODE_FIELDS: u64 = 4;
@@ -18,13 +16,13 @@ const FSID_WORDS: u64 = 2;
 // Birth uses a two-key map with the same header width as a timestamp array.
 const MAX_BIRTH_BYTES: usize = 2 + MAX_TIMESTAMP_BYTES;
 const MAX_VOLUME_BYTES: usize = 1 + 3 + 1 + (1 + 4) + (1 + 2 * MAX_UINT32_BYTES);
-pub(super) const MAX_IDENTITY_BYTES: usize =
+pub(in crate::macos) const MAX_IDENTITY_BYTES: usize =
 	1 + 4 + MAX_VOLUME_BYTES + (1 + 8) + MAX_UINT32_BYTES + MAX_BIRTH_BYTES;
 
-pub(super) fn write_identity(
-	encoder: &mut Encoder<PlanCursor>,
+pub(in crate::macos) fn write_identity<W: Write>(
+	encoder: &mut Encoder<W>,
 	identity: DarwinFileIdentity,
-) -> Result<(), EncodeError> {
+) -> Result<(), encode::Error<W::Error>> {
 	let volume = identity.volume();
 	let [first, second] = volume.physical_fsid();
 	encoder
@@ -57,7 +55,7 @@ pub(super) fn write_identity(
 	Ok(())
 }
 
-pub(super) fn read_identity(
+pub(in crate::macos) fn read_identity(
 	decoder: &mut Decoder<'_>,
 ) -> Result<DarwinFileIdentity, DarwinCopyPlanError> {
 	expect_map(decoder, INODE_FIELDS)?;

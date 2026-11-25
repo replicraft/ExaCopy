@@ -20,7 +20,7 @@ use super::{
 
 mod identity;
 
-use self::identity::{MAX_IDENTITY_BYTES, read_identity, write_identity};
+pub(in crate::macos) use self::identity::{MAX_IDENTITY_BYTES, read_identity, write_identity};
 
 const PLAN_DOMAIN: &[u8] = b"ExaCopy/darwin-managed-apfs-copy-plan/v2\0";
 const VERSION: [u8; 3] = [2, 0, 1];

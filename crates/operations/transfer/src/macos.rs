@@ -10,6 +10,7 @@ use exacopy_platform::macos::{BasicMetadata, ManagedRegularFile};
 mod error;
 pub mod job;
 pub mod plan;
+pub mod receipt;
 
 #[cfg(test)]
 mod tests;

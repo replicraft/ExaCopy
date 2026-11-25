@@ -29,5 +29,8 @@ exacopy-model.workspace = true
 exacopy-platform.workspace = true
 minicbor.workspace = true
 
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+ed25519-dalek.workspace = true
+
 [lints]
 workspace = true

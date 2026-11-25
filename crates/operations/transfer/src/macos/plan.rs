@@ -14,6 +14,8 @@ mod wire;
 pub use error::DarwinCopyPlanError;
 pub use wire::MAX_DARWIN_COPY_PLAN_BYTES;
 
+pub(super) use wire::{MAX_IDENTITY_BYTES, read_identity, write_identity};
+
 #[cfg(test)]
 mod tests;
 
