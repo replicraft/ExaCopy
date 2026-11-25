@@ -104,3 +104,21 @@ pub trait RecoveryInventoryView {
 	/// Fails if any relation or absence can no longer be confirmed.
 	fn recheck(&self) -> Result<(), Self::Error>;
 }
+
+/// Read-only artifact observations for interrupted public-apply stage preparation.
+pub trait PublicStageJobView: RecoveryJobView {
+	/// Checks and opens the fixed owner record. `None` requires observed absence.
+	/// # Errors
+	/// Fails if absence or the held record cannot be established safely.
+	fn open_optional_owner(&self) -> Result<Option<Self::Record>, Self::NamespaceError>;
+
+	/// Checks and opens the fixed private plan. `None` requires observed absence.
+	/// # Errors
+	/// Fails if absence or the held record cannot be established safely.
+	fn open_optional_plan(&self) -> Result<Option<Self::Record>, Self::NamespaceError>;
+
+	/// Checks and opens the fixed first segment. `None` requires observed absence.
+	/// # Errors
+	/// Fails if absence or the held record cannot be established safely.
+	fn open_optional_first_segment(&self) -> Result<Option<Self::Record>, Self::NamespaceError>;
+}

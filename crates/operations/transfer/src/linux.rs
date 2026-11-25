@@ -20,11 +20,12 @@ pub use plan::{
 };
 pub use receipt::{CopyReceipt, MAX_COPY_RECEIPT_BYTES, ReceiptError, ReceiptEvidence};
 pub use recovery::{
-	FinishFailure, FinishReceiptDirectory, InspectionError, LeaseInventory, LeaseReadError,
-	ReceiptLease, RecoveryDisposition, RecoveryInspection, RecoveryIssue, RecoveryLease,
-	RecoveryProfile, RecoverySource, RecoveryStageLease, RecoveryStep, ResumeStageDirectory,
-	SourceRecoveryFailure, SourceRecoveryResult, finish_with_lease, inspect_with_job,
-	resume_with_lease, retry_with_lease,
+	AuthenticatedPublicStage, FinishFailure, FinishReceiptDirectory, InspectionError,
+	LeaseInventory, LeaseReadError, PublicStageHistory, PublicStageInspection,
+	PublicStageObservation, ReceiptLease, RecoveryDisposition, RecoveryInspection, RecoveryIssue,
+	RecoveryLease, RecoveryProfile, RecoverySource, RecoveryStageLease, RecoveryStep,
+	ResumeStageDirectory, SourceRecoveryFailure, SourceRecoveryResult, finish_with_lease,
+	inspect_public_stage_with_job, inspect_with_job, resume_with_lease, retry_with_lease,
 };
 pub use replay::{
 	JournalBoundary, JournalReplay, JournalReplayError, JournalTail, MAX_LOCAL_JOURNAL_BYTES,

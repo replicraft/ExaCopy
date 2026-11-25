@@ -8,7 +8,9 @@ use exacopy_journal::{
 };
 
 use super::suffix::PublicationFrames;
-use super::{JournalReplayError, LocalCopyPlan, Scan, publication_context, require_binding};
+use super::{
+	JournalReplayError, LocalCopyPlan, ReplayOwner, Scan, publication_context, require_binding,
+};
 
 enum Next {
 	Seal,
@@ -33,7 +35,7 @@ impl<R: Read> Scan<R> {
 		&mut self,
 		mut next: Option<Frame>,
 		plan: &LocalCopyPlan<'_>,
-		owner: &OwnerRecord,
+		owner: ReplayOwner<'_>,
 		prepared: EntryPreparation<'_>,
 	) -> Result<(), JournalReplayError> {
 		let entry = plan.attempt().entry;
@@ -41,6 +43,12 @@ impl<R: Read> Scan<R> {
 		while let Some(frame) = next {
 			let kind = frame.kind();
 			if kind == FrameKind::RecoveryStarted {
+				let ReplayOwner::Legacy(owner) = owner else {
+					return Err(JournalReplayError::UnexpectedRecord {
+						expected: Some(expected.kind()),
+						found: kind,
+					});
+				};
 				self.start_range_resume(&frame, plan, owner, prepared)?;
 				expected = Next::Seal;
 			} else {
@@ -101,6 +109,12 @@ impl<R: Read> Scan<R> {
 						Next::Intent(verification_frame, verification, frame)
 					}
 					Next::Intent(verification_frame, verification, metadata) => {
+						let ReplayOwner::Legacy(owner) = owner else {
+							return Err(JournalReplayError::UnexpectedRecord {
+								expected: None,
+								found: kind,
+							});
+						};
 						let intent = PublishIntent::from_frame(&frame)?;
 						let destination = plan.destination();
 						require_binding(

@@ -10,16 +10,14 @@ use rustix::io::Errno;
 use rustix::process::geteuid;
 
 use super::handle::{FileIdentity, file_identity, mount_id};
-use super::job::{
-	CHECKPOINTS, FIRST_SEGMENT, JOURNAL, OWNER, PLAN, RECEIPT, RECEIPTS, STAGE, check_page_length,
-	checkpoint_page_name,
-};
+use super::job::{FIRST_SEGMENT, JOURNAL, RECEIPT, RECEIPTS, STAGE};
 use super::source::{
 	ExtendedAttributes, ReadError, SourceObservation, check_logical_eof, reopen_regular_read_only,
 	reopen_regular_without_atime, xattrs,
 };
 use super::stage::{CHILD_RESOLVE, DestinationRoot, StageError, check_private_child, component};
 
+mod artifacts;
 mod lease;
 mod writer;
 
@@ -88,48 +86,6 @@ impl RecoveryJob<'_> {
 			.recheck(&self.root.directory, &self.name, self.root.mount)
 	}
 
-	/// Opens the private `owner.cbor` record read-only.
-	///
-	/// # Errors
-	/// Fails for unsafe, missing, or detached records or enclosing directories.
-	pub fn open_owner(&self) -> Result<RecoveryFile, StageError> {
-		self.open_record(None, OsStr::new(OWNER))
-	}
-
-	/// Opens the private canonical `plan.cbor` record read-only.
-	///
-	/// # Errors
-	/// Fails for unsafe, missing, or detached records or enclosing directories.
-	pub fn open_plan(&self) -> Result<RecoveryFile, StageError> {
-		self.open_record(None, OsStr::new(PLAN))
-	}
-
-	/// Opens the fixed first journal segment read-only.
-	///
-	/// # Errors
-	/// Fails for unsafe, missing, or detached records or enclosing directories.
-	pub fn open_first_segment(&self) -> Result<RecoveryFile, StageError> {
-		self.open_record(Some(OsStr::new(JOURNAL)), OsStr::new(FIRST_SEGMENT))
-	}
-
-	/// Opens an ordinal checkpoint page read-only under the caller's job lease.
-	/// # Errors
-	/// Rejects invalid ordinals, unsafe or missing records, and out-of-bounds lengths.
-	pub fn open_checkpoint_page(&self, ordinal: u32) -> Result<RecoveryFile, StageError> {
-		let name = checkpoint_page_name(ordinal)?;
-		let file = self.open_record(Some(OsStr::new(CHECKPOINTS)), OsStr::new(&name))?;
-		check_page_length(file.len())?;
-		Ok(file)
-	}
-
-	/// Opens the fixed receipt record read-only.
-	///
-	/// # Errors
-	/// Fails for unsafe, missing, or detached records or enclosing directories.
-	pub fn open_receipt(&self) -> Result<RecoveryFile, StageError> {
-		self.open_record(Some(OsStr::new(RECEIPTS)), OsStr::new(RECEIPT))
-	}
-
 	/// Observes a private stage name and a public target name with held read-only handles.
 	///
 	/// Absence describes the observed namespace. The snapshot can become stale
@@ -162,33 +118,6 @@ impl RecoveryJob<'_> {
 		};
 		inventory.recheck()?;
 		Ok(inventory)
-	}
-
-	fn open_record(
-		&self,
-		child_name: Option<&OsStr>,
-		name: &OsStr,
-	) -> Result<RecoveryFile, StageError> {
-		self.recheck()?;
-		let mount = self.root.mount;
-		let parent = &self.directory.file;
-		let file = if let Some(child_name) = child_name {
-			match PrivateDirectory::open(parent, child_name, mount)? {
-				Some(child) => {
-					let file = open_checked_record(&child.file, name, mount)?;
-					child.recheck(parent, child_name, mount)?;
-					file
-				}
-				None => {
-					check_absent(parent, child_name)?;
-					None
-				}
-			}
-		} else {
-			open_checked_record(parent, name, mount)?
-		};
-		self.recheck()?;
-		file.ok_or_else(|| Errno::NOENT.into())
 	}
 }
 

@@ -1109,7 +1109,7 @@ requirement_ids = ["R-155"]
 acceptance_ids = ["A-155"]
 invariant_ids = ["INV-013", "INV-018", "INV-019"]
 scope = "Separate signed local owner declaration binding public/private Plan domains, approved stream and metadata policy, roots, entry/epoch and expiry; legacy readers refuse the form."
-limits = "Codec and authentication only, no portable Approval verification, live content evidence, executor, mutation authorization or recovery qualification. P-040 is a scoped Rust admission check."
+limits = "Codec and authentication only, no portable Approval verification, live content evidence, publication authorization or native recovery qualification. P-040 is a scoped Rust admission check."
 
 [[coverage.evidence]]
 owner = "exacopy-journal"
@@ -1130,3 +1130,49 @@ owner = "exacopy-journal"
 level = "documentation"
 state = "reported"
 path = "docs/architecture/public-apply-owner.md"
+
+
+[[coverage]]
+id = "public-approved-staging"
+status = "implemented"
+requirement_ids = ["R-155", "R-182"]
+acceptance_ids = ["A-155", "A-182"]
+invariant_ids = ["INV-013", "INV-018", "INV-019"]
+scope = "Single-file public/private binding and actual source plus independent stage length/digest checks before durable seal, with mandatory signed owner before job preparation."
+limits = "Staging only; no intent, rename, receipt, CLI apply or native durability qualification. Portable fixture execution is distinct from native Linux execution."
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "test"
+state = "defined"
+path = "crates/operations/transfer/src/linux/local_copy/public_apply/tests.rs"
+target = "stream_evidence_requires_both_actual_measurements_and_lengths"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/public-apply-staging.md"
+
+
+[[coverage]]
+id = "public-stage-inspection"
+status = "implemented"
+requirement_ids = ["R-155", "R-182"]
+acceptance_ids = ["A-155", "A-182"]
+invariant_ids = ["INV-013", "INV-018", "INV-019"]
+scope = "Read-only authenticated public-stage replay and actual stage verification, with explicit checked absence and refusal of unsupported publication/recovery suffixes."
+limits = "No mutating continuation or CLI entrypoint. Native Linux fixture source is cross-checked but unexecuted; portable tests do not qualify native I/O."
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "test"
+state = "defined"
+path = "crates/operations/transfer/src/linux/recovery/public_apply/tests.rs"
+target = "altered_approval_and_unsupported_suffix_refuse_before_inventory"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/public-stage-inspection.md"

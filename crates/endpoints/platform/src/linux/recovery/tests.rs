@@ -10,7 +10,7 @@ use std::time::{Duration, SystemTime};
 use exacopy_endpoint::UnixComponent;
 use rustix::fs::{self as linux_fs, Mode, OFlags};
 
-use super::{FIRST_SEGMENT, JOURNAL, OWNER, PLAN, RECEIPT, RECEIPTS, STAGE};
+use crate::linux::job::{FIRST_SEGMENT, JOURNAL, OWNER, PLAN, RECEIPT, RECEIPTS, STAGE};
 use crate::linux::{DestinationRoot, ReadError, RecoveryFile, StageError};
 use crate::scratch::Scratch;
 
@@ -360,4 +360,40 @@ fn private_file(path: &Path, bytes: &[u8]) {
 fn assert_read_only(file: &RecoveryFile) {
 	let flags = linux_fs::fcntl_getfl(&file.file).expect("inspect descriptor flags");
 	assert_eq!(flags & OFlags::ACCMODE, OFlags::RDONLY);
+}
+
+#[test]
+fn optional_public_artifacts_distinguish_checked_absence_from_unsafe_names() {
+	use exacopy_endpoint::linux_recovery::PublicStageJobView;
+
+	let (fixture, root) = fixture();
+	let path = fixture.path(JOB);
+	let job = root.open_recovery_job(name(JOB)).unwrap();
+	assert!(
+		PublicStageJobView::open_optional_owner(&job)
+			.unwrap()
+			.is_none()
+	);
+	assert!(
+		PublicStageJobView::open_optional_plan(&job)
+			.unwrap()
+			.is_none()
+	);
+	assert!(
+		PublicStageJobView::open_optional_first_segment(&job)
+			.unwrap()
+			.is_none()
+	);
+
+	private_file(&path.join(OWNER), b"owner");
+	assert_read_only(
+		&PublicStageJobView::open_optional_owner(&job)
+			.unwrap()
+			.unwrap(),
+	);
+
+	symlink(path.join(OWNER), path.join(PLAN)).unwrap();
+	assert!(PublicStageJobView::open_optional_plan(&job).is_err());
+	private_file(&path.join(JOURNAL), b"unsafe journal directory");
+	assert!(PublicStageJobView::open_optional_first_segment(&job).is_err());
 }

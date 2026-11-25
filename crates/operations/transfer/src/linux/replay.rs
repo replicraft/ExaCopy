@@ -5,9 +5,10 @@ use std::io::Read;
 use exacopy_journal::frame::{ChainHead, Frame, FrameKind, FrameReadError, FrameReader};
 use exacopy_journal::{
 	DurabilityRecorded, DurableJournal, EntryPrepared, JobPrepared, JournalContext, JournalEntryId,
-	JournalEpoch, LinuxFileIdentity, LiveSourceView, MetadataRecorded, OwnerRecord,
-	OwnerStateDirectory, PublishIntentContext, PublishObserved, RangeCheckpoint, ReceiptCommitted,
-	SourceInodeMetadata, SourceMeasurementId, StageSealed, VerificationRecorded,
+	JournalEpoch, LinuxFileIdentity, LiveSourceView, MetadataRecorded, OwnerDigest, OwnerManifest,
+	OwnerRecord, OwnerStateDirectory, PublicApplyOwnerRecord, PublishIntentContext,
+	PublishObserved, RangeCheckpoint, ReceiptCommitted, SourceInodeMetadata, SourceMeasurementId,
+	StageSealed, VerificationRecorded,
 };
 
 use super::LocalCopyPlan;
@@ -124,20 +125,78 @@ pub fn replay_journal(
 	plan: &LocalCopyPlan<'_>,
 	owner: &OwnerRecord,
 ) -> Result<JournalReplay, JournalReplayError> {
-	let context = plan.context();
-	let manifest = owner.manifest();
-	let destination = plan.destination().root.identity;
-	if manifest.job != context.job
-		|| manifest.plan_digest != context.plan_digest
-		|| manifest.destination_device != destination.device()
-		|| manifest.state_root == destination
-		|| manifest.state_root == plan.source().root_identity
-		|| manifest.state_root == plan.source().file_identity
-		|| !manifest.directories.contains(&OwnerStateDirectory::Journal)
-		|| !manifest.directories.contains(&OwnerStateDirectory::Stage)
+	replay_bound_journal(reader, plan, ReplayOwner::Legacy(owner))
+}
+
+pub(super) fn replay_public_stage(
+	reader: impl Read,
+	plan: &LocalCopyPlan<'_>,
+	owner: &PublicApplyOwnerRecord,
+) -> Result<JournalReplay, JournalReplayError> {
+	check_public_stage_plan(plan, owner)?;
+	let binding = owner.manifest().binding;
+	let summary = replay_bound_journal(reader, plan, ReplayOwner::PublicStage(owner))?;
+	if let Some(verification) = summary.verification {
+		require_binding(
+			FrameKind::VerificationRecorded,
+			verification.source().length == binding.stream_length
+				&& verification.stage().length == binding.stream_length
+				&& verification.source().digest.as_bytes() == binding.stream_digest.as_bytes()
+				&& verification.stage().digest.as_bytes() == binding.stream_digest.as_bytes(),
+		)?;
+	}
+	Ok(summary)
+}
+
+pub(super) fn check_public_stage_plan(
+	plan: &LocalCopyPlan<'_>,
+	owner: &PublicApplyOwnerRecord,
+) -> Result<(), JournalReplayError> {
+	let binding = owner.manifest().binding;
+	let attempt = plan.attempt();
+	let source = plan.source();
+	if binding.private_entry != attempt.entry
+		|| binding.epoch != attempt.epoch
+		|| binding.source_root != source.root_id
+		|| binding.destination_root != plan.destination().root.id
+		|| binding.stream_length.get() != source.length
+		|| binding.metadata_policy.as_bytes()
+			!= &crate::copy_planning::linux_baseline_metadata_policy_digest()
 	{
 		return Err(JournalReplayError::OwnerBinding);
 	}
+	check_owner_plan(plan, &owner.manifest().owner)
+}
+
+#[derive(Clone, Copy)]
+enum ReplayOwner<'owner> {
+	Legacy(&'owner OwnerRecord),
+	PublicStage(&'owner PublicApplyOwnerRecord),
+}
+
+impl<'owner> ReplayOwner<'owner> {
+	fn manifest(self) -> &'owner OwnerManifest {
+		match self {
+			Self::Legacy(owner) => owner.manifest(),
+			Self::PublicStage(owner) => &owner.manifest().owner,
+		}
+	}
+
+	fn digest(self) -> OwnerDigest {
+		match self {
+			Self::Legacy(owner) => owner.digest(),
+			Self::PublicStage(owner) => owner.digest(),
+		}
+	}
+}
+
+fn replay_bound_journal(
+	reader: impl Read,
+	plan: &LocalCopyPlan<'_>,
+	owner: ReplayOwner<'_>,
+) -> Result<JournalReplay, JournalReplayError> {
+	check_owner_plan(plan, owner.manifest())?;
+	let context = plan.context();
 
 	let mut scan = Scan {
 		reader: FrameReader::new(reader.take(MAX_LOCAL_JOURNAL_BYTES + 1), ChainHead::start()),
@@ -173,6 +232,27 @@ pub fn replay_journal(
 	};
 	scan.replay(plan, owner, context)?;
 	Ok(scan.summary)
+}
+
+fn check_owner_plan(
+	plan: &LocalCopyPlan<'_>,
+	manifest: &OwnerManifest,
+) -> Result<(), JournalReplayError> {
+	let context = plan.context();
+	let destination = plan.destination().root.identity;
+	if manifest.job != context.job
+		|| manifest.plan_digest != context.plan_digest
+		|| manifest.destination_device != destination.device()
+		|| manifest.state_root == destination
+		|| manifest.state_root == plan.source().root_identity
+		|| manifest.state_root == plan.source().file_identity
+		|| !manifest.directories.contains(&OwnerStateDirectory::Journal)
+		|| !manifest.directories.contains(&OwnerStateDirectory::Stage)
+	{
+		return Err(JournalReplayError::OwnerBinding);
+	}
+
+	Ok(())
 }
 
 struct Scan<R> {
@@ -229,7 +309,7 @@ impl<R: Read> Scan<R> {
 	fn replay(
 		&mut self,
 		plan: &LocalCopyPlan<'_>,
-		owner: &OwnerRecord,
+		owner: ReplayOwner<'_>,
 		context: JournalContext,
 	) -> Result<(), JournalReplayError> {
 		let Some(frame) = self.next(Some(FrameKind::JobPrepared))? else {
@@ -278,7 +358,7 @@ impl<R: Read> Scan<R> {
 			context,
 			entry_id,
 			SourceMeasurementId::from_prepared_payload(frame.payload()),
-			owner,
+			&owner.manifest().directories,
 		)?;
 		self.replay_preintent(next, plan, owner, prepared)
 	}

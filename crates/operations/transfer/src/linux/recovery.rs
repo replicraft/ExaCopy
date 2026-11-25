@@ -17,6 +17,7 @@ mod error;
 mod finish;
 mod lease;
 mod observations;
+mod public_apply;
 mod resume;
 mod retry;
 mod source;
@@ -32,6 +33,10 @@ pub use lease::{
 use observations::{
 	observe_names, open_receipt, read_artifact, read_checkpoint, recheck_receipt, recheck_record,
 	record_identity, verify,
+};
+pub use public_apply::{
+	AuthenticatedPublicStage, PublicStageHistory, PublicStageInspection, PublicStageObservation,
+	inspect_public_stage_with_job,
 };
 pub use resume::resume_with_lease;
 pub use retry::{RecoverySource, SourceRecoveryFailure, retry_with_lease};

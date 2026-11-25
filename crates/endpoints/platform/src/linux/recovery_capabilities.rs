@@ -1,8 +1,8 @@
-use std::io;
-
 use exacopy_endpoint::linux_copy::CopySourceObservation;
 use exacopy_endpoint::linux_job::JobFileIdentity;
-use exacopy_endpoint::linux_recovery::{RecoveryInventoryView, RecoveryJobView, RecoveryRecord};
+use exacopy_endpoint::linux_recovery::{
+	PublicStageJobView, RecoveryInventoryView, RecoveryJobView, RecoveryRecord,
+};
 use exacopy_endpoint::{ReadView, UnixComponent};
 
 use super::{
@@ -81,11 +81,7 @@ impl RecoveryJobView for RecoveryJob<'_> {
 	}
 
 	fn open_optional_receipt(&self) -> Result<Option<Self::Record>, Self::NamespaceError> {
-		match self.open_receipt() {
-			Ok(file) => Ok(Some(file)),
-			Err(StageError::System(error)) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-			Err(error) => Err(error),
-		}
+		RecoveryJob::open_optional_receipt(self)
 	}
 
 	fn inventory(
@@ -94,6 +90,20 @@ impl RecoveryJobView for RecoveryJob<'_> {
 		target: UnixComponent<'_>,
 	) -> Result<Self::Inventory<'_>, Self::NamespaceError> {
 		RecoveryJob::inventory(self, stage, target)
+	}
+}
+
+impl PublicStageJobView for RecoveryJob<'_> {
+	fn open_optional_owner(&self) -> Result<Option<Self::Record>, Self::NamespaceError> {
+		RecoveryJob::open_optional_owner(self)
+	}
+
+	fn open_optional_plan(&self) -> Result<Option<Self::Record>, Self::NamespaceError> {
+		RecoveryJob::open_optional_plan(self)
+	}
+
+	fn open_optional_first_segment(&self) -> Result<Option<Self::Record>, Self::NamespaceError> {
+		RecoveryJob::open_optional_first_segment(self)
 	}
 }
 
