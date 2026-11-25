@@ -103,6 +103,11 @@ jobs:
         run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
       - name: Run engineering policy
         run: bash .github/ci/capture.sh policy cargo run --locked -p xtask -- check
+      - name: Check emitted CLI contract versions
+        if: ${{ !cancelled() }}
+        run: |
+          bash .github/ci/capture.sh contract-build cargo build --locked -p exacopy-cli
+          bash .github/ci/capture.sh contract-runtime python3 -B tools/contracts/check_cli.py target/debug/exacopy
       - name: Run feature and SBOM policy controls
         if: ${{ !cancelled() }}
         run: |

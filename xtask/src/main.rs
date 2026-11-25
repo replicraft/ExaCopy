@@ -4,6 +4,7 @@
 
 mod architecture;
 mod command;
+mod contracts;
 mod evidence;
 mod finding;
 mod source;

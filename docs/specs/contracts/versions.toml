@@ -60,6 +60,7 @@ status = "implemented_private"
 version = "1.0"
 required_features = 0
 owner = "crates/storage/journal/src/prepared/wire.rs"
+notes = "Shared header version for Linux preparation, verification, publication evidence and recovery payloads."
 
 [[contract]]
 id = "linux-publication-intent"
@@ -107,6 +108,7 @@ status = "implemented_private"
 version = "2.0"
 required_features = 1
 owner = "crates/storage/journal/src/darwin_prepared/wire.rs"
+notes = "Shared header version for managed APFS preparation and phase payloads, including publication intent."
 
 [[contract]]
 id = "darwin-managed-apfs-copy-receipt"

@@ -3,26 +3,28 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use crate::finding::Findings;
-use crate::{evidence, source, verification, workspace};
+use crate::{contracts, evidence, source, verification, workspace};
 
 const CHECK: &str = "check";
+const CHECK_CONTRACTS: &str = "check-contracts";
 const CHECK_EVIDENCE: &str = "check-evidence";
 
 enum Command {
-	Check,
-	CheckEvidence(PathBuf),
+	CheckContracts,
+	Workspace { evidence: Option<PathBuf> },
 }
 
 pub(crate) fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
 	let args = args.collect::<Vec<_>>();
 	let command = match args.as_slice() {
-		[command] if command == CHECK => Command::Check,
-		[command, directory] if command == CHECK_EVIDENCE => {
-			Command::CheckEvidence(directory.into())
-		}
+		[command] if command == CHECK => Command::Workspace { evidence: None },
+		[command] if command == CHECK_CONTRACTS => Command::CheckContracts,
+		[command, directory] if command == CHECK_EVIDENCE => Command::Workspace {
+			evidence: Some(directory.into()),
+		},
 		_ => {
 			eprintln!(
-				"Usage: cargo run --locked -p xtask -- {CHECK} | {CHECK_EVIDENCE} <evidence-dir>"
+				"Usage: cargo run --locked -p xtask -- {CHECK} | {CHECK_CONTRACTS} | {CHECK_EVIDENCE} <evidence-dir>"
 			);
 			return ExitCode::FAILURE;
 		}
@@ -36,15 +38,34 @@ pub(crate) fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
 	};
 	let mut findings = Findings::default();
 	let root = metadata.workspace_root.as_std_path();
-	let files = source::files(root, &mut findings);
-	workspace::check(&metadata, &files, &mut findings);
-	for path in &files {
-		source::check(path, &mut findings);
-	}
-	let projects = verification::check(&metadata, &files, &mut findings);
-	if findings.is_empty() {
-		match command {
-			Command::Check => {
+	contracts::check(root, &mut findings);
+	match command {
+		Command::CheckContracts => {
+			if findings.is_empty() {
+				println!("Contract inventory and implementation markers checked.");
+			}
+		}
+		Command::Workspace {
+			evidence: directory,
+		} => {
+			let files = source::files(root, &mut findings);
+			workspace::check(&metadata, &files, &mut findings);
+			for path in &files {
+				source::check(path, &mut findings);
+			}
+			let projects = verification::check(&metadata, &files, &mut findings);
+			if !findings.is_empty() {
+				eprint!("{findings}");
+				return ExitCode::FAILURE;
+			}
+			if let Some(directory) = directory {
+				evidence::check(root, &directory, &projects, &mut findings);
+				if findings.is_empty() {
+					println!(
+						"Current checkout has passing evidence for every declared verification gate."
+					);
+				}
+			} else {
 				let gates = projects
 					.iter()
 					.flat_map(|project| &project.obligations)
@@ -56,14 +77,6 @@ pub(crate) fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
 				println!(
 					"{gates} declared verification gates require independent execution and evidence. Review main's call graph and domain ownership."
 				);
-			}
-			Command::CheckEvidence(directory) => {
-				evidence::check(root, &directory, &projects, &mut findings);
-				if findings.is_empty() {
-					println!(
-						"Current checkout has passing evidence for every declared verification gate."
-					);
-				}
 			}
 		}
 	}

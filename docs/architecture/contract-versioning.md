@@ -6,6 +6,29 @@ identifiers and version markers. The owning codec or interface specification
 defines the exact representation and valid values. A crate or binary
 version never substitutes for a contract marker.
 
+Run the source and inventory gate with
+`cargo run --locked -p xtask -- check-contracts`. The aggregate
+`xtask check` also runs it. It validates the inventory schema, checks
+the status and owner of each required entry, and reads the version,
+required-feature and magic literals from the owning Rust syntax.
+Adding, moving or retiring a contract requires updating its binding
+and the inventory in the same change. The gate covers declared markers.
+Serializer and decoder tests establish field-level behavior.
+
+On Linux, run the CLI probe against a native build.
+
+```sh
+cargo build --locked -p exacopy-cli
+python3 -B tools/contracts/check_cli.py target/debug/exacopy
+```
+
+The probe compares emitted diff, copy and recovery inspection markers
+against the inventory. It generates a disposable file pair, a private
+profile and a retained job in an isolated temporary directory. The
+profile seed is generated for the fixture and removed with it. The probe
+also checks the source and copied bytes. The managed APFS comparison
+report is exercised by the macOS CLI tests.
+
 ## Contract boundaries
 
 | Contract | Policy |
