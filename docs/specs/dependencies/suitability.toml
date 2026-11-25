@@ -6,6 +6,7 @@ schema_version = 1
 anstyle = "Represent fixed help and diagnostic styles used internally by Clap even with terminal color disabled."
 apfs-mounted = "Descriptor-scoped APFS observations and operations for the macOS adapter."
 arrayvec = "BLAKE3's fixed-capacity tree and digest state."
+base64 = "Encode and decode canonical padded standard Base64 for bounded raw bytes in public integrity manifests."
 bitflags = "Typed operating-system flags in rustix."
 blake3 = "Source-stream and independent stage read-back digests, content bindings, and authenticated-record hashing."
 block-buffer = "Fixed-size block buffering for the digest traits and SHA-512."
@@ -627,3 +628,14 @@ adversarial_inputs = "This is a typed style and formatting library. ExaCopy neve
 verification = "Selected default and std feature union was checked in locked resolution. Exact candidate native macOS and Linux guest tests cover plain help, usage, and redacted error output. No independent terminal capability or color behavior claim."
 replacement = "Keep the selected terminal output free of automatic color and preserve the CLI's fixed help and diagnostic rendering."
 review_gaps = ["Independent exact-release upstream source comparison and whole package Cargo Vet review"]
+
+[assessment."base64@0.23.1"]
+archive_sha256 = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
+release_observation = "The crates.io index lists unyanked 0.23.1 on 2026-08-04 after 0.23.0 on 2026-07-23. The archive identifies upstream release commit 069bf7067b949f5c0a92b6ceb82492920502f2c2. The library MSRV is 1.71.0."
+security_history = "Recorded RustSec snapshot 263a4d951a0867d4bddc29dddd6d59427c78f9a7 lists RUSTSEC-2017-0004, an encoding buffer integer overflow fixed in 0.5.2. It does not affect this release."
+unsafe_exposure = "Default features disabled, only alloc selected. src/lib.rs forbids unsafe outside the unselected simd-unsafe feature. The scalar STANDARD uses the general-purpose engine. No build script, procedural macro, runtime dependencies, or build dependencies."
+resource_limits = "The manifest codec bounds JSON input and caps encoded field lengths before decoded-buffer allocation. STANDARD scalar work grows with accepted bytes. Checked encoded_len gives a representable output size. decode_slice can write a prefix before returning an error; callers discard failed output and use only the successful count."
+adversarial_inputs = "STANDARD requires canonical standard-alphabet padding and zero unused terminal bits. Treat encoded fields as ASCII and decoded names as opaque raw bytes. Path and component policy remains in the caller. No timing claim for arbitrary inputs."
+verification = "An exact registry artifact with only alloc compiled under Rust 1.100.0 on macOS ARM64. Independent Python 3.14 stdlib strict decode plus re-encode produced 66,828 accepted and 209,701 rejected vectors. Native Rust matched every verdict and accepted payload, including exhaustive one- and two-byte padded encodings and terminal alias rejections, invalid characters and padding, raw bytes, and exact/undersized slice canary cases."
+replacement = "Retain RFC 4648 standard padded spellings and rejection of nonzero unused terminal bits to preserve the public JSON projection and schema acceptance."
+review_gaps = ["Other supported targets still require their integration lanes", "The default SIMD engines and whole package Cargo Vet safe-to-deploy review are outside this selected scalar review."]

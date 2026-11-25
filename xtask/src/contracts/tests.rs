@@ -29,6 +29,16 @@ required_features = 1
 owner = "crates/operations/transfer/src/macos/plan/wire.rs"
 "#;
 
+const MANIFEST_OWNER: &str = "crates/core/codec/src/manifest/json.rs";
+const MANIFEST: &str = r#"
+id = "portable-manifests"
+kind = "manifest"
+status = "implemented"
+version = "1.0"
+owner = "crates/core/codec/src/manifest/json.rs"
+"#;
+const MANIFEST_SOURCE: &str = r#"const SCHEMA_VERSION: &str = "1.0";"#;
+
 fn root() -> &'static Path {
 	Path::new(env!("CARGO_MANIFEST_DIR"))
 		.parent()
@@ -155,4 +165,94 @@ fn detects_private_required_feature_drift() {
 	);
 	fixture.write(owner, "const VERSION: [u8; 3] = [2, 0, 1];");
 	assert_eq!(check_record(fixture.root(), &record), Ok(()));
+}
+
+#[test]
+fn manifest_binding_requires_one_canonical_version_literal() {
+	let fixture = Fixture::new();
+	let record: Contract = toml::from_str(MANIFEST).expect("parse manifest contract fixture");
+	fixture.write(MANIFEST_OWNER, MANIFEST_SOURCE);
+	assert_eq!(check_record(fixture.root(), &record), Ok(()));
+
+	for (source, expected) in [
+		(
+			r#"const SCHEMA_VERSION: &str = "2.0";"#,
+			"version differs from 2.0",
+		),
+		(
+			r#"// const SCHEMA_VERSION: &str = "1.0";"#,
+			"expected one top-level SCHEMA_VERSION constant",
+		),
+		(
+			r#"mod nested { const SCHEMA_VERSION: &str = "1.0"; }"#,
+			"expected one top-level SCHEMA_VERSION constant",
+		),
+		(
+			r#"const SCHEMA_VERSION: &str = "1.0"; const SCHEMA_VERSION: &str = "2.0";"#,
+			"expected one top-level SCHEMA_VERSION constant",
+		),
+		(
+			r#"const SCHEMA_VERSION: &str = concat!("1", ".0");"#,
+			"expected a literal schema_version string",
+		),
+		(
+			r#"const SCHEMA_VERSION: &str = "01.0";"#,
+			"expected canonical major.minor schema_version",
+		),
+		(
+			r#"const SCHEMA_VERSION: &str = "1";"#,
+			"expected major.minor schema_version",
+		),
+	] {
+		fixture.write(MANIFEST_OWNER, source);
+		let error =
+			check_record(fixture.root(), &record).expect_err("refuse invalid manifest marker");
+		assert!(error.contains(expected), "{source}: {error}");
+	}
+}
+
+#[test]
+fn manifest_binding_requires_public_status_kind_owner_and_exact_markers() {
+	let fixture = Fixture::new();
+	fixture.write(MANIFEST_OWNER, MANIFEST_SOURCE);
+	for (from, to, expected) in [
+		(
+			"status = \"implemented\"",
+			"status = \"planned\"",
+			"expected kind Manifest and status Implemented",
+		),
+		(
+			"status = \"implemented\"",
+			"status = \"implemented_private\"",
+			"expected kind Manifest and status Implemented",
+		),
+		(
+			"kind = \"manifest\"",
+			"kind = \"cli_output\"",
+			"expected kind Manifest and status Implemented",
+		),
+		(MANIFEST_OWNER, "../json.rs", "expected owner"),
+		(
+			"version = \"1.0\"",
+			"version = \"2.0\"",
+			"version differs from 1.0",
+		),
+		(
+			"version = \"1.0\"",
+			"version = \"1.0\"\nrequired_features = 0",
+			"required feature mask differs from None",
+		),
+		(
+			"version = \"1.0\"",
+			"version = \"1.0\"\nmagic = \"manifest\"",
+			"magic differs from None",
+		),
+	] {
+		let altered = MANIFEST.replacen(from, to, 1);
+		assert_ne!(MANIFEST, altered, "mutation must change fixture: {from}");
+		let record: Contract = toml::from_str(&altered).expect("parse altered manifest fixture");
+		let error =
+			check_record(fixture.root(), &record).expect_err("refuse invalid manifest record");
+		assert!(error.contains(expected), "{altered}: {error}");
+	}
 }

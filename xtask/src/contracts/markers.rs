@@ -14,6 +14,7 @@ pub(super) struct Binding {
 
 enum Marker {
 	Report,
+	Manifest,
 	Scalar {
 		version: &'static str,
 		magic: Option<&'static str>,
@@ -43,6 +44,11 @@ pub(super) const BINDINGS: &[Binding] = &[
 		"exacopy.local_recovery_inspection",
 		"crates/clients/cli/src/recovery_report.rs",
 		Marker::Report,
+	),
+	Binding::new(
+		"portable-manifests",
+		"crates/core/codec/src/manifest/json.rs",
+		Marker::Manifest,
 	),
 	Binding::new(
 		"local-journal-frame",
@@ -115,6 +121,7 @@ impl Binding {
 	pub(super) fn check(&self, root: &Path, record: &Contract) -> Result<(), String> {
 		let (kind, status) = match self.marker {
 			Marker::Report => (Kind::CliOutput, Status::Implemented),
+			Marker::Manifest => (Kind::Manifest, Status::Implemented),
 			_ => (Kind::TransferJournal, Status::ImplementedPrivate),
 		};
 		record.check_classification(kind, status, Some(Path::new(self.owner)))?;
@@ -163,6 +170,11 @@ impl Marker {
 	fn read(&self, file: &File, id: &str) -> Result<Markers, String> {
 		let (version, features, magic) = match *self {
 			Self::Report => (report_version(file, id)?, None, None),
+			Self::Manifest => (
+				schema_version(constant(file, "SCHEMA_VERSION")?)?,
+				None,
+				None,
+			),
 			Self::Scalar { version, magic } => (
 				number(constant(file, version)?)?.to_string(),
 				None,
@@ -266,7 +278,11 @@ fn report_version(file: &File, id: &str) -> Result<String, String> {
 	if string(schema).as_deref() != Some(id) {
 		return Err(format!("report schema identifier differs from {id}"));
 	}
-	let version = string(version).ok_or("expected a literal schema_version string")?;
+	schema_version(version)
+}
+
+fn schema_version(expression: &Expr) -> Result<String, String> {
+	let version = string(expression).ok_or("expected a literal schema_version string")?;
 	let (major, minor) = version
 		.split_once('.')
 		.ok_or("expected major.minor schema_version")?;

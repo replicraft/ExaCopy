@@ -23,6 +23,14 @@ version = "1.0"
 owner = "crates/clients/cli/src/recovery_report.rs"
 
 [[contract]]
+id = "portable-manifests"
+kind = "manifest"
+status = "implemented"
+version = "1.0"
+owner = "crates/core/codec/src/manifest/json.rs"
+notes = "Unsigned single-file integrity manifest with one unnamed BLAKE3 stream. Canonical CBOR projection has independent golden vectors."
+
+[[contract]]
 id = "local-owner-seed"
 kind = "local_profile"
 status = "development_unversioned"
@@ -131,11 +139,6 @@ status = "planned"
 [[contract]]
 id = "backup-repository"
 kind = "repository"
-status = "planned"
-
-[[contract]]
-id = "portable-manifests"
-kind = "manifest"
 status = "planned"
 
 [[contract]]

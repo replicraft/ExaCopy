@@ -1,0 +1,14 @@
+schema_version = 1
+
+[[obligation]]
+id = "P-010"
+requirement_ids = ["R-182"]
+source = "src/manifest/json.rs"
+symbols = ["decode", "decode_basename", "parse_length"]
+assumptions = [
+    "This Rust gate covers the supported single-file unsigned manifest shape and exercised JSON admission boundaries.",
+    "The manifest decoder accepts an in-memory slice. The caller bounds reads before providing that slice.",
+    "The gate observes typed parser outcomes on fixed fixtures. It does not establish universal parser refinement.",
+]
+gates = ["rust"]
+rust = { file = "tests/manifest.rs", test = "malformed_objects_duplicates_trailing_data_and_oversize_fail", oracle = "The valid envelope at the JSON byte limit decodes, while the oversized slice, truncated prefixes, duplicates, malformed objects and trailing document are rejected." }

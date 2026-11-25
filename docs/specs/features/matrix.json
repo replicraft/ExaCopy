@@ -3,6 +3,7 @@
   "product_package": "exacopy-cli",
   "production_packages": [
     "exacopy-cli",
+    "exacopy-codec",
     "exacopy-content",
     "exacopy-diff",
     "exacopy-endpoint",
@@ -116,6 +117,11 @@
       "default_features": false,
       "features": [],
       "purpose": "Perform descriptor-scoped mounted APFS operations under the macOS adapter contract."
+    },
+    "base64": {
+      "default_features": false,
+      "features": ["alloc"],
+      "purpose": "Encode the bounded raw-byte fields of public integrity manifests."
     },
     "blake3": {
       "default_features": false,

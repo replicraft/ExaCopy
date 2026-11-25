@@ -1,0 +1,36 @@
+{
+  "body": {
+    "schema_version": "1.0",
+    "manifest_id": "00112233-4455-4677-8899-aabbccddeeff",
+    "algorithm": "blake3-256",
+    "consistency": "live_observed",
+    "complete": true,
+    "entries": [
+      {
+        "path": {
+          "root_id": "ffeeddcc-bbaa-4988-8776-554433221100",
+          "components": [
+            {
+              "encoding": "unix_bytes",
+              "raw_base64": "cHJlZml4Lf8tc3VmZml4LmJpbg=="
+            }
+          ]
+        },
+        "file_type": "regular",
+        "streams": [
+          {
+            "name_raw_base64": "",
+            "length": "3",
+            "algorithm": "blake3-256",
+            "digest": "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85"
+          }
+        ],
+        "metadata_ref": null
+      }
+    ],
+    "continuation_pages": [],
+    "errors": [],
+    "extensions": {}
+  },
+  "digest": "7bb39baf597db0e29861393545253ee1cef1fcc862739be76b092a880db10b8a"
+}

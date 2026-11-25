@@ -13,6 +13,7 @@ behavior, recovery paths and their evidence.
 | --- | --- |
 | Applications | Parse user intent, select the concrete platform implementation and compose capabilities with engines. Render engine results and map them to exit status or UI state. |
 | Local runtime | Compose held native capabilities with reusable operation policies. Linux CLI planning, copy and recovery use `exacopy-engine`. The experimental managed APFS library also composes the native adapter with transfer policy there. |
+| Public codecs | Own bounded, versioned interoperability records and canonical digest projections. Filesystem lookup and authorization remain with callers. |
 | Core model | Own typed identities, checked ranges and pure preserve-mode transitions. Keep OS, database, async runtime, network implementation and presentation dependencies outside this boundary. |
 | Endpoint contracts | Define bounded capabilities that callers can supply and adapters can implement. Represent unsupported operations explicitly. |
 | Operation engines | Own comparison, transfer orchestration, recovery decisions and eventual synchronization/conflict policy. Consume capabilities. |
@@ -47,3 +48,7 @@ independent public and persistent boundaries. [Technical stack](tech-stack.md)
 tracks adopted dependencies. [Roadmap](roadmap.md) gives the order for
 extending the system. [Requirements traceability](architecture/requirements.md)
 connects the admitted profiles to tests, proof obligations and open gates.
+
+The [public single-file manifest profile](architecture/public-manifest.md)
+defines the initial portable codec, its digest rule and the separate read-only
+verification workflow.

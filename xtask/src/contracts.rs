@@ -67,7 +67,6 @@ const PLANNED: &[(&str, Kind)] = &[
 	("configuration-schema", Kind::Configuration),
 	("saved-connection-profiles", Kind::ConnectionProfile),
 	("backup-repository", Kind::Repository),
-	("portable-manifests", Kind::Manifest),
 	("ipc", Kind::Ipc),
 	("mcp", Kind::Mcp),
 	("native-remote", Kind::RemoteProtocol),

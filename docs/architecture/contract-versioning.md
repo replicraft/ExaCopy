@@ -13,7 +13,10 @@ the status and owner of each required entry, and reads the version,
 required-feature and magic literals from the owning Rust syntax.
 Adding, moving or retiring a contract requires updating its binding
 and the inventory in the same change. The gate covers declared markers.
-Serializer and decoder tests establish field-level behavior.
+Serializer and decoder tests establish field-level behavior. The implemented
+portable manifest profile covers one unsigned single-file manifest with one
+unnamed BLAKE3 stream. The gate binds its JSON schema version to the owning
+source literal. The codec's golden vectors exercise its canonical CBOR version.
 
 On Linux, run the CLI probe against a native build.
 
