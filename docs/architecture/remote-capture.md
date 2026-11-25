@@ -52,10 +52,20 @@ and strictly increasing source epochs. Every accepted allocation consumes its
 epochs, including one left unbound after interruption. The last physically
 bound stage is tracked separately for preservation and may be absent.
 
+For the strict native profile, a signed StageDirectoryPrepared record
+establishes the selected bootstrap anchor before any allocation. The first
+allocation must immediately follow that exact authenticated head. Later
+allocations follow the actual preceding selected frame and retain the newest
+consumed allocation after the same bootstrap. The transfer planner also
+supports an explicitly historical JobPrepared anchor for legacy fixtures.
+The writable native application requires the signed profile and independently
+observes the actual private staging directory.
+
 Under the exclusive job lease, the application first synchronizes a fresh
 private filename allocation, then creates the stage exclusively and
 synchronizes its namespace. It passes the fresh allocation's exact chain head
-and epochs, and the preceding consumed allocation, into restart planning. A
+and epochs, its actual immediate predecessor, and the preceding consumed
+allocation into restart planning. A
 replayed allocation without a recorded physical binding remains consumed, and
 its name and any discovered material require inventory. Missing identity does
 not establish absence or permission to adopt an orphan.

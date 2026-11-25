@@ -12,9 +12,9 @@ use exacopy_transfer::remote_capture::{
 	CaptureCheckpoint, CaptureCheckpoints, CapturedReadAt, CheckpointStage, SourceEpoch,
 };
 use exacopy_transfer::remote_resume::{
-	AllocatedCapture, CaptureAttempt, RemoteScopeDigest, ReplayState, RestartAdmission,
-	RestartJournal, RestartPlan, RestartRecord, RestartStage, ResumeHistory, ResumeScope,
-	SyncedRestart, TargetState, plan_restart,
+	AllocatedCapture, AllocationBase, CaptureAttempt, RemoteScopeDigest, ReplayState,
+	RestartAdmission, RestartJournal, RestartPlan, RestartRecord, RestartStage, ResumeHistory,
+	ResumeScope, SyncedRestart, TargetState, plan_restart,
 };
 
 pub const OLD: u64 = 10;
@@ -39,6 +39,7 @@ pub fn history() -> ResumeHistory<u64> {
 			approved_scope: RemoteScopeDigest::from_bytes([4; 32]),
 			maximum_length: 128,
 		},
+		allocation_base: AllocationBase::LegacyJobPrepared(head(1)),
 		predecessor: head(11),
 		previous: Some(CaptureAttempt {
 			run: JournalEpoch::new(5),
@@ -55,6 +56,7 @@ pub fn history() -> ResumeHistory<u64> {
 			run: JournalEpoch::new(6),
 			source: epoch(8),
 		},
+		pending_allocation_predecessor: head(10),
 		state: ReplayState::CleanBeforeIntent,
 	}
 }

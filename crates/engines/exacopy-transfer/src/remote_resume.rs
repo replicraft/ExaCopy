@@ -16,12 +16,13 @@ use exacopy_content::validate_stream_input;
 mod error;
 mod replay;
 
-const FIRST_ALLOCATION_SEQUENCE: u64 = 2;
+const LEGACY_JOB_PREPARED_SEQUENCE: u64 = 1;
 
 pub use error::{RestartCheckpointError, RestartError, RestartRefusal};
 pub use replay::{
-	AllocatedCapture, CaptureAttempt, RemoteScopeDigest, ReplayState, RestartAdmission,
-	RestartJournal, RestartRecord, ResumeHistory, ResumeScope, SyncedRestart, TargetState,
+	AllocatedCapture, AllocationBase, CaptureAttempt, RemoteScopeDigest, ReplayState,
+	RestartAdmission, RestartJournal, RestartRecord, ResumeHistory, ResumeScope, SyncedRestart,
+	TargetState,
 };
 
 /// A fresh writer that can confirm the native stage identity before and after capture.
@@ -81,7 +82,6 @@ pub fn plan_restart<B>(
 		.head
 		.sequence()
 		.checked_add(1)
-		.filter(|sequence| *sequence > FIRST_ALLOCATION_SEQUENCE)
 		.ok_or(RestartRefusal::JournalBoundary)?;
 	validate_allocations(&history)?;
 	Ok(RestartPlan {
@@ -92,11 +92,25 @@ pub fn plan_restart<B>(
 
 fn validate_allocations<B>(history: &ResumeHistory<B>) -> Result<(), RestartRefusal> {
 	let pending = history.pending_allocation;
+	let base = history.allocation_base.head();
+	let preceding = history.pending_allocation_predecessor;
+	if matches!(
+		history.allocation_base,
+		AllocationBase::LegacyJobPrepared(_)
+	) && base.sequence() != LEGACY_JOB_PREPARED_SEQUENCE
+	{
+		return Err(RestartRefusal::JournalBoundary);
+	}
+	if preceding.sequence() < base.sequence()
+		|| preceding.sequence().checked_add(1) != Some(pending.head.sequence())
+	{
+		return Err(RestartRefusal::JournalBoundary);
+	}
 	let Some(prior) = history.previous_allocation else {
 		if history.previous.is_some() {
 			return Err(RestartRefusal::AllocationBinding);
 		}
-		if pending.head.sequence() != FIRST_ALLOCATION_SEQUENCE {
+		if preceding != base {
 			return Err(RestartRefusal::JournalBoundary);
 		}
 		if pending.run.get() != 1 {
@@ -104,8 +118,9 @@ fn validate_allocations<B>(history: &ResumeHistory<B>) -> Result<(), RestartRefu
 		}
 		return Ok(());
 	};
-	if prior.head.sequence() < FIRST_ALLOCATION_SEQUENCE
-		|| prior.head.sequence() >= pending.head.sequence()
+	if prior.head.sequence() <= base.sequence()
+		|| prior.head.sequence() > preceding.sequence()
+		|| (prior.head.sequence() == preceding.sequence() && prior.head != preceding)
 	{
 		return Err(RestartRefusal::JournalBoundary);
 	}

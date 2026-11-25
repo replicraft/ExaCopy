@@ -2,15 +2,16 @@ use std::num::{NonZeroU16, NonZeroU64};
 
 use ed25519_dalek::SigningKey;
 use exacopy_endpoint::{UnixComponent, ssh_sftp::SshAuthority};
-use exacopy_journal::frame::{ChainHead, FrameWriter};
+use exacopy_journal::frame::{ChainHead, FrameKind, FrameReader, FrameWriter};
 use exacopy_journal::remote_download::replay::{
 	RemoteDownloadReplay, RemoteReplayAttempt, RemoteReplayState, replay_remote_download,
+	replay_remote_download_with_bootstrap,
 };
 use exacopy_journal::remote_download::{
-	RemoteDownloadBody as Body, RemoteDownloadContext, RemoteDownloadDestination,
-	RemoteDownloadDurability, RemoteDownloadOwner, RemoteDownloadOwnerRecord, RemoteDownloadRecord,
-	RemoteDownloadRoute, RemoteDownloadScope, RemoteDownloadSource, RemoteEpochs,
-	RemoteSourceObservation,
+	RemoteBootstrapTrust, RemoteDownloadBody as Body, RemoteDownloadContext,
+	RemoteDownloadDestination, RemoteDownloadDurability, RemoteDownloadOwner,
+	RemoteDownloadOwnerRecord, RemoteDownloadRecord, RemoteDownloadRoute, RemoteDownloadScope,
+	RemoteDownloadSource, RemoteEpochs, RemoteSourceObservation,
 };
 use exacopy_journal::{
 	JournalEpoch, LinuxFileIdentity, OwnerProfileId, OwnerTimestamp, OwnerToken, RootCapabilityId,
@@ -18,8 +19,8 @@ use exacopy_journal::{
 };
 use exacopy_transfer::remote_capture::{CaptureCheckpoint, CaptureCheckpoints};
 use exacopy_transfer::remote_resume::{
-	AllocatedCapture, CaptureAttempt, RemoteScopeDigest, RestartJournal, RestartRecord,
-	RestartRefusal, ResumeHistory, SyncedRestart, plan_restart, restart_live,
+	AllocatedCapture, AllocationBase, CaptureAttempt, RemoteScopeDigest, RestartJournal,
+	RestartRecord, RestartRefusal, ResumeHistory, SyncedRestart, plan_restart, restart_live,
 };
 
 use super::fixture::{CONTENT, Fault, NEW, OLD, admission, epoch, head, history, setup};
@@ -108,6 +109,19 @@ impl FramedJournal {
 		journal
 	}
 
+	fn add_signed_bootstrap(&mut self, trust: &RemoteBootstrapTrust<'_>, key: &SigningKey) {
+		let mut reader = FrameReader::new(self.bytes.as_slice(), ChainHead::start());
+		let job = reader.next_frame().unwrap().unwrap();
+		assert!(reader.next_frame().unwrap().is_none());
+		let payload = trust
+			.sign(&job, LinuxFileIdentity::new(DEVICE, STAGING), key)
+			.unwrap();
+		let mut writer = FrameWriter::new(&mut self.bytes, self.head);
+		self.head = writer
+			.append(FrameKind::StageDirectoryPrepared, &payload)
+			.unwrap();
+	}
+
 	fn append(&mut self, body: Body<'_>) -> ChainHead {
 		let head = self.head;
 		let record = RemoteDownloadRecord::new(
@@ -192,6 +206,7 @@ impl RestartJournal<u64> for FramedJournal {
 
 fn from_selected_history(
 	owner: &RemoteDownloadOwnerRecord,
+	journal: &FramedJournal,
 	replayed: &RemoteDownloadReplay,
 ) -> ResumeHistory<u64> {
 	assert!(matches!(
@@ -203,7 +218,20 @@ fn from_selected_history(
 	history.scope.owner = owner.digest();
 	history.scope.approved_scope =
 		RemoteScopeDigest::from_bytes(*owner.manifest().scope.digest().unwrap().as_bytes());
+	let base = replayed.job_prepared().unwrap();
+	history.allocation_base = replayed.stage_directory_prepared().map_or(
+		AllocationBase::LegacyJobPrepared(base),
+		AllocationBase::SignedStageDirectoryPrepared,
+	);
 	history.predecessor = replayed.boundary().head;
+	let mut reader = FrameReader::new(journal.bytes.as_slice(), ChainHead::start());
+	let pending_frame = std::iter::from_fn(|| reader.next_frame().unwrap())
+		.find(|frame| frame.head() == history.predecessor)
+		.expect("find the exact pending allocation");
+	history.pending_allocation_predecessor = RemoteDownloadRecord::from_frame(&pending_frame)
+		.unwrap()
+		.predecessor()
+		.unwrap();
 	history.previous = previous.iter().rev().find_map(|attempt| {
 		let stage = attempt.prepared()?;
 		let epochs = attempt.epochs();
@@ -239,7 +267,7 @@ fn restart_replays_after_zero_one_or_multiple_unbound_allocations() {
 		let run = previous.map_or(1, |epochs| epochs.run.get() + 1);
 		let pending = journal.allocate(previous, epochs(run, 8));
 		let replay = replay_remote_download(journal.bytes.as_slice(), &owner).unwrap();
-		let history = from_selected_history(&owner, &replay);
+		let history = from_selected_history(&owner, &journal, &replay);
 		let plan = plan_restart(history, admission(history.scope)).unwrap();
 		let (mut source, stage, _, _, _) = setup(CONTENT, Fault::None);
 		let (_, _, synced) = ready(restart_live(
@@ -359,4 +387,99 @@ fn exhausted_allocations_stop_without_rejecting_the_last_valid_reservation() {
 		plan_restart(history, admission).unwrap_err(),
 		RestartRefusal::JournalBoundary
 	);
+}
+
+#[test]
+fn first_allocation_follows_the_signed_bootstrap() {
+	let owner = owner();
+	let signer = SigningKey::from_bytes(&[0x52; 32]);
+	let key = signer.verifying_key();
+	let trust = RemoteBootstrapTrust::new(&owner, owner.manifest().profile, &key).unwrap();
+	let mut journal = FramedJournal::new(&owner);
+	journal.add_signed_bootstrap(&trust, &signer);
+	let pending = journal.allocate(None, epochs(1, 8));
+	let replay = replay_remote_download_with_bootstrap(journal.bytes.as_slice(), &trust).unwrap();
+	let history = from_selected_history(&owner, &journal, &replay);
+	let proof = replay.stage_directory_prepared().unwrap();
+	assert_eq!(
+		history.allocation_base,
+		AllocationBase::SignedStageDirectoryPrepared(proof)
+	);
+	assert_eq!(history.pending_allocation_predecessor, proof.head());
+	let admission = admission(history.scope);
+	let plan = plan_restart(history, admission).expect("allocation must follow exact signed head");
+
+	let mut foreign = history;
+	foreign.pending_allocation_predecessor =
+		ChainHead::after(proof.head().sequence(), [0x63; 32]).unwrap();
+	assert_eq!(
+		plan_restart(foreign, admission).unwrap_err(),
+		RestartRefusal::JournalBoundary
+	);
+
+	let mut legacy = history;
+	legacy.allocation_base = AllocationBase::LegacyJobPrepared(replay.job_prepared().unwrap());
+	assert_eq!(
+		plan_restart(legacy, admission).unwrap_err(),
+		RestartRefusal::JournalBoundary
+	);
+
+	let (mut source, stage, _, _, _) = setup(CONTENT, Fault::None);
+	let (_, _, synced) = ready(restart_live(
+		plan,
+		&mut source,
+		stage,
+		&mut journal,
+		&mut [0; 8],
+	))
+	.unwrap()
+	.into_parts();
+	assert_eq!(synced.record.predecessor, pending);
+	let replay = replay_remote_download_with_bootstrap(journal.bytes.as_slice(), &trust).unwrap();
+	assert!(matches!(replay.state(), RemoteReplayState::StageBound));
+	assert_eq!(replay.attempts()[0].prepared().unwrap().head, synced.head);
+}
+
+#[test]
+fn later_allocation_rereads_after_burned_signed_attempt() {
+	let owner = owner();
+	let signer = SigningKey::from_bytes(&[0x52; 32]);
+	let key = signer.verifying_key();
+	let trust = RemoteBootstrapTrust::new(&owner, owner.manifest().profile, &key).unwrap();
+	let mut journal = FramedJournal::new(&owner);
+	journal.add_signed_bootstrap(&trust, &signer);
+	let first = epochs(1, 6);
+	let burned = journal.allocate(None, first);
+	let pending = journal.allocate(Some(first), epochs(2, 8));
+	let replay = replay_remote_download_with_bootstrap(journal.bytes.as_slice(), &trust).unwrap();
+	let history = from_selected_history(&owner, &journal, &replay);
+	assert!(history.previous.is_none());
+	assert_eq!(history.pending_allocation_predecessor, burned);
+	let admission = admission(history.scope);
+	let plan = plan_restart(history, admission).unwrap();
+
+	let mut foreign = history;
+	foreign.pending_allocation_predecessor =
+		ChainHead::after(burned.sequence(), [0x64; 32]).unwrap();
+	assert_eq!(
+		plan_restart(foreign, admission).unwrap_err(),
+		RestartRefusal::JournalBoundary
+	);
+
+	let (mut source, stage, _, _, _) = setup(CONTENT, Fault::None);
+	let (_, _, synced) = ready(restart_live(
+		plan,
+		&mut source,
+		stage,
+		&mut journal,
+		&mut [0; 8],
+	))
+	.unwrap()
+	.into_parts();
+	assert_eq!(synced.record.predecessor, pending);
+	assert_eq!(synced.record.next.run.get(), 2);
+	let replay = replay_remote_download_with_bootstrap(journal.bytes.as_slice(), &trust).unwrap();
+	assert!(matches!(replay.state(), RemoteReplayState::StageBound));
+	assert!(replay.attempts()[0].prepared().is_none());
+	assert_eq!(replay.attempts()[1].prepared().unwrap().head, synced.head);
 }

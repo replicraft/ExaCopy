@@ -1,4 +1,5 @@
 use exacopy_journal::frame::ChainHead;
+use exacopy_journal::remote_download::RemoteStageDirectoryPrepared;
 use exacopy_journal::{JournalEntryId, JournalEpoch, JournalJobId, OwnerDigest};
 
 use crate::remote_capture::{CaptureCheckpoints, SourceEpoch};
@@ -66,6 +67,28 @@ pub enum ReplayState {
 	Uncertain,
 }
 
+/// Selected historical boundary that immediately precedes the first allocation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AllocationBase {
+	/// Historical marker for the pre-bootstrap format, used by legacy fixtures.
+	///
+	/// A native writable application must require the signed stage-directory profile.
+	LegacyJobPrepared(ChainHead),
+	/// Verified signed stage-directory proof from the selected strict replay.
+	SignedStageDirectoryPrepared(RemoteStageDirectoryPrepared),
+}
+
+impl AllocationBase {
+	/// Returns the exact record head immediately before any allocation existed.
+	#[must_use]
+	pub const fn head(self) -> ChainHead {
+		match self {
+			Self::LegacyJobPrepared(head) => head,
+			Self::SignedStageDirectoryPrepared(proof) => proof.head(),
+		}
+	}
+}
+
 /// Exact durable allocation and the consumed run and source epochs it declares.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AllocatedCapture {
@@ -87,6 +110,8 @@ pub struct AllocatedCapture {
 pub struct ResumeHistory<B> {
 	/// Exact scope of the persisted job and entry.
 	pub scope: ResumeScope,
+	/// Authenticated anchor of the explicitly selected bootstrap profile.
+	pub allocation_base: AllocationBase,
 	/// Last accepted complete frame of that job, rechecked in the held writer.
 	pub predecessor: ChainHead,
 	/// Last recorded physical stage from before the pending allocation, if any.
@@ -97,6 +122,11 @@ pub struct ResumeHistory<B> {
 	///
 	/// An unbound allocation found after a restart belongs in the consumed history.
 	pub pending_allocation: AllocatedCapture,
+	/// Actual immediate predecessor established by the synchronized allocation append.
+	///
+	/// The application confirms the encoded predecessor's sequence and digest
+	/// against the held writer's exact prior head before creating the stage.
+	pub pending_allocation_predecessor: ChainHead,
 	/// Whether journal replay permits pre-intent restart.
 	pub state: ReplayState,
 }
