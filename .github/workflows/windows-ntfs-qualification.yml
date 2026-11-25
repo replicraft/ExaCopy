@@ -23,6 +23,12 @@ jobs:
       - name: Install Rust 1.100.0
         shell: bash
         run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
+      - name: Reject dirty qualification inputs
+        shell: pwsh
+        run: |
+          & ./.github/ci/windows-ntfs-tests.ps1 `
+            -LocalNtfsRoot $env:USERPROFILE `
+            -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'exacopy-windows-ntfs-controls')
       - name: Run native fixed NTFS fixture
         shell: pwsh
         run: |
@@ -40,5 +46,6 @@ jobs:
           path: |
             ${{ runner.temp }}/exacopy-evidence/
             ${{ runner.temp }}/exacopy-windows-ntfs/
+            ${{ runner.temp }}/exacopy-windows-ntfs-controls/
           if-no-files-found: error
           retention-days: 90

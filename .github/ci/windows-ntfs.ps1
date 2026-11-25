@@ -91,6 +91,22 @@ try {
     $env:EXACOPY_WINDOWS_UNC_ROOT = $UncRoot
     $env:EXACOPY_WINDOWS_SECOND_NTFS_ROOT = $SecondNtfsRoot
 
+    $sourceStatus = Invoke-Lane -Name 'revision' -Program 'git' -Arguments @('rev-parse', 'HEAD')
+    $revision = Get-Content -LiteralPath (Join-Path $evidence.FullName 'revision.stdout.log') -Raw
+    if ($sourceStatus -ne 0 -or $revision -notmatch '^\s*[0-9a-f]{40}\s*$') {
+        throw 'Could not identify the tested source revision.'
+    }
+    $sourceDiff = Invoke-Lane -Name 'candidate_diff' -Program 'git' -Arguments @('diff', '--no-ext-diff', 'HEAD', '--binary')
+    $sourceFiles = Invoke-Lane -Name 'candidate_status' -Program 'git' -Arguments @('status', '--porcelain=v1', '--untracked-files=all')
+    if ($sourceDiff -ne 0 -or $sourceFiles -ne 0) {
+        throw 'Could not capture source evidence.'
+    }
+    $status = Get-Content -LiteralPath (Join-Path $evidence.FullName 'candidate_status.stdout.log') -Raw
+    $diff = Get-Content -LiteralPath (Join-Path $evidence.FullName 'candidate_diff.stdout.log') -Raw
+    if (-not [string]::IsNullOrWhiteSpace($status) -or -not [string]::IsNullOrWhiteSpace($diff)) {
+        throw 'Qualification requires a clean Git checkout. The candidate diff and status have been retained.'
+    }
+
     $os = Get-CimInstance Win32_OperatingSystem
     $profile = [ordered]@{
         os = $os.Caption
@@ -119,16 +135,6 @@ try {
         throw 'The installed native compiler must match the pinned official Rust build.'
     }
 
-    $sourceStatus = Invoke-Lane -Name 'revision' -Program 'git' -Arguments @('rev-parse', 'HEAD')
-    $revision = Get-Content -LiteralPath (Join-Path $evidence.FullName 'revision.stdout.log') -Raw
-    if ($sourceStatus -ne 0 -or $revision.Trim() -notmatch '^[0-9a-f]{40}$') {
-        throw 'Could not identify the tested source revision.'
-    }
-    $sourceDiff = Invoke-Lane -Name 'candidate_diff' -Program 'git' -Arguments @('diff', 'HEAD', '--binary')
-    $sourceFiles = Invoke-Lane -Name 'candidate_status' -Program 'git' -Arguments @('status', '--short')
-    if ($sourceDiff -ne 0 -or $sourceFiles -ne 0) {
-        throw 'Could not capture source evidence.'
-    }
     try {
         $partition = Get-Partition -DriveLetter ($drive.Name[0])
         $partition | Get-Disk | Select-Object BusType, PartitionStyle | ConvertTo-Json |
