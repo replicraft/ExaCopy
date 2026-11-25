@@ -4,11 +4,14 @@ from copy import deepcopy
 import json
 import unittest
 
-from feature_matrix import MATRIX, check_cli_graph, check_manifests, profile_flags
+from feature_matrix import (
+    MATRIX, check_cli_graph, check_isolated_features, check_manifests, profile_flags, resolved_graph,
+)
 
 POLICY = json.loads(MATRIX.read_text(encoding="utf-8"))
 LINUX = "x86_64-unknown-linux-gnu"
 MACOS = "aarch64-apple-darwin"
+WINDOWS = "x86_64-pc-windows-msvc"
 
 
 class FeatureMatrixTests(unittest.TestCase):
@@ -48,29 +51,42 @@ class FeatureMatrixTests(unittest.TestCase):
         target = POLICY["targets"][LINUX]
         groups = POLICY["cli_graph_groups"]
         graph = {name: set() for group in target["cli_graph_groups"] for name in groups[group]}
-        graph["rustix"] = set(target["rustix_features"])
-        graph["ed25519-dalek"] = {"zeroize"}
-        graph["clap"] = {"error-context", "help", "std", "usage"}
-        graph["base64"] = {"alloc"}
-        graph["chrono"] = {"alloc"}
+        graph["rustix@1.1.6"] = set(target["rustix_features"])
+        graph["ed25519-dalek@2.2.0"] = {"zeroize"}
+        graph["clap@4.6.10"] = {"error-context", "help", "std", "usage"}
+        graph["base64@0.23.1"] = {"alloc"}
+        graph["chrono@0.4.45"] = {"alloc"}
         check_cli_graph(POLICY, LINUX, graph)
         defaulted = deepcopy(graph)
-        defaulted["clap"].add("default")
+        defaulted["clap@4.6.10"].add("default")
         with self.assertRaisesRegex(ValueError, "CLI dependency clap"):
             check_cli_graph(POLICY, LINUX, defaulted)
         defaulted = deepcopy(graph)
-        defaulted["base64"].update({"std", "simd-unsafe"})
+        defaulted["base64@0.23.1"].update({"std", "simd-unsafe"})
         with self.assertRaisesRegex(ValueError, "CLI dependency base64"):
             check_cli_graph(POLICY, LINUX, defaulted)
         clock_enabled = deepcopy(graph)
-        clock_enabled["chrono"].update({"clock", "std"})
+        clock_enabled["chrono@0.4.45"].update({"clock", "std"})
         with self.assertRaisesRegex(ValueError, "CLI dependency chrono"):
             check_cli_graph(POLICY, LINUX, clock_enabled)
         corrupted = deepcopy(graph)
-        del corrupted["blake3"]
-        corrupted["unreviewed-network-library"] = set()
+        del corrupted["blake3@1.8.7"]
+        corrupted["unreviewed-network-library@1.0.0"] = set()
         with self.assertRaisesRegex(ValueError, "unexpected.*unreviewed-network-library.*missing.*blake3"):
             check_cli_graph(POLICY, LINUX, corrupted)
+
+        duplicate_version = graph | {"base64@0.22.1": graph["base64@0.23.1"].copy()}
+        with self.assertRaisesRegex(ValueError, r"unexpected.*base64@0\.22\.1"):
+            check_cli_graph(POLICY, LINUX, duplicate_version)
+
+    def test_resolved_graph_does_not_merge_same_name_versions(self):
+        def cargo(*args, **kwargs):
+            return "base64 v0.22.1\talloc\nbase64 v0.23.1\talloc\n"
+
+        self.assertEqual(
+            resolved_graph(cargo, ["exacopy-cli"], LINUX, []),
+            {"base64@0.22.1": {"alloc"}, "base64@0.23.1": {"alloc"}},
+        )
 
     def test_experimental_apfs_feature_is_target_scoped_and_default_off(self):
         profiles = POLICY["profiles"]
@@ -81,7 +97,6 @@ class FeatureMatrixTests(unittest.TestCase):
             opt_in = ",".join(profile_flags(POLICY, profiles["experimental-apfs-copy"], MACOS))
             self.assertIn(feature, opt_in.split(","))
             self.assertNotIn(feature, ",".join(profile_flags(POLICY, profiles["development-all"], LINUX)))
-
 
     def test_protocol_profile_isolated_and_default_off_on_every_target(self):
         profiles = POLICY["profiles"]
@@ -101,6 +116,73 @@ class FeatureMatrixTests(unittest.TestCase):
                     feature,
                     ",".join(profile_flags(POLICY, profiles["development-all"], target)).split(","),
                 )
+
+
+    def test_isolated_profiles_ignore_new_same_owner_features(self):
+        policy = deepcopy(POLICY)
+        for name, target, selectors in (
+            ("experimental-apfs-copy", MACOS, [
+                "exacopy-engine/experimental-apfs-copy", "exacopy-transfer/experimental-apfs-copy",
+            ]),
+            ("experimental-windows-copy", WINDOWS, [
+                "exacopy-platform/experimental-windows-copy", "exacopy-platform/windows-read-fixture",
+            ]),
+            ("experimental-wireguard-protocol", LINUX, ["exacopy-wireguard/experimental-protocol"]),
+        ):
+            with self.subTest(profile=name):
+                owner = selectors[0].partition("/")[0]
+                policy["features"][owner]["future-experiment"] = {"status": "experimental"}
+                self.assertEqual(
+                    profile_flags(policy, policy["profiles"][name], target),
+                    ["--no-default-features", "--features", ",".join(selectors)],
+                )
+                self.assertIn(
+                    f"{owner}/future-experiment",
+                    ",".join(profile_flags(policy, policy["profiles"]["development-all"], target)),
+                )
+
+    def test_exact_selector_rejects_unknown_unavailable_and_mixed_selectors(self):
+        profile = POLICY["profiles"]["experimental-wireguard-protocol"]
+        for selectors, error in (
+            (["exacopy-wireguard/experimental-typo"], "unknown.*experimental-typo"),
+            (["exacopy-platform/windows-read-fixture"], "unavailable on a profile target"),
+            (["exacopy-model/proof-extraction"], "non-experimental"),
+            (profile["exact_features"] * 2, "duplicate"),
+        ):
+            with self.subTest(selectors=selectors):
+                with self.assertRaisesRegex(ValueError, error):
+                    profile_flags(POLICY, profile | {"exact_features": selectors}, LINUX)
+        with self.assertRaisesRegex(ValueError, "isolated profile"):
+            profile_flags(POLICY, profile | {"feature_statuses": ["experimental"]}, LINUX)
+        with self.assertRaisesRegex(ValueError, "use exact_features"):
+            profile_flags(POLICY, profile | {"feature_packages": ["exacopy-wireguard"]}, LINUX)
+
+    def test_resolved_network_feature_leaks_are_rejected(self):
+        policy = deepcopy(POLICY)
+        policy["production_packages"].append("exacopy-ssh")
+        policy["features"]["exacopy-ssh"] = {"experimental-ssh": {"status": "experimental"}}
+        for owner, feature in (
+            ("exacopy-wireguard", "experimental-protocol"), ("exacopy-ssh", "experimental-ssh"),
+        ):
+            profile = POLICY["profiles"]["experimental-wireguard-protocol"] | {
+                "exact_features": [f"{owner}/{feature}"],
+            }
+            normal = {f"{owner}@0.1.0": {feature}, "exacopy-platform@0.1.0": set()}
+            check_isolated_features(policy, WINDOWS, "network", profile, normal)
+            for package, accidental in (
+                (owner, "future-experiment"),
+                ("exacopy-engine", "experimental-apfs-copy"),
+                ("exacopy-platform", "experimental-windows-copy"),
+                ("exacopy-platform", "windows-read-fixture"),
+                ("exacopy-model", "proof-extraction"),
+                ("exacopy-ssh", "experimental-ssh") if owner == "exacopy-wireguard"
+                else ("exacopy-wireguard", "experimental-protocol"),
+            ):
+                with self.subTest(owner=owner, accidental=accidental):
+                    corrupted = deepcopy(normal)
+                    corrupted.setdefault(f"{package}@0.1.0", set()).add(accidental)
+                    with self.assertRaisesRegex(ValueError, f"unexpected.*{package}/{accidental}"):
+                        check_isolated_features(policy, WINDOWS, "network", profile, corrupted)
 
 
 if __name__ == "__main__":

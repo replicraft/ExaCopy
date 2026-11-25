@@ -69,9 +69,10 @@ def check_manifests(policy, packages):
         raise ValueError(f"production dependency inventory has unused entries: {sorted(set(rules) - seen)}")
 
 
-def resolved_graph(cargo, package, target, flags):
+def resolved_graph(cargo, roots, target, flags):
+    root_flags = [argument for package in roots for argument in ("-p", package)]
     output = cargo(
-        "tree", "-p", package, "--target", target, "--edges", "normal,build",
+        "tree", *root_flags, "--target", target, "--edges", "normal,build",
         "--prefix", "none", "--format", "{p}\t{f}", *flags, capture=True,
     )
     packages = defaultdict(set)
@@ -82,7 +83,7 @@ def resolved_graph(cargo, package, target, flags):
         name, version, *_ = package_with_version.split()
         if not version.startswith("v"):
             raise ValueError(f"unexpected cargo tree version: {line}")
-        packages[name].update(features.split(",") if features else ())
+        packages[f"{name}@{version[1:]}"].update(features.split(",") if features else ())
     return packages
 
 
@@ -96,7 +97,8 @@ def check_cli_graph(policy, target, graph):
             f"unexpected {sorted(set(graph) - expected)}, missing {sorted(expected - set(graph))}"
         )
     controls = policy["production_dependencies"]
-    for name, features in graph.items():
+    for identity, features in graph.items():
+        name, _, _ = identity.partition("@")
         if name == "rustix":
             allowed = set(target_policy["rustix_features"])
         elif name in controls and not controls[name]["default_features"]:
@@ -107,17 +109,37 @@ def check_cli_graph(policy, target, graph):
             continue
         if features != allowed:
             raise ValueError(
-                f"{target}: CLI dependency {name} enables {sorted(features)}, expected {sorted(allowed)}"
+                f"{target}: CLI dependency {identity} enables {sorted(features)}, expected {sorted(allowed)}"
             )
 
 
 def profile_features(policy, profile, target):
-    feature_packages = profile.get("feature_packages", policy["features"])
+    if "feature_packages" in profile:
+        raise ValueError("unrecognized feature_packages selector; use exact_features")
+    targets = set(profile.get("targets", policy["targets"]))
+    if not targets or targets - policy["targets"].keys():
+        raise ValueError("profile has missing or unknown targets")
+    exact = profile.get("exact_features")
+    if exact is not None:
+        if profile["defaults"] or profile["feature_statuses"]:
+            raise ValueError("exact_features requires an isolated profile with defaults and status selection off")
+        if not exact:
+            raise ValueError("exact_features requires at least one feature selector")
+        if len(exact) != len(set(exact)):
+            raise ValueError("duplicate exact feature selector")
+        for selector in exact:
+            package, _, feature = selector.partition("/")
+            entry = policy["features"].get(package, {}).get(feature)
+            if entry is None or entry["status"] != "experimental":
+                raise ValueError(f"unknown or non-experimental exact feature selector {selector}")
+            if targets - set(entry.get("targets", policy["targets"])):
+                raise ValueError(f"exact feature selector {selector} is unavailable on a profile target")
+        return sorted(exact) if target in targets else []
     return sorted(
         f"{package}/{name}"
         for package, features in policy["features"].items()
         for name, entry in features.items()
-        if package in feature_packages and entry["status"] in profile["feature_statuses"]
+        if entry["status"] in profile["feature_statuses"]
         and target in entry.get("targets", policy["targets"])
     )
 
@@ -130,6 +152,21 @@ def profile_flags(policy, profile, target):
     return flags
 
 
+def check_isolated_features(policy, target, profile_name, profile, graph):
+    expected = set(profile_features(policy, profile, target))
+    production = set(policy["production_packages"])
+    selected = set()
+    for identity, features in graph.items():
+        name, _, _ = identity.partition("@")
+        if name in production:
+            selected.update(f"{name}/{feature}" for feature in features)
+    if selected != expected:
+        raise ValueError(
+            f"{target}/{profile_name}: isolated workspace features differ: "
+            f"unexpected {sorted(selected - expected)}, missing {sorted(expected - selected)}"
+        )
+
+
 def check_optional_features(policy, target, cargo):
     for package, entries in policy["features"].items():
         for name, entry in entries.items():
@@ -137,13 +174,19 @@ def check_optional_features(policy, target, cargo):
                 continue
             expected = set(entry["resolution_probe"])
             minimal = ["--no-default-features"]
-            off = resolved_graph(cargo, package, target, minimal)
-            on = resolved_graph(cargo, package, target, [*minimal, "--features", name])
-            if expected & set(off) or expected - set(on) or name not in on[package]:
+            off = resolved_graph(cargo, [package], target, minimal)
+            on = resolved_graph(cargo, [package], target, [*minimal, "--features", name])
+            off_names = {identity.partition("@")[0] for identity in off}
+            on_names = {identity.partition("@")[0] for identity in on}
+            enabled = any(
+                name in features for identity, features in on.items()
+                if identity.startswith(f"{package}@")
+            )
+            if expected & off_names or expected - on_names or not enabled:
                 raise ValueError(
                     f"{target}: {package}/{name} dependency probe differs: "
-                    f"unexpected while off {sorted(expected & set(off))}, "
-                    f"missing while on {sorted(expected - set(on))}"
+                    f"unexpected while off {sorted(expected & off_names)}, "
+                    f"missing while on {sorted(expected - on_names)}"
                 )
 
 
@@ -152,12 +195,15 @@ def check_matrix(policy, target, cargo, graph_only):
     check_manifests(policy, json.loads(manifest)["packages"])
     root = policy["product_package"]
     for name, profile in policy["profiles"].items():
+        flags = profile_flags(policy, profile, target)
         if target not in profile.get("targets", policy["targets"]):
             print(f"{target}: {name} not applicable", flush=True)
             continue
-        flags = profile_flags(policy, profile, target)
         if profile["check_cli"]:
-            check_cli_graph(policy, target, resolved_graph(cargo, root, target, flags))
+            check_cli_graph(policy, target, resolved_graph(cargo, [root], target, flags))
+        if "exact_features" in profile:
+            graph = resolved_graph(cargo, policy["production_packages"], target, flags)
+            check_isolated_features(policy, target, name, profile, graph)
         if not graph_only:
             cargo("check", "--workspace", "--all-targets", "--target", target, *flags)
             print(f"{target}: {name} build passed", flush=True)

@@ -43,24 +43,24 @@
     "experimental-apfs-copy": {
       "defaults": false,
       "check_cli": false,
-      "feature_statuses": ["experimental"],
-      "feature_packages": ["exacopy-engine", "exacopy-transfer"],
+      "feature_statuses": [],
+      "exact_features": ["exacopy-engine/experimental-apfs-copy", "exacopy-transfer/experimental-apfs-copy"],
       "targets": ["aarch64-apple-darwin"],
       "purpose": "Compile the opt-in transfer policies, native runtime, and managed APFS regressions."
     },
     "experimental-windows-copy": {
       "defaults": false,
       "check_cli": false,
-      "feature_statuses": ["experimental"],
-      "feature_packages": ["exacopy-platform"],
+      "feature_statuses": [],
+      "exact_features": ["exacopy-platform/experimental-windows-copy", "exacopy-platform/windows-read-fixture"],
       "targets": ["x86_64-pc-windows-msvc"],
       "purpose": "Compile the optional private NTFS staging capability and Windows qualification fixtures."
     },
     "experimental-wireguard-protocol": {
       "defaults": false,
       "check_cli": false,
-      "feature_statuses": ["experimental"],
-      "feature_packages": ["exacopy-wireguard"],
+      "feature_statuses": [],
+      "exact_features": ["exacopy-wireguard/experimental-protocol"],
       "purpose": "Check the in-memory WireGuard packet adapter in a separate workspace profile on each CI target."
     },
     "development-all": {
@@ -266,25 +266,25 @@
     }
   },
   "cli_graph_groups": {
-    "command_line": ["anstyle", "clap", "clap_builder", "clap_lex"],
+    "command_line": ["anstyle@1.0.14", "clap@4.6.10", "clap_builder@4.6.10", "clap_lex@1.1.2"],
     "reporting": [
-      "exacopy-cli", "itoa", "memchr", "proc-macro2", "quote",
-      "serde", "serde_core", "serde_derive", "serde_json", "syn", "unicode-ident", "zmij"
+      "exacopy-cli@0.1.0", "itoa@1.0.19", "memchr@2.8.3", "proc-macro2@1.0.107", "quote@1.0.47",
+      "serde@1.0.229", "serde_core@1.0.229", "serde_derive@1.0.229", "serde_json@1.0.154", "syn@3.0.10", "unicode-ident@1.0.27", "zmij@1.0.23"
     ],
     "local_comparison": [
-      "bitflags", "exacopy-diff", "exacopy-endpoint", "exacopy-model",
-      "exacopy-platform", "rustix", "uuid"
+      "bitflags@2.13.2", "exacopy-diff@0.1.0", "exacopy-endpoint@0.1.0", "exacopy-model@0.1.0",
+      "exacopy-platform@0.1.0", "rustix@1.1.6", "uuid@1.29.3"
     ],
     "linux_verified_transfer": [
-      "arrayvec", "blake3", "block-buffer", "cc", "cfg-if", "constant_time_eq",
-      "cpufeatures", "crc32c", "crypto-common", "curve25519-dalek", "curve25519-dalek-derive",
-      "digest", "ed25519", "ed25519-dalek", "exacopy-content", "exacopy-engine", "exacopy-journal",
-      "exacopy-transfer", "find-msvc-tools", "generic-array", "linux-raw-sys",
-      "minicbor", "rustc_version", "semver", "sha2", "shlex", "signature", "subtle",
-      "typenum", "version_check", "zeroize"
+      "arrayvec@0.7.8", "blake3@1.8.7", "block-buffer@0.10.4", "cc@1.11.2", "cfg-if@1.0.5", "constant_time_eq@0.4.2",
+      "cpufeatures@0.2.17", "cpufeatures@0.3.1", "crc32c@0.6.9", "crypto-common@0.1.7", "curve25519-dalek@4.1.3", "curve25519-dalek-derive@0.1.1",
+      "digest@0.10.7", "ed25519@2.2.3", "ed25519-dalek@2.2.0", "exacopy-content@0.1.0", "exacopy-engine@0.1.0", "exacopy-journal@0.1.0",
+      "exacopy-transfer@0.1.0", "find-msvc-tools@0.1.15", "generic-array@0.14.7", "linux-raw-sys@0.12.1",
+      "minicbor@2.3.1", "rustc_version@0.4.1", "semver@1.0.28", "sha2@0.10.9", "shlex@2.0.1", "signature@2.2.0", "syn@2.0.119", "subtle@2.6.1",
+      "typenum@1.20.1", "version_check@0.9.5", "zeroize@1.9.2"
     ],
-    "linux_manifests": ["autocfg", "base64", "chrono", "exacopy-codec", "num-traits"],
-    "macos_io": ["apfs-mounted", "cfg-if", "errno", "getrandom", "libc"]
+    "linux_manifests": ["autocfg@1.5.1", "base64@0.23.1", "chrono@0.4.45", "exacopy-codec@0.1.0", "num-traits@0.2.19"],
+    "macos_io": ["apfs-mounted@0.1.0", "cfg-if@1.0.5", "errno@0.3.15", "getrandom@0.4.3", "libc@0.2.191"]
   },
   "targets": {
     "x86_64-unknown-linux-gnu": {
