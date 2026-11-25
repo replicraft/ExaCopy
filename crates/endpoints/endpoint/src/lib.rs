@@ -4,6 +4,10 @@
 mod component;
 mod positioned;
 
+#[cfg(kani)]
+#[path = "../verification/kani/mod.rs"]
+mod kani_checks;
+
 pub use component::{MAX_UNIX_COMPONENT_BYTES, NameError, UnixComponent};
 pub use positioned::{
 	IoError, MAX_FILE_LENGTH, MAX_INTERRUPTED_RETRIES, read_exact_at, write_all_at,

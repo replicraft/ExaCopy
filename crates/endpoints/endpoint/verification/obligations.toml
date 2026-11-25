@@ -1,0 +1,10 @@
+schema_version = 1
+
+[[obligation]]
+id = "P-013"
+requirement_ids = ["R-058", "R-059"]
+source = "src/component.rs"
+symbols = ["UnixComponent::new", "UnixComponent::as_bytes"]
+assumptions = ["Inputs are symbolic prefixes of Rust byte arrays. This covers all byte sequences at the stated lengths within that memory model.", "The obligation covers the Unix component validator. OS path resolution, symlinks, capabilities, and containment are adapter obligations."]
+gates = ["kani"]
+kani = { harness = "kani_checks::component::checked_unix_component_matches_byte_specification", file = "verification/kani/component.rs", unwind_bound = 20, model_bounds = ["All byte values at every length from 0 through 255, with no harness assumptions on the bytes or length.", "The same gate also checks all 256-byte arrays at the first oversized length, with unwind bound 1."], oracle = "Compare each result with an independent per-byte specification with the documented typed error precedence, prove that success returns the original borrowed slice, and reach every declared cover. At length 256 every byte array returns TooLong." }
