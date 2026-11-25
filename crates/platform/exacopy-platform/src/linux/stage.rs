@@ -9,7 +9,11 @@ pub(super) mod selected_stream;
 pub use directory::{DestinationRoot, StageDirectory};
 pub use error::{DirectoryBarriersError, PublishError, StageError};
 pub use file::{ClosedStage, WriteStage};
-pub use selected_stream::{SelectedStreamMetadataReady, SelectedStreamObservation};
+pub use selected_stream::{
+	SelectedStreamGateRequest, SelectedStreamLocation, SelectedStreamMetadataReady,
+	SelectedStreamNames, SelectedStreamObservation, SelectedStreamPublication,
+	SelectedStreamPublicationAuthority, SelectedStreamPublishError,
+};
 
 pub(super) use directory::{
 	CHILD_RESOLVE, check_private_child, component, create_private_directory, sync_directory,

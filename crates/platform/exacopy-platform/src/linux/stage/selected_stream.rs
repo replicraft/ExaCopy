@@ -11,6 +11,13 @@ use crate::linux::handle::{FileIdentity, mount_id};
 use crate::linux::recovery::RetainedStage;
 use crate::linux::source::{SourceObservation, check_logical_eof};
 
+mod publication;
+
+pub use publication::{
+	SelectedStreamGateRequest, SelectedStreamLocation, SelectedStreamNames,
+	SelectedStreamPublication, SelectedStreamPublicationAuthority, SelectedStreamPublishError,
+};
+
 #[cfg(test)]
 mod tests;
 
@@ -104,6 +111,10 @@ impl SelectedStreamMetadataReady<'_> {
 	/// attributes, and reports failed inspections.
 	pub fn recheck(&self) -> Result<(), StageError> {
 		let view = self.stage.view()?;
+		self.recheck_view(&view)
+	}
+
+	fn recheck_view(&self, view: &SelectedStreamView<'_>) -> Result<(), StageError> {
 		let current = view.observe(self.observation.length())?;
 		self.observation
 			.file
@@ -177,6 +188,14 @@ pub(in crate::linux) struct SelectedStreamView<'stage> {
 
 impl SelectedStreamView<'_> {
 	fn observe(&self, expected_length: u64) -> Result<SourceObservation, StageError> {
+		let current = self.observe_held(expected_length)?;
+		self.expected
+			.recheck(current)
+			.map_err(StageError::ReadBack)?;
+		Ok(current)
+	}
+
+	fn observe_held(&self, expected_length: u64) -> Result<SourceObservation, StageError> {
 		let before = self.check_held(expected_length)?;
 		check_no_visible_attributes(self.file)?;
 		check_logical_eof(self.file, expected_length).map_err(StageError::ReadBack)?;
@@ -195,9 +214,6 @@ impl SelectedStreamView<'_> {
 		if mount_id(self.file)? != self.mount {
 			return Err(StageError::IdentityChanged);
 		}
-		self.expected
-			.recheck(current)
-			.map_err(StageError::ReadBack)?;
 		Ok(current)
 	}
 }

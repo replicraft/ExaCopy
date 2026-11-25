@@ -43,8 +43,10 @@ pub use source::{
 	ExtendedAttributes, ReadError, ReadRoot, SourceFile, SourceObservation, SourceTimestamp,
 };
 pub use stage::{
-	ClosedStage, DestinationRoot, DirectoryBarriersError, PublishError,
-	SelectedStreamMetadataReady, SelectedStreamObservation, StageDirectory, StageError, WriteStage,
+	ClosedStage, DestinationRoot, DirectoryBarriersError, PublishError, SelectedStreamGateRequest,
+	SelectedStreamLocation, SelectedStreamMetadataReady, SelectedStreamNames,
+	SelectedStreamObservation, SelectedStreamPublication, SelectedStreamPublicationAuthority,
+	SelectedStreamPublishError, StageDirectory, StageError, WriteStage,
 };
 
 pub use mount_observation::MountObservations;
