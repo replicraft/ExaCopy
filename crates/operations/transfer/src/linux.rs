@@ -9,9 +9,14 @@ use exacopy_platform::linux::{
 
 mod error;
 mod job;
+mod plan;
 
 pub use error::{StageCopyError, StageFailure};
 pub use job::{JobBootstrap, JobBootstrapError, JobStep, PreparedJob};
+pub use plan::{
+	DestinationPlanBinding, LocalCopyPlan, LocalCopyPlanError, MAX_LOCAL_COPY_PLAN_BYTES,
+	PlanAttempt, SourcePlanBinding,
+};
 
 const SPECIAL_MODE_BITS: u32 = 0o7000;
 
