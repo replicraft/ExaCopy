@@ -1,6 +1,6 @@
-# Single-file verification and journal preparation
+# Single-file verification, publication, and replay
 
-`exacopy-content` owns bounded standard BLAKE3-256 stream measurement. `exacopy-transfer` owns the sequencing of one private Linux stage and the initial persisted job. `exacopy-journal` owns the bounded frame, canonical payload, and signed owner codecs. This work implements parts of the architecture pack's PR 3 and PR 4 packages.
+`exacopy-content` owns bounded standard BLAKE3-256 stream measurement. `exacopy-transfer` owns Linux copy sequencing, its private plan and receipt, and journal replay. `exacopy-journal` owns framing, canonical payloads, and signed owner records. `exacopy-diff` provides read-only byte comparison for the Linux command line.
 
 | Scope | Requirements and acceptance cases | Invariants |
 | --- | --- | --- |
@@ -14,7 +14,7 @@ The transfer reads the held regular file in logical order into bounded caller-ow
 
 The Linux baseline checks that source attributes can be inspected and no extended attribute names are visible. It refuses special mode bits and incompatible stage ownership. It preserves ordinary permissions, UID/GID by equality with the new inode, and the captured access and modification times. Hidden attributes, link topology, sparse allocation and the inode change time fall outside this fidelity profile. A hash match never upgrades the source or metadata claim.
 
-`VerifiedStage` holds the pinned stage and its `ReadyToPublish` model state. It exposes phase, length, identity and digest. Production publication needs further journaled evidence and authorization. This work never creates the copy target. A copy, metadata or barrier failure leaves any allocated stage private.
+`stage_verified` returns a `VerifiedStage` with the pinned stage and its `ReadyToPublish` model state. It exposes phase, length, identity, and digest. The copy coordinator uses the same staging path and records `EntryPrepared` before writing any stage data. Its source consistency checks include a bounded EOF probe at the recorded length. A copy, metadata, or prepublication barrier failure leaves any allocated stage private.
 
 ## Versioned private job evidence
 
@@ -22,9 +22,15 @@ The already authorized destination can create a new owner-private job directory.
 
 The initial local owner profile uses strict Ed25519 verification over `ExaCopy/owner/v1\0` followed by the exact deterministic CBOR body. Verification requires the independently expected profile and key. Linux device and inode are stored as fixed little-endian values with unavailable generation recorded explicitly. A persisted identity is an observation and requires revalidation after reopening.
 
-The `EXAJNL01` frame codec bounds payloads before allocating, enforces version and kind, and checks CRC32C and domain-separated BLAKE3 predecessor chaining. The reader stops at corruption or an incomplete trailing record and retains the last verified boundary. It never searches for later magic. The local canonical codecs support `JobPrepared`, `EntryPrepared`, `StageSealed`, `VerificationRecorded`, `MetadataRecorded`, and `PublishIntent`. The kind-7 verification reference is a domain-separated digest of the complete canonical kind-5 payload. These codecs describe observations. They do not manufacture effect authority from bytes on disk.
+The `EXAJNL01` frame codec bounds payloads before allocation, checks version and kind, and verifies CRC32C and a domain-separated BLAKE3 predecessor chain. The reader stops at corruption or an incomplete trailing record and retains the last verified boundary. It never searches for later magic. The kind-7 verification reference is a domain-separated digest of the complete canonical kind-5 payload.
 
-The current bootstrap is an application-library entry point. Profile-key custody, canonical plan persistence, the coordinator's append and publication sequence, CLI receipts, and restart reconciliation remain separate work. Completed barriers in the tested adapter do not establish a power-loss profile.
+## Publication and recovery evidence
+
+`plan_new_file` observes a regular source and an absent target under caller-authorized roots. Its private v1 CBOR plan binds the root capabilities, device and inode observations, raw components, logical length, modification and change times, and the fixed verification and metadata policies. Applying the plan reopens the source under the same authorization and checks those observations again. The coordinator synchronizes the plan and signed owner artifacts before the preparation frame. The caller supplies the trusted local profile key and fresh ownership token.
+
+The coordinator journals the stage seal, independent measurements, and required metadata. It obtains the model's publication token only after synchronizing the exact `PublishIntent` frame. Linux `renameat2(RENAME_NOREPLACE)` decides whether publication wins against an incumbent. After a successful rename, the adapter synchronizes both directories and checks the target identity and absence of the former private name. The coordinator records those observations, synchronizes `receipts/receipt.cbor` and its directory chain, and synchronizes `ReceiptCommitted`. The receipt claims a live-observed source, buffered independent read-back, baseline metadata, and completed barrier calls. Filesystem power-loss qualification remains unconfirmed.
+
+Read-only recovery handles reopen fixed private records and inspect stage and target names under the caller's destination handle. Replay validates the exact local record order and cross-checks ownership, plan, identities, measurements, and receipt references. It distinguishes clean early EOF, a torn trailing frame, and a rejected chain. Replayed records require fresh filesystem evidence and current authorization before any recovery effect. Automatic repair and resume remain open.
 
 ## Checks
 

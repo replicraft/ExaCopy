@@ -102,7 +102,7 @@ pub enum OwnerStateDirectory {
 	Checkpoints,
 	/// Authoritative journal segments.
 	Journal,
-	/// Signed transfer receipts.
+	/// Transfer receipts bound by the journal.
 	Receipts,
 	/// Exclusively created staged files.
 	Stage,

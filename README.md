@@ -1,6 +1,10 @@
 # ExaCopy
 
-ExaCopy is a Rust project for file transfers, comparison, and backup. The Linux code can prepare a private job with signed ownership and a synchronized journal, then copy data into a private stage and verify it by independent BLAKE3 read-back. The command-line application and recovery are future work.
+ExaCopy is a Rust project for file transfers, comparison, and backup. On Linux, the library can copy one regular file into an absent name. It verifies the private stage by independent BLAKE3 read-back, synchronizes publication intent before an exclusive rename, and commits a receipt. The local CLI compares regular files byte for byte.
+
+```sh
+cargo run --locked -p exacopy-cli -- diff LEFT RIGHT --format json
+```
 
 Use Rust 1.100.0 and cargo-nextest 0.9.151 for the developer checks.
 
