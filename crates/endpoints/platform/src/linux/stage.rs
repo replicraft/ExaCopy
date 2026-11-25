@@ -10,6 +10,6 @@ pub use error::{DirectoryBarriersError, PublishError, StageError};
 pub use file::{ClosedStage, WriteStage};
 
 pub(super) use directory::{
-	check_private_child, component, create_private_directory, sync_directory,
+	CHILD_RESOLVE, check_private_child, component, create_private_directory, sync_directory,
 };
 pub(super) use file::create_private_file;

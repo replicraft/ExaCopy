@@ -22,7 +22,7 @@ const DIRECTORY_FLAGS: OFlags = OFlags::RDONLY
 	.union(OFlags::NOFOLLOW);
 const DIRECTORY_MODE: Mode = Mode::RUSR.union(Mode::WUSR).union(Mode::XUSR);
 
-pub(super) const CHILD_RESOLVE: ResolveFlags = ResolveFlags::BENEATH
+pub(in crate::linux) const CHILD_RESOLVE: ResolveFlags = ResolveFlags::BENEATH
 	.union(ResolveFlags::NO_MAGICLINKS)
 	.union(ResolveFlags::NO_SYMLINKS)
 	.union(ResolveFlags::NO_XDEV);

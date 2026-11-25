@@ -23,7 +23,7 @@ pub struct SourceObservation {
 }
 
 impl SourceObservation {
-	pub(super) fn capture(stat: &Stat) -> Result<Self, ReadError> {
+	pub(in crate::linux) fn capture(stat: &Stat) -> Result<Self, ReadError> {
 		if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile {
 			return Err(ReadError::NotRegularFile);
 		}
@@ -52,7 +52,7 @@ impl SourceObservation {
 		})
 	}
 
-	pub(super) fn recheck(self, current: Self) -> Result<(), ReadError> {
+	pub(in crate::linux) fn recheck(self, current: Self) -> Result<(), ReadError> {
 		if self.identity != current.identity {
 			return Err(ReadError::IdentityChanged);
 		}
