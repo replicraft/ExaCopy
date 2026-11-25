@@ -19,6 +19,8 @@ mod file;
 	reason = "bounded descriptor and relative-name physical FSID attributes on Darwin"
 )]
 mod physical_fsid;
+#[path = "staging/mod.rs"]
+pub mod staging;
 #[cfg(test)]
 mod tests;
 #[allow(

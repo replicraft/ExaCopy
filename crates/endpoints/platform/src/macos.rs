@@ -30,6 +30,7 @@ mod managed;
 #[cfg(test)]
 mod tests;
 
+pub use managed::staging;
 pub use managed::{ManagedReadError, ManagedReadGrant, ManagedReadRoot, ManagedRegularFile};
 
 /// A held directory for metadata probes on macOS.

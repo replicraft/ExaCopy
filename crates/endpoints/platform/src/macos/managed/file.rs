@@ -143,7 +143,7 @@ impl<'root> ManagedRegularFile<'root> {
 	}
 }
 
-fn same_observation(current: &Stat, initial: &Stat) -> bool {
+pub(super) fn same_observation(current: &Stat, initial: &Stat) -> bool {
 	current.st_dev == initial.st_dev
 		&& current.st_ino == initial.st_ino
 		&& current.st_gen == initial.st_gen

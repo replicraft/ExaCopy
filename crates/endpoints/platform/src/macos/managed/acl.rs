@@ -18,6 +18,16 @@ const EMPTY_FILESEC_BYTES: usize = ACL_FLAGS + FIELD_BYTES;
 struct AttributeBuffer([u8; PAYLOAD + EMPTY_FILESEC_BYTES]);
 
 pub(super) fn has_explicit_empty_acl(fd: BorrowedFd<'_>) -> io::Result<bool> {
+	Ok(is_explicit_empty_acl(&descriptor_security(fd)?.0))
+}
+
+// Use only for an exclusively created child on the positively admitted APFS volume.
+pub(super) fn has_no_stage_acl_entries(fd: BorrowedFd<'_>) -> io::Result<bool> {
+	let AttributeBuffer(response) = descriptor_security(fd)?;
+	Ok(is_explicit_empty_acl(&response) || is_absent_acl(&response))
+}
+
+fn descriptor_security(fd: BorrowedFd<'_>) -> io::Result<AttributeBuffer> {
 	let mut request = attribute_request(SECURITY_MASK);
 	let mut buffer = AttributeBuffer([0; PAYLOAD + EMPTY_FILESEC_BYTES]);
 	// SAFETY: The borrow keeps the descriptor live. The initialized attrlist and
@@ -35,7 +45,7 @@ pub(super) fn has_explicit_empty_acl(fd: BorrowedFd<'_>) -> io::Result<bool> {
 	if status != 0 {
 		return Err(io::Error::last_os_error());
 	}
-	Ok(is_explicit_empty_acl(&buffer.0))
+	Ok(buffer)
 }
 
 pub(super) fn attribute_request(commonattr: u32) -> libc::attrlist {
@@ -74,6 +84,16 @@ fn is_explicit_empty_acl(response: &[u8]) -> bool {
 	field(payload, 0) == Some(FILESEC_MAGIC)
 		&& field(payload, ENTRY_COUNT) == Some(0)
 		&& field(payload, ACL_FLAGS) == Some(0)
+}
+
+// APFS returns only ATTR_CMN_RETURNED_ATTRS for a fresh file with no ACL,
+// along with a zeroed unused attrreference_t in this fixed-size response.
+fn is_absent_acl(response: &[u8]) -> bool {
+	field(response, 0) == Some(PAYLOAD as u32)
+		&& field(response, RETURNED_ATTRS) == Some(libc::ATTR_CMN_RETURNED_ATTRS)
+		&& response
+			.get(RETURNED_ATTRS + FIELD_BYTES..PAYLOAD)
+			.is_some_and(|fields| fields.iter().all(|&byte| byte == 0))
 }
 
 fn field(bytes: &[u8], offset: usize) -> Option<u32> {
@@ -157,4 +177,29 @@ fn rejects_uncertain_acl_payloads() {
 			"truncated at {length}"
 		);
 	}
+}
+
+#[test]
+fn fresh_stage_acl_absence_requires_the_exact_apfs_response() {
+	let mut absent = [0; PAYLOAD + EMPTY_FILESEC_BYTES];
+	write_field(&mut absent, 0, PAYLOAD as u32);
+	write_field(&mut absent, RETURNED_ATTRS, libc::ATTR_CMN_RETURNED_ATTRS);
+	assert!(is_absent_acl(&absent));
+	assert!(!is_explicit_empty_acl(&absent));
+	for (field, value) in [
+		(0, (PAYLOAD - FIELD_BYTES) as u32),
+		(0, (PAYLOAD + FIELD_BYTES) as u32),
+		(RETURNED_ATTRS, SECURITY_MASK),
+		(RETURNED_ATTRS + FIELD_BYTES, 1),
+		(REFERENCE, 1),
+		(REFERENCE + FIELD_BYTES, 1),
+	] {
+		let mut malformed = absent;
+		write_field(&mut malformed, field, value);
+		assert!(
+			!is_absent_acl(&malformed),
+			"accepted uncertain field {field}"
+		);
+	}
+	assert!(!is_absent_acl(&absent[..PAYLOAD - 1]));
 }
