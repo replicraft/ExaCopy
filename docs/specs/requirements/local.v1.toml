@@ -133,6 +133,13 @@ state = "defined"
 path = "crates/engineering/exacopy-testkit/tests/preservation.rs"
 target = "a_failed_stage_file_barrier_is_never_retried_by_the_attempt"
 
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "test"
+state = "defined"
+path = "crates/operations/transfer/src/linux/job/tests.rs"
+target = "each_failed_effect_stops_bootstrap_at_that_effect"
+
 [[coverage]]
 id = "lossless-components"
 status = "implemented"
@@ -612,6 +619,27 @@ level = "documentation"
 state = "reported"
 path = "docs/local-adapter.md"
 detail = "Preserves the native adapter outcome and blocked strict end-to-end path."
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "test"
+state = "defined"
+path = "crates/operations/transfer/src/macos/replay/tests/recovery.rs"
+target = "requires_the_exact_original_attempt_and_recovery_start"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "test"
+state = "defined"
+path = "crates/operations/transfer/src/macos/job/entry/publish/tests.rs"
+target = "coordinator_commits_only_after_receipt_persistence"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "test"
+state = "defined"
+path = "crates/operations/transfer/src/macos/job/tests/inspection.rs"
+target = "retained_stage_read_back_refuses_a_visible_attribute_before_payload_io"
 
 [[coverage]]
 id = "workspace-and-evidence"

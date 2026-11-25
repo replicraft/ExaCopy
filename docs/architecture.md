@@ -25,6 +25,14 @@ Run the [engineering policy check](testing.md). Source review also follows
 the actual call graph because a permitted package edge does not establish
 how authority moves through a function.
 
+Transfer staging consumes endpoint read, write, close and metadata capabilities.
+Linux job bootstrap and publication, and the experimental APFS publication
+coordinator, sequence their effects through supplied capabilities. Native
+facades preserve the existing entry points and translate adapter failures.
+Recovery classification consumes independently obtained observations. Native
+recovery orchestration still uses platform types, so the transfer-to-platform
+exception remains necessary.
+
 Generic I/O or network libraries belong outside product workflows.
 When transports are introduced, one capability policy owns admission and
 credential acquisition. Transports receive scoped authorization and

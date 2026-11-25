@@ -39,3 +39,11 @@ lease, dehydration, `F_FULLFSYNC` and exclusive-rename semantics. The
 reader stays outside the production dependency graph. Reproduce the review
 from `crates/filesystem/apfs-reader/{Cargo.toml,README.md}` at that revision
 of the local Pomologie APFS checkout.
+
+Candidates for reuse in Pomologie include native-to-image metadata fixtures,
+explicit attribute and unavailable-content diagnostics, and a separately
+qualified macOS companion crate for held identities, exclusive rename and
+flush results. The reader's clone/shared-extent, compression and snapshot
+profiles also need implementation before broader image fidelity is claimed.
+ExaCopy retains copy authorization, journal sequencing and recovery policy.
+These are proposed ownership boundaries and introduce no Pomologie dependency.
