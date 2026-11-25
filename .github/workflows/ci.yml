@@ -1,0 +1,239 @@
+name: CI
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  native:
+    name: Native checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      CARGO_TARGET_DIR: target
+      EXPECTED_RUST_HOST: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+          - os: macos-15
+            target: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.100.0
+        id: rust
+        run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
+      - name: Check formatting
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: bash .github/ci/capture.sh fmt cargo +1.100.0 fmt --all --check
+      - name: Compile locked workspace
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: bash .github/ci/capture.sh build cargo +1.100.0 build --locked --workspace --all-targets
+      - name: Compile verification feature
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: bash .github/ci/capture.sh build-proof-feature cargo +1.100.0 check --locked -p exacopy-model --features proof-extraction
+      - name: Run Clippy
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: bash .github/ci/capture.sh clippy cargo +1.100.0 clippy --locked --workspace --all-targets -- -D warnings
+      - name: Install nextest
+        id: nextest
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: bash .github/ci/capture.sh nextest-setup bash .github/ci/install.sh nextest
+      - name: Run nextest
+        if: ${{ !cancelled() && steps.nextest.outcome == 'success' }}
+        run: |
+          bash .github/ci/capture.sh nextest cargo +1.100.0 nextest run --locked --workspace --profile ci --no-tests fail
+          test -s target/nextest/ci/junit.xml
+      - name: Run doctests
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: bash .github/ci/capture.sh doctest cargo +1.100.0 test --locked --workspace --doc
+      - name: Retain native evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-${{ matrix.os }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-evidence/
+            target/nextest/ci/junit.xml
+          if-no-files-found: error
+          retention-days: 30
+
+  policy:
+    name: Engineering policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.100.0
+        run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
+      - name: Run engineering policy
+        run: bash .github/ci/capture.sh policy cargo run --locked -p xtask -- check
+      - name: Retain policy evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: policy-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-evidence/
+          if-no-files-found: error
+          retention-days: 30
+
+  formal:
+    name: Formal verification (Linux x86_64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      EXPECTED_RUST_HOST: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set formal evidence paths
+        run: printf 'EVS_RECORDS=%s/exacopy-evs\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - name: Install Rust 1.100.0
+        id: rust
+        run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
+      - name: Install hax and elan
+        id: lean
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: bash .github/ci/capture.sh lean-setup bash .github/ci/install.sh lean
+      - name: Check extraction and Lean proof
+        if: ${{ !cancelled() && steps.lean.outcome == 'success' }}
+        run: bash .github/ci/capture.sh lean python3 tools/record_evidence.py "$EVS_RECORDS" --gate lean
+      - name: Install Kani
+        id: kani
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: bash .github/ci/capture.sh kani-setup bash .github/ci/install.sh kani
+      - name: Run Kani harness
+        if: ${{ !cancelled() && steps.kani.outcome == 'success' }}
+        run: bash .github/ci/capture.sh kani python3 tools/record_evidence.py "$EVS_RECORDS" --gate kani
+      - name: Install Java and TLC
+        id: tlc
+        if: ${{ !cancelled() && steps.rust.outcome != 'skipped' }}
+        run: bash .github/ci/capture.sh tlc-setup bash .github/ci/install.sh tlc
+      - name: Run TLC model and negative control
+        if: ${{ !cancelled() && steps.tlc.outcome == 'success' }}
+        run: bash .github/ci/capture.sh tlc python3 tools/record_evidence.py "$EVS_RECORDS" --gate tlc
+      - name: Install nextest for obligation tests
+        id: nextest
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: bash .github/ci/capture.sh nextest-setup bash .github/ci/install.sh nextest
+      - name: Record obligation tests
+        if: ${{ !cancelled() && steps.nextest.outcome == 'success' }}
+        run: bash .github/ci/capture.sh obligation-tests python3 tools/record_evidence.py "$EVS_RECORDS" --gate rust
+      - name: Install Miri
+        id: miri
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: bash .github/ci/capture.sh miri-setup bash .github/ci/install.sh miri
+      - name: Run Miri
+        if: ${{ !cancelled() && steps.miri.outcome == 'success' }}
+        run: bash .github/ci/capture.sh miri bash crates/core/model/verification/check.sh miri
+      - name: Validate EVS records against current sources
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: bash .github/ci/capture.sh evs cargo run --locked -p xtask -- check-evidence "$EVS_RECORDS"
+      - name: Retain formal evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: formal-linux-x86_64-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-evidence/
+            ${{ runner.temp }}/exacopy-evs/
+          if-no-files-found: error
+          retention-days: 90
+
+  dependencies:
+    name: Dependency policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.100.0
+        id: rust
+        run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
+      - name: Install cargo-deny
+        id: deny
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: bash .github/ci/capture.sh deny-setup bash .github/ci/install.sh deny
+      - name: Check sources, licenses, bans, and advisories
+        if: ${{ !cancelled() && steps.deny.outcome == 'success' }}
+        run: bash .github/ci/capture.sh deny cargo deny --locked check
+      - name: Install cargo-audit
+        id: audit
+        if: ${{ !cancelled() && steps.rust.outcome != 'skipped' }}
+        run: bash .github/ci/capture.sh audit-setup bash .github/ci/install.sh audit
+      - name: Audit the lockfile
+        if: ${{ !cancelled() && steps.audit.outcome == 'success' }}
+        run: bash .github/ci/capture.sh audit cargo audit --file Cargo.lock --deny warnings
+      - name: Install cargo-vet
+        id: vet
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: bash .github/ci/capture.sh vet-setup bash .github/ci/install.sh vet
+      - name: Check dependency audits
+        if: ${{ !cancelled() && steps.vet.outcome == 'success' }}
+        run: bash .github/ci/capture.sh vet cargo vet --locked
+      - name: Retain dependency evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dependencies-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-evidence/
+          if-no-files-found: error
+          retention-days: 30
+
+  scanners:
+    name: Repository security scans
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        id: source
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Gitleaks
+        id: gitleaks
+        run: bash .github/ci/capture.sh gitleaks-setup bash .github/ci/install.sh gitleaks
+      - name: Scan repository history for secrets
+        if: ${{ !cancelled() && steps.gitleaks.outcome == 'success' }}
+        run: bash .github/ci/capture.sh gitleaks gitleaks git --redact=100 --no-banner .
+      - name: Install Trivy
+        id: trivy
+        if: ${{ !cancelled() && steps.source.outcome == 'success' }}
+        run: bash .github/ci/capture.sh trivy-setup bash .github/ci/install.sh trivy
+      - name: Scan locked dependencies for vulnerabilities
+        if: ${{ !cancelled() && steps.trivy.outcome == 'success' }}
+        run: |
+          report="$RUNNER_TEMP/exacopy-evidence/trivy.json"
+          bash .github/ci/capture.sh trivy trivy fs --scanners vuln --no-progress --format json --output "$report" --exit-code 1 Cargo.lock
+          jq -e 'any(.Results[]?; .Type == "cargo" and (.Packages | length > 0))' "$report"
+      - name: Retain scanner evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: security-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-evidence/
+          if-no-files-found: error
+          retention-days: 30
