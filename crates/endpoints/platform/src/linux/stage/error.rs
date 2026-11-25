@@ -127,6 +127,8 @@ pub enum PublishError {
 	BindingMismatch,
 	/// The rename succeeded, but a required directory barrier failed.
 	BarriersFailed(DirectoryBarriersError),
+	/// The rename and barriers succeeded, but the resulting namespace could not be confirmed.
+	ObservationFailed(StageError),
 }
 
 impl fmt::Display for PublishError {
@@ -145,6 +147,12 @@ impl fmt::Display for PublishError {
 					"exclusive rename succeeded but directory synchronization failed: {source}"
 				)
 			}
+			Self::ObservationFailed(source) => {
+				write!(
+					f,
+					"exclusive rename succeeded but its resulting names require reconciliation: {source}"
+				)
+			}
 		}
 	}
 }
@@ -153,7 +161,7 @@ impl Error for PublishError {
 	fn source(&self) -> Option<&(dyn Error + 'static)> {
 		match self {
 			Self::Unsupported(source) | Self::Uncertain(source) => Some(source),
-			Self::StageChanged(source) => Some(source),
+			Self::StageChanged(source) | Self::ObservationFailed(source) => Some(source),
 			Self::BarriersFailed(source) => Some(source),
 			Self::Conflict | Self::BindingMismatch => None,
 		}

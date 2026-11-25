@@ -9,7 +9,7 @@ use exacopy_model::{
 use rustix::io::Errno;
 
 use super::{DirectoryBarriersError, PublishError, rename_error};
-use crate::linux::DestinationRoot;
+use crate::linux::{DestinationRoot, StageError};
 use crate::scratch::Scratch;
 
 #[test]
@@ -133,6 +133,55 @@ fn rename_errno_distinguishes_conflict_unsupported_and_reconciliation() {
 			PublishError::Uncertain(error) if error.raw_os_error() == Some(errno.raw_os_error())
 		));
 	}
+}
+
+#[test]
+fn a_changed_public_name_after_rename_requires_reconciliation() {
+	let fixture = Scratch::new();
+	let root = DestinationRoot::from_directory(fixture.open()).expect("managed root");
+	let directory = root
+		.create_stage_directory(component("stage"))
+		.expect("private stage directory");
+	let job = JobId::try_from_bytes([0, 0, 0, 0, 0, 0, 0x70, 0, 0x80, 0, 0, 0, 0, 0, 0, 1])
+		.expect("fixture job is UUIDv7");
+	let binding = CopyBinding::new(
+		job,
+		EntryId::new(1),
+		RunEpoch::new(1),
+		StageId::from_bytes([1; 16]),
+	);
+	let mut writer = directory
+		.create_file(component("part"), component("target"), binding)
+		.expect("new private stage");
+	writer
+		.write_all_at(0, b"published bytes")
+		.expect("write stage");
+	writer.flush().expect("flush stage");
+	let stage = writer.close_writes().expect("release writer");
+	let target = fixture.path("target");
+	let displaced = fixture.path("displaced");
+	let mut calls = 0;
+	let result = stage.publish_with_barriers(authorization(binding), |_| {
+		if calls == 0 {
+			fs::rename(&target, &displaced).expect("simulate a target rebind");
+			fs::write(&target, b"different inode").expect("new public inode");
+		}
+		calls += 1;
+		Ok(())
+	});
+	assert_eq!(calls, 2);
+	assert!(matches!(
+		result,
+		Err(PublishError::ObservationFailed(StageError::IdentityChanged))
+	));
+	assert_eq!(
+		fs::read(target).expect("new public name remains"),
+		b"different inode"
+	);
+	assert_eq!(
+		fs::read(displaced).expect("published inode remains"),
+		b"published bytes"
+	);
 }
 
 fn component(name: &str) -> UnixComponent<'_> {
