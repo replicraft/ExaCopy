@@ -5,6 +5,7 @@ mod job;
 mod recovery;
 mod source;
 mod stage;
+mod staging_capabilities;
 
 pub use handle::FileIdentity;
 pub use job::{

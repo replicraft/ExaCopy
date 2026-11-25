@@ -5,16 +5,7 @@ use rustix::io::{self, Errno};
 
 use super::ReadError;
 
-/// The result of a bounded probe for visible extended-attribute names.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum ExtendedAttributes {
-	/// The kernel did not report any visible names.
-	NoneVisible,
-	/// The kernel reported one or more visible names.
-	Present,
-	/// The filesystem or kernel could not provide a name list.
-	Unsupported,
-}
+pub use exacopy_endpoint::linux_staging::ExtendedAttributes;
 
 // Linux's VFS caps the name list returned by flistxattr at 64 KiB.
 const MAX_LINUX_XATTR_LIST: usize = 64 * 1024;

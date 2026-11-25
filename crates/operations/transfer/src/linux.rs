@@ -1,12 +1,10 @@
 //! Sequential Linux staging and independent read-back verification.
 
-use exacopy_content::{ContentDigest, copy_and_measure_at, measure_at, validate_stream_input};
-use exacopy_endpoint::UnixComponent;
-use exacopy_model::{CopyBinding, CopyEffect, CopyEvent, CopyPhase, CopySession};
-use exacopy_platform::linux::{
-	ClosedStage, ExtendedAttributes, FileIdentity, SourceFile, SourceTimestamp, StageDirectory,
-	WriteStage,
-};
+use exacopy_content::ContentDigest;
+use exacopy_model::{CopyPhase, CopySession};
+use exacopy_platform::linux::{ClosedStage, FileIdentity, SourceFile, StageDirectory};
+
+use crate::linux_staging::{self, StageRecords as StageRecordSink};
 
 mod error;
 mod job;
@@ -35,18 +33,11 @@ pub use replay::{
 	replay_journal,
 };
 
-const SPECIAL_MODE_BITS: u32 = 0o7000;
-
-/// The planned names and attempt identity for a single new file.
-#[derive(Debug, Clone, Copy)]
-pub struct StageRequest<'name> {
-	/// The exclusive file name inside the owned stage directory.
-	pub stage_name: UnixComponent<'name>,
-	/// The intended name in the held destination root.
-	pub target: UnixComponent<'name>,
-	/// The job, entry, epoch, and stage binding allocated by the coordinator.
-	pub binding: CopyBinding,
-}
+pub use crate::linux_staging::StageRequest;
+use crate::linux_staging::{
+	begin_stage_reads, check_source, complete_stage_metadata, flush_written_stage, observe,
+	verify_stage_readback,
+};
 
 /// A private stage with independent source-stream and destination read-back agreement.
 ///
@@ -111,165 +102,19 @@ fn stage_with_preparation<'stage>(
 	scratch: &mut [u8],
 	records: Option<StageRecords<'_, '_>>,
 ) -> Result<VerifiedStage<'stage>, StageCopyError> {
-	let mut session = CopySession::new(request.binding);
-	let result = prepare(source, directory, request, scratch, &mut session, records);
-	match result {
-		Ok((stage, digest)) => Ok(VerifiedStage {
-			stage,
-			session,
-			digest,
-		}),
-		Err(failure) => Err(StageCopyError {
-			phase: session.phase(),
-			failure,
-		}),
-	}
-}
-
-fn prepare<'stage>(
-	source: &SourceFile,
-	directory: &'stage StageDirectory<'_>,
-	request: StageRequest<'_>,
-	scratch: &mut [u8],
-	session: &mut CopySession,
-	records: Option<StageRecords<'_, '_>>,
-) -> Result<(ClosedStage<'stage>, ContentDigest), StageFailure> {
-	validate_stream_input(source.len(), scratch.len()).map_err(StageFailure::Input)?;
-	check_source(source)?;
-	let mut writable = directory
-		.create_file(request.stage_name, request.target, request.binding)
-		.map_err(StageFailure::Stage)?;
-	if writable.identity() == source.identity() {
-		return Err(StageFailure::Alias);
-	}
-	writable
-		.check_ownership(source.observation())
-		.map_err(StageFailure::Stage)?;
-	let checkpoints = if let Some(records) = records {
-		directory.sync_directory().map_err(StageFailure::Stage)?;
-		Some(records.begin(writable.identity())?)
-	} else {
-		None
-	};
-	begin_stage_reads(session, request.binding)?;
-
-	let source_digest = if let Some(checkpoints) = checkpoints {
-		checkpoints.copy(source, &mut writable, scratch)?
-	} else {
-		copy_and_measure_at(
-			source.len(),
-			scratch,
-			|offset, bytes| source.read_exact_at(offset, bytes),
-			|offset, bytes| writable.write_all_at(offset, bytes),
-		)
-		.map_err(StageFailure::Copy)?
-	};
-	flush_written_stage(&mut writable, source.len(), session, request.binding)?;
-	let stage = writable.close_writes().map_err(StageFailure::Stage)?;
-	verify_stage_readback(
-		&stage,
-		source.len(),
-		source_digest,
-		scratch,
-		session,
-		request.binding,
-	)?;
-	let stage = complete_stage_metadata(
-		stage,
-		source,
-		source.observation().accessed_at(),
-		session,
-		request.binding,
-	)?;
+	let mut records = records;
+	let records = records
+		.as_mut()
+		.map(|records| records as &mut dyn StageRecordSink<_, _, _>);
+	let (stage, session, digest) =
+		linux_staging::stage_verified(source, directory, request, scratch, records)?.into_parts();
 	#[cfg(test)]
 	local_copy::crash_tests::pause_metadata_at(
 		local_copy::crash_tests::Checkpoint::CopyMetadataApplied,
 	);
-	Ok((stage, source_digest))
-}
-
-fn begin_stage_reads(session: &mut CopySession, binding: CopyBinding) -> Result<(), StageFailure> {
-	match session.apply(binding, CopyEvent::StagePrepared)? {
-		Some(CopyEffect::ReadSource(read)) if read.binding() == binding => Ok(()),
-		_ => Err(StageFailure::UnexpectedEffect),
-	}
-}
-
-fn flush_written_stage(
-	writable: &mut WriteStage<'_>,
-	length: u64,
-	session: &mut CopySession,
-	binding: CopyBinding,
-) -> Result<(), StageFailure> {
-	writable.set_len(length).map_err(StageFailure::Stage)?;
-	observe(session, binding, CopyEvent::WritersJoined)?;
-	writable.flush().map_err(StageFailure::Stage)?;
-	observe(session, binding, CopyEvent::DataFlushed)
-}
-
-fn verify_stage_readback(
-	stage: &ClosedStage<'_>,
-	source_length: u64,
-	source_digest: ContentDigest,
-	scratch: &mut [u8],
-	session: &mut CopySession,
-	binding: CopyBinding,
-) -> Result<(), StageFailure> {
-	if stage.length() != source_length {
-		return Err(StageFailure::LengthMismatch {
-			expected: source_length,
-			actual: stage.length(),
-		});
-	}
-	let stage_digest = measure_at(stage.length(), scratch, |offset, bytes| {
-		stage.read_exact_at(offset, bytes)
+	Ok(VerifiedStage {
+		stage,
+		session,
+		digest,
 	})
-	.map_err(StageFailure::Readback)?;
-	if stage_digest != source_digest {
-		return Err(StageFailure::DigestMismatch);
-	}
-	observe(session, binding, CopyEvent::ReadbackVerified)
-}
-
-fn complete_stage_metadata<'stage>(
-	stage: ClosedStage<'stage>,
-	source: &SourceFile,
-	accessed_at: SourceTimestamp,
-	session: &mut CopySession,
-	binding: CopyBinding,
-) -> Result<ClosedStage<'stage>, StageFailure> {
-	check_source(source)?;
-	let stage = stage
-		.apply_metadata_with_access_time(source.observation(), accessed_at)
-		.map_err(StageFailure::Stage)?;
-	stage.sync_stage_directory().map_err(StageFailure::Stage)?;
-	check_source(source)?;
-	observe(session, binding, CopyEvent::MetadataReady)?;
-	observe(session, binding, CopyEvent::StageSealed)?;
-	Ok(stage)
-}
-
-fn check_source(source: &SourceFile) -> Result<(), StageFailure> {
-	let attributes = source.extended_attributes().map_err(StageFailure::Source)?;
-	source.recheck_observation().map_err(StageFailure::Source)?;
-	source.check_logical_eof().map_err(StageFailure::Source)?;
-	if attributes != ExtendedAttributes::NoneVisible {
-		return Err(StageFailure::SourceAttributes(attributes));
-	}
-	let mode = source.observation().mode();
-	if mode & SPECIAL_MODE_BITS != 0 {
-		return Err(StageFailure::UnsupportedSourceMode { mode });
-	}
-	Ok(())
-}
-
-fn observe(
-	session: &mut CopySession,
-	binding: CopyBinding,
-	event: CopyEvent,
-) -> Result<(), StageFailure> {
-	if session.apply(binding, event)?.is_some() {
-		return Err(StageFailure::UnexpectedEffect);
-	}
-	Ok(())
 }

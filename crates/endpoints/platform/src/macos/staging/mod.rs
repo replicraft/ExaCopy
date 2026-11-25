@@ -1,5 +1,6 @@
 //! Private synchronous staging on a positively admitted, managed local APFS volume.
 
+mod capabilities;
 #[allow(
 	unsafe_code,
 	reason = "single checked close of the owned Darwin write descriptor"

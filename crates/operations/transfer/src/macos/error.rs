@@ -5,6 +5,8 @@ use exacopy_content::{ContentDigest, CopyMeasureError, MeasureError, StreamInput
 use exacopy_platform::macos::ManagedReadError;
 use exacopy_platform::macos::staging::{MAX_STAGE_IO_BYTES, StageError, StageIdentity};
 
+use crate::staging::StageCopyFailure;
+
 /// A failed private transfer and the identity of its retained stage.
 #[derive(Debug)]
 pub struct StageTransferError {
@@ -13,10 +15,13 @@ pub struct StageTransferError {
 }
 
 impl StageTransferError {
-	pub(super) fn new(identity: StageIdentity, failure: StageTransferFailure) -> Self {
+	pub(super) fn from_copy(
+		identity: StageIdentity,
+		failure: StageCopyFailure<ManagedReadError, StageError>,
+	) -> Self {
 		Self {
 			identity,
-			failure: Box::new(failure),
+			failure: Box::new(StageTransferFailure::from_copy(failure)),
 		}
 	}
 
@@ -88,6 +93,42 @@ pub enum StageTransferFailure {
 		/// Digest computed independently from the private stage.
 		stage_digest: ContentDigest,
 	},
+}
+
+impl StageTransferFailure {
+	pub(super) fn from_copy(failure: StageCopyFailure<ManagedReadError, StageError>) -> Self {
+		match failure {
+			StageCopyFailure::InitialStage(error) => Self::InitialStage(error),
+			StageCopyFailure::ExtentMismatch {
+				source_length,
+				stage_length,
+			} => Self::ExtentMismatch {
+				source_length,
+				stage_length,
+			},
+			StageCopyFailure::ScratchTooLarge { length } => Self::ScratchTooLarge { length },
+			StageCopyFailure::InvalidInput(error) => Self::InvalidInput(error),
+			StageCopyFailure::RevalidateSource(error) => Self::RevalidateSource(error),
+			StageCopyFailure::AdmitMetadata(error) => Self::AdmitMetadata(error),
+			StageCopyFailure::ApplyMetadata(error) => Self::ApplyMetadata(error),
+			StageCopyFailure::Copy(error) => Self::Copy(error),
+			StageCopyFailure::CloseStage(error) => Self::CloseStage(error),
+			StageCopyFailure::OpenReadBack(error) => Self::OpenReadBack(error),
+			// A native reader for the held stage must observe its declared extent.
+			StageCopyFailure::ReadBackExtentMismatch { .. } => {
+				Self::OpenReadBack(StageError::StageChanged)
+			}
+			StageCopyFailure::ReadBack(error) => Self::ReadBack(error),
+			StageCopyFailure::RevalidateReadBack(error) => Self::RevalidateReadBack(error),
+			StageCopyFailure::DigestMismatch {
+				source_digest,
+				stage_digest,
+			} => Self::DigestMismatch {
+				source_digest,
+				stage_digest,
+			},
+		}
+	}
 }
 
 impl fmt::Display for StageTransferFailure {

@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io;
 use std::os::unix::fs::FileExt as _;
 
-use exacopy_endpoint::{MAX_INTERRUPTED_RETRIES, read_exact_at};
+use exacopy_endpoint::{MAX_INTERRUPTED_RETRIES, ReadView, read_exact_at};
 
 use super::super::with_materialization_disabled;
 use super::file::bounded_end;
@@ -90,5 +90,21 @@ impl fmt::Debug for StageReader<'_> {
 		formatter
 			.debug_struct("StageReader")
 			.finish_non_exhaustive()
+	}
+}
+
+impl ReadView for StageReader<'_> {
+	type Error = StageError;
+
+	fn length(&self) -> u64 {
+		self.stage.length()
+	}
+
+	fn recheck_observation(&self) -> Result<(), Self::Error> {
+		self.revalidate()
+	}
+
+	fn read_exact_at(&self, offset: u64, buffer: &mut [u8]) -> Result<(), Self::Error> {
+		StageReader::read_exact_at(self, offset, buffer)
 	}
 }

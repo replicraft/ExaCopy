@@ -5,9 +5,9 @@ use exacopy_content::{CopyMeasureError, StreamInputError, measure_at};
 use exacopy_platform::macos::staging::{MAX_STAGE_IO_BYTES, StageError};
 use exacopy_platform::macos::{BasicMetadataError, ManagedReadError};
 
-use super::{
-	StageTransferFailure, copy_verified_stage, copy_with_basic_metadata, verify_read_back,
-};
+use crate::staging::verify_read_back;
+
+use super::{StageTransferFailure, copy_verified_stage, copy_with_basic_metadata};
 
 mod fixture;
 
@@ -113,6 +113,8 @@ fn verifies_empty_source_with_empty_scratch() {
 
 #[test]
 fn refuses_different_extents_before_writing() {
+	use StageTransferFailure::ExtentMismatch;
+
 	let fixture = Fixture::new();
 	write_file(&fixture.destination.join(SOURCE), PAYLOAD);
 	let root = fixture.stage_root();
@@ -126,7 +128,7 @@ fn refuses_different_extents_before_writing() {
 	assert_eq!(error.identity(), identity);
 	assert!(matches!(
 		error.failure(),
-		StageTransferFailure::ExtentMismatch { source_length, stage_length }
+		ExtentMismatch { source_length, stage_length }
 			if *source_length == source.length() && *stage_length == source.length() + 1
 	));
 	assert_eq!(fs::read(&fixture.stage).unwrap(), b"");
@@ -257,7 +259,14 @@ fn read_back_checks_digest_and_refuses_a_rebound_closed_stage() {
 	})
 	.unwrap();
 
-	let error = verify_read_back(&closed, wrong_digest, &mut [0; 2]).unwrap_err();
+	let error = verify_read_back::<ManagedReadError, _>(
+		&closed,
+		closed.length(),
+		wrong_digest,
+		&mut [0; 2],
+	)
+	.map_err(StageTransferFailure::from_copy)
+	.unwrap_err();
 
 	assert!(matches!(
 		error,
@@ -269,7 +278,14 @@ fn read_back_checks_digest_and_refuses_a_rebound_closed_stage() {
 	let original_stage = fixture.stage.with_file_name("held-stage");
 	fs::rename(&fixture.stage, &original_stage).unwrap();
 	write_file(&fixture.stage, b"old");
-	let error = verify_read_back(&closed, wrong_digest, &mut [0; 2]).unwrap_err();
+	let error = verify_read_back::<ManagedReadError, _>(
+		&closed,
+		closed.length(),
+		wrong_digest,
+		&mut [0; 2],
+	)
+	.map_err(StageTransferFailure::from_copy)
+	.unwrap_err();
 
 	assert!(matches!(
 		error,

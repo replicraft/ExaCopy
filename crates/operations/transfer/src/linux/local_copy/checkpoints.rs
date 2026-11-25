@@ -1,10 +1,11 @@
-use exacopy_content::{ContentDigest, CopyMeasureError, RangeMeasurement, copy_and_checkpoint_at};
+use exacopy_content::RangeMeasurement;
 use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{
-	DurableJournal, JournalContext, JournalEntryId, RangeCheckpoint, RangePage,
-	SourceMeasurementId, StreamDigest,
+	DurableJournal, RangeCheckpoint, RangePage, SourceMeasurementId, StreamDigest,
 };
-use exacopy_platform::linux::{CheckpointDirectory, FileIdentity, SourceFile, WriteStage};
+use exacopy_platform::linux::{CheckpointDirectory, FileIdentity, ReadError, StageError};
+
+use crate::linux_staging::StageRecords as StageRecordSink;
 
 use super::super::StageFailure;
 use super::super::job::native_identity;
@@ -14,6 +15,7 @@ pub(in crate::linux) struct StageRecords<'job, 'name> {
 	entry: &'job EntryEvidence<'name>,
 	pages: &'job CheckpointDirectory<'job>,
 	journal: &'job mut DurableJournal,
+	ordinal: u32,
 }
 
 impl<'job, 'name> StageRecords<'job, 'name> {
@@ -26,78 +28,27 @@ impl<'job, 'name> StageRecords<'job, 'name> {
 			entry,
 			pages,
 			journal,
+			ordinal: 1,
 		}
 	}
-
-	pub(in crate::linux) fn begin(
-		self,
-		stage: FileIdentity,
-	) -> Result<RangeRecorder<'job>, StageFailure> {
-		let measurement = self.entry.record(self.journal, native_identity(stage))?;
-		Ok(RangeRecorder {
-			context: self.entry.context,
-			entry: self.entry.entry,
-			pages: self.pages,
-			journal: self.journal,
-			measurement,
-			ordinal: 1,
-		})
-	}
 }
 
-pub(in crate::linux) struct RangeRecorder<'job> {
-	context: JournalContext,
-	entry: JournalEntryId,
-	measurement: SourceMeasurementId,
-	pages: &'job CheckpointDirectory<'job>,
-	journal: &'job mut DurableJournal,
-	ordinal: u32,
-}
-
-impl RangeRecorder<'_> {
-	pub(in crate::linux) fn copy(
-		mut self,
-		source: &SourceFile,
-		stage: &mut WriteStage<'_>,
-		scratch: &mut [u8],
-	) -> Result<ContentDigest, StageFailure> {
-		copy_and_checkpoint_at(
-			source.len(),
-			scratch,
-			|offset, bytes| source.read_exact_at(offset, bytes),
-			|offset, bytes, range| {
-				stage.write_all_at(offset, bytes).map_err(|source| {
-					StageFailure::Copy(CopyMeasureError::Write { offset, source })
-				})?;
-				if let Some(range) = range {
-					self.record(source, stage, range)?;
-				}
-				Ok(())
-			},
-		)
-		.map_err(|error| match error {
-			CopyMeasureError::InvalidInput(error) => StageFailure::Input(error),
-			CopyMeasureError::Read { offset, source } => {
-				StageFailure::Copy(CopyMeasureError::Read { offset, source })
-			}
-			CopyMeasureError::Write { source, .. } => source,
-		})
+impl StageRecordSink<FileIdentity, ReadError, StageError> for StageRecords<'_, '_> {
+	fn begin(&mut self, stage: FileIdentity) -> Result<SourceMeasurementId, StageFailure> {
+		self.entry.record(self.journal, native_identity(stage))
 	}
 
 	fn record(
 		&mut self,
-		source: &SourceFile,
-		stage: &mut WriteStage<'_>,
+		measurement: SourceMeasurementId,
 		range: RangeMeasurement,
 	) -> Result<(), StageFailure> {
-		source.recheck_observation().map_err(StageFailure::Source)?;
-		stage.flush().map_err(StageFailure::Stage)?;
 		let page = RangePage::new(
 			self.ordinal,
 			range.offset,
 			range.length,
 			StreamDigest::from_bytes(*range.digest.as_bytes()),
-			self.measurement,
+			measurement,
 		)
 		.map_err(StageFailure::CheckpointEvidence)?;
 		self.pages
@@ -106,10 +57,10 @@ impl RangeRecorder<'_> {
 		#[cfg(test)]
 		super::crash_tests::pause_range_at(super::crash_tests::Checkpoint::RangePageSynced);
 		let record = RangeCheckpoint {
-			context: self.context,
-			entry: self.entry,
+			context: self.entry.context,
+			entry: self.entry.entry,
 			page: page.reference(),
-			source: self.measurement,
+			source: measurement,
 		};
 		let _ = self
 			.journal
