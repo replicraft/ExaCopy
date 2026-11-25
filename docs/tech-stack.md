@@ -10,7 +10,7 @@ the platform contracts linked in the [architecture guide](architecture.md).
 | `blake3` | 1.8.7 | Stream and stage read-back digests, authenticated record linkage and domain-separated hashes. Any replacement needs algorithm negotiation, independent qualification and a format migration. |
 | `crc32c` | 0.6.9 | Fast framing corruption detection. Authentication uses the applicable digest/signature checks. |
 | `ed25519-dalek`, `zeroize` | 2.2.0, 1.9.2 | Owner signatures and secret memory cleanup. Use reviewed implementations of these established primitives. |
-| `minicbor` | 2.3.0 | Bounded binary records with explicit deterministic CBOR encoding. Generic serialization remains useful for tooling and interchange where its compatibility contract permits it. |
+| `minicbor` | 2.3.1 | Bounded binary records with explicit deterministic CBOR encoding. Generic serialization remains useful for tooling and interchange where its compatibility contract permits it. |
 | `serde`, `serde_json` | 1.0.229, 1.0.154 | Typed encodable CLI reports and JSON projections. Private authenticated records use their own bounded binary codecs. |
 | `uuid` | 1.29.3 | Typed identifiers with explicit validation and stable byte representation. Callers bind identifiers to the actual capability and attempt. |
 | `rustix`, `libc` | 1.1.6, 0.2.191 | Prefer typed OS wrappers where they cover required effects. Keep unsupported native primitives behind reviewed platform-specific bindings. |

@@ -91,16 +91,16 @@ verification = "Native platform tests exercise the selected adapter operations; 
 replacement = "Substitute an equivalent safe OS binding where available and requalify the affected native adapter."
 review_gaps = ["Review selected ABI bindings and their callers on each target", "Independent exact-version suitability evidence"]
 
-[assessment."minicbor@2.3.0"]
-archive_sha256 = "c12b4033ffaa92fbf9df03df38d19324f52bad130dd223f811734a8006dd2d69"
-release_observation = "Local crates.io index lists 2.3.0 on 2026-07-23 and 2.3.1 on 2026-10-18."
-security_history = "No package advisory in the recorded RustSec snapshot."
-unsafe_exposure = "Archive src/decode.rs and src/bytes.rs contain array-initialization and byte-cast unsafe code. The feature matrix disables dependency default and allocation features."
+[assessment."minicbor@2.3.1"]
+archive_sha256 = "e7244eafd1e09e7c4e33043881997aa6ab6dffff3ed2cee3395a278980481d6e"
+release_observation = "The crates.io index dates 2.3.1 to 2026-10-18. Packaged source matches upstream revision 0432e74b1c85edf45db3c64da9f8b0d0897cdfda."
+security_history = "Upstream 2.3.1 changes the generic Duration decoder to return an error on overflow. ExaCopy decodes timestamps with explicit typed fields."
+unsafe_exposure = "Archive src/decode.rs and src/bytes.rs contain array-initialization and byte-cast unsafe code. New boxed-byte casts require the alloc feature, which the selected graph leaves disabled."
 resource_limits = "ExaCopy uses explicit bounded encoders and decoders with per-format record size maxima."
 adversarial_inputs = "Callers validate explicit tags, lengths, the required version, typed fields, and complete record consumption. Fuzz inputs include malformed framing and records."
-verification = "Journal fixtures, codec tests and the journal fuzz target cover the project encoding and rejection behavior."
+verification = "Journal fixtures and transfer codec tests check existing canonical bytes and rejection behavior. A 250,000-input AddressSanitizer journal fuzz run exercised framed and raw journal records on macOS."
 replacement = "Preserve canonical CBOR bytes and existing rejection behavior or introduce a versioned dual-reader transition."
-review_gaps = ["Audit selected decoder and encoder paths for malformed inputs", "Independent exact-version suitability evidence"]
+review_gaps = ["Review the complete package for the required Cargo Vet criteria", "Independent exact-version suitability evidence"]
 
 [assessment."rustix@1.1.6"]
 archive_sha256 = "e5e76742e5294153d4dde1207dbec5bdd81eef6fabdc0d2118babadabfd858aa"
