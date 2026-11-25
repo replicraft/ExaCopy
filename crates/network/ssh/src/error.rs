@@ -16,8 +16,12 @@ pub enum Error {
 	Credential(CredentialRefusal),
 	/// The broker did not provide a usable password.
 	Password,
+	/// The key library could not construct the supplied Ed25519 key.
+	Key(russh::keys::ssh_key::Error),
 	/// The server rejected password authentication.
 	Authentication,
+	/// The server rejected the selected Ed25519 key.
+	KeyAuthentication,
 	/// The server did not confirm the SFTP subsystem request.
 	Subsystem,
 	/// The SSH peer tried to open a channel not granted by this profile.
@@ -57,7 +61,9 @@ impl std::fmt::Display for Error {
 			Self::KeyExchange => "SSH peer does not support strict key exchange",
 			Self::Rekey => "SSH credential and stream binding cannot be revalidated during rekey",
 			Self::Password => "SSH credential broker did not provide a usable password",
+			Self::Key(_) => "SSH credential broker did not provide a usable Ed25519 key",
 			Self::Authentication => "SSH password authentication was refused",
+			Self::KeyAuthentication => "SSH Ed25519 authentication was refused",
 			Self::Subsystem => "SSH server did not confirm the SFTP subsystem",
 			Self::UnsolicitedChannel => "SSH peer attempted to open an unrequested channel",
 			Self::Ssh(_) => "SSH transport failed",
@@ -80,6 +86,7 @@ impl std::error::Error for Error {
 			Self::HostKey(error) => Some(error),
 			Self::Credential(error) => Some(error),
 			Self::Version(error) => Some(error),
+			Self::Key(error) => Some(error),
 			Self::Ssh(error) => Some(error),
 			Self::Io(error) => Some(error),
 			_ => None,

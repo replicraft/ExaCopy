@@ -9,7 +9,7 @@ The future route owner must enforce its connection and generation policy.
 The initial suite admits strict Curve25519 key exchange, an Ed25519 host
 key, AES-256-GCM and no compression. A mandatory independently supplied
 SHA-256 fingerprint and an authority-bound strict trust snapshot are checked before asking
-the broker for one supplied password. Changed/revoked/unavailable trust,
+the broker for one explicitly selected supplied password or Ed25519 key. Changed/revoked/unavailable trust,
 certificates and unattended prompts are refused. The broker request binds
 host, port, account and verified key. Only a confirmed SFTP subsystem is
 opened. Setup tolerates at most eight channel-window adjustments before the
@@ -21,7 +21,7 @@ fences the connection and requires a new verified handshake.
 Password ownership uses zeroizing buffers and the upstream password method.
 This does not establish complete credential erasure: the exact upstream
 library retains an unwiped serialization scratch allocation. Certificate,
-agent, MFA, key-file and protected trust-store acquisition remain separate
+agent, MFA, private-key-file parsing and protected trust-store acquisition remain separate
 work; no ambient configuration or credential lookup is implemented here.
 
 The snapshot parser bounds total input to 1 MiB and 4,096 lines, supports
@@ -46,7 +46,7 @@ selected profile. Frames are capped at 256 KiB; only one request is outstanding.
 Listings allow at most 4,096 entries in 128 replies. Whole-file reads use
 caller-owned buffers up to 4 MiB and requests up to 32 KiB, with a 4,096
 request limit. Connect and each operation have 20-second timeouts. Cancellation,
-error or timeout fences the session rather than reusing an uncertain channel.
+started-operation error or timeout fences the session rather than reusing an uncertain channel.
 These conservative prototype limits do not implement the final scheduler.
 
 File observations compare server-reported size, mode and second-resolution
@@ -55,11 +55,15 @@ remote inode or universal symlink/root confinement. Required metadata fidelity,
 remote staging, writes, exclusive publication and recovery are unimplemented.
 SFTP extension advertisements confer no such authority.
 
-Twenty-four native macOS tests passed, including exchanges with an in-memory
+Twenty-eight native macOS SSH tests passed, including exchanges with an in-memory
 SSH/SFTP peer. They cover raw names, short reads, EOF refusal, host and
 credential scope, missing subsystem, frame admission and unsolicited channels.
 Linux x86-64 checking also compiled Ring's C/assembly using Zig. Windows
-checking reached Ring and stopped at missing MSVC SDK headers. OpenSSH,
+checking reached Ring and stopped at missing MSVC SDK headers. The opt-in unprivileged Apple OpenSSH 9.7p1 localhost fixture also passed
+verified Ed25519 authentication, listing, stat and exact read-back. It creates
+random temporary keys and a read-only internal SFTP session over an owned
+connected socket pair, without global SSH changes. The original window-update
+ordering failure is retained. This is one local server/configuration profile;
 Dropbear, NAS, native Windows/Linux execution and route qualification remain
 open. Exact source and retained failure logs are under
 `/private/tmp/exacopy-ssh-with-wg.bnV8hX` and
@@ -72,3 +76,12 @@ Existing ordinary CLI and storage feature closures remain unchanged. The
 combined backend inventory records unassessed transitive versions and Cargo
 Vet gaps; exact SPDX exceptions do not grant deployment audits. No product
 SSH support tier or production qualification is claimed.
+
+
+The supplied-key API owns an upstream Ed25519 private key constructed from a
+zeroizing seed. It never contacts an agent or falls back to a password after
+key refusal. Key exchange remains fenced on a second KEX. The reproducible
+native test is `tests/openssh.rs`; its system-server dependency is test-only.
+Native source and raw results are retained in
+`/private/tmp/exacopy-ssh-key-auth.xUpRlk`, with an integrated root run at
+`/private/tmp/exacopy-openssh-root-native.log`.

@@ -10,7 +10,7 @@ mod known_hosts;
 mod shape;
 mod wire;
 
-pub use connection::{Password, connect};
+pub use connection::{Ed25519Key, Password, connect, connect_with_ed25519};
 pub use data::{FileObservation, ReadOnlySftp};
 pub use error::Error;
 pub use known_hosts::{KnownHostTrust, KnownHostsError};

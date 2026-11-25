@@ -186,7 +186,9 @@ fn unattended_prompt_fails_without_falling_back_to_another_mechanism() {
 			InteractionPolicy::Forbidden,
 		),
 		(CredentialSource::AgentKey, InteractionPolicy::Allowed),
+		(CredentialSource::SuppliedKey, InteractionPolicy::Allowed),
 		(CredentialSource::AgentKey, InteractionPolicy::Forbidden),
+		(CredentialSource::SuppliedKey, InteractionPolicy::Forbidden),
 	] {
 		let selected = verified
 			.request_credential(&target, source, interaction)

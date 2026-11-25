@@ -106,6 +106,8 @@ pub fn verify_host(
 pub enum CredentialSource {
 	/// Use a preselected key through an agent. Forwarding is a separate operation.
 	AgentKey,
+	/// Ask the credential broker for the explicit private key selected by the caller.
+	SuppliedKey,
 	/// Ask the credential broker for the password selected by the caller.
 	SuppliedPassword,
 	/// Request a password through an approved secure prompt.

@@ -6,8 +6,11 @@ use exacopy_endpoint::ssh_sftp::{
 	CredentialRequest, CredentialSource, HostKeyFingerprint, HostKeyRefusal, InteractionPolicy,
 	KnownHostStatus, SshAuthority, verify_host,
 };
-use russh::client::{self, ChannelOpenHandle, Handler, Msg};
-use russh::keys::{Algorithm, HashAlg, PublicKey, PublicKeyOrCertificate};
+use russh::client::{self, AuthResult, ChannelOpenHandle, Handler, Msg};
+use russh::keys::ssh_key::private::{Ed25519Keypair, KeypairData};
+use russh::keys::{
+	Algorithm, HashAlg, PrivateKey, PrivateKeyWithHashAlg, PublicKey, PublicKeyOrCertificate,
+};
 use russh::{Channel, Names, Preferred, cipher, compression, kex, mac};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::oneshot;
@@ -42,6 +45,65 @@ impl Password {
 			return Err(Error::Password);
 		}
 		Ok(Self(secret))
+	}
+}
+
+/// A caller-supplied Ed25519 private key for one authentication attempt.
+///
+/// This wrapper exposes no key bytes or formatting. The seed and upstream
+/// private key storage are wiped on drop, subject to their respective library
+/// guarantees. It makes no guarantee about other copies or process memory.
+pub struct Ed25519Key(PrivateKey);
+
+impl Ed25519Key {
+	/// Constructs a key using the upstream SSH key library and takes ownership of the seed.
+	///
+	/// # Errors
+	/// Returns a credential error if the library cannot construct the key.
+	pub fn from_seed(seed: Zeroizing<[u8; 32]>) -> Result<Self, Error> {
+		let keypair = Ed25519Keypair::from_seed(&seed);
+		PrivateKey::new(KeypairData::Ed25519(keypair), "")
+			.map(Self)
+			.map_err(Error::Key)
+	}
+}
+
+trait Authentication {
+	const SOURCE: CredentialSource;
+	const REFUSAL: Error;
+
+	async fn authenticate(
+		self,
+		connection: &mut client::Handle<HostCheck>,
+		account: &str,
+	) -> Result<AuthResult, russh::Error>;
+}
+
+impl Authentication for Password {
+	const SOURCE: CredentialSource = CredentialSource::SuppliedPassword;
+	const REFUSAL: Error = Error::Authentication;
+
+	async fn authenticate(
+		mut self,
+		connection: &mut client::Handle<HostCheck>,
+		account: &str,
+	) -> Result<AuthResult, russh::Error> {
+		let secret = std::mem::take(&mut *self.0);
+		connection.authenticate_password(account, secret).await
+	}
+}
+
+impl Authentication for Ed25519Key {
+	const SOURCE: CredentialSource = CredentialSource::SuppliedKey;
+	const REFUSAL: Error = Error::KeyAuthentication;
+
+	async fn authenticate(
+		self,
+		connection: &mut client::Handle<HostCheck>,
+		account: &str,
+	) -> Result<AuthResult, russh::Error> {
+		let key = PrivateKeyWithHashAlg::new(Arc::new(self.0), None);
+		connection.authenticate_publickey(account, key).await
 	}
 }
 
@@ -202,6 +264,47 @@ where
 	S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 	B: FnOnce(CredentialRequest<'_>) -> Result<Password, Error>,
 {
+	connect_with_credential(stream, authority, pin, trust, credential_authority, broker).await
+}
+
+/// Connects to a pinned SFTP peer with one caller-supplied Ed25519 key.
+///
+/// The broker is called after the SSH peer and credential authority have
+/// been verified. It must be bounded and nonblocking. The key is used only
+/// for authentication on the verified connection. The adapter exposes no
+/// private key loading, agent forwarding, or shell operation.
+///
+/// # Errors
+/// A failure to establish SSH/SFTP or obtain an approved key is returned.
+/// A rejected key ends the attempt.
+pub async fn connect_with_ed25519<S, B>(
+	stream: S,
+	authority: &SshAuthority,
+	pin: HostKeyFingerprint,
+	trust: KnownHostTrust,
+	credential_authority: &SshAuthority,
+	broker: B,
+) -> Result<ReadOnlySftp, Error>
+where
+	S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+	B: FnOnce(CredentialRequest<'_>) -> Result<Ed25519Key, Error>,
+{
+	connect_with_credential(stream, authority, pin, trust, credential_authority, broker).await
+}
+
+async fn connect_with_credential<S, B, C>(
+	stream: S,
+	authority: &SshAuthority,
+	pin: HostKeyFingerprint,
+	trust: KnownHostTrust,
+	credential_authority: &SshAuthority,
+	broker: B,
+) -> Result<ReadOnlySftp, Error>
+where
+	S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+	B: FnOnce(CredentialRequest<'_>) -> Result<C, Error>,
+	C: Authentication,
+{
 	if !trust.binds(authority) {
 		return Err(Error::HostKey(HostKeyRefusal::TrustUnavailable));
 	}
@@ -222,18 +325,17 @@ where
 		let request = verified
 			.request_credential(
 				credential_authority,
-				CredentialSource::SuppliedPassword,
+				C::SOURCE,
 				InteractionPolicy::Forbidden,
 			)
 			.map_err(Error::Credential)?;
-		let mut password = broker(request)?;
-		let secret = std::mem::take(&mut *password.0);
-		if !connection
-			.authenticate_password(authority.account(), secret)
+		let credential = broker(request)?;
+		if !credential
+			.authenticate(&mut connection, authority.account())
 			.await?
 			.success()
 		{
-			return Err(Error::Authentication);
+			return Err(C::REFUSAL);
 		}
 
 		let mut channel = connection.channel_open_session().await?;
