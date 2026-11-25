@@ -18,7 +18,7 @@ The [CLI release SBOM](../../supply-chain/README.md#unsigned-cli-rebuild-evidenc
 identifies the inputs observed in actual builds of the selected binary.
 
 [suitability.toml](suitability.toml) explains each package's role. Its
-direct dependency assessments bind to exact archive checksums and record
+direct and transitive dependency assessments bind to exact archive checksums and record
 release observations, security history, unsafe boundaries, resource and
 input contracts, verification coverage and replacement implications. The
 2026-11-25 release observations use the local crates.io index. Security history

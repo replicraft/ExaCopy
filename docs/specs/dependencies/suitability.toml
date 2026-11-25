@@ -156,3 +156,53 @@ adversarial_inputs = "Erasure applies to owned buffers at the selected locations
 verification = "CLI and signed-record tests exercise the integration; inspect compiled erasure for a claimed compiler and architecture."
 replacement = "Use a reviewed erasure implementation with equivalent guarantees and revalidate key lifetime and copy boundaries."
 review_gaps = ["Review emitted erasure and key lifecycle on supported compiler and targets", "Independent exact-version suitability evidence"]
+
+# Exact sources are the locked registry archives. Upstream release references
+# corroborate the source identity. See supply-chain/audits.toml for scoped reviews.
+# https://github.com/bluss/arrayvec/tree/0cb664cf505844348538230479b0040b44f3faf1
+[assessment."arrayvec@0.7.8"]
+archive_sha256 = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
+release_observation = "Local crates.io index lists 0.7.8 on 2026-07-02 after 0.7.7 on 2026-06-20. The upstream release adjusts test selection on 32-bit targets."
+security_history = "No package advisory in the recorded RustSec snapshot. The upstream changelog records a zero-sized element double-free fix in 0.7.7, included in the locked release."
+unsafe_exposure = "ArrayVec uses MaybeUninit and raw pointer operations to maintain an initialized prefix, including during unwind. ArrayString additionally maintains UTF-8. BLAKE3 uses safe APIs with all arrayvec features disabled. The package has no build script, native linkage or platform I/O."
+resource_limits = "BLAKE3 uses inline capacity for the chaining-value stack, SIMD batches of chunk and parent references, and a 64-byte hexadecimal digest buffer. Capacity comes from fixed constants. The length uses u16 on 16-bit targets and u32 elsewhere."
+adversarial_inputs = "Arbitrary file bytes affect BLAKE3 state and digest values. Hash tree depth and batching determine capacity requirements, and the hex buffer receives encoded ASCII. Panicking insertion methods rely on the caller maintaining those bounds."
+verification = "The existing source review records macOS ARM64 tests without default features, all-feature Miri tests with the exhaustive UTF-8 test run natively, and Linux GNU and Windows MSVC x86_64 compile checks. ExaCopy content tests exercise digest and stream-boundary behavior."
+replacement = "BLAKE3 would need equivalent bounded storage, insertion and iteration semantics. Recheck digest vectors, tree boundaries and inline memory cost if its storage implementation changes."
+review_gaps = ["Native target qualification of BLAKE3's selected backends remains separate. Revisit optional codec portability and the 16-bit length representation if the supported graph expands."]
+
+# https://github.com/rust-lang/cfg-if/tree/8b0a2b0fc1fa3b3741b9e72895f390cf499fe36f
+[assessment."cfg-if@1.0.5"]
+archive_sha256 = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
+release_observation = "Local crates.io index lists 1.0.5 on 2026-09-16. The release directs users to Rust 1.95's cfg_select! and limits future updates to breakages and security fixes."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "The no_std library expands a declarative macro to the first matching branch. It forwards caller tokens and has no unsafe implementation, build script, proc macro or runtime I/O. Consumers own any unsafe code in the emitted branches."
+resource_limits = "Expansion is limited to caller-written branches and predicates. It adds no runtime state, allocation or per-input processing."
+adversarial_inputs = "Inputs are dependency source tokens and compiler cfg settings. BLAKE3, Curve25519 and SHA-2 supply the architecture, backend and feature predicates. File contents and decoded records never enter the macro."
+verification = "The existing exact-version source review records Rust 1.100.0 unit, cross-crate and documentation tests and an eight-case branch matrix."
+replacement = "Consumers can migrate to cfg_select! once their supported compiler permits it. Preserve first-match precedence, the optional default and grouping of all items in a branch. Compare backend selection for every supported target and feature set."
+review_gaps = ["The macro review covers branch selection. Correctness of the selected BLAKE3, Curve25519 and SHA-2 backends requires their own target evidence."]
+
+# https://github.com/cesarb/constant_time_eq/commit/86f38ed9ad4d0500c5472bb8cb2ddc4fe5ac7143
+[assessment."constant_time_eq@0.4.2"]
+archive_sha256 = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
+release_observation = "Local crates.io index lists 0.4.2 on 2025-03-15, a yanked 0.4.3 and a newer 0.6.1 on 2026-10-01. The locked release revised AArch64 DIT selection."
+security_history = "No package advisory in the recorded RustSec snapshot. Timing depends on the target, compiler and input lengths or addresses. The generic black_box fallback is a best-effort optimizer barrier."
+unsafe_exposure = "The library uses checked slice windows for unsafe SSE2, NEON and generic loads and uses inline assembly and a guard for AArch64 DIT. BLAKE3 disables std, so this build relies on compile-time CPU features. ExaCopy uses no unsafe DIT override. The package has no build script or native linkage."
+resource_limits = "The comparison borrows its inputs and uses no heap allocation. ExaCopy's BLAKE3 Hash equality compares 32 bytes. The general slice API does work proportional to the common length and rejects unequal lengths immediately."
+adversarial_inputs = "ExaCopy compares unkeyed digests of arbitrary file bytes, including during stage read-back and resume. Correct equality is needed for the digest binding. This use places no secrets behind the comparison."
+verification = "The existing source review records equality tests on native macOS ARM64 and translated macOS x86_64 and compile checks for additional targets. A no_std DIT unit expectation failed with DIT disabled at compile time while the equality tests passed. No side-channel timing qualification was performed."
+replacement = "Preserve full-byte digest equality and mismatch behavior. Any change to BLAKE3's general equality implementation must also preserve its documented timing contract on supported targets."
+review_gaps = ["Secret-input timing would require compiler and hardware evidence.", "Actual Miri execution and the instruction-count gate were unrun in the prior source review."]
+
+# https://github.com/SergioBenitez/version_check/commit/d77ef9f27cc336719b2d839d09ee6635dd22f758
+[assessment."version_check@0.9.5"]
+archive_sha256 = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+release_observation = "Local crates.io index lists 0.9.5 on 2024-07-25 after 0.9.4 on 2021-12-29. Release cadence is sparse."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "The library contains no unsafe code, native linkage or build script of its own. On the build host, generic-array's build script calls it to run the compiler designated by RUSTC or PATH with fixed version-query arguments and the inherited environment."
+resource_limits = "The single generic-array probe captures subprocess output. Command::output has no size limit or timeout here, so resource bounds depend on the trusted compiler and build runner."
+adversarial_inputs = "Build environment values and compiler output control the probe. It accepts parseable UTF-8 stdout even after a nonzero child exit. generic-array checks a fixed 1.41.0 threshold and omits relaxed_coherence when the probe returns no version. ExaCopy file and journal data do not reach the probe."
+verification = "The existing exact-version review records Rust 1.100.0 tests and doctests and isolated compiler probes, including version query failure and the generic-array cfg output. Historical sample fixtures are absent from the shipped archive."
+replacement = "Remove the probe when the consuming generic-array release supports the required conversion impl unconditionally, or preserve compiler selection and the fallback for missing version information until then."
+review_gaps = ["Isolated compiler-probe tests cover the reviewed build host. Cross-host process and compiler-output behavior remains scoped to the trusted build toolchain."]

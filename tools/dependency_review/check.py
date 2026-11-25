@@ -223,7 +223,7 @@ def main():
         direct, missing = review_gaps(graph, expected, reviews)
         count = len(graph["packages"])
         print(f"Locked production graph matches {count} registry versions across {len(graph['resolutions'])} targets.")
-        print(f"{len(direct)} direct suitability assessments identify outstanding evidence.")
+        print(f"{len(reviews['assessment'])} suitability assessments cover {len(direct)} direct dependencies and reviewed transitive inputs.")
         if missing:
             print(f"{len(missing)} versions lack a suitability entry in this inventory: {', '.join(missing)}")
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
