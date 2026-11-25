@@ -64,7 +64,8 @@ fn resumes_a_checkpointed_copy_and_repeats_with_the_same_receipt() {
 	let page = RangePage::decode(&page_bytes).expect("decode checkpoint page");
 	assert_eq!(page.reference(), checkpoint.page);
 	assert_eq!(page.offset(), 0);
-	assert_eq!(page.length(), MAX_CHECKPOINT_RANGE_BYTES);
+	// The time threshold can close the first range before its byte limit.
+	assert!((1..=MAX_CHECKPOINT_RANGE_BYTES).contains(&page.length()));
 
 	// Reconstruct the private inode and journal at the first persisted checkpoint.
 	// Keep the authenticated plan, owner envelope and checkpoint page from the copy.
