@@ -60,6 +60,13 @@ Inspection can also open the bounded final receipt and observe both selected nam
 
 The experimental APFS transfer library also exposes an explicit private-stage read-back inspection. It binds the held stage directory and regular inode to the accepted preparation, measures the complete recorded extent and checks EOF, then compares the independent BLAKE3-256 digest with the accepted verification record. If the journal includes required metadata, the inspection checks fidelity before and after the read. APFS reads can advance the private stage's access time, which can cause a fidelity refusal. The existing inspection uses event-only stage and target observations. Native positive recovery read-back remains unqualified on the tested host because its fixtures expose extended attributes under the strict profile.
 
+Journal replay accepts one recovery-start record (kind 19) and an optional
+immediately following decision (kind 20) after an eligible original publication
+boundary. Both records bind the exact accepted publication history and the fresh
+epoch. Replay retains the original attempt's historical status and exposes the
+recovery frames for inspection. Live reconciliation and mutation require their
+own adapter evidence. Earlier readers refuse these record kinds safely.
+
 Strict basic metadata admission checks the visible xattr inventory, effective ACL, resource fork, ownership and fixed owner-private mode. The adapter captures source times from the pinned descriptor. After data verification, it applies the required times to the held stage through its read-only descriptor, checks both held and named observations, and requests `F_FULLFSYNC`. The resulting stage has no data-read operation.
 
 The APFS publication adapter consumes a metadata-ready stage and matching one-use model authorization. The coordinator must supply exact verification and synchronized intent before obtaining that authorization. The adapter requests exclusive rename and both directory barriers. Success returns the checked target identity and the identities of both held directories that passed `fsync`. The adapter reports conflict, uncertain effect, and a confirmed rename with incomplete evidence separately. The strict native end-to-end fixture remains unqualified on the tested host because its newly created sources have a visible `com.apple.provenance` attribute. Separate native cases exercised exclusive rename and outcome classification.

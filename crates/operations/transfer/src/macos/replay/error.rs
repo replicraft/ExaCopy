@@ -22,7 +22,7 @@ pub enum DarwinReplayError {
 	},
 	/// A record does not belong at this point in the supported history.
 	UnexpectedRecord {
-		/// The required kind, or no kind after the last supported record.
+		/// The expected continuation, or no kind after the last supported record.
 		expected: Option<FrameKind>,
 		/// The kind of the complete unexpected frame.
 		found: FrameKind,

@@ -13,6 +13,7 @@ use super::plan::DarwinCopyPlan;
 use super::receipt::{DarwinCopyReceipt, DarwinReceiptFrames};
 
 mod error;
+mod recovery;
 mod validate;
 
 #[cfg(test)]
@@ -66,7 +67,7 @@ pub enum DarwinJournalTail {
 	},
 }
 
-/// Historical classification of the accepted journal prefix.
+/// Historical classification of the original publication attempt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DarwinReplayStatus {
 	/// Preparation stopped before intent, or the adapter reported no rename attempt.
@@ -81,7 +82,7 @@ pub enum DarwinReplayStatus {
 	Complete,
 }
 
-/// Accepted historical evidence for a single initial managed APFS job.
+/// Accepted historical evidence for one managed APFS job and its first recovery generation.
 #[derive(Debug)]
 pub struct DarwinJournalReplay {
 	frames: Vec<Frame>,
@@ -103,7 +104,10 @@ impl DarwinJournalReplay {
 		self.tail
 	}
 
-	/// Classifies the recorded history independently of live names and artifacts.
+	/// Classifies the original publication independently of live names and artifacts.
+	///
+	/// Recovery records remain available through [`Self::frame`]. They describe prior
+	/// reconciliation observations and leave the original attempt's status intact.
 	#[must_use]
 	pub const fn status(&self) -> DarwinReplayStatus {
 		self.status
@@ -138,6 +142,9 @@ impl DarwinJournalReplay {
 		else {
 			return Err(DarwinReplayError::MissingReceiptCommitment);
 		};
+		if committed.kind() != FrameKind::ReceiptCommitted {
+			return Err(DarwinReplayError::MissingReceiptCommitment);
+		}
 		let receipt = DarwinCopyReceipt::decode(bytes)?;
 		DarwinReceiptCommitted::from_frame(committed)?
 			.validate_evidence(durability, receipt.digest())?;
@@ -155,17 +162,19 @@ impl DarwinJournalReplay {
 	}
 }
 
-/// Checks the initial single-file journal against a canonical plan and independently trusted owner.
+/// Checks a single-file journal against a canonical plan and independently trusted owner.
 ///
 /// The caller supplies a reader scoped to the held private job and observations of the
 /// independently authorized directory. Each complete record must come from the same consecutive
 /// frame chain and match its prerequisites. Any torn frame contributes only the tail length.
+/// The supported recovery suffix consists of one recovery start after an eligible original
+/// publication attempt and an optional decision immediately following it.
 /// Replay issues no filesystem operations or authority. A recovery coordinator must independently
 /// validate live objects, containment and receipt bytes before interpreting current state.
 ///
 /// # Errors
 /// Rejects invalid authority, incompatible plans or records, I/O errors, damaged frames,
-/// sequence gaps, and any complete record outside the supported initial history.
+/// sequence gaps, and any complete record outside the supported history.
 pub fn replay_journal(
 	reader: impl Read,
 	plan: &DarwinCopyPlan<'_>,
@@ -175,7 +184,13 @@ pub fn replay_journal(
 	let owner = DarwinOwnerRecord::decode(owner_bytes, authority.profile, authority.key)?;
 	let expected_job = validate::expected_job(plan, &owner, authority)?;
 	let (frames, boundary, tail) = read_prefix(reader)?;
-	let status = validate::history(&frames, expected_job, plan, &owner)?;
+	let recovery_start = frames
+		.iter()
+		.position(|frame| frame.kind() == FrameKind::RecoveryStarted)
+		.unwrap_or(frames.len());
+	let (original, recovery) = frames.split_at(recovery_start);
+	let status = validate::history(original, expected_job, plan, &owner)?;
+	recovery::validate(&owner, original, recovery)?;
 	Ok(DarwinJournalReplay {
 		frames,
 		boundary,
@@ -187,9 +202,9 @@ pub fn replay_journal(
 fn read_prefix(
 	reader: impl Read,
 ) -> Result<(Vec<Frame>, DarwinJournalBoundary, DarwinJournalTail), DarwinReplayError> {
-	// At most nine accepted frames plus one look-ahead; FrameReader bounds each allocation.
+	// At most eight original frames and two recovery frames, or a nine-frame initial history.
 	let mut reader = FrameReader::new(reader, ChainHead::start());
-	let mut frames = Vec::with_capacity(INITIAL_ORDER.len());
+	let mut frames = Vec::with_capacity(INITIAL_ORDER.len() + 1);
 	let tail = loop {
 		let frame = match reader.next_frame() {
 			Ok(Some(frame)) => frame,
@@ -199,8 +214,22 @@ fn read_prefix(
 			}
 			Err(error) => return Err(DarwinReplayError::Frame(error)),
 		};
-		let expected = INITIAL_ORDER.get(frames.len()).copied();
-		if Some(frame.kind()) != expected {
+		let preceding = frames.last().map(Frame::kind);
+		let expected = match preceding {
+			Some(FrameKind::RecoveryStarted) => Some(FrameKind::RecoveryDecision),
+			Some(FrameKind::RecoveryDecision) => None,
+			_ => INITIAL_ORDER.get(frames.len()).copied(),
+		};
+		let starts_recovery = frame.kind() == FrameKind::RecoveryStarted
+			&& matches!(
+				preceding,
+				Some(
+					FrameKind::PublishIntent
+						| FrameKind::PublishObserved
+						| FrameKind::DurabilityRecorded
+				)
+			);
+		if Some(frame.kind()) != expected && !starts_recovery {
 			return Err(DarwinReplayError::UnexpectedRecord {
 				expected,
 				found: frame.kind(),

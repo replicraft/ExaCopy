@@ -14,6 +14,7 @@ use super::{
 
 mod fixture;
 mod receipt;
+mod recovery;
 
 use fixture::{Fixture, identity, name};
 
