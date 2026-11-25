@@ -11,6 +11,7 @@ mod positioned;
 mod read_view;
 pub mod ssh_sftp;
 mod staging;
+pub mod wireguard;
 
 #[cfg(kani)]
 #[path = "../verification/kani/mod.rs"]
