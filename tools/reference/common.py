@@ -12,6 +12,7 @@ import tomllib
 
 ROOT = Path(__file__).resolve().parents[2]
 MACOS = platform.system() == "Darwin"
+MACOS_ACL_FIXTURE = ROOT / "fixtures/macos/empty_acl.c"
 
 
 def require(condition, message):
@@ -77,7 +78,7 @@ def prepare(root):
         if not helper.exists():
             subprocess.run([
                 "cc", "-Wall", "-Wextra", "-Werror",
-                ROOT / "crates/clients/cli/tests/fixtures/macos_empty_acl.c", "-o", helper,
+                MACOS_ACL_FIXTURE, "-o", helper,
             ], check=True)
         subprocess.run([helper, root], check=True)
     return root

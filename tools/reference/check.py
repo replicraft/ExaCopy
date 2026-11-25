@@ -5,13 +5,21 @@ import json
 from pathlib import Path
 import re
 
-from common import ROOT, digest, require
+from common import MACOS_ACL_FIXTURE, ROOT, digest, require
 from run import summarize
 
 
 REQUIRED_TARGETS = {
     "adb", "beyond-compare-pro", "fastcopy", "freefilesync", "kopia", "openmtp",
     "openssh", "restic", "rsync", "teracopy", "winscp", "wireguard",
+}
+
+# The first measured revision used the helper before its shared fixture path was fixed.
+HISTORICAL_RUNNER = {
+    "d82ce08b78f770e500de9b2c7965f24d625b757a": (
+        "b568c1c52621826f6665dbacceca68638d8bcc74af4063c5434b090e82aeaa12",
+        "f3a13b225dde78a1b84fd95420f96d9b55833ea0ef14c01d25ec45ef59e02674",
+    ),
 }
 
 
@@ -25,8 +33,10 @@ def check_evidence(path):
     require(report["schema_version"] == 1 and report["outcome"] == "passed", f"ineligible evidence: {path}")
     config = report["configuration"]
     require(re.fullmatch(r"[0-9a-f]{40}", config["source_revision"]) is not None, f"missing revision: {path}")
-    for digest_key, file in (("runner_sha256", "run.py"), ("fixture_helper_sha256", "common.py")):
-        require(config[digest_key] == digest(ROOT / "tools/reference" / file), f"runner provenance drift: {path}")
+    recorded = (config["runner_sha256"], config["fixture_helper_sha256"])
+    current = tuple(digest(ROOT / "tools/reference" / name) for name in ("run.py", "common.py"))
+    historical = HISTORICAL_RUNNER.get(config["source_revision"])
+    require(recorded == current or recorded == historical, f"runner provenance drift: {path}")
     return report
 
 
@@ -96,6 +106,7 @@ def check_performance():
 
 
 if __name__ == "__main__":
+    require(MACOS_ACL_FIXTURE.is_file(), "shared macOS ACL fixture is missing")
     check_compatibility()
     check_performance()
     print("Reference inventory and performance evidence structure checked")
