@@ -23,6 +23,9 @@ use super::{
 mod error;
 mod records;
 
+#[cfg(test)]
+mod crash_tests;
+
 pub use error::LocalCopyError;
 use records::{EntryEvidence, SealEvidence};
 
@@ -133,6 +136,8 @@ pub fn copy_new_file<'name>(
 	)?;
 	let (job, mut journal) = PreparedJob::with_plan(roots.destination, plan, profile)
 		.map_err(LocalCopyError::Bootstrap)?;
+	#[cfg(test)]
+	crash_tests::pause_at(crash_tests::Checkpoint::PlanSynced);
 	let directory = job
 		.create_stage_directory()
 		.map_err(LocalCopyError::CreateStage)?;
@@ -151,6 +156,8 @@ pub fn copy_new_file<'name>(
 
 	let sealed = evidence.seal(&verified)?;
 	let metadata_frame = sealed.record(&mut journal)?;
+	#[cfg(test)]
+	crash_tests::pause_at(crash_tests::Checkpoint::StageSealed);
 	check_source(&file).map_err(LocalCopyError::SourcePolicy)?;
 	let publication = Publication {
 		context,
@@ -264,6 +271,8 @@ impl Publication<'_, '_> {
 			},
 		};
 		let synced = append(journal, FrameKind::PublishIntent, &intent.encode())?;
+		#[cfg(test)]
+		crash_tests::pause_at(crash_tests::Checkpoint::IntentSynced);
 		let authorization = match session
 			.apply(self.binding, CopyEvent::PublishIntentRecorded)
 			.map_err(super::StageFailure::Model)
@@ -296,6 +305,8 @@ impl Publication<'_, '_> {
 				.err();
 			return Err(LocalCopyError::Publication { source, recording });
 		}
+		#[cfg(test)]
+		crash_tests::pause_at(crash_tests::Checkpoint::RenamedAndSynced);
 
 		let observation = PublishObserved::new(
 			context,
@@ -356,7 +367,11 @@ fn persist_receipt(
 	job.directory()
 		.sync_directory()
 		.map_err(LocalCopyError::ReceiptNamespace)?;
+	#[cfg(test)]
+	crash_tests::pause_at(crash_tests::Checkpoint::ReceiptSynced);
 	let _ = append(journal, FrameKind::ReceiptCommitted, &committed.encode())?;
+	#[cfg(test)]
+	crash_tests::pause_at(crash_tests::Checkpoint::ReceiptCommitted);
 	Ok(())
 }
 
