@@ -1,20 +1,26 @@
 use std::error::Error;
 use std::fmt;
-use std::io::Write as _;
+use std::fs::File;
 
 use ed25519_dalek::SigningKey;
 use exacopy_endpoint::UnixComponent;
 use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{
-	DestinationRootBinding, DurableJournal, DurableJournalError, JobPrepared, JournalContext,
-	LinuxFileIdentity, OwnerError, OwnerManifest, OwnerProfileId, OwnerRecord, OwnerStateDirectory,
-	OwnerTimestamp, OwnerToken, RootCapabilityId, SyncedFrame,
+	DurableJournal, DurableJournalError, JobPrepared, JournalContext, LinuxFileIdentity,
+	OwnerError, OwnerProfileId, OwnerRecord, OwnerTimestamp, OwnerToken, RootCapabilityId,
+	SyncedFrame,
 };
 use exacopy_platform::linux::{
 	DestinationRoot, FileIdentity, JobDirectory, StageDirectory, StageError,
 };
 
 use super::LocalCopyPlan;
+use protocol::{BootstrapFailure, InitialJournal};
+
+mod protocol;
+
+#[cfg(test)]
+mod tests;
 
 /// Inputs supplied by the caller from its authorized destination and trusted local profile.
 #[derive(Debug, Clone, Copy)]
@@ -85,92 +91,13 @@ impl<'root> PreparedJob<'root> {
 		signer: &SigningKey,
 		plan: Option<&[u8]>,
 	) -> Result<(Self, DurableJournal), JobBootstrapError> {
-		if request.owner_token.as_bytes() == request.context.job.as_bytes()
-			|| request.owner_token.as_bytes() == request.profile.as_bytes()
-		{
-			return Err(JobBootstrapError::Owner(OwnerError::InvalidToken));
-		}
-		let destination_identity = native_identity(destination.identity());
-		let directory = destination
-			.create_job_directory(request.name)
-			.map_err(JobStep::CreateJob.error())?;
-		let directories = if plan.is_some() {
-			vec![
-				OwnerStateDirectory::Checkpoints,
-				OwnerStateDirectory::Journal,
-				OwnerStateDirectory::Receipts,
-				OwnerStateDirectory::Stage,
-			]
-		} else {
-			vec![OwnerStateDirectory::Journal, OwnerStateDirectory::Stage]
-		};
-		let owner = OwnerRecord::sign(
-			OwnerManifest {
-				token: request.owner_token,
-				job: request.context.job,
-				profile: request.profile,
-				created: request.created,
-				destination_device: destination_identity.device(),
-				state_root: native_identity(directory.identity()),
-				plan_digest: request.context.plan_digest,
-				directories,
-			},
-			signer,
-		)
-		.map_err(JobBootstrapError::Owner)?;
-		let mut record = directory
-			.create_owner_record()
-			.map_err(JobStep::CreateOwner.error())?;
-		record
-			.write_all(owner.as_bytes())
-			.map_err(JobBootstrapError::WriteOwner)?;
-		record.sync_all().map_err(JobBootstrapError::SyncOwner)?;
-		drop(record);
-		if let Some(bytes) = plan {
-			let mut artifact = directory
-				.create_plan_record()
-				.map_err(JobStep::CreatePlan.error())?;
-			artifact
-				.write_all(bytes)
-				.map_err(JobBootstrapError::WritePlan)?;
-			artifact.sync_all().map_err(JobBootstrapError::SyncPlan)?;
-		}
-
-		let journal_directory = directory
-			.create_journal_directory()
-			.map_err(JobStep::CreateJournal.error())?;
-		let segment = journal_directory
-			.create_first_segment()
-			.map_err(JobStep::CreateSegment.error())?;
-		let mut journal =
-			DurableJournal::from_new_file(segment).map_err(JobBootstrapError::Journal)?;
-		journal_directory
-			.sync_directory()
-			.map_err(JobStep::SyncJournal.error())?;
-		directory
-			.sync_directory()
-			.map_err(JobStep::SyncJob.error())?;
-		destination
-			.sync_directory()
-			.map_err(JobStep::SyncDestination.error())?;
-
-		let initial = JobPrepared {
-			context: request.context,
-			owner_digest: owner.digest(),
-			destination_root: DestinationRootBinding {
-				id: request.destination_id,
-				identity: destination_identity,
-			},
-		};
-		let initial_frame = journal
-			.append(FrameKind::JobPrepared, &initial.encode())
-			.map_err(JobBootstrapError::Journal)?;
+		let prepared = protocol::prepare::<_, DurableJournal>(destination, request, signer, plan)?;
 		let job = Self {
-			directory,
-			owner,
-			initial_frame,
+			directory: prepared.directory,
+			owner: prepared.owner,
+			initial_frame: prepared.initial_frame,
 		};
-		Ok((job, journal))
+		Ok((job, prepared.journal))
 	}
 
 	pub(super) const fn directory(&self) -> &JobDirectory<'root> {
@@ -223,12 +150,6 @@ pub enum JobStep {
 	SyncJob,
 	/// Synchronization of the destination directory holding the job entry.
 	SyncDestination,
-}
-
-impl JobStep {
-	fn error(self) -> impl FnOnce(StageError) -> JobBootstrapError {
-		move |source| JobBootstrapError::Platform { step: self, source }
-	}
 }
 
 /// A failed job bootstrap leaves any created private entries for inspection.
@@ -294,6 +215,37 @@ impl Error for JobBootstrapError {
 			| Self::WritePlan(error)
 			| Self::SyncPlan(error) => Some(error),
 			Self::Journal(error) => Some(error),
+		}
+	}
+}
+
+impl InitialJournal for DurableJournal {
+	type Segment = File;
+	type Error = DurableJournalError;
+	type Frame = SyncedFrame;
+
+	fn from_new_segment(segment: File) -> Result<Self, Self::Error> {
+		Self::from_new_file(segment)
+	}
+
+	fn append_job_prepared(
+		&mut self,
+		preparation: JobPrepared,
+	) -> Result<Self::Frame, Self::Error> {
+		self.append(FrameKind::JobPrepared, &preparation.encode())
+	}
+}
+
+impl From<BootstrapFailure<StageError, DurableJournalError>> for JobBootstrapError {
+	fn from(error: BootstrapFailure<StageError, DurableJournalError>) -> Self {
+		match error {
+			BootstrapFailure::Namespace(step, source) => Self::Platform { step, source },
+			BootstrapFailure::Owner(source) => Self::Owner(source),
+			BootstrapFailure::WriteOwner(source) => Self::WriteOwner(source),
+			BootstrapFailure::SyncOwner(source) => Self::SyncOwner(source),
+			BootstrapFailure::WritePlan(source) => Self::WritePlan(source),
+			BootstrapFailure::SyncPlan(source) => Self::SyncPlan(source),
+			BootstrapFailure::Journal(source) => Self::Journal(source),
 		}
 	}
 }

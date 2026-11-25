@@ -12,6 +12,7 @@ use super::stage::{
 	create_private_directory, create_private_file, sync_directory,
 };
 
+mod capabilities;
 mod checkpoint;
 
 pub use checkpoint::CheckpointDirectory;

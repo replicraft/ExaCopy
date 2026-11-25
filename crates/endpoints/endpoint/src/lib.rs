@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 mod component;
+pub mod linux_job;
 pub mod linux_publication;
 pub mod linux_staging;
 mod positioned;
