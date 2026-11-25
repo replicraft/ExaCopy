@@ -20,7 +20,7 @@ pub use error::JournalReplayError;
 #[cfg(test)]
 mod tests;
 
-/// Sequence assigned to the first and only publication effect in a local v1 copy.
+/// Sequence assigned to the first publication effect in a local v1 copy.
 const PUBLICATION_EFFECT_SEQUENCE: u64 = 1;
 
 /// Maximum byte length of the local profile's single journal segment.
@@ -59,34 +59,40 @@ pub struct JournalReplay {
 	pub tail: JournalTail,
 	/// Source observation from entry preparation.
 	pub source: Option<LiveSourceView>,
+	/// Source link count observed at preparation.
+	pub source_link_count: Option<u64>,
 	/// Stage identity from entry preparation.
 	pub stage: Option<LinuxFileIdentity>,
 	/// Stage seal observation, including the recorded logical stream length.
 	pub sealed: Option<StageSealed>,
 	/// Stream measurements from the recorded verification.
 	pub verification: Option<VerificationRecorded>,
-	/// Exact original verification frame reference.
+	/// Exact verification frame of the active publication effect.
 	pub verification_head: Option<ChainHead>,
 	/// Metadata and file barrier from the recorded run.
 	pub metadata: Option<MetadataRecorded>,
-	/// Exact original metadata frame reference.
+	/// Exact metadata frame of the active publication effect.
 	pub metadata_head: Option<ChainHead>,
-	/// Context of the one recorded candidate publication effect.
+	/// Context of the most recent complete publication intent.
 	pub intent: Option<PublishIntentContext>,
-	/// Exact original publication intent frame reference.
+	/// Exact reference to the active publication intent.
 	pub intent_head: Option<ChainHead>,
-	/// Latest recorded observation of the original publication.
+	/// Latest recorded observation of the active publication.
 	pub observation: Option<PublishObserved>,
 	/// Exact reference to the latest recorded observation.
 	pub observation_head: Option<ChainHead>,
 	/// Recorded namespace barriers, including the claimed stage directory identity.
 	pub durability: Option<DurabilityRecorded>,
-	/// Exact original publication barrier frame reference.
+	/// Exact barrier frame of the active publication.
 	pub durability_head: Option<ChainHead>,
 	/// Most recent recovery generation, or the plan generation before the first recovery start.
 	pub latest_epoch: JournalEpoch,
+	/// Highest effect sequence reserved by an original intent or recovery decision.
+	pub last_effect_sequence: u64,
 	/// The private stage directory claimed by the recovery decisions in this journal.
 	pub recovery_stage_directory: Option<LinuxFileIdentity>,
+	/// A recovery decision confirmed that the active intent already published the stage.
+	pub published_recovery: bool,
 	/// Recorded exact receipt reference. Validate the artifact separately.
 	pub receipt: Option<ReceiptCommitted>,
 }
@@ -96,8 +102,8 @@ pub struct JournalReplay {
 /// The caller supplies an owner authenticated using the applicable profile's trusted key
 /// and a plan validated against that owner and the authorized recovery location. Replay
 /// rechecks their recorded bindings and accepts only a consecutive, kind-correct prefix up to
-/// [`MAX_LOCAL_JOURNAL_BYTES`]. A recovery generation can record observations of the single
-/// original publication and complete its journal and receipt evidence.
+/// [`MAX_LOCAL_JOURNAL_BYTES`]. Recovery can reconcile the active publication or record a
+/// freshly checked retained stage with a new no-clobber effect.
 /// A plausible torn frame contributes no claims to the summary. The reader performs no
 /// filesystem effects and issues no authority for reconciliation actions.
 ///
@@ -133,6 +139,7 @@ pub fn replay_journal(
 			},
 			tail: JournalTail::Clean,
 			source: None,
+			source_link_count: None,
 			stage: None,
 			sealed: None,
 			verification: None,
@@ -146,7 +153,9 @@ pub fn replay_journal(
 			durability: None,
 			durability_head: None,
 			latest_epoch: context.epoch,
+			last_effect_sequence: 0,
 			recovery_stage_directory: None,
+			published_recovery: false,
 			receipt: None,
 		},
 	};
@@ -247,6 +256,7 @@ impl<R: Read> Scan<R> {
 				&& stage != source.root_identity,
 		)?;
 		self.summary.source = Some(prepared.source);
+		self.summary.source_link_count = Some(prepared.source_metadata.link_count());
 		self.summary.stage = Some(stage);
 
 		let Some(frame) = self.next(Some(FrameKind::StageSealed))? else {
@@ -311,12 +321,13 @@ impl<R: Read> Scan<R> {
 		)?;
 		self.summary.intent = Some(intent.context);
 		self.summary.intent_head = Some(intent_frame.head());
+		self.summary.last_effect_sequence = intent.context.effect_sequence;
 
 		self.replay_suffix(
-			suffix::OriginalFrames {
-				verification: &verification_frame,
-				metadata: &metadata_frame,
-				intent: &intent_frame,
+			suffix::PublicationFrames {
+				verification: verification_frame,
+				metadata: metadata_frame,
+				intent: intent_frame,
 			},
 			plan,
 			owner,

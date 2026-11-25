@@ -25,7 +25,8 @@ pub use plan::{
 pub use receipt::{CopyReceipt, MAX_COPY_RECEIPT_BYTES, ReceiptError, ReceiptEvidence};
 pub use recovery::{
 	RecoveryDisposition, RecoveryFinishError, RecoveryInspectError, RecoveryInspection,
-	RecoveryIssue, RecoveryProfile, RecoveryStep, finish_recovery, inspect_recovery,
+	RecoveryIssue, RecoveryProfile, RecoveryRetryError, RecoverySource, RecoveryStep,
+	finish_recovery, inspect_recovery, retry_recovery,
 };
 pub use replay::{
 	JournalBoundary, JournalReplay, JournalReplayError, JournalTail, MAX_LOCAL_JOURNAL_BYTES,

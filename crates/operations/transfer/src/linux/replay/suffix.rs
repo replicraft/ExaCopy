@@ -9,22 +9,26 @@ use exacopy_journal::{
 
 use super::{JournalReplayError, JournalTail, LocalCopyPlan, Scan, require_binding};
 
-pub(super) struct OriginalFrames<'a> {
-	pub(super) verification: &'a Frame,
-	pub(super) metadata: &'a Frame,
-	pub(super) intent: &'a Frame,
+mod retry;
+use retry::PendingRetry;
+
+pub(super) struct PublicationFrames {
+	pub(super) verification: Frame,
+	pub(super) metadata: Frame,
+	pub(super) intent: Frame,
 }
 
 enum RecoveryGeneration {
 	None,
 	Started(Frame),
 	Decided,
+	Retry(Box<PendingRetry>),
 }
 
 impl<R: Read> Scan<R> {
 	pub(super) fn replay_suffix(
 		&mut self,
-		original: OriginalFrames<'_>,
+		mut active: PublicationFrames,
 		plan: &LocalCopyPlan<'_>,
 		owner: &OwnerRecord,
 	) -> Result<(), JournalReplayError> {
@@ -40,7 +44,7 @@ impl<R: Read> Scan<R> {
 			match frame.kind() {
 				FrameKind::RecoveryStarted => {
 					let started = RecoveryStarted::from_frame(&frame)?;
-					started.validate_intent(original.intent, owner_digest)?;
+					started.validate_intent(&active.intent, owner_digest)?;
 					require_binding(
 						frame.kind(),
 						receipts_owned
@@ -53,7 +57,27 @@ impl<R: Read> Scan<R> {
 					self.summary.latest_epoch = started.context().epoch;
 					generation = RecoveryGeneration::Started(frame);
 				}
+				FrameKind::VerificationRecorded => {
+					let RecoveryGeneration::Started(started) = generation else {
+						return Err(JournalReplayError::RecordBinding { kind: frame.kind() });
+					};
+					generation = RecoveryGeneration::Retry(Box::new(PendingRetry::new(
+						started,
+						frame,
+						&self.summary,
+					)?));
+				}
+				FrameKind::MetadataRecorded => {
+					let RecoveryGeneration::Retry(pending) = &mut generation else {
+						return Err(JournalReplayError::RecordBinding { kind: frame.kind() });
+					};
+					pending.metadata(frame, &self.summary)?;
+				}
 				FrameKind::RecoveryDecision => {
+					if let RecoveryGeneration::Retry(pending) = &mut generation {
+						pending.decide(&frame, &active.intent, &mut self.summary, plan, owner)?;
+						continue;
+					}
 					let RecoveryGeneration::Started(started) = &generation else {
 						return Err(JournalReplayError::RecordBinding { kind: frame.kind() });
 					};
@@ -68,9 +92,9 @@ impl<R: Read> Scan<R> {
 					decision.validate_evidence(
 						RecoveryDecisionFrames {
 							started,
-							intent: original.intent,
-							verification: original.verification,
-							metadata: original.metadata,
+							intent: &active.intent,
+							verification: &active.verification,
+							metadata: &active.metadata,
 						},
 						owner_digest,
 						RecoveryDirectories {
@@ -81,15 +105,24 @@ impl<R: Read> Scan<R> {
 					check_stage_directory(frame.kind(), stage_directory, plan, owner)?;
 
 					self.summary.recovery_stage_directory = Some(stage_directory);
+					self.summary.published_recovery = true;
 					generation = RecoveryGeneration::Decided;
+				}
+				FrameKind::PublishIntent => {
+					let RecoveryGeneration::Retry(pending) = generation else {
+						return Err(JournalReplayError::RecordBinding { kind: frame.kind() });
+					};
+					active = pending.accept_intent(frame, &active.intent, &mut self.summary)?;
+					observation_frame = None;
+					generation = RecoveryGeneration::None;
 				}
 				FrameKind::PublishObserved => {
 					let observed = PublishObserved::from_frame(&frame)?;
-					observed.validate_intent(original.intent)?;
+					observed.validate_intent(&active.intent)?;
 					let previous = self.summary.observation.map(|record| record.outcome());
 					let compatible = match generation {
 						RecoveryGeneration::None => previous.is_none(),
-						RecoveryGeneration::Started(_) => false,
+						RecoveryGeneration::Started(_) | RecoveryGeneration::Retry(_) => false,
 						RecoveryGeneration::Decided => {
 							matches!(previous, None | Some(PublicationOutcome::Uncertain { .. }))
 								&& matches!(
@@ -109,11 +142,13 @@ impl<R: Read> Scan<R> {
 					};
 					require_binding(
 						frame.kind(),
-						!matches!(generation, RecoveryGeneration::Started(_))
-							&& self.summary.durability.is_none(),
+						matches!(
+							generation,
+							RecoveryGeneration::None | RecoveryGeneration::Decided
+						) && self.summary.durability.is_none(),
 					)?;
 					let durability = DurabilityRecorded::from_frame(&frame)?;
-					durability.validate_evidence(original.metadata, original.intent, observed)?;
+					durability.validate_evidence(&active.metadata, &active.intent, observed)?;
 					let stage_directory = durability.barriers().stage_directory;
 					check_stage_directory(frame.kind(), stage_directory, plan, owner)?;
 					require_binding(
@@ -134,8 +169,10 @@ impl<R: Read> Scan<R> {
 					let receipt = ReceiptCommitted::from_frame(&frame)?;
 					require_binding(
 						frame.kind(),
-						!matches!(generation, RecoveryGeneration::Started(_))
-							&& receipt.context() == durability.context()
+						matches!(
+							generation,
+							RecoveryGeneration::None | RecoveryGeneration::Decided
+						) && receipt.context() == durability.context()
 							&& receipt.durability() == head
 							&& owner
 								.manifest()
@@ -152,6 +189,7 @@ impl<R: Read> Scan<R> {
 				found => {
 					let expected = match generation {
 						RecoveryGeneration::Started(_) => FrameKind::RecoveryDecision,
+						RecoveryGeneration::Retry(ref pending) => pending.expected(),
 						_ if self.summary.durability.is_some() => FrameKind::ReceiptCommitted,
 						_ if self.summary.observation.is_some() => FrameKind::DurabilityRecorded,
 						_ => FrameKind::PublishObserved,

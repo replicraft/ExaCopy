@@ -356,3 +356,5 @@ fn assert_binding(fixture: &Fixture, bytes: &[u8], expected: FrameKind) {
 		Err(JournalReplayError::RecordBinding { kind }) if kind == expected
 	));
 }
+
+mod retry;

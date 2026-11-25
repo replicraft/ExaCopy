@@ -1,5 +1,6 @@
 use std::io;
 
+use exacopy_journal::JournalContext;
 use exacopy_platform::linux::{RecoveryFile, RecoveryJob, StageError};
 
 use super::super::{
@@ -42,11 +43,14 @@ pub(super) fn check_receipt(
 	let Some(verification) = journal.verification else {
 		return Err(RecoveryInspectError::ReceiptBinding);
 	};
-	if journal.durability.is_none() {
+	let Some(intent) = journal.intent.filter(|_| journal.durability.is_some()) else {
 		return Err(RecoveryInspectError::ReceiptBinding);
-	}
+	};
 	let expected = ReceiptEvidence {
-		context: plan.context(),
+		context: JournalContext {
+			epoch: intent.epoch,
+			..plan.context()
+		},
 		entry: plan.attempt().entry,
 		source: plan.source().file_identity,
 		destination: plan.destination().root,

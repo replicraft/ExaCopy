@@ -12,8 +12,8 @@ use exacopy_platform::linux::{DestinationRoot, RecoveryInventory, RecoveryWriteL
 
 use super::super::{CopyReceipt, JournalTail, LocalCopyPlan, ReceiptEvidence};
 use super::{
-	RecoveryDisposition, RecoveryHistory, RecoveryInspection, RecoveryProfile, RecoveryStep,
-	native_identity,
+	RecoveryDisposition, RecoveryHistory, RecoveryInspectError, RecoveryInspection,
+	RecoveryProfile, RecoveryStep, native_identity,
 };
 
 mod error;
@@ -41,12 +41,28 @@ pub fn finish_recovery(
 	scratch: &mut [u8],
 ) -> Result<RecoveryInspection, RecoveryFinishError> {
 	validate_stream_input(0, scratch.len()).map_err(super::RecoveryInspectError::Input)?;
+	let lease = acquire_lease(destination, name)?;
+	finish_leased(&lease, name, profile, scratch)
+}
+
+pub(super) fn acquire_lease<'root>(
+	destination: &'root DestinationRoot,
+	name: UnixComponent<'_>,
+) -> Result<RecoveryWriteLease<'root>, RecoveryInspectError> {
 	let previous = destination
 		.open_recovery_job(name)
 		.map_err(RecoveryStep::Job.platform())?;
-	let lease = destination
+	destination
 		.try_recovery_write_lease(name, previous.identity())
-		.map_err(RecoveryStep::Lease.platform())?;
+		.map_err(RecoveryStep::Lease.platform())
+}
+
+pub(super) fn finish_leased(
+	lease: &RecoveryWriteLease<'_>,
+	name: UnixComponent<'_>,
+	profile: RecoveryProfile<'_>,
+	scratch: &mut [u8],
+) -> Result<RecoveryInspection, RecoveryFinishError> {
 	let job = lease.job();
 	let history = RecoveryHistory::load(job, name, profile)?;
 	let plan = history.plan()?;
@@ -68,7 +84,7 @@ pub fn finish_recovery(
 		plan,
 		names: &names,
 	}
-	.complete(&lease)?;
+	.complete(lease)?;
 	let history =
 		RecoveryHistory::load(job, name, profile).map_err(RecoveryFinishError::Completion)?;
 	history
@@ -189,7 +205,10 @@ impl CompleteCopy<'_, '_> {
 		};
 		let receipt = CopyReceipt::from_evidence(
 			ReceiptEvidence {
-				context: self.plan.context(),
+				context: JournalContext {
+					epoch: intent.epoch,
+					..self.plan.context()
+				},
 				entry,
 				source: self.plan.source().file_identity,
 				destination: self.plan.destination().root,
@@ -248,11 +267,11 @@ impl CompleteCopy<'_, '_> {
 	}
 }
 
-fn required<T>(value: Option<T>) -> Result<T, RecoveryFinishError> {
+pub(super) fn required<T>(value: Option<T>) -> Result<T, RecoveryFinishError> {
 	value.ok_or(RecoveryFinishError::IncompleteEvidence)
 }
 
-fn append(
+pub(super) fn append(
 	journal: &mut DurableJournal,
 	kind: FrameKind,
 	payload: &[u8],
@@ -262,7 +281,7 @@ fn append(
 		.map_err(|source| RecoveryFinishError::Journal { kind, source })
 }
 
-fn completion(
+pub(super) fn completion(
 	step: RecoveryStep,
 ) -> impl FnOnce(exacopy_platform::linux::StageError) -> RecoveryFinishError {
 	move |source| RecoveryFinishError::Completion(step.platform()(source))

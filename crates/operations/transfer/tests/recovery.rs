@@ -453,3 +453,6 @@ fn rejects_a_job_held_by_an_active_writer_and_reopens_after_release() {
 
 #[path = "recovery/finish.rs"]
 mod finish;
+
+#[path = "recovery/retry.rs"]
+mod retry;

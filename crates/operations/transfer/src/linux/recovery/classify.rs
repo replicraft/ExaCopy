@@ -50,6 +50,13 @@ pub(super) fn classify(
 	}
 
 	match (stage, target) {
+		(Some(_), None)
+			if journal.recovery_stage_directory.is_some_and(|identity| {
+				Some(identity) != names.stage_directory_identity().map(native_identity)
+			}) =>
+		{
+			Ok(unresolved(RecoveryIssue::StageDirectoryBinding))
+		}
 		(Some(_), None) => Ok(private_stage(journal)),
 		(None, Some(_)) => Ok(published_stage(names, journal, receipt_present)),
 		(Some(_), Some(_)) => Ok(unresolved(RecoveryIssue::ContradictoryNames)),
@@ -58,6 +65,9 @@ pub(super) fn classify(
 }
 
 fn private_stage(journal: &JournalReplay) -> RecoveryDisposition {
+	if journal.published_recovery && journal.tail == JournalTail::Clean {
+		return RecoveryDisposition::RequiresReconciliation(RecoveryIssue::ContradictoryOutcome);
+	}
 	match (
 		journal.tail,
 		journal.observation.map(|event| event.outcome()),
@@ -65,7 +75,9 @@ fn private_stage(journal: &JournalReplay) -> RecoveryDisposition {
 		(JournalTail::Torn { .. }, _) => {
 			RecoveryDisposition::RequiresReconciliation(RecoveryIssue::TornJournal)
 		}
-		(JournalTail::Clean, None) => RecoveryDisposition::PossibleRetry,
+		(JournalTail::Clean, None | Some(PublicationOutcome::Uncertain { .. })) => {
+			RecoveryDisposition::PossibleRetry
+		}
 		(JournalTail::Clean, Some(PublicationOutcome::Published { .. })) => {
 			RecoveryDisposition::RequiresReconciliation(RecoveryIssue::ContradictoryOutcome)
 		}
@@ -117,7 +129,7 @@ fn published_stage(
 	}
 }
 
-fn verify(
+pub(super) fn verify(
 	file: &RecoveryFile,
 	expected: StreamEvidence,
 	metadata: Option<MetadataRecorded>,

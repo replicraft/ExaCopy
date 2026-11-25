@@ -16,11 +16,13 @@ mod artifacts;
 mod classify;
 mod error;
 mod finish;
+mod retry;
 
 use artifacts::{open_receipt, read_artifact, recheck_receipt, recheck_record};
 use classify::classify;
 pub use error::{RecoveryInspectError, RecoveryStep};
 pub use finish::{RecoveryFinishError, finish_recovery};
+pub use retry::{RecoveryRetryError, RecoverySource, retry_recovery};
 
 /// Ownership trust supplied independently of the selected job directory.
 #[derive(Debug, Clone, Copy)]
