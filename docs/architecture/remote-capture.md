@@ -28,3 +28,18 @@ read-back corruption and terminal source refusal. Native metadata, durable
 journal replay, efficient range reuse and exclusive publication require their
 own adapters and admission. This helper does not enable a CLI command or
 issue a publication permit.
+
+The separate `remote_resume` coordinator admits a fresh pass only from a
+matching authenticated scope and a clean pre-intent history with an absent
+target. It requires newer source and run epochs and a distinct physical stage.
+The application first durably allocates the new private filename, creates and
+synchronizes it, then supplies that allocation head as the exact predecessor
+for the observed stage-binding record. Capture cannot read or write before the
+record's synchronization succeeds. An uncertain append requires reconciliation.
+The journal adapter must verify the actual predecessor digest, kind and bytes;
+a returned sequence number alone does not establish durable evidence.
+
+This first restart path rereads the source from byte zero and preserves all
+earlier stages. It does not implement efficient range reuse. Native replay,
+required metadata and publication remain separate. Nine deterministic restart
+tests and independent source review cover its private capability protocol.

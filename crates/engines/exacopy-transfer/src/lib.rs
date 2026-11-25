@@ -29,3 +29,9 @@ pub mod staging;
 	all(target_os = "macos", feature = "experimental-apfs-copy")
 ))]
 pub mod remote_capture;
+
+#[cfg(any(
+	target_os = "linux",
+	all(target_os = "macos", feature = "experimental-apfs-copy")
+))]
+pub mod remote_resume;
