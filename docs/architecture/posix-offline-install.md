@@ -1,4 +1,4 @@
-# Offline CLI installation on macOS and Linux
+# CLI installation on macOS and Linux
 
 The root shell scripts install a user-scoped CLI release from GitHub's latest stable release or an exact offline bundle. Use the scripts from a trusted source tree, with their companion shell files in `tools/installer`. ExaCopy has yet to provision an official publisher certificate or signed distributable bundle for this profile.
 
@@ -39,9 +39,17 @@ Set `VERSION`, `BUNDLE`, `CERT` and `PIN` to your independently verified inputs.
   --publisher-cert "$CERT" --publisher-sha256 "$PIN" --dry-run
 ```
 
-Run the same command without `--dry-run` to install. The script prints the exact versioned executable path for direct invocation. The default store is `$HOME/Library/Application Support/ExaCopy/install` on macOS and `${XDG_DATA_HOME:-$HOME/.local/share}/exacopy/install` on Linux. The install root must be below the installing owner's home and named `install`. Use `--install-root` to choose a different such directory. The script is noninteractive and also accepts `--scope user`, `--cli-only`, and `--non-interactive`.
+Run the same command without `--dry-run` to install. The script prints both the exact versioned executable path and the stable `$HOME/.local/bin/exacopy` path. Run `exacopy` when the current PATH already contains `$HOME/.local/bin`. Otherwise invoke the printed launcher path or add its directory to PATH using your shell's settings. The default store is `$HOME/Library/Application Support/ExaCopy/install` on macOS and `${XDG_DATA_HOME:-$HOME/.local/share}/exacopy/install` on Linux. The install root must be below the installing owner's home and named `install`. Use `--install-root` to choose a different such directory. The script is noninteractive and also accepts `--scope user`, `--cli-only`, and `--non-interactive`.
 
 The store keeps an owner record, a monotone release sequence with its exact signed manifest digest, and the published `versions/<version>` directories. A version directory holds the immutable executable bytes, verified release descriptor and signature, and its install intent. Install stages and verifies the next version under the same versions parent, records its release sequence, and publishes the directory without replacing an incumbent. A repeat of the latest exact release rechecks the existing bytes. Stale releases and reuse of a sequence for a different manifest fail. An unrelated or symlinked existing path is a conflict. Rollback history applies to the retained store and trust root. A new store has no history to inherit.
+
+## Stable launcher and interruption
+
+The public launcher is a symlink to the exact verified executable under the selected store. The installer validates the owner-controlled bin directory and its ancestors and checks the existing command on the caller's PATH. An unrelated command on that PATH or an unowned object at the launcher pathname blocks activation. This check covers the invoking PATH. Shell settings and aliases in other sessions remain under the user's control.
+
+The store and launcher directory have separate lifecycle locks so two stores under the same home cannot claim the same entry concurrently. The installer re-verifies the current release and the newly published version, then flushes a private transition record. Its two sides bind the prior and intended selections to the store, publisher pin, exact target, symlink identity, and signed content digests. The installer publishes the first selector exclusively and switches an owned selector by same-volume rename. The prior verified version stays in its versioned directory. Invoking the launcher uses the installed bytes authenticated at activation.
+
+An interruption before the switch leaves the prior launcher usable. After the switch the stable path targets the new version. A retry re-verifies the selected installed version and accepts an exact match to a recorded side. Retained locks, unexpected ownership or identity, and unknown transition data require owner reconciliation. Keep that evidence with the owned versions. This protocol assumes cooperative processes of the installing UID, a trusted administrator, and local storage with the stated link and rename behavior.
 
 ## Remove an exact version
 
@@ -52,13 +60,13 @@ Stop all launches and uses of the selected version before uninstalling. No manag
   --publisher-sha256 "$PIN" --quiesced
 ```
 
-Repeat the installation's `--install-root` if you used one. Uninstall re-verifies the historical release signature, ownership records, and exact artifact bytes. It withdraws only the named version, removes its four known files and the resulting empty version directory, and retains the rollback sequence. A tampered file, unexpected entry, missing ownership, lock, or interrupted withdrawal blocks the operation. Preserve the evidence and reconcile with the owner if the installer reports an ambiguous state.
+Repeat the installation's `--install-root` if you used one. Uninstall re-verifies the historical release signature, ownership records, and exact artifact bytes. It withdraws only the named version, removes its four known files and the resulting empty version directory, and retains the rollback sequence. Removing the active version withdraws its owned launcher first. Removing a different version leaves the active launcher pointing at its selected release. The previous version remains available by its versioned path after active removal. A tampered file, unexpected entry, missing ownership, lock, or interrupted withdrawal blocks the operation. Preserve the evidence and reconcile with the owner if the installer reports an ambiguous state.
 
 Repeating removal or preview for the absent version recorded in the retained release history reports `Already absent` after checking store ownership and the supplied publisher certificate pin. The result describes the current pathname. Missing or mismatched history, an unowned store, a dangling version link, and pending withdrawal evidence still produce a refusal.
 
-On macOS, removal also refuses if the selected version directory or any of its four owned paths carries a resource fork. The signed raw release verifies the ordinary file bytes. A separately attached resource fork needs preservation before the version can be removed. Preview performs the same check. The check reads attribute names using the host `/usr/bin/xattr`.
+On macOS, removal also refuses if the selected version directory, any of its four owned paths, or the affected launcher or selector record carries a resource fork. The signed raw release verifies the ordinary file bytes. A separately attached resource fork needs preservation before the version can be removed. Preview performs the same check. The check reads attribute names using the host `/usr/bin/xattr`.
 
-Profiles, saved credentials, journals, partial transfers, repositories, source and destination files, retained originals, shell startup files, PATH, and other installed versions are outside the removal scope. A stable launcher, profile migrations, safe service draining, managed update and rollback, purge, system scope, and power-loss qualification remain later work. The script assumes cooperative processes of the installing UID and a trusted administrator.
+Profiles, saved credentials, journals, partial transfers, repositories, source and destination files, retained originals, shell startup files, PATH, and other installed versions are outside the removal scope. Profile migrations, safe service draining, managed update and rollback, purge, system scope, and power-loss qualification remain later work. The script assumes cooperative processes of the installing UID and a trusted administrator.
 
 ## Verification
 
@@ -67,6 +75,7 @@ From a trusted source tree, run the shell checks and the fixture suite as an unp
 ```sh
 shellcheck -x install.sh uninstall.sh
 python3 -B tools/installer/test_posix.py
+python3 -B tools/installer/test_posix_launcher.py
 ```
 
-Use `--artifact /absolute/path/to/exacopy` to repeat the suite with actual locally built CLI bytes. The suite generates a temporary test-only publisher and operates in a disposable home. The macOS arm64 controls check signed installation, exact repeated installation, signature and metadata rejection, path and history conflicts, and byte preservation on uninstall. Linux native execution, macOS x86-64, release keys and artifacts, real installation/reboot, and power-loss behavior are unqualified.
+Use `--artifact /absolute/path/to/exacopy` to repeat the suite with actual locally built CLI bytes. The suite generates a temporary test-only publisher and operates in a disposable home. The macOS arm64 controls check signed installation, exact repeated installation, signature and metadata rejection, path and history conflicts, and byte preservation on uninstall. The launcher fixture also exercises direct invocation, competing stores, incumbent preservation and process interruption around activation and removal. Linux native execution, macOS x86-64, release keys and artifacts, real installation/reboot, and power-loss behavior are unqualified.

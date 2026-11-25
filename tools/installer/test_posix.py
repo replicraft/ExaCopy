@@ -44,7 +44,8 @@ def test_install(temporary, options):
     fixture = json.loads(subprocess.check_output(command, text=True))
     home = temporary / "home"
     home.mkdir(mode=0o700)
-    environment = dict(os.environ, HOME=str(home), XDG_DATA_HOME=str(home / "xdg data"))
+    environment = dict(os.environ, HOME=str(home), XDG_DATA_HOME=str(home / "xdg data"),
+                       PATH="/usr/bin:/bin:/usr/sbin:/sbin")
     store = home / "Unicode Å space" / "install"
     version = fixture["version"]
     directory = store / "versions" / version
@@ -78,14 +79,25 @@ def test_install(temporary, options):
         home / "backup-repository" / "key": b"synthetic recovery key\x00",
         home / ".exacopy" / "stages" / "partial": b"partial transfer\xff",
         home / ".exacopy" / "retained": b"retained incumbent",
-        home / ".local" / "bin" / "exacopy": b"foreign launcher",
+        home / ".local" / "bin" / "other-command": b"foreign executable",
         home / ".profile": b"# existing PATH config\n",
     }
     for path, data in user_paths.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
 
-    install("dry run leaves selected store absent", "valid", "--dry-run")
+    launcher = home / ".local" / "bin" / "exacopy"
+    launcher.write_bytes(b"foreign launcher")
+    for arguments in ((), ("--dry-run",)):
+        install("refuse unowned launcher without changing it", "valid", *arguments,
+                expected="unowned launcher path is occupied")
+        assert launcher.read_bytes() == b"foreign launcher"
+        assert not store.exists()
+    launcher.unlink()
+
+    dry_install = install("dry run leaves selected store absent", "valid", "--dry-run")
+    assert f"Launcher: {launcher}" in dry_install and "to your PATH" in dry_install
+    assert not launcher.is_symlink()
     assert not store.exists()
     default_store = (home / "Library" / "Application Support" / "ExaCopy" / "install"
                      if platform.system() == "Darwin" else home / "xdg data" / "exacopy" / "install")
@@ -204,7 +216,7 @@ def test_install(temporary, options):
             subprocess.run(["/usr/bin/xattr", "-d", darwin_resource_fork, owned],
                            check=True, capture_output=True, timeout=10)
     run("uninstall", "remove only exact owned version files", "--quiesced")
-    assert not directory.exists()
+    assert not directory.exists() and not launcher.is_symlink()
     history_bytes = history.read_bytes()
     assert sha256(history_bytes).digest() == history_digest
     owner_marker = store / ".owner"
@@ -273,6 +285,7 @@ def test_install(temporary, options):
     install("refuse rollback after removing binaries", "lower-sequence", expected="rollback refused")
     install("reinstall exact verified version")
     assert executable.read_bytes() == signed_artifact
+    assert launcher.readlink() == executable
     assert all(path.read_bytes() == data for path, data in user_paths.items())
     print("pass preserved profile, credentials, journal, backup, recovery key, stage, retained files, launcher and PATH")
 

@@ -1,5 +1,6 @@
 # User-scoped POSIX installer support.
 
+caller_path=${PATH-}
 PATH=/usr/bin:/bin:/usr/sbin:/sbin
 LC_ALL=C
 export PATH LC_ALL
@@ -11,6 +12,8 @@ umask 077
 . "$script_dir/tools/installer/manifest.sh"
 # shellcheck source=tools/installer/store.sh
 . "$script_dir/tools/installer/store.sh"
+# shellcheck source=tools/installer/launcher.sh
+. "$script_dir/tools/installer/launcher.sh"
 
 fail() {
 	printf 'exacopy %s: %s\n' "$operation" "$1" >&2
@@ -187,6 +190,7 @@ snapshot() {
 }
 
 cleanup() {
+	cleanup_launcher
 	if [ -n "$stage" ]; then
 		rm -f "$stage/exacopy" "$stage/release.manifest" "$stage/release.sig" "$stage/intent" || :
 		rmdir "$stage" 2>/dev/null || :
@@ -234,6 +238,7 @@ installer_main() {
 	walk_directories "${root%/*}" optional
 
 	scratch='' stage='' record_stage='' previous_sequence='' locked=no
+	launcher_paths
 	trap cleanup EXIT
 	trap 'exit 1' HUP INT TERM
 	scratch=$(mktemp -d "$temp_base/exacopy-release.XXXXXXXX") || fail 'cannot create verification directory'

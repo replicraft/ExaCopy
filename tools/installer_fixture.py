@@ -52,6 +52,8 @@ def main():
     parser.add_argument("output", type=Path, help="New output directory")
     parser.add_argument("--target", choices=TARGETS, required=True)
     parser.add_argument("--artifact", type=Path, help="Exact local binary, never executed by this tool")
+    parser.add_argument("--launcher-upgrade", action="store_true",
+                        help="Issue a newer synthetic release with the same certificate")
     args = parser.parse_args()
 
     old_umask = os.umask(0o077)
@@ -114,6 +116,9 @@ def main():
             }
             for name, candidate in ({"valid": valid} | mutations).items():
                 bundle(output, name, candidate, artifact, artifact_name, key)
+            if args.launcher_upgrade:
+                upgrade = encoded(fields | {"version": "0.2.0", "sequence": 3})
+                bundle(output, "launcher-upgrade", upgrade, artifact, artifact_name, key)
             print(json.dumps({"directory": str(output), "publisher_certificate": str(cert),
                               "publisher_sha256": fields["publisher_sha256"], "target": args.target,
                               "expires": fields["expires"], "version": fields["version"]}, indent=2))

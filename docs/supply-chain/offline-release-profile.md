@@ -122,10 +122,12 @@ quiescence. An installer lock only serializes installers and cannot exclude
 a concurrent direct launch. If lifecycle evidence is uncertain, stop and
 retain the installation.
 
-The raw profile leaves stable launchers, PATH, service and task registration,
-system scope, updates and downgrades, transactional selector switching, purge,
-GUI and native platform signatures for their separate implementation and
-release evidence. The [GitHub CLI release archive profile](online-cli-release-profile.md)
+The [POSIX installer](../architecture/posix-offline-install.md) manages a
+user-scoped stable launcher using this signed release and ownership profile.
+The launcher has its own checked transition record. PATH, service and task
+registration, system scope, managed updates and downgrades, purge, GUI and
+native platform signatures require separate implementation and release
+evidence. The [GitHub CLI release archive profile](online-cli-release-profile.md)
 uses these same signed descriptor and ownership rules for online delivery.
 
 ## Test bundles

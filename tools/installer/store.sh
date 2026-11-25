@@ -142,17 +142,27 @@ install_file() {
 	[ "$(file_bytes "$bundle/exacopy")" = "$artifact_size" ] || fail 'artifact size mismatch'
 	snapshot "$bundle/exacopy" "$scratch/exacopy" "$artifact_size"
 	verify_artifact "$scratch/exacopy"
+	launcher_preflight
 	open_store
 	check_sequence
+	launcher_open
+	if [ "${launcher_current%%|*}" != "$version" ]; then
+		verify_launcher_metadata
+	fi
 	if [ -e "$version_dir" ] || [ -L "$version_dir" ]; then
 		requested_hash=$manifest_hash
 		verify_installed
 		[ "$requested_hash" = "$manifest_hash" ] || fail 'version already binds a different signed release'
+		if [ "$dry_run" = no ]; then
+			activate_launcher
+		fi
 		printf 'Already installed: %s\n' "$version_dir/exacopy"
+		report_launcher
 		return
 	fi
 	if [ "$dry_run" = yes ]; then
 		printf 'Verified release. Would install: %s\n' "$version_dir/exacopy"
+		report_launcher
 		return
 	fi
 
@@ -175,7 +185,12 @@ install_file() {
 	mv "$stage" "$version_dir" || fail 'cannot publish version directory'
 	stage=
 	sync || fail 'version was published but flush failed; reconcile the reported path'
+	requested_hash=$manifest_hash
+	verify_installed
+	[ "$requested_hash" = "$manifest_hash" ] || fail 'published version differs from the staged release'
+	activate_launcher
 	printf 'Installed: %s\n' "$version_dir/exacopy"
+	report_launcher
 }
 
 verify_removal_resource_forks() {
@@ -200,6 +215,7 @@ uninstall_file() {
 		[ "$previous_sequence" -gt 0 ] && [ "$previous_version" = "$version" ] ||
 			fail 'absent version does not match retained release history'
 		verify_publisher_pin
+		launcher_for_removal
 		printf 'Already absent: %s\n' "$version_dir"
 		return
 	fi
@@ -211,11 +227,19 @@ uninstall_file() {
 	fi
 	verify_removal_resource_forks "$version_dir" "$version_dir/exacopy" \
 		"$version_dir/release.manifest" "$version_dir/release.sig" "$version_dir/intent"
+	launcher_for_removal
+	if [ "${launcher_current%%|*}" = "$version" ]; then
+		verify_launcher_metadata
+		if [ "$dry_run" = yes ]; then
+			printf 'Would remove launcher: %s\n' "$launcher"
+		fi
+	fi
 	if [ "$dry_run" = yes ]; then
 		printf 'Verified ownership. Would remove: %s\n' "$version_dir"
 		return
 	fi
 
+	withdraw_launcher
 	retired=$version_store/.remove-$version
 	mv "$version_dir" "$retired" || fail 'cannot withdraw version directory'
 	rm "$retired/exacopy" "$retired/release.manifest" "$retired/release.sig" "$retired/intent" &&

@@ -155,7 +155,8 @@ def mock_source(base):
     helpers.mkdir(parents=True)
     for name in ("install.sh", "uninstall.sh"):
         shutil.copy2(REPO / name, source)
-    for name in ("posix.sh", "download.sh", "manifest.sh", "store.sh", "unpack_release.pl"):
+    for name in ("posix.sh", "download.sh", "manifest.sh", "store.sh", "launcher.sh",
+                 "unpack_release.pl"):
         shutil.copy2(REPO / "tools" / "installer" / name, helpers)
     curl_py = source / "curl.py"
     curl_py.write_text(MOCK_CURL)
@@ -201,7 +202,7 @@ def exercise(base):
                if platform.system() == "Darwin" else home / "xdg space" / "exacopy" / "install")
     credentials = ["--publisher-cert", metadata["publisher_certificate"],
                    "--publisher-sha256", metadata["publisher_sha256"]]
-    environment = dict(os.environ, HOME=str(home), XDG_DATA_HOME=str(home / "xdg space"),
+    environment = dict(os.environ, HOME=str(home), PATH="/usr/bin:/bin:/usr/sbin:/sbin", XDG_DATA_HOME=str(home / "xdg space"),
                        FIXTURE_ROUTES=str(routes), FIXTURE_REQUESTS=str(requests))
     foreign = home / "backup"
     foreign.write_bytes(b"preserve incumbent content\x00\xff")
@@ -311,12 +312,14 @@ def exercise(base):
     prepare()
     stdout = run("latest default install path dry run", "--dry-run", install_root=None)
     assert str(default / "versions" / version / "exacopy") in stdout
-    assert not default.exists()
+    launcher = home / ".local" / "bin" / "exacopy"
+    assert not default.exists() and not launcher.parent.exists()
     stdout = run("latest override publishes authenticated bytes", "--latest", "--version", version)
     executable = root / "versions" / version / "exacopy"
     signed_bytes = (fixtures / "valid" / "exacopy").read_bytes()
     assert str(executable) in stdout and executable.read_bytes() == signed_bytes
     assert executable.stat().st_mode & 0o777 == 0o700
+    assert launcher.readlink() == executable
     identity = executable.stat().st_ino
     assert "Already installed" in run("latest repeat verifies owned version")
     assert executable.stat().st_ino == identity
@@ -325,7 +328,7 @@ def exercise(base):
     assert executable.stat().st_ino == identity and executable.read_bytes() == signed_bytes
     run("offline uninstall removes latest installed owned bytes", "--version", version, "--quiesced",
         operation="uninstall", expected_requests=[])
-    assert not executable.exists()
+    assert not executable.exists() and not launcher.is_symlink()
     assert (root / ".high-water").is_file()
 
 
@@ -347,7 +350,7 @@ def exercise_release(base, release):
     home = base / "home"
     home.mkdir(mode=0o700)
     root = home / "install"
-    environment = dict(os.environ, HOME=str(home), FIXTURE_ROUTES=str(routes),
+    environment = dict(os.environ, HOME=str(home), PATH="/usr/bin:/bin:/usr/sbin:/sbin", FIXTURE_ROUTES=str(routes),
                        FIXTURE_REQUESTS=str(requests))
     certificate = base / "fixture-publisher.der"
     shutil.copyfile(release.publisher_cert, certificate)
