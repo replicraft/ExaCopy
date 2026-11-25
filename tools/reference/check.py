@@ -186,7 +186,7 @@ def check_startup_probe(path, target, profile):
             f"invalid retained startup probe: {path}")
 
 
-def check_compatibility(directory=ROOT / "docs/specs/compatibility"):
+def check_compatibility(directory=ROOT / "specs/compatibility"):
     inventory = read_json(directory / "inventory.v1.json")
     require(inventory["schema_version"] == 1, "unknown compatibility inventory schema")
     targets = inventory["targets"]
@@ -322,7 +322,7 @@ def check_recovery_sample(subject, sample, *, traced=False):
 
 
 def check_performance():
-    directory = ROOT / "docs/specs/performance"
+    directory = ROOT / "specs/performance"
     workloads = read_json(directory / "workloads.v1.json")
     require(workloads["schema_version"] == 1, "unknown performance inventory schema")
     require(all(item["status"] == "not_executed" and "evidence" not in item for item in workloads["future"]),

@@ -12,7 +12,7 @@ use serde::Deserialize;
 
 use crate::finding::Findings;
 
-const INVENTORY: &str = "docs/specs/contracts/versions.toml";
+const INVENTORY: &str = "specs/contracts/versions.toml";
 const POLICY: &str = "docs/architecture/contract-versioning.md";
 const INVENTORY_VERSION: u16 = 1;
 

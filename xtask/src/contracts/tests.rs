@@ -4,7 +4,7 @@ use super::{Contract, INVENTORY, check, check_record, check_text};
 use crate::finding::Findings;
 use crate::test_support::Fixture;
 
-const CURRENT: &str = include_str!("../../../docs/specs/contracts/versions.toml");
+const CURRENT: &str = include_str!("../../../specs/contracts/versions.toml");
 const DIFF: &str = r#"
 id = "exacopy.cli.diff"
 kind = "cli_output"

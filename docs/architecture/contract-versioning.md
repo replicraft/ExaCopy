@@ -1,7 +1,7 @@
 # Contract versioning and migration
 
 This document defines compatibility admission and migration policy. The
-[contract inventory](../specs/contracts/versions.toml) records current
+[contract inventory](../../specs/contracts/versions.toml) records current
 identifiers and version markers. The owning codec or interface specification
 defines the exact representation and valid values. A crate or binary
 version never substitutes for a contract marker.

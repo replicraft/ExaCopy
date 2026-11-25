@@ -18,7 +18,7 @@ combinations, test-only dependencies and engineering roots are covered by the
 broader workspace supply-chain checks. Target resolution records build inputs
 for the selected target, including inputs compiled on the host. Native execution
 and OS, filesystem and CPU qualification require their respective test lanes.
-The [CLI release SBOM](../../supply-chain/README.md#unsigned-cli-rebuild-evidence)
+The [CLI release SBOM](../../docs/supply-chain/README.md#unsigned-cli-rebuild-evidence)
 identifies the inputs observed in actual builds of the selected binary.
 
 [suitability.toml](suitability.toml) explains each package's role. Its
@@ -36,10 +36,10 @@ no outstanding gaps within that assessment's stated scope. Cargo Vet and native
 qualification retain their own criteria and evidence. For transitive packages,
 a purpose entry identifies the reason for inclusion, and an absent assessment
 indicates an open suitability entry in this inventory. Existing exact-version
-local and peer audit records live in [supply-chain](../../../supply-chain/README.md)
+local and peer audit records live in [supply-chain](../../supply-chain/README.md)
 with their original scope and reviewer attribution. The locked Cargo Vet check
 determines whether those records cover the required criteria. License notices,
-permissions and exceptions follow [cargo-deny policy](../../../deny.toml) and
+permissions and exceptions follow [cargo-deny policy](../../deny.toml) and
 the packaged license texts.
 
 Run from the workspace root with Python 3.12 or later and the pinned Rust
@@ -58,7 +58,7 @@ python3 -B -m unittest discover -s tools -p '*_test.py'
 Use `--offline` when the locked inputs are already in the Cargo cache.
 `--emit-graph` prints a candidate snapshot for review. Inspect the graph and
 lockfile diff, update the affected exact-version assessments, and run the
-[workspace supply-chain checks](../../../supply-chain/README.md) before admitting
+[workspace supply-chain checks](../../supply-chain/README.md) before admitting
 a change. A passing graph check establishes that the records match the
 selected locked inputs and that their required fields are present. Review
 gaps stay visible in the check output, and Cargo Vet provides its own gate.

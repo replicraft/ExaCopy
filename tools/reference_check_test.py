@@ -12,7 +12,7 @@ from check import check_compatibility
 
 
 REPOSITORY = Path(__file__).resolve().parents[1]
-COMPATIBILITY = REPOSITORY / "docs/specs/compatibility"
+COMPATIBILITY = REPOSITORY / "specs/compatibility"
 LINUX_COPY = "evidence/linux-ext4-copy.json"
 LINUX_DIFF = "evidence/linux-ext4-differential.json"
 APFS_DIFF = "evidence/macos-apfs-differential.json"

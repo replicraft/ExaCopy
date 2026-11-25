@@ -11,7 +11,7 @@ import tomllib
 
 
 ROOT = Path(__file__).resolve().parents[2]
-TRACE = ROOT / "docs/specs/requirements/local.v1.toml"
+TRACE = ROOT / "specs/requirements/local.v1.toml"
 DESIGN_INVENTORIES = ("requirements", "acceptance-cases", "invariants", "proof-obligations")
 TEST_LEVELS = {"test", "simulation", "native", "process-kill", "policy"}
 EVIDENCE_STATES = {
@@ -140,7 +140,7 @@ def main():
             raise ValueError("invalid design inventory fingerprint")
         inventories = check_pack(arguments.pack, fingerprints) if arguments.pack else None
 
-        architecture = tomllib.loads((ROOT / "docs/specs/architecture/dependencies.toml").read_text())
+        architecture = tomllib.loads((ROOT / "specs/architecture/dependencies.toml").read_text())
         owners = {
             name: ROOT / path
             for group in architecture["groups"].values()

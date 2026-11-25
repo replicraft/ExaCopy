@@ -14,7 +14,7 @@ through Cargo.
 | Benchmarks | Keep benchmarks with their crate. Measure verified operations under the same integrity and durability policies. |
 | Formal checks | Follow the [verification guide](verification.md) and the owning crate's gate. |
 
-The [feature matrix](specs/features/matrix.json) defines supported
+The [feature matrix](../specs/features/matrix.json) defines supported
 profiles and target restrictions. See [feature checks](../tools/feature_matrix.py)
 for repeatable graph and build validation.
 

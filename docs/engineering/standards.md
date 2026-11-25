@@ -67,7 +67,7 @@ objects can be reproduced with `git -C <checkout> show <commit>:<path>`.
   ExaCopy contributions use Apache-2.0.
 - Use [contract versioning](../architecture/contract-versioning.md) for
   format admission, migrations and recovery. Use the
-  [behavioral inventory](../specs/compatibility/) for reference fixtures,
+  [behavioral inventory](../../specs/compatibility) for reference fixtures,
   intentionally preserved safety differences and independent oracles.
 - Review shared contract, lockfile, unsafe and authority changes serially.
   Use disjoint ownership for concurrent work. Integrate small atomic

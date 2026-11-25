@@ -346,7 +346,7 @@ target = "failed_report_output_keeps_the_committed_copy_and_names_the_job"
 owner = "reference tools"
 level = "reference"
 state = "retained"
-path = "docs/specs/performance/evidence/linux-ext4-copy.json"
+path = "specs/performance/evidence/linux-ext4-copy.json"
 detail = "Independent cmp and rsync control ran on the ext4 VM. The incumbent control uses a pre-existing name."
 
 [[coverage]]
@@ -553,7 +553,7 @@ path = "fixtures/macos/empty_acl.c"
 owner = "reference tools"
 level = "reference"
 state = "retained"
-path = "docs/specs/compatibility/evidence/macos-apfs-differential.json"
+path = "specs/compatibility/evidence/macos-apfs-differential.json"
 detail = "Exact cmp and generated-byte oracle, rsync checksum dry run, worker ceilings 1, 4 and 16, and final symlink refusal control."
 
 [[coverage]]
@@ -851,31 +851,31 @@ limits = "The recorded benchmarks cover warm-cache single-file workloads. The ex
 owner = "reference tools"
 level = "configuration"
 state = "defined"
-path = "docs/specs/compatibility/inventory.v1.json"
+path = "specs/compatibility/inventory.v1.json"
 
 [[coverage.evidence]]
 owner = "reference tools"
 level = "configuration"
 state = "defined"
-path = "docs/specs/performance/workloads.v1.json"
+path = "specs/performance/workloads.v1.json"
 
 [[coverage.evidence]]
 owner = "reference tools"
 level = "reference"
 state = "retained"
-path = "docs/specs/compatibility/evidence/macos-apfs-differential.json"
+path = "specs/compatibility/evidence/macos-apfs-differential.json"
 
 [[coverage.evidence]]
 owner = "reference tools"
 level = "benchmark"
 state = "retained"
-path = "docs/specs/performance/evidence/linux-ext4-copy.json"
+path = "specs/performance/evidence/linux-ext4-copy.json"
 
 [[coverage.evidence]]
 owner = "reference tools"
 level = "benchmark"
 state = "retained"
-path = "docs/specs/performance/evidence/macos-apfs-comparison.json"
+path = "specs/performance/evidence/macos-apfs-comparison.json"
 
 [[coverage]]
 id = "native-platform-matrix"

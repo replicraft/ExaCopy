@@ -10,7 +10,7 @@ import subprocess
 from apfs_source import CONSUMER, MACOS_CFG, NAME as APFS_NAME, WORKSPACE_PATH
 
 
-MATRIX = Path("docs/specs/features/matrix.json")
+MATRIX = Path("specs/features/matrix.json")
 
 
 def check_manifests(policy, packages):

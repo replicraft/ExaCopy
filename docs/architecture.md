@@ -22,7 +22,7 @@ behavior, recovery paths and their evidence.
 | Storage | Own integrity primitives, bounded record codecs and journal framing. |
 | Engineering | Provide policy and evidence tooling, fixtures and independent test oracles. Production paths have no engineering dependencies. |
 
-The [dependency matrix](specs/architecture/dependencies.toml) is the
+The [dependency matrix](../specs/architecture/dependencies.toml) is the
 enforced package-level authority for operation contracts and native composition.
 Run the [engineering policy check](testing.md). Source review also follows
 the actual call graph because a permitted package edge does not establish

@@ -11,7 +11,7 @@ mod graph;
 mod inversion;
 mod placement;
 
-const MATRIX_PATH: &str = "docs/specs/architecture/dependencies.toml";
+const MATRIX_PATH: &str = "specs/architecture/dependencies.toml";
 const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Deserialize)]

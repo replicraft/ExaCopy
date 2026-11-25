@@ -82,7 +82,7 @@ def main():
     if sys.platform != "linux":
         parser.error("this contract probe requires the Linux CLI copy profile")
     try:
-        with (ROOT / "docs/specs/contracts/versions.toml").open("rb") as stream:
+        with (ROOT / "specs/contracts/versions.toml").open("rb") as stream:
             inventory = tomllib.load(stream)
         versions = {
             contract["id"]: contract["version"]

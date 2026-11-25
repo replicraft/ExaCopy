@@ -22,7 +22,7 @@ The opt-in `exacopy_diff::compare_parallel` entry point uses the same held read-
 
 The coordinator joins the workers and reduces their outcomes in byte order. A mismatch can only be returned if every earlier window read successfully and compared equal. An outstanding speculative read in a later range joins before any result is returned. Thread start and worker panic failures are inconclusive. The final observation check follows the joins. Files remain live-observed, and results use only the bytes actually read.
 
-The portable tests and the [three-range scheduling model](verification/tla/ParallelCompare.tla) exercise P-036. Linux adapter tests exercise the public API with sparse files, ordered mismatches, stale observations and content preservation. These checks cover a per-call worker and scratch budget, contributing to R-082 and A-097. Applications that run simultaneous comparisons account for their aggregate budgets. The CLI uses serial comparison by default and accepts an explicit [worker ceiling](../../clients/cli/README.md). The tested budget applies to each comparison.
+The portable tests and the [three-range scheduling model](verification/tla/ParallelCompare.tla) exercise P-036. Linux adapter tests exercise the public API with sparse files, ordered mismatches, stale observations and content preservation. These checks cover a per-call worker and scratch budget, contributing to R-082 and A-097. Applications that run simultaneous comparisons account for their aggregate budgets. The CLI uses serial comparison by default and accepts an explicit [worker ceiling](../../../apps/exacopy-cli/README.md). The tested budget applies to each comparison.
 
 Run the local gate using the TLC and Temurin versions pinned in the [TLC toolchain lock](verification/tla/toolchain.lock.json). Set `TLC_LOG_DIR` to retain the model and negative-control logs.
 
@@ -32,6 +32,6 @@ crates/engines/exacopy-diff/verification/check.sh
 
 ## Native adapters
 
-The CLI opens Linux `SourceFile` or macOS `ManagedRegularFile` capabilities and supplies them to the shared comparator. On Linux, the adapter checks captured metadata and probes for logical EOF. On macOS, the adapter admits and revalidates both files under the trusted owner's managed-root grant. Adapter failures propagate with their original cause, comparison side, and operation. See the [CLI instructions](../../clients/cli/README.md#managed-apfs-comparison-on-macos) for the grant and native fixture test.
+The CLI opens Linux `SourceFile` or macOS `ManagedRegularFile` capabilities and supplies them to the shared comparator. On Linux, the adapter checks captured metadata and probes for logical EOF. On macOS, the adapter admits and revalidates both files under the trusted owner's managed-root grant. Adapter failures propagate with their original cause, comparison side, and operation. See the [CLI instructions](../../../apps/exacopy-cli/README.md#managed-apfs-comparison-on-macos) for the grant and native fixture test.
 
 Library callers migrate from `exacopy_diff::linux` or `exacopy_diff::macos` to `exacopy_diff::{compare, compare_parallel}`. Both native handle types implement `ReadView` directly.

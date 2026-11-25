@@ -17,7 +17,7 @@ from apfs_source import (
 )
 from feature_matrix import MATRIX, profile_features, profile_flags
 
-SPEC = Path("docs/specs/dependencies")
+SPEC = Path("specs/dependencies")
 CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
 TREE_ROW = re.compile(r"([0-9]+)\|([^ ]+) v([^ ]+)(?: [^\t]*)?\t(.*)")
 REVIEW_FIELDS = {

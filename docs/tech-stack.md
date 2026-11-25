@@ -26,7 +26,7 @@ First-party code uses [Apache-2.0](../LICENSE). Preserve third-party licensing
 and notices under the supply-chain policy.
 
 Keep releases locked and use a portable compiler baseline, with reviewed
-runtime detection for optional CPU features. The [feature matrix](specs/features/matrix.json) records enabled dependencies,
+runtime detection for optional CPU features. The [feature matrix](../specs/features/matrix.json) records enabled dependencies,
 profiles and target restrictions. The adopted and outstanding release evidence is governed by [Engineering standards](engineering/standards.md).
 
 ## Evaluated APFS reader

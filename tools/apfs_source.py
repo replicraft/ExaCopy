@@ -12,7 +12,7 @@ import tarfile
 import tempfile
 import tomllib
 
-PIN = Path("docs/specs/dependencies/apfs-source.toml")
+PIN = Path("specs/dependencies/apfs-source.toml")
 SIBLING = Path("pomologie/apfs")
 MEMBER = Path("crates/platform/apfs-mounted")
 WORKSPACE_PATH = (Path("..") / SIBLING / MEMBER).as_posix()

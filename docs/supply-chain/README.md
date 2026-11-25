@@ -1,6 +1,6 @@
 # Dependency and build evidence
 
-The [Cargo feature matrix](../specs/features/matrix.json) records the supported
+The [Cargo feature matrix](../../specs/features/matrix.json) records the supported
 build profiles and target triples, the CLI dependency footprint on each target,
 and the purpose and feature selection for each direct third-party dependency.
 [Cargo.lock](../../Cargo.lock) pins resolved versions and registry source
@@ -52,7 +52,7 @@ the macOS library is disabled.
 
 ## Dependency suitability
 
-The [locked dependency inventory](../specs/dependencies/README.md) records the
+The [locked dependency inventory](../../specs/dependencies/README.md) records the
 production graph for the three supported targets and the review status of
 selected direct dependencies. Verify the current graph with
 `python3 -B tools/dependency_review/check.py --offline`.
@@ -102,7 +102,7 @@ python3 tools/sbom_release.py --target x86_64-unknown-linux-gnu --fetch \
 
 Use Python 3.12 or newer and a native Rust toolchain. The inputs are the Git
 archive of ExaCopy `HEAD` and the pinned
-[Pomologie sibling archive](../specs/dependencies/apfs-source.toml). Commit
+[Pomologie sibling archive](../../specs/dependencies/apfs-source.toml). Commit
 changes before collecting revision-specific release evidence. Supply a clean
 checkout of that sibling revision on every target so Cargo can resolve its
 manifest. The runner verifies its tree and archive digest and unpacks both

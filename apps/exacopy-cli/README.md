@@ -19,7 +19,7 @@ Each input may be absolute or relative to the current working directory. The com
 
 The `exacopy.cli.diff` JSON summary has `schema_version` set to `1.0`, `relation` set to `bytes`, a `result` of `equal`, `different`, or `inconclusive`, and a `complete` Boolean for the relation decision. Successful decisions carry `consistency` set to `live_observed`. The lengths and offset are unsigned decimal strings. A first-byte offset is zero-based and establishes inequality. The summary reports a single witness. Inconclusive comparisons include an `error` with a stable code and an explanation. Invocation errors are written to stderr. Use `exacopy --help` for the command list and `exacopy diff --help` for the generated option reference. The paged diff report and shell completions are outside this initial command.
 
-The command exercises the byte comparison and exit-status portions of the local CLI design. It has no persistent job, mutation, or publication authority. See the [diff crate](../../operations/diff/README.md) for evidence scope and source-observation limits.
+The command exercises the byte comparison and exit-status portions of the local CLI design. It has no persistent job, mutation, or publication authority. See the [diff crate](../../crates/engines/exacopy-diff/README.md) for evidence scope and source-observation limits.
 
 ### Managed APFS comparison on macOS
 
@@ -56,7 +56,7 @@ Comparison reads the unnamed data stream and reports `live_observed` when it
 can decide the byte relation. Mapped changes and filter-driver behavior may
 escape live detection. Copy, recovery, metadata equivalence, named streams,
 and snapshots are outside this profile. Windows qualification remains pending.
-[NTFS fixture and evidence](../../../docs/testing.md#windows-held-directory-ntfs-qualification)
+[NTFS fixture and evidence](../../docs/testing.md#windows-held-directory-ntfs-qualification)
 
 ## Create and verify a single-file manifest
 
@@ -80,7 +80,7 @@ Verification defaults to human output. The `exacopy.cli.verify` JSON report has 
 | 5 | Length or stream digest mismatch, or invalid manifest body digest |
 | 6 | Unsupported platform, read capability, manifest version or required feature |
 
-The current profile covers one regular file and a bounded unsigned JSON baseline. See the [independent manifest vectors and parser fuzz gate](../../core/codec/verification/manifest/README.md).
+The current profile covers one regular file and a bounded unsigned JSON baseline. See the [independent manifest vectors and parser fuzz gate](../../crates/formats/exacopy-manifest/verification/manifest/README.md).
 
 ## Export a plan for one regular file
 
@@ -131,7 +131,7 @@ plans remains unavailable, and the export reports no copy durability result.
 
 If confirmation output fails after the bundle was written, the CLI exits 4
 and attempts to report that outcome on stderr. See the [read-only plan export
-contract and evidence](../../../docs/architecture/read-only-plan-export.md).
+contract and evidence](../../docs/architecture/read-only-plan-export.md).
 
 ## Copy one regular file
 
@@ -146,7 +146,7 @@ The destination must be a previously absent name beneath a managed directory. An
 
 The CLI retains each started job in the destination parent under `.exacopy-<job-uuid>` with a signed owner record, a plan, a journal, and a committed receipt on success. A late failure may report the job name so its evidence can be inspected. The CLI leaves any private job material in place. The source is read-only and may have an access-time update.
 
-The default text report identifies a successfully published copy and its committed receipt. `--format json` emits an `exacopy.cli.copy` 1.0 summary. The successful summary includes a UUIDv7 job ID, the job directory component, a decimal byte count, the BLAKE3 stream digest, and the committed receipt digest. The receipt represents a live-observed source, independent logical writes and buffered BLAKE3 read-back, and the adapter's basic metadata policy. Durability remains unconfirmed. Check [verified staging](../../../docs/verified-staging.md) and the [Linux adapter](../../../docs/local-adapter.md) for the metadata, barrier, and filesystem evidence limits.
+The default text report identifies a successfully published copy and its committed receipt. `--format json` emits an `exacopy.cli.copy` 1.0 summary. The successful summary includes a UUIDv7 job ID, the job directory component, a decimal byte count, the BLAKE3 stream digest, and the committed receipt digest. The receipt represents a live-observed source, independent logical writes and buffered BLAKE3 read-back, and the adapter's basic metadata policy. Durability remains unconfirmed. Check [verified staging](../../docs/verified-staging.md) and the [Linux adapter](../../docs/local-adapter.md) for the metadata, barrier, and filesystem evidence limits.
 
 | Exit | Outcome |
 | --- | --- |

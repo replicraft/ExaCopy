@@ -19,7 +19,7 @@ The copy report identifies the job directory inside the target's parent. See the
 On macOS, `diff LEFT RIGHT --managed-macos` enables exact comparison of regular files in explicitly provisioned owner-managed APFS directories. The flag attests that both input parents satisfy the [managed directory contract](apps/exacopy-cli/README.md#managed-apfs-comparison-on-macos).
 
 Use Rust 1.100.0 and cargo-nextest 0.9.151 for the developer checks. Supply the
-[pinned Pomologie sibling checkout](docs/specs/dependencies/README.md) before
+[pinned Pomologie sibling checkout](specs/dependencies/README.md) before
 running Cargo on any target; verify it with `python3 -B tools/apfs_source.py`.
 
 ```sh
