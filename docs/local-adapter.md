@@ -1,6 +1,6 @@
 # PR 2. Linux local adapter and fault simulator
 
-`exacopy-endpoint` owns checked positioned I/O and lossless local name validation. `exacopy-platform` owns the Linux descriptor boundary. `exacopy-test-support` owns the independent in-memory filesystem used in tests. The work package uses ADR-013, ADR-014, ADR-019, ADR-020, ADR-021, ADR-031 through ADR-033, and ADR-071 from the local architecture pack.
+`exacopy-endpoint` owns checked positioned I/O and lossless local name validation. `exacopy-platform` owns the Linux descriptor boundary. `exacopy-testkit` owns the independent in-memory filesystem used in tests. The work package uses ADR-013, ADR-014, ADR-019, ADR-020, ADR-021, ADR-031 through ADR-033, and ADR-071 from the local architecture pack.
 
 | Scope | Requirements and acceptance cases | Invariants |
 | --- | --- | --- |
@@ -33,7 +33,7 @@ The Linux run measured 105 of 117 endpoint lines and 483 of 520 platform lines. 
 
 ```sh
 cargo test --locked -p exacopy-platform
-cargo nextest run --locked -p exacopy-endpoint -p exacopy-test-support
+cargo nextest run --locked -p exacopy-endpoint -p exacopy-testkit
 ```
 
 This work package has no on-disk application format, public CLI or application publication path. The next work package couples these operations to streamed hash verification and the coordinator. The application release gate still requires the locked dependency audits.

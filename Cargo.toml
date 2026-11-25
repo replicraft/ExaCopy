@@ -8,7 +8,7 @@ members = [
     "crates/operations/transfer",
     "crates/storage/content",
     "crates/storage/journal",
-    "crates/testing/test-support",
+    "crates/engineering/exacopy-testkit",
     "xtask",
 ]
 resolver = "3"

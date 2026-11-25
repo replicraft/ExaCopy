@@ -1,7 +1,7 @@
 //! Modeled volatile-storage loss at each barrier of a single checkpoint.
 
 use exacopy_endpoint::UnixComponent;
-use exacopy_test_support::{
+use exacopy_testkit::{
 	Area, DiskId, EffectError, EffectFault, EffectOperation, Entry, Failure, Simulator, Snapshot,
 	StageWriter, WritableArea,
 };

@@ -2,7 +2,7 @@ use exacopy_endpoint::{UnixComponent, read_exact_at, write_all_at};
 use exacopy_model::{
 	CopyBinding, CopyEffect, CopyEvent, CopyPhase, CopySession, EntryId, JobId, RunEpoch, StageId,
 };
-use exacopy_test_support::{
+use exacopy_testkit::{
 	Area, DiskId, EffectError, EffectFault, EffectOperation, Entry, Failure, FileView, ObjectId,
 	Rejection, Simulator, Snapshot, TransferFault, TransferOperation, WritableArea,
 };

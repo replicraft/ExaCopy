@@ -3,7 +3,7 @@
 use std::io::ErrorKind;
 
 use exacopy_endpoint::{IoError, UnixComponent, read_exact_at, write_all_at};
-use exacopy_test_support::{
+use exacopy_testkit::{
 	Area, DiskId, EffectError, EffectFault, EffectOperation, Entry, Failure, FileView, Rejection,
 	Simulator, Snapshot, TransferFault, TransferOperation, WritableArea,
 };

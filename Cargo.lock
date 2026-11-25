@@ -307,7 +307,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "exacopy-test-support"
+name = "exacopy-testkit"
 version = "0.1.0"
 dependencies = [
  "exacopy-endpoint",

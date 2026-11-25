@@ -5,7 +5,7 @@ mod fixture;
 
 use exacopy_endpoint::UnixComponent;
 use exacopy_model::CopyPhase;
-use exacopy_test_support::{Area, EffectError, EffectFault, EffectOperation, Entry, Failure};
+use exacopy_testkit::{Area, EffectError, EffectFault, EffectOperation, Entry, Failure};
 
 use fixture::{Boundary, CONTENTS, Case, Fixture, INCUMBENT, REBOUND, Race, Script};
 
