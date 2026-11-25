@@ -13,16 +13,19 @@ use crate::linux::{ReadRoot, StageError};
 use crate::scratch::Scratch;
 
 const JOB: &str = "privately-owned-job";
-const RECORD: &str = "owner.cbor";
+const OWNER: &str = "owner.cbor";
+const PLAN: &str = "plan.cbor";
 const STAGE: &str = "stage";
 const JOURNAL: &str = "journal";
 const SEGMENT: &str = "00000000000000000001.exajnl";
+const RECEIPTS: &str = "receipts";
+const RECEIPT: &str = "receipt.cbor";
 const PART: &str = "private-payload";
 const TARGET: &str = "target";
 const DATA: &[u8] = b"one file through the nested stage";
 
 #[test]
-fn fixed_owner_and_journal_records_can_only_be_created_exclusively() {
+fn fixed_job_records_can_only_be_created_exclusively() {
 	let fixture = Scratch::new();
 	let root = DestinationRoot::from_directory(fixture.open()).expect("held destination");
 	let job = root
@@ -32,18 +35,34 @@ fn fixed_owner_and_journal_records_can_only_be_created_exclusively() {
 	let journal = job
 		.create_journal_directory()
 		.expect("fixed journal directory");
+	let receipts = job
+		.create_receipt_directory()
+		.expect("fixed receipt directory");
 	let mut owner = job.create_owner_record().expect("new owner record");
+	let mut plan = job.create_plan_record().expect("new plan record");
 	let mut segment = journal.create_first_segment().expect("new journal segment");
+	let mut receipt = receipts
+		.create_receipt_record()
+		.expect("new receipt record");
 	owner
 		.write_all(b"fixture owner")
 		.expect("write private manifest");
+	plan.write_all(b"fixture plan").expect("write private plan");
 	segment
 		.write_all(b"fixture segment")
 		.expect("write private segment");
+	receipt
+		.write_all(b"fixture receipt")
+		.expect("write private receipt");
 	owner.sync_all().expect("owner record barrier");
+	plan.sync_all().expect("plan record barrier");
 	segment.sync_all().expect("segment barrier");
+	receipt.sync_all().expect("receipt barrier");
 	stage.sync_directory().expect("stage directory barrier");
 	journal.sync_directory().expect("journal directory barrier");
+	receipts
+		.sync_directory()
+		.expect("receipt directory barrier");
 	job.sync_directory().expect("job directory barrier");
 	root.sync_directory()
 		.expect("destination directory barrier");
@@ -60,7 +79,7 @@ fn fixed_owner_and_journal_records_can_only_be_created_exclusively() {
 		assert_eq!(metadata.dev(), identity.device());
 		assert_eq!(metadata.ino(), identity.inode());
 	}
-	for file in [&owner, &segment] {
+	for file in [&owner, &plan, &segment, &receipt] {
 		let metadata = file.metadata().expect("private record metadata");
 		assert_eq!(metadata.mode() & 0o7777, 0o600);
 		assert_eq!(metadata.nlink(), 1);
@@ -78,30 +97,52 @@ fn fixed_owner_and_journal_records_can_only_be_created_exclusively() {
 		Err(StageError::AlreadyExists)
 	));
 	assert!(matches!(
+		job.create_receipt_directory(),
+		Err(StageError::AlreadyExists)
+	));
+	assert!(matches!(
 		job.create_owner_record(),
+		Err(StageError::AlreadyExists)
+	));
+	assert!(matches!(
+		job.create_plan_record(),
 		Err(StageError::AlreadyExists)
 	));
 	assert!(matches!(
 		journal.create_first_segment(),
 		Err(StageError::AlreadyExists)
 	));
+	assert!(matches!(
+		receipts.create_receipt_record(),
+		Err(StageError::AlreadyExists)
+	));
 	assert_eq!(
-		fs::read(job_path.join(RECORD)).expect("retain owner record"),
+		fs::read(job_path.join(OWNER)).expect("retain owner record"),
 		b"fixture owner"
+	);
+	assert_eq!(
+		fs::read(job_path.join(PLAN)).expect("retain plan record"),
+		b"fixture plan"
 	);
 	assert_eq!(
 		fs::read(journal_path.join(SEGMENT)).expect("retain segment"),
 		b"fixture segment"
 	);
-	assert!(!fixture.path(RECORD).exists());
+	assert_eq!(
+		fs::read(job_path.join(RECEIPTS).join(RECEIPT)).expect("retain receipt"),
+		b"fixture receipt"
+	);
+	assert!(!fixture.path(OWNER).exists());
+	assert!(!fixture.path(PLAN).exists());
 	assert!(!fixture.path(SEGMENT).exists());
 	fixture.assert_debug_redacts(&job, &[JOB]);
 	fixture.assert_debug_redacts(&journal, &[JOB, JOURNAL]);
+	fixture.assert_debug_redacts(&receipts, &[JOB, RECEIPTS]);
 }
 
 #[test]
 fn rebind_of_the_job_or_either_child_blocks_new_effects() {
-	for displaced in [JOB, JOURNAL, STAGE] {
+	for displaced in [JOB, JOURNAL, STAGE, RECEIPTS] {
 		let fixture = Scratch::new();
 		let root = DestinationRoot::from_directory(fixture.open()).expect("held destination");
 		let job = root
@@ -109,6 +150,7 @@ fn rebind_of_the_job_or_either_child_blocks_new_effects() {
 			.expect("private job");
 		let journal = job.create_journal_directory().expect("fixed journal");
 		let stage = job.create_stage_directory().expect("fixed stage");
+		let receipts = job.create_receipt_directory().expect("fixed receipts");
 		let mut writer = stage
 			.create_file(component(PART), component(TARGET), binding())
 			.expect("owned stage");
@@ -140,8 +182,16 @@ fn rebind_of_the_job_or_either_child_blocks_new_effects() {
 				job.create_owner_record(),
 				Err(StageError::IdentityChanged)
 			));
+			assert!(matches!(
+				job.create_plan_record(),
+				Err(StageError::IdentityChanged)
+			));
 		} else if displaced == JOURNAL {
 			let _ = job.create_journal_directory().expect("replacement journal");
+		} else if displaced == RECEIPTS {
+			let _ = job
+				.create_receipt_directory()
+				.expect("replacement receipts");
 		} else {
 			let _ = job.create_stage_directory().expect("replacement stage");
 		}
@@ -152,6 +202,16 @@ fn rebind_of_the_job_or_either_child_blocks_new_effects() {
 			));
 			assert!(matches!(
 				journal.create_first_segment(),
+				Err(StageError::IdentityChanged)
+			));
+		}
+		if displaced == JOB || displaced == RECEIPTS {
+			assert!(matches!(
+				receipts.sync_directory(),
+				Err(StageError::IdentityChanged)
+			));
+			assert!(matches!(
+				receipts.create_receipt_record(),
 				Err(StageError::IdentityChanged)
 			));
 		}
@@ -176,6 +236,9 @@ fn nested_stage_publishes_to_original_destination_parent() {
 	let fixture = Scratch::new();
 	fs::write(fixture.path("source"), DATA).expect("seed source");
 	let reader = ReadRoot::from_directory(fixture.open()).expect("held source root");
+	let root_metadata = fixture.open().metadata().expect("source root metadata");
+	assert_eq!(reader.identity().device(), root_metadata.dev());
+	assert_eq!(reader.identity().inode(), root_metadata.ino());
 	let source = reader
 		.open_regular(component("source"))
 		.expect("source capability");

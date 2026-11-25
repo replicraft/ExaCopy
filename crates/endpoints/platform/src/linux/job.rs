@@ -15,10 +15,13 @@ use super::stage::{
 #[cfg(test)]
 mod tests;
 
-const STAGE: &str = "stage";
-const JOURNAL: &str = "journal";
-const OWNER: &str = "owner.cbor";
-const FIRST_SEGMENT: &str = "00000000000000000001.exajnl";
+pub(super) const STAGE: &str = "stage";
+pub(super) const JOURNAL: &str = "journal";
+pub(super) const OWNER: &str = "owner.cbor";
+pub(super) const PLAN: &str = "plan.cbor";
+pub(super) const FIRST_SEGMENT: &str = "00000000000000000001.exajnl";
+pub(super) const RECEIPTS: &str = "receipts";
+pub(super) const RECEIPT: &str = "receipt.cbor";
 
 /// Advisory observation of a relative publication target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,8 +75,8 @@ impl DestinationRoot {
 
 /// An exclusively created private job directory rooted in one destination handle.
 ///
-/// The job can create only the fixed owner manifest, stage directory and journal
-/// directory through this interface. Each operation rechecks the held job binding.
+/// The job can create its fixed records and state directories. Each operation
+/// rechecks the held job binding.
 pub struct JobDirectory<'root> {
 	root: &'root DestinationRoot,
 	directory: File,
@@ -105,11 +108,25 @@ impl JobDirectory<'_> {
 	/// Rejects a changed job binding, a name collision or a syscall failure.
 	/// The record writer owns file barriers and reconciliation.
 	pub fn create_owner_record(&self) -> Result<File, StageError> {
+		self.create_record(OWNER)
+	}
+
+	/// Exclusively creates the private `plan.cbor` record.
+	///
+	/// # Errors
+	///
+	/// Rejects a changed job binding, a name collision or a syscall failure.
+	/// The record writer owns file barriers and reconciliation.
+	pub fn create_plan_record(&self) -> Result<File, StageError> {
+		self.create_record(PLAN)
+	}
+
+	fn create_record(&self, name: &str) -> Result<File, StageError> {
 		self.check_current()?;
 		let (file, _) = create_private_file(
 			&self.directory,
 			self.root.mount,
-			OsStr::new(OWNER),
+			OsStr::new(name),
 			OFlags::RDWR,
 		)?;
 		Ok(file)
@@ -131,13 +148,30 @@ impl JobDirectory<'_> {
 	///
 	/// Rejects a changed job binding, a name collision or a syscall failure.
 	pub fn create_journal_directory(&self) -> Result<JournalDirectory<'_>, StageError> {
+		Ok(JournalDirectory(self.create_record_directory(JOURNAL)?))
+	}
+
+	/// Exclusively creates the fixed private `receipts/` child.
+	///
+	/// # Errors
+	///
+	/// Rejects a changed job binding, a name collision or a syscall failure.
+	pub fn create_receipt_directory(&self) -> Result<ReceiptDirectory<'_>, StageError> {
+		Ok(ReceiptDirectory(self.create_record_directory(RECEIPTS)?))
+	}
+
+	fn create_record_directory(
+		&self,
+		name: &'static str,
+	) -> Result<RecordDirectory<'_>, StageError> {
 		self.check_current()?;
 		let (directory, identity) =
-			create_private_directory(&self.directory, OsStr::new(JOURNAL), self.root.mount)?;
-		Ok(JournalDirectory {
+			create_private_directory(&self.directory, OsStr::new(name), self.root.mount)?;
+		Ok(RecordDirectory {
 			job: self,
 			directory,
 			identity,
+			name,
 		})
 	}
 
@@ -158,17 +192,13 @@ impl JobDirectory<'_> {
 }
 
 /// An exclusively created journal directory bound to one held private job.
-pub struct JournalDirectory<'job> {
-	job: &'job JobDirectory<'job>,
-	directory: File,
-	identity: FileIdentity,
-}
+pub struct JournalDirectory<'job>(RecordDirectory<'job>);
 
 impl JournalDirectory<'_> {
 	/// Returns the held journal directory identity.
 	#[must_use]
 	pub fn identity(&self) -> FileIdentity {
-		self.identity
+		self.0.identity
 	}
 
 	/// Requests a barrier on the checked journal directory.
@@ -177,8 +207,7 @@ impl JournalDirectory<'_> {
 	///
 	/// Rejects a changed job or journal binding, or a failed directory barrier.
 	pub fn sync_directory(&self) -> Result<(), StageError> {
-		self.check_current()?;
-		sync_directory(&self.directory)
+		self.0.sync_directory()
 	}
 
 	/// Exclusively creates the private `00000000000000000001.exajnl` segment.
@@ -188,11 +217,54 @@ impl JournalDirectory<'_> {
 	/// Rejects a changed directory binding, a name collision or a syscall failure.
 	/// The segment writer owns file barriers and reconciliation.
 	pub fn create_first_segment(&self) -> Result<File, StageError> {
+		self.0.create_file(FIRST_SEGMENT)
+	}
+}
+
+/// An exclusively created receipt directory bound to one held private job.
+#[derive(Debug)]
+pub struct ReceiptDirectory<'job>(RecordDirectory<'job>);
+
+impl ReceiptDirectory<'_> {
+	/// Exclusively creates the private `receipt.cbor` artifact.
+	///
+	/// # Errors
+	///
+	/// Rejects a changed directory binding, a name collision or a syscall failure.
+	/// The record writer owns file barriers and reconciliation.
+	pub fn create_receipt_record(&self) -> Result<File, StageError> {
+		self.0.create_file(RECEIPT)
+	}
+
+	/// Requests a barrier on the checked receipt directory.
+	///
+	/// # Errors
+	///
+	/// Rejects a changed job or receipt binding, or a failed directory barrier.
+	pub fn sync_directory(&self) -> Result<(), StageError> {
+		self.0.sync_directory()
+	}
+}
+
+struct RecordDirectory<'job> {
+	job: &'job JobDirectory<'job>,
+	directory: File,
+	identity: FileIdentity,
+	name: &'static str,
+}
+
+impl RecordDirectory<'_> {
+	fn sync_directory(&self) -> Result<(), StageError> {
+		self.check_current()?;
+		sync_directory(&self.directory)
+	}
+
+	fn create_file(&self, name: &str) -> Result<File, StageError> {
 		self.check_current()?;
 		let (file, _) = create_private_file(
 			&self.directory,
 			self.job.root.mount,
-			OsStr::new(FIRST_SEGMENT),
+			OsStr::new(name),
 			OFlags::RDWR,
 		)?;
 		Ok(file)
@@ -203,7 +275,7 @@ impl JournalDirectory<'_> {
 		check_private_child(
 			&self.job.directory,
 			&self.directory,
-			OsStr::new(JOURNAL),
+			OsStr::new(self.name),
 			self.identity,
 			self.job.root.mount,
 		)
@@ -223,6 +295,15 @@ impl fmt::Debug for JournalDirectory<'_> {
 	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
 		formatter
 			.debug_struct("JournalDirectory")
+			.field("identity", &self.0.identity)
+			.finish_non_exhaustive()
+	}
+}
+
+impl fmt::Debug for RecordDirectory<'_> {
+	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+		formatter
+			.debug_struct("RecordDirectory")
 			.field("identity", &self.identity)
 			.finish_non_exhaustive()
 	}

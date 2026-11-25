@@ -106,6 +106,7 @@ const CHILD_RESOLUTION: ResolveFlags = ResolveFlags::BENEATH
 /// A held Linux directory from which a reader may select one child by name.
 pub struct ReadRoot {
 	directory: File,
+	identity: FileIdentity,
 }
 
 impl fmt::Debug for ReadRoot {
@@ -125,7 +126,16 @@ impl ReadRoot {
 		if FileType::from_raw_mode(stat.st_mode) != FileType::Directory {
 			return Err(ReadError::NotDirectory);
 		}
-		Ok(Self { directory })
+		Ok(Self {
+			directory,
+			identity: FileIdentity::from_stat(&stat),
+		})
+	}
+
+	/// Returns the native identity observed for the held directory descriptor.
+	#[must_use]
+	pub fn identity(&self) -> FileIdentity {
+		self.identity
 	}
 
 	/// Open a regular child with read-only rights, refusing links and mount crossings.
