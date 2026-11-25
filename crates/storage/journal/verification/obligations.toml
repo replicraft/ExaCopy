@@ -1,0 +1,14 @@
+schema_version = 1
+
+[[obligation]]
+id = "P-040"
+requirement_ids = ["R-155"]
+source = "src/owner/apply.rs"
+symbols = ["PublicApplyOwnerRecord::decode"]
+assumptions = [
+    "This scoped Rust gate tests externally selected profile/key and signature-domain binding of local public-apply owner declarations.",
+    "Ed25519 security and profile-key custody are assumptions, not proven by these fixtures.",
+    "The authenticated declaration is not a portable Approval signature, actual content measurement, native recovery qualification or effect authorization.",
+]
+gates = ["rust"]
+rust = { file = "tests/public_apply_owner.rs", test = "independent_profile_and_signature_domain_are_mandatory", oracle = "The independent signed public-apply fixture admits only under its selected profile/key and domain. Foreign profile, foreign key and other signature prefixes are rejected." }

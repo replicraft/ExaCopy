@@ -23,6 +23,7 @@ type EnvelopeBytes = Cursor<[u8; MAX_ENVELOPE_BYTES]>;
 pub(super) enum OwnerDomain {
 	LinuxV1,
 	DarwinManagedApfs,
+	LinuxPublicApply,
 }
 
 impl OwnerDomain {
@@ -30,6 +31,7 @@ impl OwnerDomain {
 		match self {
 			Self::LinuxV1 => (1, b"ExaCopy/owner/v1\0"),
 			Self::DarwinManagedApfs => (2, b"ExaCopy/owner/darwin-managed-apfs/v1\0"),
+			Self::LinuxPublicApply => (3, b"ExaCopy/owner/linux-public-apply/v1\0"),
 		}
 	}
 

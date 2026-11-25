@@ -34,9 +34,11 @@ pub use intent::{
 	VerificationDigest,
 };
 pub use owner::{
-	DarwinFileIdentity, DarwinOwnerManifest, DarwinOwnerRecord, DarwinVolumeIdentity,
-	MAX_OWNER_BYTES, OwnerDigest, OwnerError, OwnerManifest, OwnerProfileId, OwnerRecord,
-	OwnerStateDirectory, OwnerTimestamp, OwnerToken,
+	ApplyMetadataPolicyDigest, ApplyRequestedDurability, ApprovedPublicPlanDigest,
+	ApprovedStreamDigest, DarwinFileIdentity, DarwinOwnerManifest, DarwinOwnerRecord,
+	DarwinVolumeIdentity, MAX_OWNER_BYTES, OwnerDigest, OwnerError, OwnerManifest, OwnerProfileId,
+	OwnerRecord, OwnerStateDirectory, OwnerTimestamp, OwnerToken, PublicApplyBinding,
+	PublicApplyOwnerManifest, PublicApplyOwnerRecord, PublicPlanEntryId,
 };
 pub use prepared::{
 	DestinationRootBinding, EntryPreparation, EntryPrepared, JobPrepared, JournalContext,

@@ -214,3 +214,9 @@ stays fatal, even under the process-crash profile.
    mismatched authorization. Report 9 when publication or its barriers
    leave an uncertain effect requiring reconciliation. Do not claim success
    merely because a preflight report and immutable Plan exist.
+
+
+The [public-apply owner codec](public-apply-owner.md) now implements the
+separate authenticated public/private binding form. It is not yet consumed
+by execution or recovery; the expected-content and effect-boundary work
+above remains required before exposing public apply.

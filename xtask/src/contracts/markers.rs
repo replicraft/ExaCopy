@@ -87,6 +87,11 @@ pub(super) const BINDINGS: &[Binding] = &[
 		Marker::pair("FORMAT_MAJOR", "FORMAT_MINOR", "REQUIRED_FEATURES"),
 	),
 	Binding::new(
+		"linux-public-apply-owner",
+		"crates/storage/journal/src/owner/apply_codec.rs",
+		Marker::pair("FORMAT_MAJOR", "FORMAT_MINOR", "REQUIRED_FEATURES"),
+	),
+	Binding::new(
 		"linux-copy-plan",
 		"crates/operations/transfer/src/linux/plan/wire.rs",
 		Marker::Array { width: 2 },

@@ -86,6 +86,15 @@ required_features = 0
 owner = "crates/storage/journal/src/owner/codec.rs"
 
 [[contract]]
+id = "linux-public-apply-owner"
+kind = "transfer_journal"
+status = "implemented_private"
+version = "1.0"
+required_features = 1
+owner = "crates/storage/journal/src/owner/apply_codec.rs"
+notes = "Signed domain code 3, ExaCopy/owner/linux-public-apply/v1 plus NUL. Public/private Plan and exact approved stream binding; legacy owner readers refuse this form. No executor or recovery authority is implied."
+
+[[contract]]
 id = "linux-copy-plan"
 kind = "transfer_journal"
 status = "implemented_private"

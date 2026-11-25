@@ -1100,3 +1100,33 @@ owner = "exacopy-endpoint"
 level = "documentation"
 state = "reported"
 path = "docs/architecture/remote-admission.md"
+
+
+[[coverage]]
+id = "public-apply-owner-binding"
+status = "implemented"
+requirement_ids = ["R-155"]
+acceptance_ids = ["A-155"]
+invariant_ids = ["INV-013", "INV-018", "INV-019"]
+scope = "Separate signed local owner declaration binding public/private Plan domains, approved stream and metadata policy, roots, entry/epoch and expiry; legacy readers refuse the form."
+limits = "Codec and authentication only, no portable Approval verification, live content evidence, executor, mutation authorization or recovery qualification. P-040 is a scoped Rust admission check."
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "obligation"
+state = "defined"
+path = "crates/storage/journal/verification/obligations.toml"
+target = "P-040"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/journal/tests/public_apply_owner.rs"
+target = "independent_vector_fixes_the_signed_projection_and_legacy_boundary"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/public-apply-owner.md"

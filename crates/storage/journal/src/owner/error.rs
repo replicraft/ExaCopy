@@ -42,6 +42,18 @@ pub enum OwnerError {
 	DarwinVolumeMismatch,
 	/// The managed APFS state-root UID is outside the admitted non-root range.
 	InvalidOwnerUid,
+	/// A public or private entry identifier is nil.
+	InvalidApplyEntry,
+	/// A bound root alias is outside the RFC UUID profile.
+	InvalidApplyRoot,
+	/// A private attempt has a zero epoch.
+	InvalidApplyEpoch,
+	/// The approved logical stream exceeds the Linux file extent limit.
+	InvalidApplyLength,
+	/// The finite expiry is at or before the recorded admission.
+	InvalidApplyExpiry,
+	/// The public-apply owner codec does not recognize the requested durability.
+	UnsupportedApplyDurability,
 }
 
 impl fmt::Display for OwnerError {
@@ -68,6 +80,16 @@ impl fmt::Display for OwnerError {
 			Self::InvalidOwnerUid => "owner state-root UID is outside the admitted Darwin range",
 			Self::UnsupportedPolicy => "owner policy is unsupported",
 			Self::InvalidDirectories => "owner state-directory allowlist is invalid",
+			Self::InvalidApplyEntry => "public apply owner has a nil entry ID",
+			Self::InvalidApplyRoot => "public apply owner has an invalid root alias",
+			Self::InvalidApplyEpoch => "public apply owner has a zero attempt epoch",
+			Self::InvalidApplyLength => {
+				"public apply owner stream exceeds the Linux file extent limit"
+			}
+			Self::InvalidApplyExpiry => "public apply owner expiry is at or before admission",
+			Self::UnsupportedApplyDurability => {
+				"public apply owner requested durability is unsupported"
+			}
 		};
 		formatter.write_str(message)
 	}
