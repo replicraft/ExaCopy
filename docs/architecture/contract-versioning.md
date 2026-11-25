@@ -29,6 +29,9 @@ profile seed is generated for the fixture and removed with it. The probe
 also checks the source and copied bytes. The managed APFS comparison
 report is exercised by the macOS CLI tests.
 
+The [Linux compatibility run](migration-evidence.md) exercises retained
+jobs in both directions between two native builds and includes refusal controls.
+
 ## Contract boundaries
 
 | Contract | Policy |
