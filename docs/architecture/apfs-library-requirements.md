@@ -1,10 +1,12 @@
 # APFS library requirements for ExaCopy
 
-This is a proposed integration contract, based on ExaCopy checkpoint
-`6e24897d3a185bc5b4a3a99b6931233f24501503` and the inspected Pomologie APFS
-checkout at `78f8586bd87f2b336f2ceeac2f609ec1725bcdfb`. It records the library
-capabilities required to replace ExaCopy's mounted APFS implementation. It
-does not claim that Pomologie already implements the proposed mounted APIs.
+This integration contract records the capabilities needed to replace ExaCopy's
+mounted APFS implementation. The original accounting used ExaCopy
+`6e24897d3a185bc5b4a3a99b6931233f24501503`; the consumer update below uses
+`885b74e`. The inspected Pomologie revision is
+`8f19cd36c1d1ddf7a16a45adb849d389797dee89`, whose clean checkout now contains
+`crates/platform/apfs-mounted`. Available library APIs, consumer integration
+and native qualification are separate statuses.
 
 **Ownership**
 
@@ -14,12 +16,11 @@ ExaCopy should consume safe typed capabilities and observations. Its copy
 model, authorization, integrity verification, journal and recovery policy
 remain operation-engine responsibilities.
 
-Pomologie currently supplies portable image-oriented core, format, container
-and reader crates. The reader uses `no_std` and forbids unsafe code. A
-macOS-only hosted companion package can provide the mounted API without
-introducing Darwin or `std` into those portable crates. Its native bindings
-need their own explicit unsafe policy and review. The proposed companion
-package name and exact signatures remain design decisions.
+Pomologie supplies portable image-oriented core, format, container and reader
+crates, plus the macOS-only hosted `apfs-mounted` companion. The reader uses
+`no_std` and forbids unsafe code. The companion keeps Darwin and `std` outside
+the portable crates. Its documented item-level native-binding exceptions
+remain a separate safety and qualification boundary.
 
 **What the existing unsafe code does**
 
@@ -49,6 +50,84 @@ APFS object maps,
 on-disk B-trees, checkpoints and raw allocation structures belong to the
 Pomologie format stack. ExaCopy's mounted implementation uses kernel
 filesystem operations.
+
+**Why mounted hooks are needed**
+
+The current copy engine does not require raw APFS access. It neither reads
+filesystem blocks nor parses or modifies APFS trees, checkpoints or allocation
+structures. Darwin's mounted interfaces supply the live identity, metadata,
+materialization policy, exclusive publication and synchronization observations
+needed by the copy contract. Most are Darwin filesystem operations used on
+APFS rather than APFS format operations. Moving their implementation into
+Pomologie preserves those checks while removing native layouts and bindings
+from ExaCopy. A raw image reader is a separate future input capability.
+
+**Consumer changes and current library support**
+
+At ExaCopy `885b74e`, native macOS composition lives in `exacopy-engine`.
+`exacopy-transfer` owns generic admission, staging, publication and read-only
+recovery policies without importing the platform or engine crates. Safe
+`rustix` exclusive rename and `getrandom` entropy have already replaced two
+direct unsafe calls. These are ExaCopy changes; the independently committed
+Pomologie companion is a separate workstream. The companion is not yet a
+production dependency at this consumer checkpoint. An independent archive run
+of Pomologie `8f19cd3` on native ARM64 macOS with Rust 1.100.0 passed its 50
+unit tests and one private-publication integration test. That integration
+test does not impose ExaCopy's strict xattr admission, journal intent or crash
+protocol; it is library evidence rather than an ExaCopy copy qualification.
+
+The inspected companion exports scoped directories and byte-preserving names,
+held/named identities, volume observations, owned advisory leases, dataless
+policy scopes, pinned source reads, metadata observations/application, private
+writers, independent read-back and exclusive publication with separate
+barrier results. ExaCopy must translate these observations into its existing
+strict admission policy and persisted records. The presence of each API does
+not establish that the full consumer migration has passed.
+
+The first integration can delegate ACL/GUID, xattr/fork, volume, filesystem
+identity, materialization policy and stored-name queries independently of
+writer ownership. Required fidelity remains unchanged: visible attributes,
+including `com.apple.provenance`, cannot be ignored to obtain a passing copy.
+
+**Remaining full-port seams**
+
+- **Owning source and stage capabilities.** `PinnedSource` borrows its root
+  and entry name; the writer lifecycle also retains borrowed locations.
+  ExaCopy constructs names during open/create and returns owning capabilities.
+  An owned-name/owned-root variant or a consumer scope redesign is needed;
+  a wrapper must not become self-referential or use unsafe lifetime extension.
+  The current `Lease` already owns its independently opened descriptor and
+  named binding, so lease ownership is no longer a missing capability.
+- **Appendable private records.** `PrivateWriter` has a declared final extent
+  and performs its full-file barrier while consuming and closing the writer.
+  The authoritative journal needs a confirmed new empty inode, bounded growth,
+  a full-file barrier after each frame, and later same-inode read/write reopen
+  at an accepted extent. The current first-segment bound is 64 MiB. Pomologie
+  can expose generic bounded private-file operations; ExaCopy keeps frame
+  encoding, accepted-prefix validation, chain heads and intent ordering.
+  Read-only recovery inventory alone does not provide append authority.
+- **Metadata of the actual held source.** Scalar captured source metadata is
+  available, but the consumer must also bracket current timestamps and strict
+  ACL/GUID/xattr/fork observations against that same held inode. A scoped safe
+  observation method can supply this without opening a second source by name.
+  Post-metadata and post-publication checks also retain the complete ExaCopy
+  predicate rather than only the library's baseline writer checks.
+- **Birth-time changes during metadata application.** APFS can change birth
+  time when applying an earlier modification time. The companion returns the
+  resulting live identity. ExaCopy's existing prepared-stage journal identity
+  includes birth time and sealing requires it to remain equal. The current
+  protocol must refuse an identity change while retaining the artifact, or
+  adopt an explicit compatible record/replay transition. Dropping the birth
+  field or substituting the earlier identity would hide the discrepancy.
+- **Diagnostic and effect preservation.** Unknown volume capabilities remain
+  refusals. If an API collapses a native unsupported error into `Unknown`, its
+  original errno is unavailable to the consumer. Dataless restoration failure
+  must retain an already-observed filesystem effect and the original cause.
+  Query ordering must preserve a known unsupported metadata condition even
+  when a later independent query fails.
+
+These are reusable filesystem capability requirements. None requires
+Pomologie to depend on ExaCopy's model, journal format or publication policy.
 
 **Existing libraries**
 
@@ -258,8 +337,9 @@ and [journal barrier](../../crates/storage/journal/src/durable.rs).
 
 The current checkouts are siblings under `replicraft/`. A Cargo path
 dependency can consume the companion directly while both repositories
-retain their own workspaces and Git histories. The following name and
-directory are illustrative until the companion package exists.
+retain their own workspaces and Git histories. The companion package now
+exists at the following path; these declarations remain the consumer
+integration plan at the checkpoint above.
 
 In ExaCopy's root `Cargo.toml`, extend the existing dependency table.
 
@@ -278,7 +358,8 @@ apfs-mounted.workspace = true
 Cargo reads the package's `Cargo.toml` at the named directory and rebuilds
 changed dependency source. The dependency retains its own workspace
 inheritance. ExaCopy uses its root lockfile for the resolved build.
-Create the real companion package before adding these declarations.
+The package exists in the inspected local revision. Supply that source to
+clean-room builds before enabling the dependency.
 [Cargo path dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#specifying-path-dependencies)
 
 After the first API slice is available, integrate it through thin ExaCopy
