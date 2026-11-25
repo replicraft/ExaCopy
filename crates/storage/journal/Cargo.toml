@@ -9,6 +9,10 @@ publish = false
 [dependencies]
 blake3.workspace = true
 crc32c.workspace = true
+ed25519-dalek.workspace = true
+exacopy-endpoint.workspace = true
+exacopy-model.workspace = true
+minicbor.workspace = true
 
 [lints]
 workspace = true
