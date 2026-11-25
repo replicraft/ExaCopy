@@ -1,0 +1,449 @@
+{
+  "schema_version": 1,
+  "revision": 1,
+  "scope": "Reference workflow evidence for the recorded builds. Acceptance IDs retain their architecture-pack meaning; these profiles can exercise subsets.",
+  "status_meanings": {
+    "executed_pass": "The named bounded differential ran and passed. Evidence contains the decision and setup.",
+    "not_executed": "No paired ExaCopy/reference run. Version and platform can describe a planned profile or an identity-only probe."
+  },
+  "targets": [
+    {
+      "id": "cmp",
+      "name": "cmp",
+      "primary_sources": [
+        "https://github.com/apple-oss-distributions/patch_cmds",
+        "https://man.openbsd.org/cmp"
+      ],
+      "profiles": [
+        {
+          "id": "local-exact-bytes",
+          "status": "executed_pass",
+          "reference_version": "Apple patch_cmds-61",
+          "platform": "macOS 14.7.2 arm64",
+          "filesystem": "managed APFS",
+          "configuration_and_invocation": "cmp -s LEFT RIGHT; exacopy diff LEFT RIGHT --compare bytes --workers N --format json --managed-macos (N=1,4,16)",
+          "fixtures": "Seven generated regular-file pairs: empty, equal binary, first/middle/last changed bytes, unequal length, sparse mismatch; final symlink control.",
+          "expected_behavior": "Exact relation agrees with the generated witness; input bytes, identity, mode, mtime and namespace are preserved.",
+          "actual_exacopy_behavior": "All 21 regular-file results matched cmp and the expected witness; the final symlink returned E_OPEN_INPUT, complete=false.",
+          "known_deviation": "cmp followed the final symlink and returned equality.",
+          "deviation_rationale": "Capability-scoped admission refuses redirection through the final path component.",
+          "acceptance": [
+            "A-093",
+            "A-100"
+          ],
+          "evidence": "evidence/macos-apfs-differential.json",
+          "reproduction": "../../docs/compatibility/local-references.md"
+        }
+      ]
+    },
+    {
+      "id": "rsync",
+      "name": "rsync",
+      "primary_sources": [
+        "https://rsync.samba.org/ftp/rsync/rsync.1"
+      ],
+      "profiles": [
+        {
+          "id": "local-checksum-preview",
+          "status": "executed_pass",
+          "reference_version": "3.5.2, protocol version 33 reported by binary",
+          "platform": "macOS 14.7.2 arm64",
+          "filesystem": "managed APFS",
+          "configuration_and_invocation": "rsync --dry-run --checksum --itemize-changes --out-format=%i -- LEFT RIGHT; ExaCopy exact diff with 1/4/16 workers.",
+          "fixtures": "The same seven generated pairs as cmp, with equal mtimes and modes for equal-sized pairs.",
+          "expected_behavior": "Rsync gives a content transfer item only for different pairs. Exact equality is independently established with cmp.",
+          "actual_exacopy_behavior": "Every ExaCopy comparison agreed with cmp and the itemized rsync dry-run result; inputs were preserved.",
+          "known_deviation": "Rsync plans updates using a checksum and prints an itemization; ExaCopy reports exact byte relation and a difference witness.",
+          "deviation_rationale": "A checksum match is advisory and does not establish byte-exact equality.",
+          "acceptance": [
+            "A-093",
+            "A-100"
+          ],
+          "evidence": "evidence/macos-apfs-differential.json",
+          "reproduction": "../../docs/compatibility/local-references.md"
+        },
+        {
+          "id": "local-copy-to-absent-and-incumbent",
+          "status": "executed_pass",
+          "reference_version": "3.2.7, protocol version 31 reported by binary",
+          "platform": "Ubuntu 24.04.5 LTS aarch64 guest",
+          "filesystem": "ext4",
+          "configuration_and_invocation": "rsync --ignore-existing --itemize-changes --out-format=%i -- SOURCE TARGET; exacopy copy SOURCE TARGET --profile PROFILE --format json.",
+          "fixtures": "Generated 4096-byte source, absent target and different 4096-byte incumbent; separate 64 MiB ExaCopy copy workload.",
+          "expected_behavior": "The new target compares equal by cmp; the existing target and source stay byte- and identity-stable.",
+          "actual_exacopy_behavior": "New targets passed independent cmp and committed-state inspection. The existing target caused exit 3/E_CONFLICT with no publication.",
+          "known_deviation": "Rsync exited 0 with an empty itemization for the incumbent. ExaCopy exits 3 and reports an explicit conflict.",
+          "deviation_rationale": "A skipped incumbent cannot satisfy a preserved copy request. Rsync skip is only tested without an incumbent-creation race.",
+          "acceptance": [
+            "A-008",
+            "A-009",
+            "A-185",
+            "A-194"
+          ],
+          "evidence": "../performance/evidence/linux-ext4-copy.json",
+          "reproduction": "../../docs/compatibility/local-references.md"
+        },
+        {
+          "id": "remote-delta-resume",
+          "status": "not_executed",
+          "reference_version": "3.5.2 (planned local peer pin; capture negotiated protocol in each run)",
+          "platform": "Linux lab endpoints",
+          "filesystem": "ext4 to ext4",
+          "configuration_and_invocation": "Pin both peers; record options and interrupted transfer stage, compare --partial or --partial-dir with safe verified range adoption.",
+          "fixtures": "Deterministic 64 MiB same-length and inserted-block variants, wrong retained ranges and late incumbent.",
+          "expected_behavior": "Restore exact final bytes with verified reuse; report payload, retransmission and refused ranges.",
+          "actual_exacopy_behavior": "Local single-file staging exists. Remote delta and rsync wire interoperability are outside the current implementation.",
+          "known_deviation": null,
+          "deviation_rationale": null,
+          "acceptance": [
+            "A-264",
+            "A-266"
+          ],
+          "evidence": null,
+          "reproduction": "Use a disposable local two-peer lab once the ExaCopy endpoint exists; capture transport counts and independently compare all final files."
+        }
+      ]
+    },
+    {
+      "id": "teracopy",
+      "name": "TeraCopy",
+      "primary_sources": [
+        "https://codesector.com/teracopy",
+        "https://codesector.com/downloads"
+      ],
+      "profiles": [
+        {
+          "id": "verified-copy",
+          "status": "not_executed",
+          "reference_version": "4.0.3 Build 2 (planned)",
+          "platform": "Windows 11 x64",
+          "filesystem": "NTFS",
+          "configuration_and_invocation": "Enable verify after copy; choose Skip for incumbent handling; save verification log and option export.",
+          "fixtures": "One 4 KiB and one 64 MiB generated file; different incumbent; failure point before verification.",
+          "expected_behavior": "Preserve incumbent/source and verify a new target; skipped entries and interrupted stages remain explicit.",
+          "actual_exacopy_behavior": "Local Linux copy exposes staged hash readback and refuses incumbents. Windows and TeraCopy differential unexecuted.",
+          "known_deviation": null,
+          "deviation_rationale": null,
+          "acceptance": [
+            "A-008",
+            "A-027",
+            "A-185",
+            "A-194"
+          ],
+          "evidence": null,
+          "reproduction": "In a disposable VM, execute the reference settings and the qualified Windows ExaCopy counterpart; compare target bytes and preserve logs before and after interruption."
+        }
+      ]
+    },
+    {
+      "id": "fastcopy",
+      "name": "FastCopy",
+      "primary_sources": [
+        "https://fastcopy.jp/help/fastcopy_eng.htm"
+      ],
+      "profiles": [
+        {
+          "id": "verified-copy",
+          "status": "not_executed",
+          "reference_version": "5.12.0 (planned)",
+          "platform": "Windows 11 x64",
+          "filesystem": "NTFS",
+          "configuration_and_invocation": "Use Diff (No overwrite) with conventional destination reread verification and SHA-256; capture the log and exported settings.",
+          "fixtures": "Flat tiny-file corpus, deterministic 64 MiB binary, and different same-name incumbent.",
+          "expected_behavior": "Independently verify every materialized file; report incumbent and incomplete transfer distinctly.",
+          "actual_exacopy_behavior": "Local Linux copy exposes staged hash readback and refuses incumbents. Windows and FastCopy differential unexecuted.",
+          "known_deviation": null,
+          "deviation_rationale": null,
+          "acceptance": [
+            "A-008",
+            "A-027",
+            "A-185",
+            "A-194"
+          ],
+          "evidence": null,
+          "reproduction": "Provision a disposable NTFS fixture and capture the reference settings, reports, cmp results, and the matching ExaCopy run after Windows qualification."
+        }
+      ]
+    },
+    {
+      "id": "beyond-compare-pro",
+      "name": "Beyond Compare Pro",
+      "primary_sources": [
+        "https://www.scootersoftware.com/kb/feature_compare",
+        "https://www.scootersoftware.com/all/v5changelog"
+      ],
+      "profiles": [
+        {
+          "id": "binary-folder-and-text",
+          "status": "not_executed",
+          "reference_version": "5.2.8.33052 Pro (planned)",
+          "platform": "macOS arm64",
+          "filesystem": "APFS",
+          "configuration_and_invocation": "Use Hex Compare, then Folder Compare in binary mode; use Text Compare with normalization selected and record settings.",
+          "fixtures": "Local exact-byte fixture corpus, renamed tree, LF/CRLF variants and three-way overlapping edits.",
+          "expected_behavior": "Exact equality agrees with cmp; normalized similarity is labeled; independent trees and conflicts stay intact.",
+          "actual_exacopy_behavior": "CLI exact regular-file comparison is implemented. No Beyond Compare application, tree diff, specialized view or merge was exercised.",
+          "known_deviation": null,
+          "deviation_rationale": null,
+          "acceptance": [
+            "A-093",
+            "A-095",
+            "A-301",
+            "A-302"
+          ],
+          "evidence": null,
+          "reproduction": "Use fresh synthetic pairs and save native reports, then diff corresponding decisions against the exact and normalized oracles once implemented."
+        }
+      ]
+    },
+    {
+      "id": "winscp",
+      "name": "WinSCP",
+      "primary_sources": [
+        "https://winscp.net/eng/docs/feature_index",
+        "https://winscp.net/eng/docs/history"
+      ],
+      "profiles": [
+        {
+          "id": "sftp-queue-and-reconnect",
+          "status": "not_executed",
+          "reference_version": "6.5.7 (planned)",
+          "platform": "Windows 11 client / Linux OpenSSH peer",
+          "filesystem": "NTFS client / ext4 server",
+          "configuration_and_invocation": "SFTP binary transfer with explicit pinned host key and disposable credentials. Record reconnect and temp-file settings.",
+          "fixtures": "A 64 MiB binary, a partial target, and a same-name incumbent; restart the test connection.",
+          "expected_behavior": "Validate identity on reconnect; independently verify completed bytes and preserve any incumbent.",
+          "actual_exacopy_behavior": "ExaCopy has no SFTP endpoint or equivalent GUI queue in this slice.",
+          "known_deviation": null,
+          "deviation_rationale": null,
+          "acceptance": [
+            "A-222",
+            "A-234",
+            "A-256",
+            "A-297"
+          ],
+          "evidence": null,
+          "reproduction": "Use an isolated key-authenticated test server, save redacted transfer logs, and compare reports plus server-side bytes when the endpoint exists."
+        }
+      ]
+    },
+    {
+      "id": "freefilesync",
+      "name": "FreeFileSync",
+      "primary_sources": [
+        "https://freefilesync.org/manual.php?topic=synchronization-settings",
+        "https://freefilesync.org/archive.php"
+      ],
+      "profiles": [
+        {
+          "id": "two-way-preview-and-versioning",
+          "status": "not_executed",
+          "reference_version": "14.13 (planned)",
+          "platform": "Windows 11 x64",
+          "filesystem": "NTFS",
+          "configuration_and_invocation": "Use Compare by file content and Two way sync; capture preview; run mutations only on disposable trees with Versioning.",
+          "fixtures": "Common baseline, changed/renamed/target-only paths, divergent edits and inaccessible former subtree.",
+          "expected_behavior": "Conflicts and incomplete observations remain explicit; baseline advances only on complete verified outcomes.",
+          "actual_exacopy_behavior": "ExaCopy has no tree synchronization workflow in this slice.",
+          "known_deviation": null,
+          "deviation_rationale": null,
+          "acceptance": [
+            "A-269",
+            "A-270",
+            "A-272",
+            "A-276"
+          ],
+          "evidence": null,
+          "reproduction": "Generate baseline and two follow-up trees, save preview and log, and independently inventory bytes/version history after the qualified ExaCopy run."
+        }
+      ]
+    },
+    {
+      "id": "openssh",
+      "name": "OpenSSH / SSH / SFTP",
+      "primary_sources": [
+        "https://www.openssh.com/releasenotes.html",
+        "https://man.openbsd.org/sftp"
+      ],
+      "profiles": [
+        {
+          "id": "sftp-protocol",
+          "status": "not_executed",
+          "reference_version": "OpenSSH 9.7p1 client identified; peer build and negotiated SFTP versions must be pinned",
+          "platform": "Linux client and OpenSSH Linux peer planned",
+          "filesystem": "ext4",
+          "configuration_and_invocation": "Use sftp -F test_config -b commands with binary put/get, an explicit known_hosts file and disposable keys.",
+          "fixtures": "Generated binary and interrupted transfer, same-length incorrect retained range, and changed host key.",
+          "expected_behavior": "Read back real bytes, validate host key and retained ranges, and keep namespace durability evidence separate.",
+          "actual_exacopy_behavior": "No ExaCopy SSH or SFTP workload was run. The host ssh -V inventory alone is informational.",
+          "known_deviation": null,
+          "deviation_rationale": null,
+          "acceptance": [
+            "A-216",
+            "A-222",
+            "A-229",
+            "A-234",
+            "A-235",
+            "A-256"
+          ],
+          "evidence": null,
+          "reproduction": "Use an isolated SSH lab and capture peer version, negotiated SFTP protocol/extensions, exact final bytes and refusal reports."
+        }
+      ]
+    },
+    {
+      "id": "wireguard",
+      "name": "WireGuard",
+      "primary_sources": [
+        "https://www.wireguard.com/protocol/",
+        "https://git.zx2c4.com/wireguard-tools"
+      ],
+      "profiles": [
+        {
+          "id": "embedded-to-kernel-peer",
+          "status": "not_executed",
+          "reference_version": "wireguard-tools 1.0.20260223 (planned); pin Linux kernel build with the tools",
+          "platform": "Controlled Linux network lab, then Windows client / Linux peer",
+          "filesystem": "Transport only; ext4 inner transfer if used",
+          "configuration_and_invocation": "Use disposable isolated peer and explicit AllowedIPs; compare a kernel peer and embedded endpoint with a route-loss scenario.",
+          "fixtures": "Generated TCP stream, non-routable test destination outside the tunnel, tunnel restart.",
+          "expected_behavior": "Authenticated tunnel transfers exact data; private DNS and destination traffic stay off the direct route.",
+          "actual_exacopy_behavior": "No embedded WireGuard implementation or interoperability run in this slice.",
+          "known_deviation": null,
+          "deviation_rationale": null,
+          "acceptance": [
+            "A-239",
+            "A-240",
+            "A-247",
+            "A-249"
+          ],
+          "evidence": null,
+          "reproduction": "Capture peer versions, packet/route observations and end-to-end byte results in an isolated network lab after the embedded lane exists."
+        }
+      ]
+    },
+    {
+      "id": "adb",
+      "name": "ADB / Android Debug Bridge",
+      "primary_sources": [
+        "https://developer.android.com/tools/adb"
+      ],
+      "profiles": [
+        {
+          "id": "usb-and-wireless-shared-storage",
+          "status": "not_executed",
+          "reference_version": "ADB 1.0.41, platform-tools 36.0.0-13206524 identified; device build unpinned",
+          "platform": "macOS arm64 host / Android 11+ test device planned",
+          "filesystem": "Host APFS; record backing filesystem and Android shared storage",
+          "configuration_and_invocation": "Use explicit device selection, USB and legitimate wireless enrollment; run adb pull of shared-storage fixture with a recorded disconnect.",
+          "fixtures": "Generated small media tree and 64 MiB binary; offline or different device reconnect control.",
+          "expected_behavior": "Copy only authorized shared storage, verify bytes and accurately report omissions and reconnect identity.",
+          "actual_exacopy_behavior": "No ExaCopy ADB transfer was run. The host adb --version inventory alone is informational.",
+          "known_deviation": null,
+          "deviation_rationale": null,
+          "acceptance": [
+            "A-280",
+            "A-283",
+            "A-284",
+            "A-291",
+            "A-293"
+          ],
+          "evidence": null,
+          "reproduction": "Pin physical device/platform build, provision generated shared-storage data and capture USB and wireless runs separately."
+        }
+      ]
+    },
+    {
+      "id": "openmtp",
+      "name": "OpenMTP / Media Transfer Protocol",
+      "primary_sources": [
+        "https://openmtp.ganeshrvel.com/",
+        "https://github.com/ganeshrvel/openmtp"
+      ],
+      "profiles": [
+        {
+          "id": "mtp-whole-file",
+          "status": "not_executed",
+          "reference_version": "OpenMTP 3.1.15 (planned); record device MTP implementation",
+          "platform": "macOS arm64 host / Android USB device planned",
+          "filesystem": "APFS host; device shared storage",
+          "configuration_and_invocation": "Open an authorized device in OpenMTP and drag a selected device file to a new host name; record USB disconnect and reconnect.",
+          "fixtures": "Generated shared-storage media tree and large binary with changed device or volume identity control.",
+          "expected_behavior": "Verified whole-file transfer and explicit capability/identity limitations; no arbitrary range reuse claim.",
+          "actual_exacopy_behavior": "No ExaCopy MTP transport or GUI comparison in this slice.",
+          "known_deviation": null,
+          "deviation_rationale": null,
+          "acceptance": [
+            "A-280",
+            "A-283",
+            "A-285"
+          ],
+          "evidence": null,
+          "reproduction": "Use a physical device and a scratch APFS destination, save OpenMTP logs and compare whole-file bytes after the device lane exists."
+        }
+      ]
+    },
+    {
+      "id": "restic",
+      "name": "Restic",
+      "primary_sources": [
+        "https://github.com/restic/restic/releases/tag/v0.20.0",
+        "https://github.com/restic/restic/blob/v0.20.0/doc/design.rst"
+      ],
+      "profiles": [
+        {
+          "id": "snapshot-growth-and-restore",
+          "status": "not_executed",
+          "reference_version": "0.20.0 (planned)",
+          "platform": "Linux x86_64",
+          "filesystem": "ext4",
+          "configuration_and_invocation": "Create a scratch local repository; take first and changed snapshots, run check --read-data and restore both into separate new subtrees.",
+          "fixtures": "Repeatable tree with unchanged, renamed, inserted and repeated content; include a damaged object in a separate fixture.",
+          "expected_behavior": "Restored content and metadata match original manifests; missing/corrupt objects are surfaced and growth is accounted for.",
+          "actual_exacopy_behavior": "ExaCopy has no repository backup or restore in this slice; this is a workflow reference.",
+          "known_deviation": null,
+          "deviation_rationale": null,
+          "acceptance": [
+            "A-103",
+            "A-108",
+            "A-109",
+            "A-196"
+          ],
+          "evidence": null,
+          "reproduction": "Run isolated repositories with test credentials and compare restored trees against independent SHA-256 and metadata manifests."
+        }
+      ]
+    },
+    {
+      "id": "kopia",
+      "name": "Kopia",
+      "primary_sources": [
+        "https://github.com/kopia/kopia/releases/tag/v0.21.1",
+        "https://kopia.io/docs/features/"
+      ],
+      "profiles": [
+        {
+          "id": "snapshot-growth-and-restore",
+          "status": "not_executed",
+          "reference_version": "0.21.1 (planned)",
+          "platform": "Linux x86_64",
+          "filesystem": "ext4",
+          "configuration_and_invocation": "Create a scratch filesystem repository; use matching snapshot and verification policies, then restore both retained snapshots.",
+          "fixtures": "Restic workflow corpus, same independent restore manifest and growth accounting.",
+          "expected_behavior": "Restore complete generations exactly and measure logical source bytes versus new stored bytes.",
+          "actual_exacopy_behavior": "ExaCopy has no repository backup or restore in this slice; this is a workflow reference.",
+          "known_deviation": null,
+          "deviation_rationale": null,
+          "acceptance": [
+            "A-103",
+            "A-108",
+            "A-109",
+            "A-196"
+          ],
+          "evidence": null,
+          "reproduction": "Save snapshot policies and version, restore into new directories and validate contents independently of either repository implementation."
+        }
+      ]
+    }
+  ]
+}

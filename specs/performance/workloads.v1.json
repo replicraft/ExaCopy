@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "revision": 1,
+  "invariants": [
+    "TIME-01: Time the full user operation through its reported result, including integrity checks, policy metadata, required barriers and receipt commitment where applicable.",
+    "TIME-02: Count only trials whose outcome matches the independent byte, metadata and state oracle for their workload.",
+    "TIME-03: Label cache class, source-consistency, verification, durability and storage topology. Match assurance and resource profiles before drawing regression or relative-throughput conclusions.",
+    "TIME-04: Keep failures and timeouts with results. A run missing required evidence cannot pass a performance gate."
+  ],
+  "budgets": {
+    "controlled_throughput_regression_review_percent": 5,
+    "controlled_peak_rss_regression_review_percent": 10,
+    "local_control_ack_target_ms": 100,
+    "visible_pause_or_cancel_target_ms": 250,
+    "gui_input_target_ms": 50,
+    "minimum_measured_trials": 5,
+    "default_measured_trials": 9,
+    "enforcement": "Review thresholds apply to repeated measurements with identical assurance, hardware, build and cache class. GUI/control values are design targets pending native measurements. Correctness and preservation gates precede performance review."
+  },
+  "baseline": [
+    {
+      "id": "local-exact-compare",
+      "status": "executed_pass",
+      "acceptance": ["A-093", "A-185", "A-324"],
+      "workload": "Separate pairs of 4 KiB and 64 MiB regular files, including equal, byte-zero mismatch and last-byte mismatch. Sequential access to generated extents under a warm host page cache.",
+      "subjects": ["ExaCopy, 1 worker", "ExaCopy, up to 4 workers", "system cmp -s"],
+      "measurements": ["wall_ns", "user_cpu_ns", "system_cpu_ns", "per_process_peak_rss_bytes"],
+      "evidence": "evidence/macos-apfs-comparison.json"
+    },
+    {
+      "id": "local-verified-copy",
+      "status": "executed_pass",
+      "acceptance": ["A-185", "A-194", "A-324"],
+      "workload": "4 KiB and 64 MiB synthetic inputs, each copied into a fresh target with a preprovisioned profile on one ext4 guest volume. Include publication and receipt reporting, then independently check final bytes, required fixture metadata and committed-state inspection.",
+      "subjects": ["ExaCopy staged copy"],
+      "measurements": ["wall_ns", "verified_logical_bytes_per_second", "user_cpu_ns", "system_cpu_ns", "per_process_peak_rss_bytes"],
+      "evidence": "evidence/linux-ext4-copy.json"
+    }
+  ],
+  "future": [
+    {
+      "id": "large-inventory",
+      "status": "not_executed",
+      "fixture": "Deterministic 1M and 5M entries, deep and broad trees, 0–4 KiB files plus 64 MiB–4 GiB mixed extents, case-fold collision and unreadable subtree controls.",
+      "prerequisite": "Complete bounded tree inventory and diff, including explicit unsupported-entry accounting.",
+      "metrics": ["entries per second", "time to first result", "peak memory", "descriptor high-water mark", "verified files and bytes per second"]
+    },
+    {
+      "id": "storage-and-random-access",
+      "status": "not_executed",
+      "fixture": "Start with sequential 1 GiB and 4 GiB fixtures and fixed-seed 4 KiB random-position reads and range rewrites. Use physical HDD, SATA SSD, NVMe, separate disks and isolated network storage. Include sparse and incompressible variants, then measure warm and dedicated cold-cache classes.",
+      "prerequisite": "Provision and identify physical topology, filesystem, mount and cache behavior. A guest ext4 volume supplies functional coverage only for this matrix.",
+      "metrics": ["verified logical throughput", "random-operation latency", "bytes read and written", "allocation", "CPU per GiB", "peak memory"]
+    },
+    {
+      "id": "ssh-sftp-and-network",
+      "status": "not_executed",
+      "fixture": "64 MiB and 1 GiB verified transfers over isolated LAN and shaped WAN. Start at 1/40/150 ms RTT, 0/0.5/2% seeded loss and 20/100/1000 Mbit/s. Include disconnect and bad retained-range controls.",
+      "prerequisite": "Qualified SSH/SFTP endpoints and capability, identity, readback and recovery evidence.",
+      "metrics": ["verified goodput", "network payload and retransmission", "CPU per GiB", "peak memory", "reconnect and recovery time"]
+    },
+    {
+      "id": "embedded-wireguard",
+      "status": "not_executed",
+      "fixture": "Run a common verified transfer over kernel WireGuard and embedded WireGuard with the same peer and measured route. Vary MTU, RTT, loss and tunnel reconnection under load.",
+      "prerequisite": "Embedded-to-kernel interoperability, route-loss no-fallback and tunnel identity evidence.",
+      "metrics": ["verified goodput", "handshake and reconnect latency", "CPU per GiB", "peak memory", "transport retransmission"]
+    },
+    {
+      "id": "android-usb-and-wireless",
+      "status": "not_executed",
+      "fixture": "Generated album and 1 GiB binary on authorized shared storage. Pin device, host build, USB 2/3 and modeled Wi-Fi conditions; run supported stream counts up to the tested capability bound. Include a disconnect and held-temperature repeat.",
+      "prerequisite": "Qualified Android USB and wireless adapters, explicit per-device permissions and safe reconnect.",
+      "metrics": ["verified files per second", "verified goodput", "thermal and power data", "CPU", "memory", "verified/reused/retransmitted bytes"]
+    },
+    {
+      "id": "verification-and-recovery",
+      "status": "not_executed",
+      "fixture": "Use the same 64 MiB and 4 GiB fixtures with independently checked stable snapshots of intended bytes. Interrupt at fixed staging fractions, just before publication and after publication. Corrupt one checkpoint in each relevant profile.",
+      "prerequisite": "Stage timing instrumentation and deterministic crash-boundary estimates. Preserve ordinary readback/barrier behavior for every timed result.",
+      "metrics": ["readback time and read amplification", "barrier and metadata time", "reconciliation latency", "time to verified completion", "validated retained bytes", "unnecessary retransmission"]
+    },
+    {
+      "id": "comparison-and-gui-responsiveness",
+      "status": "not_executed",
+      "fixture": "Pathological long/repeated lines, mostly equal large trees and millions of result rows, with user input and cancellation during backup throughput load.",
+      "prerequisite": "Native comparison UI with phase timing and qualified bounded result virtualization.",
+      "metrics": ["time to first useful difference", "complete relation time", "input-to-paint latency", "visible cancellation acknowledgement", "actual worker quiescence latency"]
+    },
+    {
+      "id": "repository-growth-and-deduplication",
+      "status": "not_executed",
+      "fixture": "First full snapshot of deterministic mixed/repeated content, strict unchanged scan, rename-only, inserted-block and rewrite snapshots; verify all retained versions by restoration.",
+      "prerequisite": "Verified backup and restore, independent repository lineage and metadata oracle, qualified reuse of stored objects.",
+      "metrics": ["net new physical bytes", "logical bytes divided by stored bytes", "verified backup and restore throughput", "CPU and peak memory", "verification amplification"]
+    }
+  ]
+}
