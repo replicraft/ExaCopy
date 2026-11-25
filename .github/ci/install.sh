@@ -95,6 +95,14 @@ case "$tool" in
 		"$install_dir/cargo-mutants" mutants --version
 		add_path "$install_dir"
 		;;
+	fuzz)
+		rustup toolchain install nightly-2026-11-04 --profile minimal --component rust-src
+		rustc +nightly-2026-11-04 -vV
+		cargo +1.100.0 install --locked --version '=0.13.2' \
+			--root "$install_dir" --target-dir "$install_dir/target" cargo-fuzz
+		"$install_dir/bin/cargo-fuzz" fuzz --version
+		add_path "$install_dir/bin"
+		;;
 	tlc)
 		fetch 'https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.8%2B9/OpenJDK21U-jdk_x64_linux_hotspot_21.0.8_9.tar.gz' \
 			f2dc5418092c43003db8f9005c4a286e1c0104fea96ccdd49e8ebd037cac9219 "$asset"
