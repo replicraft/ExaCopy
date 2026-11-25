@@ -1,4 +1,4 @@
-# Linux exact file comparison
+# Exact file comparison
 
 `exacopy_diff::linux::compare` takes two already opened Linux `SourceFile` capabilities and caller-owned scratch. It compares the recorded logical extents of the held descriptors. It uses no pathname lookups, creates no files, and holds no mutation capability. Ordinary reads may update access times.
 
@@ -21,10 +21,14 @@ The opt-in `exacopy_diff::linux::compare_parallel` entry point uses the same hel
 
 The coordinator joins the workers and reduces their outcomes in byte order. A mismatch can only be returned if every earlier window read successfully and compared equal. An outstanding speculative read in a later range joins before any result is returned. Thread start and worker panic failures are inconclusive. The final observation check follows the joins. Files remain live-observed, and results use only the bytes actually read.
 
-The portable tests and the [three-range scheduling model](verification/tla/ParallelCompare.tla) exercise P-036. Linux adapter tests exercise the public API with sparse files, ordered mismatches, stale observations and content preservation. These checks cover a per-call worker and scratch budget, contributing to R-082 and A-097. Applications that run simultaneous comparisons account for their aggregate budgets. The CLI uses serial comparison by default and accepts an explicit [worker ceiling](../../clients/cli/README.md). This work package covers the per-comparison budget and held Linux file views.
+The portable tests and the [three-range scheduling model](verification/tla/ParallelCompare.tla) exercise P-036. Linux adapter tests exercise the public API with sparse files, ordered mismatches, stale observations and content preservation. These checks cover a per-call worker and scratch budget, contributing to R-082 and A-097. Applications that run simultaneous comparisons account for their aggregate budgets. The CLI uses serial comparison by default and accepts an explicit [worker ceiling](../../clients/cli/README.md). The tested budget applies to each comparison.
 
 Run the local gate using the TLC and Temurin versions pinned in the [TLC toolchain lock](verification/tla/toolchain.lock.json). Set `TLC_LOG_DIR` to retain the model and negative-control logs.
 
 ```sh
 crates/operations/diff/verification/check.sh
 ```
+
+## Managed APFS on macOS
+
+`exacopy_diff::macos::compare` and `compare_parallel` take two managed APFS read handles from `exacopy_platform::macos`. The platform adapter admits and revalidates both files under the trusted owner's managed-root grant. The same byte comparator, scratch and worker bounds, result types, and error phases apply. Adapter failures propagate with their side and operation. Results describe live observations of the held views. See the [CLI instructions](../../clients/cli/README.md#managed-apfs-comparison-on-macos) for the grant and native fixture test. The fixture exercises the adapter on its host filesystem.
