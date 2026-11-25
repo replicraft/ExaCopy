@@ -2,7 +2,8 @@ use std::{error::Error, fmt};
 
 use exacopy_journal::frame::{FrameKind, FrameReadError};
 use exacopy_journal::{
-	IntentError, PreparedError, PublicationRecordError, VerificationRecordError,
+	IntentError, PreparedError, PublicationRecordError, RecoveryRecordError,
+	VerificationRecordError,
 };
 
 /// A local journal prefix that cannot be used as compatible recovery evidence.
@@ -13,6 +14,10 @@ pub enum JournalReplayError {
 	OwnerBinding,
 	/// An envelope was incompatible, corrupted, or unreadable.
 	Frame(FrameReadError),
+	/// The segment exceeds the local single-segment profile's byte limit.
+	SegmentTooLarge,
+	/// An incomplete suffix follows a committed receipt.
+	TrailingAfterReceipt,
 	/// A complete frame was not the next record allowed for this journal.
 	UnexpectedRecord {
 		/// The next supported record, or none at the end of the fixed sequence.
@@ -38,6 +43,8 @@ pub enum JournalReplayError {
 	Intent(IntentError),
 	/// A publication observation, barrier, or receipt payload or binding was refused.
 	Publication(PublicationRecordError),
+	/// A recovery start or decision payload or link was refused.
+	Recovery(RecoveryRecordError),
 }
 
 impl fmt::Display for JournalReplayError {
@@ -45,6 +52,12 @@ impl fmt::Display for JournalReplayError {
 		match self {
 			Self::OwnerBinding => formatter.write_str("owner and local plan bindings disagree"),
 			Self::Frame(error) => write!(formatter, "journal frame refused ({error})"),
+			Self::SegmentTooLarge => {
+				formatter.write_str("local journal exceeds the segment byte limit")
+			}
+			Self::TrailingAfterReceipt => {
+				formatter.write_str("incomplete record follows the final receipt")
+			}
 			Self::UnexpectedRecord { expected, found } => {
 				write!(
 					formatter,
@@ -71,6 +84,7 @@ impl fmt::Display for JournalReplayError {
 				write!(formatter, "publication intent payload refused ({error})")
 			}
 			Self::Publication(error) => write!(formatter, "publication evidence refused ({error})"),
+			Self::Recovery(error) => write!(formatter, "recovery evidence refused ({error})"),
 		}
 	}
 }
@@ -83,6 +97,7 @@ impl Error for JournalReplayError {
 			Self::Verification(error) => Some(error),
 			Self::Intent(error) => Some(error),
 			Self::Publication(error) => Some(error),
+			Self::Recovery(error) => Some(error),
 			_ => None,
 		}
 	}
@@ -109,5 +124,11 @@ impl From<IntentError> for JournalReplayError {
 impl From<PublicationRecordError> for JournalReplayError {
 	fn from(error: PublicationRecordError) -> Self {
 		Self::Publication(error)
+	}
+}
+
+impl From<RecoveryRecordError> for JournalReplayError {
+	fn from(error: RecoveryRecordError) -> Self {
+		Self::Recovery(error)
 	}
 }

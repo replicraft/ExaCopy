@@ -27,7 +27,10 @@ pub use recovery::{
 	RecoveryDisposition, RecoveryInspectError, RecoveryInspection, RecoveryIssue, RecoveryProfile,
 	RecoveryStep, inspect_recovery,
 };
-pub use replay::{JournalBoundary, JournalReplay, JournalReplayError, JournalTail, replay_journal};
+pub use replay::{
+	JournalBoundary, JournalReplay, JournalReplayError, JournalTail, MAX_LOCAL_JOURNAL_BYTES,
+	replay_journal,
+};
 
 const SPECIAL_MODE_BITS: u32 = 0o7000;
 

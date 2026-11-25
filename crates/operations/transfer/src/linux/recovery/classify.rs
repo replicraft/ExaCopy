@@ -91,6 +91,12 @@ fn published_stage(
 	let Some(stage_directory) = names.stage_directory_identity().map(native_identity) else {
 		return unresolved(RecoveryIssue::StageDirectoryBinding);
 	};
+	if journal
+		.recovery_stage_directory
+		.is_some_and(|identity| identity != stage_directory)
+	{
+		return unresolved(RecoveryIssue::StageDirectoryBinding);
+	}
 	let Some(durability) = journal.durability else {
 		return RecoveryDisposition::PublishedNeedsBarriers;
 	};

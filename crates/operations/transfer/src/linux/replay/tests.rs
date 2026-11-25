@@ -10,6 +10,7 @@ use exacopy_journal::{
 use super::*;
 
 mod fixture;
+mod recovery;
 
 use fixture::{Fixture, JOB_ROOT, KINDS, OTHER_STAGE, Records, STAGE, STAGE_DIRECTORY, component};
 

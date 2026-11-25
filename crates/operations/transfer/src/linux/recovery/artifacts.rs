@@ -56,7 +56,9 @@ pub(super) fn check_receipt(
 	let durability = match journal.receipt {
 		Some(commit) if commit.digest().as_bytes() == &receipt.digest() => commit.durability(),
 		Some(_) => return Err(RecoveryInspectError::ReceiptBinding),
-		None => journal.boundary.head,
+		None => journal
+			.durability_head
+			.ok_or(RecoveryInspectError::ReceiptBinding)?,
 	};
 	if receipt.evidence() != expected || receipt.durability_frame() != durability {
 		return Err(RecoveryInspectError::ReceiptBinding);

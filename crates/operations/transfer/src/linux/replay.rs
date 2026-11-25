@@ -4,15 +4,16 @@ use std::io::Read;
 
 use exacopy_journal::frame::{ChainHead, Frame, FrameKind, FrameReadError, FrameReader};
 use exacopy_journal::{
-	DurabilityRecorded, EntryPrepared, JobPrepared, JournalContext, JournalEntryId,
-	LinuxFileIdentity, LiveSourceView, MetadataRecorded, ObservedTimestamp, OwnerRecord,
-	OwnerStateDirectory, OwnerTimestamp, PublishIntent, PublishIntentContext, PublishObserved,
-	ReceiptCommitted, StageSealed, VerificationRecorded,
+	DurabilityRecorded, DurableJournal, EntryPrepared, JobPrepared, JournalContext, JournalEntryId,
+	JournalEpoch, LinuxFileIdentity, LiveSourceView, MetadataRecorded, ObservedTimestamp,
+	OwnerRecord, OwnerStateDirectory, OwnerTimestamp, PublishIntent, PublishIntentContext,
+	PublishObserved, ReceiptCommitted, StageSealed, VerificationRecorded,
 };
 
 use super::LocalCopyPlan;
 
 mod error;
+mod suffix;
 
 pub use error::JournalReplayError;
 
@@ -21,6 +22,9 @@ mod tests;
 
 /// Sequence assigned to the first and only publication effect in a local v1 copy.
 const PUBLICATION_EFFECT_SEQUENCE: u64 = 1;
+
+/// Maximum byte length of the local profile's single journal segment.
+pub const MAX_LOCAL_JOURNAL_BYTES: u64 = DurableJournal::MAX_FIRST_SEGMENT_BYTES;
 
 /// The byte and chain boundary after the last accepted record.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -61,14 +65,28 @@ pub struct JournalReplay {
 	pub sealed: Option<StageSealed>,
 	/// Stream measurements from the recorded verification.
 	pub verification: Option<VerificationRecorded>,
+	/// Exact original verification frame reference.
+	pub verification_head: Option<ChainHead>,
 	/// Metadata and file barrier from the recorded run.
 	pub metadata: Option<MetadataRecorded>,
+	/// Exact original metadata frame reference.
+	pub metadata_head: Option<ChainHead>,
 	/// Context of the one recorded candidate publication effect.
 	pub intent: Option<PublishIntentContext>,
-	/// Recorded result of the publication attempt.
+	/// Exact original publication intent frame reference.
+	pub intent_head: Option<ChainHead>,
+	/// Latest recorded observation of the original publication.
 	pub observation: Option<PublishObserved>,
+	/// Exact reference to the latest recorded observation.
+	pub observation_head: Option<ChainHead>,
 	/// Recorded namespace barriers, including the claimed stage directory identity.
 	pub durability: Option<DurabilityRecorded>,
+	/// Exact original publication barrier frame reference.
+	pub durability_head: Option<ChainHead>,
+	/// Most recent recovery generation, or the plan generation before the first recovery start.
+	pub latest_epoch: JournalEpoch,
+	/// The private stage directory claimed by the recovery decisions in this journal.
+	pub recovery_stage_directory: Option<LinuxFileIdentity>,
 	/// Recorded exact receipt reference. Validate the artifact separately.
 	pub receipt: Option<ReceiptCommitted>,
 }
@@ -77,7 +95,9 @@ pub struct JournalReplay {
 ///
 /// The caller supplies an owner authenticated using the applicable profile's trusted key
 /// and a plan validated against that owner and the authorized recovery location. Replay
-/// rechecks their recorded bindings and accepts only a consecutive, kind-correct prefix.
+/// rechecks their recorded bindings and accepts only a consecutive, kind-correct prefix up to
+/// [`MAX_LOCAL_JOURNAL_BYTES`]. A recovery generation can record observations of the single
+/// original publication and complete its journal and receipt evidence.
 /// A plausible torn frame contributes no claims to the summary. The reader performs no
 /// filesystem effects and issues no authority for reconciliation actions.
 ///
@@ -105,7 +125,7 @@ pub fn replay_journal(
 	}
 
 	let mut scan = Scan {
-		reader: FrameReader::new(reader, ChainHead::start()),
+		reader: FrameReader::new(reader.take(MAX_LOCAL_JOURNAL_BYTES + 1), ChainHead::start()),
 		summary: JournalReplay {
 			boundary: JournalBoundary {
 				head: ChainHead::start(),
@@ -116,10 +136,17 @@ pub fn replay_journal(
 			stage: None,
 			sealed: None,
 			verification: None,
+			verification_head: None,
 			metadata: None,
+			metadata_head: None,
 			intent: None,
+			intent_head: None,
 			observation: None,
+			observation_head: None,
 			durability: None,
+			durability_head: None,
+			latest_epoch: context.epoch,
+			recovery_stage_directory: None,
 			receipt: None,
 		},
 	};
@@ -133,21 +160,26 @@ struct Scan<R> {
 }
 
 impl<R: Read> Scan<R> {
-	fn next(&mut self, expected: Option<FrameKind>) -> Result<Option<Frame>, JournalReplayError> {
+	fn read_next(&mut self) -> Result<Option<Frame>, JournalReplayError> {
 		let frame = match self.reader.next_frame() {
 			Ok(Some(frame)) => frame,
 			Ok(None) => return Ok(None),
-			Err(FrameReadError::TornTail { bytes_read, .. }) => {
+			Err(FrameReadError::TornTail { offset, bytes_read }) => {
+				let bytes_read_u64 =
+					u64::try_from(bytes_read).map_err(|_| JournalReplayError::SegmentTooLarge)?;
+				if offset
+					.checked_add(bytes_read_u64)
+					.is_none_or(|end| end > MAX_LOCAL_JOURNAL_BYTES)
+				{
+					return Err(JournalReplayError::SegmentTooLarge);
+				}
 				self.summary.tail = JournalTail::Torn { bytes_read };
 				return Ok(None);
 			}
 			Err(error) => return Err(JournalReplayError::Frame(error)),
 		};
-		if Some(frame.kind()) != expected {
-			return Err(JournalReplayError::UnexpectedRecord {
-				expected,
-				found: frame.kind(),
-			});
+		if self.reader.offset() > MAX_LOCAL_JOURNAL_BYTES {
+			return Err(JournalReplayError::SegmentTooLarge);
 		}
 		let sequence = frame.head().sequence();
 		if self.summary.boundary.head.sequence().checked_add(1) != Some(sequence) {
@@ -157,6 +189,19 @@ impl<R: Read> Scan<R> {
 			head: frame.head(),
 			offset: self.reader.offset(),
 		};
+		Ok(Some(frame))
+	}
+
+	fn next(&mut self, expected: Option<FrameKind>) -> Result<Option<Frame>, JournalReplayError> {
+		let Some(frame) = self.read_next()? else {
+			return Ok(None);
+		};
+		if Some(frame.kind()) != expected {
+			return Err(JournalReplayError::UnexpectedRecord {
+				expected,
+				found: frame.kind(),
+			});
+		}
 		Ok(Some(frame))
 	}
 
@@ -217,10 +262,10 @@ impl<R: Read> Scan<R> {
 		)?;
 		self.summary.sealed = Some(sealed);
 
-		let Some(frame) = self.next(Some(FrameKind::VerificationRecorded))? else {
+		let Some(verification_frame) = self.next(Some(FrameKind::VerificationRecorded))? else {
 			return Ok(());
 		};
-		let verification = VerificationRecorded::from_frame(&frame)?;
+		let verification = VerificationRecorded::from_frame(&verification_frame)?;
 		require_binding(
 			FrameKind::VerificationRecorded,
 			verification.context == context
@@ -231,6 +276,7 @@ impl<R: Read> Scan<R> {
 				&& verification.stage().length == sealed.length,
 		)?;
 		self.summary.verification = Some(verification);
+		self.summary.verification_head = Some(verification_frame.head());
 
 		let Some(metadata_frame) = self.next(Some(FrameKind::MetadataRecorded))? else {
 			return Ok(());
@@ -249,6 +295,7 @@ impl<R: Read> Scan<R> {
 				&& same_time(metadata.metadata.modified_at, source_times.modified_at),
 		)?;
 		self.summary.metadata = Some(metadata);
+		self.summary.metadata_head = Some(metadata_frame.head());
 
 		let Some(intent_frame) = self.next(Some(FrameKind::PublishIntent))? else {
 			return Ok(());
@@ -263,44 +310,17 @@ impl<R: Read> Scan<R> {
 				&& intent.target.verification_digest == verification.record_digest(),
 		)?;
 		self.summary.intent = Some(intent.context);
+		self.summary.intent_head = Some(intent_frame.head());
 
-		let Some(observed_frame) = self.next(Some(FrameKind::PublishObserved))? else {
-			return Ok(());
-		};
-		let observed = PublishObserved::from_frame(&observed_frame)?;
-		observed.validate_intent(&intent_frame)?;
-		self.summary.observation = Some(observed);
-
-		let Some(durability_frame) = self.next(Some(FrameKind::DurabilityRecorded))? else {
-			return Ok(());
-		};
-		let durability = DurabilityRecorded::from_frame(&durability_frame)?;
-		durability.validate_evidence(&metadata_frame, &intent_frame, &observed_frame)?;
-		let stage_directory = durability.barriers().stage_directory;
-		require_binding(
-			FrameKind::DurabilityRecorded,
-			stage_directory != state_root
-				&& stage_directory != source.file_identity
-				&& stage_directory != source.root_identity,
-		)?;
-		self.summary.durability = Some(durability);
-
-		let Some(receipt_frame) = self.next(Some(FrameKind::ReceiptCommitted))? else {
-			return Ok(());
-		};
-		let receipt = ReceiptCommitted::from_frame(&receipt_frame)?;
-		require_binding(
-			FrameKind::ReceiptCommitted,
-			receipt.context() == durability.context()
-				&& receipt.durability() == durability_frame.head()
-				&& owner
-					.manifest()
-					.directories
-					.contains(&OwnerStateDirectory::Receipts),
-		)?;
-		self.summary.receipt = Some(receipt);
-
-		self.next(None).map(|_| ())
+		self.replay_suffix(
+			suffix::OriginalFrames {
+				verification: &verification_frame,
+				metadata: &metadata_frame,
+				intent: &intent_frame,
+			},
+			plan,
+			owner,
+		)
 	}
 }
 
