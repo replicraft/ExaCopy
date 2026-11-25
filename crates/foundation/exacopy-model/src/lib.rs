@@ -1,7 +1,7 @@
 //! Pure decisions for preserve-mode ExaCopy transactions.
 #![forbid(unsafe_code)]
 
-mod identity;
+mod binding;
 mod range;
 mod sync;
 mod transaction;
@@ -10,7 +10,8 @@ mod transaction;
 #[path = "../verification/kani/mod.rs"]
 mod kani_checks;
 
-pub use identity::{CopyBinding, EntryId, InvalidJobId, JobId, RunEpoch, StageId};
+pub use binding::CopyBinding;
+pub use exacopy_core::{EntryId, InvalidJobId, JobId, RunEpoch, StageId};
 pub use range::checked_range_end;
 pub use sync::{
 	RegularFileEvidence, SyncBaseline, SyncBlock, SyncConflict, SyncCopyTarget,

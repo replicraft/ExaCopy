@@ -173,9 +173,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "exacopy-core"
+version = "0.1.0"
+dependencies = [
+ "uuid",
+]
+
+[[package]]
 name = "exacopy-endpoint"
 version = "0.1.0"
 dependencies = [
+ "exacopy-core",
  "exacopy-model",
 ]
 
@@ -204,7 +212,7 @@ dependencies = [
 name = "exacopy-model"
 version = "0.1.0"
 dependencies = [
- "uuid",
+ "exacopy-core",
 ]
 
 [[package]]

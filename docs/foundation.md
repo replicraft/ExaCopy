@@ -1,6 +1,6 @@
 # PR 1. Executable copy decisions and proof path
 
-`exacopy-model` owns typed job, entry, epoch and stage identities, the preserve-mode decision state machine, and the checked write-range guard. `xtask` owns engineering policy and evidence validation. The work package uses ADR-005, ADR-006, ADR-012, ADR-067, ADR-068, ADR-075, and ADR-107 through ADR-116 from the local architecture pack.
+`exacopy-core` owns typed job, entry, epoch and stage identities. `exacopy-model` owns their transaction binding, the preserve-mode decision state machine, and the checked write-range guard. `xtask` owns engineering policy and evidence validation. The work package uses ADR-005, ADR-006, ADR-012, ADR-067, ADR-068, ADR-075, and ADR-107 through ADR-116 from the local architecture pack.
 
 | Scope | Requirements and acceptance | Invariants and obligations |
 | --- | --- | --- |
@@ -34,7 +34,7 @@ crates/foundation/exacopy-model/verification/check.sh miri
 
 The recorder takes `--gate rust|lean|kani|tlc` for a single lane. It retains the command output and the TLC counterexample with their SHA-256 digests. These records carry execution results. Independent assurance review and filesystem qualification are separate gates. Supply-chain review remains subject to [cargo-vet's import policy](../supply-chain/config.toml).
 
-The initial macOS ARM64 coverage run measured 100 of 100 model source lines and 94 of 94 regions. Nightly instrumentation measured 16 of 16 branches. The production-only mutation run caught 25 viable mutants. Six other edits failed to compile. Separate Kani checks exercise the symbolic harness. The coverage and mutation denominators cover `identity.rs`, `range.rs`, and `transaction.rs`.
+The initial macOS ARM64 coverage run measured 100 of 100 model source lines and 94 of 94 regions. Nightly instrumentation measured 16 of 16 branches. The production-only mutation run caught 25 viable mutants. Six other edits failed to compile. Separate Kani checks exercise the symbolic harness. The initial coverage and mutation denominators covered `identity.rs`, `range.rs`, and `transaction.rs`. Current mutation sampling spans core identities, the model binding, the range guard, and the copy state machine. The line and branch coverage gate also includes the model sync classifier. The component validator has a separate line coverage gate.
 
 The initial locked dependency scans passed cargo-deny and cargo-audit. Cargo-vet imported existing peer audits covering 12 of 69 third-party versions. The other 57 require evidence under the configured review criteria. This keeps the dependency gate open.
 

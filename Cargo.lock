@@ -807,6 +807,9 @@ dependencies = [
 [[package]]
 name = "exacopy-core"
 version = "0.1.0"
+dependencies = [
+ "uuid",
+]
 
 [[package]]
 name = "exacopy-diff"
@@ -854,9 +857,9 @@ dependencies = [
 name = "exacopy-model"
 version = "0.1.0"
 dependencies = [
+ "exacopy-core",
  "hax-lib",
  "proptest",
- "uuid",
 ]
 
 [[package]]

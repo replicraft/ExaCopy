@@ -6,14 +6,15 @@ mkdir -p "$evidence"
 case "$1" in
 	coverage)
 		report="$evidence/coverage.json"
-		cargo +nightly-2026-11-04 llvm-cov nextest --locked -p exacopy-model \
+		cargo +nightly-2026-11-04 llvm-cov nextest --locked -p exacopy-core -p exacopy-model \
 			--branch --json --summary-only --output-path "$report" \
-			--ignore-filename-regex '(^|/)(tests|verification)/' --no-tests fail
+			--ignore-filename-regex '(^|/)(tests|verification)/|/exacopy-core/src/component\.rs$' \
+			--no-tests fail
 		jq '.data[0].totals | {lines, branches}' "$report"
 		jq -e '
 			(.data | length == 1) and
 			([.data[0].files[].filename | split("/") | last] | sort ==
-				["identity.rs", "range.rs", "transaction.rs"]) and
+				["binding.rs", "identity.rs", "range.rs", "sync.rs", "transaction.rs"]) and
 			(.data[0].totals |
 				.lines.count > 0 and .lines.covered * 100 >= .lines.count * 95 and
 				.branches.count > 0 and .branches.covered * 100 >= .branches.count * 90)
@@ -26,15 +27,15 @@ case "$1" in
 		cargo +1.100.0 llvm-cov nextest --locked -p exacopy-core -p exacopy-endpoint -p exacopy-platform \
 			--json --show-missing-lines --output-path "$report" --no-tests fail
 		jq '
-			def source_lines($crate):
+			def source_lines($path):
 				[.data[0].files[] |
-					select(.filename | test("(^|/)crates/" + $crate + "/src/")) |
+					select(.filename | test("(^|/)crates/" + $path)) |
 					.summary.lines] |
 				{count: (map(.count) | add // 0), covered: (map(.covered) | add // 0)};
 			if (.data | length) != 1 then error("expected one coverage data set") else
-				{"exacopy-core": source_lines("foundation/exacopy-core"),
-				 "exacopy-endpoint": source_lines("endpoints/endpoint"),
-				 "exacopy-platform": source_lines("endpoints/platform")}
+				{"exacopy-core": source_lines("foundation/exacopy-core/src/component\\.rs$"),
+				 "exacopy-endpoint": source_lines("interfaces/exacopy-endpoint/src/"),
+				 "exacopy-platform": source_lines("platform/exacopy-platform/src/")}
 			end
 		' "$report" > "$summary"
 		cat "$summary"
@@ -45,8 +46,10 @@ case "$1" in
 	mutation)
 		# cargo-mutants 27.1.0 leaves [workspace.dependencies] paths relative
 		# in its scratch copy. CI passes --in-place in a disposable checkout.
-		cargo +1.100.0 mutants "${@:2}" --package exacopy-model --output "$evidence" --no-shuffle \
-			--file crates/foundation/exacopy-model/src/identity.rs \
+		cargo +1.100.0 mutants "${@:2}" --package exacopy-core --package exacopy-model \
+			--test-package exacopy-core --test-package exacopy-model --output "$evidence" --no-shuffle \
+			--file crates/foundation/exacopy-core/src/identity.rs \
+			--file crates/foundation/exacopy-model/src/binding.rs \
 			--file crates/foundation/exacopy-model/src/range.rs \
 			--file crates/foundation/exacopy-model/src/transaction.rs -- --locked
 		report="$evidence/mutants.out/outcomes.json"
@@ -56,7 +59,8 @@ case "$1" in
 			.total_mutants == .caught + .unviable and
 			(.outcomes[0] | .scenario == "Baseline" and .summary == "Success") and
 			([.outcomes[1:][].scenario.Mutant.file] | unique == [
-				"crates/foundation/exacopy-model/src/identity.rs",
+				"crates/foundation/exacopy-core/src/identity.rs",
+				"crates/foundation/exacopy-model/src/binding.rs",
 				"crates/foundation/exacopy-model/src/range.rs",
 				"crates/foundation/exacopy-model/src/transaction.rs"
 			])

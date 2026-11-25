@@ -1,6 +1,6 @@
-//! Tests for the public job identifier boundary.
+//! UUID identity admission and private stage diagnostics.
 
-use exacopy_model::{InvalidJobId, JobId};
+use exacopy_core::{InvalidJobId, JobId, StageId};
 
 const RFC_UUID_V7: [u8; 16] = [
 	0x01, 0x8f, 0x23, 0x45, 0x67, 0x89, 0x7a, 0xbc, 0xa2, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
@@ -47,4 +47,20 @@ fn rejects_other_uuid_versions_with_the_rfc_variant() {
 			"version octet {version:#04x}"
 		);
 	}
+}
+
+#[test]
+fn stage_debug_redacts_the_token() {
+	const FIRST_TOKEN: [u8; 16] = [0x51; 16];
+	const SECOND_TOKEN: [u8; 16] = [0x57; 16];
+	for token in [FIRST_TOKEN, SECOND_TOKEN] {
+		let stage = StageId::from_bytes(token);
+		assert_eq!(format!("{stage:?}"), "StageId(<redacted>)");
+	}
+}
+
+#[test]
+fn invalid_job_id_explains_the_uuid_requirement() {
+	let error = InvalidJobId.to_string();
+	assert!(error.contains("RFC UUIDv7"), "{error}");
 }

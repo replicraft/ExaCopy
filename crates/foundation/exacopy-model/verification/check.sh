@@ -7,7 +7,7 @@ repo=$(cd "$verification_dir/../../../.." && pwd -P)
 check_miri() (
 	cd "$repo"
 	# The native suite runs the generated properties, which read their regression corpus.
-	rustup run nightly-2026-11-04 cargo miri test --locked -p exacopy-model --tests -- \
+	rustup run nightly-2026-11-04 cargo miri test --locked -p exacopy-core -p exacopy-model --tests -- \
 		--skip checked_ranges_agree_with_wide_integer_arithmetic \
 		--skip generated_copy_histories_agree_with_the_reference_ledger
 )

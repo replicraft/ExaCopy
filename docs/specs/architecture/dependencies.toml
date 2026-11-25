@@ -7,13 +7,14 @@ concrete_external = ["apfs-mounted", "boringtun", "libc", "russh", "russh-sftp",
 
 [groups.core]
 members = { exacopy-model = "crates/foundation/exacopy-model" }
-normal.external = ["uuid"]
+normal.groups = ["foundation"]
 normal.optional_external = ["hax-lib"] # Extraction annotations, only with proof-extraction.
 dev.groups = ["testkit"]
 dev.external = ["proptest"]
 
 [groups.foundation]
 members = { exacopy-core = "crates/foundation/exacopy-core" }
+normal.external = ["uuid"]
 
 [groups.codecs]
 normal.groups = ["foundation"]

@@ -10,8 +10,8 @@ publish = false
 proof-extraction = ["dep:hax-lib"]
 
 [dependencies]
+exacopy-core.workspace = true
 hax-lib = { workspace = true, optional = true }
-uuid.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

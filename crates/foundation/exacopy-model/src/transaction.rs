@@ -1,6 +1,6 @@
 use core::fmt;
 
-use crate::identity::CopyBinding;
+use crate::binding::CopyBinding;
 
 /// The current abstract phase of one preserve-mode copy attempt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
