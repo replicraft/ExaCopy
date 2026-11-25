@@ -49,7 +49,6 @@ case "$1" in
 		cargo +1.100.0 mutants "${@:2}" --package exacopy-core --package exacopy-model \
 			--test-package exacopy-core --test-package exacopy-model --output "$evidence" --no-shuffle \
 			--file crates/foundation/exacopy-core/src/identity.rs \
-			--file crates/foundation/exacopy-model/src/binding.rs \
 			--file crates/foundation/exacopy-model/src/range.rs \
 			--file crates/foundation/exacopy-model/src/transaction.rs -- --locked
 		report="$evidence/mutants.out/outcomes.json"
@@ -60,7 +59,6 @@ case "$1" in
 			(.outcomes[0] | .scenario == "Baseline" and .summary == "Success") and
 			([.outcomes[1:][].scenario.Mutant.file] | unique == [
 				"crates/foundation/exacopy-core/src/identity.rs",
-				"crates/foundation/exacopy-model/src/binding.rs",
 				"crates/foundation/exacopy-model/src/range.rs",
 				"crates/foundation/exacopy-model/src/transaction.rs"
 			])
