@@ -9,6 +9,7 @@ pub mod linux_recovery;
 pub mod linux_staging;
 mod positioned;
 mod read_view;
+pub mod ssh_sftp;
 mod staging;
 
 #[cfg(kani)]
