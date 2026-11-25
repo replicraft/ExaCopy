@@ -4,6 +4,7 @@ use std::io;
 use std::os::fd::AsFd as _;
 use std::os::unix::ffi::OsStrExt as _;
 use std::path::Path;
+use std::process;
 
 use exacopy_endpoint::UnixComponent;
 use rustix::fs::{self, AtFlags, FileType, FlockOperation, Mode, OFlags, Stat};
@@ -86,11 +87,12 @@ impl ManagedReadGrant {
 /// A held, explicitly authorized owner-private local APFS directory.
 ///
 /// Concurrent readers may hold independent shared advisory locks on the same
-/// directory. The shared lock lasts for the owned descriptor's lifetime.
+/// directory. The shared lock is released when the capability is dropped.
 pub struct ManagedReadRoot {
 	directory: File,
 	owner: u32,
 	identity: DirectoryIdentity,
+	lease_process: u32,
 }
 
 impl fmt::Debug for ManagedReadRoot {
@@ -168,43 +170,31 @@ impl ManagedReadRoot {
 		if imported.is_some_and(|imported| imported != identity) {
 			return Err(ManagedReadError::UnsupportedNamespace);
 		}
-		let root = Self {
-			directory,
-			owner: rustix::process::geteuid().as_raw(),
-			identity,
-		};
-		root.check_root()?;
-		if !volume::supports_managed_root(root.directory.as_fd())? {
+		let owner = rustix::process::geteuid().as_raw();
+		check_directory_authority(&directory, owner, identity)?;
+		if !volume::supports_managed_root(directory.as_fd())? {
 			return Err(ManagedReadError::UnsupportedNamespace);
 		}
-		match fs::flock(&root.directory, FlockOperation::NonBlockingLockShared) {
+		match fs::flock(&directory, FlockOperation::NonBlockingLockShared) {
 			Ok(()) => {}
 			Err(Errno::AGAIN) => return Err(ManagedReadError::DirectoryBusy),
 			Err(error) => return Err(error.into()),
 		}
+		let root = Self {
+			directory,
+			owner,
+			identity,
+			lease_process: process::id(),
+		};
 		root.check_root()?;
 		Ok(root)
 	}
 
 	fn check_root(&self) -> Result<(), ManagedReadError> {
-		let stat = fs::fstat(&self.directory)?;
-		let mount = fs::fstatfs(&self.directory)?;
-		if self.owner == 0
-			|| rustix::process::geteuid().as_raw() != self.owner
-			|| stat.st_uid != self.owner
-			|| !self.identity.matches_stat(&stat)
-			|| FileType::from_raw_mode(stat.st_mode) != FileType::Directory
-			|| Mode::from_raw_mode(stat.st_mode) != DIRECTORY_MODE
-			|| stat.st_flags & UNSUPPORTED_OBJECT_FLAGS != 0
-			|| !mount.f_fstypename.starts_with(&APFS_NAME)
-			|| mount.f_flags & libc::MNT_LOCAL as u32 == 0
-			|| mount.f_flags & libc::MNT_IGNORE_OWNERSHIP as u32 != 0
-			|| PhysicalFsid::held(self.directory.as_fd())? != Some(self.identity.physical_fsid)
-			|| !acl::has_explicit_empty_acl(self.directory.as_fd())?
-		{
+		if self.lease_process != process::id() {
 			return Err(ManagedReadError::UnsupportedNamespace);
 		}
-		Ok(())
+		check_directory_authority(&self.directory, self.owner, self.identity)
 	}
 
 	/// Select one owner-private, single-link regular file without following links.
@@ -272,6 +262,15 @@ impl ManagedReadRoot {
 	}
 }
 
+impl Drop for ManagedReadRoot {
+	fn drop(&mut self) {
+		// A fork can briefly retain the open description even with CLOEXEC.
+		if self.lease_process == process::id() {
+			let _ = fs::flock(&self.directory, FlockOperation::Unlock);
+		}
+	}
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct DirectoryIdentity {
 	device: libc::dev_t,
@@ -284,6 +283,31 @@ impl DirectoryIdentity {
 	fn matches_stat(self, stat: &Stat) -> bool {
 		self.device == stat.st_dev && self.inode == stat.st_ino && self.generation == stat.st_gen
 	}
+}
+
+fn check_directory_authority(
+	directory: &File,
+	owner: u32,
+	identity: DirectoryIdentity,
+) -> Result<(), ManagedReadError> {
+	let stat = fs::fstat(directory)?;
+	let mount = fs::fstatfs(directory)?;
+	if owner == 0
+		|| rustix::process::geteuid().as_raw() != owner
+		|| stat.st_uid != owner
+		|| !identity.matches_stat(&stat)
+		|| FileType::from_raw_mode(stat.st_mode) != FileType::Directory
+		|| Mode::from_raw_mode(stat.st_mode) != DIRECTORY_MODE
+		|| stat.st_flags & UNSUPPORTED_OBJECT_FLAGS != 0
+		|| !mount.f_fstypename.starts_with(&APFS_NAME)
+		|| mount.f_flags & libc::MNT_LOCAL as u32 == 0
+		|| mount.f_flags & libc::MNT_IGNORE_OWNERSHIP as u32 != 0
+		|| PhysicalFsid::held(directory.as_fd())? != Some(identity.physical_fsid)
+		|| !acl::has_explicit_empty_acl(directory.as_fd())?
+	{
+		return Err(ManagedReadError::UnsupportedNamespace);
+	}
+	Ok(())
 }
 
 fn capture_directory(directory: &File) -> Result<DirectoryIdentity, ManagedReadError> {

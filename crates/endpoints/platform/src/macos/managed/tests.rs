@@ -483,3 +483,16 @@ fn imported_descriptor_alias_cannot_unlock_the_private_reader_lease() {
 	drop(root);
 	flock(&writer, FlockOperation::NonBlockingLockExclusive).expect("private lease was released");
 }
+
+#[test]
+fn dropping_a_reader_releases_its_lease_with_a_transient_descriptor_alias() {
+	let fixture = Fixture::new();
+	fixture.install_empty_acl();
+	let writer = fixture.open();
+	let root = fixture.bind().expect("hold the shared root lease");
+	// A concurrent fork can retain the open description briefly before CLOEXEC.
+	let alias = root.directory.try_clone().expect("duplicate lease fd");
+	drop(root);
+	flock(&writer, FlockOperation::NonBlockingLockExclusive).expect("reader released its lease");
+	drop(alias);
+}
