@@ -8,7 +8,7 @@ use exacopy_endpoint::{MAX_INTERRUPTED_RETRIES, UnixComponent, read_exact_at};
 use rustix::fs::{self, AtFlags, Stat};
 use rustix::io::Errno;
 
-use super::{ManagedReadError, ManagedReadRoot, PhysicalFsid, with_materialization_disabled};
+use super::{ManagedReadError, PhysicalFsid, ReadDirectory, with_materialization_disabled};
 
 /// A held, read-only view of a regular file beneath a managed APFS directory.
 ///
@@ -16,7 +16,7 @@ use super::{ManagedReadError, ManagedReadRoot, PhysicalFsid, with_materializatio
 /// own dataless policy scope. Metadata checks report observations of a live
 /// inode. Ordinary reads can update the access time.
 pub struct ManagedRegularFile<'root> {
-	root: &'root ManagedReadRoot,
+	root: ReadDirectory<'root>,
 	name: UnixComponent<'root>,
 	file: File,
 	initial: Stat,
@@ -33,7 +33,7 @@ impl fmt::Debug for ManagedRegularFile<'_> {
 
 impl<'root> ManagedRegularFile<'root> {
 	pub(super) fn new(
-		root: &'root ManagedReadRoot,
+		root: ReadDirectory<'root>,
 		name: UnixComponent<'root>,
 		file: File,
 		initial: Stat,
@@ -108,7 +108,7 @@ impl<'root> ManagedRegularFile<'root> {
 	pub(super) fn check_file(&self) -> Result<(), ManagedReadError> {
 		let held = fs::fstat(&self.file)?;
 		let named = match fs::statat(
-			&self.root.directory,
+			self.root.directory,
 			self.name.as_bytes(),
 			AtFlags::SYMLINK_NOFOLLOW,
 		) {

@@ -2,6 +2,7 @@ use std::fmt;
 use std::fs::File;
 use std::io;
 use std::os::fd::AsFd as _;
+use std::path::Path;
 use std::process;
 
 use exacopy_endpoint::{MAX_FILE_LENGTH, UnixComponent};
@@ -9,8 +10,9 @@ use rustix::fs::{self, AtFlags, FileType, FlockOperation, Mode, Stat};
 use rustix::io::Errno;
 
 use super::super::{
-	DIRECTORY_OPEN, DirectoryIdentity, ManagedReadError, PhysicalFsid, capture_directory,
-	check_directory_authority, volume, with_materialization_disabled,
+	DIRECTORY_OPEN, DirectoryIdentity, ManagedReadError, ManagedReadGrant, ManagedRegularFile,
+	PhysicalFsid, ReadDirectory, capture_directory, check_directory_authority,
+	open_provisioned_directory, provisioned_path_components, volume, with_materialization_disabled,
 };
 use super::entropy::fill_stage_entropy;
 use super::identity::RANDOM_STAGE_ID_BYTES;
@@ -67,6 +69,41 @@ impl ManagedStageRoot {
 			let reopened = fs::openat(&directory, c".", DIRECTORY_OPEN, Mode::empty())?;
 			let lease = DirectoryLease::bind(reopened.into(), imported)?;
 			Ok(Self { lease })
+		})
+	}
+
+	/// Opens a separately authorized source under this destination's exclusive lease.
+	///
+	/// The read grant must cover the selected file and the independently resolved absolute
+	/// source parent. The source parent must have the same held physical directory identity
+	/// as the destination. The read view borrows this lease and exposes only positioned reads
+	/// and revalidation.
+	///
+	/// # Errors
+	/// Rejects an unqualified source parent or child, a different parent identity, a lease
+	/// owned by another process, changed observations, and filesystem or thread policy failures.
+	pub fn open_regular_source<'root>(
+		&'root self,
+		source_parent: &Path,
+		name: UnixComponent<'root>,
+		_grant: ManagedReadGrant,
+	) -> Result<ManagedRegularFile<'root>, ManagedReadError> {
+		let directory = ReadDirectory {
+			directory: &self.lease.file,
+			owner: self.lease.owner,
+			identity: self.lease.identity,
+			lease_process: self.lease.lease_process,
+		};
+		directory.check_process()?;
+		let relative = provisioned_path_components(source_parent)?;
+		with_materialization_disabled(|| {
+			let source = open_provisioned_directory(relative)?;
+			let identity = capture_directory(&source)?;
+			if identity != directory.identity {
+				return Err(ManagedReadError::UnsupportedNamespace);
+			}
+			check_directory_authority(&source, directory.owner, identity)?;
+			directory.open_with_policy(name)
 		})
 	}
 

@@ -57,7 +57,8 @@ const UNSUPPORTED_OBJECT_FLAGS: u32 = SF_FIRMLINK | SF_DATALESS;
 /// Explicit trust from the owner of an independently provisioned directory.
 ///
 /// The grant conveys a caller attestation. The adapter checks directory mode,
-/// ownership, ACL, filesystem and identities, and takes a shared advisory lock.
+/// ownership, ACL, filesystem and identities. The read capability either owns a
+/// shared advisory lock or borrows a separately authorized exclusive lock.
 #[derive(Debug)]
 pub struct ManagedReadGrant(());
 
@@ -72,7 +73,8 @@ impl ManagedReadGrant {
 	/// Every cooperating actor under the same effective UID must independently
 	/// open the directory and hold an exclusive Darwin `flock` before changing
 	/// the directory, any names, or any selected files, including through
-	/// aliases or previously retained handles. Readers hold a shared lock.
+	/// aliases or previously retained handles. The read capability requires a
+	/// held lease throughout use.
 	///
 	/// For path admission, every ancestor and its directory entries must be
 	/// protected against redirection through the initial open. Resolution
@@ -145,25 +147,12 @@ impl ManagedReadRoot {
 		path: &Path,
 		_grant: ManagedReadGrant,
 	) -> Result<Self, ManagedReadError> {
-		let raw = path.as_os_str().as_bytes();
-		let Some(relative) = raw.strip_prefix(b"/") else {
-			return Err(ManagedReadError::UnsupportedNamespace);
-		};
-		if raw.len() >= libc::PATH_MAX as usize
-			|| relative
-				.split(|&byte| byte == b'/')
-				.any(|name| UnixComponent::new(name).is_err())
-		{
-			return Err(ManagedReadError::UnsupportedNamespace);
-		}
+		let relative = provisioned_path_components(path)?;
 		with_materialization_disabled(|| {
-			let mut directory = fs::open(c"/", DIRECTORY_OPEN, Mode::empty())?;
-			for child in relative.split(|&byte| byte == b'/') {
-				directory = fs::openat(&directory, child, DIRECTORY_OPEN, Mode::empty())?;
-			}
-			Self::bind_directory(File::from(directory), None)
+			Self::bind_directory(open_provisioned_directory(relative)?, None)
 		})
 	}
+
 	fn bind_directory(
 		directory: File,
 		imported: Option<DirectoryIdentity>,
@@ -188,15 +177,8 @@ impl ManagedReadRoot {
 			identity,
 			lease_process: process::id(),
 		};
-		root.check_root()?;
+		root.read_directory().check_root()?;
 		Ok(root)
-	}
-
-	fn check_root(&self) -> Result<(), ManagedReadError> {
-		if self.lease_process != process::id() {
-			return Err(ManagedReadError::UnsupportedNamespace);
-		}
-		check_directory_authority(&self.directory, self.owner, self.identity)
 	}
 
 	/// Select one owner-private, single-link regular file without following links.
@@ -214,15 +196,45 @@ impl ManagedReadRoot {
 		&'root self,
 		name: UnixComponent<'root>,
 	) -> Result<ManagedRegularFile<'root>, ManagedReadError> {
-		with_materialization_disabled(|| self.open_with_policy(name))
+		with_materialization_disabled(|| self.read_directory().open_with_policy(name))
 	}
 
-	fn open_with_policy<'root>(
-		&'root self,
+	fn read_directory(&self) -> ReadDirectory<'_> {
+		ReadDirectory {
+			directory: &self.directory,
+			owner: self.owner,
+			identity: self.identity,
+			lease_process: self.lease_process,
+		}
+	}
+}
+
+struct ReadDirectory<'root> {
+	directory: &'root File,
+	owner: u32,
+	identity: DirectoryIdentity,
+	lease_process: u32,
+}
+
+impl<'root> ReadDirectory<'root> {
+	fn check_process(&self) -> Result<(), ManagedReadError> {
+		if self.lease_process != process::id() {
+			return Err(ManagedReadError::UnsupportedNamespace);
+		}
+		Ok(())
+	}
+
+	fn check_root(&self) -> Result<(), ManagedReadError> {
+		self.check_process()?;
+		check_directory_authority(self.directory, self.owner, self.identity)
+	}
+
+	fn open_with_policy(
+		self,
 		name: UnixComponent<'root>,
 	) -> Result<ManagedRegularFile<'root>, ManagedReadError> {
 		self.check_root()?;
-		let before = match fs::statat(&self.directory, name.as_bytes(), AtFlags::SYMLINK_NOFOLLOW) {
+		let before = match fs::statat(self.directory, name.as_bytes(), AtFlags::SYMLINK_NOFOLLOW) {
 			Ok(stat) => stat,
 			Err(Errno::NOENT) => return Err(ManagedReadError::Missing),
 			Err(error) => return Err(error.into()),
@@ -240,7 +252,7 @@ impl ManagedReadRoot {
 		let length =
 			u64::try_from(before.st_size).map_err(|_| ManagedReadError::UnsupportedChild)?;
 		let descriptor = fs::openat(
-			&self.directory,
+			self.directory,
 			name.as_bytes(),
 			OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
 			Mode::empty(),
@@ -310,6 +322,30 @@ fn check_directory_authority(
 		return Err(ManagedReadError::UnsupportedNamespace);
 	}
 	Ok(())
+}
+
+fn provisioned_path_components(path: &Path) -> Result<&[u8], ManagedReadError> {
+	let raw = path.as_os_str().as_bytes();
+	let Some(relative) = raw.strip_prefix(b"/") else {
+		return Err(ManagedReadError::UnsupportedNamespace);
+	};
+	if raw.len() >= libc::PATH_MAX as usize
+		|| relative
+			.split(|&byte| byte == b'/')
+			.any(|name| UnixComponent::new(name).is_err())
+	{
+		return Err(ManagedReadError::UnsupportedNamespace);
+	}
+	Ok(relative)
+}
+
+// The caller holds the dataless materialization scope through path resolution.
+fn open_provisioned_directory(relative: &[u8]) -> Result<File, ManagedReadError> {
+	let mut directory = fs::open(c"/", DIRECTORY_OPEN, Mode::empty())?;
+	for child in relative.split(|&byte| byte == b'/') {
+		directory = fs::openat(&directory, child, DIRECTORY_OPEN, Mode::empty())?;
+	}
+	Ok(directory.into())
 }
 
 fn capture_directory(directory: &File) -> Result<DirectoryIdentity, ManagedReadError> {
