@@ -3,6 +3,7 @@ members = [
     "crates/core/model",
     "crates/endpoints/endpoint",
     "crates/endpoints/platform",
+    "crates/testing/test-support",
     "xtask",
 ]
 resolver = "3"
