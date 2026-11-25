@@ -104,6 +104,11 @@ Raw initial and depth-limited campaign records are retained separately at
 `/private/tmp/exacopy-public-manifest.OdSXc5/fuzz-evidence-final-depth`.
 These are executed fixture/parser results. They do not establish universal
 parser refinement, filesystem qualification or historical authenticity.
+An additional ARM64 macOS ASan run completed the same 250,000-input budget
+against clean commit `98dacb7`. All 36 recorded input digests matched that
+commit, including both workspace and fuzz lockfiles, and the before/after
+ledgers matched. Its raw results and initial cache failure are retained at
+`/private/tmp/exacopy-manifest-nightly.CByKWK/evidence/`.
 The root verification ledger records its actual Rust gate; the separate
 [fuzz runner](../../crates/core/codec/verification/manifest/check-fuzz.sh)
 records source, lock, sanitizer, seed and budget information for each run.
@@ -114,4 +119,16 @@ on Linux with the CLI binary and the codec vector directory as its two
 arguments. The native pre-commit snapshot, raw logs and JUnit are retained
 at `/private/tmp/exacopy-manifest-native.0S53Xk`. Its 546 passing tests and
 six skipped crash-child entrypoints precede the six additional portable
-codec admission tests.
+codec admission tests. A clean-commit rerun at `98dacb7` passed all five
+README checks on native ARM64 Linux/ext4, with 552 passing tests and six
+skipped crash-child entrypoints. The tracked probe also passed against that
+revision's binary. The final logs, JUnit and source bindings are retained at
+`/private/tmp/exacopy-manifest-final-native.SLaUtT`.
+
+That same revision passed 490 macOS workspace tests, strict Clippy,
+doctests, 32 Python tooling tests, and all 12 declared Rust/Lean/Kani/TLC
+gate records through the evidence validator. The passing records are under
+`target/integration-evidence/98dacb7/formal-passing`; the initial TLC
+sandbox-listener failures and successful reruns remain separately retained.
+These formal results cover the declared obligations, including the scoped
+manifest admission test, rather than a universal parser proof.
