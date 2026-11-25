@@ -33,7 +33,7 @@ exacopy-content.workspace = true
 exacopy-model.workspace = true
 exacopy-journal.workspace = true
 exacopy-transfer.workspace = true
-rustix = { workspace = true, features = ["rand"] }
+rustix.workspace = true
 uuid.workspace = true
 zeroize.workspace = true
 

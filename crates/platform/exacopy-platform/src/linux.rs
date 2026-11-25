@@ -5,6 +5,7 @@ mod handle;
 mod job;
 mod mount_observation;
 mod named_read;
+mod owner_seed;
 mod process_crash;
 pub(crate) mod protected_snapshot;
 mod publication_capabilities;
@@ -19,6 +20,9 @@ pub use job::{
 	CheckpointDirectory, JobDirectory, JournalDirectory, ReceiptDirectory, TargetStatus,
 };
 pub use named_read::NamedReadView;
+pub use owner_seed::{
+	HeldOwnerSeed, OWNER_SEED_BYTES, OwnerSeedError, initialize_owner_seed, kernel_random,
+};
 pub use process_crash::{
 	ProcessCrashEligibility, ProcessCrashEnvironment, ProcessCrashProfileError,
 	ProcessCrashProfileId, observe_process_crash_environment,

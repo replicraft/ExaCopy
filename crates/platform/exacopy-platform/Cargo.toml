@@ -19,7 +19,7 @@ required-features = ["windows-read-fixture"]
 [target.'cfg(target_os = "linux")'.dependencies]
 exacopy-endpoint.workspace = true
 exacopy-model.workspace = true
-rustix.workspace = true
+rustix = { workspace = true, features = ["rand"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 apfs-mounted.workspace = true

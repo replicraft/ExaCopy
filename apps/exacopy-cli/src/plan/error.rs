@@ -176,9 +176,6 @@ impl fmt::Display for ProfileCause {
 
 impl Error for ProfileCause {
 	fn source(&self) -> Option<&(dyn Error + 'static)> {
-		match &self.0 {
-			ProfileError::Io(error) => Some(error),
-			_ => None,
-		}
+		self.0.io_error().map(|error| error as _)
 	}
 }

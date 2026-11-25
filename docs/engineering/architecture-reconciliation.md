@@ -116,6 +116,14 @@ cross-package target sources and invalid fuzz workspace exemptions.
 Source review remains necessary for capability authority and macro
 behavior; a permitted graph does not prove workflow correctness.
 
+Linux profile seed acquisition, exclusive initialization, held identity,
+bounded native entropy and file/directory barriers now belong to the platform
+adapter. The CLI retains path selection, signing-key construction, versioned
+owner/root identifier derivation and error projection. The move preserves the
+existing checks and bytes. Linux-target lint compiles the synthetic fixtures;
+native Linux execution of this extraction remains unqualified. Plan bundle
+effects and the remaining identifier policy still need their ownership moves.
+
 Historical evidence retains its recorded revision and paths. Current
 source links and reproduction entry points follow the corrected layout.
 When reproducing an older pinned revision, use that revision's package
