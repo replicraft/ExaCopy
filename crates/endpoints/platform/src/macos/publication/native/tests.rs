@@ -160,3 +160,37 @@ fn native_exclusive_rename_preserves_an_incumbent_addressed_through_an_alias() {
 	assert_eq!(fs::read(incumbent).unwrap(), INCUMBENT_BYTES);
 	assert_eq!(fs::read(referent).unwrap(), INCUMBENT_BYTES);
 }
+
+#[test]
+fn native_exclusive_rename_refuses_to_traverse_a_symbolic_link() {
+	let fixture = Scratch::new();
+	let destination = Scratch::new();
+	let fixture_dir = fixture.open();
+	let destination_dir = destination.open();
+	let source_parent = fixture.path("source-parent");
+	fs::create_dir(&source_parent).expect("create synthetic source parent");
+	let source = source_parent.join("stage");
+	write_new(&source, STAGE_BYTES);
+	let alias = fixture.path("parent-link");
+	symlink("source-parent", &alias).expect("install synthetic parent alias");
+	let target = destination.path("target");
+	let original_file = identity(&source);
+	let original_link = identity(&alias);
+
+	// The product accepts only one checked component. An intermediate link
+	// here distinguishes the native no-follow flag from no-clobber alone.
+	let error = rename_exclusively(
+		fixture_dir.as_fd(),
+		c"parent-link/stage",
+		destination_dir.as_fd(),
+		c"target",
+	)
+	.expect_err("the native call must not traverse a source parent link");
+
+	assert_eq!(error.raw_os_error(), Some(libc::ELOOP));
+	assert_eq!(identity(&source), original_file);
+	assert_eq!(fs::read(source).unwrap(), STAGE_BYTES);
+	assert_eq!(identity(&alias), original_link);
+	assert_eq!(fs::read_link(alias).unwrap(), Path::new("source-parent"));
+	assert!(matches!(target.symlink_metadata(), Err(error) if error.kind() == ErrorKind::NotFound));
+}

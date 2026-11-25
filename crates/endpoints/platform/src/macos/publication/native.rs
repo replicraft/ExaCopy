@@ -1,9 +1,11 @@
 use std::ffi::CStr;
 use std::io;
-use std::os::fd::{AsRawFd as _, BorrowedFd};
+use std::os::fd::BorrowedFd;
 
-/// Darwin <sys/stdio.h>. The pinned libc does not expose this flag.
-const RENAME_NOFOLLOW_ANY: u32 = 0x0000_0010;
+use rustix::fs::{RenameFlags, renameat_with};
+
+/// Darwin <sys/stdio.h>. The pinned rustix preserves OS flag bits without a named constant.
+const RENAME_NOFOLLOW_ANY: RenameFlags = RenameFlags::from_bits_retain(0x0000_0010);
 
 pub(in super::super) fn rename_exclusively(
 	from_directory: BorrowedFd<'_>,
@@ -11,22 +13,14 @@ pub(in super::super) fn rename_exclusively(
 	to_directory: BorrowedFd<'_>,
 	target: &CStr,
 ) -> io::Result<()> {
-	// SAFETY: Both directory descriptors stay borrowed, and both valid C
-	// strings remain alive throughout the synchronous call. No pointer escapes.
-	let status = unsafe {
-		libc::renameatx_np(
-			from_directory.as_raw_fd(),
-			stage.as_ptr(),
-			to_directory.as_raw_fd(),
-			target.as_ptr(),
-			libc::RENAME_EXCL | RENAME_NOFOLLOW_ANY,
-		)
-	};
-	if status == 0 {
-		Ok(())
-	} else {
-		Err(io::Error::last_os_error())
-	}
+	renameat_with(
+		from_directory,
+		stage,
+		to_directory,
+		target,
+		RenameFlags::NOREPLACE | RENAME_NOFOLLOW_ANY,
+	)
+	.map_err(Into::into)
 }
 
 #[cfg(test)]
