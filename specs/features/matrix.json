@@ -386,9 +386,9 @@
         "exacopy-wireguard": ["cfg(any(target_os = \"linux\", target_os = \"macos\"))"]
       },
       "feature_additions": {
-        "exacopy-cli": ["rand"],
         "exacopy-wireguard": ["time"],
         "exacopy-platform": {
+          "cfg(target_os = \"linux\")": ["rand"],
           "cfg(target_os = \"macos\")": ["try_close"]
         }
       },
