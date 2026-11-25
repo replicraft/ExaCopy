@@ -1,12 +1,97 @@
 use std::fs::{self, File};
-use std::io::Write as _;
+use std::io::{self, Write as _};
 use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _};
 
-use rustix::fs::{Timespec, Timestamps};
+use rustix::fs::{Timespec, Timestamps, XattrFlags};
 
-use super::super::super::{ManagedReadGrant, with_materialization_disabled};
+use super::super::super::{
+	BasicMetadataError, ManagedReadError, ManagedReadGrant, with_materialization_disabled,
+};
 use super::super::tests::{Fixture, make_stage, name, open_staging};
 use super::StageError;
+
+#[test]
+fn visible_source_attribute_refuses_metadata_application_and_preserves_private_stage() {
+	const SOURCE: &str = "attributed-source";
+	const ATTRIBUTE: &str = "org.replicraft.exacopy.strict-metadata-fixture";
+	const BODY: &[u8] = b"\0required\xFF";
+	let fixture = Fixture::new();
+	let source_path = fixture.path(SOURCE);
+	let mut initial = File::options()
+		.create_new(true)
+		.mode(0o600)
+		.write(true)
+		.open(&source_path)
+		.expect("create owner-private source fixture");
+	initial.write_all(BODY).unwrap();
+	rustix::fs::fsetxattr(&initial, ATTRIBUTE, b"", XattrFlags::CREATE)
+		.expect("attach a visible empty xattr to the source fixture");
+	drop(initial);
+
+	let root = fixture.bind();
+	let source = root
+		.open_regular_source(
+			source_path.parent().unwrap(),
+			name(SOURCE.as_bytes()),
+			ManagedReadGrant::trusted_owner_authorizes_provisioned_root(),
+		)
+		.expect("obtain the read-only source before strict metadata admission");
+	let staging = open_staging(&root);
+	let mut writer = make_stage(&staging, source.length()).unwrap();
+	let mut bytes = [0; BODY.len()];
+	source.read_exact_at(0, &mut bytes).unwrap();
+	source.revalidate().unwrap();
+	writer.write_next(&bytes).unwrap();
+	let stage = writer.flush_and_close().unwrap();
+	{
+		let reader = stage.open_read_back().unwrap();
+		let mut readback = [0; BODY.len()];
+		reader.read_exact_at(0, &mut readback).unwrap();
+		reader.revalidate().unwrap();
+		assert_eq!(
+			&readback, BODY,
+			"verify stage bytes before metadata application"
+		);
+	}
+
+	let stage_path = fixture.stage_path();
+	let before = fs::symlink_metadata(&stage_path).unwrap();
+	let error = stage
+		.apply_basic_metadata(&source)
+		.expect_err("strict metadata application must refuse a visible source xattr");
+	assert!(
+		matches!(
+			error,
+			StageError::Managed(ManagedReadError::BasicMetadata(
+				BasicMetadataError::ExtendedAttributes
+			))
+		),
+		"metadata refusal must retain source error provenance: {error:?}"
+	);
+	let after = fs::symlink_metadata(&stage_path).unwrap();
+	assert_eq!((after.dev(), after.ino()), (before.dev(), before.ino()));
+	assert_eq!(
+		(after.ctime(), after.ctime_nsec()),
+		(before.ctime(), before.ctime_nsec())
+	);
+	assert_eq!(after.accessed().unwrap(), before.accessed().unwrap());
+	assert_eq!(after.modified().unwrap(), before.modified().unwrap());
+	source
+		.revalidate()
+		.expect("retain the original source observation");
+	assert_eq!(
+		rustix::fs::getxattr_query(&source_path, ATTRIBUTE).unwrap(),
+		0
+	);
+	assert_eq!(fs::read(source_path).unwrap(), BODY);
+	assert_eq!(fs::read(stage_path).unwrap(), BODY);
+	assert_eq!(
+		fs::symlink_metadata(fixture.path("target"))
+			.unwrap_err()
+			.kind(),
+		io::ErrorKind::NotFound
+	);
+}
 
 #[test]
 #[ignore = "requires a local APFS fixture where strict inventory can establish zero visible xattrs"]

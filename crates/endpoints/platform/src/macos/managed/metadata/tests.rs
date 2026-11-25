@@ -2,9 +2,11 @@ use std::fs::{self, File};
 use std::os::fd::{AsFd as _, AsRawFd as _};
 use std::os::unix::fs::OpenOptionsExt as _;
 
+use rustix::fs::{Timespec, Timestamps};
+
 use super::{
-	BasicMetadataError, FIELD_BYTES, ManagedTimestamp, RESOURCE_BYTES, RESOURCE_FORK,
-	ResourceBuffer, check_inventory, is_zero_fork,
+	BasicMetadata, BasicMetadataError, FIELD_BYTES, ManagedTimestamp, RESOURCE_BYTES,
+	RESOURCE_FORK, ResourceBuffer, check_inventory, is_zero_fork,
 };
 
 #[test]
@@ -37,6 +39,63 @@ fn timestamps_reject_out_of_range_and_native_sentinel_fractions() {
 	let time = ManagedTimestamp::from_stat_parts(-23, 999_999_999).unwrap();
 	assert_eq!(time.seconds(), -23);
 	assert_eq!(time.nanoseconds(), 999_999_999);
+}
+
+#[test]
+fn projects_native_stat_and_detects_independent_timestamp_changes() {
+	const MODE: u32 = 0o600;
+	let path = std::path::Path::new("/private/tmp").join(format!(
+		"exacopy-basic-projection-test-{}",
+		std::process::id()
+	));
+	let file = File::options()
+		.write(true)
+		.create_new(true)
+		.mode(MODE)
+		.open(&path)
+		.expect("create owner-private stat projection fixture");
+	let original = Timestamps {
+		last_access: Timespec {
+			tv_sec: 1_610_000_000,
+			tv_nsec: 123_456_789,
+		},
+		last_modification: Timespec {
+			tv_sec: 1_620_000_000,
+			tv_nsec: 987_654_321,
+		},
+	};
+	rustix::fs::futimens(&file, &original).unwrap();
+	let stat = rustix::fs::fstat(&file).unwrap();
+	let metadata = BasicMetadata::from_stat(&stat).expect("project regular file stat fields");
+	assert_eq!(metadata.uid(), stat.st_uid);
+	assert_eq!(metadata.gid(), stat.st_gid);
+	assert_eq!(metadata.mode(), MODE);
+	assert_eq!(metadata.times().last_access, original.last_access);
+	assert_eq!(
+		metadata.times().last_modification,
+		original.last_modification
+	);
+	assert!(metadata.matches(&stat));
+
+	let mut changed_access = original.clone();
+	changed_access.last_access.tv_nsec += 1;
+	let mut changed_modification = original;
+	changed_modification.last_modification.tv_nsec += 1;
+	for changed in [changed_access, changed_modification] {
+		rustix::fs::futimens(&file, &changed).unwrap();
+		let stat = rustix::fs::fstat(&file).unwrap();
+		assert!(
+			!metadata.matches(&stat),
+			"a one-nanosecond timestamp change must invalidate the original projection"
+		);
+		let observed = BasicMetadata::from_stat(&stat).unwrap();
+		assert_eq!(observed.times().last_access, changed.last_access);
+		assert_eq!(
+			observed.times().last_modification,
+			changed.last_modification
+		);
+	}
+	fs::remove_file(path).expect("remove the private stat projection fixture");
 }
 
 #[test]
