@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core/model", "xtask"]
+members = ["crates/core/model", "crates/endpoints/endpoint", "xtask"]
 resolver = "3"
 
 [workspace.package]
@@ -9,6 +9,9 @@ rust-version = "1.100.0"
 license = "Apache-2.0"
 
 [workspace.dependencies]
+# Internal crates
+exacopy-model = { path = "crates/core/model" }
+
 # Domain identifiers
 uuid = { version = "1.29", default-features = false }
 
