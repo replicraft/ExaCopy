@@ -304,6 +304,26 @@ fn entry_preparation_refuses_source_rebinding_after_kind_1() {
 	.unwrap();
 }
 
+pub(super) fn with_publication_fixture(
+	operation: impl FnOnce(&mut PreparedDarwinEntry<'_>, &Path),
+) {
+	let fixture = Fixture::new();
+	let root = fixture.root();
+	let source = fixture.source(&root);
+	let container = root.open_stage_directory(component(PRIVATE)).unwrap();
+	let signer = SigningKey::from_bytes(&[4; 32]);
+	let request = fixture.request(&source, &container, &signer);
+	let plan = fixture.plan(&root, request);
+	let name = JobName::from_uuid_bytes(*plan.attempt().job.as_bytes()).unwrap();
+	let path = fixture.0.join(PRIVATE).join(name.to_string());
+	let destination = admit_destination(plan.destination(), request).unwrap();
+	with_admitted_job(&plan, request, name, destination, |job| {
+		job.with_admitted_entry(|entry| operation(entry, &path))
+			.unwrap();
+	})
+	.unwrap();
+}
+
 struct Fixture(PathBuf);
 
 impl Fixture {
