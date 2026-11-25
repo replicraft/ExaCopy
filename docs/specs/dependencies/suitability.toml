@@ -206,3 +206,351 @@ adversarial_inputs = "Build environment values and compiler output control the p
 verification = "The existing exact-version review records Rust 1.100.0 tests and doctests and isolated compiler probes, including version query failure and the generic-array cfg output. Historical sample fixtures are absent from the shipped archive."
 replacement = "Remove the probe when the consuming generic-array release supports the required conversion impl unconditionally, or preserve compiler selection and the fallback for missing version information until then."
 review_gaps = ["Isolated compiler-probe tests cover the reviewed build host. Cross-host process and compiler-output behavior remains scoped to the trusted build toolchain."]
+
+
+[assessment."block-buffer@0.10.4"]
+archive_sha256 = "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71"
+release_observation = "Local crates.io index lists 0.10.4 on 2023-03-09 and 0.12.1 on 2026-06-11. The locked digest 0.10 line requires block-buffer 0.10."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "src/sealed.rs casts bounded whole-block byte prefixes to GenericArray slices. src/lib.rs relies on the sealed cursor invariant before unreachable_unchecked and also provides a mutable block-output cast. SHA-512 uses the eager immutable-input path."
+resource_limits = "A SHA-512 buffer holds one 128-byte block and an 8-bit cursor. Updates borrow complete blocks and copy the pending prefix or trailing remainder into the buffer."
+adversarial_inputs = "The compile-time size and sealed eager cursor constrain block splits independently of byte values. SHA-512 supplies a fixed 16-byte length suffix and bounded journal inputs."
+verification = "An isolated digest harness passed SHA-512 streaming and reset across chunk sizes 1 through 132 on Apple ARM64 and in Miri. The supported signatures also exercise final padding."
+replacement = "Preserve eager block splitting, SHA-512 length padding and exact streaming results. Coordinate a replacement with digest and generic-array."
+review_gaps = ["Independent exact-version review of selected casts and cursor invariants"]
+
+[assessment."cpufeatures@0.2.17"]
+archive_sha256 = "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280"
+release_observation = "Local crates.io index lists 0.2.17 on 2025-01-25, with the separate 0.3 line at 0.3.1 on 2026-08-26."
+security_history = "No package advisory in the recorded RustSec snapshot. The Linux/Android ARM64 sha3 mapping checks any bit in the combined SHA3 and SHA512 mask. That detector is outside the current production feature and target resolutions."
+unsafe_exposure = "src/x86.rs reads CPUID and guards XGETBV with XSAVE and OSXSAVE. The AVX2 check requires XMM and YMM state. src/aarch64.rs exposes getauxval and sysctlbyname. The selected Apple ARM64 SHA-512 implementation is portable."
+resource_limits = "Each macro instance caches one detection byte. Compile-time target features can elide detection. Concurrent first calls may repeat the same query."
+adversarial_inputs = "CPU and OS capability values drive dispatch, independent of record bytes. Release compiler target features are part of the dispatch contract."
+verification = "Isolated upstream tests passed on Apple ARM64 and as x86-64 macOS binaries. They exercise feature queries and cached results without qualifying physical baseline x86-64 Linux or Windows hosts."
+replacement = "Preserve detection of CPU instructions and OS register support before entering accelerated routines. Requalify fallback and capable-host paths when changing dispatch."
+review_gaps = ["Native x86-64 Linux and Windows dispatch on baseline and AVX2-capable CPUs", "Independent exact-version suitability evidence"]
+
+[assessment."cpufeatures@0.3.1"]
+archive_sha256 = "5ca28b0ae3115b884660db4118d803791fd6756b6e88f39c0f3f7859060d7566"
+release_observation = "Local crates.io index lists 0.3.1 on 2026-08-26 after 0.3.0 on 2026-02-05."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "The selected x86-64 BLAKE3 detectors in src/x86.rs use CPUID and XGETBV. AVX2 requires XMM and YMM state. AVX-512F and AVX-512VL require the additional opmask and ZMM state."
+resource_limits = "A fixed per-detector atomic byte caches the x86-64 feature result. No heap allocation or file input is involved in detection."
+adversarial_inputs = "Dispatch depends on the CPU, OS register state and compile-time features. File bytes are used only by the selected BLAKE3 implementation."
+verification = "Isolated upstream tests passed on Apple ARM64. This is supplemental evidence for the archive. Production selects this version through BLAKE3 on x86-64 Linux and Windows."
+replacement = "Retain the BLAKE3 byte-level results and qualify software fallback and native SIMD dispatch together on supported x86-64 hosts."
+review_gaps = ["Native x86-64 Linux and Windows BLAKE3 dispatch on baseline and SIMD-capable CPUs", "Independent exact-version suitability evidence"]
+
+[assessment."crypto-common@0.1.7"]
+archive_sha256 = "78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a"
+release_observation = "Local crates.io index lists 0.1.7 on 2025-11-12 and 0.2.2 on 2026-05-19. The selected digest traits use the 0.1 line."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "src/lib.rs forbids unsafe code. Block and output aliases use GenericArray and its layout contract."
+resource_limits = "Associated types fix block and output sizes at compilation. Product SHA-512 uses 128-byte blocks and 64-byte digests."
+adversarial_inputs = "Record bytes cannot choose the type-level sizes. The slice-based key and IV helpers check lengths before delegating to GenericArray and are outside the selected SHA-512 path."
+verification = "An isolated digest harness passed SHA-512 known answers and exact key/IV length checks on Apple ARM64 with and without dependency std features and in Miri."
+replacement = "Update digest and its implementations together to preserve block and output contracts and authenticated wire bytes."
+review_gaps = ["Independent exact-version suitability evidence"]
+
+[assessment."digest@0.10.7"]
+archive_sha256 = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
+release_observation = "Local crates.io index lists 0.10.7 on 2023-05-19 and 0.11.3 on 2026-05-03. SHA-2 and its consumers must agree on the trait version."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "src/lib.rs forbids unsafe code. src/core_api/wrapper.rs delegates buffering and compression to block-buffer and the algorithm core."
+resource_limits = "The selected default/core-api path stores fixed algorithm state and a block buffer. The production feature sets exclude alloc and std."
+adversarial_inputs = "Update borrows input bytes and fixed-output finalization uses an associated output length. Journal decoding bounds the message before hashing."
+verification = "An isolated harness exercised known answers, update chunking, reset, and rejection of wrong dynamic output lengths on Apple ARM64 and in Miri. Dynamic output checks supplement the production fixed-output path."
+replacement = "Move SHA-2 and the Ed25519 consumers to compatible traits together while preserving digest, reset and streaming semantics."
+review_gaps = ["Independent exact-version suitability evidence"]
+
+[assessment."ed25519@2.2.3"]
+archive_sha256 = "115531babc129696a58c64a4fef0a8bf9e9698629fb97e9e40767d235cfbcd53"
+release_observation = "Local crates.io index lists 2.2.3 on 2023-10-15 and 3.0.0 on 2026-05-03."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "src/lib.rs forbids unsafe code. Selected features are empty. The signature representation holds two 32-byte components."
+resource_limits = "Parsing and emitting the 64-byte signature operates on fixed-size arrays. The slice constructor returns an error if its input length differs."
+adversarial_inputs = "Length and representation checks allow arbitrary 64-byte signatures to reach Ed25519 Dalek. ExaCopy invokes verify_strict against the expected key and domain-bound message before treating an owner record as authentic."
+verification = "Journal owner tests include wrong keys, tampering and weak-key rejection. An isolated RFC 8032 known-answer check validates the actual signing and verification result and the signature byte order."
+replacement = "Retain the 64-byte R-then-S wire format and the strict verifier contract when upgrading the representation and provider."
+review_gaps = ["Independent exact-version suitability evidence"]
+
+[assessment."generic-array@0.14.7"]
+archive_sha256 = "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a"
+release_observation = "Local crates.io index lists 0.14.7 on 2023-03-28, 0.14.9 on 2025-10-13 and 1.4.5 on 2026-08-13. The selected crypto-common manifest pins 0.14.7."
+security_history = "RUSTSEC-2020-0146 describes lifetime erasure in arr! and lists 0.13.3 and later as patched."
+unsafe_exposure = "src/lib.rs uses recursive repr(C) storage and transparent GenericArray, with unsafe ArrayLength, slice casts and initialization/drop helpers. src/impls.rs casts array representations for fixed lengths. The build script probes the compiler through version_check."
+resource_limits = "Block and output lengths are compile-time constants. The SHA-512 path operates on fixed arrays including U128 and U64. The selected more_lengths feature supplies additional conversion implementations."
+adversarial_inputs = "Input bytes cannot select layout, alignment or array length. Selected reinterpretations rely on the built-in ArrayLength implementation for u8 and a correct caller-side length check."
+verification = "Known-answer and streaming SHA-512 checks exercised selected byte-array operations on Apple ARM64 and under Miri. Other generic element types and initialization/drop paths require separate evidence."
+replacement = "Coordinate a fixed-array representation change with crypto-common and block-buffer. Retest layout assumptions across the slice-cast boundaries and preserve wire bytes."
+review_gaps = ["Independent exact-version review of selected layouts and initialization paths"]
+
+[assessment."sha2@0.10.9"]
+archive_sha256 = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
+release_observation = "Local crates.io index lists 0.10.9 on 2025-04-30 and 0.11.1 on 2026-10-12."
+security_history = "RUSTSEC-2021-0100 describes incorrect long-message AVX2 output in 0.9.7, patched in 0.9.8 and later."
+unsafe_exposure = "src/sha512.rs casts fixed 128-byte GenericArray blocks to native arrays and selects the portable implementation on Apple ARM64 with current features. x86-64 uses src/sha512/x86.rs AVX2 intrinsics after detection, with a portable fallback. The ARM64 asm feature is absent."
+resource_limits = "SHA-512 uses fixed state, one 128-byte pending block and a 128-bit encoded bit length. Work grows with journal message length within the caller's format bound."
+adversarial_inputs = "The hash consumes arbitrary message bytes. Journal owner decoders limit bodies to 512 bytes before applying domain separation and signature verification. SHA-512 correctness is part of the signature trust boundary."
+verification = "Isolated known answers and fragmented multi-block SHA-512 updates passed on Apple ARM64. An RFC 8032 check covers Ed25519 interoperability. Miri covers selected portable byte-layout operations."
+replacement = "Preserve SHA-512 results and strict Ed25519 interoperability, including existing signed records. Validate portable and accelerated paths with independent known answers across padding and multi-block boundaries."
+review_gaps = ["Native x86-64 Linux and Windows validation of AVX2 and portable fallback", "Independent exact-version suitability evidence"]
+
+[assessment."signature@2.2.0"]
+archive_sha256 = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
+release_observation = "Local crates.io index lists 2.2.0 on 2023-11-12 and 3.0.0 on 2026-05-02."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "src/lib.rs forbids unsafe code. src/signer.rs, src/encoding.rs and src/error.rs provide the feature-minimal callable interface and error. Algorithm implementation lives in the provider."
+resource_limits = "The enabled interface passes borrowed messages and fixed-size signatures. The production graph selects no optional allocation, std, prehash or randomized-signing features."
+adversarial_inputs = "The product uses fallible try_sign and Ed25519 Dalek verify_strict. The trait interface delegates message limits and validation to the caller and provider."
+verification = "Journal owner tests exercise the actual fallible signing and strict verification integration. An isolated RFC 8032 test exercises the same signature representation and provider."
+replacement = "Keep the fallible signing call, error propagation and strict algorithm-specific verification when migrating the trait and provider together."
+review_gaps = ["Independent exact-version suitability evidence"]
+
+[assessment."subtle@2.6.1"]
+archive_sha256 = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
+release_observation = "Local crates.io index lists 2.6.1 on 2024-06-24 after the yanked 2.6.0 release on 2024-06-19."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "src/lib.rs uses a volatile read of a live, aligned value as the selected Choice optimization barrier. The general API also contains an Ordering representation cast. Constant-time behavior depends on compiler output and downstream use."
+resource_limits = "Integer selection uses a mask and fixed-width operations. Equal-length slice comparisons visit each element without allocation. Ed25519 key and Curve25519 scalar comparisons use fixed-size inputs."
+adversarial_inputs = "Slice equality branches on public lengths. Choice requires inputs of 0 or 1, with a debug assertion. Secret-dependent control flow must remain out of the caller's use of Choice."
+verification = "Exact Ed25519 RFC 8032 and journal owner tests exercise arithmetic and signatures using subtle. Functional checks do not establish absence of timing leakage."
+replacement = "Preserve constant-time selection and equality contracts in the curve implementation. Require compiler-output review and side-channel qualification for the supported build targets."
+review_gaps = ["Optimized compiler-output and timing evidence for selected signing code on production targets", "Independent exact-version suitability evidence"]
+
+[assessment."typenum@1.20.1"]
+archive_sha256 = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
+release_observation = "Local crates.io index lists 1.20.1 on 2026-05-29 after 1.20.0 on 2026-04-19."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "src/lib.rs forbids unsafe code. The manifest disables build scripts. src/gen provides checked-in type aliases used in fixed-array and block-size bounds."
+resource_limits = "Type-level arithmetic resolves the fixed digest and block sizes during compilation. Selected unsigned size constants allocate no runtime heap."
+adversarial_inputs = "Cryptographic input bytes cannot instantiate new types or alter lengths. Array layout code relies on the compile-time values matching the selected storage types."
+verification = "SHA-512 known answers and streaming tests instantiate the production U128 block and U64 output contracts. These exercise the selected constants and generic-array integration."
+replacement = "Preserve the corresponding array lengths and bounds when migrating to fixed arrays or another type-level representation. Recheck the dependent layout invariants."
+review_gaps = ["Independent exact-version suitability evidence"]
+
+[assessment."proc-macro2@1.0.107"]
+archive_sha256 = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
+release_observation = "Local crates.io index lists 1.0.107 on 2026-07-19 after 1.0.106 on 2026-01-21."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "The host library wraps compiler token streams and has a fallback lexer and token buffer. The compiler bridge in src/wrapper.rs uses unchecked token and literal construction on selected cfg paths. src/fallback.rs uses an unsafe ownership read when converting a token buffer. build.rs directly invokes the trusted compiler or configured wrappers for packaged probes and cleans its OUT_DIR/probe directory."
+resource_limits = "Token storage and fallback lexing depend on the size and nesting of build source. Compiler probes depend on the configured build environment and inherit its process limits."
+adversarial_inputs = "The selected derive paths consume Rust source tokens at build time. Fallback FromStr reports lexical errors. Unchecked literal construction requires valid literal syntax."
+verification = "A Rust 1.100.0 aarch64 macOS harness passed all 41 cases from the packaged tests/test.rs at the selected proc-macro feature union. These exercises largely use the standalone token fallback."
+replacement = "Coordinate an upgrade with both Syn majors and Quote. Confirm token spans, hygiene, diagnostics and output from the Serde and Curve25519 derives."
+review_gaps = ["Review compiler-backed token and probe paths across supported build environments", "Full upstream suite and independent exact-version suitability evidence"]
+
+[assessment."quote@1.0.47"]
+archive_sha256 = "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001"
+release_observation = "Local crates.io index lists 1.0.47 on 2026-07-19 after 1.0.46 on 2026-06-22."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "The token generation implementation is safe Rust built on proc-macro2. build.rs directly invokes trusted RUSTC with --version to select diagnostic attribute support."
+resource_limits = "Interpolation and repetition grow token output with the derive source and supplied iterators."
+adversarial_inputs = "Inputs are build-source token templates and interpolated values supplied by derive implementations. Invalid identifier construction can panic at build time."
+verification = "A Rust 1.100.0 aarch64 macOS harness passed 41 packaged token tests. The upstream trybuild diagnostic runner requires an unavailable offline dev input."
+replacement = "Compare emitted tokens and spans, then recheck CLI JSON report contracts and the generated Curve25519 arithmetic paths."
+review_gaps = ["Compiler diagnostic tests and independent exact-version suitability evidence"]
+
+[assessment."rustc_version@0.4.1"]
+archive_sha256 = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
+release_observation = "Local crates.io index lists 0.4.1 on 2024-08-28 after 0.4.0 on 2021-06-07."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "The library uses safe Rust and has no build script of its own. Its selected probe invokes RUSTC -vV directly, through RUSTC_WRAPPER when configured. An unset RUSTC resolves rustc through PATH."
+resource_limits = "Command output is buffered to completion and the parser allocates for metadata. The build assumes a responsive trusted compiler and wrappers, with process bounds supplied by the build runner."
+adversarial_inputs = "The parser reports process errors, invalid UTF-8, malformed or missing metadata, and unknown prerelease channels. CRC32C and Curve25519 abort their builds if querying the compiler fails."
+verification = "All 28 tests in the packaged tests/all.rs passed on Rust 1.100.0 aarch64 macOS, including local command execution, historical metadata, and malformed LLVM version fixtures."
+replacement = "Retain consumer version thresholds, channel classification and failure behavior. Revalidate CRC32C and Curve25519 cfg selection with the pinned compiler."
+review_gaps = ["Review selected compiler and wrapper resolution on each supported build host", "Independent exact-version suitability evidence"]
+
+[assessment."semver@1.0.28"]
+archive_sha256 = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
+release_observation = "Local crates.io index lists 1.0.28 on 2026-04-04 after 1.0.27 on 2025-09-14."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "src/identifier.rs uses inline tagged storage or owned heap memory for identifiers. src/parse.rs also uses raw Vec initialization for requirement comparators, outside the selected compiler version parsing path."
+resource_limits = "Compiler version parsing uses checked u64 numeric components and can allocate for long prerelease or build identifiers. Input size is governed by the trusted compiler response."
+adversarial_inputs = "The selected std build parses release metadata supplied by rustc_version, returning errors for invalid syntax, leading zeroes and overflowing numeric components."
+verification = "A Rust 1.100.0 aarch64 macOS harness passed 33 packaged version, requirement and identifier tests. The rustc_version suite also exercised compiler metadata with this exact parser."
+replacement = "Retain version ordering, prerelease and build metadata semantics, and the malformed-version errors used by rustc_version."
+review_gaps = ["Review tagged identifier allocation, clone and drop invariants on the selected host widths", "Independent exact-version suitability evidence"]
+
+[assessment."serde_core@1.0.229"]
+archive_sha256 = "67dca2c9c51e58a4791a4b1ed58308b39c64224d349a935ab5039aa360942a48"
+release_observation = "Local crates.io index lists 1.0.229 on 2026-07-18 after 1.0.228 on 2025-09-27."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "src/format.rs reconstructs UTF-8 from complete strings written into an internal buffer, and src/ser/impls.rs converts ASCII IP address formatting with unchecked UTF-8. build.rs writes a versioned module into OUT_DIR and invokes trusted RUSTC with --version."
+resource_limits = "The selected std and result features provide traits and standard-library implementations. CLI report producers own collection size and serialization passes through the supplied output writer."
+adversarial_inputs = "The product CLI reaches Serialize for typed report values. Inputs such as paths flow through ExaCopy's report representation and JSON escaping."
+verification = "CLI report contract tests cover serialization. A Rust 1.100.0 aarch64 macOS harness verified tagged output, escaping and optional-field omission with the exact Serde, Serde Core, derive and JSON versions."
+replacement = "Keep Serde, Serde Core and the derive private API compatible. Retest the JSON report field names, omission rules and writer errors."
+review_gaps = ["Review serialized report paths and the versioned build output", "Independent exact-version suitability evidence"]
+
+[assessment."serde_derive@1.0.229"]
+archive_sha256 = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
+release_observation = "Local crates.io index lists 1.0.229 on 2026-07-18 after 1.0.228 on 2025-09-27. The upstream release records the Syn 3 transition."
+security_history = "No package advisory in the recorded RustSec snapshot. Upstream issue 2530 records historic precompiled-binary build behavior in 1.0.172. The locked archive builds its macro from Rust source."
+unsafe_exposure = "The host proc macro contains safe Rust and has no build script. It parses source with Syn and emits implementations that call versioned Serde private APIs."
+resource_limits = "Macro work and generated code size are governed by the number and complexity of fields, variants and attributes in build source. Serialized report size is governed separately by the CLI."
+adversarial_inputs = "Only Rust build-source tokens affect expansion. Parse and validation errors become compiler diagnostics. Runtime report values pass through the generated serializers."
+verification = "A Rust 1.100.0 aarch64 macOS harness verified tagged output, escaping and optional-field omission with the exact derive version and rejected an unknown attribute at compile time. CLI report contract cases cover the application output shapes."
+replacement = "Upgrade in lockstep with Serde and Serde Core. Handwritten implementations could remove this macro if they preserve field names, tagging, flattening and omission in the report fixtures."
+review_gaps = ["Review generated code for all CLI report types and run upstream compile-fail diagnostics", "Independent exact-version suitability evidence"]
+
+[assessment."syn@2.0.119"]
+archive_sha256 = "872831b642d1a07999a962a351ed35b955ea2cfc8f3862091e2a240a84f17297"
+release_observation = "Local crates.io index lists 2.0.119 on 2026-07-15 after 2.0.118 on 2026-06-16. Syn 3 is a separate major version in the locked graph."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "src/buffer.rs, src/parse.rs and src/discouraged.rs use raw token cursors and lifetime adjustments. src/token.rs and src/thread.rs also contain layout conversion and thread-bound access. The host library has no build script."
+resource_limits = "The x86_64 Linux and Windows target graphs select the host parser with its full feature for Curve25519 derive. Token buffers and recursive parsing depend on build-source size and nesting."
+adversarial_inputs = "The caller supplies Rust source tokens at build time. Full item parsing reports invalid syntax and trailing tokens. Copied file bytes and journal records do not reach the parser."
+verification = "A Rust 1.100.0 aarch64 macOS harness built the exact Syn 2 source with its production feature union and exercised valid and malformed function items. The upstream suite was blocked offline by missing automod."
+replacement = "Coordinate any major update with Curve25519's derive and requalify generated x86_64 arithmetic and dispatch on Linux and Windows."
+review_gaps = ["Upstream suite and review of the selected token cursor and lifetime invariants", "Independent exact-version suitability evidence"]
+
+[assessment."syn@3.0.10"]
+archive_sha256 = "4ae9ccbea3a7b0b09443036490c8f34a8b1b760fd345e5c0dae0aac718faea79"
+release_observation = "Local crates.io index lists 3.0.10 on 2026-11-09 after 3.0.9 on 2026-10-12."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "src/buffer.rs, src/parse.rs and src/discouraged.rs use raw token cursors and lifetime adjustments. src/token.rs and src/thread.rs also contain layout conversion and thread-bound access. The host library has no build script."
+resource_limits = "Serde derive selects derive, parsing, printing, clone-impls and proc-macro on every target. Token buffers and recursive parsing depend on build-source size and nesting."
+adversarial_inputs = "Serde derive supplies compiler token streams. The parser returns errors for malformed syntax or trailing tokens, and the macro converts them to compile-time diagnostics."
+verification = "A Rust 1.100.0 aarch64 macOS harness built the exact Syn 3 source with its production feature union and exercised valid derive input, malformed fields and trailing tokens. The upstream suite was blocked offline by missing automod."
+replacement = "Coordinate replacements with the Serde derive version and retest generated CLI report output and attribute diagnostics."
+review_gaps = ["Upstream suite and review of the selected token cursor and lifetime invariants", "Independent exact-version suitability evidence"]
+
+[assessment."unicode-ident@1.0.27"]
+archive_sha256 = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
+release_observation = "Local crates.io index lists 1.0.27 on 2026-10-12 after 1.0.26 on 2026-09-17. The packaged tables specify Unicode 18.0.0."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "Both XID lookups use unchecked indexing into a generated static leaf table. Checked trie lookup and zero-page fallback provide the inputs to the offset calculation."
+resource_limits = "Each check takes one Rust char, uses fixed-size static tables, and performs no allocation or I/O. The graph uses it in the host macro parser stack."
+adversarial_inputs = "The Rust char type excludes nonscalars. The generated XID data classifies every scalar, including code points outside the populated trie."
+verification = "A fresh exact-archive build on Rust 1.100.0 aarch64 macOS matched Unicode 18.0.0 DerivedCoreProperties.txt XID_Start and XID_Continue across all 1,112,064 scalar values. A table check bounded the maximum computed offsets to 5215 and 8063 in an 8064-byte leaf."
+replacement = "Preserve Unicode XID behavior for the supported compiler and retain the Unicode-3.0 notice. Re-run the complete scalar and table bounds checks when tables change."
+review_gaps = ["Independent exact-version suitability evidence"]
+
+[assessment."bitflags@2.13.2"]
+archive_sha256 = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
+release_observation = "Local crates.io index lists 2.13.2 on 2026-09-10 after 2.13.1 on 2026-07-15. The packaged changelog records a change to generated constant declarations."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "The library forbids unsafe in non-test builds. The macOS and Linux graph selects std and leaves the optional bytemuck unsafe trait expansions disabled. rustix uses the generated flags at the syscall boundary."
+resource_limits = "The selected open, rename and mode flags are fixed-width masks. Bitwise operations need no allocation, and flag iteration is bounded by the declared flags."
+adversarial_inputs = "rustix declares unnamed all-bits masks for types such as OFlags and RenameFlags. A typed value can retain arbitrary bits. ExaCopy composes operation-specific named masks, including NOFOLLOW and NOREPLACE, where the adapter grants access or publishes."
+verification = "Linux source and stage tests exercise symlink rejection and preservation of a late incumbent through the rustix flag types. The macOS release build record confirms the exact std feature selection for its CLI profile."
+replacement = "Preserve the rustix flag API, integer widths, and exact bit patterns for selected operations and recheck the generated masks on Linux and macOS."
+review_gaps = ["Independent exact-version suitability review of the generated flags used at the native boundary"]
+
+[assessment."cc@1.11.2"]
+archive_sha256 = "33ef9e3e8154a45c7a95cff4c1299702106ad94062d7bb85fdc5d3a5afd91d45"
+release_observation = "Local crates.io index lists 1.11.2 on 2026-11-13 and 1.11.3 on 2026-11-20."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "BLAKE3's build script runs compiler, assembler and archive commands through cc. src/utilities.rs implements a custom unsafe OnceLock. The graph leaves the separate parallel jobserver and reactor code disabled."
+resource_limits = "BLAKE3 supplies a finite list of packaged C or assembly inputs per backend. cc compiles objects serially in the selected configuration. External tool runtime, input environment size, and subprocess output capture depend on the build host."
+adversarial_inputs = "Compiler, wrapper and archiver selection trusts the build environment and installed tools. When shell-escaped flag handling is enabled, cc collects Shlex tokens without checking had_error, so a malformed trailing flag can be omitted. Copy inputs never reach this build interface."
+verification = "BLAKE3 content-stream tests exercise the linked hash. The recorded Linux ext4 release-copy run used a lockfile containing this version. It did not inventory compiler or assembler argv or qualify every native backend."
+replacement = "Use another controlled native build helper or a deliberately selected Rust backend and verify target coverage, native archive inputs, and byte-identical BLAKE3 digests."
+review_gaps = ["Independent review of compiler selection, command arguments, and the selected synchronization code", "Capture compiler and archive invocations for supported release targets"]
+
+[assessment."errno@0.3.15"]
+archive_sha256 = "e35d6e78f4cebb90e51d543db8fe41528851d6deeef6ef21ebd4bfdc1e784776"
+release_observation = "Local crates.io index lists 0.3.15 on 2026-11-12 after 0.3.14 on 2025-09-09. The packaged 0.3.15 changelog adds QNX 8 support."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "The production graph selects std through the macOS rustix libc backend. src/unix.rs links errno_location to Darwin __error and dereferences the returned thread-local c_int pointer. Its separate formatter calls strerror_r and strlen."
+resource_limits = "Reading or setting errno accesses one thread-local integer with no heap allocation. The description helper uses a 1024-byte stack buffer and relies on the libc string contract."
+adversarial_inputs = "The integration interprets a fixed-width native error value rather than parsing paths or record bytes. rustix reads errno after a failed call, and ExaCopy maps relevant codes such as EEXIST to conservative collision or failure handling."
+verification = "The macOS release build record confirms the exact std feature selection. The macOS staging path checks for name collisions and includes injected barrier and close error tests. These do not qualify the libc thread-local or formatter contract independently."
+replacement = "Preserve immediate, thread-local OS error capture and recheck the adapter's failure mapping with the replacement libc binding."
+review_gaps = ["Independent review of Darwin TLS and libc formatting contracts and macOS error-path evidence"]
+
+[assessment."find-msvc-tools@0.1.15"]
+archive_sha256 = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
+release_observation = "Local crates.io index lists 0.1.15 on 2026-10-19 after 0.1.14 on 2026-09-25. The packaged changelog records regenerated Windows system bindings."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "Windows-host discovery uses Win32 registry calls, raw COM pointers and BSTR handling in src/registry.rs, src/com.rs and src/setup_config.rs. src/find_tools.rs can invoke cl or vswhere and load an OS DLL for an architecture query. The Windows FFI modules are host-gated."
+resource_limits = "Discovery work depends on PATH, installed Visual Studio instances, registry entries and child process output. The discovery probes do not have a crate-defined wall-clock deadline or output cap."
+adversarial_inputs = "Build-host environment variables, registry values and installed tools can influence the selected compiler, include and library paths. Their provenance belongs to the build-host trust boundary. ExaCopy runtime file inputs do not reach discovery."
+verification = "The graph resolves this dependency through cc with no optional features. Non-Windows source inspection distinguishes the environment-only MSVC lookup from registry and COM discovery. Native Windows discovery evidence remains open."
+replacement = "Supply explicitly configured compiler, assembler and archiver paths and equivalent SDK, include and library settings, and compare the resulting Windows native build."
+review_gaps = ["Independent review of Windows FFI ownership, host tool selection, and child probe behavior", "Native MSVC discovery evidence for clean and preconfigured build environments"]
+
+[assessment."linux-raw-sys@0.12.1"]
+archive_sha256 = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
+release_observation = "Local crates.io index lists 0.12.1 on 2025-12-23 after 0.12.0 on 2025-10-24."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "The Linux x86-64 graph selects pre-generated auxvec, elf, errno, general, ioctl and prctl bindings with no_std. The general feature exposes unsafe FD-set pointer helpers and a signal sentinel. The selected filesystem operation bindings supply fixed ABI layouts and numbers to rustix, which issues the syscalls."
+resource_limits = "Selected syscall constants and C-compatible layouts have fixed widths and do not allocate. rustix and ExaCopy own descriptor and buffer lifetimes, I/O limits and the handling of blocking syscalls."
+adversarial_inputs = "Source opens and exclusive publication rely on architecture-correct NOFOLLOW and RENAME_NOREPLACE values and correct interpretation of native error codes. ExaCopy binds permissions and identity to held descriptors and handles errors without trusting unchecked path observations."
+verification = "Linux source and stage tests exercise ELOOP and incumbent preservation. The recorded ext4 release-copy evidence binds successful runs to a lockfile with these exact bindings. The declared tests provide scoped integration evidence for the selected kernel interface."
+replacement = "Preserve exact syscall numbers, flag and errno values, C struct layout and caller behavior, or change the rustix backend and requalify the Linux adapter."
+review_gaps = ["Independently cross-check the selected x86-64 constants and layouts against Linux UAPI headers and the rustix backend"]
+
+[assessment."shlex@2.0.1"]
+archive_sha256 = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+release_observation = "Local crates.io index lists 2.0.1 on 2026-05-17 after 2.0.0 on 2026-05-16. The packaged changelog records removal of the unsound DerefMut API in 2.0.0 and a documentation compile fix in 2.0.1."
+security_history = "RUSTSEC-2024-0006 affects older quoting APIs. The recorded snapshot marks versions from 1.3.0 patched."
+unsafe_exposure = "The selected default and std features expose src/lib.rs's UTF-8 wrapper. Its iterator converts tokens from the byte tokenizer with unchecked UTF-8 under the UTF-8 input and tokenization invariant. cc uses Shlex::new and does not use the unsafe byte-construction or mutation APIs."
+resource_limits = "The byte tokenizer scans the build environment flag string once, with token allocation proportional to the input. cc collects the resulting argv fragments and relies on build-host environment bounds."
+adversarial_inputs = "cc uses the tokenizer only for shell-escaped build flags and passes tokens as arguments. An unclosed quote or trailing escape drops the incomplete token and sets had_error, which cc does not inspect. ExaCopy runtime file and journal data do not enter this tokenizer."
+verification = "Seven archived upstream unit tests passed on macOS with pinned rustc and the default and std features, covering tokenizer and quoting behavior. The workspace import lock records peer safe-to-deploy coverage through 2.0.1. A project-specific check of malformed flag handling remains open."
+replacement = "Preserve the supported shell-escaped compiler flag syntax and verify argument construction and malformed-input behavior in the consuming build path."
+review_gaps = ["Check cc's handling of malformed shell-escaped flags against the intended release build environment contract"]
+
+
+# The locked archive identifies upstream commit 5312a0311ec40df95be953eacfa8a11b9a34bc54.
+[assessment."curve25519-dalek@4.1.3"]
+archive_sha256 = "97fb8b7c4503de7d6ae7b42ab72a5a59857b4c937ec27a3d4539dba95b5ab2be"
+release_observation = "Local crates.io index lists 4.1.3 on 2024-06-18 after 4.1.2 on 2024-02-07. It lists 4.2.0 as yanked and the 5.0.0 major release on 2026-07-06."
+security_history = "RUSTSEC-2024-0344 identifies scalar subtraction timing variability and lists 4.1.3 as patched. The locked serial u32 and u64 source contains the volatile-read optimization barrier."
+unsafe_exposure = "build.rs reads Cargo target configuration and probes rustc. Default stable builds use the serial backend on ARM64 and select AVX2 or serial at runtime on x86-64. The vector backend contains intrinsic operations and generated target-feature wrappers. The nightly AVX-512 branch is outside the stable compiler scope."
+resource_limits = "Ed25519 uses fixed-size point, scalar, public-key and signature representations. The production graph selects digest and zeroize without alloc. The caller bounds the signed owner envelope before verifying it."
+adversarial_inputs = "Owner decoders bind the envelope to an independently selected profile key and use Ed25519 strict verification. That path decompresses the signature point, rejects small-order signature and key points and compares the computed signature point encoding. The public verification arithmetic and the secret signing arithmetic have different timing requirements."
+verification = "Journal Linux and Darwin owner-codec tests cover signed formats and authentication refusal. Those tests exercise the application contract. Native backend parity and emitted constant-time behavior require separate evidence."
+replacement = "Choose an independently reviewed Ed25519 stack and preserve deterministic signature bytes and strict acceptance for persisted owner records or use an explicit format transition. Verify existing vectors and malformed-signature refusals on each supported backend."
+review_gaps = ["Independent exact-version cryptographic and unsafe backend review", "Stable compiler code generation and native AVX2 and serial parity, including baseline x86-64 and ARM64"]
+
+# The locked archive identifies upstream commit 72761ca6b4772af985f969db53faf7accbad9b36.
+[assessment."curve25519-dalek-derive@0.1.1"]
+archive_sha256 = "f46882e17999c6cc590af592290432be3bce0428cb0d5f8b6715e4dc7b383eb3"
+release_observation = "Local crates.io index lists 0.1.1 on 2023-10-31 after 0.1.0 on 2023-06-24."
+security_history = "No package advisory in the recorded RustSec snapshot. Generated wrappers remain part of the Curve25519 backend trust boundary."
+unsafe_exposure = "The host procedural macro parses trusted Rust tokens in src/lib.rs and generates unsafe target-feature functions and calls from safe wrappers. Those wrappers do not detect CPU features. The production graph selects the macro for x86-64 Linux and Windows targets."
+resource_limits = "Expansion allocates and clones token and syntax trees per specialization of the annotated source. Production invocations use a fixed set of specializations in the parent archive. There is no runtime input to the macro."
+adversarial_inputs = "The macro receives build-time attributes and Rust items rather than journal data. CPU feature selection at every generated entry is the parent backend's responsibility. Incorrect expansion or dispatch can invoke instructions unavailable on the deployed CPU."
+verification = "Packaged tests cover functions, impl methods, generics and specialization attributes. Owner-codec tests cover the resulting signing and verification integration on exercised backends. Expansion and CPU feature boundaries still require target-specific evidence."
+replacement = "Retain reviewed equivalent generated or explicit wrappers and inspect the resulting target-feature annotations and call sites. Revalidate baseline and AVX2 behavior on both supported x86-64 targets."
+review_gaps = ["Inspect stable expansion and all reachable feature-check call sites", "Independent exact-version host macro and generated-code review"]
+
+# The locked archive identifies upstream commit 9339ca99a43c550b5ee36e2afe524d1c90413461.
+[assessment."itoa@1.0.19"]
+archive_sha256 = "3bd1574e617a9a6c1f8f8181bd7e841e1f20e4277607ef28945765188d6284d4"
+release_observation = "Local crates.io index lists 1.0.19 on 2026-11-09 after 1.0.18 on 2026-03-20."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "src/lib.rs casts a MaybeUninit scratch buffer to the sealed integer type's scratch width, uses unchecked digit writes and borrows the initialized ASCII suffix as UTF-8. The production graph selects no optional features and the crate has no build script."
+resource_limits = "Formatting uses a 40-byte scratch buffer sized for signed i128 and returns a borrow tied to that buffer. The formatter has bounded work per primitive integer and performs no heap allocation or I/O."
+adversarial_inputs = "CLI JSON passes typed integer fields. Signed minima, unsigned maxima and boundaries between decimal widths exercise scratch size, digit arithmetic and sign handling."
+verification = "CLI JSON contract tests cover integer fields. The exact-version local audit records native Rust 1.100.0 and Miri checks with the production feature set."
+replacement = "Use equivalent decimal formatting via the serializer and preserve the complete JSON integer range, syntax and report fixtures."
+review_gaps = ["Independent suitability review and native evidence on the other supported targets"]
+
+# The locked archive identifies upstream commit 5fdb40c054e1fff359a2f7bdf7f87a13b34b465d.
+[assessment."memchr@2.8.3"]
+archive_sha256 = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
+release_observation = "Local crates.io index lists 2.8.3 on 2026-07-08 after 2.8.2 on 2026-06-12."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "The byte-search paths use pointer arithmetic, word and vector loads and target intrinsics. The std feature allows x86-64 runtime AVX2 selection with SSE2 and portable paths. AArch64 uses NEON when enabled for the target and the portable path otherwise."
+resource_limits = "serde_json reader calls scan supplied slices for quotes, backslashes and newlines. Each byte search uses constant scratch space and work bounded by the length of its input slice."
+adversarial_inputs = "Safe APIs accept arbitrary bytes. Empty, short, unaligned and delimiter-heavy slices exercise vector boundary handling. Production CLI calls serialize typed values, while CLI tests parse emitted JSON."
+verification = "Packaged tests exercise byte-search backends against shared fixtures. CLI report parsers in tests exercise the serde_json integration. Native evidence is needed for selected intrinsic and fallback paths."
+replacement = "Use a serde_json implementation with equivalent forward, reverse and delimiter search semantics for the reader, or an equivalent report serializer whose JSON output and error behavior match the existing contract."
+review_gaps = ["Review vector boundary reads and CPU dispatch for each selected target", "Independent exact-version suitability evidence"]
+
+# The locked archive identifies upstream commit 7b7cc48b58028e8af7be87e94c0c1c8936f1a57c.
+[assessment."zmij@1.0.23"]
+archive_sha256 = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+release_observation = "Local crates.io index lists 1.0.23 on 2026-07-13 after 1.0.22 on 2026-07-12."
+security_history = "No package advisory in the recorded RustSec snapshot."
+unsafe_exposure = "src/lib.rs uses unchecked table indices, raw writes and UTF-8 construction. SIMD digit operations depend on compiled x86-64 SSE2 or SSE4.1 and ARM64 NEON features, with scalar paths under other configurations. build.rs probes Cargo's rustc and selects compiler and size-optimization cfgs."
+resource_limits = "Binary32 and binary64 formatting uses a fixed 24-byte scratch buffer, fixed tables and bounded work per value. Returned text borrows the buffer."
+adversarial_inputs = "serde_json classifies NaN and infinity before using format_finite for JSON number values. Signed zero, subnormals, exponent extrema and rounding ties exercise the formatter's bounds and the shortest round-trip contract. The current CLI report source declares no floating-point fields."
+verification = "Packaged tests include boundary cases, exponent sweeps and comparison with Ryu. CLI JSON report tests establish the current report shapes. Native and scalar float-formatting parity requires separate execution evidence."
+replacement = "Preserve shortest round-trip finite decimal output, signed-zero behavior and Serde JSON's nonfinite policy if adopting another formatter. Check exact report fixtures if floating-point fields are introduced."
+review_gaps = ["Review float boundary arithmetic and SIMD and scalar output bounds", "Independent exact-version suitability and target-path evidence"]
