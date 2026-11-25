@@ -75,9 +75,11 @@ precedence over a byte mismatch. The caller also retains and revalidates
 the baseline through the target observation. Source content and namespace
 receive no application mutation capability. Ordinary reads may update atime.
 
-The codec is implemented. CLI creation and historical verification require
-integration and native execution of that workflow before being advertised
-as available commands. Private Linux copy receipts remain journal-bound
+The codec and Linux CLI creation/verification commands are implemented.
+Native ARM64 Linux/ext4 validation exercised the integrated workflow,
+including raw names, unchanged source/baseline bytes and inode identities,
+independent golden input, stale name replacement, and an actual output
+space error. macOS and Windows CLI routes refuse this operation explicitly. Private Linux copy receipts remain journal-bound
 artifacts and are not reinterpreted as portable manifests.
 
 ## Evidence and remaining assurance
@@ -90,7 +92,11 @@ synthetic; no giant file was read. Rust compares exact canonical bytes and
 envelope digests, and standalone cross-language decoders checked the
 fixtures. Display annotations leave the canonical bytes unchanged.
 
-Eleven ordinary codec tests passed after adding the structural depth guard.
+Seventeen ordinary codec tests passed after adding structural depth and
+diagnostic-redaction cases. The measured codec coverage was 379/387 lines
+(97.93%) and 77/78 branch outcomes (98.72%), without product-source
+exclusions. Six deliberately changed source predicates were detected by
+their tests; a complete mutation score remains unmeasured.
 The bounded AddressSanitizer campaign completed 250,000 inputs at seed
 18723 with a maximum input length of 16,385 bytes and no failure artifact.
 Raw initial and depth-limited campaign records are retained separately at
@@ -101,3 +107,11 @@ parser refinement, filesystem qualification or historical authenticity.
 The root verification ledger records its actual Rust gate; the separate
 [fuzz runner](../../crates/core/codec/verification/manifest/check-fuzz.sh)
 records source, lock, sanitizer, seed and budget information for each run.
+
+The native CLI integration probe is retained at
+[`manifest_probe.py`](../../crates/clients/cli/tests/manifest_probe.py). Run it
+on Linux with the CLI binary and the codec vector directory as its two
+arguments. The native pre-commit snapshot, raw logs and JUnit are retained
+at `/private/tmp/exacopy-manifest-native.0S53Xk`. Its 546 passing tests and
+six skipped crash-child entrypoints precede the six additional portable
+codec admission tests.

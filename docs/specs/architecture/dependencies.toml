@@ -34,7 +34,7 @@ dev.groups = ["testkit"]
 
 [groups.operations]
 members = { exacopy-diff = "crates/operations/diff", exacopy-transfer = "crates/operations/transfer" }
-normal.groups = ["contracts", "core", "storage"]
+normal.groups = ["contracts", "core", "storage", "codecs"]
 normal.external = ["blake3", "ed25519-dalek", "minicbor"]
 dev.groups = ["testkit"]
 dev.external = ["ed25519-dalek", "rustix"]
@@ -46,7 +46,7 @@ dev.external = ["blake3", "ed25519-dalek", "rustix"]
 
 [groups.clients]
 members = { exacopy-cli = "crates/clients/cli" }
-normal.groups = ["contracts", "operations", "platform", "runtime", "storage"]
+normal.groups = ["contracts", "operations", "platform", "runtime", "storage", "codecs"]
 normal.external = ["blake3", "clap", "ed25519-dalek", "rustix", "serde", "serde_json", "uuid", "zeroize"]
 dev.groups = ["testkit"]
 

@@ -9,6 +9,8 @@ pub(crate) enum Command {
 	Help(String),
 	Diff(DiffCommand),
 	Copy(CopyCommand),
+	ManifestCreate { path: PathBuf },
+	Verify(VerifyCommand),
 	Recover(RecoveryCommand),
 	InitProfile(PathBuf),
 }
@@ -31,6 +33,12 @@ pub(crate) struct CopyCommand {
 	pub(crate) source: PathBuf,
 	pub(crate) target: PathBuf,
 	pub(crate) profile: PathBuf,
+	pub(crate) format: Format,
+}
+
+pub(crate) struct VerifyCommand {
+	pub(crate) path: PathBuf,
+	pub(crate) manifest: PathBuf,
 	pub(crate) format: Format,
 }
 

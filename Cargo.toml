@@ -23,6 +23,7 @@ license = "Apache-2.0"
 
 [workspace.dependencies]
 # Internal crates
+exacopy-codec = { path = "crates/core/codec", version = "=0.1.0" }
 exacopy-content = { path = "crates/storage/content", version = "=0.1.0" }
 exacopy-diff = { path = "crates/operations/diff", version = "=0.1.0" }
 exacopy-endpoint = { path = "crates/endpoints/endpoint", version = "=0.1.0" }

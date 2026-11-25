@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DIFF = "exacopy.cli.diff"
 COPY = "exacopy.cli.copy"
 RECOVERY = "exacopy.local_recovery_inspection"
+VERIFY = "exacopy.cli.verify"
 JSON_FLAGS = ("--format", "json")
 
 
@@ -46,6 +47,17 @@ def probe(cli, versions):
         (directory / "source").write_bytes(source)
         (directory / "same").write_bytes(source)
         read_report(cli, directory, versions, DIFF, "diff", "source", "same")
+        baseline = run(cli, directory, "manifest", "create", "source")
+        envelope = json.loads(baseline)
+        if envelope["body"]["schema_version"] != "1.0":
+            raise ValueError("manifest writer emitted an unexpected public version")
+        (directory / "baseline.json").write_bytes(baseline)
+        verified = read_report(
+            cli, directory, versions, VERIFY,
+            "verify", "source", "--manifest", "baseline.json",
+        )
+        if verified.get("result") != "verified" or verified.get("complete") is not True:
+            raise ValueError("manifest verification did not complete")
         run(cli, directory, "profile", "init", "profile")
         report = read_report(
             cli, directory, versions, COPY, "copy", "source", "copy", "--profile", "profile",
@@ -80,7 +92,7 @@ def main():
         probe(args.binary.resolve(strict=True), versions)
     except (KeyError, OSError, TypeError, ValueError, subprocess.TimeoutExpired) as error:
         parser.exit(1, f"CLI contract probe failed: {error}\n")
-    print("Emitted Linux diff, copy and recovery inspection markers match the contract inventory.")
+    print("Emitted Linux diff, copy, verification and recovery inspection markers match the contract inventory.")
 
 
 if __name__ == "__main__":

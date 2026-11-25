@@ -32,6 +32,16 @@ pub(crate) fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
 			};
 			ExitCode::from(code)
 		}
+		Command::ManifestCreate { path } => {
+			ExitCode::from(crate::manifest::create(&path, &mut stdout, &mut stderr))
+		}
+		Command::Verify(verify) => ExitCode::from(crate::manifest::verify(
+			&verify.path,
+			&verify.manifest,
+			verify.format,
+			&mut stdout,
+			&mut stderr,
+		)),
 		Command::InitProfile(path) => ExitCode::from(init_profile(&path, &mut stderr)),
 		Command::Recover(recovery) => {
 			let outcome = execute_recovery(&recovery);

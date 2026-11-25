@@ -31,6 +31,11 @@ enum Marker {
 
 pub(super) const BINDINGS: &[Binding] = &[
 	Binding::new(
+		"exacopy.cli.verify",
+		"crates/clients/cli/src/manifest_report.rs",
+		Marker::Report,
+	),
+	Binding::new(
 		"exacopy.cli.diff",
 		"crates/clients/cli/src/report.rs",
 		Marker::Report,

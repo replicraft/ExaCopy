@@ -2,6 +2,9 @@
 #![forbid(unsafe_code)]
 
 #[cfg(target_os = "linux")]
+pub mod manifest;
+
+#[cfg(target_os = "linux")]
 pub mod linux;
 
 #[cfg(target_os = "linux")]

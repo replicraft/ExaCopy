@@ -2,6 +2,13 @@ inventory_version = 1
 policy = "docs/architecture/contract-versioning.md"
 
 [[contract]]
+id = "exacopy.cli.verify"
+kind = "cli_output"
+status = "implemented"
+version = "1.0"
+owner = "crates/clients/cli/src/manifest_report.rs"
+
+[[contract]]
 id = "exacopy.cli.diff"
 kind = "cli_output"
 status = "implemented"

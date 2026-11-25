@@ -51,10 +51,15 @@ class FeatureMatrixTests(unittest.TestCase):
         graph["rustix"] = set(target["rustix_features"])
         graph["ed25519-dalek"] = {"zeroize"}
         graph["clap"] = {"error-context", "help", "std", "usage"}
+        graph["base64"] = {"alloc"}
         check_cli_graph(POLICY, LINUX, graph)
         defaulted = deepcopy(graph)
         defaulted["clap"].add("default")
         with self.assertRaisesRegex(ValueError, "CLI dependency clap"):
+            check_cli_graph(POLICY, LINUX, defaulted)
+        defaulted = deepcopy(graph)
+        defaulted["base64"].update({"std", "simd-unsafe"})
+        with self.assertRaisesRegex(ValueError, "CLI dependency base64"):
             check_cli_graph(POLICY, LINUX, defaulted)
         corrupted = deepcopy(graph)
         del corrupted["blake3"]

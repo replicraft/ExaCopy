@@ -557,6 +557,126 @@ path = "docs/specs/compatibility/evidence/macos-apfs-differential.json"
 detail = "Exact cmp and generated-byte oracle, rsync checksum dry run, worker ceilings 1, 4 and 16, and final symlink refusal control."
 
 [[coverage]]
+id = "local-manifest-verification"
+status = "implemented"
+requirement_ids = ["R-007", "R-016", "R-087", "R-092", "R-154", "R-160", "R-161", "R-182"]
+acceptance_ids = ["A-007", "A-016", "A-087", "A-092", "A-154", "A-160", "A-161", "A-182"]
+invariant_ids = ["INV-001", "INV-013", "INV-016", "INV-019", "INV-020", "INV-032"]
+scope = "Linux CLI creates a portable 1.0 manifest on stdout and checks one explicitly selected regular file against a caller-supplied baseline. It holds read-only input capabilities, checks fresh observations, matches the lossless basename and measures all logical bytes with standard BLAKE3-256. The bounded parser validates the canonical manifest body digest and refuses invalid or unsupported input."
+limits = "This slice covers one unsigned JSON manifest, one unnamed stream, live observations and explicitly omitted metadata. Baseline trust comes from the caller. Creating a baseline establishes a current observation. The defined native fixtures cover Linux behavior, and codec vectors and fuzzing cover their declared parser boundaries. Signed, tree and snapshot manifests, NDJSON, and broader native and storage qualification remain open."
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "crates/clients/cli/src/args/parser/tests.rs"
+target = "new_commands_keep_raw_input_and_baseline_paths"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "crates/clients/cli/src/args/parser/tests.rs"
+target = "invalid_manifest_cli_syntax_never_returns_a_command"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "native"
+state = "defined"
+path = "crates/clients/cli/tests/linux_manifest.rs"
+target = "creates_and_verifies_raw_basename_without_a_profile"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "native"
+state = "defined"
+path = "crates/clients/cli/tests/linux_manifest.rs"
+target = "verification_mismatches_report_completed_integrity_failures"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "native"
+state = "defined"
+path = "crates/clients/cli/tests/linux_manifest.rs"
+target = "validates_baseline_before_target_admission"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "native"
+state = "defined"
+path = "crates/clients/cli/tests/linux_manifest.rs"
+target = "verification_requires_a_baseline_and_checks_exact_basename"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "native"
+state = "defined"
+path = "crates/clients/cli/tests/linux_manifest.rs"
+target = "human_verification_does_not_follow_or_replay_manifest_display"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "test"
+state = "defined"
+path = "crates/operations/transfer/src/manifest/tests.rs"
+target = "measurement_bounds_reads_and_checks_observations_in_order"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "test"
+state = "defined"
+path = "crates/operations/transfer/src/manifest/tests.rs"
+target = "first_observation_and_failed_read_stop_at_their_respective_boundaries"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "test"
+state = "defined"
+path = "crates/operations/transfer/src/manifest/tests.rs"
+target = "compares_length_then_digest_only_after_final_observation"
+
+[[coverage.evidence]]
+owner = "exacopy-codec"
+level = "obligation"
+state = "defined"
+path = "crates/core/codec/verification/obligations.toml"
+target = "P-010"
+
+[[coverage.evidence]]
+owner = "exacopy-codec"
+level = "test"
+state = "defined"
+path = "crates/core/codec/tests/manifest_vectors.rs"
+target = "independent_vectors_match_canonical_body_and_envelope_digest"
+
+[[coverage.evidence]]
+owner = "exacopy-codec"
+level = "test"
+state = "defined"
+path = "crates/core/codec/tests/manifest_vectors.rs"
+target = "independent_display_annotation_changes_no_canonical_byte"
+
+[[coverage.evidence]]
+owner = "exacopy-codec"
+level = "test"
+state = "defined"
+path = "crates/core/codec/tests/manifest_depth.rs"
+target = "caps_nesting_even_inside_unsupported_values"
+
+[[coverage.evidence]]
+owner = "exacopy-codec"
+level = "fuzz"
+state = "defined"
+path = "crates/core/codec/fuzz/fuzz_targets/manifest_json.rs"
+
+[[coverage.evidence]]
+owner = "exacopy-codec"
+level = "fixture"
+state = "defined"
+path = "crates/core/codec/verification/manifest/check-fuzz.sh"
+detail = "Pinned parser fuzz gate and retained seed replay. Scope is limited to exercised manifest JSON input."
+
+[[coverage]]
 id = "managed-apfs-copy"
 status = "experimental"
 requirement_ids = ["R-008", "R-013", "R-016", "R-018", "R-021", "R-023", "R-025", "R-026", "R-027", "R-028", "R-039", "R-040", "R-045", "R-051", "R-056", "R-062", "R-194"]

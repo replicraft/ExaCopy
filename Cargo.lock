@@ -284,6 +284,7 @@ dependencies = [
  "blake3",
  "clap",
  "ed25519-dalek",
+ "exacopy-codec",
  "exacopy-content",
  "exacopy-diff",
  "exacopy-endpoint",
@@ -399,6 +400,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "ed25519-dalek",
+ "exacopy-codec",
  "exacopy-content",
  "exacopy-endpoint",
  "exacopy-journal",

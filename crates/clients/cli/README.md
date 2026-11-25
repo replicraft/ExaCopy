@@ -1,6 +1,6 @@
 # ExaCopy command-line interface
 
-The `exacopy` binary compares regular local files on Linux and in the opt-in managed APFS profile on macOS. Linux also supports copying one regular file to a new name. The default output is human-readable. Exact byte comparison is the default and can be requested explicitly.
+The `exacopy` binary compares regular local files on Linux and in the opt-in managed APFS profile on macOS. Linux also supports creating and checking a portable content baseline for one regular file and copying a regular file to a new name. The default output is human-readable. Exact byte comparison is the default and can be requested explicitly.
 
 ```sh
 cargo run --locked -p exacopy-cli -- diff ./left ./right
@@ -38,6 +38,30 @@ The native CLI tests compile a small fixture provisioner with the Apple C compil
 ```sh
 cargo nextest run --locked -p exacopy-cli --test macos_diff
 ```
+
+## Create and verify a single-file manifest
+
+```sh
+cargo run --locked -p exacopy-cli -- manifest create ./source > ./source.manifest.json
+cargo run --locked -p exacopy-cli -- verify ./source --manifest ./source.manifest.json --format json
+```
+
+These commands run on Linux and require no private profile or copy job. `manifest create` writes a portable 1.0 JSON manifest to stdout. Choose a separate path for shell redirection. The manifest records the raw basename, the decimal byte length and the BLAKE3-256 digest of the file's logical bytes as a single unnamed stream. The observation is `live_observed` and the manifest explicitly omits metadata. The canonical body digest checks the manifest's integrity. Keep the unsigned baseline in a trusted location and select it explicitly for verification. Creating a baseline records the file's current observation and provides no evidence of its earlier state.
+
+`verify` checks the selected baseline before opening the input. The input's raw basename must match the record exactly. The explicit input path selects the parent directory. The manifest's logical root ID and display annotations confer no path authority. Both commands use read-only input capabilities, though the operating system may update access times. Final symlinks and non-regular files are refused. A path starting with a dash can follow `manifest create --` or `verify --`. For verification, put `--manifest FILE` and any `--format` option after the input path. The public manifest and the private committed copy receipt serve different workflows.
+
+Verification defaults to human output. The `exacopy.cli.verify` JSON report has `schema_version` set to `1.0` and a `result` of `verified`, `mismatch`, or `inconclusive`. Completed checks set `complete` to true and include the decimal length, algorithm, consistency, metadata status and unsigned baseline authentication status. A completed mismatch includes the expected and observed lengths or digests. Inconclusive reports set `complete` to false and include a stable error code. Invocation errors go to stderr.
+
+| Exit | Outcome |
+| --- | --- |
+| 0 | Baseline created or file verified against the selected baseline |
+| 2 | Invalid usage, input path, baseline, or basename scope |
+| 3 | An input or baseline observation changed during the check |
+| 4 | I/O, resource or output failure |
+| 5 | Length or stream digest mismatch, or invalid manifest body digest |
+| 6 | Unsupported platform, read capability, manifest version or required feature |
+
+The current profile covers one regular file and a bounded unsigned JSON baseline. See the [independent manifest vectors and parser fuzz gate](../../core/codec/verification/manifest/README.md).
 
 ## Copy one regular file
 

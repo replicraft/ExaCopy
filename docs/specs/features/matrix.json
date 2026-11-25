@@ -223,6 +223,7 @@
       "minicbor", "rustc_version", "semver", "sha2", "shlex", "signature", "subtle",
       "typenum", "version_check", "zeroize"
     ],
+    "linux_manifests": ["base64", "exacopy-codec"],
     "macos_io": ["apfs-mounted", "cfg-if", "errno", "getrandom", "libc"]
   },
   "targets": {
@@ -230,9 +231,10 @@
       "cli": {
         "status": "local",
         "diff": "local regular files",
-        "copy_and_recovery": "Linux verified single-file transfer and recovery"
+        "copy_and_recovery": "Linux verified single-file transfer and recovery",
+        "manifest_and_verification": "Unsigned single-file baseline creation and read-only content verification"
       },
-      "cli_graph_groups": ["command_line", "reporting", "local_comparison", "linux_verified_transfer"],
+      "cli_graph_groups": ["command_line", "reporting", "local_comparison", "linux_verified_transfer", "linux_manifests"],
       "rustix_features": ["alloc", "default", "fs", "process", "rand", "std"]
     },
     "aarch64-apple-darwin": {

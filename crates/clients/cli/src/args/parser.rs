@@ -8,11 +8,14 @@ use clap::{Arg, ArgAction, ArgMatches, Command as Cli};
 
 use super::{
 	Command, CopyCommand, DiffCommand, DiffProfile, Format, RecoveryAction, RecoveryCommand,
-	SourceRecoveryAction,
+	SourceRecoveryAction, VerifyCommand,
 };
 
 const DIFF: &str = "diff";
 const COPY: &str = "copy";
+const MANIFEST: &str = "manifest";
+const CREATE: &str = "create";
+const VERIFY: &str = "verify";
 const RECOVER: &str = "recover";
 const PROFILE: &str = "profile";
 const INIT: &str = "init";
@@ -24,6 +27,9 @@ const FORMAT: &str = "format";
 const SOURCE_ROOT: &str = "source-root";
 const WORKERS: &str = "workers";
 const MANAGED_MACOS: &str = "managed-macos";
+#[cfg(test)]
+mod tests;
+
 const MAX_DIFF_WORKERS: u8 = 16;
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -61,7 +67,7 @@ pub(crate) fn parse(args: impl Iterator<Item = OsString>) -> Result<Command, Str
 fn definition() -> Cli {
 	Cli::new("exacopy")
 		.bin_name("exacopy")
-		.about("Compare regular files, copy into a new name, or recover a retained copy.")
+		.about("Compare, verify, or copy regular files and recover retained copies.")
 		.no_binary_name(true)
 		.disable_help_subcommand(true)
 		.subcommand_required(true)
@@ -108,6 +114,29 @@ fn definition() -> Cli {
 				.arg(output_format()),
 		)
 		.subcommand(
+			Cli::new(MANIFEST)
+				.about("Create a manifest of one regular file.")
+				.disable_help_subcommand(true)
+				.subcommand_required(true)
+				.subcommand(
+					Cli::new(CREATE)
+						.about("Emit a content manifest for one regular file as JSON.")
+						.arg(operand("PATH", 1)),
+				),
+		)
+		.subcommand(
+			Cli::new(VERIFY)
+				.about("Verify one regular file against an existing manifest.")
+				.after_help(OPERAND_ORDER)
+				.arg(operand("PATH", 1))
+				.arg(path_option(
+					MANIFEST,
+					"FILE",
+					"Select the baseline manifest.",
+				))
+				.arg(output_format()),
+		)
+		.subcommand(
 			Cli::new(RECOVER)
 				.about("Inspect or recover a retained Linux copy.")
 				.disable_help_subcommand(true)
@@ -144,9 +173,13 @@ fn operand(name: &'static str, position: usize) -> Arg {
 }
 
 fn directory_option(name: &'static str, help: &'static str) -> Arg {
+	path_option(name, "DIR", help)
+}
+
+fn path_option(name: &'static str, value_name: &'static str, help: &'static str) -> Arg {
 	Arg::new(name)
 		.long(name)
-		.value_name("DIR")
+		.value_name(value_name)
 		.value_parser(OsStringValueParser::new())
 		.required(true)
 		.help(help)
@@ -227,13 +260,13 @@ fn frame_operands(
 		if is_help(&option) {
 			return Err("request help by itself or use -- before a path named like a help flag");
 		}
-		if (option == "--profile" || option == "--source-root")
+		if (option == "--profile" || option == "--source-root" || option == "--manifest")
 			&& let Some(value) = options.next_if(|value| {
 				let bytes = value.as_encoded_bytes();
 				let legacy_profile = option == "--profile" && scope.get_name() != RESUME;
 				bytes.starts_with(b"-") && (legacy_profile || !bytes.starts_with(b"--"))
 			}) {
-			// Bind a literal dash-prefixed directory without allowing the injected
+			// Bind a literal dash-prefixed path without allowing the injected
 			// end-of-options marker to stand in for a missing grant.
 			option.push("=");
 			option.push(value);
@@ -291,6 +324,20 @@ fn typed_command(mut args: ArgMatches) -> Option<Command> {
 			source: path(&mut command, "SOURCE")?,
 			target: path(&mut command, "TARGET")?,
 			profile: path(&mut command, PROFILE)?,
+			format: selected_format(&command),
+		})),
+		MANIFEST => {
+			let (action, mut args) = command.remove_subcommand()?;
+			if action != CREATE {
+				return None;
+			}
+			Some(Command::ManifestCreate {
+				path: path(&mut args, "PATH")?,
+			})
+		}
+		VERIFY => Some(Command::Verify(VerifyCommand {
+			path: path(&mut command, "PATH")?,
+			manifest: path(&mut command, MANIFEST)?,
 			format: selected_format(&command),
 		})),
 		RECOVER => recovery_command(command),
