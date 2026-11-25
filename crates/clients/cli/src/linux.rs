@@ -1,9 +1,10 @@
 use std::num::NonZeroUsize;
 use std::path::Path;
 
-use exacopy_diff::linux::{self, MAX_SCRATCH_BYTES, Side};
+use exacopy_diff::linux::{self, Side};
 use exacopy_platform::linux::{ReadRoot, SourceFile};
 
+use crate::diff;
 use crate::linux_path::{open_directory, split};
 use crate::report::{ErrorCode, Failure, Outcome};
 
@@ -21,23 +22,10 @@ fn compare_files(
 ) -> Result<Outcome, Failure> {
 	let left = open(left, Side::Left)?;
 	let right = open(right, Side::Right)?;
-	let mut scratch = Vec::new();
-	scratch
-		.try_reserve_exact(MAX_SCRATCH_BYTES)
-		.map_err(|_| Failure {
-			code: ErrorCode::ResourceLimit,
-			message: "could not allocate the comparison buffer".into(),
-		})?;
-	scratch.resize(MAX_SCRATCH_BYTES, 0);
-	let result = match workers {
-		Some(workers) => linux::compare_parallel(&left, &right, &mut scratch, workers),
-		None => linux::compare(&left, &right, &mut scratch),
-	}
-	.map_err(|error| Failure {
-		code: ErrorCode::CompareInput,
-		message: error.to_string(),
-	})?;
-	Ok(Outcome::from_comparison(result))
+	diff::compare(|scratch| match workers {
+		Some(workers) => linux::compare_parallel(&left, &right, scratch, workers),
+		None => linux::compare(&left, &right, scratch),
+	})
 }
 
 fn open(path: &Path, side: Side) -> Result<SourceFile, Failure> {

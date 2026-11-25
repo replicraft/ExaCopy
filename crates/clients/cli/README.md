@@ -1,6 +1,6 @@
 # ExaCopy command-line interface
 
-The `exacopy` binary compares regular local files and copies one regular file to a new name on Linux. The default output is human-readable. Exact byte comparison is the default and can be requested explicitly.
+The `exacopy` binary compares regular local files on Linux and in the opt-in managed APFS profile on macOS. Linux also supports copying one regular file to a new name. The default output is human-readable. Exact byte comparison is the default and can be requested explicitly.
 
 ```sh
 cargo run --locked -p exacopy-cli -- diff ./left ./right
@@ -9,7 +9,7 @@ cargo run --locked -p exacopy-cli -- diff /path/to/left /path/to/right --compare
 
 The default comparison runs serially. Use `--workers N` after the two paths to set a ceiling from 1 through 16 for positioned reads. The comparator uses up to that many workers within the same 8 MiB scratch budget. All worker choices use the same byte relation, report format, and exit codes.
 
-Each input may be absolute or relative to the current working directory. The command opens the named parent directory and selects its final filename within that capability. Linux file names are preserved as raw bytes. A trailing separator, a reserved final component, a final symlink, or a non-regular file is refused. A parent path is the directory the caller chose, following ordinary Linux directory resolution. A filename that matches a help flag can be passed after `diff --` or with a leading `./`.
+Each input may be absolute or relative to the current working directory. The command opens the named parent directory and selects its final filename as a raw byte component within that capability. It refuses trailing separators, reserved final components, final symlinks and non-regular files. Linux uses ordinary resolution of parent paths. A filename that matches a help flag can be passed after `diff --` or with a leading `./`.
 
 | Exit | Outcome |
 | --- | --- |
@@ -20,6 +20,24 @@ Each input may be absolute or relative to the current working directory. The com
 The `exacopy.cli.diff` JSON summary has `schema_version` set to `1.0`, `relation` set to `bytes`, a `result` of `equal`, `different`, or `inconclusive`, and a `complete` Boolean for the relation decision. Successful decisions carry `consistency` set to `live_observed`. The lengths and offset are unsigned decimal strings. A first-byte offset is zero-based and establishes inequality. The summary reports a single witness. Inconclusive comparisons include an `error` with a stable code and an explanation. Invocation errors are written to stderr. The paged diff report, shell completions, and generated argument parser are outside this initial command.
 
 The command exercises the byte comparison and exit-status portions of the local CLI design. It has no persistent job, mutation, or publication authority. See the [diff crate](../../operations/diff/README.md) for evidence scope and source-observation limits.
+
+### Managed APFS comparison on macOS
+
+```sh
+cargo run --locked -p exacopy-cli -- diff /path/to/managed-root/left /path/to/managed-root/right --managed-macos --workers 4 --format json
+```
+
+By passing `--managed-macos`, the non-root owner attests that each input parent path stably resolves to its exact independently provisioned, owner-private, materialized local APFS directory outside File Provider, on a volume with ownership enforcement. The paths must have protected ancestors in a trusted mount namespace, with no symlinks or possible redirection. Resolving either parent must require no automount or other filesystem trigger and no remote or File Provider lookup. The two inputs can share one parent.
+
+Provision each parent with mode `0700` and an explicit empty extended ACL. Each selected file must be an owner-private, single-link regular file with mode `0600`. Processes outside the cooperating namespace must hold no access handles to the selected files, including handles obtained before provisioning. Every participating same-user process must hold an exclusive Darwin `flock` on the parent directory before changing it, its selected names or files, including through other handles or aliases. The adapter holds a shared advisory lock on each parent during comparison.
+
+On macOS, omitting the flag returns `E_UNSUPPORTED_PLATFORM`. Using it outside macOS returns the same code. Successful comparisons use the standard report and exit codes and describe live observations. The managed APFS profile covers read-only byte comparison. Mac copy and recovery require separate adapter work.
+
+The native CLI tests compile a small fixture provisioner with the Apple C compiler and use fresh owner-private directories in `/private/tmp` on local APFS.
+
+```sh
+cargo nextest run --locked -p exacopy-cli --test macos_diff
+```
 
 ## Copy one regular file
 

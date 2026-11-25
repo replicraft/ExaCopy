@@ -3,7 +3,9 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
-use crate::args::{self, Command, CopyCommand, DiffCommand, Format, RecoveryCommand, USAGE};
+use crate::args::{
+	self, Command, CopyCommand, DiffCommand, DiffProfile, Format, RecoveryCommand, USAGE,
+};
 use crate::copy_report::CopyOutcome;
 use crate::recovery_report::RecoveryOutcome;
 use crate::report::{INCONCLUSIVE, Outcome, Report};
@@ -83,16 +85,36 @@ fn run_diff(diff: DiffCommand, stdout: &mut impl Write, stderr: &mut impl Write)
 
 #[cfg(target_os = "linux")]
 fn compare(diff: &DiffCommand) -> Outcome {
-	crate::linux::compare(&diff.left, &diff.right, diff.workers)
+	match diff.profile {
+		DiffProfile::Default => crate::linux::compare(&diff.left, &diff.right, diff.workers),
+		DiffProfile::ManagedMacos => unsupported_diff("--managed-macos requires macOS"),
+	}
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+fn compare(diff: &DiffCommand) -> Outcome {
+	match diff.profile {
+		DiffProfile::Default => {
+			unsupported_diff("local byte comparison on macOS requires --managed-macos")
+		}
+		DiffProfile::ManagedMacos => crate::macos::compare(&diff.left, &diff.right, diff.workers),
+	}
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn compare(diff: &DiffCommand) -> Outcome {
 	let _ = (&diff.left, &diff.right, diff.workers);
+	match diff.profile {
+		DiffProfile::Default => unsupported_diff("local byte comparison requires Linux"),
+		DiffProfile::ManagedMacos => unsupported_diff("--managed-macos requires macOS"),
+	}
+}
+
+fn unsupported_diff(message: &'static str) -> Outcome {
 	Outcome::Inconclusive {
 		error: crate::report::Failure {
 			code: crate::report::ErrorCode::UnsupportedPlatform,
-			message: "local byte comparison requires Linux".into(),
+			message: message.into(),
 		},
 	}
 }

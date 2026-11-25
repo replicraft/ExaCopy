@@ -15,6 +15,10 @@ fn help_describes_diff_and_exits_successfully() {
 	assert!(usage.contains("exacopy diff"));
 	assert!(usage.contains("--format human|json"));
 	assert!(usage.contains("--workers N"));
+	assert!(usage.contains("--managed-macos attests"));
+	assert!(usage.contains("owner-private, materialized local APFS roots outside File Provider"));
+	assert!(usage.contains("protected ancestors"));
+	assert!(usage.contains("Outside actors must hold no access handles"));
 	assert!(usage.contains("exacopy recover retry [--] JOB --source-root DIR"));
 	assert!(usage.contains("exacopy recover resume [--] JOB --source-root DIR"));
 }
@@ -28,7 +32,22 @@ fn rejects_missing_operands_and_unsupported_or_repeated_options() {
 		&[
 			"diff", "left", "right", "--format", "json", "--format", "human",
 		],
+		&[
+			"diff",
+			"left",
+			"right",
+			"--managed-macos",
+			"--managed-macos",
+		],
 		&["copy", "left", "right"],
+		&[
+			"copy",
+			"left",
+			"right",
+			"--profile",
+			"profile",
+			"--managed-macos",
+		],
 	] {
 		let output = exacopy()
 			.args(args)
@@ -126,6 +145,45 @@ fn unsupported_platform_returns_structured_inconclusive_result() {
 	assert_eq!(report["result"], "inconclusive");
 	assert_eq!(report["complete"], false);
 	assert_eq!(report["error"]["code"], "E_UNSUPPORTED_PLATFORM");
+	assert!(report.get("consistency").is_none());
+}
+
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn managed_macos_opt_in_refuses_other_platforms_without_opening_inputs() {
+	let output = exacopy()
+		.args([
+			"diff",
+			"unavailable-left",
+			"unavailable-right",
+			"--managed-macos",
+			"--format",
+			"json",
+		])
+		.output()
+		.expect("invoke managed diff on unsupported platform");
+	assert_eq!(output.status.code(), Some(2));
+	assert!(output.stderr.is_empty());
+	let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("read report");
+	assert_eq!(report["result"], "inconclusive");
+	assert_eq!(report["complete"], false);
+	assert_eq!(report["error"]["code"], "E_UNSUPPORTED_PLATFORM");
+	assert!(report.get("consistency").is_none());
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn managed_macos_opt_in_routes_to_managed_admission() {
+	let output = exacopy()
+		.args(["diff", "./", "right", "--managed-macos", "--format", "json"])
+		.output()
+		.expect("invoke managed diff with invalid terminal name");
+	assert_eq!(output.status.code(), Some(2));
+	assert!(output.stderr.is_empty());
+	let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("read report");
+	assert_eq!(report["result"], "inconclusive");
+	assert_eq!(report["complete"], false);
+	assert_eq!(report["error"]["code"], "E_INVALID_PATH");
 	assert!(report.get("consistency").is_none());
 }
 

@@ -14,14 +14,16 @@ path = "src/main.rs"
 serde.workspace = true
 serde_json.workspace = true
 
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+exacopy-diff.workspace = true
+exacopy-endpoint.workspace = true
+exacopy-platform.workspace = true
+
 [target.'cfg(target_os = "linux")'.dependencies]
 blake3.workspace = true
 ed25519-dalek.workspace = true
 exacopy-content.workspace = true
-exacopy-diff.workspace = true
-exacopy-endpoint.workspace = true
 exacopy-journal.workspace = true
-exacopy-platform.workspace = true
 exacopy-transfer.workspace = true
 rustix = { workspace = true, features = ["rand"] }
 uuid.workspace = true

@@ -2,13 +2,13 @@ use std::ffi::{OsStr, OsString};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
-pub(crate) const USAGE: &str = "Usage:\n  exacopy diff [--] LEFT RIGHT [--compare bytes] [--workers N] [--format human|json]\n  exacopy copy [--] SOURCE TARGET --profile DIR [--format human|json]\n  exacopy recover inspect|finish [--] JOB --profile DIR [--format human|json]\n  exacopy recover retry [--] JOB --source-root DIR --profile DIR [--format human|json]\n  exacopy recover resume [--] JOB --source-root DIR --profile DIR [--format human|json]\n  exacopy profile init [--] DIR";
+pub(crate) const USAGE: &str = "Usage:\n  exacopy diff [--] LEFT RIGHT [--compare bytes] [--workers N] [--managed-macos] [--format human|json]\n  exacopy copy [--] SOURCE TARGET --profile DIR [--format human|json]\n  exacopy recover inspect|finish [--] JOB --profile DIR [--format human|json]\n  exacopy recover retry [--] JOB --source-root DIR --profile DIR [--format human|json]\n  exacopy recover resume [--] JOB --source-root DIR --profile DIR [--format human|json]\n  exacopy profile init [--] DIR\n\n  --managed-macos attests that both input parent paths stably resolve to the exact\n  provisioned, owner-private, materialized local APFS roots outside File Provider.\n  Use protected ancestors and a trusted mount namespace with no automounts or\n  remote or provider lookups. Outside actors must hold no access handles, and\n  same-user writers must take exclusive directory locks, including across aliases.";
 
 const MAX_DIFF_WORKERS: usize = 16;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 const _: () = assert!(
-	MAX_DIFF_WORKERS == exacopy_diff::linux::MAX_WORKERS,
+	MAX_DIFF_WORKERS == exacopy_diff::MAX_WORKERS,
 	"the CLI worker limit must match the comparison engine"
 );
 
@@ -24,7 +24,14 @@ pub(crate) struct DiffCommand {
 	pub(crate) left: PathBuf,
 	pub(crate) right: PathBuf,
 	pub(crate) workers: Option<NonZeroUsize>,
+	pub(crate) profile: DiffProfile,
 	pub(crate) format: Format,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DiffProfile {
+	Default,
+	ManagedMacos,
 }
 
 pub(crate) struct CopyCommand {
@@ -174,6 +181,7 @@ fn parse_diff(mut args: impl Iterator<Item = OsString>) -> Result<Command, &'sta
 	let mut format = None;
 	let mut compare_selected = false;
 	let mut workers = None;
+	let mut profile = DiffProfile::Default;
 	while let Some(flag) = args.next() {
 		match flag.to_str() {
 			Some("--format") if format.is_none() => format = Some(parse_format(args.next())?),
@@ -184,7 +192,10 @@ fn parse_diff(mut args: impl Iterator<Item = OsString>) -> Result<Command, &'sta
 				compare_selected = true;
 			}
 			Some("--workers") if workers.is_none() => workers = Some(parse_workers(args.next())?),
-			Some("--format" | "--compare" | "--workers") => {
+			Some("--managed-macos") if profile == DiffProfile::Default => {
+				profile = DiffProfile::ManagedMacos;
+			}
+			Some("--format" | "--compare" | "--workers" | "--managed-macos") => {
 				return Err("repeated diff option");
 			}
 			_ => return Err("unknown diff option"),
@@ -195,6 +206,7 @@ fn parse_diff(mut args: impl Iterator<Item = OsString>) -> Result<Command, &'sta
 		left: left.into(),
 		right: right.into(),
 		workers,
+		profile,
 		format: format.unwrap_or(Format::Human),
 	}))
 }

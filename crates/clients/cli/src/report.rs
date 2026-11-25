@@ -3,10 +3,10 @@ use std::process::ExitCode;
 
 use serde::Serialize;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 const DIFFERENT: u8 = 1;
 pub(crate) const INCONCLUSIVE: u8 = 2;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 const LIVE_OBSERVED: &str = "live_observed";
 
 #[derive(Serialize)]
@@ -40,12 +40,12 @@ impl Report {
 #[derive(Serialize)]
 #[serde(tag = "result", rename_all = "snake_case")]
 pub(crate) enum Outcome {
-	#[cfg(target_os = "linux")]
+	#[cfg(any(target_os = "linux", target_os = "macos"))]
 	Equal {
 		consistency: &'static str,
 		length: String,
 	},
-	#[cfg(target_os = "linux")]
+	#[cfg(any(target_os = "linux", target_os = "macos"))]
 	Different {
 		consistency: &'static str,
 		difference: DifferenceWitness,
@@ -56,9 +56,9 @@ pub(crate) enum Outcome {
 }
 
 impl Outcome {
-	#[cfg(target_os = "linux")]
-	pub(crate) fn from_comparison(comparison: exacopy_diff::linux::LiveComparison) -> Self {
-		use exacopy_diff::linux::{Difference, LiveComparison};
+	#[cfg(any(target_os = "linux", target_os = "macos"))]
+	pub(crate) fn from_comparison(comparison: exacopy_diff::LiveComparison) -> Self {
+		use exacopy_diff::{Difference, LiveComparison};
 
 		let difference = match comparison {
 			LiveComparison::Equal { length } => {
@@ -87,9 +87,9 @@ impl Outcome {
 
 	pub(crate) fn exit_code(&self) -> ExitCode {
 		match self {
-			#[cfg(target_os = "linux")]
+			#[cfg(any(target_os = "linux", target_os = "macos"))]
 			Self::Equal { .. } => ExitCode::SUCCESS,
-			#[cfg(target_os = "linux")]
+			#[cfg(any(target_os = "linux", target_os = "macos"))]
 			Self::Different { .. } => ExitCode::from(DIFFERENT),
 			Self::Inconclusive { .. } => ExitCode::from(INCONCLUSIVE),
 		}
@@ -106,14 +106,14 @@ impl Outcome {
 			&mut stdout
 		};
 		match self {
-			#[cfg(target_os = "linux")]
+			#[cfg(any(target_os = "linux", target_os = "macos"))]
 			Self::Equal {
 				length,
 				consistency,
 			} => {
 				writeln!(output, "Equal bytes ({length} bytes, {consistency}).")?;
 			}
-			#[cfg(target_os = "linux")]
+			#[cfg(any(target_os = "linux", target_os = "macos"))]
 			Self::Different {
 				difference,
 				consistency,
@@ -139,7 +139,7 @@ impl Outcome {
 	}
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum DifferenceWitness {
@@ -155,19 +155,18 @@ pub(crate) struct Failure {
 
 #[derive(Serialize)]
 pub(crate) enum ErrorCode {
-	#[cfg(target_os = "linux")]
+	#[cfg(any(target_os = "linux", target_os = "macos"))]
 	#[serde(rename = "E_INVALID_PATH")]
 	InvalidPath,
-	#[cfg(target_os = "linux")]
+	#[cfg(any(target_os = "linux", target_os = "macos"))]
 	#[serde(rename = "E_OPEN_INPUT")]
 	OpenInput,
-	#[cfg(target_os = "linux")]
+	#[cfg(any(target_os = "linux", target_os = "macos"))]
 	#[serde(rename = "E_COMPARE_INPUT")]
 	CompareInput,
-	#[cfg(target_os = "linux")]
+	#[cfg(any(target_os = "linux", target_os = "macos"))]
 	#[serde(rename = "E_RESOURCE_LIMIT")]
 	ResourceLimit,
-	#[cfg(not(target_os = "linux"))]
 	#[serde(rename = "E_UNSUPPORTED_PLATFORM")]
 	UnsupportedPlatform,
 }
