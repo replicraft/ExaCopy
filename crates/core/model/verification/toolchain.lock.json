@@ -1,0 +1,50 @@
+{
+  "primary_platform": "linux-x86_64",
+  "cargo_hax": {
+    "version": "0.4.2",
+    "revision": "5ccf89dd2e996c9f88f2267eaa2a64739c4ca41a",
+    "tools_manifest_sha256": "427c7c6b10fd5e9bc1529dd4bf9982f27cc2cd76da3610a8c13a55a0e451b906"
+  },
+  "hax_lib": {
+    "version": "0.4.2",
+    "crate_sha256": "fb3bfcfc915e894c331662e4ac76706b777a5956535ea24535f4df30da04b1bf"
+  },
+  "aeneas": {
+    "version": "build-183e4f0",
+    "revision": "183e4f0642e5f261f89215549366043a9a3d72ff"
+  },
+  "charon": {
+    "version": "nightly-2026.09.02",
+    "revision": "fea3fc68d445181cf4ce094855a43a17192a2b12",
+    "rust_toolchain_sha256": "495d90ce48777990065d77dbbbe93fbad1c0a62439cab991286789c15c2d41dc"
+  },
+  "extraction_rust": {
+    "toolchain": "nightly-2026-08-18",
+    "revision": "8fa1c96cfd489e4c27654c144ae871ce2c4db6c6",
+    "components": ["rustc-dev", "rust-src", "llvm-tools", "miri"]
+  },
+  "hax_lean": {
+    "version": "v0.3.30",
+    "revision": "174840bf2f633ae3bae955e08f781b3737ffc0b8"
+  },
+  "lean": {
+    "toolchain": "leanprover/lean4:v4.31.0",
+    "revision": "68218e876d2a38b1985b8590fff244a83c321783"
+  },
+  "mathlib": {
+    "version": "v4.31.0",
+    "revision": "fabf563a7c95a166b8d7b6efca11c8b4dc9d911f"
+  },
+  "platforms": {
+    "linux-x86_64": {
+      "cargo-hax": {"archive_sha256": "64b15097c003919075c7e8cca845db0e29718c0683596b739677b159ceb138f4", "binary_sha256": "00e050b4d79bce928ca2b4286113db8b4bd486090a15d8afbc9368d0883e8504"},
+      "charon": {"archive_sha256": "a812bad35e0934a6d2b8daf5d5d674037a18d6cc27638b426911128b445fbc5d", "binary_sha256": "60ac6a5c4bf9151f0d6db961009268b91ea445e3a5c93bdb8dbfe5b48da36ebc", "driver_sha256": "1197ae18c6b5231ccd5bc2cfa91cb763c3bb69e83f2e4b8b310627488f0cb571"},
+      "aeneas": {"archive_sha256": "9d3670021746fa911f7e6d767c521e521d03c3bf51cec0176a18f3f06faea44d", "binary_sha256": "a3e9ad3ac06ea50c1b66862ed8434ec431baf1b77498fa93871d073263a32044"}
+    },
+    "macos-aarch64": {
+      "cargo-hax": {"archive_sha256": "f5fb1cdb6727310cc0d6aa93ceaa1bddedfbf9d5979438d955130abd52020af4", "binary_sha256": "43186d35e693ac16c3e25fef1717c30a14c9ba73e8a9f9c6318db22e80ac04db"},
+      "charon": {"archive_sha256": "9d63612aec6558a534a37b9a3ab1b7ed4dce75e6f7e7fbff19cde82a1b8f4c83", "binary_sha256": "a2707edb539b44a2b3b38458b541152aa19c0e402d5ab6b3864400ea4942aa9d", "driver_sha256": "8548423859420378b3d0f51f76f63fcc96eedf3b6615e9c6187fd0d29b9a7271"},
+      "aeneas": {"archive_sha256": "dd6be33b9f21a8bcfd089f4da9b36ad89be3848d877d812b8ca1ea0f28be86ca", "binary_sha256": "79048df7473ced32e9df1f6741973c78ce5c565ea49ad5777dde4df5ba680a3f"}
+    }
+  }
+}

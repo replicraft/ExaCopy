@@ -1,0 +1,22 @@
+name = "exacopy_model_verification"
+version = "0.1.0"
+defaultTargets = ["Proofs"]
+
+[[lean_lib]]
+name = "Generated"
+globs = ["Generated.+"]
+
+[[lean_lib]]
+name = "Proofs"
+globs = ["Proofs.+"]
+
+[[require]]
+name = "aeneas"
+git = "https://github.com/cryspen/aeneas"
+rev = "183e4f0642e5f261f89215549366043a9a3d72ff"
+subDir = "backends/lean"
+
+[[require]]
+name = "hax"
+git = "https://github.com/cryspen/hax-lean"
+rev = "174840bf2f633ae3bae955e08f781b3737ffc0b8"

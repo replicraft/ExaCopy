@@ -1,0 +1,15 @@
+[tools]
+aeneas = "build-183e4f0"
+charon = "nightly-2026.09.02"
+
+[versions]
+lean = "leanprover/lean4:v4.31.0"
+hax-lean-lib = "v0.3.30"
+
+[scenario.range]
+backend = "lean"
+output-dir = "verification/.lake/hax"
+project-files = false
+features = ["proof-extraction"]
+charon-args = ["--sysroot", "default", "--start-from", "crate::range::checked_range_end"]
+aeneas-args = ["-subdir", "Generated", "-namespace", "ExaCopy"]
