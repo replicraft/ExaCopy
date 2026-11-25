@@ -323,4 +323,5 @@ fn a_token_reusing_the_job_or_profile_identity_is_rejected_before_creation() {
 	assert_absent(&fixture.path(TARGET));
 }
 
+#[path = "job_bootstrap/copy.rs"]
 mod copy;
