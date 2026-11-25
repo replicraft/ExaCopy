@@ -33,6 +33,32 @@ fixed input. On Rust 1.100.0 the rustflags test passed with the test binary next
 to its rlib, as the test expects. Cargo's test layout placed them separately.
 """
 
+[[audits.cc]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.11.2"
+notes = """
+2026-11-25. Reviewed the registry archive SHA-256
+33ef9e3e8154a45c7a95cff4c1299702106ad94062d7bb85fdc5d3a5afd91d45.
+The independently fetched archive matches Cargo.lock and the cached bytes.
+Packaged source matches the upstream cc-v1.11.2 tag at
+f053f4ca6be6bdf37b7c4ae657981e0ec2fba879. Reviewed command construction,
+environment precedence and tool selection, compiler probes, generated archive
+and temporary paths, OnceLock publication, and optional process, pipe, jobserver,
+reactor and diagnostic paths. Build use trusts the configured toolchain and
+wrappers, source and flag selection, private output directory, and valid
+inherited jobserver descriptors for parallel builds. Tools receive argv
+through Command. The legacy string-export helpers carry no re-quoting
+guarantee. Malformed shell-escaped flag suffixes can be omitted. Subprocess
+time and capture size depend on the toolchain. No file-copy inputs enter these
+build interfaces. ExaCopy uses the serial feature set to compile packaged
+BLAKE3 native inputs. Native Rust 1.100.0 default and optional compiler
+fixtures, BLAKE3 digest checks, and all-feature archive unit and doc tests
+passed. Linux GNU and Windows MSVC cross-checks compile only. The separate
+find-msvc-tools dependency review remains open. These results do not qualify
+every compiler, Windows discovery path or generated native implementation.
+"""
+
 [[audits.cfg-if]]
 who = "OpenAI Codex (dependency source review)"
 criteria = "safe-to-deploy"
@@ -156,6 +182,64 @@ delegate to Borrow, PartialEq, and Ord. It has no dependencies, features, unsafe
 code, build script, or ambient privileges. Callers own the documented hashing
 and comparison contracts. Rust 1.100.0 doctest and all-target checks passed.
 This audit identifies the crates.io archive. Upstream Git provenance is unverified.
+"""
+
+[[audits.hax-lib]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.4.2"
+notes = """
+2026-11-25. Reviewed locked registry archive SHA-256
+fb3bfcfc915e894c331662e4ac76706b777a5956535ea24535f4df30da04b1bf.
+The archive names commit 5ccf89dd2e996c9f88f2267eaa2a64739c4ca41a,
+corroborated by the signed cargo-hax-v0.4.2 release. Its source, build
+script and original manifest match the upstream release tree.
+
+The build script writes fixed backend macro re-exports to
+OUT_DIR/proc_macros_generated.rs. It launches no commands. Reviewed
+the default no_std placeholder paths, optional macro re-exports, and
+cfg(hax) assertion markers and fixed-capacity BigInt wrapper. There is
+no unsafe Rust or runtime ambient I/O in this crate. Conversion and
+arithmetic helpers can panic on out-of-domain proof inputs. Executable
+safety checks belong in ordinary Rust. Native ghost proposition
+constructors are not logical decision procedures. In particular the
+native implication stub reverses operands, while the pinned upstream
+Lean model maps the definition names to forward implication. This audit
+covers the crate's build and Rust source, and does not establish
+backend proof soundness or the semantics of the separate macro crate.
+
+ExaCopy's locked proof-extraction feature compiled on Rust 1.100.0.
+On the pinned nightly-2026-08-18 compiler with Hax and Lean cfg flags,
+a native fixture passed exact-integer addition and literal conversion.
+No formal gate was run for this audit.
+"""
+
+[[audits.hax-lib-macros-types]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.4.2"
+notes = """
+2026-11-25. Reviewed locked registry archive SHA-256
+e053e3a5aeb92df47b07323180c5088edc488ca49883a234f6c73255c54cc520.
+The archive names commit 5ccf89dd2e996c9f88f2267eaa2a64739c4ca41a,
+corroborated by the signed cargo-hax-v0.4.2 release. Its source and
+original manifest match the upstream release tree.
+
+Reviewed the typed payload definitions, Serde and optional schema
+derives, token emission, and fresh item identity allocation. The JSON
+encoding is interpolated as an escaped string literal in a fixed,
+cfg-gated tool attribute, so payload strings cannot introduce Rust
+syntax at that boundary. Backend quotation payloads are trusted
+source inputs interpreted separately by the backend. The package
+has no unsafe Rust or build script. The only ambient effect is UUIDv4
+generation through uuid for build-time association labels. Labels
+are used for linkage and carry no authentication guarantee.
+
+A Rust 1.100.0 aarch64 macOS fixture passed fresh label shape, JSON
+round-trip and emitted attribute token comparison with the exact
+archive, both normally and with the optional schema derive enabled.
+The pinned Hax nightly fixture exercised the same metadata paths
+during attribute expansion.
 """
 
 [[audits.itoa]]
