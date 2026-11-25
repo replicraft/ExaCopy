@@ -1,13 +1,17 @@
 use std::fs::{self, File};
 use std::io::{self, Seek as _, SeekFrom, Write as _};
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
-use super::{DurableJournal, DurableJournalError};
+use super::{DurableJournal, DurableJournalError, JournalFileBarrier};
 use crate::frame::{
 	ChainHead, FRAME_OVERHEAD_BYTES, FrameKind, FrameReadError, FrameReader, FrameWriteError,
 	FrameWriter, MAX_PAYLOAD_BYTES,
 };
+
+#[cfg(target_os = "macos")]
+mod darwin;
+mod fixture;
+
+use self::fixture::ScratchFile;
 
 const OWNER_PAYLOAD: &[u8] = b"fixture owner record";
 const INTENT_PAYLOAD: &[u8] = b"fixture intent record";
@@ -19,6 +23,7 @@ fn synced_frames_are_visible_from_a_separate_read_handle() {
 	let first = journal
 		.append(FrameKind::JobPrepared, OWNER_PAYLOAD)
 		.expect("append and sync owner frame");
+	assert_eq!(first.barrier(), JournalFileBarrier::SyncAll);
 	let second = journal
 		.append(FrameKind::PublishIntent, INTENT_PAYLOAD)
 		.expect("append and sync intent frame");
@@ -329,6 +334,7 @@ fn rejecting_a_frame_past_the_segment_limit_preserves_space_for_a_smaller_frame(
 	let mut journal = DurableJournal {
 		writer: Some(FrameWriter::new(file, ChainHead::start())),
 		end,
+		barrier: JournalFileBarrier::SyncAll,
 	};
 	assert!(matches!(
 		journal.append_with_barrier(FrameKind::PublishIntent, b"x", |_| {
@@ -437,8 +443,6 @@ fn changed_boundary_before_append_retires_the_writer() {
 	assert_eq!(frame.head(), synced.head());
 }
 
-struct ScratchFile(PathBuf);
-
 fn synced_owner() -> (ScratchFile, ChainHead, u64) {
 	let (scratch, file) = ScratchFile::create();
 	let mut journal = DurableJournal::from_new_file(file).expect("admit exclusive empty file");
@@ -450,47 +454,4 @@ fn synced_owner() -> (ScratchFile, ChainHead, u64) {
 		.expect("inspect fixture length")
 		.len();
 	(scratch, head, end)
-}
-
-impl ScratchFile {
-	fn create() -> (Self, File) {
-		static NEXT_FILE: AtomicUsize = AtomicUsize::new(0);
-		const MAX_ATTEMPTS: usize = 128;
-		for _ in 0..MAX_ATTEMPTS {
-			let attempt = NEXT_FILE.fetch_add(1, Ordering::Relaxed);
-			let path = std::env::temp_dir().join(format!(
-				"exacopy-journal-test-{}-{attempt}",
-				std::process::id()
-			));
-			match File::create_new(&path) {
-				Ok(file) => return (Self(path), file),
-				Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-				Err(error) => panic!("could not create a synthetic journal file: {error}"),
-			}
-		}
-		panic!("could not acquire an exclusive synthetic journal file");
-	}
-
-	fn bytes(&self) -> Vec<u8> {
-		fs::read(&self.0).expect("read journal bytes independently")
-	}
-
-	fn reopen(&self) -> File {
-		File::options()
-			.read(true)
-			.write(true)
-			.open(&self.0)
-			.expect("reopen the journal fixture")
-	}
-
-	fn reader(&self) -> FrameReader<File> {
-		let read_handle = File::open(&self.0).expect("open journal for independent read");
-		FrameReader::new(read_handle, ChainHead::start())
-	}
-}
-
-impl Drop for ScratchFile {
-	fn drop(&mut self) {
-		let _ = fs::remove_file(&self.0);
-	}
 }

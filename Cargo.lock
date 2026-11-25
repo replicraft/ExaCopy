@@ -284,6 +284,7 @@ dependencies = [
  "exacopy-endpoint",
  "exacopy-model",
  "minicbor",
+ "rustix",
 ]
 
 [[package]]

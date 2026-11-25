@@ -14,10 +14,32 @@ use crate::frame::{
 
 pub use error::DurableJournalError;
 
+/// The file barrier selected for a journal segment for its entire open lifetime.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum JournalFileBarrier {
+	/// Use the platform's standard [`File::sync_all`] operation.
+	SyncAll,
+	/// Explicitly request Darwin `F_FULLFSYNC`. An error stops the writer.
+	#[cfg(target_os = "macos")]
+	DarwinFullFsync,
+}
+
+impl JournalFileBarrier {
+	fn sync(self, file: &File) -> io::Result<()> {
+		match self {
+			Self::SyncAll => file.sync_all(),
+			#[cfg(target_os = "macos")]
+			Self::DarwinFullFsync => rustix::fs::fcntl_fullfsync(file).map_err(io::Error::from),
+		}
+	}
+}
+
 /// Owns the sole writer for a journal file and barriers each complete frame.
 pub struct DurableJournal {
 	writer: Option<FrameWriter<File>>,
 	end: u64,
+	barrier: JournalFileBarrier,
 }
 
 impl DurableJournal {
@@ -34,11 +56,24 @@ impl DurableJournal {
 	/// # Errors
 	///
 	/// Fails when the file is nonregular or nonempty, its cursor is nonzero, or inspection fails.
-	pub fn from_new_file(mut file: File) -> Result<Self, DurableJournalError> {
+	pub fn from_new_file(file: File) -> Result<Self, DurableJournalError> {
+		Self::from_new_file_with_barrier(file, JournalFileBarrier::SyncAll)
+	}
+
+	/// Admits the authorized new segment with the specified file barrier for all appends.
+	/// The caller establishes the same authority and namespace prerequisites as in
+	/// [`Self::from_new_file`]. The file barrier applies when a frame is appended.
+	/// # Errors
+	/// Fails when the file is nonregular or nonempty, its cursor is nonzero, or inspection fails.
+	pub fn from_new_file_with_barrier(
+		mut file: File,
+		barrier: JournalFileBarrier,
+	) -> Result<Self, DurableJournalError> {
 		check_file(&mut file, 0)?;
 		Ok(Self {
 			writer: Some(FrameWriter::new(file, ChainHead::start())),
 			end: 0,
+			barrier,
 		})
 	}
 
@@ -59,7 +94,35 @@ impl DurableJournal {
 		expected_head: ChainHead,
 		expected_end: u64,
 	) -> Result<Self, DurableJournalError> {
-		Self::resume_with_barrier(file, expected_head, expected_end, File::sync_all)
+		Self::resume_first_segment_with_barrier(
+			file,
+			expected_head,
+			expected_end,
+			JournalFileBarrier::SyncAll,
+		)
+	}
+
+	/// Resumes the authenticated prefix using the caller's selected file barrier.
+	/// The selected barrier applies to both the prerequisite prefix sync and future appends.
+	/// The caller establishes the authority and expected prefix in
+	/// [`Self::resume_first_segment`] and selects the original profile's barrier policy.
+	/// # Errors
+	/// Fails on unsupported or inconsistent file state, invalid frames, or an I/O or barrier
+	/// failure. File bytes are preserved.
+	pub fn resume_first_segment_with_barrier(
+		file: File,
+		expected_head: ChainHead,
+		expected_end: u64,
+		barrier: JournalFileBarrier,
+	) -> Result<Self, DurableJournalError> {
+		let writer = Self::resume_with_barrier(file, expected_head, expected_end, |file| {
+			barrier.sync(file)
+		})?;
+		Ok(Self {
+			writer: Some(writer),
+			end: expected_end,
+			barrier,
+		})
 	}
 
 	fn resume_with_barrier(
@@ -67,7 +130,7 @@ impl DurableJournal {
 		expected_head: ChainHead,
 		expected_end: u64,
 		sync: impl FnOnce(&File) -> io::Result<()>,
-	) -> Result<Self, DurableJournalError> {
+	) -> Result<FrameWriter<File>, DurableJournalError> {
 		if expected_head == ChainHead::start() || expected_end == 0 {
 			return Err(DurableJournalError::EmptyPrefix);
 		}
@@ -103,10 +166,7 @@ impl DurableJournal {
 			.map_err(DurableJournalError::Inspect)?;
 		check_file(&mut file, end)?;
 		sync(&file).map_err(DurableJournalError::Sync)?;
-		Ok(Self {
-			writer: Some(FrameWriter::new(file, head)),
-			end,
-		})
+		Ok(FrameWriter::new(file, head))
 	}
 
 	/// Appends a complete frame and returns evidence of a successful file barrier.
@@ -125,7 +185,8 @@ impl DurableJournal {
 		kind: FrameKind,
 		payload: &[u8],
 	) -> Result<SyncedFrame, DurableJournalError> {
-		self.append_with_barrier(kind, payload, File::sync_all)
+		let barrier = self.barrier;
+		self.append_with_barrier(kind, payload, |file| barrier.sync(file))
 	}
 
 	fn append_with_barrier(
@@ -172,7 +233,11 @@ impl DurableJournal {
 		sync(writer.sink_mut()).map_err(DurableJournalError::Sync)?;
 		self.end = end;
 		self.writer = Some(writer);
-		Ok(SyncedFrame { head, kind })
+		Ok(SyncedFrame {
+			head,
+			kind,
+			barrier: self.barrier,
+		})
 	}
 }
 
@@ -181,17 +246,19 @@ impl fmt::Debug for DurableJournal {
 		formatter
 			.debug_struct("DurableJournal")
 			.field("synced_end", &self.end)
+			.field("barrier", &self.barrier)
 			.field("retired", &self.writer.is_none())
 			.finish()
 	}
 }
 
-/// Evidence that this writer completed a frame and successfully called `File::sync_all`.
+/// Evidence that this writer completed a frame and the selected file barrier succeeded.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use]
 pub struct SyncedFrame {
 	head: ChainHead,
 	kind: FrameKind,
+	barrier: JournalFileBarrier,
 }
 
 impl SyncedFrame {
@@ -205,6 +272,12 @@ impl SyncedFrame {
 	#[must_use]
 	pub const fn kind(&self) -> FrameKind {
 		self.kind
+	}
+
+	/// Returns the file barrier that succeeded for this frame.
+	#[must_use]
+	pub const fn barrier(&self) -> JournalFileBarrier {
+		self.barrier
 	}
 }
 

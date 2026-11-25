@@ -11,7 +11,7 @@ mod publication_records;
 mod recovery_records;
 mod verification_records;
 
-pub use durable::{DurableJournal, DurableJournalError, SyncedFrame};
+pub use durable::{DurableJournal, DurableJournalError, JournalFileBarrier, SyncedFrame};
 pub use intent::{
 	IntentError, JournalEntryId, JournalEpoch, JournalJobId, LinuxFileIdentity, PlanDigest,
 	PublicationPrimitive, PublishIntent, PublishIntentContext, PublishIntentTarget,

@@ -30,6 +30,8 @@ The managed APFS owner codec has an explicit profile version and a distinct Ed25
 
 The `EXAJNL01` frame codec bounds payloads before allocation, checks version and kind, and verifies CRC32C and a domain-separated BLAKE3 predecessor chain. The reader stops at corruption or an incomplete trailing record and retains the last verified boundary. It never searches for later magic. The kind-7 verification reference is a domain-separated digest of the complete canonical kind-5 payload.
 
+The journal writer holds its selected file barrier for the lifetime of an open segment. The standard writer uses `File::sync_all`. A Darwin caller can select `F_FULLFSYNC` for each append and for the prefix check when resuming. Failed barriers leave the written bytes available for reconciliation and retire the writer. A successful call identifies the requested barrier. Filesystem qualification still depends on the relevant namespace and storage evidence. [Darwin file barrier](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/fcntl.2.html)
+
 ## Range checkpoints
 
 During a journaled copy, the synchronous stage writer measures consecutive ranges of the unnamed stream. A range ends at 64 MiB or at the first completed read after two seconds. The writer finishes that chunk, checks the source observation and flushes the held stage. It then exclusively creates and synchronizes the canonical page in the owner-approved `checkpoints/` directory before synchronizing the kind-3 journal frame. The page includes the range bounds and BLAKE3 digest. The journal binds its ordinal, exact encoded length, domain-separated page digest, and the measurement identifier derived from the original `EntryPrepared` payload.
