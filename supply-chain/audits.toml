@@ -333,6 +333,35 @@ The pinned Hax nightly fixture exercised the same metadata paths
 during attribute expansion.
 """
 
+[[audits.indexmap]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "2.14.2"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855.
+Independent download matches the cached archive. Packaged source, original
+manifest and licenses match upstream release 2.14.2 at
+41a870887c4c77adf665886e63df08f406bfe37a. No build script, proc macro,
+network or independent filesystem path. This is an ordered in-memory
+collection. Reviewed transparent slice and Box conversions, bounds and
+uniqueness checks before mutable projections, extract iterator initialized
+prefix and cleanup, cached-hash index rebuilding, and panic boundaries.
+The default std hasher is RandomState. Callers choose custom hashing and
+collection limits. Serde caps size-hint preallocation and stores items as
+read. The optional Borsh adapter uses caller-owned streams and delegates
+entry reading to Borsh. Optional Rayon work follows explicitly selected
+parallel methods and Send/Sync bounds. This review covers IndexMap's own
+source and leaves underlying libraries to their own audits.
+
+The exact archive passed 240 native Rust 1.100.0 all-feature tests and
+doctests. No-default and no-default serialization/Arbitrary feature
+checks passed. Pinned Miri passed 13 disjoint-borrow tests and two
+extraction properties. ExaCopy locks this through TOML's optional
+preserve_order path. The current workspace feature graph does not activate
+that path.
+"""
+
 [[audits.itoa]]
 who = "OpenAI Codex (dependency source review)"
 criteria = "safe-to-deploy"
@@ -404,6 +433,108 @@ span tests with span-locations enabled. Compiling the exact Serde derive
 against this archive exercised compiler-backed expansion. The full
 upstream runner was blocked by offline dependency resolution. Unstable
 compiler paths were reviewed in source.
+"""
+
+[[audits.rand]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-run"
+version = "0.10.4"
+notes = """
+2026-11-25. Reviewed locked registry archive SHA-256
+8f6fa277c67e6ea590466f04c3fe82cb509f0864fe470643e5570de9514a9b11.
+Packaged source and original manifest match upstream commit
+c03e547d051fee1e7c8b1217ff04b11bf0ea5138, identified by the upstream 0.10.4
+release. This release is in the patched range for RUSTSEC-2026-0097.
+
+ExaCopy's only dependent is proptest through exacopy-model's dev graph. The
+locked Linux, macOS, and Windows graphs select alloc, std, and sys_rng. The
+system generator reexports getrandom's local OS entropy API. The crate has no
+build script, filesystem or network operations, process launch, or host
+configuration changes. RngReader fills the caller's buffer using the supplied
+RNG. Collection work and allocation depend on caller bounds. Rejection
+sampling assumes a generator that makes progress. Reviewed integer byte
+views and vector conversions, scalar generation and UTF-8 append invariants.
+
+The reviewed optional branches retain these effects. StdRng uses the caller's
+seed and buffer for ChaCha12, and chacha reexports the named ChaCha RNGs.
+ThreadRng keeps a lazy per-thread ChaCha state and reseeds from local OS
+entropy, including after about 64 KiB of output. Initialization and automatic
+reseed can panic on entropy failure. The controlled environment excludes
+reentrant use in signal, fork, panic, or custom entropy callbacks. Rand does
+not install a fork hook, and its compatibility log flag installs no logger
+or logging callback. Serde works through caller-provided formats and buffers.
+Round-trip bounded state from the library's own constructors. The char and
+duration decoders add bounds checks, and other derived sampler states can
+bypass constructor checks and cause bad output, panics, or stalled sampling.
+Nightly SIMD uses fixed numeric lanes. x86 intrinsics require the matching
+compile-time CPU features. The unbiased option adds integer rejection loops
+that rely on RNG progress. These are controlled-run assumptions for the
+whole package; deployment soundness remains a separate criterion.
+
+On ARM64 macOS with Rust 1.100.0, three focused probes passed for system
+entropy and seeding, scalar ranges and valid string output, and the
+caller-buffer reader. The 13 ExaCopy model tests passed twice with the
+usual generator selection and with XorShift selected. Three supplementary
+Rust 1.100.0 probes passed for seeded ChaCha, thread-local initialization and
+reseeding, and Serde state. Nightly 2026-11-04 passed those probes plus a SIMD
+lane-range test. The archived upstream suite requires postcard, unavailable
+for its offline test lock.
+"""
+
+[[audits.rand_xorshift]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-run"
+version = "0.5.0"
+notes = """
+2026-11-25. Reviewed locked registry archive SHA-256
+60aa6af80be32871323012e02e6e65f8a7cc7890931ae421d217ad8fe0df2ccf.
+Packaged source, tests, and original manifest match upstream rngs commit
+1172d82adc728aaf0c56b8e6b703876b51c041a3.
+
+ExaCopy selects this crate through proptest's model-test dependency, with
+no optional features. The crate forbids unsafe code, uses four u32 words
+of state, and fills caller buffers. It has no build script or ambient I/O.
+Direct all-zero seeds map to a fixed nonzero state. Seeding through another
+RNG retries until it sees a nonzero seed or receives an error. An all-zero
+caller RNG can therefore stall; the selected proptest path supplies a fixed
+seed or requests local OS entropy through getrandom. The predictable stream
+is suitable for generated tests under this review. The optional Serde derive
+reads or writes the four state words through the caller's format. A forged
+all-zero serialized state bypasses seed normalization and produces zeros.
+Controlled tests round-trip bounded state from the provided constructors.
+
+On ARM64 macOS with Rust 1.100.0, four unchanged packaged construction,
+sequence, zero-seed and clone tests passed in an isolated harness. All 13
+ExaCopy model tests passed with the XorShift selection. The archived
+upstream Cargo suite requires postcard, unavailable for its offline test
+lock. An independent optional-feature probe passed a Serde state round trip
+with the same generated output before and after restoration. The criterion
+covers controlled execution. Production cryptography remains a separate scope.
+"""
+
+[[audits.regex-syntax]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-run"
+version = "0.8.12"
+notes = """
+2026-11-25. Reviewed registry archive SHA-256
+d902046e6a28a1e4c3cab97258a0ce11e994903f01c2d97a9447a0b3df85f4f6,
+which matches the ExaCopy lock. The archive identifies upstream commit
+4226f214c56e584304520adb9080bcc4c792390e. The library forbids unsafe code
+and implements in-memory parsing, AST/HIR translation, literal extraction,
+Unicode table lookup and UTF-8 range conversion. There is no build script,
+application target, direct file or network I/O, external command, or native
+linkage. Optional arbitrary derives apply to AST types and use the supplied
+input; the optional macro dependency is a separate audit subject. Packaged
+benchmarks parse fixed patterns. Stack-depth regression tests use a bounded
+test thread, and callers remain responsible for limiting pattern input size
+and recursive literal extraction in general uses.
+
+ExaCopy's dev-only proptest path selects regex-syntax's default std and
+Unicode features. Rust 1.100.0 on ARM64 macOS passed 149 default unit tests,
+146 no-default unit tests, and 48 doctests. The offline all-feature test
+could not obtain the packaged lock's arbitrary 1.4.2 archive. The optional
+code was checked by source inspection. This entry is limited to safe-to-run.
 """
 
 [[audits.rustversion]]

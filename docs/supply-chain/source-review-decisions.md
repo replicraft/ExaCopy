@@ -24,6 +24,20 @@ workspace gate still fails. Exact source comparisons, probes, original
 test-resolution failure and before/after reports are retained at
 `/private/tmp/exacopy-cli-codec-vet.OpfvI4/`.
 
+Subsequent exact-version reviews accepted `indexmap 2.14.2` for
+`safe-to-deploy`, and `rand 0.10.4`, `rand_xorshift 0.5.0` and
+`regex-syntax 0.8.12` for controlled `safe-to-run`. IndexMap passed 240
+native tests/doctests and 15 Miri tests. Regex passed 149 default and
+146 no-default unit tests and 48 doctests. RNG probes covered optional
+thread-local reseeding, bounded serialized state and nightly SIMD;
+untrusted sampler state and a generator that cannot progress remain
+outside those controlled-run assumptions. Their full upstream suites
+retained offline dependency-resolution limits. These four records reduce
+the remaining missing entries from 43 to 39, without changing criteria.
+Evidence is retained in `/private/tmp/exacopy-indexmap-review.BHRJW07M`,
+`/private/tmp/exacopy-rand-source-review.9cfLEYzW` and
+`/private/tmp/exacopy-proptest-audit.2hCiYI`.
+
 ## Records left open
 
 | Package | Finding or unresolved review boundary |
@@ -35,6 +49,8 @@ test-resolution failure and before/after reports are retained at
 | `futures-task 0.3.34` | Borrowed-waker pointer reconstruction has an unresolved public `Arc::from_raw` precondition, despite compatibility with the inspected standard-library implementation. Ownership tests passed; they do not settle that contract question. |
 | `memchr 2.8.3` | Source/provenance and several native feature tests were inspected, but the whole-version review was unfinished, including optional logging behavior. No audit record was issued. |
 | `serde_json 1.0.154` and `zmij 1.0.23` | The additional whole-version review was unfinished. No new audit record was issued. Existing typed CLI serialization tests are a narrower result. |
+| `proptest 1.12.0` | Source review found that a nested runner can inherit and open the outer runner's internal replay channel without selecting its own fork. The current std-only feature selection excludes that path; 13 model integration tests passed. Whole-version `safe-to-run` remains withheld pending disposition. |
+| `slab 0.4.12` | Optional Serde decoding allocates holes up to the largest map key before returning a value for caller validation. Native and Miri ownership tests passed, but the whole-version `safe-to-deploy` record remains withheld. Current locked selection uses std without Serde. Evidence: `/private/tmp/exacopy-slab-vet.CXdsE3`. |
 
 Previously withheld records, including `bitflags`, `minicbor`, `zeroize`,
 `getrandom`, `cpufeatures`, `ed25519-dalek` and Syn 2, retain their own review
