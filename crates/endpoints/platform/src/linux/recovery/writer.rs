@@ -1,0 +1,293 @@
+use std::ffi::OsStr;
+use std::fs::File;
+use std::io::{Seek as _, SeekFrom};
+
+use exacopy_endpoint::UnixComponent;
+use rustix::fs::{self, FlockOperation, OFlags};
+use rustix::io::Errno;
+
+use super::super::source::reopen_regular_for_append;
+use super::super::stage::{create_private_directory, create_private_file, sync_directory};
+use super::lease::{lock_job, reopen_directory};
+use super::{
+	DestinationRoot, FIRST_SEGMENT, FileIdentity, FilePolicy, JOURNAL, PrivateDirectory, RECEIPT,
+	RECEIPTS, RecoveryFile, RecoveryInventory, RecoveryJob, SourceObservation, StageError,
+	mount_id, open_checked_record, open_path, recheck_regular,
+};
+
+#[cfg(test)]
+mod tests;
+
+impl DestinationRoot {
+	/// Acquires a nonblocking exclusive reconciliation lease on the expected held job.
+	///
+	/// The expected identity should come from a live job handle. The lease
+	/// coordinates with writers and inspectors using the same in-kernel job lock.
+	///
+	/// # Errors
+	/// Rejects a busy, unsafe, missing, or rebound job and lock errors.
+	pub fn try_recovery_write_lease(
+		&self,
+		name: UnixComponent<'_>,
+		expected_job: FileIdentity,
+	) -> Result<RecoveryWriteLease<'_>, StageError> {
+		let job = self.open_recovery_job(name)?;
+		if job.identity() != expected_job {
+			return Err(StageError::IdentityChanged);
+		}
+		let lock = lock_job(&job, FlockOperation::NonBlockingLockExclusive)?;
+		Ok(RecoveryWriteLease { job, lock })
+	}
+}
+
+/// Exclusive cooperative access to the fixed records of one held private job.
+///
+/// The caller establishes current record authority and publication evidence
+/// before using mutation methods. Hold this lease until record writers close
+/// and all requested barriers and observations finish.
+#[derive(Debug)]
+#[must_use]
+pub struct RecoveryWriteLease<'root> {
+	job: RecoveryJob<'root>,
+	lock: File,
+}
+
+impl RecoveryWriteLease<'_> {
+	/// Returns the held inspection capability protected by the exclusive lease.
+	#[must_use]
+	pub fn job(&self) -> &RecoveryJob<'_> {
+		&self.job
+	}
+
+	/// Opens the exact inspected first segment for appending at its captured end.
+	///
+	/// Only use the returned descriptor to rescan and append through the journal
+	/// writer while the lease is held. The caller verifies a complete, supported
+	/// chain and handles uncertain writes. Opening neither creates nor truncates
+	/// the segment.
+	///
+	/// # Errors
+	/// Rejects missing, unsafe, rebound, or changed segments and reopen failures.
+	pub fn open_first_segment_for_append(
+		&self,
+		expected: &RecoveryFile,
+	) -> Result<File, StageError> {
+		let job = &self.job;
+		let mount = job.root.mount;
+		let parent = &job.directory.file;
+		let journal_name = OsStr::new(JOURNAL);
+		let name = OsStr::new(FIRST_SEGMENT);
+		job.recheck()?;
+		let journal = PrivateDirectory::open(parent, journal_name, mount)?.ok_or(Errno::NOENT)?;
+		recheck_regular(
+			&journal.file,
+			name,
+			mount,
+			FilePolicy::Record,
+			Some(expected),
+		)?;
+		expected
+			.recheck_observation()
+			.map_err(StageError::ReadBack)?;
+		let (mut file, stat) =
+			reopen_regular_for_append(&expected.file).map_err(StageError::ReadBack)?;
+		FilePolicy::Record.check(&stat)?;
+		if mount_id(&file)? != mount {
+			return Err(StageError::IdentityChanged);
+		}
+		let current = SourceObservation::capture(&stat).map_err(StageError::ReadBack)?;
+		expected
+			.observation
+			.recheck(current)
+			.map_err(StageError::ReadBack)?;
+		let end = file.seek(SeekFrom::End(0)).map_err(StageError::System)?;
+		if end != expected.len() {
+			return Err(StageError::IdentityChanged);
+		}
+		recheck_regular(
+			&journal.file,
+			name,
+			mount,
+			FilePolicy::Record,
+			Some(expected),
+		)?;
+		journal.recheck(parent, journal_name, mount)?;
+		job.recheck()?;
+		Ok(file)
+	}
+
+	/// Requests file and directory barriers for an observed, already-published name.
+	///
+	/// The held inventory must describe this lease's job, a present public target
+	/// and private stage directory, and an absent former stage name. The caller
+	/// verifies that the target and stage directory match the authoritative records.
+	///
+	/// # Errors
+	/// Refuses a mismatched job or inventory and reports failed observations and barriers.
+	pub fn sync_publication(&self, inventory: &RecoveryInventory<'_>) -> Result<(), StageError> {
+		if !std::ptr::eq(inventory.job, &self.job) || inventory.stage.is_some() {
+			return Err(StageError::IdentityChanged);
+		}
+		let target = inventory
+			.target
+			.as_ref()
+			.ok_or(StageError::IdentityChanged)?;
+		let stage = inventory
+			.directory
+			.as_ref()
+			.ok_or(StageError::IdentityChanged)?;
+		inventory.recheck()?;
+		let directory = reopen_directory(&stage.file, stage.identity, self.job.root.mount)?;
+		inventory.recheck()?;
+		sync_file(&target.file)?;
+		sync_directory(&directory)?;
+		self.job.root.sync_directory()?;
+		inventory.recheck()
+	}
+
+	/// Requests a barrier on the leased and currently bound job directory.
+	///
+	/// # Errors
+	/// Reports changed bindings or a failed barrier.
+	pub fn sync_job_directory(&self) -> Result<(), StageError> {
+		self.job.recheck()?;
+		sync_directory(&self.lock)?;
+		self.job.recheck()
+	}
+
+	/// Opens the fixed private receipt directory or exclusively creates it if absent.
+	///
+	/// # Errors
+	/// Rejects unsafe, rebound, or concurrently created entries or failed syscalls.
+	/// A new directory can remain after a later error.
+	pub fn open_receipt_directory(&self) -> Result<RecoveryReceiptDirectory<'_>, StageError> {
+		self.job.recheck()?;
+		let parent = &self.job.directory.file;
+		let mount = self.job.root.mount;
+		let name = OsStr::new(RECEIPTS);
+		let directory = match PrivateDirectory::open(parent, name, mount)? {
+			Some(directory) => directory,
+			None => {
+				let (file, identity) = create_private_directory(parent, name, mount)?;
+				PrivateDirectory { file, identity }
+			}
+		};
+		let receipts = RecoveryReceiptDirectory {
+			job: &self.job,
+			directory,
+		};
+		receipts.recheck()?;
+		Ok(receipts)
+	}
+}
+
+/// Access to the fixed receipt of a job protected by an exclusive recovery lease.
+pub struct RecoveryReceiptDirectory<'lease> {
+	job: &'lease RecoveryJob<'lease>,
+	directory: PrivateDirectory,
+}
+
+impl RecoveryReceiptDirectory<'_> {
+	/// Opens the current private receipt read-only, or observes its absence.
+	///
+	/// # Errors
+	/// Rejects unsafe, rebound, or unreadable entries.
+	pub fn open_receipt(&self) -> Result<Option<RecoveryFile>, StageError> {
+		self.recheck()?;
+		let file = open_checked_record(
+			&self.directory.file,
+			OsStr::new(RECEIPT),
+			self.job.root.mount,
+		)?;
+		self.recheck()?;
+		Ok(file)
+	}
+
+	/// Exclusively creates the fixed private receipt record without replacing an incumbent.
+	///
+	/// The caller writes the authoritative receipt and closes the new writer before
+	/// releasing the lease. An existing receipt is only accessible read-only.
+	///
+	/// # Errors
+	/// Rejects unsafe or rebound directories, collisions, and failed syscalls.
+	/// A newly created record can remain after a later error.
+	pub fn create_receipt(&self) -> Result<File, StageError> {
+		self.recheck()?;
+		let name = OsStr::new(RECEIPT);
+		let mount = self.job.root.mount;
+		let (file, created) = create_private_file(&self.directory.file, mount, name, OFlags::RDWR)?;
+		let named = open_path(&self.directory.file, name)?.ok_or(StageError::IdentityChanged)?;
+		let stat = fs::fstat(&named)?;
+		FilePolicy::Record.check(&stat)?;
+		if FileIdentity::from_stat(&stat) != FileIdentity::from_stat(&created)
+			|| mount_id(&named)? != mount
+		{
+			return Err(StageError::IdentityChanged);
+		}
+		self.recheck()?;
+		Ok(file)
+	}
+
+	/// Requests a barrier on the exact inspected receipt inode.
+	///
+	/// # Errors
+	/// Reports mismatched receipt observations or a failed barrier.
+	pub fn sync_receipt(&self, receipt: &RecoveryFile) -> Result<(), StageError> {
+		self.recheck_receipt(receipt)?;
+		sync_file(&receipt.file)?;
+		self.recheck_receipt(receipt)
+	}
+
+	/// Requests a barrier on the currently bound receipt directory.
+	///
+	/// # Errors
+	/// Reports changed bindings or a failed barrier.
+	pub fn sync_directory(&self) -> Result<(), StageError> {
+		self.recheck()?;
+		let directory = reopen_directory(
+			&self.directory.file,
+			self.directory.identity,
+			self.job.root.mount,
+		)?;
+		self.recheck()?;
+		sync_directory(&directory)?;
+		self.recheck()
+	}
+
+	fn recheck_receipt(&self, receipt: &RecoveryFile) -> Result<(), StageError> {
+		self.recheck()?;
+		recheck_regular(
+			&self.directory.file,
+			OsStr::new(RECEIPT),
+			self.job.root.mount,
+			FilePolicy::Record,
+			Some(receipt),
+		)?;
+		receipt
+			.recheck_observation()
+			.map_err(StageError::ReadBack)?;
+		self.recheck()
+	}
+
+	fn recheck(&self) -> Result<(), StageError> {
+		self.job.recheck()?;
+		self.directory.recheck(
+			&self.job.directory.file,
+			OsStr::new(RECEIPTS),
+			self.job.root.mount,
+		)
+	}
+}
+
+impl std::fmt::Debug for RecoveryReceiptDirectory<'_> {
+	fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		formatter
+			.debug_struct("RecoveryReceiptDirectory")
+			.field("identity", &self.directory.identity)
+			.finish_non_exhaustive()
+	}
+}
+
+fn sync_file(file: &File) -> Result<(), StageError> {
+	file.sync_all().map_err(StageError::BarrierFailed)
+}

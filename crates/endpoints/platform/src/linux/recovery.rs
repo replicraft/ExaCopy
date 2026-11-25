@@ -18,8 +18,10 @@ use super::source::{
 use super::stage::{CHILD_RESOLVE, DestinationRoot, StageError, check_private_child, component};
 
 mod lease;
+mod writer;
 
 pub use lease::RecoveryReadLease;
+pub use writer::{RecoveryReceiptDirectory, RecoveryWriteLease};
 
 #[cfg(test)]
 mod tests;

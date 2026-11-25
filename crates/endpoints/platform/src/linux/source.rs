@@ -288,11 +288,15 @@ pub(super) fn check_logical_eof(file: &File, length: u64) -> Result<(), ReadErro
 }
 
 pub(super) fn reopen_regular_read_only(pinned: &impl AsFd) -> Result<(File, Stat), ReadError> {
-	reopen_regular(pinned, OFlags::empty())
+	reopen_regular(pinned, OFlags::RDONLY)
 }
 
 pub(super) fn reopen_regular_without_atime(pinned: &impl AsFd) -> Result<(File, Stat), ReadError> {
-	reopen_regular(pinned, OFlags::NOATIME)
+	reopen_regular(pinned, OFlags::RDONLY | OFlags::NOATIME)
+}
+
+pub(super) fn reopen_regular_for_append(pinned: &impl AsFd) -> Result<(File, Stat), ReadError> {
+	reopen_regular(pinned, OFlags::RDWR | OFlags::APPEND | OFlags::NOATIME)
 }
 
 fn reopen_regular(pinned: &impl AsFd, flags: OFlags) -> Result<(File, Stat), ReadError> {
@@ -343,7 +347,7 @@ fn reopen_regular(pinned: &impl AsFd, flags: OFlags) -> Result<(File, Stat), Rea
 	let file = fs::openat(
 		&descriptors,
 		descriptor_name.as_c_str(),
-		OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NONBLOCK | OFlags::NOCTTY | flags,
+		OFlags::CLOEXEC | OFlags::NONBLOCK | OFlags::NOCTTY | flags,
 		Mode::empty(),
 	)?;
 	let stat = fs::fstat(&file)?;

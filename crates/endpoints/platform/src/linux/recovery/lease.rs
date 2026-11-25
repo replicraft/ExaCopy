@@ -21,23 +21,40 @@ impl RecoveryJob<'_> {
 	/// # Errors
 	/// Reports a busy job, unsupported lock, or changed binding.
 	pub fn try_read_lease(&self) -> Result<RecoveryReadLease<'_>, StageError> {
-		self.recheck()?;
-		let file = fs::openat2(
-			&self.directory.file,
-			c".",
-			OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
-			Mode::empty(),
-			CHILD_RESOLVE,
-		)?
-		.into();
-		if file_identity(&file)? != self.identity() || mount_id(&file)? != self.root.mount {
-			return Err(StageError::IdentityChanged);
-		}
-		try_lock_job(&file, FlockOperation::NonBlockingLockShared)?;
-		self.recheck()?;
+		let file = lock_job(self, FlockOperation::NonBlockingLockShared)?;
 		Ok(RecoveryReadLease {
 			_file: file,
 			_job: self,
 		})
 	}
+}
+
+pub(super) fn lock_job(
+	job: &RecoveryJob<'_>,
+	operation: FlockOperation,
+) -> Result<File, StageError> {
+	job.recheck()?;
+	let file = reopen_directory(&job.directory.file, job.identity(), job.root.mount)?;
+	try_lock_job(&file, operation)?;
+	job.recheck()?;
+	Ok(file)
+}
+
+pub(super) fn reopen_directory(
+	directory: &File,
+	identity: super::FileIdentity,
+	mount: u64,
+) -> Result<File, StageError> {
+	let file = fs::openat2(
+		directory,
+		c".",
+		OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+		Mode::empty(),
+		CHILD_RESOLVE,
+	)?
+	.into();
+	if file_identity(&file)? != identity || mount_id(&file)? != mount {
+		return Err(StageError::IdentityChanged);
+	}
+	Ok(file)
 }
