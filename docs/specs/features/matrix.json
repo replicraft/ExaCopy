@@ -46,6 +46,13 @@
       "targets": ["aarch64-apple-darwin"],
       "purpose": "Compile the opt-in transfer policies, native runtime, and managed APFS regressions."
     },
+    "experimental-windows-copy": {
+      "defaults": false,
+      "check_cli": false,
+      "feature_statuses": ["experimental"],
+      "targets": ["x86_64-pc-windows-msvc"],
+      "purpose": "Compile the optional private NTFS staging capability and Windows qualification fixtures."
+    },
     "development-all": {
       "defaults": true,
       "check_cli": false,
@@ -63,12 +70,19 @@
       }
     },
     "exacopy-platform": {
+      "experimental-windows-copy": {
+        "status": "experimental",
+        "targets": ["x86_64-pc-windows-msvc"],
+        "enables": ["dep:exacopy-endpoint", "dep:exacopy-model", "dep:windows-sys"],
+        "resolution_probe": ["exacopy-endpoint", "exacopy-model", "windows-sys"],
+        "purpose": "Expose held-directory Windows private stage creation, bounded writes, confirmed file flush and close, and independent read-back."
+      },
       "windows-read-fixture": {
         "status": "experimental",
         "targets": ["x86_64-pc-windows-msvc"],
         "enables": [],
         "resolution_probe": [],
-        "purpose": "Compile private held-directory and exact comparison fixtures. Windows API dependencies are test-only."
+        "purpose": "Compile private held-directory and exact comparison fixtures. The fixture uses its own test dependencies."
       }
     },
     "exacopy-engine": {
@@ -198,6 +212,18 @@
       "default_features": false,
       "features": [],
       "purpose": "Represent and encode fixed-size transaction identities."
+    },
+    "windows-sys": {
+      "default_features": false,
+      "features": [],
+      "optional": true,
+      "feature_additions": {
+        "exacopy-platform": [
+          "Wdk_Foundation", "Wdk_Storage_FileSystem", "Win32_Security",
+          "Win32_Storage_FileSystem", "Win32_System_IO"
+        ]
+      },
+      "purpose": "Provide the Windows ABI for experimental private staging beneath an authorized NTFS directory."
     },
     "zeroize": {
       "default_features": false,

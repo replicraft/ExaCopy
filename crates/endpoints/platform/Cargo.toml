@@ -8,6 +8,7 @@ publish = false
 
 [features]
 windows-read-fixture = []
+experimental-windows-copy = ["dep:exacopy-endpoint", "dep:exacopy-model", "dep:windows-sys"]
 
 [[test]]
 name = "windows_read"
@@ -26,6 +27,11 @@ exacopy-model.workspace = true
 getrandom.workspace = true
 libc.workspace = true
 rustix = { workspace = true, features = ["try_close"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+exacopy-endpoint = { workspace = true, optional = true }
+exacopy-model = { workspace = true, optional = true }
+windows-sys = { workspace = true, optional = true, features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO"] }
 
 [target.'cfg(target_os = "windows")'.dev-dependencies]
 exacopy-diff.workspace = true

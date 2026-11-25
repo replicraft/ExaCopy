@@ -38,7 +38,7 @@ or incomplete campaign fails the lane. These lanes exercise manifest JSON,
 public document references and plan-entry page admission, leaving native
 file verification to the Linux integration tests.
 
-## Windows held-directory read qualification
+## Windows held-directory NTFS qualification
 
 The [manual Windows workflow](../.github/workflows/windows-ntfs-qualification.yml)
 runs the `windows_read` integration test with the default-off
@@ -46,6 +46,19 @@ runs the `windows_read` integration test with the default-off
 Windows filesystem test is ignored by the ordinary workspace test run,
 including with `--all-features`. The manual workflow selects eleven tests
 for the ordinary NTFS profile and requires all eleven to pass.
+
+The same manual workflow's Stage selection builds the default-off
+`experimental-windows-copy` platform library. It runs the three stage
+contract controls and five ordinary fixed-NTFS stage tests. Enable
+`include_symlink` to select the two additional symbolic-link cases on a
+runner with permission to create links. These cases cover both an existing
+referent and a dangling link whose referent must stay absent. The local
+runner selects this suite with `-Mode Stage` and optionally
+`-IncludeSymlink`. The workflow's default Read selection continues to run
+the existing read qualification. See the
+[private staging contract](architecture/windows-private-staging.md) for its
+caller assumptions and implemented boundary. The PowerShell scripts pass
+syntax parsing on macOS; native Windows execution remains pending.
 
 The candidate starts with a directory handle supplied by the synthetic
 fixture. It checks the NTFS volume and parent, searches for the exact counted

@@ -4,7 +4,10 @@ param(
     [string] $LocalNtfsRoot,
 
     [Parameter(Mandatory)]
-    [string] $EvidenceDirectory
+    [string] $EvidenceDirectory,
+
+    [ValidateSet('Read', 'Stage')]
+    [string] $Mode = 'Read'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -25,7 +28,7 @@ function Assert-SourceRefused {
     $failure = $null
     try {
         & (Join-Path $PSScriptRoot 'windows-ntfs.ps1') -Repository $fixture.FullName `
-            -LocalNtfsRoot $LocalNtfsRoot -EvidenceDirectory $logs
+            -LocalNtfsRoot $LocalNtfsRoot -EvidenceDirectory $logs -Mode $Mode
     } catch {
         $failure = $_
     }

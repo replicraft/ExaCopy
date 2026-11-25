@@ -13,12 +13,18 @@ param(
 
     [string] $SecondNtfsRoot,
 
-    [switch] $IncludeSymlink
+    [switch] $IncludeSymlink,
+
+    [ValidateSet('Read', 'Stage')]
+    [string] $Mode = 'Read'
 )
 
 $ErrorActionPreference = 'Stop'
 $evidence = New-Item -ItemType Directory -Path $EvidenceDirectory
 try {
+    if ($Mode -eq 'Stage' -and ($UncRoot -or $SecondNtfsRoot)) {
+        throw 'The private stage lane requires only a fixed local NTFS root.'
+    }
     $repo = (Resolve-Path -LiteralPath $Repository).Path
     $rootInfo = Get-Item -LiteralPath $LocalNtfsRoot
     if (-not $rootInfo.PSIsContainer -or $rootInfo.FullName -notmatch '^[A-Za-z]:\\') {
@@ -72,8 +78,13 @@ function Invoke-Lane {
 
 function Run-TestLane {
     param([string] $Name, [int] $ExpectedTests, [string[]] $HarnessArgs)
-    $cargoArgs = @('+1.100.0', 'test', '--locked', '-p', 'exacopy-platform', '--test', 'windows_read',
-        '--features', 'windows-read-fixture', '--target', 'x86_64-pc-windows-msvc', '--', '--nocapture', '--test-threads=1')
+    $cargoArgs = @('+1.100.0', 'test', '--locked', '-p', 'exacopy-platform')
+    if ($Mode -eq 'Stage') {
+        $cargoArgs += @('--lib', '--features', 'experimental-windows-copy')
+    } else {
+        $cargoArgs += @('--test', 'windows_read', '--features', 'windows-read-fixture')
+    }
+    $cargoArgs += @('--target', 'x86_64-pc-windows-msvc', '--', '--nocapture', '--test-threads=1')
     $exitCode = Invoke-Lane -Name $Name -Program 'cargo' -Arguments ($cargoArgs + $HarnessArgs)
     $output = Get-Content -Raw -LiteralPath (Join-Path $evidence.FullName ($Name + '.stdout.log'))
     # Libtest succeeds when zero tests match. Require the expected number of passes.
@@ -116,6 +127,7 @@ try {
         runner_image = $env:ImageOS
         runner_image_version = $env:ImageVersion
         test_target = 'x86_64-pc-windows-msvc'
+        qualification = $Mode
         fixture_filesystem = $drive.DriveFormat
         fixture_drive_type = $drive.DriveType.ToString()
         fixture_drive = $drive.Name
@@ -148,16 +160,27 @@ try {
         Add-Content -LiteralPath (Join-Path $evidence.FullName 'profile-notes.txt') -Value 'Filter inventory unavailable under the running account.'
     }
 
-    $failures = Run-TestLane -Name 'parser' -ExpectedTests 4 -HarnessArgs @('directory_entries::')
-    $failures += Run-TestLane -Name 'ordinary_ntfs' -ExpectedTests 11 -HarnessArgs @('--ignored', 'ordinary_ntfs_')
-    if ($UncRoot) {
-        $failures += Run-TestLane -Name 'unc_refusal' -ExpectedTests 1 -HarnessArgs @('--ignored', 'native_unc_handle_has_no_local_volume_guid_and_is_refused')
-    }
-    if ($SecondNtfsRoot) {
-        $failures += Run-TestLane -Name 'cross_volume_junction' -ExpectedTests 1 -HarnessArgs @('--ignored', 'native_cross_volume_held_parent_junction_is_refused')
-    }
-    if ($IncludeSymlink) {
-        $failures += Run-TestLane -Name 'file_and_directory_symlinks' -ExpectedTests 1 -HarnessArgs @('--ignored', 'refuses_reparse_leaf_and_parent')
+    if ($Mode -eq 'Stage') {
+        $failures = Run-TestLane -Name 'stage_contract_controls' -ExpectedTests 3 `
+            -HarnessArgs @('windows::stage::')
+        $failures += Run-TestLane -Name 'ordinary_ntfs_stage' -ExpectedTests 5 `
+            -HarnessArgs @('--ignored', 'windows::stage::tests::', '--skip', 'stage_symlink_')
+        if ($IncludeSymlink) {
+            $failures += Run-TestLane -Name 'stage_symlinks' -ExpectedTests 2 `
+                -HarnessArgs @('--ignored', 'windows::stage::tests::stage_symlink_')
+        }
+    } else {
+        $failures = Run-TestLane -Name 'parser' -ExpectedTests 4 -HarnessArgs @('directory_entries::')
+        $failures += Run-TestLane -Name 'ordinary_ntfs' -ExpectedTests 11 -HarnessArgs @('--ignored', 'ordinary_ntfs_')
+        if ($UncRoot) {
+            $failures += Run-TestLane -Name 'unc_refusal' -ExpectedTests 1 -HarnessArgs @('--ignored', 'native_unc_handle_has_no_local_volume_guid_and_is_refused')
+        }
+        if ($SecondNtfsRoot) {
+            $failures += Run-TestLane -Name 'cross_volume_junction' -ExpectedTests 1 -HarnessArgs @('--ignored', 'native_cross_volume_held_parent_junction_is_refused')
+        }
+        if ($IncludeSymlink) {
+            $failures += Run-TestLane -Name 'file_and_directory_symlinks' -ExpectedTests 1 -HarnessArgs @('--ignored', 'refuses_reparse_leaf_and_parent')
+        }
     }
     if ($failures -ne 0) {
         throw "$failures native lane(s) failed. Preserve stdout/stderr and inspect the failing positive control or test."

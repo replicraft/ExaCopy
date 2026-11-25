@@ -1,7 +1,17 @@
-name: Windows NTFS read qualification
+name: Windows NTFS qualification
 
 on:
   workflow_dispatch:
+    inputs:
+      qualification:
+        description: Native capability to qualify
+        type: choice
+        options: [Read, Stage]
+        default: Read
+      include_symlink:
+        description: Include cases requiring Windows symbolic link permission
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -10,10 +20,12 @@ env:
   CARGO_TERM_COLOR: never
   CARGO_INCREMENTAL: "0"
   EXPECTED_RUST_HOST: x86_64-pc-windows-msvc
+  NTFS_QUALIFICATION: ${{ inputs.qualification }}
+  NTFS_SYMLINKS: ${{ inputs.include_symlink }}
 
 jobs:
   qualify:
-    name: Held-directory read comparison (Windows x64 NTFS)
+    name: Held-directory ${{ inputs.qualification }} (Windows x64 NTFS)
     runs-on: windows-2025
     timeout-minutes: 30
     steps:
@@ -34,15 +46,19 @@ jobs:
         run: |
           & ./.github/ci/windows-ntfs-tests.ps1 `
             -LocalNtfsRoot $env:USERPROFILE `
+            -Mode $env:NTFS_QUALIFICATION `
             -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'exacopy-windows-ntfs-controls')
       - name: Run native fixed NTFS fixture
         shell: pwsh
         run: |
           # The runner's TEMP can be on a different filesystem. The wrapper verifies
           # the profile directory's actual drive type, format, and reparse ancestry.
+          $includeSymlink = $env:NTFS_SYMLINKS -eq 'true'
           & ./.github/ci/windows-ntfs.ps1 `
             -Repository $env:GITHUB_WORKSPACE `
             -LocalNtfsRoot $env:USERPROFILE `
+            -Mode $env:NTFS_QUALIFICATION `
+            -IncludeSymlink:$includeSymlink `
             -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'exacopy-windows-ntfs')
       - name: Retain raw Windows evidence
         if: always()

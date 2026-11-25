@@ -1,6 +1,18 @@
 //! Capability-scoped operating-system adapters for ExaCopy.
-#![cfg_attr(not(target_os = "macos"), forbid(unsafe_code))]
-#![cfg_attr(target_os = "macos", deny(unsafe_code))]
+#![cfg_attr(
+	not(any(
+		target_os = "macos",
+		all(target_os = "windows", feature = "experimental-windows-copy")
+	)),
+	forbid(unsafe_code)
+)]
+#![cfg_attr(
+	any(
+		target_os = "macos",
+		all(target_os = "windows", feature = "experimental-windows-copy")
+	),
+	deny(unsafe_code)
+)]
 
 #[cfg(target_os = "linux")]
 pub mod linux;

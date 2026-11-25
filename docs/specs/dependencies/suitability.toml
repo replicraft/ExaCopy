@@ -51,6 +51,8 @@ typenum = "Type-level arithmetic for digest sizes and fixed-array lengths."
 unicode-ident = "Recognize Rust Unicode identifiers during macro expansion."
 uuid = "Represent and encode fixed-size transaction identities."
 version_check = "Detect compiler features for generic-array at build time."
+windows-link = "Emit the compile-time native function imports used by the selected Windows bindings."
+windows-sys = "Supply the Windows ABI for the experimental held-directory staging capability."
 zeroize = "Clear temporary copies of signing keys and cryptographic intermediate state."
 zmij = "Format floating-point JSON values in serde_json's serializer."
 
@@ -639,3 +641,25 @@ adversarial_inputs = "STANDARD requires canonical standard-alphabet padding and 
 verification = "An exact registry artifact with only alloc compiled under Rust 1.100.0 on macOS ARM64. Independent Python 3.14 stdlib strict decode plus re-encode produced 66,828 accepted and 209,701 rejected vectors. Native Rust matched every verdict and accepted payload, including exhaustive one- and two-byte padded encodings and terminal alias rejections, invalid characters and padding, raw bytes, and exact/undersized slice canary cases."
 replacement = "Retain RFC 4648 standard padded spellings and rejection of nonzero unused terminal bits to preserve the public JSON projection and schema acceptance."
 review_gaps = ["Other supported targets still require their integration lanes", "The default SIMD engines and whole package Cargo Vet safe-to-deploy review are outside this selected scalar review."]
+
+[assessment."windows-sys@0.61.2"]
+archive_sha256 = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
+release_observation = "The exact cached registry archive identifies windows-rs commit 32c3144490c016fe496a0aed769bce60987a2e9d and crates/libs/sys. The declared MSRV is 1.71."
+security_history = "This scoped assessment does not recapture the package advisory history. The archived-source inspection and default-off Windows feature do not establish a release security review."
+unsafe_exposure = "Generated unsafe Windows FFI declarations and native ABI types. The experimental staging adapter calls NtCreateFile, GetFileType, GetFileInformationByHandleEx, GetVolumeInformationByHandleW, GetFinalPathNameByHandleW, and CloseHandle through scoped wrappers. No build script or procedural macro. Normal Windows dependencies exclude separate fixture features."
+resource_limits = "ExaCopy supplies one counted UTF-16 name at a time, bounded initialized handle-query buffers, and synchronous stage I/O with signed extent and per-operation limits. This does not bound OS operation latency."
+adversarial_inputs = "The adapter validates ordinary NTFS identity, rejects reparse and recall observations, checks single-link extents, and explicitly separates creation and independent read handles. Parent acquisition and private-root ACL provenance are caller obligations."
+verification = "Exact Rust 1.100.0 x86_64-pc-windows-msvc cross checks compile the feature API and native test cases. Windows native execution and file-system qualification remain open."
+replacement = "Preserve the selected NT and Win32 ABI layouts, synchronous counted relative opening, share masks, error and status information, and scoped native handle ownership."
+review_gaps = ["Native Windows execution with real NTFS and independent effect oracles", "Independent exact-release upstream comparison, advisory history, and whole-package Cargo Vet review"]
+
+[assessment."windows-link@0.2.1"]
+archive_sha256 = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
+release_observation = "The exact cached registry archive identifies windows-rs commit d468916ac27a36fb8a12bafc1bf5c0ec2fe92238 and crates/libs/link. The declared MSRV is 1.71."
+security_history = "This scoped assessment does not recapture the package advisory history. The selected macros have no runtime parser."
+unsafe_exposure = "The pinned no_std library defines declarative link macros. On Windows x86-64 the selected macro emits a raw-dylib extern declaration. The ABI and safety preconditions remain the responsibility of bindings and callers."
+resource_limits = "The macro consumes statically supplied function and native library declarations at compile time. No build script, proc macro, or runtime allocation."
+adversarial_inputs = "No external data reaches the macro. Library names and ABI declarations come from the pinned Windows binding source."
+verification = "Reviewed the exact archive's selected Windows macro and cross-checked it with Rust 1.100.0 on x86_64-pc-windows-msvc through windows-sys. Native loader resolution and execution remain open."
+replacement = "Retain the selected Windows raw-dylib link semantics and static ABI declarations."
+review_gaps = ["Native loader and execution check", "Independent exact-release upstream comparison, advisory history, and whole-package Cargo Vet review"]

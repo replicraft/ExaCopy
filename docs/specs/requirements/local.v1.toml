@@ -884,7 +884,7 @@ requirement_ids = ["R-003", "R-014", "R-019", "R-028", "R-050", "R-051", "R-056"
 acceptance_ids = ["A-003", "A-014", "A-019", "A-028", "A-050", "A-051", "A-056", "A-062", "A-328"]
 invariant_ids = ["INV-004", "INV-006", "INV-019", "INV-020", "INV-030", "INV-032"]
 scope = "Native Windows held-root and publication, broader filesystem metadata and failure profiles, and real storage power-loss qualification."
-limits = "Windows has lexical checks and explicit CLI refusal. The Linux ext4 VM evidence and managed APFS fixtures are bounded to their declared operations."
+limits = "Windows has lexical checks, read qualification fixtures and default-off private staging mechanisms; its native qualification remains pending and product CLI routes refuse. The Linux ext4 VM evidence and managed APFS fixtures are bounded to their declared operations."
 
 [[coverage]]
 id = "protected-and-tree-operations"
@@ -950,3 +950,25 @@ owner = "exacopy-codec"
 level = "documentation"
 state = "reported"
 path = "docs/architecture/public-plan-pages.md"
+
+[[coverage]]
+id = "windows-private-staging"
+status = "implemented"
+requirement_ids = ["R-003", "R-014", "R-018", "R-019"]
+acceptance_ids = ["A-003", "A-014", "A-018", "A-019"]
+invariant_ids = ["INV-002", "INV-004", "INV-013", "INV-019"]
+scope = "Default-off local NTFS held-directory exclusive private stage creation, bounded contiguous writes, explicit flush and consuming close, independent read-back and EOF checks. Positive ranges reuse the P-004 model guard."
+limits = "Windows cross-checks and code generation passed. Native Windows tests remain unexecuted; ACL/root authorization is a caller precondition. No product copy, journal, publication, namespace barrier or power-loss qualification."
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "test"
+state = "defined"
+path = "crates/endpoints/platform/src/windows/stage/tests.rs"
+target = "bounded_writes_flush_close_and_reopen_the_original_file"
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/windows-private-staging.md"
