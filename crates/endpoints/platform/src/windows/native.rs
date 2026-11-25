@@ -5,7 +5,8 @@ use std::ptr::{null, null_mut};
 
 use windows_sys::Wdk::Foundation::OBJECT_ATTRIBUTES;
 use windows_sys::Wdk::Storage::FileSystem::{
-	FILE_NON_DIRECTORY_FILE, FILE_OPEN_REPARSE_POINT, FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile,
+	FILE_DIRECTORY_FILE, FILE_NON_DIRECTORY_FILE, FILE_OPEN_REPARSE_POINT,
+	FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile,
 };
 use windows_sys::Win32::Foundation::{
 	INVALID_HANDLE_VALUE, NTSTATUS, STATUS_SUCCESS, UNICODE_STRING,
@@ -97,6 +98,7 @@ pub(super) enum Kind {
 	RegularFile,
 }
 
+#[derive(Clone, Copy)]
 pub(super) struct RelativeFileOpen {
 	pub(super) access: u32,
 	pub(super) share: u32,
@@ -110,6 +112,19 @@ pub(super) fn open_relative_file(
 	name: WindowsComponent<'_>,
 	request: RelativeFileOpen,
 ) -> Result<OwnedHandle, Refusal> {
+	open_relative_entry(parent, name, request, Kind::RegularFile)
+}
+
+pub(super) fn open_relative_entry(
+	parent: BorrowedHandle<'_>,
+	name: WindowsComponent<'_>,
+	request: RelativeFileOpen,
+	kind: Kind,
+) -> Result<OwnedHandle, Refusal> {
+	let kind = match kind {
+		Kind::Directory => FILE_DIRECTORY_FILE,
+		Kind::RegularFile => FILE_NON_DIRECTORY_FILE,
+	};
 	let units = name.as_units();
 	let mut buffer = [0_u16; MAX_WINDOWS_COMPONENT_UNITS];
 	buffer[..units.len()].copy_from_slice(units);
@@ -143,7 +158,7 @@ pub(super) fn open_relative_file(
 			0,
 			request.share,
 			request.disposition,
-			FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+			kind | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
 			null(),
 			0,
 		)
@@ -167,7 +182,10 @@ pub(super) fn open_relative_file(
 
 pub(super) fn observe(handle: BorrowedHandle<'_>, kind: Kind) -> Result<ObjectId, Refusal> {
 	let info = observe_file(handle, kind)?;
-	let volume = local_ntfs_volume(handle)?;
+	const MAX_EXTENDED_PATH_UNITS: usize = 32_768;
+	let mut path = [0_u16; MAX_EXTENDED_PATH_UNITS];
+	let count = local_ntfs_path(handle, FILE_NAME_OPENED, &mut path)?;
+	let (volume, _) = parse_volume_guid(&path[..count])?;
 	Ok(ObjectId {
 		volume,
 		volume_serial: info.VolumeSerialNumber,
@@ -243,7 +261,12 @@ pub(super) unsafe fn query<T>(
 	Ok(())
 }
 
-fn local_ntfs_volume(handle: BorrowedHandle<'_>) -> Result<VolumeGuid, Refusal> {
+/// Queries the filesystem and the GUID-qualified handle path, bounded by the caller's buffer.
+pub(super) fn local_ntfs_path(
+	handle: BorrowedHandle<'_>,
+	spelling: u32,
+	buffer: &mut [u16],
+) -> Result<usize, Refusal> {
 	const NTFS: [u16; 5] = [b'N' as u16, b'T' as u16, b'F' as u16, b'S' as u16, 0];
 	let mut fs = [0_u16; 32];
 	// SAFETY: The borrowed handle is live, the writable filesystem name buffer has the
@@ -266,28 +289,26 @@ fn local_ntfs_volume(handle: BorrowedHandle<'_>) -> Result<VolumeGuid, Refusal> 
 	if !fs.starts_with(&NTFS) {
 		return Err(Refusal::NotNtfs);
 	}
-	// The result can contain the original path. Retain only its volume GUID.
-	const MAX_EXTENDED_PATH_UNITS: u32 = 32_768;
-	let mut path = [0_u16; MAX_EXTENDED_PATH_UNITS as usize];
-	// SAFETY: The borrowed handle and buffer are live and the buffer length matches its units.
+	let capacity = u32::try_from(buffer.len()).map_err(|_| Refusal::UnidentifiedVolume)?;
+	// SAFETY: The borrowed handle and buffer are live and capacity matches its UTF-16 units.
 	let count = unsafe {
 		GetFinalPathNameByHandleW(
 			handle.as_raw_handle(),
-			path.as_mut_ptr(),
-			MAX_EXTENDED_PATH_UNITS,
-			VOLUME_NAME_GUID | FILE_NAME_OPENED,
+			buffer.as_mut_ptr(),
+			capacity,
+			VOLUME_NAME_GUID | spelling,
 		)
 	};
 	if count == 0 {
 		return Err(Refusal::QueryFailed(io::Error::last_os_error()));
 	}
-	if count >= MAX_EXTENDED_PATH_UNITS {
+	if count >= capacity {
 		return Err(Refusal::UnidentifiedVolume);
 	}
-	parse_volume_guid(&path[..count as usize])
+	Ok(count as usize)
 }
 
-fn parse_volume_guid(path: &[u16]) -> Result<VolumeGuid, Refusal> {
+pub(super) fn parse_volume_guid(path: &[u16]) -> Result<(VolumeGuid, &[u16]), Refusal> {
 	const PREFIX: &str = r"\\?\Volume{";
 	const SUFFIX: [u16; 2] = [b'}' as u16, b'\\' as u16];
 	let Some((prefix, tail)) = path.split_at_checked(PREFIX.len()) else {
@@ -312,5 +333,5 @@ fn parse_volume_guid(path: &[u16]) -> Result<VolumeGuid, Refusal> {
 		}
 		*out = byte.to_ascii_lowercase();
 	}
-	Ok(VolumeGuid(ascii))
+	Ok((VolumeGuid(ascii), &rest[SUFFIX.len()..]))
 }

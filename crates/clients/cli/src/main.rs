@@ -6,7 +6,11 @@ mod command;
 #[cfg(target_os = "linux")]
 mod copy;
 mod copy_report;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(
+	target_os = "linux",
+	target_os = "macos",
+	all(target_os = "windows", feature = "experimental-windows-diff")
+))]
 mod diff;
 #[cfg(target_os = "linux")]
 mod linux;
@@ -25,6 +29,8 @@ mod recovery_report;
 mod report;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod unix_path;
+#[cfg(all(target_os = "windows", feature = "experimental-windows-diff"))]
+mod windows;
 
 fn main() -> std::process::ExitCode {
 	command::run(std::env::args_os().skip(1))

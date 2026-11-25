@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+experimental-windows-diff = ["dep:exacopy-diff", "dep:exacopy-endpoint", "dep:exacopy-platform", "exacopy-platform/experimental-windows-read"]
+
 [[bin]]
 name = "exacopy"
 path = "src/main.rs"
@@ -31,6 +34,11 @@ exacopy-transfer.workspace = true
 rustix = { workspace = true, features = ["rand"] }
 uuid.workspace = true
 zeroize.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+exacopy-diff = { workspace = true, optional = true }
+exacopy-endpoint = { workspace = true, optional = true }
+exacopy-platform = { workspace = true, optional = true }
 
 [lints]
 workspace = true

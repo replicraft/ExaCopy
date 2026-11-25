@@ -97,6 +97,7 @@ fn compare(diff: &DiffCommand) -> Outcome {
 	match diff.profile {
 		DiffProfile::Default => crate::linux::compare(&diff.left, &diff.right, diff.workers),
 		DiffProfile::ManagedMacos => unsupported_diff("--managed-macos requires macOS"),
+		DiffProfile::LocalNtfs => unsupported_ntfs_diff(),
 	}
 }
 
@@ -107,6 +108,7 @@ fn compare(diff: &DiffCommand) -> Outcome {
 			unsupported_diff("local byte comparison on macOS requires --managed-macos")
 		}
 		DiffProfile::ManagedMacos => crate::macos::compare(&diff.left, &diff.right, diff.workers),
+		DiffProfile::LocalNtfs => unsupported_ntfs_diff(),
 	}
 }
 
@@ -116,7 +118,26 @@ fn compare(diff: &DiffCommand) -> Outcome {
 	match diff.profile {
 		DiffProfile::Default => unsupported_diff("local byte comparison requires Linux"),
 		DiffProfile::ManagedMacos => unsupported_diff("--managed-macos requires macOS"),
+		DiffProfile::LocalNtfs => compare_ntfs(diff),
 	}
+}
+
+#[cfg(all(target_os = "windows", feature = "experimental-windows-diff"))]
+fn compare_ntfs(diff: &DiffCommand) -> Outcome {
+	crate::windows::compare(&diff.left, &diff.right, diff.workers)
+}
+
+#[cfg(all(
+	not(any(target_os = "linux", target_os = "macos")),
+	not(all(target_os = "windows", feature = "experimental-windows-diff"))
+))]
+fn compare_ntfs(_: &DiffCommand) -> Outcome {
+	unsupported_ntfs_diff()
+}
+
+#[cfg(not(all(target_os = "windows", feature = "experimental-windows-diff")))]
+fn unsupported_ntfs_diff() -> Outcome {
+	unsupported_diff("--local-ntfs requires Windows with the experimental-windows-diff feature")
 }
 
 fn unsupported_diff(message: &'static str) -> Outcome {

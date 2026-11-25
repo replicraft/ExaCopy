@@ -3,10 +3,18 @@ use std::process::ExitCode;
 
 use serde::Serialize;
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(
+	target_os = "linux",
+	target_os = "macos",
+	all(target_os = "windows", feature = "experimental-windows-diff")
+))]
 const DIFFERENT: u8 = 1;
 pub(crate) const INCONCLUSIVE: u8 = 2;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(
+	target_os = "linux",
+	target_os = "macos",
+	all(target_os = "windows", feature = "experimental-windows-diff")
+))]
 const LIVE_OBSERVED: &str = "live_observed";
 
 #[derive(Serialize)]
@@ -40,12 +48,20 @@ impl Report {
 #[derive(Serialize)]
 #[serde(tag = "result", rename_all = "snake_case")]
 pub(crate) enum Outcome {
-	#[cfg(any(target_os = "linux", target_os = "macos"))]
+	#[cfg(any(
+		target_os = "linux",
+		target_os = "macos",
+		all(target_os = "windows", feature = "experimental-windows-diff")
+	))]
 	Equal {
 		consistency: &'static str,
 		length: String,
 	},
-	#[cfg(any(target_os = "linux", target_os = "macos"))]
+	#[cfg(any(
+		target_os = "linux",
+		target_os = "macos",
+		all(target_os = "windows", feature = "experimental-windows-diff")
+	))]
 	Different {
 		consistency: &'static str,
 		difference: DifferenceWitness,
@@ -56,7 +72,11 @@ pub(crate) enum Outcome {
 }
 
 impl Outcome {
-	#[cfg(any(target_os = "linux", target_os = "macos"))]
+	#[cfg(any(
+		target_os = "linux",
+		target_os = "macos",
+		all(target_os = "windows", feature = "experimental-windows-diff")
+	))]
 	pub(crate) fn from_comparison(comparison: exacopy_diff::LiveComparison) -> Self {
 		use exacopy_diff::{Difference, LiveComparison};
 
@@ -87,9 +107,17 @@ impl Outcome {
 
 	pub(crate) fn exit_code(&self) -> ExitCode {
 		match self {
-			#[cfg(any(target_os = "linux", target_os = "macos"))]
+			#[cfg(any(
+				target_os = "linux",
+				target_os = "macos",
+				all(target_os = "windows", feature = "experimental-windows-diff")
+			))]
 			Self::Equal { .. } => ExitCode::SUCCESS,
-			#[cfg(any(target_os = "linux", target_os = "macos"))]
+			#[cfg(any(
+				target_os = "linux",
+				target_os = "macos",
+				all(target_os = "windows", feature = "experimental-windows-diff")
+			))]
 			Self::Different { .. } => ExitCode::from(DIFFERENT),
 			Self::Inconclusive { .. } => ExitCode::from(INCONCLUSIVE),
 		}
@@ -106,14 +134,22 @@ impl Outcome {
 			&mut stdout
 		};
 		match self {
-			#[cfg(any(target_os = "linux", target_os = "macos"))]
+			#[cfg(any(
+				target_os = "linux",
+				target_os = "macos",
+				all(target_os = "windows", feature = "experimental-windows-diff")
+			))]
 			Self::Equal {
 				length,
 				consistency,
 			} => {
 				writeln!(output, "Equal bytes ({length} bytes, {consistency}).")?;
 			}
-			#[cfg(any(target_os = "linux", target_os = "macos"))]
+			#[cfg(any(
+				target_os = "linux",
+				target_os = "macos",
+				all(target_os = "windows", feature = "experimental-windows-diff")
+			))]
 			Self::Different {
 				difference,
 				consistency,
@@ -139,7 +175,11 @@ impl Outcome {
 	}
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(
+	target_os = "linux",
+	target_os = "macos",
+	all(target_os = "windows", feature = "experimental-windows-diff")
+))]
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum DifferenceWitness {
@@ -155,16 +195,32 @@ pub(crate) struct Failure {
 
 #[derive(Serialize)]
 pub(crate) enum ErrorCode {
-	#[cfg(any(target_os = "linux", target_os = "macos"))]
+	#[cfg(any(
+		target_os = "linux",
+		target_os = "macos",
+		all(target_os = "windows", feature = "experimental-windows-diff")
+	))]
 	#[serde(rename = "E_INVALID_PATH")]
 	InvalidPath,
-	#[cfg(any(target_os = "linux", target_os = "macos"))]
+	#[cfg(any(
+		target_os = "linux",
+		target_os = "macos",
+		all(target_os = "windows", feature = "experimental-windows-diff")
+	))]
 	#[serde(rename = "E_OPEN_INPUT")]
 	OpenInput,
-	#[cfg(any(target_os = "linux", target_os = "macos"))]
+	#[cfg(any(
+		target_os = "linux",
+		target_os = "macos",
+		all(target_os = "windows", feature = "experimental-windows-diff")
+	))]
 	#[serde(rename = "E_COMPARE_INPUT")]
 	CompareInput,
-	#[cfg(any(target_os = "linux", target_os = "macos"))]
+	#[cfg(any(
+		target_os = "linux",
+		target_os = "macos",
+		all(target_os = "windows", feature = "experimental-windows-diff")
+	))]
 	#[serde(rename = "E_RESOURCE_LIMIT")]
 	ResourceLimit,
 	#[serde(rename = "E_UNSUPPORTED_PLATFORM")]

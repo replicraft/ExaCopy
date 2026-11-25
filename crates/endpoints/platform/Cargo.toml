@@ -8,6 +8,7 @@ publish = false
 
 [features]
 windows-read-fixture = []
+experimental-windows-read = ["dep:exacopy-endpoint", "dep:windows-sys"]
 experimental-windows-copy = ["dep:exacopy-endpoint", "dep:exacopy-model", "dep:windows-sys"]
 
 [[test]]

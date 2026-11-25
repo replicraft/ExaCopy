@@ -39,6 +39,25 @@ The native CLI tests compile a small fixture provisioner with the Apple C compil
 cargo nextest run --locked -p exacopy-cli --test macos_diff
 ```
 
+## Experimental local NTFS comparison on Windows
+
+```powershell
+cargo run --locked -p exacopy-cli --features experimental-windows-diff -- diff C:\synthetic\left C:\synthetic\right --local-ntfs --format json
+```
+
+Use literal absolute drive-letter paths in a trusted local Windows device
+namespace. The command checks fixed NTFS volume roots, then opens each component
+relative to its held parent. It refuses reparse points, drive aliases to subdirectories,
+relative and UNC paths, device paths, alternate stream syntax, reported offline
+or recall attributes, and inconsistent observations. Input names retain their
+UTF-16 code units. Each path contains at most 64 components after its drive root.
+
+Comparison reads the unnamed data stream and reports `live_observed` when it
+can decide the byte relation. Mapped changes and filter-driver behavior may
+escape live detection. Copy, recovery, metadata equivalence, named streams,
+and snapshots are outside this profile. Windows qualification remains pending.
+[NTFS fixture and evidence](../../../docs/testing.md#windows-held-directory-ntfs-qualification)
+
 ## Create and verify a single-file manifest
 
 ```sh

@@ -57,6 +57,16 @@ fixture directories. A distributable release has separate publishing gates.
 
 ## Windows held-directory NTFS qualification
 
+The manual workflow's `Diff` mode exercises the opt-in CLI with absolute paths
+on the verified NTFS fixture. It checks path refusal, equal bytes, first
+difference, unequal lengths, worker selection, and preserved input bytes. The
+optional symlink control exercises both the leaf and an ancestor. This is
+separate from qualification of the held-directory by-ID candidate in `Read`
+mode and the private staging capability in `Stage` mode. The CLI slice
+covers R-007, R-016, R-058, R-059 and R-067 through their corresponding acceptance
+cases, with the same live-observation boundary as the exact comparison engine.
+
+
 The [manual Windows workflow](../.github/workflows/windows-ntfs-qualification.yml)
 runs the `windows_read` integration test with the default-off
 `windows-read-fixture` feature. The four parser tests are portable. Every

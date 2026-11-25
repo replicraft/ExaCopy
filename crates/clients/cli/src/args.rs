@@ -28,6 +28,7 @@ pub(crate) struct DiffCommand {
 pub(crate) enum DiffProfile {
 	Default,
 	ManagedMacos,
+	LocalNtfs,
 }
 
 pub(crate) struct CopyCommand {

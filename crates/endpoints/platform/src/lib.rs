@@ -2,14 +2,26 @@
 #![cfg_attr(
 	not(any(
 		target_os = "macos",
-		all(target_os = "windows", feature = "experimental-windows-copy")
+		all(
+			target_os = "windows",
+			any(
+				feature = "experimental-windows-copy",
+				feature = "experimental-windows-read"
+			)
+		)
 	)),
 	forbid(unsafe_code)
 )]
 #![cfg_attr(
 	any(
 		target_os = "macos",
-		all(target_os = "windows", feature = "experimental-windows-copy")
+		all(
+			target_os = "windows",
+			any(
+				feature = "experimental-windows-copy",
+				feature = "experimental-windows-read"
+			)
+		)
 	),
 	deny(unsafe_code)
 )]

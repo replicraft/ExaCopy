@@ -25,6 +25,7 @@ fn generated_help_describes_the_existing_command_tree() {
 	assert!(diff.contains("human") && diff.contains("json"));
 	assert!(diff.contains("--workers <N>"));
 	assert!(diff.contains("--managed-macos"));
+	assert!(diff.contains("--local-ntfs"));
 	assert!(diff.contains("owner-private, materialized local APFS roots outside File Provider"));
 	assert!(diff.contains("protected ancestors"));
 	assert!(diff.contains("Outside actors must hold no access handles"));
@@ -58,6 +59,7 @@ fn rejects_missing_operands_and_unsupported_or_repeated_options() {
 			"--managed-macos",
 			"--managed-macos",
 		],
+		&["diff", "left", "right", "--managed-macos", "--local-ntfs"],
 		&["copy", "left", "right"],
 		&[
 			"copy",

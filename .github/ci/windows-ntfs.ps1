@@ -15,15 +15,15 @@ param(
 
     [switch] $IncludeSymlink,
 
-    [ValidateSet('Read', 'Stage')]
+    [ValidateSet('Read', 'Stage', 'Diff')]
     [string] $Mode = 'Read'
 )
 
 $ErrorActionPreference = 'Stop'
 $evidence = New-Item -ItemType Directory -Path $EvidenceDirectory
 try {
-    if ($Mode -eq 'Stage' -and ($UncRoot -or $SecondNtfsRoot)) {
-        throw 'The private stage lane requires only a fixed local NTFS root.'
+    if ($Mode -ne 'Read' -and ($UncRoot -or $SecondNtfsRoot)) {
+        throw 'The selected lane requires only a fixed local NTFS root.'
     }
     $repo = (Resolve-Path -LiteralPath $Repository).Path
     $rootInfo = Get-Item -LiteralPath $LocalNtfsRoot
@@ -78,11 +78,17 @@ function Invoke-Lane {
 
 function Run-TestLane {
     param([string] $Name, [int] $ExpectedTests, [string[]] $HarnessArgs)
-    $cargoArgs = @('+1.100.0', 'test', '--locked', '-p', 'exacopy-platform')
-    if ($Mode -eq 'Stage') {
-        $cargoArgs += @('--lib', '--features', 'experimental-windows-copy')
-    } else {
-        $cargoArgs += @('--test', 'windows_read', '--features', 'windows-read-fixture')
+    $cargoArgs = @('+1.100.0', 'test', '--locked')
+    switch ($Mode) {
+        'Read' {
+            $cargoArgs += @('-p', 'exacopy-platform', '--test', 'windows_read', '--features', 'windows-read-fixture')
+        }
+        'Stage' {
+            $cargoArgs += @('-p', 'exacopy-platform', '--lib', '--features', 'experimental-windows-copy')
+        }
+        'Diff' {
+            $cargoArgs += @('-p', 'exacopy-cli', '--test', 'windows_diff', '--features', 'experimental-windows-diff')
+        }
     }
     $cargoArgs += @('--target', 'x86_64-pc-windows-msvc', '--', '--nocapture', '--test-threads=1')
     $exitCode = Invoke-Lane -Name $Name -Program 'cargo' -Arguments ($cargoArgs + $HarnessArgs)
@@ -168,6 +174,15 @@ try {
         if ($IncludeSymlink) {
             $failures += Run-TestLane -Name 'stage_symlinks' -ExpectedTests 2 `
                 -HarnessArgs @('--ignored', 'windows::stage::tests::stage_symlink_')
+        }
+    } elseif ($Mode -eq 'Diff') {
+        $failures = Run-TestLane -Name 'diff_path_refusal' -ExpectedTests 1 `
+            -HarnessArgs @('ntfs_profile_refuses_unavailable_or_unadmitted_input')
+        $failures += Run-TestLane -Name 'ordinary_ntfs_diff' -ExpectedTests 1 `
+            -HarnessArgs @('--ignored', 'ordinary_ntfs_compares_and_preserves_regular_files')
+        if ($IncludeSymlink) {
+            $failures += Run-TestLane -Name 'diff_symlinks' -ExpectedTests 1 `
+                -HarnessArgs @('--ignored', 'refuses_native_reparse_leaf_and_parent')
         }
     } else {
         $failures = Run-TestLane -Name 'parser' -ExpectedTests 4 -HarnessArgs @('directory_entries::')

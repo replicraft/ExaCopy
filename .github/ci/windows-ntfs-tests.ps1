@@ -6,7 +6,7 @@ param(
     [Parameter(Mandatory)]
     [string] $EvidenceDirectory,
 
-    [ValidateSet('Read', 'Stage')]
+    [ValidateSet('Read', 'Stage', 'Diff')]
     [string] $Mode = 'Read'
 )
 

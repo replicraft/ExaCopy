@@ -1199,3 +1199,33 @@ owner = "exacopy-wireguard"
 level = "documentation"
 state = "reported"
 path = "docs/architecture/wireguard-protocol.md"
+
+
+[[coverage]]
+id = "experimental-windows-comparison"
+status = "implemented"
+requirement_ids = ["R-056", "R-093", "R-100"]
+acceptance_ids = ["A-056", "A-093", "A-100"]
+invariant_ids = ["INV-004", "INV-013", "INV-019"]
+scope = "Default-off Windows CLI comparison through held non-reparse local NTFS paths and the existing bounded serial/parallel exact byte comparator."
+limits = "Live unnamed-stream comparison only. Windows cross-check and Clippy passed, native executable linking and NTFS operation qualification remain open; no metadata equivalence, copy, recovery or snapshots."
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "test"
+state = "defined"
+path = "crates/endpoints/platform/src/windows/read_path/tests.rs"
+target = "refuses_ambiguous_path_syntax_and_bounds_component_depth"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "crates/clients/cli/tests/windows_diff/native.rs"
+target = "ordinary_ntfs_compares_and_preserves_regular_files"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "documentation"
+state = "reported"
+path = "crates/clients/cli/README.md"

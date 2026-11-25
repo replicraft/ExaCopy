@@ -6,7 +6,7 @@ on:
       qualification:
         description: Native capability to qualify
         type: choice
-        options: [Read, Stage]
+        options: [Read, Stage, Diff]
         default: Read
       include_symlink:
         description: Include cases requiring Windows symbolic link permission

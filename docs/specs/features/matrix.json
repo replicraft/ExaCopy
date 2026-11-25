@@ -48,6 +48,19 @@
       "targets": ["aarch64-apple-darwin"],
       "purpose": "Compile the opt-in transfer policies, native runtime, and managed APFS regressions."
     },
+    "experimental-windows-diff": {
+      "defaults": false,
+      "check_cli": false,
+      "feature_statuses": [],
+      "exact_features": [
+        "exacopy-cli/experimental-windows-diff",
+        "exacopy-platform/experimental-windows-read"
+      ],
+      "targets": [
+        "x86_64-pc-windows-msvc"
+      ],
+      "purpose": "Compile the explicitly selected local NTFS read-only CLI comparison without staging or fixture features."
+    },
     "experimental-windows-copy": {
       "defaults": false,
       "check_cli": false,
@@ -71,6 +84,15 @@
     }
   },
   "features": {
+    "exacopy-cli": {
+      "experimental-windows-diff": {
+        "status": "experimental",
+        "targets": ["x86_64-pc-windows-msvc"],
+        "enables": ["dep:exacopy-diff", "dep:exacopy-endpoint", "dep:exacopy-platform", "exacopy-platform/experimental-windows-read"],
+        "resolution_probe": ["exacopy-diff", "exacopy-endpoint", "exacopy-platform", "windows-sys"],
+        "purpose": "Build the opt-in local NTFS read-only CLI comparison."
+      }
+    },
     "exacopy-wireguard": {
       "experimental-protocol": {
         "status": "experimental",
@@ -94,6 +116,21 @@
         "enables": ["dep:exacopy-endpoint", "dep:exacopy-model", "dep:windows-sys"],
         "resolution_probe": ["exacopy-endpoint", "exacopy-model", "windows-sys"],
         "purpose": "Expose held-directory Windows private stage creation, bounded writes, confirmed file flush and close, and independent read-back."
+      },
+      "experimental-windows-read": {
+        "status": "experimental",
+        "targets": [
+          "x86_64-pc-windows-msvc"
+        ],
+        "enables": [
+          "dep:exacopy-endpoint",
+          "dep:windows-sys"
+        ],
+        "resolution_probe": [
+          "exacopy-endpoint",
+          "windows-sys"
+        ],
+        "purpose": "Admit read-only held regular files through bounded literal drive paths."
       },
       "windows-read-fixture": {
         "status": "experimental",
@@ -309,7 +346,7 @@
     "x86_64-pc-windows-msvc": {
       "cli": {
         "status": "explicit-refusal",
-        "diff": "unsupported",
+        "diff": "experimental NTFS with experimental-windows-diff and --local-ntfs",
         "copy_and_recovery": "unsupported"
       },
       "cli_graph_groups": ["command_line", "reporting"],

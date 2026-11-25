@@ -29,12 +29,17 @@ const FORMAT: &str = "format";
 const SOURCE_ROOT: &str = "source-root";
 const WORKERS: &str = "workers";
 const MANAGED_MACOS: &str = "managed-macos";
+const LOCAL_NTFS: &str = "local-ntfs";
 #[cfg(test)]
 mod tests;
 
 const MAX_DIFF_WORKERS: u8 = 16;
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(
+	target_os = "linux",
+	target_os = "macos",
+	all(target_os = "windows", feature = "experimental-windows-diff")
+))]
 const _: () = assert!(
 	MAX_DIFF_WORKERS as usize == exacopy_diff::MAX_WORKERS,
 	"the CLI worker limit must match the comparison engine"
@@ -100,6 +105,15 @@ fn definition() -> Cli {
 						.long(MANAGED_MACOS)
 						.action(ArgAction::SetTrue)
 						.help(MANAGED_APFS),
+				)
+				.arg(
+					Arg::new(LOCAL_NTFS)
+						.long(LOCAL_NTFS)
+						.action(ArgAction::SetTrue)
+						.conflicts_with(MANAGED_MACOS)
+						.help(
+							"Select experimental live NTFS comparison through literal absolute drive paths on Windows.",
+						),
 				)
 				.arg(output_format()),
 		)
@@ -337,6 +351,8 @@ fn typed_command(mut args: ArgMatches) -> Option<Command> {
 				.and_then(|value| NonZeroUsize::new(usize::from(*value))),
 			profile: if command.get_flag(MANAGED_MACOS) {
 				DiffProfile::ManagedMacos
+			} else if command.get_flag(LOCAL_NTFS) {
+				DiffProfile::LocalNtfs
 			} else {
 				DiffProfile::Default
 			},
