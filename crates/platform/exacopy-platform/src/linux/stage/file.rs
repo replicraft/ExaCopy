@@ -18,6 +18,7 @@ use super::directory::{CHILD_RESOLVE, StageName, component};
 use super::{StageDirectory, StageError};
 
 mod metadata;
+mod selected_stream;
 
 pub(in crate::linux) use metadata::check_no_visible_attributes;
 

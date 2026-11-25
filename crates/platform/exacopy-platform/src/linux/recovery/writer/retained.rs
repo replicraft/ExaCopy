@@ -14,6 +14,8 @@ use crate::linux::stage::{
 	PublicationNames, PublishError, check_no_visible_attributes, check_private_child,
 };
 
+mod selected_stream;
+
 #[cfg(test)]
 mod tests;
 
