@@ -12,6 +12,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use ed25519_dalek::SigningKey;
 use exacopy_endpoint::UnixComponent;
+use exacopy_engine::linux::{
+	CopyRoots, RecoveryInspectError, copy_new_file, inspect_recovery, plan_new_file,
+};
 use exacopy_journal::frame::{ChainHead, FrameKind, FrameReader};
 use exacopy_journal::{
 	JournalEntryId, JournalEpoch, JournalJobId, OwnerError, OwnerProfileId, OwnerTimestamp,
@@ -19,9 +22,8 @@ use exacopy_journal::{
 };
 use exacopy_platform::linux::{DestinationRoot, ReadRoot};
 use exacopy_transfer::linux::{
-	CopyProfile, CopyRoots, JournalTail, MAX_LOCAL_COPY_PLAN_BYTES, PlanAttempt,
-	RecoveryDisposition, RecoveryInspectError, RecoveryInspection, RecoveryIssue, RecoveryProfile,
-	RecoveryStep, copy_new_file, inspect_recovery, plan_new_file,
+	CopyProfile, JournalTail, MAX_LOCAL_COPY_PLAN_BYTES, PlanAttempt, RecoveryDisposition,
+	RecoveryInspection, RecoveryIssue, RecoveryProfile, RecoveryStep,
 };
 
 const DATA: &[u8] = b"owner-private evidence checks the bytes of this copied file";

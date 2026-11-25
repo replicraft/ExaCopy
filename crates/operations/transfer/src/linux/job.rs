@@ -4,15 +4,12 @@ use std::fs::File;
 
 use ed25519_dalek::SigningKey;
 use exacopy_endpoint::UnixComponent;
+use exacopy_endpoint::linux_copy::CopyWorkspace;
 use exacopy_endpoint::linux_job::{JobBootstrapRoot, JobWorkspace};
 use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{
-	DurableJournal, DurableJournalError, JobPrepared, JournalContext, LinuxFileIdentity,
-	OwnerError, OwnerProfileId, OwnerRecord, OwnerTimestamp, OwnerToken, RootCapabilityId,
-	SyncedFrame,
-};
-use exacopy_platform::linux::{
-	DestinationRoot, FileIdentity, JobDirectory, StageDirectory, StageError,
+	DurableJournal, DurableJournalError, JobPrepared, JournalContext, OwnerError, OwnerProfileId,
+	OwnerRecord, OwnerTimestamp, OwnerToken, RootCapabilityId, SyncedFrame,
 };
 
 use super::LocalCopyPlan;
@@ -45,13 +42,13 @@ pub struct JobBootstrap<'name> {
 /// The caller owns profile key custody and must allocate unique names and tokens. The
 /// bootstrap writes no copy payload and issues no publication authorization.
 #[derive(Debug)]
-pub struct PreparedJob<'root> {
-	directory: JobDirectory<'root>,
+pub struct PreparedJob<D> {
+	directory: D,
 	owner: OwnerRecord,
 	initial_frame: SyncedFrame,
 }
 
-impl<'root> PreparedJob<'root> {
+impl<D: JobWorkspace<Segment = File>> PreparedJob<D> {
 	/// Creates an exclusive private job here and persists its ownership and preparation frame.
 	///
 	/// A full file barrier precedes the directory barriers for the owner record. The first
@@ -61,28 +58,20 @@ impl<'root> PreparedJob<'root> {
 	/// # Errors
 	/// Stops on a naming conflict, invalid ownership evidence, or any I/O or journal failure.
 	/// Created entries remain for later inspection and are never adopted on retry.
-	pub fn create(
-		destination: &'root DestinationRoot,
+	pub fn create<'root, R>(
+		destination: &'root R,
 		request: JobBootstrap<'_>,
 		signer: &SigningKey,
-	) -> Result<Self, JobBootstrapError> {
-		let (job, _) = Self::prepare(destination, request, signer, None)?;
-		Ok(job)
-	}
-
-	fn prepare(
-		destination: &'root DestinationRoot,
-		request: JobBootstrap<'_>,
-		signer: &SigningKey,
-		plan: Option<&[u8]>,
-	) -> Result<(Self, DurableJournal), JobBootstrapError> {
-		let prepared = protocol::prepare::<_, DurableJournal>(destination, request, signer, plan)?;
-		let job = Self {
+	) -> Result<Self, BootstrapError<D::Error>>
+	where
+		R: JobBootstrapRoot<'root, Job = D, Error = D::Error>,
+	{
+		let prepared = protocol::prepare::<_, DurableJournal>(destination, request, signer, None)?;
+		Ok(Self {
 			directory: prepared.directory,
 			owner: prepared.owner,
 			initial_frame: prepared.initial_frame,
-		};
-		Ok((job, prepared.journal))
+		})
 	}
 
 	/// Returns the exact signed owner record written to this job's private root.
@@ -101,9 +90,12 @@ impl<'root> PreparedJob<'root> {
 	///
 	/// # Errors
 	/// Reports a creation collision, changed identity, or failure to synchronize the entry.
-	pub fn create_stage_directory(&self) -> Result<StageDirectory<'_>, StageError> {
+	pub fn create_stage_directory(&self) -> Result<D::Stage<'_>, <D as JobWorkspace>::Error>
+	where
+		D: CopyWorkspace,
+	{
 		let stage = self.directory.create_stage_directory()?;
-		self.directory.sync_directory()?;
+		JobWorkspace::sync_directory(&self.directory)?;
 		Ok(stage)
 	}
 }
@@ -133,10 +125,6 @@ where
 	Ok((prepared.directory, prepared.journal))
 }
 
-pub(super) fn native_identity(identity: FileIdentity) -> LinuxFileIdentity {
-	LinuxFileIdentity::new(identity.device(), identity.inode())
-}
-
 /// An attempted namespace operation during private job bootstrap.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum JobStep {
@@ -157,9 +145,6 @@ pub enum JobStep {
 	/// Synchronization of the destination directory holding the job entry.
 	SyncDestination,
 }
-
-/// The error returned by the native Linux bootstrap entry point.
-pub type JobBootstrapError = BootstrapError<StageError>;
 
 /// A failed job bootstrap leaves any created private entries for inspection.
 #[derive(Debug)]

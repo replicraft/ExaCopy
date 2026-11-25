@@ -1,3 +1,5 @@
+use exacopy_transfer::linux::JournalTail;
+
 use std::fs::{self, File, FileTimes, Metadata};
 use std::io::Read as _;
 use std::os::unix::fs::{FileExt as _, MetadataExt as _};
@@ -12,15 +14,15 @@ use exacopy_journal::{
 	RootCapabilityId,
 };
 
-use super::super::super::{
-	CopyReceipt, JournalTail, RecoveryDisposition, RecoveryInspection, RecoveryProfile,
-	RecoveryRetryError, RecoverySource, inspect_recovery, resume_recovery, retry_recovery,
-};
 use super::evidence::{SEGMENT, SUCCESS_ORDER, assert_absent, read_frames};
 use super::{
 	Checkpoint, DESTINATION_DIRECTORY, Fixture, JOB, STAGE_DIRECTORY, STAGE_FILE, Snapshot, TARGET,
 	component, connect_checkpoint, fixture_signer, open_destination, open_source, profile_id,
 	source_id, uuid_v4,
+};
+use crate::linux::{
+	CopyReceipt, RecoveryDisposition, RecoveryInspection, RecoveryProfile, RecoveryRetryError,
+	RecoverySource, inspect_recovery, resume_recovery, retry_recovery,
 };
 
 pub(super) const CHECKPOINT_PREFIX: &[FrameKind] = &[

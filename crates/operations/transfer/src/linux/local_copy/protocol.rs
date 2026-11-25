@@ -15,7 +15,7 @@ use exacopy_model::{CopyBinding, CopyEffect, CopyEvent, CopySession, PublishNoCl
 
 use crate::linux_staging::{StageFailure, observe};
 
-use super::super::{CopyReceipt, LocalCopyPlan};
+use super::super::{CopyCheckpoint, CopyReceipt, LocalCopyPlan};
 use super::records::SealEvidence;
 
 #[derive(Debug)]
@@ -59,8 +59,9 @@ impl Publication<'_, '_> {
 		stage: P,
 		sealed: &SealEvidence,
 		metadata: &SyncedFrame,
+		checkpoint: fn(CopyCheckpoint),
 	) -> Result<SyncedFrame, ProtocolError<R, S, P::Error>> {
-		self.complete_using(journal, session, sealed, metadata, |permit| {
+		self.complete_using(journal, session, sealed, metadata, checkpoint, |permit| {
 			stage.publish_no_clobber(permit)
 		})
 	}
@@ -71,6 +72,7 @@ impl Publication<'_, '_> {
 		session: &mut CopySession,
 		sealed: &SealEvidence,
 		metadata: &SyncedFrame,
+		checkpoint: fn(CopyCheckpoint),
 		publish: impl FnOnce(PublishNoClobber) -> Result<(), PublicationFailure<P>>,
 	) -> Result<SyncedFrame, ProtocolError<R, S, P>> {
 		let context = self.intent_context();
@@ -86,11 +88,10 @@ impl Publication<'_, '_> {
 			},
 		};
 		let synced = append(journal, FrameKind::PublishIntent, &intent.encode())?;
-		#[cfg(test)]
-		super::crash_tests::pause_at(if self.context.epoch == self.plan.context().epoch {
-			super::crash_tests::Checkpoint::IntentSynced
+		checkpoint(if self.context.epoch == self.plan.context().epoch {
+			CopyCheckpoint::IntentSynced
 		} else {
-			super::crash_tests::Checkpoint::RangeResumeIntentSynced
+			CopyCheckpoint::RangeResumeIntentSynced
 		});
 		let authorization = match session
 			.apply(self.binding, CopyEvent::PublishIntentRecorded)
@@ -122,8 +123,7 @@ impl Publication<'_, '_> {
 				.err();
 			return Err(ProtocolError::Publication { source, recording });
 		}
-		#[cfg(test)]
-		super::crash_tests::pause_at(super::crash_tests::Checkpoint::RenamedAndSynced);
+		checkpoint(CopyCheckpoint::RenamedAndSynced);
 
 		let observation = PublishObserved::new(
 			context,
@@ -158,6 +158,7 @@ pub(super) fn persist_receipt<R, P, J: ReceiptWorkspace>(
 	context: PublishIntentContext,
 	receipt: &CopyReceipt<'_>,
 	durability: &SyncedFrame,
+	checkpoint: fn(CopyCheckpoint),
 ) -> Result<(), ProtocolError<R, J::Error, P>> {
 	let committed = ReceiptCommitted::new(
 		context,
@@ -181,11 +182,9 @@ pub(super) fn persist_receipt<R, P, J: ReceiptWorkspace>(
 		.map_err(ProtocolError::ReceiptNamespace)?;
 	job.sync_directory()
 		.map_err(ProtocolError::ReceiptNamespace)?;
-	#[cfg(test)]
-	super::crash_tests::pause_at(super::crash_tests::Checkpoint::ReceiptSynced);
+	checkpoint(CopyCheckpoint::ReceiptSynced);
 	let _ = append(journal, FrameKind::ReceiptCommitted, &committed.encode())?;
-	#[cfg(test)]
-	super::crash_tests::pause_at(super::crash_tests::Checkpoint::ReceiptCommitted);
+	checkpoint(CopyCheckpoint::ReceiptCommitted);
 	Ok(())
 }
 

@@ -1,3 +1,5 @@
+use exacopy_transfer::linux::JournalTail;
+
 use std::fs::{self, File, FileTimes, Metadata, Permissions};
 use std::os::unix::fs::{FileExt as _, MetadataExt as _, PermissionsExt as _};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -5,9 +7,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use exacopy_journal::frame::{ChainHead, FrameKind, FrameReader};
 use exacopy_journal::{EntryPrepared, JournalEpoch, LOCAL_RECEIPT_LOCATION, LinuxFileIdentity};
 
-use super::super::super::{
-	CopyReceipt, JournalTail, RecoveryDisposition, RecoveryRetryError, StageFailure,
-};
 use super::evidence::{SEGMENT, SUCCESS_ORDER, assert_absent, read_frames};
 use super::resume::{
 	CHECKPOINT_PREFIX, RESUMED_PREFIX, artifact, assert_intent, assert_receipt_bound,
@@ -18,6 +17,7 @@ use super::{
 	Checkpoint, Fixture, METADATA_CHECKPOINTS, SOURCE_BYTES, Snapshot, TARGET, component,
 	connect_checkpoint, run_copy_worker, source_id,
 };
+use crate::linux::{CopyReceipt, RecoveryDisposition, RecoveryRetryError, StageFailure};
 
 const SOURCE_MODE: u32 = 0o640;
 const PERMISSION_BITS: u32 = 0o7777;

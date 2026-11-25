@@ -10,12 +10,14 @@ use crate::linux_staging::{StageFailure, StageRecords as StageRecordSink};
 
 use super::planning::journal_identity;
 use super::records::EntryEvidence;
+use crate::linux::CopyCheckpoint;
 
 pub(in crate::linux) struct StageRecords<'job, 'name, Pages> {
 	entry: &'job EntryEvidence<'name>,
 	pages: &'job Pages,
 	journal: &'job mut DurableJournal,
 	ordinal: u32,
+	checkpoint: fn(CopyCheckpoint),
 }
 
 impl<'job, 'name, Pages> StageRecords<'job, 'name, Pages> {
@@ -23,12 +25,14 @@ impl<'job, 'name, Pages> StageRecords<'job, 'name, Pages> {
 		entry: &'job EntryEvidence<'name>,
 		pages: &'job Pages,
 		journal: &'job mut DurableJournal,
+		checkpoint: fn(CopyCheckpoint),
 	) -> Self {
 		Self {
 			entry,
 			pages,
 			journal,
 			ordinal: 1,
+			checkpoint,
 		}
 	}
 }
@@ -63,8 +67,7 @@ where
 		self.pages
 			.persist_page(self.ordinal, &page.encode())
 			.map_err(StageFailure::CheckpointPage)?;
-		#[cfg(test)]
-		super::crash_tests::pause_range_at(super::crash_tests::Checkpoint::RangePageSynced);
+		(self.checkpoint)(CopyCheckpoint::RangePageSynced);
 		let record = RangeCheckpoint {
 			context: self.entry.context,
 			entry: self.entry.entry,
@@ -75,8 +78,7 @@ where
 			.journal
 			.append(FrameKind::RangeCheckpoint, &record.encode())
 			.map_err(StageFailure::CheckpointJournal)?;
-		#[cfg(test)]
-		super::crash_tests::pause_range_at(super::crash_tests::Checkpoint::RangeFrameSynced);
+		(self.checkpoint)(CopyCheckpoint::RangeFrameSynced);
 		// The stream recorder issues at most 4,096 checkpoints.
 		self.ordinal += 1;
 		Ok(())

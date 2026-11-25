@@ -11,10 +11,10 @@ use exacopy_journal::{
 };
 use rustix::fs::{Mode, OFlags, open};
 
-use super::super::{CopyReceipt, LocalCopyPlan};
 use super::{
 	Checkpoint, Fixture, SOURCE, STAGE_FILE, TARGET, component, fixture_signer, profile_id,
 };
+use exacopy_transfer::linux::{CopyReceipt, LocalCopyPlan};
 
 pub(super) const STAGE_DIRECTORY: &str = "stage";
 pub(super) const SEGMENT: &str = "journal/00000000000000000001.exajnl";

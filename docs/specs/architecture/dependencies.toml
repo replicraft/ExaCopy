@@ -37,7 +37,8 @@ dev.external = ["ed25519-dalek", "rustix"]
 
 [groups.runtime]
 members = { exacopy-engine = "crates/runtime/engine" }
-normal.groups = ["contracts", "operations", "platform"]
+normal.groups = ["contracts", "operations", "platform", "core", "storage"]
+dev.external = ["blake3", "ed25519-dalek", "rustix"]
 
 [groups.clients]
 members = { exacopy-cli = "crates/clients/cli" }
@@ -56,9 +57,9 @@ members = { xtask = "xtask" }
 engineering = true
 normal.external = ["cargo_metadata", "proc-macro2", "serde", "serde_json", "sha2", "syn", "toml"]
 
-# Transfer still hosts concrete native entry points, including durable stage/job recovery.
-# Move native composition to the client boundary before removing this allowance.
+# Managed APFS recovery still hosts concrete native entry points.
+# Move those entry points to the runtime before removing this allowance.
 [[transitional_normal]]
 from = "exacopy-transfer"
 to = "exacopy-platform"
-targets = ['cfg(target_os = "linux")', 'cfg(target_os = "macos")']
+targets = ['cfg(target_os = "macos")']

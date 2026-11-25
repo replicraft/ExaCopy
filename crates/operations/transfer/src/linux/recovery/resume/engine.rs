@@ -13,9 +13,8 @@ use exacopy_journal::{
 };
 use exacopy_model::{CopyBinding, CopyEvent, CopySession, EntryId, JobId, RunEpoch, StageId};
 
+use super::super::super::CopyCheckpoint;
 use super::super::super::local_copy::Publication;
-#[cfg(test)]
-use super::super::super::local_copy::crash_tests::{Checkpoint, pause_at, pause_metadata_at};
 use super::super::super::local_copy::records::EntryEvidence;
 use super::super::super::{
 	CopyReceipt, JournalBoundary, JournalReplay, JournalTail, LocalCopyPlan,
@@ -35,21 +34,29 @@ const PRIVATE_STAGE_MODE: u32 = 0o600;
 // Reserve enough space for the bounded resume, publication and receipt recovery suffixes.
 const RESUME_JOURNAL_RESERVE: u64 = 16 * 1024;
 
-// Holds the original job lease and inventory while opening only the captured stage.
-pub(super) trait StageDirectory<M, I> {
+/// Holds the original job lease and inventory while opening only the captured stage.
+pub trait StageDirectory<M, I> {
+	/// Native operation failure.
 	type Error;
+	/// Native exclusive publication failure.
 	type PublicationError;
+	/// Reader of the held stage with released write authority.
 	type Reader<'stage>: StageReader<Identity = I, Metadata = M, Error = Self::Error>
 		+ ExclusivePublication<Error = Self::PublicationError>
 	where
 		Self: 'stage;
+	/// One writer scoped to the held stage.
 	type Writer<'stage>: StageWriter<Identity = I, Metadata = M, Error = Self::Error, Reader = Self::Reader<'stage>>
 	where
 		Self: 'stage;
 
+	/// Returns the held directory identity.
 	fn identity(&self) -> LinuxFileIdentity;
+	/// Translates a held stage identity into the existing persisted domain.
 	fn record_identity(identity: I) -> LinuxFileIdentity;
+	/// Opens the existing admitted stage for writing.
 	fn open_writer(&mut self, binding: CopyBinding) -> Result<Self::Writer<'_>, Self::Error>;
+	/// Opens the unchanged metadata-ready stage independently for read-back.
 	fn open_flushed_readback(
 		&mut self,
 		binding: CopyBinding,
@@ -63,6 +70,9 @@ pub(super) trait Records {
 
 	fn resume_journal(&self, boundary: JournalBoundary) -> Result<DurableJournal, Self::Error>;
 	fn sync_receipt(&self, receipt: &CopyReceipt<'_>) -> Result<(), Self::Error>;
+	fn checkpoint(&self) -> fn(CopyCheckpoint) {
+		|_| {}
+	}
 }
 
 pub(super) struct RetainedStage<'file, R, I> {
@@ -192,8 +202,13 @@ where
 				let writer = directory
 					.open_writer(binding)
 					.map_err(ResumeError::Namespace)?;
-				let (stage, digest) =
-					self.rewrite_ranges(writer, scratch, &mut session, binding)?;
+				let (stage, digest) = self.rewrite_ranges(
+					writer,
+					scratch,
+					&mut session,
+					binding,
+					records.checkpoint(),
+				)?;
 				(stage, digest, journal)
 			}
 			Mode::ReadBack => {
@@ -216,8 +231,7 @@ where
 		let stage =
 			complete_stage_metadata(stage, self.source, self.accessed_at, &mut session, binding)
 				.map_err(ResumeError::ResumeStage)?;
-		#[cfg(test)]
-		pause_metadata_at(Checkpoint::RangeResumeMetadataApplied);
+		(records.checkpoint())(CopyCheckpoint::RangeResumeMetadataApplied);
 
 		self.check_identity(stage.identity())?;
 		let plan = self.evidence.plan;
@@ -239,7 +253,14 @@ where
 			stage_directory,
 		};
 		let durability = publication
-			.complete_with(&mut journal, &mut session, stage, &sealed, &metadata)
+			.complete_with(
+				&mut journal,
+				&mut session,
+				stage,
+				&sealed,
+				&metadata,
+				records.checkpoint(),
+			)
 			.map_err(ResumeError::Publish)?;
 		let receipt = CopyReceipt::from_synced_durability(
 			ReceiptEvidence {
@@ -341,8 +362,7 @@ where
 			.resume_journal(boundary)
 			.map_err(ResumeError::Records)?;
 		let _ = append(&mut journal, FrameKind::RecoveryStarted, &start.encode())?;
-		#[cfg(test)]
-		pause_at(Checkpoint::RangeResumeStartedSynced);
+		(records.checkpoint())(CopyCheckpoint::RangeResumeStartedSynced);
 		Ok(journal)
 	}
 
@@ -352,6 +372,7 @@ where
 		scratch: &mut [u8],
 		session: &mut CopySession,
 		binding: CopyBinding,
+		checkpoint: fn(CopyCheckpoint),
 	) -> StreamResult<W::Reader, S::Error, W::Error, P, F>
 	where
 		W: StageWriter<Identity = S::Identity, Metadata = S::Metadata>,
@@ -377,8 +398,7 @@ where
 		.digest;
 		flush_written_stage(&mut writer, self.source.length(), session, binding)
 			.map_err(ResumeError::ResumeStage)?;
-		#[cfg(test)]
-		pause_at(Checkpoint::RangeResumeDataFlushed);
+		checkpoint(CopyCheckpoint::RangeResumeDataFlushed);
 		let stage = writer
 			.close_writes()
 			.map_err(|error| ResumeError::ResumeStage(StageFailure::Stage(error)))?;

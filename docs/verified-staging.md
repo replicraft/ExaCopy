@@ -92,7 +92,7 @@ The process-kill tests cover synchronized preparation through receipt commitment
 
 ```sh
 cargo nextest run --locked -p exacopy-content -p exacopy-journal
-cargo test --locked -p exacopy-platform -p exacopy-transfer
+cargo test --locked -p exacopy-platform -p exacopy-transfer -p exacopy-engine
 ```
 
 The native tests use private Linux fixtures. The [journal frame fuzz target](../crates/storage/journal/fuzz/README.md) independently checks framing boundaries under AddressSanitizer.

@@ -80,26 +80,36 @@ pub(super) trait FinishJournal {
 	-> Result<ChainHead, DurableJournalError>;
 }
 
-pub(super) trait ReceiptLease {
+/// Receipt effects restricted to the selected leased job.
+pub trait ReceiptLease {
+	/// Native operation failure.
 	type EffectError;
+	/// The exact old receipt retained for revalidation.
 	type ExistingReceipt;
+	/// The receipt directory scoped to this lease.
 	type Directory<'lease>: FinishReceiptDirectory<Error = Self::EffectError, ExistingReceipt = Self::ExistingReceipt>
 	where
 		Self: 'lease;
 
 	/// Opens or exclusively creates the fixed private directory.
 	fn open_receipt_directory(&self) -> Result<Self::Directory<'_>, Self::EffectError>;
+	/// Synchronizes the job directory after receipt persistence.
 	fn sync_job_directory(&self) -> Result<(), Self::EffectError>;
 }
 
-pub(super) trait FinishReceiptDirectory {
+/// Receipt operations within the held private directory.
+pub trait FinishReceiptDirectory {
+	/// Native operation failure.
 	type Error;
+	/// Previously held immutable receipt.
 	type ExistingReceipt;
+	/// Exclusive new receipt writer.
 	type Record: ReceiptRecord;
 
 	/// Synchronizes the exact previously inspected receipt.
 	fn sync_receipt(&self, receipt: &Self::ExistingReceipt) -> Result<(), Self::Error>;
 	/// Creates the fixed private receipt without replacing an incumbent.
 	fn create_receipt(&self) -> Result<Self::Record, Self::Error>;
+	/// Synchronizes the held receipt directory.
 	fn sync_directory(&self) -> Result<(), Self::Error>;
 }

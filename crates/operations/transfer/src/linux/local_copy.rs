@@ -12,21 +12,19 @@ use exacopy_journal::{OwnerProfileId, OwnerTimestamp, OwnerToken};
 use exacopy_model::{CopyBinding, CopyEvent, EntryId, JobId, RunEpoch, StageId};
 
 use super::job::prepare_durable_copy;
-use super::{CopyReceipt, LocalCopyPlan, ReceiptEvidence, StageRequest, check_source, observe};
+use super::{
+	CopyCheckpoint, CopyReceipt, LocalCopyPlan, ReceiptEvidence, StageRequest, check_source,
+	observe,
+};
 
 pub(super) mod checkpoints;
 mod error;
-mod native;
 mod planning;
 mod protocol;
 pub(super) mod records;
 
-#[cfg(test)]
-pub(super) mod crash_tests;
-
 use checkpoints::StageRecords;
 pub use error::CopyError;
-pub use native::{CopyRoots, LocalCopyError, copy_new_file, plan_new_file};
 pub use planning::{PlanningRoots, plan_with_capabilities};
 use planning::{
 	capture_source, check_absent, destination_binding, journal_identity, source_root_identity,
@@ -65,6 +63,7 @@ pub fn copy_with_capabilities<'root, 'name, S, D, J>(
 	plan: &LocalCopyPlan<'name>,
 	profile: CopyProfile<'_>,
 	scratch: &mut [u8],
+	checkpoint: fn(CopyCheckpoint),
 ) -> CopyResult<'name, S::Error, D, J>
 where
 	S: CopySourceRoot<Source: CopySource<Identity = J::Identity, Metadata = J::Metadata>>,
@@ -115,8 +114,7 @@ where
 	)?;
 	let (job, mut journal) =
 		prepare_durable_copy(planning.destination, plan, profile).map_err(CopyError::Bootstrap)?;
-	#[cfg(test)]
-	crash_tests::pause_at(crash_tests::Checkpoint::PlanSynced);
+	checkpoint(CopyCheckpoint::PlanSynced);
 	let directory = job
 		.create_stage_directory()
 		.map_err(CopyError::CreateStage)?;
@@ -130,7 +128,7 @@ where
 		target,
 		binding,
 	};
-	let mut records = StageRecords::new(&evidence, &pages, &mut journal);
+	let mut records = StageRecords::new(&evidence, &pages, &mut journal, checkpoint);
 	let (stage, mut session, digest) = crate::linux_staging::stage_verified(
 		&file,
 		&directory,
@@ -140,8 +138,7 @@ where
 	)
 	.map_err(CopyError::Stage)?
 	.into_parts();
-	#[cfg(test)]
-	crash_tests::pause_metadata_at(crash_tests::Checkpoint::CopyMetadataApplied);
+	checkpoint(CopyCheckpoint::CopyMetadataApplied);
 
 	let sealed = evidence.seal_stream(
 		journal_identity(stage.identity().into()),
@@ -149,8 +146,7 @@ where
 		digest,
 	)?;
 	let metadata_frame = sealed.record(&mut journal)?;
-	#[cfg(test)]
-	crash_tests::pause_at(crash_tests::Checkpoint::StageSealed);
+	checkpoint(CopyCheckpoint::StageSealed);
 	check_source(&file).map_err(CopyError::SourcePolicy)?;
 	let publication = Publication {
 		context,
@@ -163,6 +159,7 @@ where
 		&mut session,
 		&sealed,
 		&metadata_frame,
+		checkpoint,
 		|permit| directory.publish(stage, permit),
 	)?;
 	let receipt = CopyReceipt::from_synced_durability(
@@ -183,6 +180,7 @@ where
 		publication.intent_context(),
 		&receipt,
 		&durability,
+		checkpoint,
 	)?;
 	observe(&mut session, binding, CopyEvent::ReceiptRecorded)
 		.map_err(CopyError::PublicationModel)?;

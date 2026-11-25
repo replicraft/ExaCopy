@@ -22,8 +22,8 @@ use exacopy_endpoint::UnixComponent;
 use exacopy_journal::{OwnerProfileId, OwnerTimestamp, OwnerToken, RootCapabilityId};
 use exacopy_platform::linux::{DestinationRoot, PublishError, ReadRoot};
 
-use super::super::PlanAttempt;
-use super::{CopyProfile, CopyRoots, LocalCopyError, copy_new_file, plan_new_file};
+use super::{CopyRoots, LocalCopyError, copy_new_file, plan_new_file};
+use exacopy_transfer::linux::{CopyCheckpoint as Checkpoint, CopyProfile, PlanAttempt};
 
 mod evidence;
 mod metadata_resume;
@@ -46,28 +46,17 @@ const STAGE_FILE: &str = "partial";
 const SOURCE_BYTES: &[u8] = b"independent source and stage streams\0\xff\n";
 const INCUMBENT_BYTES: &[u8] = b"late incumbent owned by another writer";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-pub(in crate::linux) enum Checkpoint {
-	PlanSynced = 1,
-	StageSealed,
-	IntentSynced,
-	RenamedAndSynced,
-	ReceiptSynced,
-	ReceiptCommitted,
-	RetryDecisionSynced,
-	RetryIntentSynced,
-	RetryRenamedAndSynced,
-	RangePageSynced,
-	RangeFrameSynced,
-	RangeResumeStartedSynced,
-	RangeResumeDataFlushed,
-	RangeResumeIntentSynced,
-	CopyMetadataApplied,
-	RangeResumeMetadataApplied,
+trait CheckpointTest: Sized {
+	const COPY_ORDER: [Self; 6];
+	const RETRY_ORDER: [Self; 3];
+	const RANGE_ORDER: [Self; 3];
+	const RESUME_ORDER: [Self; 3];
+	const COPY_METADATA_ORDER: [Self; 2];
+	const RESUME_METADATA_ORDER: [Self; 3];
+	fn worker(self) -> (&'static str, &'static [Self]);
 }
 
-impl Checkpoint {
+impl CheckpointTest for Checkpoint {
 	const COPY_ORDER: [Self; 6] = [
 		Self::PlanSynced,
 		Self::StageSealed,

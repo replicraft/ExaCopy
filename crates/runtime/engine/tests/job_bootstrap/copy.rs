@@ -31,9 +31,9 @@ fn copy_profile(signer: &SigningKey) -> exacopy_transfer::linux::CopyProfile<'_>
 fn copy_roots<'root>(
 	source: &'root exacopy_platform::linux::ReadRoot,
 	destination: &'root DestinationRoot,
-) -> exacopy_transfer::linux::CopyRoots<'root> {
+) -> exacopy_engine::linux::CopyRoots<'root> {
 	let request = bootstrap(JOB_DIRECTORY);
-	exacopy_transfer::linux::CopyRoots {
+	exacopy_engine::linux::CopyRoots {
 		source,
 		destination,
 		source_id: request.destination_id,
@@ -43,11 +43,12 @@ fn copy_roots<'root>(
 
 #[test]
 fn journaled_copy_persists_a_receipt_bound_to_verified_bytes_and_observed_publication() {
+	use exacopy_engine::linux::{copy_new_file, plan_new_file};
 	use exacopy_journal::{
 		DurabilityRecorded, MetadataRecorded, PublishObserved, ReceiptCommitted,
 	};
 	use exacopy_platform::linux::ReadRoot;
-	use exacopy_transfer::linux::{CopyReceipt, LocalCopyPlan, copy_new_file, plan_new_file};
+	use exacopy_transfer::linux::{CopyReceipt, LocalCopyPlan};
 
 	const DATA: &[u8] = b"this regular source participates in the actual copy";
 	let fixture = DestinationFixture::new();
@@ -156,8 +157,8 @@ fn journaled_copy_persists_a_receipt_bound_to_verified_bytes_and_observed_public
 
 #[test]
 fn late_preflight_conflict_and_changed_source_create_no_private_job() {
+	use exacopy_engine::linux::{LocalCopyError, copy_new_file, plan_new_file};
 	use exacopy_platform::linux::ReadRoot;
-	use exacopy_transfer::linux::{LocalCopyError, copy_new_file, plan_new_file};
 
 	let fixture = DestinationFixture::new();
 	let source_path = fixture.path("source");
@@ -199,10 +200,9 @@ fn late_preflight_conflict_and_changed_source_create_no_private_job() {
 fn conflicting_destination_capabilities_refuse_before_private_job_creation() {
 	use exacopy_endpoint::linux_copy::{CopyDestinationView, TargetObservation};
 	use exacopy_endpoint::linux_job::{JobBootstrapRoot, JobFileIdentity};
+	use exacopy_engine::linux::plan_new_file;
 	use exacopy_platform::linux::{JobDirectory, ReadRoot, StageError};
-	use exacopy_transfer::linux::{
-		CopyError, PlanningRoots, copy_with_capabilities, plan_new_file,
-	};
+	use exacopy_transfer::linux::{CopyError, PlanningRoots, copy_with_capabilities};
 
 	struct InconsistentDestination<'root>(&'root DestinationRoot);
 
@@ -259,7 +259,7 @@ fn conflicting_destination_capabilities_refuse_before_private_job_creation() {
 		destination_id: roots.destination_id,
 	};
 	let signer = fixture_signer();
-	let error = copy_with_capabilities(roots, &plan, copy_profile(&signer), &mut [0; 7])
+	let error = copy_with_capabilities(roots, &plan, copy_profile(&signer), &mut [0; 7], |_| {})
 		.expect_err("bootstrap identity must agree with the destination view");
 	assert!(matches!(error, CopyError::StalePlan), "{error}");
 	assert_absent(&fixture.path(JOB_DIRECTORY));

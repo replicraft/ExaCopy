@@ -3,7 +3,6 @@ use std::fmt;
 
 use exacopy_content::{MeasureError, StreamInputError};
 use exacopy_journal::{OwnerError, VerificationRecordError};
-use exacopy_platform::linux::{ReadError, StageError};
 
 use super::super::{JournalReplayError, LocalCopyPlanError, ReceiptError};
 
@@ -31,32 +30,32 @@ pub enum RecoveryStep {
 }
 
 impl RecoveryStep {
-	pub(super) fn platform(self) -> impl FnOnce(StageError) -> RecoveryInspectError {
-		move |source| RecoveryInspectError::Platform { step: self, source }
+	pub(super) fn platform<R, S>(self) -> impl FnOnce(S) -> InspectionError<R, S> {
+		move |source| InspectionError::Platform { step: self, source }
 	}
 
-	pub(super) fn read(self) -> impl FnOnce(ReadError) -> RecoveryInspectError {
-		move |source| RecoveryInspectError::Read { step: self, source }
+	pub(super) fn read<R, S>(self) -> impl FnOnce(R) -> InspectionError<R, S> {
+		move |source| InspectionError::Read { step: self, source }
 	}
 }
 
 /// The evidence or current namespace could not be safely inspected.
 #[derive(Debug)]
 #[non_exhaustive]
-pub enum RecoveryInspectError {
+pub enum InspectionError<R, S> {
 	/// A retained Linux handle could not be admitted or rechecked.
 	Platform {
 		/// Evidence needed when the operation failed.
 		step: RecoveryStep,
 		/// The typed Linux platform error.
-		source: StageError,
+		source: S,
 	},
 	/// A held file could not be read or its observation could not be rechecked.
 	Read {
 		/// Evidence needed when the operation failed.
 		step: RecoveryStep,
 		/// The typed Linux read error.
-		source: ReadError,
+		source: R,
 	},
 	/// An immutable record's length exceeds its private format limit.
 	Oversize(RecoveryStep),
@@ -83,10 +82,10 @@ pub enum RecoveryInspectError {
 	/// The supplied scratch buffer is outside the stream limits.
 	Input(StreamInputError),
 	/// A fresh measurement of the known stage inode failed.
-	ReadBack(MeasureError<ReadError>),
+	ReadBack(MeasureError<R>),
 }
 
-impl fmt::Display for RecoveryInspectError {
+impl<R: fmt::Display, S: fmt::Display> fmt::Display for InspectionError<R, S> {
 	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
 			Self::Platform { step, source } => {
@@ -135,7 +134,7 @@ impl fmt::Display for RecoveryInspectError {
 	}
 }
 
-impl Error for RecoveryInspectError {
+impl<R: Error + 'static, S: Error + 'static> Error for InspectionError<R, S> {
 	fn source(&self) -> Option<&(dyn Error + 'static)> {
 		match self {
 			Self::Platform { source, .. } => Some(source),

@@ -9,15 +9,15 @@ use exacopy_journal::{
 };
 use exacopy_platform::linux::StageError;
 
-use super::super::super::{
-	CopyReceipt, RecoveryDisposition, RecoveryInspection, RecoveryProfile, RecoveryRetryError,
-	RecoverySource, finish_recovery, inspect_recovery, retry_recovery,
-};
 use super::evidence::{SEGMENT, SUCCESS_ORDER, assert_absent, read_frames};
 use super::{
 	Checkpoint, DESTINATION_DIRECTORY, Fixture, INCUMBENT_BYTES, JOB, PROCEED, PublishError,
 	STAGE_DIRECTORY, STAGE_FILE, Snapshot, TARGET, assert_crash, component, connect_checkpoint,
 	fixture_signer, open_destination, open_source, profile_id, source_id,
+};
+use crate::linux::{
+	CopyReceipt, RecoveryDisposition, RecoveryInspection, RecoveryProfile, RecoveryRetryError,
+	RecoverySource, finish_recovery, inspect_recovery, retry_recovery,
 };
 
 const INITIAL_ORDER: &[FrameKind] = SUCCESS_ORDER.split_at(6).0;

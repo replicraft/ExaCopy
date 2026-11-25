@@ -28,8 +28,13 @@ impl CopySourceRoot for ReadRoot {
 
 impl CopySource for SourceFile {
 	fn copy_observation(&self) -> CopySourceObservation {
-		let observation: SourceObservation = self.observation();
-		CopySourceObservation {
+		self.observation().into()
+	}
+}
+
+impl From<SourceObservation> for CopySourceObservation {
+	fn from(observation: SourceObservation) -> Self {
+		Self {
 			mode: observation.mode(),
 			owner: observation.owner(),
 			group: observation.group(),

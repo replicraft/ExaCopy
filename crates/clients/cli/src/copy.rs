@@ -3,11 +3,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use exacopy_content::MAX_SCRATCH_BYTES;
 use exacopy_endpoint::UnixComponent;
-use exacopy_engine::linux::{CopyRoots, LocalCopyError, copy_new_file, plan_new_file};
+use exacopy_engine::linux::{
+	CopyRoots, LocalCopyError, StageFailure, copy_new_file, plan_new_file,
+};
 use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{JournalEntryId, JournalEpoch, JournalJobId, OwnerTimestamp, OwnerToken};
 use exacopy_platform::linux::{PublishError, ReadError, ReadRoot, StageError};
-use exacopy_transfer::linux::{CopyProfile, PlanAttempt, StageFailure};
+use exacopy_transfer::linux::{CopyProfile, PlanAttempt};
 use uuid::{Builder, Uuid};
 
 use crate::args::CopyCommand;
@@ -219,10 +221,10 @@ fn stage_kind(error: &StageError) -> ErrorKind {
 #[cfg(test)]
 mod tests {
 	use exacopy_engine::linux::LocalCopyError;
+	use exacopy_engine::linux::StageFailure;
 	use exacopy_journal::frame::FrameKind;
 	use exacopy_journal::{DurableJournalError, VerificationRecordError};
 	use exacopy_platform::linux::StageError;
-	use exacopy_transfer::linux::StageFailure;
 	use rustix::io::Errno;
 
 	use super::{ErrorKind, copy_kind, stage_failure_kind};

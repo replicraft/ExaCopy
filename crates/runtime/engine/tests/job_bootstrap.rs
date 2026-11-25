@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use ed25519_dalek::SigningKey;
 use exacopy_endpoint::UnixComponent;
+use exacopy_engine::linux::{JobBootstrapError, PreparedJob};
 use exacopy_journal::frame::{ChainHead, FrameKind, FrameReader};
 use exacopy_journal::{
 	DestinationRootBinding, JobPrepared, JournalContext, JournalEpoch, JournalJobId,
@@ -17,7 +18,7 @@ use exacopy_journal::{
 	OwnerTimestamp, OwnerToken, PlanDigest, RootCapabilityId,
 };
 use exacopy_platform::linux::{DestinationRoot, StageError};
-use exacopy_transfer::linux::{JobBootstrap, JobBootstrapError, JobStep, PreparedJob};
+use exacopy_transfer::linux::{JobBootstrap, JobStep};
 
 const JOB_DIRECTORY: &str = "fixture-job";
 const OWNER: &str = "owner.cbor";

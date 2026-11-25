@@ -1,77 +1,58 @@
-use exacopy_content::validate_stream_input;
 use exacopy_endpoint::UnixComponent;
-use exacopy_platform::linux::{DestinationRoot, RecoveryFile, RecoveryWriteLease};
 
 use super::super::CopyReceipt;
-use super::{RecoveryInspectError, RecoveryInspection, RecoveryProfile, RecoveryStep};
+use super::{InspectionError, RecoveryInspection, RecoveryProfile, RecoveryStep};
+use super::{LeaseReadError, RecoveryLease};
 
 mod capabilities;
 mod error;
-mod native;
+mod held;
 mod protocol;
 
-pub use error::RecoveryFinishError;
+pub use capabilities::{FinishReceiptDirectory, ReceiptLease};
 
-/// Completes the journal and receipt after an already-published Linux copy.
-///
-/// The caller authorizes this specific job under the held destination and supplies its
-/// independently trusted profile. Recovery obtains an exclusive job lease, verifies the
-/// historical evidence and freshly checks the current published inode, then synchronizes
-/// the relevant directories and completes the job's private history. Running this again
-/// after receipt commitment returns the existing complete observation.
-///
-/// An intact private stage, a conflict, and a torn journal yield their current
-/// inspection dispositions. This operation issues no new publication or deletion.
+pub use error::FinishFailure;
+use protocol::FinishError;
+
+/// Completes an already-published copy under the supplied exclusive lease.
 ///
 /// # Errors
-/// Reports authentication, observation, effect recording, or barrier failures. Existing
-/// source and destination names and all previously reached records remain in place.
-pub fn finish_recovery(
-	destination: &DestinationRoot,
+/// Fails on unsupported history, changed observations, or incomplete durable effects.
+pub fn finish_with_lease<L: RecoveryLease>(
+	lease: &L,
 	name: UnixComponent<'_>,
 	profile: RecoveryProfile<'_>,
 	scratch: &mut [u8],
-) -> Result<RecoveryInspection, RecoveryFinishError> {
-	validate_stream_input(0, scratch.len()).map_err(super::RecoveryInspectError::Input)?;
-	let lease = acquire_lease(destination, name)?;
-	finish_leased(&lease, name, profile, scratch)
+) -> Result<RecoveryInspection, FinishFailure<LeaseReadError<L>, L::EffectError>> {
+	protocol::finish(&held::HeldRecovery(lease), name, profile, scratch)
+		.map_err(FinishFailure::from)
 }
 
-pub(super) fn acquire_lease<'root>(
-	destination: &'root DestinationRoot,
-	name: UnixComponent<'_>,
-) -> Result<RecoveryWriteLease<'root>, RecoveryInspectError> {
-	let previous = destination
-		.open_recovery_job(name)
-		.map_err(RecoveryStep::Job.platform())?;
-	destination
-		.try_recovery_write_lease(name, previous.identity())
-		.map_err(RecoveryStep::Lease.platform())
-}
-
-pub(super) fn finish_leased(
-	lease: &RecoveryWriteLease<'_>,
-	name: UnixComponent<'_>,
-	profile: RecoveryProfile<'_>,
-	scratch: &mut [u8],
-) -> Result<RecoveryInspection, RecoveryFinishError> {
-	protocol::finish(lease, name, profile, scratch).map_err(RecoveryFinishError::from)
-}
-
-pub(super) fn sync_receipt(
-	lease: &RecoveryWriteLease<'_>,
+pub(super) fn sync_leased_receipt<L: RecoveryLease>(
+	lease: &L,
 	receipt: &CopyReceipt<'_>,
-	existing: Option<&RecoveryFile>,
-) -> Result<(), RecoveryFinishError> {
-	protocol::sync_receipt(lease, receipt, existing).map_err(RecoveryFinishError::from)
+) -> Result<(), FinishFailure<LeaseReadError<L>, L::EffectError>> {
+	protocol::sync_receipt(&held::HeldRecovery(lease), receipt, None).map_err(FinishFailure::from)
 }
 
-pub(super) fn required<T>(value: Option<T>) -> Result<T, RecoveryFinishError> {
-	value.ok_or(RecoveryFinishError::IncompleteEvidence)
+pub(super) fn completion<R, S>(step: RecoveryStep) -> impl FnOnce(S) -> FinishFailure<R, S> {
+	move |source| FinishFailure::Completion(step.platform()(source))
 }
 
-pub(super) fn completion(
-	step: RecoveryStep,
-) -> impl FnOnce(exacopy_platform::linux::StageError) -> RecoveryFinishError {
-	move |source| RecoveryFinishError::Completion(step.platform()(source))
+impl<R, S> From<FinishError<InspectionError<R, S>, S>> for FinishFailure<R, S> {
+	fn from(error: FinishError<InspectionError<R, S>, S>) -> Self {
+		match error {
+			FinishError::Inspection(error) => Self::Inspection(error),
+			FinishError::Completion(error) => Self::Completion(error),
+			FinishError::Effect { step, source } => completion(step)(source),
+			FinishError::IncompleteEvidence => Self::IncompleteEvidence,
+			FinishError::EpochExhausted => Self::EpochExhausted,
+			FinishError::Resume(error) => Self::Resume(error),
+			FinishError::Decision(error) => Self::Decision(error),
+			FinishError::Publication(error) => Self::Publication(error),
+			FinishError::Journal { kind, source } => Self::Journal { kind, source },
+			FinishError::Receipt(error) => Self::Receipt(error),
+			FinishError::WriteReceipt(error) => Self::WriteReceipt(error),
+		}
+	}
 }

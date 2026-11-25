@@ -12,7 +12,7 @@ behavior, recovery paths and their evidence.
 | Owner | Boundary |
 | --- | --- |
 | Applications | Parse user intent, select the concrete platform implementation and compose capabilities with engines. Render engine results and map them to exit status or UI state. |
-| Local runtime | Compose held native capabilities with reusable operation policies. Linux CLI planning and fresh execution use `exacopy-engine`. |
+| Local runtime | Compose held native capabilities with reusable operation policies. Linux CLI planning, copy and recovery use `exacopy-engine`. |
 | Core model | Own typed identities, checked ranges and pure preserve-mode transitions. Keep OS, database, async runtime, network implementation and presentation dependencies outside this boundary. |
 | Endpoint contracts | Define bounded capabilities that callers can supply and adapters can implement. Represent unsupported operations explicitly. |
 | Operation engines | Own comparison, transfer orchestration, recovery decisions and eventual synchronization/conflict policy. Consume capabilities. |
@@ -32,9 +32,10 @@ read, write, close and metadata capabilities.
 Linux job bootstrap and publication, and the experimental APFS publication
 coordinator, sequence their effects through supplied capabilities. Native
 facades preserve the existing entry points and translate adapter failures.
-Recovery classification consumes independently obtained observations. Native
-recovery orchestration still uses platform types, so the transfer-to-platform
-exception remains necessary.
+Recovery classification consumes independently obtained observations. Linux
+recovery runs through held job, inventory, and stage capabilities.
+Experimental APFS still uses native entry points in transfer, so its
+transfer-to-platform exception remains necessary.
 
 Generic I/O or network libraries belong outside product workflows.
 When transports are introduced, one capability policy owns admission and

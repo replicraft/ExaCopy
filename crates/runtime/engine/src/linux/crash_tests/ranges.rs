@@ -5,12 +5,12 @@ use exacopy_content::{ContentDigest, measure_at};
 use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{MAX_CHECKPOINT_RANGE_BYTES, RangeCheckpoint, RangePage};
 
-use super::super::super::{RecoveryDisposition, RecoveryProfile, inspect_recovery};
 use super::evidence::{STAGE_DIRECTORY, read_frames};
 use super::{
 	Checkpoint, Fixture, JOB, RANGE_CHECKPOINTS, STAGE_FILE, TARGET, component, fixture_signer,
 	open_destination, profile_id, run_copy_worker,
 };
+use crate::linux::{RecoveryDisposition, RecoveryProfile, inspect_recovery};
 
 #[test]
 fn kill_after_range_page_sync_before_frame() {

@@ -3,10 +3,9 @@
 use ed25519_dalek::VerifyingKey;
 use exacopy_content::{CheckpointCandidate, validate_stream_input};
 use exacopy_endpoint::UnixComponent;
+use exacopy_endpoint::linux_recovery::{RecoveryInventoryView, RecoveryJobView, RecoveryRecord};
 use exacopy_journal::{MAX_OWNER_BYTES, OwnerProfileId, OwnerRecord, OwnerStateDirectory};
-use exacopy_platform::linux::{DestinationRoot, RecoveryFile, RecoveryInventory, RecoveryJob};
 
-use super::job::native_identity;
 use super::{
 	JournalBoundary, JournalReplay, JournalTail, LocalCopyPlan, MAX_COPY_RECEIPT_BYTES,
 	MAX_LOCAL_COPY_PLAN_BYTES, replay_journal,
@@ -16,21 +15,26 @@ mod artifacts;
 mod classify;
 mod error;
 mod finish;
-mod native;
+mod lease;
+mod observations;
 mod resume;
 mod retry;
 mod source;
 
 use artifacts::{check_receipt, load_range_pages};
 use classify::classify;
-pub use error::{RecoveryInspectError, RecoveryStep};
-pub use finish::{RecoveryFinishError, finish_recovery};
-use native::{
-	observe_names, open_receipt, read_artifact, read_checkpoint, recheck_receipt, recheck_record,
-	verify,
+pub use error::{InspectionError, RecoveryStep};
+pub use finish::{FinishFailure, finish_with_lease};
+pub use lease::{
+	FinishReceiptDirectory, LeaseInventory, LeaseReadError, ReceiptLease, RecoveryLease,
+	RecoveryStageLease, ResumeStageDirectory,
 };
-pub use resume::resume_recovery;
-pub use retry::{RecoveryRetryError, RecoverySource, retry_recovery};
+use observations::{
+	observe_names, open_receipt, read_artifact, read_checkpoint, recheck_receipt, recheck_record,
+	record_identity, verify,
+};
+pub use resume::resume_with_lease;
+pub use retry::{RecoverySource, SourceRecoveryFailure, retry_with_lease};
 
 /// Ownership trust supplied independently of the selected job directory.
 #[derive(Debug, Clone, Copy)]
@@ -105,61 +109,49 @@ pub enum RecoveryIssue {
 	MissingCommittedReceipt,
 }
 
-/// Inspects a local Linux job from a held destination root using independently supplied trust.
-///
-/// Calls use read-only, same-mount handles to the job, records and current namespace.
-/// A shared job lease excludes cooperating copy writers during inspection. Bindings and
-/// inode observations are checked again before returning. Other actors can still change
-/// the filesystem between observations. Ordinary file reads can advance access times.
+/// Checks a held job under the caller's retained read or exclusive lease.
 ///
 /// # Errors
-/// Rejects unsupported or unauthenticated evidence, unsafe namespace entries, changed
-/// observations, and bounded read or decoding failures. An error supplies no basis for mutation.
-pub fn inspect_recovery(
-	destination: &DestinationRoot,
+/// Refuses unsupported scratch, unsafe observations, and unauthenticated evidence.
+pub fn inspect_with_job<J: RecoveryJobView>(
+	job: &J,
 	name: UnixComponent<'_>,
 	profile: RecoveryProfile<'_>,
 	scratch: &mut [u8],
-) -> Result<RecoveryInspection, RecoveryInspectError> {
-	validate_stream_input(0, scratch.len()).map_err(RecoveryInspectError::Input)?;
-	let job = destination
-		.open_recovery_job(name)
-		.map_err(RecoveryStep::Job.platform())?;
-	let _lease = job
-		.try_read_lease()
-		.map_err(RecoveryStep::Lease.platform())?;
-	let history = RecoveryHistory::load(&job, name, profile)?;
+) -> Result<RecoveryInspection, InspectionError<J::ReadError, J::NamespaceError>> {
+	validate_stream_input(0, scratch.len()).map_err(InspectionError::Input)?;
+	let history = RecoveryHistory::load(job, name, profile)?;
 	let plan = history.plan()?;
 	let names = job
 		.inventory(plan.attempt().stage_name, plan.destination().component)
 		.map_err(RecoveryStep::Namespace.platform())?;
-	history.inspect(&job, &names, scratch)
+	history.inspect(job, &names, scratch)
 }
 
-struct RecoveryHistory {
-	owner_file: RecoveryFile,
+struct RecoveryHistory<F> {
+	owner_file: F,
 	owner: OwnerRecord,
-	plan_file: RecoveryFile,
+	plan_file: F,
 	plan_bytes: Vec<u8>,
-	journal_file: RecoveryFile,
+	journal_file: F,
 	journal: JournalReplay,
 	ranges: Vec<CheckpointCandidate>,
-	receipt: Option<RecoveryFile>,
+	receipt: Option<F>,
 }
 
-impl RecoveryHistory {
-	fn load(
-		job: &RecoveryJob<'_>,
+impl<F: RecoveryRecord> RecoveryHistory<F> {
+	fn load<J: RecoveryJobView<Record = F, ReadError = F::Error>>(
+		job: &J,
 		name: UnixComponent<'_>,
 		profile: RecoveryProfile<'_>,
-	) -> Result<Self, RecoveryInspectError> {
+	) -> Result<Self, InspectionError<F::Error, J::NamespaceError>> {
 		let owner_file = job.open_owner().map_err(RecoveryStep::Owner.platform())?;
 		let owner = OwnerRecord::decode(
 			&read_artifact(&owner_file, RecoveryStep::Owner, MAX_OWNER_BYTES)?,
 			profile.id,
 			profile.verifying_key,
 		)
-		.map_err(RecoveryInspectError::Owner)?;
+		.map_err(InspectionError::Owner)?;
 		let manifest = owner.manifest();
 		let original_directories = [
 			OwnerStateDirectory::Journal,
@@ -172,30 +164,31 @@ impl RecoveryHistory {
 			OwnerStateDirectory::Receipts,
 			OwnerStateDirectory::Stage,
 		];
-		if manifest.state_root != native_identity(job.identity())
-			|| manifest.destination_device != job.destination_identity().device()
+		let (job_identity, destination_identity) = job.identities();
+		if manifest.state_root != record_identity(job_identity)
+			|| manifest.destination_device != destination_identity.device
 			|| (manifest.directories != original_directories
 				&& manifest.directories != checkpoint_directories)
 		{
-			return Err(RecoveryInspectError::OwnerBinding);
+			return Err(InspectionError::OwnerBinding);
 		}
 
 		let plan_file = job.open_plan().map_err(RecoveryStep::Plan.platform())?;
 		let plan_bytes = read_artifact(&plan_file, RecoveryStep::Plan, MAX_LOCAL_COPY_PLAN_BYTES)?;
-		let plan = LocalCopyPlan::decode(&plan_bytes).map_err(RecoveryInspectError::Plan)?;
+		let plan = LocalCopyPlan::decode(&plan_bytes).map_err(InspectionError::Plan)?;
 		if plan.attempt().job_name != name
-			|| plan.destination().root.identity != native_identity(job.destination_identity())
+			|| plan.destination().root.identity != record_identity(destination_identity)
 			|| plan.context().plan_digest != manifest.plan_digest
 			|| plan.attempt().job != manifest.job
 		{
-			return Err(RecoveryInspectError::PlanBinding);
+			return Err(InspectionError::PlanBinding);
 		}
 
 		let mut journal_file = job
 			.open_first_segment()
 			.map_err(RecoveryStep::Journal.platform())?;
-		let journal = replay_journal(&mut journal_file, &plan, &owner)
-			.map_err(RecoveryInspectError::Journal)?;
+		let journal =
+			replay_journal(&mut journal_file, &plan, &owner).map_err(InspectionError::Journal)?;
 		let ranges = load_range_pages(&journal, plan.source().length, |page| {
 			read_checkpoint(job, page)
 		})?;
@@ -216,16 +209,16 @@ impl RecoveryHistory {
 		})
 	}
 
-	fn plan(&self) -> Result<LocalCopyPlan<'_>, RecoveryInspectError> {
-		LocalCopyPlan::decode(&self.plan_bytes).map_err(RecoveryInspectError::Plan)
+	fn plan<N>(&self) -> Result<LocalCopyPlan<'_>, InspectionError<F::Error, N>> {
+		LocalCopyPlan::decode(&self.plan_bytes).map_err(InspectionError::Plan)
 	}
 
-	fn inspect(
+	fn inspect<'job, J: RecoveryJobView<Record = F, ReadError = F::Error>>(
 		&self,
-		job: &RecoveryJob<'_>,
-		names: &RecoveryInventory<'_>,
+		job: &'job J,
+		names: &J::Inventory<'job>,
 		scratch: &mut [u8],
-	) -> Result<RecoveryInspection, RecoveryInspectError> {
+	) -> Result<RecoveryInspection, InspectionError<F::Error, J::NamespaceError>> {
 		let disposition = classify(
 			observe_names(names),
 			&self.journal,
@@ -249,4 +242,22 @@ impl RecoveryHistory {
 			disposition,
 		})
 	}
+}
+
+/// The typed result of retrying or resuming under supplied lease capabilities.
+pub type SourceRecoveryResult<L> = Result<
+	RecoveryInspection,
+	SourceRecoveryFailure<
+		LeaseReadError<L>,
+		<L as ReceiptLease>::EffectError,
+		<L as RecoveryStageLease>::PublishError,
+	>,
+>;
+
+fn after_admission<R, S, P>(error: FinishFailure<R, S>) -> SourceRecoveryFailure<R, S, P> {
+	match error {
+		FinishFailure::Inspection(error) => FinishFailure::Completion(error),
+		error => error,
+	}
+	.into()
 }

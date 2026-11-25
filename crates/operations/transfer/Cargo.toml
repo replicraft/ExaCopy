@@ -25,11 +25,7 @@ exacopy-content.workspace = true
 exacopy-endpoint.workspace = true
 exacopy-journal.workspace = true
 exacopy-model.workspace = true
-exacopy-platform.workspace = true
 minicbor.workspace = true
-
-[target.'cfg(target_os = "linux")'.dev-dependencies]
-rustix.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 blake3 = { workspace = true, optional = true }

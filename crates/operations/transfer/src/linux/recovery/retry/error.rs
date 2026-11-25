@@ -2,25 +2,25 @@ use std::{error::Error, fmt};
 
 use exacopy_content::MeasureError;
 use exacopy_journal::VerificationRecordError;
-use exacopy_platform::linux::{PublishError, ReadError};
 
-use super::super::super::{LocalCopyError, StageFailure};
-use super::super::{RecoveryFinishError, RecoveryInspectError, RecoveryIssue};
+use super::super::super::CopyError;
+use super::super::{FinishFailure, InspectionError, RecoveryIssue};
+use crate::linux_staging::StageFailure;
 
 /// A retained-stage recovery attempt that could not establish or publish its evidence.
 #[derive(Debug)]
 #[non_exhaustive]
-pub enum RecoveryRetryError {
+pub enum SourceRecoveryFailure<R, S, P> {
 	/// The authenticated job or its journal could not be used or finished.
-	Recovery(RecoveryFinishError),
+	Recovery(FinishFailure<R, S>),
 	/// The current source directory grant, identity, metadata, or bytes disagree with the plan.
 	SourceMismatch,
 	/// Opening the expected raw source component under the supplied grant failed.
-	OpenSource(ReadError),
+	OpenSource(R),
 	/// A source observation or required source policy failed.
-	SourcePolicy(StageFailure),
+	SourcePolicy(StageFailure<R, S>),
 	/// A full source reread could not complete.
-	MeasureSource(MeasureError<ReadError>),
+	MeasureSource(MeasureError<R>),
 	/// A freshly read retained stage disagrees with the journal.
 	Stage(RecoveryIssue),
 	/// Fresh measurements cannot form compatible verification evidence.
@@ -28,28 +28,30 @@ pub enum RecoveryRetryError {
 	/// The previous decision consumed the last available effect sequence.
 	EffectSequenceExhausted,
 	/// The new epoch session did not accept its expected event.
-	Model(StageFailure),
+	Model(StageFailure<R, S>),
 	/// Preparing, rewriting or fully verifying the retained partial stage failed.
-	ResumeStage(StageFailure),
+	ResumeStage(StageFailure<R, S>),
 	/// Recording or publishing the newly verified copy failed.
-	ResumeCopy(Box<LocalCopyError>),
+	ResumeCopy(Box<CopyError<R, S, P>>),
 	/// The exclusive rename or its postconditions failed after the fresh synchronized intent.
-	Publish(PublishError),
+	Publish(P),
 }
 
-impl From<RecoveryFinishError> for RecoveryRetryError {
-	fn from(error: RecoveryFinishError) -> Self {
+impl<R, S, P> From<FinishFailure<R, S>> for SourceRecoveryFailure<R, S, P> {
+	fn from(error: FinishFailure<R, S>) -> Self {
 		Self::Recovery(error)
 	}
 }
 
-impl From<RecoveryInspectError> for RecoveryRetryError {
-	fn from(error: RecoveryInspectError) -> Self {
+impl<R, S, P> From<InspectionError<R, S>> for SourceRecoveryFailure<R, S, P> {
+	fn from(error: InspectionError<R, S>) -> Self {
 		Self::Recovery(error.into())
 	}
 }
 
-impl fmt::Display for RecoveryRetryError {
+impl<R: fmt::Display, S: fmt::Display, P: fmt::Display> fmt::Display
+	for SourceRecoveryFailure<R, S, P>
+{
 	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
 			Self::Recovery(error) => error.fmt(formatter),
@@ -83,7 +85,9 @@ impl fmt::Display for RecoveryRetryError {
 	}
 }
 
-impl Error for RecoveryRetryError {
+impl<R: Error + 'static, S: Error + 'static, P: Error + 'static> Error
+	for SourceRecoveryFailure<R, S, P>
+{
 	fn source(&self) -> Option<&(dyn Error + 'static)> {
 		match self {
 			Self::Recovery(error) => Some(error),

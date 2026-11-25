@@ -5,6 +5,7 @@ mod component;
 pub mod linux_copy;
 pub mod linux_job;
 pub mod linux_publication;
+pub mod linux_recovery;
 pub mod linux_staging;
 mod positioned;
 mod read_view;

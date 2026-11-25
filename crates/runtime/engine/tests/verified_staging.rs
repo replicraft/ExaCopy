@@ -13,12 +13,13 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use exacopy_content::StreamInputError;
 use exacopy_endpoint::UnixComponent;
+use exacopy_engine::linux::{StageFailure, stage_verified};
 use exacopy_model::{CopyBinding, CopyPhase, EntryId, JobId, RunEpoch, StageId};
 use exacopy_platform::linux::{
 	DestinationRoot, ExtendedAttributes, ReadError, ReadRoot, SourceFile, StageDirectory,
 	StageError,
 };
-use exacopy_transfer::linux::{StageFailure, StageRequest, stage_verified};
+use exacopy_transfer::linux::StageRequest;
 use rustix::fs::{self as unix, XattrFlags};
 
 const SOURCE: &[u8] = b"input-\xff";

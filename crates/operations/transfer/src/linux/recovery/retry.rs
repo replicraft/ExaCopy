@@ -1,51 +1,51 @@
-use exacopy_content::validate_stream_input;
 use exacopy_endpoint::UnixComponent;
+use exacopy_endpoint::linux_copy::{CopySource, CopySourceRoot};
+use exacopy_endpoint::linux_recovery::{RecoveryJobView, RecoveryRecord};
 use exacopy_journal::RootCapabilityId;
-use exacopy_platform::linux::{DestinationRoot, ReadRoot};
 
-use super::finish::{acquire_lease, finish_leased};
+use super::super::CopyCheckpoint;
+use super::finish::finish_with_lease;
 use super::source::open_source;
-use super::{
-	RecoveryDisposition, RecoveryFinishError, RecoveryHistory, RecoveryInspectError,
-	RecoveryInspection, RecoveryProfile, RecoveryStep,
-};
+use super::{RecoveryDisposition, RecoveryHistory, RecoveryProfile, RecoveryStep};
 
 mod engine;
 mod error;
-mod native;
+mod held;
 
 use engine::RetryHistory;
-pub use error::RecoveryRetryError;
-use native::{NativeRetainedStage, NativeRetryJournal};
+pub use error::SourceRecoveryFailure;
 
 /// The current source-directory grant for this retained copy.
 #[derive(Clone, Copy)]
-pub struct RecoverySource<'root> {
+pub struct RecoverySource<'root, S> {
 	/// A held directory opened with current authority to read the source.
-	pub root: &'root ReadRoot,
+	pub root: &'root S,
 	/// The source capability ID independently assigned by the caller.
 	pub id: RootCapabilityId,
 }
 
-/// Retries the no-clobber publication of a retained, sealed Linux stage.
-///
-/// The source grant and fresh source read must match the accepted copy history. An exclusive
-/// recovery lease, freshly checked private stage, and new synchronized publication intent
-/// are required before publication. If the target is already published, recovery can finish
-/// its existing receipt under the same lease without another namespace mutation.
+/// Rechecks recovery and attempts a retained stage through the supplied exclusive lease.
 ///
 /// # Errors
-/// Conflicting or incomplete evidence leaves existing files and journal records available
-/// for inspection. An ambiguous effect must be reconciled against current filesystem state.
-pub fn retry_recovery(
-	destination: &DestinationRoot,
+/// Refuses stale authority, changed evidence, and uncertain publication results.
+pub fn retry_with_lease<L, S>(
+	lease: &L,
 	name: UnixComponent<'_>,
 	profile: RecoveryProfile<'_>,
-	source: RecoverySource<'_>,
+	source: RecoverySource<'_, S>,
 	scratch: &mut [u8],
-) -> Result<RecoveryInspection, RecoveryRetryError> {
-	validate_stream_input(0, scratch.len()).map_err(RecoveryInspectError::Input)?;
-	let lease = acquire_lease(destination, name)?;
+	checkpoint: fn(CopyCheckpoint),
+) -> super::SourceRecoveryResult<L>
+where
+	L: super::RecoveryStageLease,
+	S: CopySourceRoot<
+			Source: CopySource<
+				Identity = <L::File as RecoveryRecord>::Identity,
+				Metadata = L::Metadata,
+			>,
+			Error = super::LeaseReadError<L>,
+		>,
+{
 	let job = lease.job();
 	let history = RecoveryHistory::load(job, name, profile)?;
 	let plan = history.plan()?;
@@ -55,7 +55,7 @@ pub fn retry_recovery(
 	let current = history.inspect(job, &names, scratch)?;
 	match current.disposition {
 		RecoveryDisposition::PossibleRetry => {
-			let stage = NativeRetainedStage::new(&lease, &names)?;
+			let stage = held::HeldStage::new(lease, &names)?;
 			let source = open_source(&plan, &history.journal, source)?;
 			engine::publish(
 				RetryHistory {
@@ -65,20 +65,15 @@ pub fn retry_recovery(
 				},
 				&source,
 				&stage,
-				|boundary| NativeRetryJournal::open(&lease, &history.journal_file, boundary),
+				|boundary| held::open_journal(lease, &history.journal_file, boundary, checkpoint),
 				scratch,
 			)
-			.map_err(native::retry_error)?;
+			.map_err(held::retry_error)?;
 		}
 		RecoveryDisposition::PublishedNeedsBarriers
 		| RecoveryDisposition::PublishedNeedsReceipt { .. } => {}
 		_ => return Ok(current),
 	}
 
-	finish_leased(&lease, name, profile, scratch)
-		.map_err(|error| match error {
-			RecoveryFinishError::Inspection(error) => RecoveryFinishError::Completion(error),
-			error => error,
-		})
-		.map_err(RecoveryRetryError::Recovery)
+	finish_with_lease(lease, name, profile, scratch).map_err(super::after_admission)
 }

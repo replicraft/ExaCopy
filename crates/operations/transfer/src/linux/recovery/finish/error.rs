@@ -4,16 +4,16 @@ use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{DurableJournalError, PublicationRecordError, RecoveryRecordError};
 
 use super::super::super::ReceiptError;
-use super::super::RecoveryInspectError;
+use super::super::InspectionError;
 
 /// A failure while checking or completing an already-published copy.
 #[derive(Debug)]
 #[non_exhaustive]
-pub enum RecoveryFinishError {
+pub enum FinishFailure<R, S> {
 	/// A held object or recorded artifact did not support inspection.
-	Inspection(RecoveryInspectError),
+	Inspection(InspectionError<R, S>),
 	/// A held operation failed after the job was admitted for completion.
-	Completion(RecoveryInspectError),
+	Completion(InspectionError<R, S>),
 	/// The verified prefix lacked a reference required for completion.
 	IncompleteEvidence,
 	/// No later recovery generation can be assigned.
@@ -37,13 +37,13 @@ pub enum RecoveryFinishError {
 	WriteReceipt(io::Error),
 }
 
-impl From<RecoveryInspectError> for RecoveryFinishError {
-	fn from(error: RecoveryInspectError) -> Self {
+impl<R, S> From<InspectionError<R, S>> for FinishFailure<R, S> {
+	fn from(error: InspectionError<R, S>) -> Self {
 		Self::Inspection(error)
 	}
 }
 
-impl fmt::Display for RecoveryFinishError {
+impl<R: fmt::Display, S: fmt::Display> fmt::Display for FinishFailure<R, S> {
 	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
 			Self::Inspection(error) | Self::Completion(error) => error.fmt(formatter),
@@ -77,7 +77,7 @@ impl fmt::Display for RecoveryFinishError {
 	}
 }
 
-impl Error for RecoveryFinishError {
+impl<R: Error + 'static, S: Error + 'static> Error for FinishFailure<R, S> {
 	fn source(&self) -> Option<&(dyn Error + 'static)> {
 		match self {
 			Self::Inspection(error) | Self::Completion(error) => Some(error),
