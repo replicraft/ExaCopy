@@ -172,6 +172,45 @@ lacks macrotest and trybuild. ExaCopy's locked UUID WebAssembly chain
 includes this crate without activating it in the workspace feature graph.
 """
 
+[[audits.rustversion]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.0.23"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f.
+Packaged macro and build sources match upstream commit
+3a7c76605450b9a7299c6502a421909de9126a59. The build script queries the
+configured compiler or wrapper, parses numeric fields and a closed channel
+enum, and writes a typed version expression to Cargo's OUT_DIR. It can
+accept parseable stdout after a nonzero exit and has no child timeout.
+The compiler, wrapper, Cargo build directory and macro inputs are trusted.
+Expansion selects or forwards caller tokens, adds the documented attributes,
+or emits a boolean or diagnostic. Compile-time date diagnostics consult the
+host clock and package name. Rust 1.100.0 macro expansion and version parser
+checks passed. The upstream trybuild UI suite was blocked by an uncached
+dependency. The lockfile includes this crate through wasm-bindgen.
+"""
+
+[[audits.serde_spanned]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.1.3"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+9c187e0a369471c550af028cba56d4f4fa2a489ad28151ae95a4d340a2a8b782.
+Packaged Rust sources match upstream TOML commit
+563cb1a5d133e39d1008d4d4148ef35d3bba379f. Spans are descriptive byte
+ranges. Callers must validate their bounds and encoding boundaries before
+using them as indexes. Equality, ordering, hashing and serialization use
+the value alone. The Serde reader rejects duplicate, missing and unknown
+private fields. Its format adapter assumes Serde's map access protocol.
+ExaCopy selects alloc, serde and std via TOML in xtask. The native TOML
+span and serialization fixture passed on Rust 1.100.0. The exact published
+test lock was blocked by an uncached syn version. There is no unsafe code,
+build script, or ambient I/O.
+"""
+
 [[audits.thiserror]]
 who = "OpenAI Codex (dependency source review)"
 criteria = "safe-to-deploy"
@@ -213,6 +252,26 @@ Four nightly-only backtrace tests passed. The offline upstream trybuild
 suite and exact diagnostic comparisons were unavailable.
 """
 
+[[audits.toml_datetime]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.1.3+spec-1.1.0"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+173f25c883cd2176a2d8212155638c0a60d484a9d84546d270866f40f56b6e49.
+Packaged Rust sources match upstream TOML commit
+563cb1a5d133e39d1008d4d4148ef35d3bba379f. Reviewed byte boundaries,
+calendar and offset bounds, fractional truncation, formatting and Serde's
+private datetime representation. String and Serde text parsing validate the
+numeric fields. Callers constructing values directly must uphold the documented
+ranges and combinations. A directly constructed minimum i16 offset panics in
+formatting under overflow checks. The format adapter assumes Serde's map
+access protocol. ExaCopy selects alloc, serde and std via TOML in xtask.
+Native roundtrip and calendar boundary checks passed on Rust 1.100.0. The
+published package check compiled and had zero tests after retrying with its
+dev dependencies available. There is no unsafe code, build script, or ambient I/O.
+"""
+
 [[audits.unicode-ident]]
 who = "OpenAI Codex (dependency source review)"
 criteria = "safe-to-deploy"
@@ -230,6 +289,51 @@ Rust 1.100.0 Apple ARM64, both properties matched Unicode 18.0.0 UCD data for
 all 1112064 valid scalars. The archive ships the tables as Rust constants.
 The upstream generation tool is outside the package, and the package's CI
 configuration is outside Cargo's dependency build.
+"""
+
+[[audits.uuid]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.29.3"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+3c14b15dffa2f4bd712103e857140aa04a4f2ff6e955c77d7eb8e53ee02a3b64.
+The archive identifies commit 266c044a9cd9845de011251525f45a6bee341774,
+corroborated by the upstream v1.29.3 release. The package has no build
+script or executable payload. Its exported literal macro performs a
+compile-time parse.
+
+Reviewed the shipped representation, parse and format paths and optional
+feature code. Uuid and its formatting wrappers are transparent over a
+16-byte array. The braced format conversion uses a padding-free C layout
+of byte fields. Formatting copies between disjoint equally sized slices,
+fully initializes the selected prefix to ASCII, and then borrows it as
+UTF-8. Unchecked non-nil constructors receive UUIDs with nonzero version
+bits. Text decoding and its diagnostic scan are bounded to 45 bytes.
+Borsh and byte-layout derives apply to the transparent byte wrapper.
+Serde, arbitrary, and slog adapters use caller-provided inputs and
+serializers. The optional Serde byte-sequence visitor stores 16 bytes and
+drains any remaining elements to report invalid length. Streaming callers
+need their ordinary serialized-input limits.
+
+Optional v1 and v6 generation encodes caller node IDs and timestamps.
+ContextV1 uses a native atomic or a non-Sync Cell, and the shared std v7
+context protects its counter and clock state with a mutex. Ambient access
+is limited to documented clock and entropy APIs, including the wasm Date
+and Web Crypto imports, with fixed-size randomness requests. Generation
+can panic or throw if its entropy or host clock service is unavailable.
+V3 and v5 use MD5 and SHA-1 for standardized name-derived identifiers.
+Those identifiers carry no authentication guarantee.
+
+Rust 1.100.0 aarch64 macOS passed 60 packaged feature-free tests and 112
+packaged tests using a standalone manifest over the exact archive source
+with std, arbitrary, versions 1 and 3 through 8, and the native getrandom
+backend. Two focused Serde boundary tests passed, covering text and byte
+round trips, short and long sequences, and rejection of nil for
+NonNilUuid. The full upstream Clippy and test runners were blocked during
+offline dependency resolution. Remaining optional target and dependency
+configurations were examined by source inspection. ExaCopy's production
+graph uses the feature-free byte representation and formatting.
 """
 
 [[audits.version_check]]
