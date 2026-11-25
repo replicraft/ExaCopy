@@ -10,20 +10,11 @@ use exacopy_endpoint::UnixComponent;
 use rustix::fs::{self, AtFlags, FileType, FlockOperation, Mode, OFlags, Stat};
 use rustix::io::Errno;
 
-#[allow(unsafe_code, reason = "bounded descriptor ACL attributes on Darwin")]
 mod acl;
 mod error;
 mod file;
-#[allow(
-	unsafe_code,
-	reason = "bounded descriptor xattr and resource-fork queries"
-)]
 mod metadata;
 mod observation;
-#[allow(
-	unsafe_code,
-	reason = "bounded descriptor and relative-name physical FSID attributes on Darwin"
-)]
 mod physical_fsid;
 #[path = "publication/mod.rs"]
 pub mod publication;
@@ -32,10 +23,6 @@ pub mod staging;
 #[cfg(test)]
 mod tests;
 mod thread_policy;
-#[allow(
-	unsafe_code,
-	reason = "bounded descriptor volume capability query on Darwin"
-)]
 mod volume;
 
 pub use error::ManagedReadError;

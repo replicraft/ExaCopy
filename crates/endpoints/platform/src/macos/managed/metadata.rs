@@ -1,17 +1,15 @@
 use std::fmt;
 use std::io;
-use std::os::fd::{AsRawFd as _, BorrowedFd};
-use std::ptr;
+use std::os::fd::BorrowedFd;
 
+use apfs_mounted::metadata::{self as mounted, ObservationError, XattrVisibility};
 use rustix::fs::{FileType, Mode, Stat, Timespec, Timestamps};
 
 use super::{FILE_MODE, ManagedTimestamp, acl};
 
-const FIELD_BYTES: usize = size_of::<u32>();
-const RETURNED_ATTR_BYTES: usize = size_of::<libc::attribute_set_t>();
-const RESOURCE_OFFSET: usize = FIELD_BYTES + RETURNED_ATTR_BYTES;
-const RESOURCE_BYTES: usize = RESOURCE_OFFSET + size_of::<libc::off_t>();
-const RESOURCE_FORK: &std::ffi::CStr = c"com.apple.ResourceFork";
+// Admission needs presence only. A positive kernel size exceeds this budget
+// and the mounted library returns it before allocating or reading attribute data.
+const PRESENCE_ONLY: usize = 0;
 
 fn timespec(timestamp: ManagedTimestamp) -> Timespec {
 	Timespec {
@@ -143,84 +141,61 @@ pub(super) fn check_inventory(fd: BorrowedFd<'_>) -> Result<(), BasicMetadataErr
 		return Err(BasicMetadataError::AccessControl);
 	}
 	check_fork(fd)?;
-	for options in [0, libc::XATTR_SHOWCOMPRESSION] {
-		// SAFETY: The descriptor remains borrowed. A null buffer and a zero
-		// size request only the bounded syscall's size result.
-		let list_bytes = unsafe { libc::flistxattr(fd.as_raw_fd(), ptr::null_mut(), 0, options) };
-		match list_bytes {
-			0 => {}
-			1.. => return Err(BasicMetadataError::ExtendedAttributes),
-			_ => return Err(BasicMetadataError::Inventory(io::Error::last_os_error())),
+	for visibility in [
+		XattrVisibility::Visible,
+		XattrVisibility::IncludingCompression,
+	] {
+		match mounted::list_xattrs(fd, visibility, PRESENCE_ONLY) {
+			Ok(names) if names.is_empty() => {}
+			Ok(_)
+			| Err(ObservationError::Limit {
+				limit: PRESENCE_ONLY,
+				observed: 1..,
+			}) => {
+				return Err(BasicMetadataError::ExtendedAttributes);
+			}
+			Err(error) => return Err(BasicMetadataError::Inventory(observation_io_error(error))),
 		}
 	}
 	Ok(())
 }
 
 fn check_fork(fd: BorrowedFd<'_>) -> Result<(), BasicMetadataError> {
-	// SAFETY: The descriptor and static attribute name remain valid throughout
-	// this size-only query. A null buffer and zero size request no output bytes.
-	let fork_bytes = unsafe {
-		libc::fgetxattr(
-			fd.as_raw_fd(),
-			RESOURCE_FORK.as_ptr(),
-			ptr::null_mut(),
-			0,
-			0,
-			libc::XATTR_SHOWCOMPRESSION,
-		)
-	};
-	if fork_bytes >= 0 {
-		return Err(BasicMetadataError::ResourceFork);
+	// A named attribute is ineligible by itself, including a zero-byte fork.
+	// Check it before consulting the reported fork length so already-observed
+	// presence remains a resource-fork refusal even if the length query fails.
+	require_absent_fork_attribute(mounted::read_resource_fork(fd, PRESENCE_ONLY))?;
+	match mounted::resource_fork(fd) {
+		Ok(fork) if fork.confirmed_absent() => Ok(()),
+		Ok(_) | Err(ObservationError::Malformed(_) | ObservationError::Limit { .. }) => {
+			Err(BasicMetadataError::ResourceFork)
+		}
+		Err(error) => Err(BasicMetadataError::Inventory(observation_io_error(error))),
 	}
-	let error = io::Error::last_os_error();
-	if error.raw_os_error() != Some(libc::ENOATTR) {
-		return Err(BasicMetadataError::Inventory(error));
-	}
-
-	let mut request = acl::attribute_request(libc::ATTR_CMN_RETURNED_ATTRS);
-	request.fileattr = libc::ATTR_FILE_RSRCLENGTH;
-	let mut buffer = ResourceBuffer([0; RESOURCE_BYTES]);
-	// SAFETY: The request and the aligned fixed-size buffer are initialized,
-	// writable and disjoint. The descriptor remains borrowed during the call
-	// and Darwin retains neither pointer.
-	let result = unsafe {
-		libc::fgetattrlist(
-			fd.as_raw_fd(),
-			(&raw mut request).cast(),
-			buffer.0.as_mut_ptr().cast(),
-			buffer.0.len(),
-			libc::FSOPT_REPORT_FULLSIZE,
-		)
-	};
-	if result != 0 {
-		return Err(BasicMetadataError::Inventory(io::Error::last_os_error()));
-	}
-	if !is_zero_fork(&buffer) {
-		return Err(BasicMetadataError::ResourceFork);
-	}
-	Ok(())
 }
 
-#[repr(C, align(4))]
-struct ResourceBuffer([u8; RESOURCE_BYTES]);
+fn require_absent_fork_attribute(
+	attribute: Result<Option<Vec<u8>>, ObservationError>,
+) -> Result<(), BasicMetadataError> {
+	match attribute {
+		Ok(None) => Ok(()),
+		Ok(Some(_))
+		| Err(ObservationError::Limit {
+			limit: PRESENCE_ONLY,
+			observed: 1..,
+		}) => Err(BasicMetadataError::ResourceFork),
+		Err(error) => Err(BasicMetadataError::Inventory(observation_io_error(error))),
+	}
+}
 
-fn is_zero_fork(buffer: &ResourceBuffer) -> bool {
-	let fields = [
-		RESOURCE_BYTES as u32,
-		libc::ATTR_CMN_RETURNED_ATTRS,
-		0,
-		0,
-		libc::ATTR_FILE_RSRCLENGTH,
-		0,
-	];
-	let (header, remainder) = buffer.0[..RESOURCE_OFFSET].as_chunks::<FIELD_BYTES>();
-	header.len() == fields.len()
-		&& remainder.is_empty()
-		&& header
-			.iter()
-			.zip(fields)
-			.all(|(actual, expected)| *actual == expected.to_ne_bytes())
-		&& buffer.0[RESOURCE_OFFSET..] == [0; size_of::<libc::off_t>()]
+pub(super) fn observation_io_error(error: ObservationError) -> io::Error {
+	match error {
+		ObservationError::Io(error)
+		| ObservationError::PermissionDenied(error)
+		| ObservationError::Unsupported(error) => error,
+		ObservationError::Allocation(error) => io::Error::new(io::ErrorKind::OutOfMemory, error),
+		error => io::Error::new(io::ErrorKind::InvalidData, error),
+	}
 }
 
 #[cfg(test)]

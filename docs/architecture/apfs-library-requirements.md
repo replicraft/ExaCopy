@@ -2,8 +2,9 @@
 
 This integration contract records the capabilities needed to replace ExaCopy's
 mounted APFS implementation. The original accounting used ExaCopy
-`6e24897d3a185bc5b4a3a99b6931233f24501503`; the consumer update below uses
-`885b74e`. The inspected Pomologie revision is
+`6e24897d3a185bc5b4a3a99b6931233f24501503`. Native composition was moved to
+the runtime at `885b74e`; `39af383` introduced the pinned local companion
+and its dataless and stored-name consumers. The inspected Pomologie revision is
 `8f19cd36c1d1ddf7a16a45adb849d389797dee89`, whose clean checkout now contains
 `crates/platform/apfs-mounted`. Available library APIs, consumer integration
 and native qualification are separate statuses.
@@ -44,6 +45,10 @@ production implementation contains no unsafe blocks.
 
 The subsequent wrapper cleanup replaces exclusive rename with safe `rustix`
 and entropy with safe `getrandom`, leaving 12 production unsafe blocks.
+Delegating the attribute, identity, volume, dataless-policy and stored-name
+operations to the companion removes another 11. ExaCopy now retains one
+production unsafe block for checked consuming writer close and three native
+fixture blocks. The table above records the original extraction accounting.
 
 These bindings call Darwin, and some decode its syscall response layouts.
 APFS object maps,
@@ -69,8 +74,10 @@ At ExaCopy `885b74e`, native macOS composition lives in `exacopy-engine`.
 recovery policies without importing the platform or engine crates. Safe
 `rustix` exclusive rename and `getrandom` entropy have already replaced two
 direct unsafe calls. These are ExaCopy changes; the independently committed
-Pomologie companion is a separate workstream. The companion is not yet a
-production dependency at this consumer checkpoint. An independent archive run
+Pomologie companion is a separate workstream. The companion is now a
+macOS-only production dependency with default features disabled. The source
+pin checks its clean sibling commit, tree and archive digest; Cargo.lock alone
+does not pin a path dependency. An independent archive run
 of Pomologie `8f19cd3` on native ARM64 macOS with Rust 1.100.0 passed its 50
 unit tests and one private-publication integration test. That integration
 test does not impose ExaCopy's strict xattr admission, journal intent or crash
@@ -84,9 +91,11 @@ barrier results. ExaCopy must translate these observations into its existing
 strict admission policy and persisted records. The presence of each API does
 not establish that the full consumer migration has passed.
 
-The first integration can delegate ACL/GUID, xattr/fork, volume, filesystem
-identity, materialization policy and stored-name queries independently of
-writer ownership. Required fidelity remains unchanged: visible attributes,
+The integration delegates ACL/GUID, xattr/fork, volume, filesystem identity,
+materialization policy and stored-name queries independently of writer
+ownership. Typed adapter regressions retain exact empty-ACL admission,
+zero-GUID requirements for basic files, empty named-fork refusal and
+affirmative-only volume capabilities. Required fidelity remains unchanged: visible attributes,
 including `com.apple.provenance`, cannot be ignored to obtain a passing copy.
 
 **Remaining full-port seams**
@@ -338,8 +347,7 @@ and [journal barrier](../../crates/storage/journal/src/durable.rs).
 The current checkouts are siblings under `replicraft/`. A Cargo path
 dependency can consume the companion directly while both repositories
 retain their own workspaces and Git histories. The companion package now
-exists at the following path; these declarations remain the consumer
-integration plan at the checkpoint above.
+exists at the following path and the consumer uses these declarations.
 
 In ExaCopy's root `Cargo.toml`, extend the existing dependency table.
 
@@ -362,19 +370,23 @@ The package exists in the inspected local revision. Supply that source to
 clean-room builds before enabling the dependency.
 [Cargo path dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#specifying-path-dependencies)
 
-After the first API slice is available, integrate it through thin ExaCopy
-wrappers implementing the existing endpoint contracts. Update the dependency
-matrix, feature and suitability inventories, lockfile and owning native
-tests with that slice. Keep the experimental copy admission gates in place
-through qualification.
+The initial API slice is integrated through thin ExaCopy wrappers. Its
+dependency matrix, feature and suitability inventories, root lockfile and
+source provenance checks identify the companion. Experimental copy admission
+gates remain in place through qualification. The writer, source-handle and
+journal lifecycle seams above remain for the full migration.
 
 Record both repository revisions for native integration evidence. Path
 dependencies have mutable source, and the lockfile records their package
 version without pinning the checkout's contents. A dirty library checkout
 needs its changed-source evidence. CI must supply the sibling checkout in
 the same relative layout, or use a separately reviewed commit-pinned source.
-Cargo dependency resolution may need the sibling manifest even when the
-current build target excludes macOS code.
+Cargo dependency resolution needs the sibling manifest even when the
+current build target excludes macOS code. The isolated rebuild runner
+verifies and extracts both repositories into independent sibling layouts.
+The current macOS local-path pair differs in executable digest and retains
+a failed reproducibility result; remote provisioning of the pinned revision
+is also unverified. See the [build evidence scope](../supply-chain/README.md#unsigned-cli-rebuild-evidence).
 
 **Commit-pinned Git integration**
 

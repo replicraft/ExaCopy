@@ -4,32 +4,34 @@ use std::os::unix::fs::OpenOptionsExt as _;
 
 use rustix::fs::{Timespec, Timestamps};
 
+use apfs_mounted::metadata::ObservationError;
+
 use super::{
-	BasicMetadata, BasicMetadataError, FIELD_BYTES, ManagedTimestamp, RESOURCE_BYTES,
-	RESOURCE_FORK, ResourceBuffer, check_inventory, is_zero_fork,
+	BasicMetadata, BasicMetadataError, ManagedTimestamp, check_inventory,
+	require_absent_fork_attribute,
 };
 
+const RESOURCE_FORK: &std::ffi::CStr = c"com.apple.ResourceFork";
+
 #[test]
-fn accepts_only_a_complete_zero_resource_fork_record() {
-	let mut buffer = ResourceBuffer([0; RESOURCE_BYTES]);
-	let header = [
-		RESOURCE_BYTES as u32,
-		libc::ATTR_CMN_RETURNED_ATTRS,
-		0,
-		0,
-		libc::ATTR_FILE_RSRCLENGTH,
-		0,
-	];
-	for (index, value) in header.into_iter().enumerate() {
-		let start = FIELD_BYTES * index;
-		buffer.0[start..start + FIELD_BYTES].copy_from_slice(&value.to_ne_bytes());
-	}
-	assert!(is_zero_fork(&buffer));
-	for offset in 0..buffer.0.len() {
-		let mut changed = ResourceBuffer(buffer.0);
-		changed.0[offset] ^= 1;
-		assert!(!is_zero_fork(&changed), "changed record byte {offset}");
-	}
+fn empty_and_oversize_named_forks_are_distinct_from_absence() {
+	assert!(require_absent_fork_attribute(Ok(None)).is_ok());
+	assert!(matches!(
+		require_absent_fork_attribute(Ok(Some(Vec::new()))),
+		Err(BasicMetadataError::ResourceFork)
+	));
+	assert!(matches!(
+		require_absent_fork_attribute(Err(ObservationError::Limit {
+			limit: 0,
+			observed: 16
+		})),
+		Err(BasicMetadataError::ResourceFork)
+	));
+	let error = rustix::io::Errno::ACCESS;
+	assert!(matches!(
+		require_absent_fork_attribute(Err(ObservationError::PermissionDenied(error.into()))),
+		Err(BasicMetadataError::Inventory(source)) if source.raw_os_error() == Some(error.raw_os_error())
+	));
 }
 
 #[test]
@@ -99,6 +101,7 @@ fn projects_native_stat_and_detects_independent_timestamp_changes() {
 }
 
 #[test]
+#[allow(unsafe_code, reason = "native xattr and fork fixture setup")]
 fn rejects_native_empty_xattr_and_nonempty_resource_fork() {
 	let path = std::path::Path::new("/private/tmp").join(format!(
 		"exacopy-basic-inventory-test-{}",
@@ -150,6 +153,10 @@ fn rejects_native_empty_xattr_and_nonempty_resource_fork() {
 }
 
 #[test]
+#[allow(
+	unsafe_code,
+	reason = "independent native provenance observation for the fixture"
+)]
 fn strict_inventory_has_no_provenance_exemption() {
 	let path = std::path::Path::new("/private/tmp").join(format!(
 		"exacopy-basic-provenance-test-{}",

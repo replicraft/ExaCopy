@@ -1,141 +1,91 @@
 use std::io;
-use std::os::fd::{AsRawFd as _, BorrowedFd};
+use std::os::fd::BorrowedFd;
 
-const FIELD_BYTES: usize = size_of::<u32>();
-const SECURITY_MASK: u32 = libc::ATTR_CMN_RETURNED_ATTRS | libc::ATTR_CMN_EXTENDED_SECURITY;
-const RETURNED_ATTRS: usize = FIELD_BYTES;
-const REFERENCE: usize = RETURNED_ATTRS + size_of::<libc::attribute_set_t>();
-const PAYLOAD: usize = REFERENCE + size_of::<libc::attrreference_t>();
+use apfs_mounted::metadata::{self, ApplyError, ExtendedSecurity, ObservationError};
 
-// Darwin <sys/kauth.h>: magic, two 16-byte GUIDs, ACL count and ACL flags.
-const FILESEC_MAGIC: u32 = 0x012c_c16d;
-const GUID_BYTES: usize = 16;
-const ENTRY_COUNT: usize = FIELD_BYTES + 2 * GUID_BYTES;
-const ACL_FLAGS: usize = ENTRY_COUNT + FIELD_BYTES;
-const EMPTY_FILESEC_BYTES: usize = ACL_FLAGS + FIELD_BYTES;
-
-#[repr(C, align(4))]
-struct AttributeBuffer([u8; PAYLOAD + EMPTY_FILESEC_BYTES]);
+use super::metadata::observation_io_error;
 
 pub(super) fn has_explicit_empty_acl(fd: BorrowedFd<'_>) -> io::Result<bool> {
-	Ok(is_explicit_empty_acl(&descriptor_security(fd)?.0))
+	Ok(descriptor_security(fd)?.is_explicit_empty_acl())
 }
 
 // Use only for an exclusively created child on the positively admitted APFS volume.
 pub(super) fn has_no_stage_acl_entries(fd: BorrowedFd<'_>) -> io::Result<bool> {
-	let AttributeBuffer(response) = descriptor_security(fd)?;
-	Ok(is_explicit_empty_acl(&response) || is_absent_acl(&response))
+	Ok(matches!(
+		descriptor_security(fd)?,
+		AclObservation::Absent | AclObservation::ExplicitEmpty { .. }
+	))
 }
 
 pub(super) fn has_basic_acl(fd: BorrowedFd<'_>) -> io::Result<bool> {
-	Ok(is_basic_acl(&descriptor_security(fd)?))
+	Ok(descriptor_security(fd)?.is_basic_acl())
 }
 
-fn is_basic_acl(buffer: &AttributeBuffer) -> bool {
-	is_absent_acl(&buffer.0)
-		|| (is_explicit_empty_acl(&buffer.0)
-			&& buffer.0[PAYLOAD + FIELD_BYTES..PAYLOAD + ENTRY_COUNT] == [0; 2 * GUID_BYTES])
+#[derive(Debug, PartialEq, Eq)]
+enum AclObservation {
+	Absent,
+	ExplicitEmpty { has_guid: bool },
+	Ineligible,
 }
 
-fn descriptor_security(fd: BorrowedFd<'_>) -> io::Result<AttributeBuffer> {
-	let mut request = attribute_request(SECURITY_MASK);
-	let mut buffer = AttributeBuffer([0; PAYLOAD + EMPTY_FILESEC_BYTES]);
-	// SAFETY: The borrow keeps the descriptor live. The initialized attrlist and
-	// four-byte-aligned initialized buffer are distinct, writable stack objects.
-	// Darwin receives the full writable buffer length and retains neither pointer.
-	let status = unsafe {
-		libc::fgetattrlist(
-			fd.as_raw_fd(),
-			&raw mut request as *mut _,
-			buffer.0.as_mut_ptr().cast(),
-			buffer.0.len(),
-			libc::FSOPT_REPORT_FULLSIZE,
-		)
-	};
-	if status != 0 {
-		return Err(io::Error::last_os_error());
+impl AclObservation {
+	fn from_security(security: ExtendedSecurity) -> Self {
+		match security {
+			ExtendedSecurity::NotReturned {
+				empty_reference: true,
+			} => Self::Absent,
+			ExtendedSecurity::Present(payload) => Self::from_payload(
+				payload.entry_count,
+				payload.flags,
+				&payload.owner_guid,
+				&payload.group_guid,
+			),
+			_ => Self::Ineligible,
+		}
 	}
-	Ok(buffer)
-}
 
-pub(super) fn attribute_request(commonattr: u32) -> libc::attrlist {
-	libc::attrlist {
-		bitmapcount: libc::ATTR_BIT_MAP_COUNT,
-		reserved: 0,
-		commonattr,
-		volattr: 0,
-		dirattr: 0,
-		fileattr: 0,
-		forkattr: 0,
+	fn from_payload(
+		entry_count: Option<u32>,
+		flags: u32,
+		owner_guid: &[u8],
+		group_guid: &[u8],
+	) -> Self {
+		if entry_count != Some(0) || flags != 0 {
+			return Self::Ineligible;
+		}
+		let has_guid = owner_guid.iter().chain(group_guid).any(|&byte| byte != 0);
+		Self::ExplicitEmpty { has_guid }
+	}
+
+	fn is_explicit_empty_acl(&self) -> bool {
+		matches!(self, Self::ExplicitEmpty { .. })
+	}
+
+	fn is_basic_acl(&self) -> bool {
+		matches!(self, Self::Absent | Self::ExplicitEmpty { has_guid: false })
 	}
 }
 
-fn is_explicit_empty_acl(response: &[u8]) -> bool {
-	let Some(length) = field(response, 0).and_then(|value| usize::try_from(value).ok()) else {
-		return false;
-	};
-	let Some(response) = response.get(..length) else {
-		return false;
-	};
-	if field(response, RETURNED_ATTRS) != Some(SECURITY_MASK)
-		|| response.get(RETURNED_ATTRS + FIELD_BYTES..REFERENCE) != Some(&[0; 4 * FIELD_BYTES])
-	{
-		return false;
+fn descriptor_security(fd: BorrowedFd<'_>) -> io::Result<AclObservation> {
+	match metadata::extended_security(fd, metadata::MAX_EXTENDED_SECURITY_BYTES) {
+		Ok(security) => Ok(AclObservation::from_security(security)),
+		Err(ObservationError::Malformed(_) | ObservationError::Limit { .. }) => {
+			Ok(AclObservation::Ineligible)
+		}
+		Err(error) => Err(observation_io_error(error)),
 	}
-	// The sole reference is relative to its own first byte. With only this
-	// variable attribute requested, an empty, unpadded payload follows it.
-	if field(response, REFERENCE) != Some(size_of::<libc::attrreference_t>() as u32)
-		|| field(response, REFERENCE + FIELD_BYTES) != Some(EMPTY_FILESEC_BYTES as u32)
-		|| response.len() != PAYLOAD + EMPTY_FILESEC_BYTES
-	{
-		return false;
-	}
-	let payload = &response[PAYLOAD..];
-	field(payload, 0) == Some(FILESEC_MAGIC)
-		&& field(payload, ENTRY_COUNT) == Some(0)
-		&& field(payload, ACL_FLAGS) == Some(0)
-}
-
-// APFS returns only ATTR_CMN_RETURNED_ATTRS for a fresh file with no ACL,
-// along with a zeroed unused attrreference_t in this fixed-size response.
-fn is_absent_acl(response: &[u8]) -> bool {
-	field(response, 0) == Some(PAYLOAD as u32)
-		&& field(response, RETURNED_ATTRS) == Some(libc::ATTR_CMN_RETURNED_ATTRS)
-		&& response
-			.get(RETURNED_ATTRS + FIELD_BYTES..PAYLOAD)
-			.is_some_and(|fields| fields.iter().all(|&byte| byte == 0))
-}
-
-fn field(bytes: &[u8], offset: usize) -> Option<u32> {
-	let value = bytes.get(offset..offset + FIELD_BYTES)?.try_into().ok()?;
-	Some(u32::from_ne_bytes(value))
 }
 
 // The caller may only set security metadata on a freshly created directory
 // whose descriptor has been bound to the exclusive creation.
 pub(super) fn set_empty_acl_on_fresh_directory(fd: BorrowedFd<'_>) -> io::Result<()> {
-	const SET_PAYLOAD: usize = size_of::<libc::attrreference_t>();
-	let mut request = attribute_request(libc::ATTR_CMN_EXTENDED_SECURITY);
-	let mut buffer = AttributeBuffer([0; PAYLOAD + EMPTY_FILESEC_BYTES]);
-	write_field(&mut buffer.0, 0, SET_PAYLOAD as u32);
-	write_field(&mut buffer.0, FIELD_BYTES, EMPTY_FILESEC_BYTES as u32);
-	write_field(&mut buffer.0, SET_PAYLOAD, FILESEC_MAGIC);
-	// SAFETY: fd is held throughout the call. The aligned buffer and attribute
-	// request are initialized and distinct. The one relative payload lies
-	// entirely within the supplied length, and Darwin retains neither pointer.
-	let status = unsafe {
-		libc::fsetattrlist(
-			fd.as_raw_fd(),
-			&raw mut request as *mut _,
-			buffer.0.as_mut_ptr().cast(),
-			SET_PAYLOAD + EMPTY_FILESEC_BYTES,
-			0,
-		)
-	};
-	if status != 0 {
-		return Err(io::Error::last_os_error());
-	}
-	Ok(())
+	metadata::set_empty_acl_on_fresh_directory(fd)
+		.map(|_| ())
+		.map_err(|error| match error {
+			ApplyError::Update(error) => error,
+			ApplyError::ReadBack(error) => observation_io_error(error),
+			error => io::Error::new(io::ErrorKind::InvalidData, error),
+		})
 }
 
 #[cfg(test)]
@@ -143,83 +93,42 @@ pub(super) fn set_fixture_empty_acl(fd: BorrowedFd<'_>) -> io::Result<()> {
 	set_empty_acl_on_fresh_directory(fd)
 }
 
-fn write_field(bytes: &mut [u8], offset: usize, value: u32) {
-	bytes[offset..offset + FIELD_BYTES].copy_from_slice(&value.to_ne_bytes());
+#[test]
+fn unreported_security_requires_the_exact_empty_reference_observation() {
+	let unsupported = AclObservation::from_security(ExtendedSecurity::NotReturned {
+		empty_reference: false,
+	});
+	assert_eq!(unsupported, AclObservation::Ineligible);
+	assert!(!unsupported.is_basic_acl());
+
+	let absent = AclObservation::from_security(ExtendedSecurity::NotReturned {
+		empty_reference: true,
+	});
+	assert_eq!(absent, AclObservation::Absent);
+	assert!(absent.is_basic_acl());
+	assert!(!absent.is_explicit_empty_acl());
 }
 
 #[test]
-fn rejects_uncertain_acl_payloads() {
-	let mut valid = [0; PAYLOAD + EMPTY_FILESEC_BYTES];
-	let length = valid.len() as u32;
-	write_field(&mut valid, 0, length);
-	write_field(&mut valid, RETURNED_ATTRS, SECURITY_MASK);
-	write_field(
-		&mut valid,
-		REFERENCE,
-		size_of::<libc::attrreference_t>() as u32,
-	);
-	write_field(
-		&mut valid,
-		REFERENCE + FIELD_BYTES,
-		EMPTY_FILESEC_BYTES as u32,
-	);
-	write_field(&mut valid, PAYLOAD, FILESEC_MAGIC);
-	assert!(is_explicit_empty_acl(&valid));
-	assert!(is_basic_acl(&AttributeBuffer(valid)));
-	let mut extended_security_guid = valid;
-	extended_security_guid[PAYLOAD + FIELD_BYTES] = 1;
-	assert!(is_explicit_empty_acl(&extended_security_guid));
-	assert!(!is_basic_acl(&AttributeBuffer(extended_security_guid)));
-	for (offset, value) in [
-		(0, length + 1),
-		(0, length - 1),
-		(RETURNED_ATTRS, libc::ATTR_CMN_RETURNED_ATTRS),
-		(RETURNED_ATTRS + FIELD_BYTES, 1),
-		(REFERENCE, u32::MAX),
-		(REFERENCE, 0),
-		(REFERENCE + FIELD_BYTES, 0),
-		(PAYLOAD, 0),
-		(PAYLOAD + ENTRY_COUNT, 1),
-		(PAYLOAD + ENTRY_COUNT, u32::MAX),
-		(PAYLOAD + ACL_FLAGS, 1),
-	] {
-		let mut uncertain = valid;
-		write_field(&mut uncertain, offset, value);
-		assert!(
-			!is_explicit_empty_acl(&uncertain),
-			"field {offset}, value {value}"
-		);
-	}
-	for length in 0..valid.len() {
-		assert!(
-			!is_explicit_empty_acl(&valid[..length]),
-			"truncated at {length}"
-		);
-	}
-}
+fn explicit_empty_acl_requires_zero_count_and_flags_and_basic_acl_requires_zero_guids() {
+	let zero_guid = [0; 16];
+	let mut nonzero_guid = zero_guid;
+	nonzero_guid[0] = 1;
 
-#[test]
-fn fresh_stage_acl_absence_requires_the_exact_apfs_response() {
-	let mut absent = [0; PAYLOAD + EMPTY_FILESEC_BYTES];
-	write_field(&mut absent, 0, PAYLOAD as u32);
-	write_field(&mut absent, RETURNED_ATTRS, libc::ATTR_CMN_RETURNED_ATTRS);
-	assert!(is_absent_acl(&absent));
-	assert!(is_basic_acl(&AttributeBuffer(absent)));
-	assert!(!is_explicit_empty_acl(&absent));
-	for (field, value) in [
-		(0, (PAYLOAD - FIELD_BYTES) as u32),
-		(0, (PAYLOAD + FIELD_BYTES) as u32),
-		(RETURNED_ATTRS, SECURITY_MASK),
-		(RETURNED_ATTRS + FIELD_BYTES, 1),
-		(REFERENCE, 1),
-		(REFERENCE + FIELD_BYTES, 1),
-	] {
-		let mut malformed = absent;
-		write_field(&mut malformed, field, value);
-		assert!(
-			!is_absent_acl(&malformed),
-			"accepted uncertain field {field}"
-		);
+	let empty = AclObservation::from_payload(Some(0), 0, &zero_guid, &zero_guid);
+	assert!(empty.is_explicit_empty_acl());
+	assert!(empty.is_basic_acl());
+
+	for (owner, group) in [(&nonzero_guid, &zero_guid), (&zero_guid, &nonzero_guid)] {
+		let security_guid = AclObservation::from_payload(Some(0), 0, owner, group);
+		assert!(security_guid.is_explicit_empty_acl());
+		assert!(!security_guid.is_basic_acl());
 	}
-	assert!(!is_absent_acl(&absent[..PAYLOAD - 1]));
+
+	for (count, flags) in [(None, 0), (Some(1), 0), (Some(0), 1)] {
+		let ineligible = AclObservation::from_payload(count, flags, &zero_guid, &zero_guid);
+		assert_eq!(ineligible, AclObservation::Ineligible);
+		assert!(!ineligible.is_explicit_empty_acl());
+		assert!(!ineligible.is_basic_acl());
+	}
 }
