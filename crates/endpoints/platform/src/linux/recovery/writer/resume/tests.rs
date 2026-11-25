@@ -1,5 +1,5 @@
 use std::fs::{self, File, FileTimes, Permissions};
-use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 
@@ -12,12 +12,13 @@ use rustix::fs::{XattrFlags, fsetxattr};
 
 use super::{RecoveryInventory, RecoveryWriteLease, StageError};
 use crate::linux::job::STAGE;
-use crate::linux::{DestinationRoot, PublishError};
+use crate::linux::{DestinationRoot, PublishError, ReadRoot, SourceObservation};
 use crate::scratch::Scratch;
 
 const JOB: &str = "resumable-job";
 const PART: &str = "retained-part";
 const TARGET: &str = "public-target";
+const SOURCE: &str = "source-file";
 const ORIGINAL: &[u8] = b"prefix data tail";
 const COMPLETED: &[u8] = b"prefix new! tail";
 const INCUMBENT: &[u8] = b"incumbent";
@@ -54,6 +55,113 @@ fn reopens_without_truncation_and_preserves_a_late_incumbent() {
 	));
 	assert_eq!(fs::read(fixture.target()).unwrap(), INCUMBENT);
 	assert_eq!(fs::read(fixture.stage()).unwrap(), COMPLETED);
+}
+
+#[test]
+fn readback_reopen_preserves_read_only_stage_and_allows_metadata_completion() {
+	let fixture = Fixture::new();
+	let source = fixture.read_only_source();
+	let stage_path = fixture.stage();
+	fs::set_permissions(&stage_path, Permissions::from_mode(0o444)).unwrap();
+	File::open(&stage_path)
+		.unwrap()
+		.set_times(FileTimes::new().set_accessed(UNIX_EPOCH))
+		.unwrap();
+	let original = fs::metadata(&stage_path).unwrap();
+	let lease = fixture.lease();
+	let inventory = inventory(&lease);
+	let mut directory = lease.reopen_stage_directory(&inventory).unwrap();
+	let stage = directory.open_flushed_readback(binding(), source).unwrap();
+	assert_eq!(stage.identity(), inventory.stage().unwrap().identity());
+	assert_eq!(stage.length(), source.len());
+	let mut bytes = [0; ORIGINAL.len()];
+	stage.read_exact_at(0, &mut bytes).unwrap();
+	assert_eq!(bytes, ORIGINAL);
+
+	let observed = fs::metadata(&stage_path).unwrap();
+	assert_eq!(observed.ino(), original.ino());
+	assert_eq!(observed.mode(), original.mode());
+	assert_eq!(observed.modified().unwrap(), original.modified().unwrap());
+	assert_eq!(observed.accessed().unwrap(), UNIX_EPOCH);
+
+	let stage = stage.apply_metadata(source).unwrap();
+	stage.sync_stage_directory().unwrap();
+	stage.publish_no_clobber(authorization(binding())).unwrap();
+	assert!(!stage_path.exists());
+	let target = fs::metadata(fixture.target()).unwrap();
+	assert_eq!(target.ino(), original.ino());
+	assert_eq!(target.mode(), original.mode());
+	assert_eq!(target.mtime(), source.modified_at().seconds());
+	assert_eq!(target.atime(), source.accessed_at().seconds());
+	assert_eq!(fs::read(fixture.target()).unwrap(), ORIGINAL);
+	assert_eq!(fs::read(fixture.scratch.path(SOURCE)).unwrap(), ORIGINAL);
+}
+
+#[test]
+fn readback_reopen_rejects_mismatched_mode_or_attributes() {
+	let fixture = Fixture::new();
+	let source = fixture.read_only_source();
+	let lease = fixture.lease();
+	{
+		let inventory = inventory(&lease);
+		let mut directory = lease.reopen_stage_directory(&inventory).unwrap();
+		assert!(matches!(
+			directory.open_flushed_readback(binding(), source),
+			Err(StageError::MetadataMismatch)
+		));
+		let aliased = inventory.stage().unwrap().observation();
+		assert!(matches!(
+			directory.open_flushed_readback(binding(), aliased),
+			Err(StageError::IdentityChanged)
+		));
+	}
+	let stage = fixture.stage();
+	assert_eq!(fs::metadata(&stage).unwrap().mode() & 0o777, 0o600);
+	fsetxattr(
+		File::open(&stage).unwrap(),
+		c"user.synthetic",
+		b"value",
+		XattrFlags::CREATE,
+	)
+	.unwrap();
+	fs::set_permissions(&stage, Permissions::from_mode(0o444)).unwrap();
+	let inventory = inventory(&lease);
+	let mut directory = lease.reopen_stage_directory(&inventory).unwrap();
+	assert!(matches!(
+		directory.open_flushed_readback(binding(), source),
+		Err(StageError::UnexpectedExtendedAttributes)
+	));
+	assert_eq!(fs::read(stage).unwrap(), ORIGINAL);
+	assert!(!fixture.target().exists());
+}
+
+#[test]
+fn readback_reopen_binds_publication_and_preserves_a_late_incumbent() {
+	let fixture = Fixture::new();
+	let source = fixture.read_only_source();
+	fs::set_permissions(fixture.stage(), Permissions::from_mode(0o444)).unwrap();
+	let lease = fixture.lease();
+	let captured = inventory(&lease);
+	let mut directory = lease.reopen_stage_directory(&captured).unwrap();
+	let current = binding();
+	let stale = binding_at_epoch(RunEpoch::new(1));
+	let stage = directory.open_flushed_readback(current, source).unwrap();
+	assert!(matches!(
+		stage.publish_no_clobber(authorization(stale)),
+		Err(PublishError::BindingMismatch)
+	));
+	let stage = directory
+		.open_flushed_readback(current, source)
+		.unwrap()
+		.apply_metadata(source)
+		.unwrap();
+	fs::write(fixture.target(), INCUMBENT).unwrap();
+	assert!(matches!(
+		stage.publish_no_clobber(authorization(current)),
+		Err(PublishError::Conflict)
+	));
+	assert_eq!(fs::read(fixture.target()).unwrap(), INCUMBENT);
+	assert_eq!(fs::read(fixture.stage()).unwrap(), ORIGINAL);
 }
 
 #[test]
@@ -222,6 +330,17 @@ impl Fixture {
 	fn target(&self) -> PathBuf {
 		self.scratch.path(TARGET)
 	}
+
+	fn read_only_source(&self) -> SourceObservation {
+		let source = self.scratch.path(SOURCE);
+		fs::write(&source, ORIGINAL).unwrap();
+		fs::set_permissions(source, Permissions::from_mode(0o444)).unwrap();
+		ReadRoot::from_directory(self.scratch.open())
+			.unwrap()
+			.open_regular(component(SOURCE))
+			.unwrap()
+			.observation()
+	}
 }
 
 fn inventory<'lease>(lease: &'lease RecoveryWriteLease<'lease>) -> RecoveryInventory<'lease> {
@@ -236,14 +355,13 @@ fn component(name: &str) -> UnixComponent<'_> {
 }
 
 fn binding() -> CopyBinding {
+	binding_at_epoch(RunEpoch::new(2))
+}
+
+fn binding_at_epoch(epoch: RunEpoch) -> CopyBinding {
 	let job =
 		JobId::try_from_bytes([0, 0, 0, 0, 0, 0, 0x70, 0, 0x80, 0, 0, 0, 0, 0, 0, 1]).unwrap();
-	CopyBinding::new(
-		job,
-		EntryId::new(1),
-		RunEpoch::new(2),
-		StageId::from_bytes([1; 16]),
-	)
+	CopyBinding::new(job, EntryId::new(1), epoch, StageId::from_bytes([1; 16]))
 }
 
 fn authorization(binding: CopyBinding) -> PublishNoClobber {

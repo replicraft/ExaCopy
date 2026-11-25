@@ -4,8 +4,8 @@ use std::sync::MutexGuard;
 use exacopy_model::CopyBinding;
 
 use super::{RecoveryInventory, RecoveryJob, RecoveryWriteLease, StageError, reopen_directory};
-use crate::linux::FileIdentity;
-use crate::linux::stage::{StageDirectory, WriteStage};
+use crate::linux::stage::{ClosedStage, StageDirectory, WriteStage};
+use crate::linux::{FileIdentity, SourceObservation};
 
 #[cfg(test)]
 mod tests;
@@ -14,7 +14,7 @@ impl RecoveryWriteLease<'_> {
 	/// Pins the exact stage directory observed under this exclusive job lease.
 	///
 	/// The inventory fixes both names and the staged inode for a subsequent
-	/// write reopen. This method grants no access to other private files.
+	/// write or read-only reopen. This method grants no access to other private files.
 	///
 	/// # Errors
 	/// Rejects a mismatched or changed inventory, a missing stage, or a busy lease.
@@ -90,6 +90,36 @@ impl RecoveryStageDirectory<'_> {
 		)?;
 		inventory.recheck()?;
 		Ok(writer)
+	}
+
+	/// Flushes the retained stage and opens an independent read-only handle under a fresh binding.
+	///
+	/// The coordinator must authenticate the retained pre-intent job. It must
+	/// freshly verify the source and stage, establish a durable trial record,
+	/// and finish required metadata before authorizing publication.
+	///
+	/// # Errors
+	/// Rejects a changed inventory, missing or unsafe stage, mismatched required
+	/// length or metadata, read-only reopen failures, and failed barriers.
+	pub fn open_flushed_readback(
+		&mut self,
+		binding: CopyBinding,
+		source: SourceObservation,
+	) -> Result<ClosedStage<'_>, StageError> {
+		let inventory = self.inventory;
+		let stage = inventory.stage().ok_or(StageError::IdentityChanged)?;
+		inventory.recheck()?;
+		let closed = ClosedStage::reopen_flushed(
+			&self.directory,
+			&inventory.stage_name,
+			&inventory.target_name,
+			binding,
+			&stage.file,
+			stage.observation,
+			source,
+		)?;
+		inventory.recheck()?;
+		Ok(closed)
 	}
 }
 

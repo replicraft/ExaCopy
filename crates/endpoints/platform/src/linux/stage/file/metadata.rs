@@ -8,7 +8,7 @@ use super::{ClosedStage, StageError, check_content_stamp};
 #[cfg(test)]
 mod tests;
 
-const ORDINARY_PERMISSIONS: u32 = 0o777;
+pub(super) const ORDINARY_PERMISSIONS: u32 = 0o777;
 
 impl ClosedStage<'_> {
 	/// Applies and verifies ordinary permission bits and source access and modification times.

@@ -10,7 +10,10 @@ use rustix::io;
 use rustix::process::geteuid;
 
 use super::super::handle::{FileIdentity, mount_id};
-use super::super::source::{SourceObservation, reopen_regular_for_write, reopen_regular_read_only};
+use super::super::source::{
+	SourceObservation, reopen_regular_for_write, reopen_regular_read_only,
+	reopen_regular_without_atime,
+};
 use super::directory::{CHILD_RESOLVE, StageName, component};
 use super::{StageDirectory, StageError};
 
@@ -234,7 +237,61 @@ pub struct ClosedStage<'stage> {
 	metadata_applied: bool,
 }
 
-impl ClosedStage<'_> {
+impl<'stage> ClosedStage<'stage> {
+	pub(in crate::linux) fn reopen_flushed(
+		directory: &'stage StageDirectory<'stage>,
+		name: &OsStr,
+		target: &OsStr,
+		binding: CopyBinding,
+		pinned: &File,
+		expected: SourceObservation,
+		source: SourceObservation,
+	) -> Result<Self, StageError> {
+		if source.identity() == expected.identity() {
+			return Err(StageError::IdentityChanged);
+		}
+		if source.mode() & !metadata::ORDINARY_PERMISSIONS != 0 {
+			return Err(StageError::UnsupportedMode);
+		}
+		if source.owner() != expected.owner() || source.group() != expected.group() {
+			return Err(StageError::DifferentOwnership);
+		}
+		if source.len() != expected.len() || source.mode() != expected.mode() {
+			return Err(StageError::MetadataMismatch);
+		}
+
+		let location = StageLocation {
+			directory,
+			name: name.into(),
+			target: target.into(),
+			binding,
+			identity: expected.identity(),
+		};
+		let mode = Mode::from_raw_mode(expected.mode());
+		location.check_named_file(mode)?;
+		let (file, before) = reopen_regular_without_atime(pinned).map_err(StageError::ReadBack)?;
+		check_stage_file(&before, mode)?;
+		if mount_id(&file)? != directory.root.mount
+			|| SourceObservation::capture(&before).map_err(StageError::ReadBack)? != expected
+		{
+			return Err(StageError::IdentityChanged);
+		}
+		check_no_visible_attributes(&file)?;
+		fs::fsync(&file).map_err(|source| StageError::BarrierFailed(source.into()))?;
+		let stat = location.check_named_file(mode)?;
+		if SourceObservation::capture(&stat).map_err(StageError::ReadBack)? != expected {
+			return Err(StageError::IdentityChanged);
+		}
+		check_no_visible_attributes(&file)?;
+		Ok(Self {
+			location,
+			file,
+			stat,
+			length: expected.len(),
+			metadata_applied: false,
+		})
+	}
+
 	/// The opened file identity of this stage.
 	#[must_use]
 	pub fn identity(&self) -> FileIdentity {
