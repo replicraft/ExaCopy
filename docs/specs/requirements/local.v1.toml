@@ -1,0 +1,775 @@
+schema_version = 1
+
+[design_baseline]
+name = "ExaCopy Architecture Pack baseline 2.1"
+date = 2026-11-25
+
+[design_baseline.sha256]
+"inventories/requirements.json" = "b0eacdc1773f9d2a7034ef6168638d64f076e94ddbaf89633002e21355598357"
+"inventories/acceptance-cases.json" = "06e4c2dca18e623b50e5404f165a02074a29f231fcfcf0c92e915eda6d5acc0e"
+"inventories/invariants.json" = "86ccbacb4413b2a798d9108d7c9ae941f88a6ab77b6ae5e94971a2d9f4c85e37"
+"inventories/proof-obligations.json" = "fed8ed2550985b6c23edad60bc2a14068674a109b26c7bf04978a74ad38231aa"
+
+[[coverage]]
+id = "copy-authorization"
+status = "implemented"
+requirement_ids = ["R-007", "R-008", "R-013", "R-015", "R-017", "R-025", "R-320"]
+acceptance_ids = ["A-007", "A-008", "A-013", "A-015", "A-017", "A-025", "A-320"]
+invariant_ids = ["INV-001", "INV-002", "INV-003", "INV-004", "INV-009", "INV-019"]
+scope = "A pure preserve-mode session binds effects to job, entry, epoch and stage. It admits one exclusive publication only after the reported join, barriers, read-back, metadata, seal and synchronized intent. Uncertain effects require reconciliation."
+limits = "P-001–003 depend on truthful coordinator observations and the adapter’s atomic no-clobber contract. TLC bounds include one entry and target, two source views, one crash and a retained-stage recovery epoch."
+
+[[coverage.evidence]]
+owner = "exacopy-model"
+level = "obligation"
+state = "defined"
+path = "crates/core/model/verification/obligations.toml"
+target = "P-001"
+
+[[coverage.evidence]]
+owner = "exacopy-model"
+level = "obligation"
+state = "defined"
+path = "crates/core/model/verification/obligations.toml"
+target = "P-002"
+
+[[coverage.evidence]]
+owner = "exacopy-model"
+level = "obligation"
+state = "defined"
+path = "crates/core/model/verification/obligations.toml"
+target = "P-003"
+
+[[coverage.evidence]]
+owner = "exacopy-model"
+level = "test"
+state = "defined"
+path = "crates/core/model/tests/transaction.rs"
+target = "tlc_early_publication_counterexample_stops_before_namespace_effect"
+
+[[coverage.evidence]]
+owner = "exacopy-model"
+level = "fixture"
+state = "defined"
+path = "crates/core/model/verification/tla/CopyRecoveryEarlyPublication.trace.json"
+
+[[coverage.evidence]]
+owner = "exacopy-model"
+level = "fixture"
+state = "defined"
+path = "crates/core/model/verification/tla/CopyRecoveryUnverifiedRetry.cfg"
+
+[[coverage]]
+id = "bounded-write-range"
+status = "implemented"
+requirement_ids = ["R-018", "R-176", "R-177", "R-178", "R-179", "R-181", "R-319", "R-321"]
+acceptance_ids = ["A-018", "A-176", "A-177", "A-178", "A-179", "A-181", "A-319", "A-321"]
+invariant_ids = ["INV-013"]
+scope = "The production guard checks a single positive half-open write range against the file extent. Rust, extracted Lean and Kani use a wider-arithmetic oracle or specification."
+limits = "P-004 covers the single-range guard. Disjoint allocation, multiworker write permits and global reservations have further obligations."
+
+[[coverage.evidence]]
+owner = "exacopy-model"
+level = "obligation"
+state = "defined"
+path = "crates/core/model/verification/obligations.toml"
+target = "P-004"
+
+[[coverage.evidence]]
+owner = "exacopy-model"
+level = "documentation"
+state = "reported"
+path = "docs/foundation.md"
+detail = "Initial model coverage and mutant dispositions are recorded here."
+
+[[coverage]]
+id = "fault-and-short-io"
+status = "implemented"
+requirement_ids = ["R-011", "R-014", "R-019", "R-023", "R-184"]
+acceptance_ids = ["A-011", "A-014", "A-019", "A-023", "A-184"]
+invariant_ids = ["INV-002", "INV-004", "INV-006", "INV-009", "INV-013", "INV-020"]
+scope = "The synchronous positioned-I/O baseline advances only by acknowledged bytes and bounds interruption retries. The simulated filesystem checks preservation and barrier failure under bounded faults."
+limits = "The simulated faults exercise the declared model. Native asynchronous Windows cancellation and physical persistence have separate gates."
+
+[[coverage.evidence]]
+owner = "exacopy-endpoint"
+level = "test"
+state = "defined"
+path = "crates/endpoints/endpoint/tests/contracts.rs"
+target = "advances_short_reads_and_retries_the_same_position_on_interruption"
+
+[[coverage.evidence]]
+owner = "exacopy-endpoint"
+level = "test"
+state = "defined"
+path = "crates/endpoints/endpoint/tests/contracts.rs"
+target = "advances_short_writes_without_replaying_written_prefixes"
+
+[[coverage.evidence]]
+owner = "exacopy-endpoint"
+level = "test"
+state = "defined"
+path = "crates/endpoints/endpoint/tests/contracts.rs"
+target = "reports_early_eof_and_write_zero_at_the_first_incomplete_offset"
+
+[[coverage.evidence]]
+owner = "exacopy-testkit"
+level = "simulation"
+state = "defined"
+path = "crates/engineering/exacopy-testkit/tests/preservation.rs"
+target = "observed_outcomes_preserve_user_bytes_across_the_bounded_failure_matrix"
+
+[[coverage.evidence]]
+owner = "exacopy-testkit"
+level = "simulation"
+state = "defined"
+path = "crates/engineering/exacopy-testkit/tests/preservation.rs"
+target = "the_namespace_oracle_rejects_an_adapter_call_bypassing_the_model"
+
+[[coverage.evidence]]
+owner = "exacopy-testkit"
+level = "simulation"
+state = "defined"
+path = "crates/engineering/exacopy-testkit/tests/preservation.rs"
+target = "a_failed_stage_file_barrier_is_never_retried_by_the_attempt"
+
+[[coverage]]
+id = "lossless-components"
+status = "implemented"
+requirement_ids = ["R-058", "R-059", "R-140", "R-182"]
+acceptance_ids = ["A-058", "A-059", "A-140", "A-182"]
+invariant_ids = ["INV-013", "INV-019"]
+scope = "Unix components preserve raw bytes and refuse separator, traversal, NUL and limit violations. The Windows lexical contract preserves UTF-16 code units and refuses path, stream and device spellings."
+limits = "P-013 covers the Unix lexical contract at lengths 0–255 and the oversized boundary at 256. Windows handle-level containment and broader untrusted input surfaces remain open."
+
+[[coverage.evidence]]
+owner = "exacopy-endpoint"
+level = "obligation"
+state = "defined"
+path = "crates/endpoints/endpoint/verification/obligations.toml"
+target = "P-013"
+
+[[coverage.evidence]]
+owner = "exacopy-endpoint"
+level = "fuzz"
+state = "defined"
+path = "crates/endpoints/endpoint/fuzz/fuzz_targets/unix_component.rs"
+
+[[coverage.evidence]]
+owner = "exacopy-endpoint"
+level = "fixture"
+state = "defined"
+path = "crates/endpoints/endpoint/fuzz/corpus/unix_component/non-utf8"
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "test"
+state = "defined"
+path = "crates/endpoints/platform/src/windows/component/tests.rs"
+target = "admits_original_code_units_including_unpaired_surrogates"
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "test"
+state = "defined"
+path = "crates/endpoints/platform/src/windows/component/tests.rs"
+target = "refuses_path_and_stream_syntax"
+
+[[coverage]]
+id = "linux-held-roots"
+status = "implemented"
+requirement_ids = ["R-007", "R-016", "R-024", "R-049", "R-064", "R-067"]
+acceptance_ids = ["A-007", "A-016", "A-024", "A-049", "A-064", "A-067"]
+invariant_ids = ["INV-001", "INV-005", "INV-013", "INV-016", "INV-019", "INV-020"]
+scope = "Linux selects a regular read-only file by one raw component relative to a held directory. Tests exercise changed directory names, hard-link identity, symlink and mount refusal, and non-regular entries."
+limits = "Containment is relative to admitted roots. Initial CLI parent path resolution and cooperating namespace assumptions are documented in the Linux profile."
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "native"
+state = "defined"
+path = "crates/endpoints/platform/tests/linux_source.rs"
+target = "opens_a_raw_name_relative_to_the_held_directory_after_its_path_is_replaced"
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "native"
+state = "defined"
+path = "crates/endpoints/platform/tests/linux_source.rs"
+target = "hard_links_share_identity_and_replacing_the_name_leaves_the_open_object_pinned"
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "native"
+state = "defined"
+path = "crates/endpoints/platform/tests/linux_source.rs"
+target = "rejects_links_inside_and_outside_the_root_and_invalid_components"
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "native"
+state = "defined"
+path = "crates/endpoints/platform/tests/linux_source.rs"
+target = "rejects_crossing_the_proc_mount_from_a_root_directory_handle"
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "native"
+state = "defined"
+path = "crates/endpoints/platform/tests/linux_source.rs"
+target = "rejects_fifos_and_directories_as_nonregular_without_opening_a_data_stream"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "native"
+state = "defined"
+path = "crates/clients/cli/tests/linux_copy.rs"
+target = "refuses_incumbents_symlinks_and_source_aliases_without_starting_a_job"
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "documentation"
+state = "reported"
+path = "docs/local-adapter.md"
+detail = "Native adapter run on an ARM64 Ubuntu ext4 guest."
+
+[[coverage]]
+id = "linux-verified-staging"
+status = "implemented"
+requirement_ids = ["R-009", "R-018", "R-021", "R-022", "R-025", "R-026", "R-062", "R-066", "R-070", "R-075", "R-086", "R-087", "R-092"]
+acceptance_ids = ["A-009", "A-018", "A-021", "A-022", "A-025", "A-026", "A-062", "A-066", "A-070", "A-075", "A-086", "A-087", "A-092"]
+invariant_ids = ["INV-001", "INV-002", "INV-003", "INV-004", "INV-005", "INV-013", "INV-019", "INV-020"]
+scope = "Linux creates a private stage, reads the full live-observed source, flushes and closes the writer, independently reads the stage, and verifies its selected metadata before publication."
+limits = "The metadata profile preserves selected basic attributes and refuses unsupported visible attributes. Sparse fixtures establish logical zeros. Snapshot consistency, sparse layout fidelity and native metadata portability require further evidence."
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "native"
+state = "defined"
+path = "crates/endpoints/platform/tests/linux_stage.rs"
+target = "stage_close_requires_a_full_flush_after_the_last_write_or_resize"
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "native"
+state = "defined"
+path = "crates/endpoints/platform/tests/linux_scope.rs"
+target = "changing_a_closed_stage_in_place_at_the_same_length_blocks_publication"
+
+[[coverage.evidence]]
+owner = "exacopy-content"
+level = "test"
+state = "defined"
+path = "crates/storage/content/tests/streams.rs"
+target = "scratch_boundaries_do_not_change_the_standard_whole_stream_digest"
+
+[[coverage.evidence]]
+owner = "exacopy-content"
+level = "test"
+state = "defined"
+path = "crates/storage/content/tests/streams.rs"
+target = "copies_logical_zero_bytes_and_detects_same_length_readback_changes"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "native"
+state = "defined"
+path = "crates/operations/transfer/tests/verified_staging.rs"
+target = "stages_a_known_dense_stream_across_scratch_boundaries_and_preserves_metadata"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "native"
+state = "defined"
+path = "crates/operations/transfer/tests/verified_staging.rs"
+target = "rejects_a_changed_observed_source_before_allocating_a_stage"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "native"
+state = "defined"
+path = "crates/operations/transfer/tests/verified_staging.rs"
+target = "rejects_visible_source_attributes_before_allocating_a_stage"
+
+[[coverage]]
+id = "linux-exclusive-publication"
+status = "implemented"
+requirement_ids = ["R-008", "R-009", "R-011", "R-027", "R-028", "R-045", "R-154", "R-194"]
+acceptance_ids = ["A-008", "A-009", "A-011", "A-027", "A-028", "A-045", "A-154", "A-194"]
+invariant_ids = ["INV-002", "INV-003", "INV-006", "INV-009", "INV-019", "INV-020"]
+scope = "Linux admits one new-name rename using RENAME_NOREPLACE and checks a late incumbent, both affected directory barriers, final identity and committed receipt."
+limits = "Native tests and fault injection exercise namespace and barrier semantics. The CLI reports unconfirmed durability and the Linux private receipt supplies a subset of the proposed public schema."
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "native"
+state = "defined"
+path = "crates/endpoints/platform/tests/linux_stage.rs"
+target = "a_late_incumbent_file_link_or_directory_keeps_its_identity_and_the_stage_survives"
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "native"
+state = "defined"
+path = "crates/endpoints/platform/src/linux/stage/publish/tests.rs"
+target = "a_real_exclusive_rename_precedes_both_directory_barriers_even_on_failure"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "native"
+state = "defined"
+path = "crates/operations/transfer/tests/job_bootstrap/copy.rs"
+target = "journaled_copy_persists_a_receipt_bound_to_verified_bytes_and_observed_publication"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "native"
+state = "defined"
+path = "crates/clients/cli/tests/linux_copy.rs"
+target = "concurrent_processes_cannot_replace_the_winner"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "native"
+state = "defined"
+path = "crates/clients/cli/tests/linux_copy.rs"
+target = "failed_report_output_keeps_the_committed_copy_and_names_the_job"
+
+[[coverage.evidence]]
+owner = "reference tools"
+level = "reference"
+state = "retained"
+path = "docs/specs/performance/evidence/linux-ext4-copy.json"
+detail = "Independent cmp and rsync control ran on the ext4 VM. The incumbent control uses a pre-existing name."
+
+[[coverage]]
+id = "linux-owned-replay"
+status = "implemented"
+requirement_ids = ["R-013", "R-039", "R-040", "R-041", "R-044", "R-045", "R-048", "R-140", "R-182", "R-186", "R-187", "R-261", "R-262"]
+acceptance_ids = ["A-013", "A-039", "A-040", "A-041", "A-044", "A-045", "A-048", "A-140", "A-182", "A-186", "A-187", "A-261", "A-262"]
+invariant_ids = ["INV-002", "INV-006", "INV-009", "INV-019", "INV-020"]
+scope = "Destination-local signed ownership, bounded chained frames and replay distinguish contradictory, torn, retained and published observations. Inspection preserves the available evidence and explicit finish can reconcile an accepted published job."
+limits = "Corrupt and torn histories stop mutation. The implemented reader preserves the original segment and has no broad journal repair, compaction or unknown-object adoption claim."
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/journal/tests/frame.rs"
+target = "every_prefix_of_a_second_frame_is_classified_without_losing_the_first_boundary"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/journal/tests/frame.rs"
+target = "corrupt_or_unsupported_middle_frame_stops_even_with_later_magic"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/journal/tests/recovery_records.rs"
+target = "malformed_or_noncanonical_cbor_is_refused"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "fuzz"
+state = "defined"
+path = "crates/storage/journal/fuzz/fuzz_targets/journal_frame.rs"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "fixture"
+state = "defined"
+path = "crates/storage/journal/fuzz/corpus/journal_frame/broken-chain-with-later-magic"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "native"
+state = "defined"
+path = "crates/operations/transfer/tests/job_bootstrap.rs"
+target = "a_private_looking_incumbent_job_is_never_adopted"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "native"
+state = "defined"
+path = "crates/operations/transfer/tests/recovery.rs"
+target = "compares_the_actual_stream_and_current_metadata_even_after_committed_receipt"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "native"
+state = "defined"
+path = "crates/operations/transfer/tests/recovery/finish.rs"
+target = "finishes_an_observed_rename_then_repeats_without_changing_evidence"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "native"
+state = "defined"
+path = "crates/operations/transfer/tests/recovery/finish.rs"
+target = "retains_stage_only_and_torn_prefixes_without_writing_records"
+
+[[coverage]]
+id = "linux-resume-and-retry"
+status = "implemented"
+requirement_ids = ["R-017", "R-028", "R-039", "R-042", "R-043", "R-044", "R-048", "R-088", "R-252", "R-253", "R-255", "R-260", "R-261", "R-264"]
+acceptance_ids = ["A-017", "A-028", "A-039", "A-042", "A-043", "A-044", "A-048", "A-088", "A-252", "A-253", "A-255", "A-260", "A-261", "A-264"]
+invariant_ids = ["INV-002", "INV-003", "INV-006", "INV-009", "INV-019", "INV-020", "INV-024"]
+scope = "Explicit Linux resume rechecks selected checkpoint ranges against current source and private stage. Retry revalidates a retained sealed stage and obtains a new authorization. Process-kill tests interrupt copy, resume and retry."
+limits = "The source grant is required for source-dependent recovery. Process-kill tests exercise a running kernel and live caches. Automatic reconnect, remote retries and hardware power-loss qualification remain open."
+
+[[coverage.evidence]]
+owner = "exacopy-testkit"
+level = "simulation"
+state = "defined"
+path = "crates/engineering/exacopy-testkit/tests/range_checkpoint_barriers.rs"
+target = "checkpoint_barrier_failures_leave_only_the_completed_stable_prefix"
+
+[[coverage.evidence]]
+owner = "exacopy-content"
+level = "test"
+state = "defined"
+path = "crates/storage/content/tests/resume_reference.rs"
+target = "resume_matches_the_byte_exact_reference"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "process-kill"
+state = "defined"
+path = "crates/operations/transfer/src/linux/local_copy/crash_tests.rs"
+target = "kill_after_rename_before_observation_frame"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "process-kill"
+state = "defined"
+path = "crates/operations/transfer/src/linux/local_copy/crash_tests.rs"
+target = "kill_after_receipt_sync_before_commit"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "process-kill"
+state = "defined"
+path = "crates/operations/transfer/src/linux/local_copy/crash_tests/ranges.rs"
+target = "kill_after_range_page_sync_before_frame"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "process-kill"
+state = "defined"
+path = "crates/operations/transfer/src/linux/local_copy/crash_tests/ranges.rs"
+target = "kill_after_range_frame_sync"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "process-kill"
+state = "defined"
+path = "crates/operations/transfer/src/linux/local_copy/crash_tests/resume.rs"
+target = "changed_live_source_with_the_old_mtime_leaves_the_partial_stage_private"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "process-kill"
+state = "defined"
+path = "crates/operations/transfer/src/linux/local_copy/crash_tests/resume.rs"
+target = "rewrites_corrupt_checkpointed_bytes_before_publishing"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "process-kill"
+state = "defined"
+path = "crates/operations/transfer/src/linux/local_copy/crash_tests/retry.rs"
+target = "kill_after_retry_rename_before_observation"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "documentation"
+state = "reported"
+path = "docs/verified-staging.md"
+detail = "Records the process-kill suite and the boundary between it and storage qualification."
+
+[[coverage]]
+id = "local-exact-comparison"
+status = "implemented"
+requirement_ids = ["R-007", "R-009", "R-010", "R-056", "R-066", "R-070", "R-082", "R-093", "R-097", "R-100", "R-154", "R-188", "R-204"]
+acceptance_ids = ["A-007", "A-009", "A-010", "A-056", "A-066", "A-070", "A-082", "A-093", "A-097", "A-100", "A-154", "A-188", "A-204"]
+invariant_ids = ["INV-001", "INV-013", "INV-016", "INV-017", "INV-020"]
+scope = "Linux and opt-in managed APFS compare regular-file observations exactly with bounded scratch and workers. Results report the first decisive witness and wait for started workers before final observation checks."
+limits = "P-036 checks ordering and joining in an independent finite model of three ranges and fixed observations. The CLI exposes a local single-result JSON summary. Tree comparisons, remote comparison, NDJSON and snapshot consistency remain open."
+
+[[coverage.evidence]]
+owner = "exacopy-diff"
+level = "obligation"
+state = "defined"
+path = "crates/operations/diff/verification/obligations.toml"
+target = "P-036"
+detail = "Repository-owned extension to the design inventory."
+
+[[coverage.evidence]]
+owner = "exacopy-diff"
+level = "test"
+state = "defined"
+path = "crates/operations/diff/src/compare/parallel/tests.rs"
+target = "partitions_cover_every_byte_without_overflow_or_overlap"
+
+[[coverage.evidence]]
+owner = "exacopy-diff"
+level = "test"
+state = "defined"
+path = "crates/operations/diff/src/compare/parallel/tests.rs"
+target = "waits_for_started_workers_before_the_final_observation_check"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "native"
+state = "defined"
+path = "crates/clients/cli/tests/linux_diff_capabilities.rs"
+target = "sparse_holes_compare_as_logical_zeros_and_can_contain_a_mismatch"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "native"
+state = "defined"
+path = "crates/clients/cli/tests/macos_diff.rs"
+target = "compares_held_managed_apfs_files_and_preserves_inputs"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "fixture"
+state = "defined"
+path = "fixtures/macos/empty_acl.c"
+
+[[coverage.evidence]]
+owner = "reference tools"
+level = "reference"
+state = "retained"
+path = "docs/specs/compatibility/evidence/macos-apfs-differential.json"
+detail = "Exact cmp and generated-byte oracle, rsync checksum dry run, worker ceilings 1, 4 and 16, and final symlink refusal control."
+
+[[coverage]]
+id = "managed-apfs-copy"
+status = "experimental"
+requirement_ids = ["R-008", "R-013", "R-016", "R-018", "R-021", "R-023", "R-025", "R-026", "R-027", "R-028", "R-039", "R-040", "R-045", "R-051", "R-056", "R-062", "R-194"]
+acceptance_ids = ["A-008", "A-013", "A-016", "A-018", "A-021", "A-023", "A-025", "A-026", "A-027", "A-028", "A-039", "A-040", "A-045", "A-051", "A-056", "A-062", "A-194"]
+invariant_ids = ["INV-002", "INV-003", "INV-004", "INV-005", "INV-006", "INV-009", "INV-013", "INV-019", "INV-020"]
+scope = "The managed APFS adapter exercises stage writes, full file barriers, separate read-back, native exclusive rename and name reconciliation. The opt-in library owns plan, receipt and read-only recovery inspection."
+limits = "Strict end-to-end acceptance is blocked on the tested host’s visible source provenance attribute. CLI copy/recovery, Darwin process-kill recovery and power-loss qualification remain open."
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "native"
+state = "defined"
+path = "crates/endpoints/platform/src/macos/publication/tests/adapter.rs"
+target = "late_regular_and_symlink_incumbents_retain_the_stage"
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "native"
+state = "defined"
+path = "crates/endpoints/platform/src/macos/publication/tests/adapter.rs"
+target = "even_when_a_barrier_fails_both_are_attempted_and_rename_is_retained"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "native"
+state = "defined"
+path = "crates/operations/transfer/src/macos/job/tests/publication.rs"
+target = "prepared_copy_refuses_visible_source_metadata_before_any_content_or_intent"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "native"
+state = "blocked"
+path = "crates/operations/transfer/src/macos/job/tests/publication.rs"
+target = "strict_native_copy_publishes_the_stage_and_commits_its_receipt"
+detail = "Ignored unless the fixture satisfies strict managed APFS source metadata admission."
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "native"
+state = "defined"
+path = "crates/operations/transfer/src/macos/job/tests/inspection.rs"
+target = "reopened_job_binds_trusted_destination_and_keeps_live_names_separate_from_history"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "fixture"
+state = "defined"
+path = "crates/operations/transfer/src/macos/receipt/tests/receipt.hex"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "fixture"
+state = "defined"
+path = "fixtures/macos/empty_acl.c"
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "documentation"
+state = "reported"
+path = "docs/local-adapter.md"
+detail = "Preserves the native adapter outcome and blocked strict end-to-end path."
+
+[[coverage]]
+id = "workspace-and-evidence"
+status = "implemented"
+requirement_ids = ["R-190", "R-317", "R-318", "R-322", "R-323", "R-324", "R-325", "R-326", "R-327", "R-328", "R-329", "R-330", "R-332", "R-333", "R-334", "R-335", "R-336", "R-337", "R-338", "R-339"]
+acceptance_ids = ["A-190", "A-317", "A-318", "A-322", "A-323", "A-324", "A-325", "A-326", "A-327", "A-328", "A-329", "A-330", "A-332", "A-333", "A-334", "A-335", "A-336", "A-337", "A-338", "A-339"]
+invariant_ids = ["INV-020", "INV-032"]
+scope = "The workspace pins Cargo policy and keeps proof gates with owners. Executable source, graph, verification and evidence checks have negative fixtures."
+limits = "Standards include human review, dependency review, quantitative denominators and release qualification beyond the configured automation. Consult each retained run and the review scope before assigning a passing result."
+
+[[coverage.evidence]]
+owner = "xtask"
+level = "policy"
+state = "defined"
+path = "xtask/src/source/tests.rs"
+target = "rejects_substantive_items_regardless_of_attributes_or_layout"
+
+[[coverage.evidence]]
+owner = "xtask"
+level = "policy"
+state = "defined"
+path = "xtask/src/source/tests.rs"
+target = "rejects_control_flow_helpers_hidden_macros_and_missing_delegate"
+
+[[coverage.evidence]]
+owner = "xtask"
+level = "policy"
+state = "defined"
+path = "xtask/src/workspace/tests.rs"
+target = "checks_all_member_dependency_kinds_including_target_tables"
+
+[[coverage.evidence]]
+owner = "xtask"
+level = "policy"
+state = "defined"
+path = "xtask/src/architecture/tests.rs"
+target = "rejects_renamed_optional_and_target_specific_edges_to_concrete_adapters"
+
+[[coverage.evidence]]
+owner = "xtask"
+level = "policy"
+state = "defined"
+path = "xtask/src/verification/tests.rs"
+target = "rejects_missing_source_symbol_unknown_gate_and_disconnected_harness"
+
+[[coverage.evidence]]
+owner = "xtask"
+level = "policy"
+state = "defined"
+path = "xtask/src/evidence/tests.rs"
+target = "gate_coverage_rejects_stale_records_missing_runs_and_wrong_commands"
+
+[[coverage.evidence]]
+owner = "xtask"
+level = "policy"
+state = "defined"
+path = "xtask/src/evidence/tests.rs"
+target = "rejects_false_green_evidence"
+
+[[coverage.evidence]]
+owner = "workspace"
+level = "configuration"
+state = "defined"
+path = ".github/workflows/ci.yml"
+
+[[coverage.evidence]]
+owner = "workspace"
+level = "configuration"
+state = "defined"
+path = ".github/workflows/nightly.yml"
+
+[[coverage.evidence]]
+owner = "workspace"
+level = "documentation"
+state = "reported"
+path = "docs/foundation.md"
+detail = "Initial foundation recorded 57 of 69 third-party versions requiring additional cargo-vet evidence. Consult the current supply-chain records for later changes."
+
+[[coverage]]
+id = "local-reference-and-performance"
+status = "implemented"
+requirement_ids = ["R-056", "R-093", "R-100", "R-185", "R-328", "R-331"]
+acceptance_ids = ["A-056", "A-093", "A-100", "A-185", "A-328", "A-331"]
+invariant_ids = ["INV-016", "INV-020", "INV-032"]
+scope = "Reference and performance tooling retains exact fixture, oracle, revision, platform and observed outcome for tested managed APFS comparison and Linux ext4 copy lanes."
+limits = "The recorded benchmarks cover warm-cache single-file workloads. The ext4 guest evidence stops at requested barriers and committed-state checks. Broader parity and durability need independent results."
+
+[[coverage.evidence]]
+owner = "reference tools"
+level = "configuration"
+state = "defined"
+path = "docs/specs/compatibility/inventory.v1.json"
+
+[[coverage.evidence]]
+owner = "reference tools"
+level = "configuration"
+state = "defined"
+path = "docs/specs/performance/workloads.v1.json"
+
+[[coverage.evidence]]
+owner = "reference tools"
+level = "reference"
+state = "retained"
+path = "docs/specs/compatibility/evidence/macos-apfs-differential.json"
+
+[[coverage.evidence]]
+owner = "reference tools"
+level = "benchmark"
+state = "retained"
+path = "docs/specs/performance/evidence/linux-ext4-copy.json"
+
+[[coverage.evidence]]
+owner = "reference tools"
+level = "benchmark"
+state = "retained"
+path = "docs/specs/performance/evidence/macos-apfs-comparison.json"
+
+[[coverage]]
+id = "native-platform-matrix"
+status = "specified"
+requirement_ids = ["R-003", "R-014", "R-019", "R-028", "R-050", "R-051", "R-056", "R-062", "R-328"]
+acceptance_ids = ["A-003", "A-014", "A-019", "A-028", "A-050", "A-051", "A-056", "A-062", "A-328"]
+invariant_ids = ["INV-004", "INV-006", "INV-019", "INV-020", "INV-030", "INV-032"]
+scope = "Native Windows held-root and publication, broader filesystem metadata and failure profiles, and real storage power-loss qualification."
+limits = "Windows has lexical checks and explicit CLI refusal. The Linux ext4 VM evidence and managed APFS fixtures are bounded to their declared operations."
+
+[[coverage]]
+id = "protected-and-tree-operations"
+status = "specified"
+requirement_ids = ["R-012", "R-029", "R-030", "R-031", "R-035", "R-037", "R-047", "R-060", "R-065", "R-069", "R-071", "R-101"]
+acceptance_ids = ["A-012", "A-029", "A-030", "A-031", "A-035", "A-037", "A-047", "A-060", "A-065", "A-069", "A-071", "A-101"]
+invariant_ids = ["INV-002", "INV-006", "INV-007", "INV-008", "INV-009", "INV-012", "INV-017", "INV-019", "INV-020"]
+scope = "Directory merge and new-tree publication, snapshots, exact patch application, protected replacement, source retirement and explicit reclamation."
+limits = "Preserve-mode single-file operations carry no authority to perform these effects."
+
+[[coverage]]
+id = "remote-and-devices"
+status = "specified"
+requirement_ids = ["R-142", "R-146", "R-149", "R-213", "R-216", "R-222", "R-229", "R-239", "R-249", "R-251", "R-256", "R-263", "R-266", "R-279", "R-280", "R-283"]
+acceptance_ids = ["A-142", "A-146", "A-149", "A-213", "A-216", "A-222", "A-229", "A-239", "A-249", "A-251", "A-256", "A-263", "A-266", "A-279", "A-280", "A-283"]
+invariant_ids = ["INV-014", "INV-015", "INV-018", "INV-021", "INV-022", "INV-023", "INV-024", "INV-027", "INV-030"]
+scope = "Authenticated remote transfer, SSH/SFTP, WireGuard route confinement, reconnect and automatic resume, Android ADB/Termux, and cloud endpoint profiles."
+limits = "Local resume and source revision checks supply no transport, route or device qualification."
+
+[[coverage]]
+id = "sync-backup-and-dedupe"
+status = "specified"
+requirement_ids = ["R-090", "R-102", "R-103", "R-108", "R-114", "R-115", "R-123", "R-124", "R-131", "R-210", "R-267", "R-269", "R-270", "R-272"]
+acceptance_ids = ["A-090", "A-102", "A-103", "A-108", "A-114", "A-115", "A-123", "A-124", "A-131", "A-210", "A-267", "A-269", "A-270", "A-272"]
+invariant_ids = ["INV-007", "INV-008", "INV-010", "INV-011", "INV-012", "INV-025", "INV-026", "INV-028", "INV-031"]
+scope = "Synchronization and conflict baselines, immutable backup and restore, repository encryption, deduplication, retention and reachability-safe reclamation."
+limits = "The local copy journal and its signed owner records establish no repository, retention or synchronization authority."
+
+[[coverage]]
+id = "clients-distribution-and-accelerators"
+status = "specified"
+requirement_ids = ["R-052", "R-053", "R-054", "R-055", "R-094", "R-159", "R-162", "R-165", "R-169", "R-191", "R-192", "R-296", "R-303", "R-307", "R-309", "R-314"]
+acceptance_ids = ["A-052", "A-053", "A-054", "A-055", "A-094", "A-159", "A-162", "A-165", "A-169", "A-191", "A-192", "A-296", "A-303", "A-307", "A-309", "A-314"]
+invariant_ids = ["INV-020", "INV-023", "INV-028", "INV-029", "INV-030", "INV-031", "INV-032"]
+scope = "GUI, specialized viewers, IPC and scheduling, installer and signed platform release qualification, and experimental native I/O acceleration."
+limits = "The current CLI and checked-in build workflows cover the local development profiles."

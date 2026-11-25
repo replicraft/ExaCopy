@@ -33,4 +33,5 @@ translate their native observations into the shared contracts.
 [Contract versioning](architecture/contract-versioning.md) defines
 independent public and persistent boundaries. [Technical stack](tech-stack.md)
 tracks adopted dependencies. [Roadmap](roadmap.md) gives the order for
-extending the system.
+extending the system. [Requirements traceability](architecture/requirements.md)
+connects the admitted profiles to tests, proof obligations and open gates.

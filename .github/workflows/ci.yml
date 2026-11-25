@@ -116,6 +116,9 @@ jobs:
       - name: Check independent reference and performance evidence
         if: ${{ !cancelled() }}
         run: bash .github/ci/capture.sh reference-evidence python3 -B tools/reference/check.py
+      - name: Check requirements traceability
+        if: ${{ !cancelled() }}
+        run: bash .github/ci/capture.sh requirements python3 -B tools/requirements/check.py
       - name: Retain policy evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
