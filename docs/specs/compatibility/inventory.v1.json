@@ -108,7 +108,7 @@
           "platform": "Ubuntu 24.04.5 LTS aarch64 Lima guest",
           "filesystem": "ext4",
           "configuration_and_invocation": "rsync --ignore-existing --itemize-changes --out-format=%i -- SOURCE TARGET; exacopy copy SOURCE TARGET --profile PROFILE --format json.",
-          "fixtures": "Generated 4096-byte source, absent target and different 4096-byte incumbent. ExaCopy also publishes fresh 4 KiB and 64 MiB targets in six trials per size.",
+          "fixtures": "Generated 4096-byte source, absent target and different 4096-byte incumbent. ExaCopy also publishes fresh 4 KiB and 64 MiB targets in one warm-up and five measured trials per size.",
           "expected_behavior": "The new target compares equal by cmp; the existing target and source stay byte- and identity-stable.",
           "actual_exacopy_behavior": "All twelve new targets passed independent cmp, mode and mtime checks, distinct identity checks and committed-state inspection. The existing target caused exit 3/E_CONFLICT with no publication.",
           "known_deviation": "Rsync exited 0 with an empty itemization for the incumbent. ExaCopy exits 3 and reports an explicit conflict.",
