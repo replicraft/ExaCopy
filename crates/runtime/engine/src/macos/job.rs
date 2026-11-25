@@ -8,9 +8,11 @@ use exacopy_platform::macos::ManagedRegularFile;
 use exacopy_platform::macos::staging::StageDirectory;
 use exacopy_platform::macos::staging::jobs::{JobDirectory, JobName, JournalDirectory};
 
-use exacopy_transfer::macos::job::bootstrap::{JobPreparation, prepare};
+use exacopy_transfer::macos::job::ProfileError;
+use exacopy_transfer::macos::job::bootstrap::{
+	BootstrapInputs, CreatedJob, JobCreationFailure, JobPreparation, admit_and_create, prepare,
+};
 use exacopy_transfer::macos::job::entry::EntryAttempt;
-use exacopy_transfer::macos::job::{ProfileError, validate_profile};
 
 use super::plan::DarwinCopyPlan;
 
@@ -29,8 +31,10 @@ pub use entry::{
 pub use error::{JobAdmissionError, JobBootstrapError, JobPreparationError};
 pub use exacopy_transfer::macos::job::{DarwinJobProfile, JobPreparationStep};
 
+#[cfg(test)]
+use self::admission::admit_destination;
 pub(super) use self::admission::native_identity;
-use self::admission::{admit_destination, check_source};
+use self::admission::{HeldDestination, HeldSource, destination_failure, source_failure};
 use self::bootstrap::NativeJob;
 
 #[cfg(test)]
@@ -109,18 +113,40 @@ pub fn with_prepared_job<T>(
 	request: JobBootstrap<'_, '_>,
 	operation: impl FnOnce(&mut PreparedDarwinJob<'_>) -> T,
 ) -> Result<T, JobBootstrapError> {
-	let attempt = plan.attempt();
-	validate_profile(attempt, request.profile).map_err(|error| match error {
-		ProfileError::Mismatch => JobAdmissionError::ProfileMismatch,
-		ProfileError::Owner(error) => JobAdmissionError::Owner(error),
+	let (root, source) = (
+		HeldDestination(request.container),
+		HeldSource(request.source),
+	);
+	let CreatedJob {
+		name,
+		directory,
+		destination,
+	} = admit_and_create(
+		plan,
+		BootstrapInputs {
+			source: &source,
+			source_root_id: request.source_root_id,
+			destination_root_id: request.destination_root_id,
+			profile: request.profile,
+		},
+		&root,
+	)
+	.map_err(|failure| match failure {
+		JobCreationFailure::Profile(ProfileError::Mismatch) => {
+			JobAdmissionError::ProfileMismatch.into()
+		}
+		JobCreationFailure::Profile(ProfileError::Owner(error)) => {
+			JobAdmissionError::Owner(error).into()
+		}
+		JobCreationFailure::Name(error) => JobAdmissionError::InvalidJobName(error).into(),
+		JobCreationFailure::Destination(error) => destination_failure(error).into(),
+		JobCreationFailure::Source(error) => source_failure(error).into(),
+		JobCreationFailure::Create(error) => JobBootstrapError::Create(error),
 	})?;
-	let name = JobName::from_uuid_bytes(*attempt.job.as_bytes())
-		.map_err(JobAdmissionError::InvalidJobName)?;
-	let destination = admit_destination(plan.destination(), request)?;
-	check_source(plan.source(), request.source, request.source_root_id)?;
-	with_admitted_job(plan, request, name, destination, operation)
+	with_created_job(plan, request, name, &directory, destination, operation)
 }
 
+#[cfg(test)]
 fn with_admitted_job<T>(
 	plan: &DarwinCopyPlan<'_>,
 	request: JobBootstrap<'_, '_>,
@@ -132,7 +158,18 @@ fn with_admitted_job<T>(
 		.container
 		.create_job_directory(name)
 		.map_err(JobBootstrapError::Create)?;
-	let native_job = NativeJob(&job);
+	with_created_job(plan, request, name, &job, destination, operation)
+}
+
+fn with_created_job<T>(
+	plan: &DarwinCopyPlan<'_>,
+	request: JobBootstrap<'_, '_>,
+	name: JobName,
+	job: &JobDirectory<'_>,
+	destination: DarwinRootBinding,
+	operation: impl FnOnce(&mut PreparedDarwinJob<'_>) -> T,
+) -> Result<T, JobBootstrapError> {
+	let native_job = NativeJob(job);
 	let JobPreparation {
 		journal,
 		journal_directory,
@@ -145,7 +182,7 @@ fn with_admitted_job<T>(
 	let mut prepared = PreparedDarwinJob {
 		journal,
 		_journal_directory: journal_directory.0,
-		job: &job,
+		job,
 		owner,
 		preparation,
 		initial_frame,

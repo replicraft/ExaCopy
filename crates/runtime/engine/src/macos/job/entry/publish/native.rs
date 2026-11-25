@@ -19,7 +19,7 @@ use crate::macos::{StageTransferError, VerifiedBasicStage, copy_with_basic_metad
 
 use super::DarwinCopyFailure;
 
-pub(super) enum NativeCopyError {
+pub(in crate::macos::job::entry) enum NativeCopyError {
 	Source(ManagedReadError),
 	Transfer(StageTransferError),
 	Stage(StageError),
@@ -67,13 +67,14 @@ impl From<CoordinatorError> for DarwinCopyFailure {
 	}
 }
 
-pub(super) struct NativePreparedCopy<'entry> {
+#[derive(Debug)]
+pub(in crate::macos::job::entry) struct NativePreparedCopy<'entry> {
 	source: &'entry ManagedRegularFile<'entry>,
 	writer: WriteStage<'entry>,
 }
 
 impl<'entry> NativePreparedCopy<'entry> {
-	pub(super) const fn new(
+	pub(in crate::macos::job::entry) const fn new(
 		source: &'entry ManagedRegularFile<'entry>,
 		writer: WriteStage<'entry>,
 	) -> Self {
@@ -107,7 +108,7 @@ impl<'entry> PreparedCopy for NativePreparedCopy<'entry> {
 	}
 }
 
-pub(super) struct NativeVerifiedCopy<'entry> {
+pub(in crate::macos::job::entry) struct NativeVerifiedCopy<'entry> {
 	source: &'entry ManagedRegularFile<'entry>,
 	verified: VerifiedBasicStage<'entry>,
 }

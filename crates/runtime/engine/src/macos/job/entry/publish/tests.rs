@@ -417,7 +417,7 @@ fn run(
 		};
 		let copy = ScriptedCopy {
 			script: &script,
-			binding: entry.writer.as_ref().unwrap().binding(),
+			binding: entry.attempt.binding().unwrap(),
 			streams: VerifiedStreams {
 				stage: prep.stage.identity,
 				length: source.length,

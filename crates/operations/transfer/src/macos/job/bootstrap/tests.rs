@@ -13,6 +13,9 @@ use exacopy_journal::{
 use super::super::{DarwinJobProfile, JobPreparationStep};
 use super::capabilities::{PrivateJob, PrivateJournalDirectory};
 use super::engine::{self, BootstrapError};
+use crate::macos::job::admission::{
+	AdmissionFailure, ReadOnlySource, SourceIdentities, SourceMetadataObservation, Timestamp,
+};
 use crate::macos::plan::{
 	DarwinCopyPlan, DestinationPlanBinding, PlanAttempt, SourceMetadata, SourcePlanBinding,
 };
@@ -205,4 +208,138 @@ const fn uuid(marker: u8) -> [u8; 16] {
 	bytes[6] = 0x70;
 	bytes[8] = 0x80;
 	bytes
+}
+
+#[test]
+fn creation_requires_authorized_profile_destination_and_source_in_order() {
+	use super::{BootstrapInputs, JobCreationFailure, admit_and_create};
+
+	let signer = SigningKey::from_bytes(&[1; 32]);
+	let (plan, profile, destination) = fixture(&signer);
+	let trace = RefCell::new(Vec::new());
+	let root = AdmissionRoot(&trace);
+	let source = AdmissionSource(&trace, plan.source());
+	let untrusted = RootCapabilityId::from_bytes(uuid(9)).unwrap();
+	let inputs = |profile, source_root_id, destination_root_id| BootstrapInputs {
+		source: &source,
+		source_root_id,
+		destination_root_id,
+		profile,
+	};
+
+	let mismatched = DarwinJobProfile {
+		id: OwnerProfileId::from_bytes(uuid(9)).unwrap(),
+		..profile
+	};
+	assert!(matches!(
+		admit_and_create(
+			&plan,
+			inputs(mismatched, destination.id, destination.id),
+			&root
+		),
+		Err(JobCreationFailure::Profile(_))
+	));
+	assert!(trace.borrow().is_empty());
+	assert!(matches!(
+		admit_and_create(&plan, inputs(profile, destination.id, untrusted), &root),
+		Err(JobCreationFailure::Destination(AdmissionFailure::Mismatch))
+	));
+	assert_eq!(trace.take(), ["name"]);
+	assert!(matches!(
+		admit_and_create(&plan, inputs(profile, untrusted, destination.id), &root),
+		Err(JobCreationFailure::Source(AdmissionFailure::Mismatch))
+	));
+	assert_eq!(trace.take(), ["name", "destination"]);
+
+	let job = admit_and_create(
+		&plan,
+		inputs(profile, destination.id, destination.id),
+		&root,
+	)
+	.unwrap();
+	assert_eq!(job.directory, JOB_UUID);
+	assert_eq!(job.destination, destination);
+	assert_eq!(
+		trace.take(),
+		[
+			"name",
+			"destination",
+			"source",
+			"metadata",
+			"change time",
+			"create"
+		]
+	);
+}
+
+struct AdmissionRoot<'trace>(&'trace RefCell<Vec<&'static str>>);
+
+impl super::PrivateJobRoot for AdmissionRoot<'_> {
+	type Name = [u8; 16];
+	type Directory<'root>
+		= [u8; 16]
+	where
+		Self: 'root;
+	type Error = std::convert::Infallible;
+
+	fn job_name(&self, bytes: [u8; 16]) -> Result<Self::Name, exacopy_model::InvalidJobId> {
+		self.0.borrow_mut().push("name");
+		Ok(bytes)
+	}
+
+	fn observe_empty(
+		&self,
+		target: UnixComponent<'_>,
+	) -> Result<DarwinFileIdentity, AdmissionFailure<Self::Error>> {
+		self.0.borrow_mut().push("destination");
+		assert_eq!(target.as_bytes(), b"target");
+		Ok(identity(1))
+	}
+
+	fn create_job(&self, name: Self::Name) -> Result<Self::Directory<'_>, Self::Error> {
+		self.0.borrow_mut().push("create");
+		Ok(name)
+	}
+}
+
+struct AdmissionSource<'trace>(
+	&'trace RefCell<Vec<&'static str>>,
+	SourcePlanBinding<'trace>,
+);
+
+impl ReadOnlySource for AdmissionSource<'_> {
+	type Error = std::convert::Infallible;
+
+	fn component(&self) -> UnixComponent<'_> {
+		self.1.component
+	}
+
+	fn length(&self) -> u64 {
+		self.1.length
+	}
+
+	fn observe_identities(&self) -> Result<SourceIdentities, AdmissionFailure<Self::Error>> {
+		self.0.borrow_mut().push("source");
+		Ok(SourceIdentities {
+			root: self.1.root_identity,
+			file: self.1.file_identity,
+		})
+	}
+
+	fn check_pre_read_metadata(&self) -> Result<SourceMetadataObservation, Self::Error> {
+		self.0.borrow_mut().push("metadata");
+		let metadata = self.1.metadata;
+		Ok(SourceMetadataObservation {
+			uid: metadata.uid().get(),
+			gid: metadata.gid(),
+			mode: u32::from(metadata.mode()),
+			accessed: metadata.accessed_at().into(),
+			modified: metadata.modified_at().into(),
+		})
+	}
+
+	fn change_time(&self) -> Result<Timestamp, Self::Error> {
+		self.0.borrow_mut().push("change time");
+		Ok(self.1.metadata.changed_at().into())
+	}
 }

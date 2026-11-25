@@ -4,6 +4,6 @@ mod engine;
 pub mod publish;
 
 pub use engine::{
-	EntryAttempt, EntryRequest, ObservedStage, PreparationFailure, PreparedStage, PrivateStage,
-	RequestError, StageAdmissionFailure, StageRequest, begin, prepare,
+	EntryAttempt, EntryOpenFailure, EntryRequest, ObservedStage, PreparationFailure, PreparedStage,
+	PrivateStage, RequestError, StageAdmissionFailure, StageRequest, open, prepare,
 };

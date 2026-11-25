@@ -1,7 +1,11 @@
 use exacopy_endpoint::UnixComponent;
 use exacopy_journal::{
-	DarwinFileIdentity, DarwinRootBinding, DarwinVolumeIdentity, OwnerError, OwnerTimestamp,
-	RootCapabilityId,
+	DarwinFileIdentity, DarwinVolumeIdentity, OwnerError, OwnerTimestamp, RootCapabilityId,
+};
+use exacopy_model::InvalidJobId;
+use exacopy_platform::macos::staging::{
+	StageDirectory,
+	jobs::{JobDirectory, JobError, JobName},
 };
 use exacopy_platform::macos::{
 	ManagedObjectIdentity, ManagedReadError, ManagedRegularFile, ManagedTimestamp,
@@ -10,27 +14,66 @@ use exacopy_transfer::macos::job::admission::{
 	self, AdmissionFailure, ReadOnlySource, SourceIdentities, SourceMetadataObservation, Timestamp,
 };
 
-use super::{JobAdmissionError, JobBootstrap};
-use crate::macos::plan::{DestinationPlanBinding, SourcePlanBinding};
+use exacopy_transfer::macos::job::bootstrap::PrivateJobRoot;
 
-struct HeldSource<'source>(&'source ManagedRegularFile<'source>);
+use super::JobAdmissionError;
+use crate::macos::plan::SourcePlanBinding;
 
+#[cfg(test)]
+use {
+	super::JobBootstrap, crate::macos::plan::DestinationPlanBinding,
+	exacopy_journal::DarwinRootBinding,
+};
+
+pub(super) struct HeldSource<'source>(pub(super) &'source ManagedRegularFile<'source>);
+pub(super) struct HeldDestination<'root>(pub(super) &'root StageDirectory<'root>);
+
+impl PrivateJobRoot for HeldDestination<'_> {
+	type Name = JobName;
+	type Directory<'root>
+		= JobDirectory<'root>
+	where
+		Self: 'root;
+	type Error = JobError;
+
+	fn job_name(&self, bytes: [u8; 16]) -> Result<Self::Name, InvalidJobId> {
+		JobName::from_uuid_bytes(bytes)
+	}
+
+	fn observe_empty(
+		&self,
+		target: UnixComponent<'_>,
+	) -> Result<DarwinFileIdentity, AdmissionFailure<JobError>> {
+		let observed = self
+			.0
+			.observe_empty_job_destination(target)
+			.map_err(AdmissionFailure::Adapter)?;
+		native_identity(observed).map_err(AdmissionFailure::Identity)
+	}
+
+	fn create_job(&self, name: JobName) -> Result<JobDirectory<'_>, JobError> {
+		self.0.create_job_directory(name)
+	}
+}
+
+#[cfg(test)]
 pub(super) fn admit_destination(
 	planned: DestinationPlanBinding<'_>,
 	request: JobBootstrap<'_, '_>,
 ) -> Result<DarwinRootBinding, JobAdmissionError> {
-	admission::bind_destination(planned, request.destination_root_id, |component| {
-		let observed = request
-			.container
-			.observe_empty_job_destination(component)
-			.map_err(AdmissionFailure::Adapter)?;
-		native_identity(observed).map_err(AdmissionFailure::Identity)
+	let root = HeldDestination(request.container);
+	admission::bind_destination(planned, request.destination_root_id, |target| {
+		root.observe_empty(target)
 	})
-	.map_err(|failure| match failure {
+	.map_err(destination_failure)
+}
+
+pub(super) fn destination_failure(failure: AdmissionFailure<JobError>) -> JobAdmissionError {
+	match failure {
 		AdmissionFailure::Mismatch => JobAdmissionError::DestinationMismatch,
 		AdmissionFailure::Identity(error) => JobAdmissionError::Identity(error),
 		AdmissionFailure::Adapter(error) => JobAdmissionError::Destination(error),
-	})
+	}
 }
 
 pub(super) fn check_source(
@@ -38,13 +81,15 @@ pub(super) fn check_source(
 	source: &ManagedRegularFile<'_>,
 	source_root_id: RootCapabilityId,
 ) -> Result<(), JobAdmissionError> {
-	admission::check_source(planned, &HeldSource(source), source_root_id).map_err(|failure| {
-		match failure {
-			AdmissionFailure::Mismatch => JobAdmissionError::SourceMismatch,
-			AdmissionFailure::Identity(error) => JobAdmissionError::Identity(error),
-			AdmissionFailure::Adapter(error) => JobAdmissionError::Source(error),
-		}
-	})
+	admission::check_source(planned, &HeldSource(source), source_root_id).map_err(source_failure)
+}
+
+pub(super) fn source_failure(failure: AdmissionFailure<ManagedReadError>) -> JobAdmissionError {
+	match failure {
+		AdmissionFailure::Mismatch => JobAdmissionError::SourceMismatch,
+		AdmissionFailure::Identity(error) => JobAdmissionError::Identity(error),
+		AdmissionFailure::Adapter(error) => JobAdmissionError::Source(error),
+	}
 }
 
 impl ReadOnlySource for HeldSource<'_> {

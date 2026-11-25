@@ -128,8 +128,39 @@ pub trait PrivateStage {
 	) -> Result<ObservedStage<Self::Writer<'stage>>, StageAdmissionFailure<Self::Error>>;
 }
 
+/// The source precondition or private entry setup that stopped creation.
+#[derive(Debug)]
+pub enum EntryOpenFailure<S, D> {
+	/// The previously admitted source no longer agrees with its plan.
+	Source(S),
+	/// The single attempt or its logical source facts were refused.
+	Request(RequestError),
+	/// The private directory could not be created exclusively.
+	Directory(D),
+}
+
+/// Revalidates the source before consuming the attempt and creating its private directory.
+///
+/// The source observation and exclusive directory effect are supplied by the holder.
+/// A failed source check does not consume the single stage attempt. Any later
+/// failure does consume it and leaves uncertainty to reconciliation.
+/// # Errors
+/// Reports the first refused prerequisite or private directory creation failure.
+pub fn open<'name, S, D, E>(
+	attempt: &mut EntryAttempt,
+	plan: DarwinCopyPlan<'name>,
+	job: JobId,
+	check_source: impl FnOnce() -> Result<(), S>,
+	create_directory: impl FnOnce() -> Result<D, E>,
+) -> Result<(EntryRequest<'name>, D), EntryOpenFailure<S, E>> {
+	check_source().map_err(EntryOpenFailure::Source)?;
+	let request = begin(attempt, plan, job).map_err(EntryOpenFailure::Request)?;
+	let directory = create_directory().map_err(EntryOpenFailure::Directory)?;
+	Ok((request, directory))
+}
+
 /// Claims the attempt and validates all record inputs before private directory creation.
-pub fn begin<'name>(
+fn begin<'name>(
 	attempt: &mut EntryAttempt,
 	plan: DarwinCopyPlan<'name>,
 	job: JobId,

@@ -1,17 +1,20 @@
 use exacopy_journal::frame::Frame;
-use exacopy_journal::{DarwinEntryPrepared, DarwinStageId, DurableJournal, SyncedFrame};
+use exacopy_journal::{
+	DarwinEntryPrepared, DarwinStageId, DurableJournal, RootCapabilityId, SyncedFrame,
+};
 use exacopy_platform::macos::ManagedRegularFile;
 use exacopy_platform::macos::staging::jobs::{JobDirectory, JobName};
 use exacopy_platform::macos::staging::{
 	StageBindingContext, StageDirectory, StageError, WriteStage,
 };
+use exacopy_transfer::macos::job::entry::publish::PublicationAttempt;
 use exacopy_transfer::macos::job::entry::{
 	self, ObservedStage, PrivateStage, StageAdmissionFailure, StageRequest,
 };
 
-use super::super::plan::DarwinCopyPlan;
-use super::PreparedDarwinJob;
+use super::super::plan::{DarwinCopyPlan, SourcePlanBinding};
 use super::admission::{check_source, native_identity};
+use super::{JobAdmissionError, PreparedDarwinJob};
 
 mod error;
 mod publish;
@@ -22,11 +25,9 @@ pub use publish::{DarwinCopyError, DarwinCopyFailure, PublicationProgress};
 /// The private unwritten stage and synchronized kind-2 evidence for one entry.
 #[derive(Debug)]
 pub struct PreparedDarwinEntry<'entry> {
-	writer: Option<WriteStage<'entry>>,
-	source: &'entry ManagedRegularFile<'entry>,
+	attempt: PublicationAttempt<publish::NativePreparedCopy<'entry>>,
 	journal: &'entry mut DurableJournal,
 	plan: DarwinCopyPlan<'entry>,
-	progress: PublicationProgress,
 	job: &'entry JobDirectory<'entry>,
 	preparation: DarwinEntryPrepared<'entry>,
 	frame: Frame,
@@ -74,40 +75,54 @@ impl PreparedDarwinJob<'_> {
 		&mut self,
 		operation: impl FnOnce(&mut PreparedDarwinEntry<'_>) -> T,
 	) -> Result<T, EntryPreparationError> {
-		let source = self.plan.source();
-		check_source(source, self.source, self.source_root_id)
-			.map_err(EntryPreparationFailure::Source)
-			.map_err(|source| EntryPreparationError::new(self.job.name(), source))?;
-		self.with_admitted_entry(operation)
+		self.with_source_check(check_source, operation)
 	}
 
+	#[cfg(test)]
 	pub(super) fn with_admitted_entry<T>(
 		&mut self,
 		operation: impl FnOnce(&mut PreparedDarwinEntry<'_>) -> T,
 	) -> Result<T, EntryPreparationError> {
+		self.with_source_check(|_, _, _| Ok(()), operation)
+	}
+
+	fn with_source_check<T>(
+		&mut self,
+		check: impl FnOnce(
+			SourcePlanBinding<'_>,
+			&ManagedRegularFile<'_>,
+			RootCapabilityId,
+		) -> Result<(), JobAdmissionError>,
+		operation: impl FnOnce(&mut PreparedDarwinEntry<'_>) -> T,
+	) -> Result<T, EntryPreparationError> {
 		let name = self.job.name();
-		self.prepare_entry(operation)
+		let (planned, source, root_id) = (self.plan.source(), self.source, self.source_root_id);
+		self.prepare_entry(|| check(planned, source, root_id), operation)
 			.map_err(|source| EntryPreparationError::new(name, source))
 	}
 
 	fn prepare_entry<T>(
 		&mut self,
+		check: impl FnOnce() -> Result<(), JobAdmissionError>,
 		operation: impl FnOnce(&mut PreparedDarwinEntry<'_>) -> T,
 	) -> Result<T, EntryPreparationFailure> {
 		let plan = self.plan;
-		let request = entry::begin(&mut self.entry_attempt, plan, self.job.name().job_id())?;
-		let stage = self
-			.job
-			.create_stage_directory()
-			.map_err(EntryPreparationFailure::Directory)?;
+		let (request, stage) = entry::open(
+			&mut self.entry_attempt,
+			plan,
+			self.job.name().job_id(),
+			check,
+			|| self.job.create_stage_directory(),
+		)?;
 		let held = HeldStageDirectory(&stage);
 		let prepared = entry::prepare(request, &self.preparation, &held, &mut self.journal)?;
 		let mut entry = PreparedDarwinEntry {
-			writer: Some(prepared.writer),
-			source: self.source,
+			attempt: PublicationAttempt::new(publish::NativePreparedCopy::new(
+				self.source,
+				prepared.writer,
+			)),
 			journal: &mut self.journal,
 			plan,
-			progress: PublicationProgress::Private,
 			job: self.job,
 			preparation: prepared.preparation,
 			frame: prepared.frame,

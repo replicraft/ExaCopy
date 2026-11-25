@@ -4,7 +4,7 @@ use exacopy_endpoint::NameError;
 use exacopy_journal::{DarwinPreparedError, DurableJournalError, OwnerError, PreparedError};
 use exacopy_platform::macos::staging::StageError;
 use exacopy_platform::macos::staging::jobs::{JobError, JobName};
-use exacopy_transfer::macos::job::entry::{PreparationFailure, RequestError};
+use exacopy_transfer::macos::job::entry::{EntryOpenFailure, PreparationFailure, RequestError};
 
 use super::super::JobAdmissionError;
 
@@ -144,6 +144,16 @@ impl From<PreparationFailure<StageError>> for EntryPreparationFailure {
 			PreparationFailure::Observation(error) => Self::Observation(error),
 			PreparationFailure::Binding(error) => Self::Binding(error),
 			PreparationFailure::Journal(error) => Self::Journal(error),
+		}
+	}
+}
+
+impl From<EntryOpenFailure<JobAdmissionError, JobError>> for EntryPreparationFailure {
+	fn from(error: EntryOpenFailure<JobAdmissionError, JobError>) -> Self {
+		match error {
+			EntryOpenFailure::Source(error) => Self::Source(error),
+			EntryOpenFailure::Request(error) => error.into(),
+			EntryOpenFailure::Directory(error) => Self::Directory(error),
 		}
 	}
 }

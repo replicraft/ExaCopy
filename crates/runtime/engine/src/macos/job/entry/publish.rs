@@ -1,4 +1,4 @@
-use exacopy_transfer::macos::job::entry::publish::{PreparedEvidence, execute};
+use exacopy_transfer::macos::job::entry::publish::{AttemptFailure, PreparedEvidence};
 
 use super::PreparedDarwinEntry;
 use crate::macos::receipt::DarwinCopyReceipt;
@@ -8,7 +8,8 @@ mod native;
 #[cfg(test)]
 mod tests;
 
-use native::{NativePreparedCopy, NativeReceiptStore};
+pub(super) use native::NativePreparedCopy;
+use native::NativeReceiptStore;
 
 pub use error::{DarwinCopyError, DarwinCopyFailure};
 pub use exacopy_transfer::macos::job::entry::publish::PublicationProgress;
@@ -27,27 +28,23 @@ impl<'entry> PreparedDarwinEntry<'entry> {
 		&mut self,
 		scratch: &mut [u8],
 	) -> Result<DarwinCopyReceipt<'entry>, DarwinCopyError> {
-		let mut progress = self.progress;
-		let result = self
-			.writer
-			.take()
-			.ok_or(DarwinCopyFailure::AlreadyAttempted)
-			.and_then(|writer| {
-				execute(
-					PreparedEvidence {
-						frame: &self.frame,
-						source: self.preparation.preparation().source.identity(),
-						plan: &self.plan,
-					},
-					NativePreparedCopy::new(self.source, writer),
-					self.journal,
-					&NativeReceiptStore(self.job),
-					scratch,
-					&mut progress,
-				)
-				.map_err(DarwinCopyFailure::from)
-			});
-		self.progress = progress;
-		result.map_err(|failure| DarwinCopyError::new(self.job_name(), progress, failure))
+		self.attempt
+			.execute(
+				PreparedEvidence {
+					frame: &self.frame,
+					source: self.preparation.preparation().source.identity(),
+					plan: &self.plan,
+				},
+				self.journal,
+				&NativeReceiptStore(self.job),
+				scratch,
+			)
+			.map_err(|error| {
+				let failure = match error {
+					AttemptFailure::AlreadyAttempted => DarwinCopyFailure::AlreadyAttempted,
+					AttemptFailure::Copy(failure) => failure.into(),
+				};
+				DarwinCopyError::new(self.job_name(), self.attempt.progress(), failure)
+			})
 	}
 }
