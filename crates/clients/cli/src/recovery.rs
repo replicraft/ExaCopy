@@ -2,15 +2,17 @@ use std::path::Path;
 
 use exacopy_content::MAX_SCRATCH_BYTES;
 use exacopy_platform::linux::StageError;
-use exacopy_transfer::linux::{RecoveryInspectError, RecoveryProfile, inspect_recovery};
+use exacopy_transfer::linux::{
+	RecoveryFinishError, RecoveryInspectError, RecoveryProfile, finish_recovery, inspect_recovery,
+};
 
-use crate::args::RecoveryCommand;
+use crate::args::{RecoveryAction, RecoveryCommand};
 use crate::copy_report::ErrorKind;
 use crate::linux_path::{open_destination, split};
 use crate::profile::LocalProfile;
 use crate::recovery_report::RecoveryOutcome;
 
-pub(crate) fn inspect(request: &RecoveryCommand) -> RecoveryOutcome {
+pub(crate) fn execute(request: &RecoveryCommand) -> RecoveryOutcome {
 	let (parent, job) = match split(&request.job) {
 		Ok(selection) => selection,
 		Err(error) => return RecoveryOutcome::failure(ErrorKind::InvalidRequest, error),
@@ -32,9 +34,19 @@ pub(crate) fn inspect(request: &RecoveryCommand) -> RecoveryOutcome {
 		id: profile.id(),
 		verifying_key: &profile.verification_key(),
 	};
-	match inspect_recovery(&destination, job, profile, &mut scratch) {
-		Ok(evidence) => RecoveryOutcome::inspected(evidence),
-		Err(error) => RecoveryOutcome::failure(kind(&error), error),
+	match request.action {
+		RecoveryAction::Inspect => match inspect_recovery(&destination, job, profile, &mut scratch)
+		{
+			Ok(evidence) => RecoveryOutcome::inspected(evidence),
+			Err(error) => RecoveryOutcome::failure(kind(&error), error),
+		},
+		RecoveryAction::Finish => match finish_recovery(&destination, job, profile, &mut scratch) {
+			Ok(evidence) => RecoveryOutcome::inspected(evidence),
+			Err(RecoveryFinishError::Inspection(error)) => {
+				RecoveryOutcome::failure(kind(&error), error)
+			}
+			Err(error) => RecoveryOutcome::failure(ErrorKind::RecoveryRequired, error),
+		},
 	}
 }
 

@@ -33,15 +33,12 @@ pub(crate) fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
 			ExitCode::from(code)
 		}
 		Command::InitProfile(path) => ExitCode::from(init_profile(&path, &mut stderr)),
-		Command::InspectRecovery(inspect) => {
-			let outcome = inspect_recovery(&inspect);
-			match outcome.write(inspect.format, &mut stdout, &mut stderr) {
+		Command::Recover(recovery) => {
+			let outcome = execute_recovery(&recovery);
+			match outcome.write(recovery.format, &mut stdout, &mut stderr) {
 				Ok(()) => ExitCode::from(outcome.exit_code()),
 				Err(error) => {
-					let _ = writeln!(
-						stderr,
-						"exacopy: could not write recovery inspection ({error})"
-					);
+					let _ = writeln!(stderr, "exacopy: could not write recovery result ({error})");
 					ExitCode::from(4)
 				}
 			}
@@ -50,13 +47,13 @@ pub(crate) fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
 }
 
 #[cfg(target_os = "linux")]
-fn inspect_recovery(command: &RecoveryCommand) -> RecoveryOutcome {
-	crate::recovery::inspect(command)
+fn execute_recovery(command: &RecoveryCommand) -> RecoveryOutcome {
+	crate::recovery::execute(command)
 }
 
 #[cfg(not(target_os = "linux"))]
-fn inspect_recovery(command: &RecoveryCommand) -> RecoveryOutcome {
-	let _ = (&command.job, &command.profile);
+fn execute_recovery(command: &RecoveryCommand) -> RecoveryOutcome {
+	let _ = (command.action, &command.job, &command.profile);
 	RecoveryOutcome::failure(
 		crate::copy_report::ErrorKind::Unsupported,
 		"local recovery requires Linux",

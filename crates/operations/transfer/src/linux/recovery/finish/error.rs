@@ -12,6 +12,8 @@ use super::super::RecoveryInspectError;
 pub enum RecoveryFinishError {
 	/// A held object or recorded artifact did not support inspection.
 	Inspection(RecoveryInspectError),
+	/// A held operation failed after the job was admitted for completion.
+	Completion(RecoveryInspectError),
 	/// The verified prefix lacked a reference required for completion.
 	IncompleteEvidence,
 	/// No later recovery generation can be assigned.
@@ -44,7 +46,7 @@ impl From<RecoveryInspectError> for RecoveryFinishError {
 impl fmt::Display for RecoveryFinishError {
 	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
-			Self::Inspection(error) => error.fmt(formatter),
+			Self::Inspection(error) | Self::Completion(error) => error.fmt(formatter),
 			Self::IncompleteEvidence => {
 				formatter.write_str("recovery lacks required publication evidence")
 			}
@@ -78,7 +80,7 @@ impl fmt::Display for RecoveryFinishError {
 impl Error for RecoveryFinishError {
 	fn source(&self) -> Option<&(dyn Error + 'static)> {
 		match self {
-			Self::Inspection(error) => Some(error),
+			Self::Inspection(error) | Self::Completion(error) => Some(error),
 			Self::Resume(error) | Self::Journal { source: error, .. } => Some(error),
 			Self::Decision(error) => Some(error),
 			Self::Publication(error) => Some(error),

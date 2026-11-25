@@ -69,10 +69,11 @@ pub fn finish_recovery(
 		names: &names,
 	}
 	.complete(&lease)?;
-	let history = RecoveryHistory::load(job, name, profile)?;
+	let history =
+		RecoveryHistory::load(job, name, profile).map_err(RecoveryFinishError::Completion)?;
 	history
 		.inspect(job, &names, scratch)
-		.map_err(RecoveryFinishError::Inspection)
+		.map_err(RecoveryFinishError::Completion)
 }
 
 struct CompleteCopy<'history, 'root> {
@@ -108,7 +109,7 @@ impl CompleteCopy<'_, '_> {
 
 		let segment = lease
 			.open_first_segment_for_append(&self.history.journal_file)
-			.map_err(RecoveryStep::Journal.platform())?;
+			.map_err(completion(RecoveryStep::Journal))?;
 		let mut journal = DurableJournal::resume_first_segment(
 			segment,
 			replay.boundary.head,
@@ -149,7 +150,7 @@ impl CompleteCopy<'_, '_> {
 		)?;
 		lease
 			.sync_publication(self.names)
-			.map_err(RecoveryStep::Namespace.platform())?;
+			.map_err(completion(RecoveryStep::Namespace))?;
 
 		let observed_head = match replay.observation.map(|observation| observation.outcome()) {
 			Some(PublicationOutcome::Published { .. }) => required(replay.observation_head)?,
@@ -208,7 +209,7 @@ impl CompleteCopy<'_, '_> {
 		self.sync_receipt(lease, &receipt)?;
 		self.names
 			.recheck()
-			.map_err(RecoveryStep::Namespace.platform())?;
+			.map_err(completion(RecoveryStep::Namespace))?;
 		let _ = append(
 			&mut journal,
 			FrameKind::ReceiptCommitted,
@@ -224,25 +225,25 @@ impl CompleteCopy<'_, '_> {
 	) -> Result<(), RecoveryFinishError> {
 		let receipts = lease
 			.open_receipt_directory()
-			.map_err(RecoveryStep::Receipt.platform())?;
+			.map_err(completion(RecoveryStep::Receipt))?;
 		if let Some(current) = &self.history.receipt {
 			receipts
 				.sync_receipt(current)
-				.map_err(RecoveryStep::Receipt.platform())?;
+				.map_err(completion(RecoveryStep::Receipt))?;
 		} else {
 			let mut file = receipts
 				.create_receipt()
-				.map_err(RecoveryStep::Receipt.platform())?;
+				.map_err(completion(RecoveryStep::Receipt))?;
 			file.write_all(&receipt.encode())
 				.map_err(RecoveryFinishError::WriteReceipt)?;
 			file.sync_all().map_err(RecoveryFinishError::WriteReceipt)?;
 		}
 		receipts
 			.sync_directory()
-			.map_err(RecoveryStep::Receipt.platform())?;
+			.map_err(completion(RecoveryStep::Receipt))?;
 		lease
 			.sync_job_directory()
-			.map_err(RecoveryStep::Job.platform())?;
+			.map_err(completion(RecoveryStep::Job))?;
 		Ok(())
 	}
 }
@@ -259,4 +260,10 @@ fn append(
 	journal
 		.append(kind, payload)
 		.map_err(|source| RecoveryFinishError::Journal { kind, source })
+}
+
+fn completion(
+	step: RecoveryStep,
+) -> impl FnOnce(exacopy_platform::linux::StageError) -> RecoveryFinishError {
+	move |source| RecoveryFinishError::Completion(step.platform()(source))
 }

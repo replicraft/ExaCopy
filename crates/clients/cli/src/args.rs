@@ -1,13 +1,13 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
-pub(crate) const USAGE: &str = "Usage:\n  exacopy diff [--] LEFT RIGHT [--compare bytes] [--format human|json]\n  exacopy copy [--] SOURCE TARGET --profile DIR [--format human|json]\n  exacopy recover inspect [--] JOB --profile DIR [--format human|json]\n  exacopy profile init [--] DIR";
+pub(crate) const USAGE: &str = "Usage:\n  exacopy diff [--] LEFT RIGHT [--compare bytes] [--format human|json]\n  exacopy copy [--] SOURCE TARGET --profile DIR [--format human|json]\n  exacopy recover inspect|finish [--] JOB --profile DIR [--format human|json]\n  exacopy profile init [--] DIR";
 
 pub(crate) enum Command {
 	Help,
 	Diff(DiffCommand),
 	Copy(CopyCommand),
-	InspectRecovery(RecoveryCommand),
+	Recover(RecoveryCommand),
 	InitProfile(PathBuf),
 }
 
@@ -25,9 +25,16 @@ pub(crate) struct CopyCommand {
 }
 
 pub(crate) struct RecoveryCommand {
+	pub(crate) action: RecoveryAction,
 	pub(crate) job: PathBuf,
 	pub(crate) profile: PathBuf,
 	pub(crate) format: Format,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum RecoveryAction {
+	Inspect,
+	Finish,
 }
 
 #[derive(Clone, Copy)]
@@ -48,15 +55,16 @@ pub(crate) fn parse(mut args: impl Iterator<Item = OsString>) -> Result<Command,
 }
 
 fn parse_recover(mut args: impl Iterator<Item = OsString>) -> Result<Command, &'static str> {
-	match args.next().as_deref().and_then(OsStr::to_str) {
+	let action = match args.next().as_deref().and_then(OsStr::to_str) {
 		Some("--help" | "-h") if args.next().is_none() => return Ok(Command::Help),
-		Some("inspect") => {}
-		_ => return Err("expected recover inspect JOB"),
-	}
-	let first = args.next().ok_or("recover inspect requires a job path")?;
+		Some("inspect") => RecoveryAction::Inspect,
+		Some("finish") => RecoveryAction::Finish,
+		_ => return Err("expected recover inspect or recover finish"),
+	};
+	let first = args.next().ok_or("recovery requires a job path")?;
 	let job = match first.to_str() {
 		Some("--help" | "-h") if args.next().is_none() => return Ok(Command::Help),
-		Some("--") => args.next().ok_or("recover inspect requires a job path")?,
+		Some("--") => args.next().ok_or("recovery requires a job path")?,
 		_ if first.as_encoded_bytes().starts_with(b"-") => {
 			return Err("use -- before a path that starts with a dash");
 		}
@@ -74,7 +82,8 @@ fn parse_recover(mut args: impl Iterator<Item = OsString>) -> Result<Command, &'
 			_ => return Err("unknown recovery option"),
 		}
 	}
-	Ok(Command::InspectRecovery(RecoveryCommand {
+	Ok(Command::Recover(RecoveryCommand {
+		action,
 		job: job.into(),
 		profile: profile
 			.ok_or("recovery requires an explicit --profile DIR")?
