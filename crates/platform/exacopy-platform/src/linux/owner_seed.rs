@@ -13,7 +13,7 @@ use rustix::rand::{GetRandomFlags, getrandom};
 
 use super::FileIdentity;
 
-const KEY_NAME: &CStr = c"owner.seed";
+pub(super) const KEY_NAME: &CStr = c"owner.seed";
 /// The exact byte length of an owner seed in the local profile layout.
 pub const OWNER_SEED_BYTES: usize = 32;
 const DIRECTORY_MODE: Mode = Mode::RUSR.union(Mode::WUSR).union(Mode::XUSR);

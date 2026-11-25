@@ -2,10 +2,10 @@
 
 The `plan SOURCE DESTINATION --profile PROFILE --output FILE` command
 exports the public Plan v1 envelope and one PlanEntries leaf for a
-preserve-mode `create_new` copy. The CLI owns the filesystem bundle writer.
-The Linux engine supplies held native observations, the transfer planner
-owns admission and measurement, and the codec owns canonical body and page
-encoding. See the [CLI instructions](../../apps/exacopy-cli/README.md#export-a-plan-for-one-regular-file),
+preserve-mode `create_new` copy. The CLI selects the held Linux platform
+capabilities. The platform owns native bundle observations and file operations.
+The transfer engine owns admission, measurement and page-first bundle ordering.
+The Plan codec owns the canonical body, page and bounded file presentation. See the [CLI instructions](../../apps/exacopy-cli/README.md#export-a-plan-for-one-regular-file),
 [public Plan JSON](public-plan-json.md), and [page format](public-plan-pages.md).
 
 ## Source and destination observations

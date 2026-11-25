@@ -12,6 +12,10 @@ use crate::copy_planning::{COPY_POLICY, CREATE_NEW, READ_CONTENT};
 #[cfg(test)]
 mod tests;
 
+mod bundle;
+
+pub use bundle::{BundleWriteError, write_plan_bundle};
+
 const LINUX_ID_COMPONENT_BYTES: usize = 8;
 
 /// The digest, names, and metadata policy selected independently of the bundle.

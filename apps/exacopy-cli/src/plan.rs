@@ -3,8 +3,6 @@ use std::io::Write;
 use crate::args::PlanCommand;
 
 #[cfg(target_os = "linux")]
-mod bundle;
-#[cfg(target_os = "linux")]
 mod error;
 #[cfg(target_os = "linux")]
 mod native;

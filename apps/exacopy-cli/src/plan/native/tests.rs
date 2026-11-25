@@ -5,6 +5,8 @@ use std::time::Duration;
 
 use exacopy_plan::PlanEntriesPage;
 
+use exacopy_plan::PublicPlan;
+
 use super::*;
 
 struct Fixture(PathBuf);

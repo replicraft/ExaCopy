@@ -122,7 +122,11 @@ adapter. The CLI retains path selection, signing-key construction, versioned
 owner/root identifier derivation and error projection. The move preserves the
 existing checks and bytes. Linux-target lint compiles the synthetic fixtures;
 native Linux execution of this extraction remains unqualified. Plan bundle
-effects and the remaining identifier policy still need their ownership moves.
+encoding now belongs to the Plan format crate; the transfer engine orders
+page verification and barriers, and a held Linux platform capability owns
+the filesystem effects. The existing envelope name can be visible during
+its write; this move does not establish atomic multi-file publication.
+The remaining identifier policy still needs its ownership move.
 
 Historical evidence retains its recorded revision and paths. Current
 source links and reproduction entry points follow the corrected layout.

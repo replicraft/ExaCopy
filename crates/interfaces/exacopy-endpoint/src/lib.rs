@@ -8,6 +8,7 @@ pub mod linux_job;
 pub mod linux_publication;
 pub mod linux_recovery;
 pub mod linux_staging;
+pub mod plan_bundle;
 mod positioned;
 mod read_view;
 pub mod ssh_sftp;

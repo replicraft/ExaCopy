@@ -3,8 +3,9 @@ use std::fmt;
 use std::io;
 
 use crate::assembly::linux::NativePlanningError;
-use exacopy_platform::linux::ReadError;
+use exacopy_platform::linux::{PlanBundleError, PlanSeedError};
 use exacopy_transfer::copy_planning::PlanningError;
+use exacopy_transfer::public_plan::BundleWriteError;
 use rustix::io::Errno;
 
 use crate::profile::ProfileError;
@@ -63,32 +64,35 @@ impl Failure {
 		Self::with(kind, error)
 	}
 
-	pub(super) fn bundle_open(error: Errno) -> Self {
-		let kind = match error {
-			Errno::LOOP | Errno::XDEV | Errno::NOTDIR => Kind::BundleUnsafe,
-			_ => Kind::BundleIo,
-		};
-		Self::with(kind, error)
+	pub(super) fn bundle(error: PlanBundleError) -> Self {
+		match error {
+			PlanBundleError::InvalidOutput => Self::plain(Kind::Invalid),
+			PlanBundleError::Scope(None) => Self::plain(Kind::BundleScope),
+			PlanBundleError::Scope(Some(error)) => Self::with(Kind::BundleScope, error),
+			PlanBundleError::Unsafe(None) => Self::plain(Kind::BundleUnsafe),
+			PlanBundleError::Unsafe(Some(error)) => Self::with(Kind::BundleUnsafe, error),
+			PlanBundleError::Conflict => Self::plain(Kind::BundleConflict),
+			PlanBundleError::AlreadyExists(error) => Self::with(Kind::AlreadyExists, error),
+			PlanBundleError::Io(error) => Self::with(Kind::BundleIo, error),
+			PlanBundleError::ReuseRead(error) => Self::with(Kind::ReuseRead, error),
+			_ => Self::with(Kind::BundleIo, error),
+		}
 	}
 
-	pub(super) fn bundle_io(error: io::Error) -> Self {
-		Self::with(Kind::BundleIo, error)
+	pub(super) fn bundle_write(error: BundleWriteError<PlanBundleError>) -> Self {
+		match error {
+			BundleWriteError::PageName(error) => Self::with(Kind::Encoding, error),
+			BundleWriteError::Output(error) => Self::bundle(error),
+			_ => Self::with(Kind::BundleIo, error),
+		}
 	}
 
-	pub(super) fn mount_observation(error: io::Error) -> Self {
-		let kind = match error.kind() {
-			io::ErrorKind::Unsupported => Kind::BundleScope,
-			_ => Kind::BundleIo,
-		};
-		Self::with(kind, error)
-	}
-
-	pub(super) fn reuse_read(error: ReadError) -> Self {
-		Self::with(Kind::ReuseRead, error)
-	}
-
-	pub(super) fn is_existing_name(&self) -> bool {
-		self.kind == Kind::AlreadyExists
+	pub(super) fn seed_observation(error: PlanSeedError) -> Self {
+		match error {
+			PlanSeedError::Unsafe => Self::plain(Kind::Profile),
+			PlanSeedError::Io(error) => Self::with(Kind::Profile, error),
+			_ => Self::with(Kind::Profile, error),
+		}
 	}
 
 	pub(super) fn exit_code(&self) -> u8 {

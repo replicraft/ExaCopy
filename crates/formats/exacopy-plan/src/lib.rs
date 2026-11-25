@@ -1,6 +1,7 @@
 //! Bounded public Plan encoding, document pages, and admission.
 #![forbid(unsafe_code)]
 
+mod bundle;
 mod cbor;
 mod document;
 mod plan;
@@ -8,6 +9,7 @@ mod plan_entries;
 mod plan_identity;
 mod portable;
 
+pub use bundle::{PlanBundleArtifacts, PlanBundleEncodingError, RenderedPlanEnvelope};
 pub use document::{DocumentError, DocumentPageKind, DocumentRef, MAX_DOCUMENT_PAGE_BYTES};
 pub use plan::{
 	MAX_PLAN_BODY_BYTES, MAX_PLAN_JSON_BYTES, PlanBody, PlanBodyFields, PlanConflict,

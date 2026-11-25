@@ -23,7 +23,7 @@ fn source_identity() -> PlanSourceIdentity<'static> {
 	}
 }
 
-fn entry() -> PlanEntry<'static> {
+pub(super) fn entry() -> PlanEntry<'static> {
 	PlanEntry {
 		entry_id: "d88c7830-6bc7-4375-8c41-e9c7eb219d8f".parse().unwrap(),
 		source: PlanPath {
@@ -43,7 +43,7 @@ fn entry() -> PlanEntry<'static> {
 	}
 }
 
-fn fields(entry: PlanEntry<'static>, reference: DocumentRef) -> PlanBodyFields<'static> {
+pub(super) fn fields(entry: PlanEntry<'static>, reference: DocumentRef) -> PlanBodyFields<'static> {
 	PlanBodyFields {
 		plan_id: "019a0000-0000-7000-8000-000000000001".parse().unwrap(),
 		operation: PlanOperation::Copy,
