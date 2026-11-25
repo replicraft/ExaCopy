@@ -1,4 +1,4 @@
-//! First creation of private managed APFS job state within a provisioned container.
+//! Private job creation and read-only inspection within a provisioned APFS container.
 
 use std::fmt;
 use std::fs::File;
@@ -15,12 +15,14 @@ use super::{DirectoryIdentity, DirectoryLease, StageDirectory, StageError};
 mod error;
 mod identity;
 mod record;
+mod recovery;
 
 #[cfg(test)]
 mod tests;
 
 pub use error::{JobArtifact, JobError, JobStep};
 pub use identity::JobName;
+pub use recovery::{RecoveryError, RecoveryJob, RecoveryRecord};
 
 const JOURNAL: &[u8] = b"journal";
 const RECEIPTS: &[u8] = b"receipts";

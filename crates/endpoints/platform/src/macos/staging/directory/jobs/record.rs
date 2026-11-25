@@ -11,9 +11,9 @@ use super::checked_component;
 use super::{Creation, DirectoryLease, JobArtifact, JobDirectory, JobError, JobStep};
 use super::{JOURNAL, JournalDirectory, ManagedObjectIdentity, RECEIPTS, ReceiptDirectory};
 
-const OWNER: &[u8] = b"owner.cbor";
-const PLAN: &[u8] = b"plan.cbor";
-const FIRST_SEGMENT: &[u8] = b"00000000000000000001.exajnl";
+pub(super) const OWNER: &[u8] = b"owner.cbor";
+pub(super) const PLAN: &[u8] = b"plan.cbor";
+pub(super) const FIRST_SEGMENT: &[u8] = b"00000000000000000001.exajnl";
 const RECEIPT: &[u8] = b"receipt.cbor";
 
 pub(super) const MAX_RECORD_BYTES: usize = 64 * 1024;
