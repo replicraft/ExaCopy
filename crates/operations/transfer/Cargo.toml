@@ -26,6 +26,7 @@ exacopy-endpoint.workspace = true
 exacopy-journal.workspace = true
 exacopy-model.workspace = true
 minicbor.workspace = true
+uuid.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 blake3 = { workspace = true, optional = true }

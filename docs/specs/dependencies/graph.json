@@ -335,7 +335,7 @@
           "syn@3.0.10": {"parents": ["serde_derive@1.0.229"], "features": ["clone-impls", "derive", "parsing", "printing", "proc-macro"]},
           "typenum@1.20.1": {"parents": ["crypto-common@0.1.7", "generic-array@0.14.7"], "features": []},
           "unicode-ident@1.0.27": {"parents": ["proc-macro2@1.0.107", "syn@2.0.119", "syn@3.0.10"], "features": []},
-          "uuid@1.29.3": {"parents": ["exacopy-cli@0.1.0", "exacopy-codec@0.1.0", "exacopy-model@0.1.0"], "features": []},
+          "uuid@1.29.3": {"parents": ["exacopy-cli@0.1.0", "exacopy-codec@0.1.0", "exacopy-model@0.1.0", "exacopy-transfer@0.1.0"], "features": []},
           "version_check@0.9.5": {"parents": ["generic-array@0.14.7"], "features": []},
           "zeroize@1.9.2": {"parents": ["curve25519-dalek@4.1.3", "ed25519-dalek@2.2.0", "exacopy-cli@0.1.0"], "features": []},
           "zmij@1.0.23": {"parents": ["serde_json@1.0.154"], "features": []}

@@ -350,6 +350,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "ed25519-dalek",
+ "exacopy-codec",
  "exacopy-content",
  "exacopy-endpoint",
  "exacopy-journal",
@@ -416,6 +417,7 @@ dependencies = [
  "exacopy-journal",
  "exacopy-model",
  "minicbor",
+ "uuid",
 ]
 
 [[package]]

@@ -2,7 +2,12 @@
 #![forbid(unsafe_code)]
 
 #[cfg(target_os = "linux")]
+pub mod copy_planning;
+
+#[cfg(target_os = "linux")]
 pub mod manifest;
+#[cfg(target_os = "linux")]
+pub mod public_plan;
 
 #[cfg(target_os = "linux")]
 pub mod linux;

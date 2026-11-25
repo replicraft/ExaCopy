@@ -1,5 +1,6 @@
+use exacopy_endpoint::linux_staging::{ExtendedAttributes, StagingSource};
 use exacopy_endpoint::{ReadView, UnixComponent};
-use exacopy_platform::linux::{FileIdentity, ReadError, ReadRoot, SourceFile};
+use exacopy_platform::linux::{FileIdentity, ReadError, ReadRoot, SourceFile, SourceObservation};
 
 #[cfg(test)]
 mod tests;
@@ -45,5 +46,28 @@ impl ReadView for NamedReadView<'_> {
 
 	fn read_exact_at(&self, offset: u64, buffer: &mut [u8]) -> Result<(), ReadError> {
 		self.file.read_exact_at(offset, buffer)
+	}
+}
+
+impl StagingSource for NamedReadView<'_> {
+	type Identity = FileIdentity;
+	type Metadata = SourceObservation;
+
+	fn identity(&self) -> Self::Identity {
+		NamedReadView::identity(self)
+	}
+
+	fn metadata(&self) -> Self::Metadata {
+		self.file.observation()
+	}
+
+	fn extended_attributes(&self) -> Result<ExtendedAttributes, ReadError> {
+		self.file.extended_attributes()
+	}
+
+	fn recheck_metadata(&self) -> Result<(), ReadError> {
+		self.root.recheck_regular_name(self.name, &self.file)?;
+		self.file.recheck_observation()?;
+		self.root.recheck_regular_name(self.name, &self.file)
 	}
 }

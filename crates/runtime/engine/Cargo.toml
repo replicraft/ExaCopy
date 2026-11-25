@@ -27,6 +27,7 @@ exacopy-transfer.workspace = true
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 blake3.workspace = true
+exacopy-codec.workspace = true
 ed25519-dalek.workspace = true
 rustix.workspace = true
 

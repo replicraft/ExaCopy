@@ -13,9 +13,11 @@ use exacopy_transfer::linux::{
 #[cfg(test)]
 mod crash_tests;
 mod named_read;
+mod public_plan;
 mod recovery;
 
 pub use named_read::NamedReadView;
+pub use public_plan::{NativePlanningError, plan_public_new_file};
 
 pub use recovery::{
 	RecoveryFinishError, RecoveryInspectError, RecoveryRetryError, RecoverySource, finish_recovery,
