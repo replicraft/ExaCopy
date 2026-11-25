@@ -3,6 +3,7 @@
 
 mod identity;
 mod range;
+mod sync;
 mod transaction;
 
 #[cfg(kani)]
@@ -11,6 +12,10 @@ mod kani_checks;
 
 pub use identity::{CopyBinding, EntryId, InvalidJobId, JobId, RunEpoch, StageId};
 pub use range::checked_range_end;
+pub use sync::{
+	RegularFileEvidence, SyncBaseline, SyncBlock, SyncConflict, SyncCopyTarget,
+	SyncInventoryCompleteness, SyncObservation, SyncPathDecision, SyncSide, classify_two_way_path,
+};
 pub use transaction::{
 	CopyEffect, CopyEvent, CopyPhase, CopySession, PublishNoClobber, ReadSource, TransitionError,
 };
