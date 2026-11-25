@@ -113,9 +113,13 @@ positive_decimal() {
 	esac
 }
 
-verify_signature() {
+verify_publisher_pin() {
 	actual_pin=$(hash_file "$scratch/publisher.der") || fail 'cannot hash publisher certificate'
 	[ "$actual_pin" = "$publisher_pin" ] || fail 'publisher certificate does not match supplied pin'
+}
+
+verify_signature() {
+	verify_publisher_pin
 	/usr/bin/openssl x509 -inform DER -in "$scratch/publisher.der" -pubkey -noout > "$scratch/publisher.pem" ||
 		fail 'cannot extract publisher public key'
 	rsa=$(/usr/bin/openssl rsa -pubin -in "$scratch/publisher.pem" -modulus -noout 2>/dev/null) ||

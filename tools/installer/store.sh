@@ -194,6 +194,15 @@ verify_removal_resource_forks() {
 
 uninstall_file() {
 	open_store
+	if [ ! -e "$version_dir" ] && [ ! -L "$version_dir" ]; then
+		[ -r "$version_store" ] && [ -x "$version_store" ] ||
+			fail 'cannot inspect owned versions directory'
+		[ "$previous_sequence" -gt 0 ] && [ "$previous_version" = "$version" ] ||
+			fail 'absent version does not match retained release history'
+		verify_publisher_pin
+		printf 'Already absent: %s\n' "$version_dir"
+		return
+	fi
 	verify_installed
 	[ "$sequence" -le "$previous_sequence" ] || fail 'history is inconsistent with installed version'
 	if [ "$sequence" = "$previous_sequence" ]; then

@@ -205,7 +205,71 @@ def test_install(temporary, options):
                            check=True, capture_output=True, timeout=10)
     run("uninstall", "remove only exact owned version files", "--quiesced")
     assert not directory.exists()
-    assert sha256(history.read_bytes()).digest() == history_digest
+    history_bytes = history.read_bytes()
+    assert sha256(history_bytes).digest() == history_digest
+    owner_marker = store / ".owner"
+    owner_bytes = owner_marker.read_bytes()
+    for arguments in (("--quiesced",), ("--dry-run",)):
+        repeated = run("uninstall", f"repeat uninstall reports absence during {arguments[0]}",
+                       *arguments)
+        assert repeated == f"Already absent: {directory}\n"
+        assert not directory.exists()
+        assert history.read_bytes() == history_bytes
+        assert owner_marker.read_bytes() == owner_bytes
+
+    alternate_certificate = temporary / "different.der"
+    original_certificate = Path(fixture["publisher_certificate"]).read_bytes()
+    alternate_certificate.write_bytes(original_certificate[:-1] + bytes([original_certificate[-1] ^ 1]))
+    run("uninstall", "refuse absent version with wrong certificate", "--quiesced",
+        credentials=[*auth[:3], str(alternate_certificate), *auth[4:]],
+        expected="certificate does not match supplied pin")
+    run("uninstall", "refuse absent unknown version", "--quiesced",
+        credentials=[auth[0], "999.0.0", *auth[2:]], expected="does not match retained release history")
+    foreign_history = history_bytes.replace(f"\n{version}\n".encode(), b"\n999.0.0\n")
+    assert foreign_history != history_bytes
+    history.write_bytes(foreign_history)
+    run("uninstall", "refuse absent version with different history", "--quiesced",
+        expected="does not match retained release history")
+    assert history.read_bytes() == foreign_history
+    history.write_bytes(b"unrecognized or incomplete history")
+    run("uninstall", "refuse absent version with invalid history", "--quiesced",
+        expected="invalid release sequence record")
+    assert history.read_bytes() == b"unrecognized or incomplete history"
+    history.write_bytes(history_bytes)
+    history.rename(absent_history)
+    run("uninstall", "refuse absent version with missing history", "--quiesced",
+        expected="invalid release sequence record")
+    assert absent_history.read_bytes() == history_bytes
+    assert not history.exists()
+    absent_history.rename(history)
+
+    absent_store = home / "absent-store" / "install"
+    run("uninstall", "refuse absent store without ownership", "--quiesced", root=absent_store,
+        expected="no owned install store")
+    assert not absent_store.exists()
+    run("uninstall", "refuse unowned store without removing an incumbent", "--quiesced",
+        root=foreign_root, expected="ownership record")
+    assert foreign_file.read_bytes() == b"foreign install data"
+
+    dangling_target = temporary / "missing-version-target"
+    directory.symlink_to(dangling_target, target_is_directory=True)
+    run("uninstall", "refuse a dangling selected-version link", "--quiesced",
+        expected="unsafe or missing directory")
+    assert directory.readlink() == dangling_target
+    directory.unlink()
+
+    pending.mkdir(mode=0o700)
+    pending_evidence = pending / "unknown-receipt"
+    pending_evidence.write_bytes(b"retained withdrawal evidence\x00\xff")
+    for arguments in (("--quiesced",), ("--dry-run",)):
+        run("uninstall", f"refuse absent selected version with withdrawal during {arguments[0]}",
+            *arguments, expected="interrupted removal requires owner reconciliation")
+        assert pending_evidence.read_bytes() == b"retained withdrawal evidence\x00\xff"
+    pending_evidence.unlink()
+    pending.rmdir()
+    assert history.read_bytes() == history_bytes
+    assert owner_marker.read_bytes() == owner_bytes
+    assert all(path.read_bytes() == data for path, data in user_paths.items())
     install("refuse rollback after removing binaries", "lower-sequence", expected="rollback refused")
     install("reinstall exact verified version")
     assert executable.read_bytes() == signed_artifact
