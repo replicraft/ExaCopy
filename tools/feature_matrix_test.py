@@ -118,6 +118,25 @@ class FeatureMatrixTests(unittest.TestCase):
                 )
 
 
+    def test_optional_dependency_is_scoped_to_its_named_consumer(self):
+        rule = {"default_features": False, "features": [], "optional_consumers": ["ssh"]}
+        policy = {
+            "production_packages": ["cli", "ssh"], "engineering_packages": [], "features": {},
+            "production_dependencies": {"zeroize": rule},
+        }
+        dependency = {
+            "name": "zeroize", "kind": None, "source": "registry", "target": None,
+            "uses_default_features": False, "features": [], "optional": False,
+        }
+        packages = [
+            {"name": "cli", "features": {}, "dependencies": [dependency]},
+            {"name": "ssh", "features": {}, "dependencies": [dependency | {"optional": True}]},
+        ]
+        check_manifests(policy, packages)
+        packages[1]["dependencies"][0]["optional"] = False
+        with self.assertRaisesRegex(ValueError, "ssh: zeroize feature selection differs"):
+            check_manifests(policy, packages)
+
     def test_isolated_profiles_ignore_new_same_owner_features(self):
         policy = deepcopy(POLICY)
         for name, target, selectors in (
@@ -128,6 +147,7 @@ class FeatureMatrixTests(unittest.TestCase):
                 "exacopy-platform/experimental-windows-copy", "exacopy-platform/windows-read-fixture",
             ]),
             ("experimental-wireguard-protocol", LINUX, ["exacopy-wireguard/experimental-protocol"]),
+            ("experimental-ssh", LINUX, ["exacopy-ssh/experimental-ssh"]),
         ):
             with self.subTest(profile=name):
                 owner = selectors[0].partition("/")[0]

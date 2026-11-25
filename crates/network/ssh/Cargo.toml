@@ -1,0 +1,30 @@
+[package]
+name = "exacopy-ssh"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+experimental-ssh = [
+    "dep:bytes",
+    "dep:exacopy-endpoint",
+    "dep:russh",
+    "dep:russh-sftp",
+    "dep:tokio",
+    "dep:tokio-util",
+    "dep:zeroize",
+]
+
+[dependencies]
+bytes = { workspace = true, optional = true }
+exacopy-endpoint = { workspace = true, optional = true }
+russh = { workspace = true, optional = true, features = ["ring"] }
+russh-sftp = { workspace = true, optional = true, features = ["raw-string"] }
+tokio = { workspace = true, optional = true, features = ["io-util", "macros", "rt", "sync", "time"] }
+tokio-util = { workspace = true, optional = true, features = ["rt"] }
+zeroize = { workspace = true, optional = true }
+
+[lints]
+workspace = true

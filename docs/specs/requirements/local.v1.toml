@@ -1229,3 +1229,26 @@ owner = "exacopy-cli"
 level = "documentation"
 state = "reported"
 path = "crates/clients/cli/README.md"
+
+
+[[coverage]]
+id = "experimental-ssh-transport"
+status = "implemented"
+requirement_ids = ["R-228", "R-229"]
+acceptance_ids = ["A-228", "A-229"]
+invariant_ids = ["INV-014", "INV-018", "INV-030"]
+scope = "Default-off caller-stream SSH/SFTP v3 library with host pin and trust checks before bounded credential acquisition, strict selected packet shapes, raw names and bounded read-only operations."
+limits = "Synthetic in-memory peer execution only; Linux cross-check and Windows SDK block are separate. No protected trust-file acquisition, product CLI, uploads, publication, recovery, snapshots or root confinement qualification."
+
+[[coverage.evidence]]
+owner = "exacopy-ssh"
+level = "test"
+state = "defined"
+path = "crates/network/ssh/tests/in_process.rs"
+target = "a_mismatched_pin_or_revocation_never_requests_or_sends_a_credential"
+
+[[coverage.evidence]]
+owner = "exacopy-ssh"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/ssh-transport.md"

@@ -52,7 +52,7 @@ def check_manifests(policy, packages):
             expected = (
                 rule["default_features"],
                 sorted(rule["features"] + additions),
-                rule.get("optional", False)
+                rule.get("optional", False) or name in rule.get("optional_consumers", [])
                 or dependency["target"] in rule.get("optional_targets", {}).get(name, []),
             )
             actual = (

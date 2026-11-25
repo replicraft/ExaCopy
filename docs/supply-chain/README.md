@@ -28,8 +28,15 @@ read-back verification, integrity framing, authenticated publication intent,
 exclusive publication and recovery. The macOS experimental feature enables
 the native composition and its transfer policies, including the integrity
 and recovery mechanisms.
-GUI, networking, VPN, Android, cloud storage, backup repositories, and
-specialized document processing have no production feature or dependency.
+The separate `exacopy-ssh/experimental-ssh` workspace profile enables the pinned
+SSH and SFTP libraries for bounded read-only adapter checks. The synthetic tests
+use an in-process peer. `exacopy-wireguard/experimental-protocol` is a separate
+bounded protocol backend. Neither profile adds a product CLI dependency or
+enables a remote command. Native interoperability and independent dependency
+audits remain open.
+
+GUI, Android, cloud storage, backup repositories, and specialized document
+processing have no production feature or dependency.
 
 ```sh
 python3 tools/feature_matrix.py --target aarch64-apple-darwin

@@ -12,7 +12,8 @@
     "exacopy-model",
     "exacopy-platform",
     "exacopy-transfer",
-    "exacopy-wireguard"
+    "exacopy-wireguard",
+    "exacopy-ssh"
   ],
   "engineering_packages": ["exacopy-testkit", "xtask"],
   "profiles": {
@@ -76,6 +77,13 @@
       "exact_features": ["exacopy-wireguard/experimental-protocol"],
       "purpose": "Check the in-memory WireGuard packet adapter in a separate workspace profile on each CI target."
     },
+    "experimental-ssh": {
+      "defaults": false,
+      "check_cli": false,
+      "feature_statuses": [],
+      "exact_features": ["exacopy-ssh/experimental-ssh"],
+      "purpose": "Compile the opt-in read-only SSH/SFTP adapter for dependency review and synthetic in-process tests."
+    },
     "development-all": {
       "defaults": true,
       "check_cli": false,
@@ -84,6 +92,30 @@
     }
   },
   "features": {
+    "exacopy-ssh": {
+      "experimental-ssh": {
+        "status": "experimental",
+        "enables": [
+          "dep:bytes",
+          "dep:exacopy-endpoint",
+          "dep:russh",
+          "dep:russh-sftp",
+          "dep:tokio",
+          "dep:tokio-util",
+          "dep:zeroize"
+        ],
+        "resolution_probe": [
+          "bytes",
+          "exacopy-endpoint",
+          "russh",
+          "russh-sftp",
+          "tokio",
+          "tokio-util",
+          "zeroize"
+        ],
+        "purpose": "Enable the caller-routed, pinned-host, read-only SSH/SFTP library without enabling a product workflow."
+      }
+    },
     "exacopy-cli": {
       "experimental-windows-diff": {
         "status": "experimental",
@@ -192,6 +224,60 @@
       "features": ["alloc"],
       "purpose": "Encode the bounded raw-byte fields of public integrity manifests."
     },
+    "bytes": {
+      "default_features": false,
+      "features": [],
+      "optional": true,
+      "purpose": "Pass bounded SFTP frames to the upstream packet codec and hold its encoded responses."
+    },
+    "russh": {
+      "default_features": false,
+      "features": [],
+      "optional": true,
+      "purpose": "Perform SSH key exchange, authenticate one pinned peer on a caller-owned stream, and request its SFTP subsystem.",
+      "feature_additions": {
+        "exacopy-ssh": [
+          "ring"
+        ]
+      }
+    },
+    "russh-sftp": {
+      "default_features": false,
+      "features": [],
+      "optional": true,
+      "purpose": "Encode and decode admitted SFTP v3 requests and preserve raw file and handle bytes.",
+      "feature_additions": {
+        "exacopy-ssh": [
+          "raw-string"
+        ]
+      }
+    },
+    "tokio": {
+      "default_features": false,
+      "features": [],
+      "optional": true,
+      "purpose": "Supply async SSH stream I/O, bounded timeouts and synchronization with a synthetic in-process peer.",
+      "feature_additions": {
+        "exacopy-ssh": [
+          "io-util",
+          "macros",
+          "rt",
+          "sync",
+          "time"
+        ]
+      }
+    },
+    "tokio-util": {
+      "default_features": false,
+      "features": [],
+      "optional": true,
+      "purpose": "Fence the owned SSH byte stream when an operation fails or its owner is dropped.",
+      "feature_additions": {
+        "exacopy-ssh": [
+          "rt"
+        ]
+      }
+    },
     "boringtun": {
       "default_features": false,
       "features": [],
@@ -299,7 +385,8 @@
     "zeroize": {
       "default_features": false,
       "features": [],
-      "purpose": "Clear temporary copies of Linux CLI signing key material."
+      "optional_consumers": ["exacopy-ssh"],
+      "purpose": "Clear owned copies of signing key material and SSH password input."
     }
   },
   "cli_graph_groups": {
