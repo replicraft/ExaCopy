@@ -1,14 +1,16 @@
 use std::path::Path;
 
 use exacopy_content::MAX_SCRATCH_BYTES;
-use exacopy_platform::linux::StageError;
+use exacopy_endpoint::UnixComponent;
+use exacopy_platform::linux::{DestinationRoot, PublishError, ReadError, ReadRoot, StageError};
 use exacopy_transfer::linux::{
-	RecoveryFinishError, RecoveryInspectError, RecoveryProfile, finish_recovery, inspect_recovery,
+	RecoveryFinishError, RecoveryInspectError, RecoveryProfile, RecoveryRetryError, RecoverySource,
+	finish_recovery, inspect_recovery, retry_recovery,
 };
 
 use crate::args::{RecoveryAction, RecoveryCommand};
 use crate::copy_report::ErrorKind;
-use crate::linux_path::{open_destination, split};
+use crate::linux_path::{open_destination, open_directory, split};
 use crate::profile::LocalProfile;
 use crate::recovery_report::RecoveryOutcome;
 
@@ -30,23 +32,85 @@ pub(crate) fn execute(request: &RecoveryCommand) -> RecoveryOutcome {
 		return RecoveryOutcome::failure(ErrorKind::Io, error);
 	}
 	scratch.resize(MAX_SCRATCH_BYTES, 0);
-	let profile = RecoveryProfile {
+	let binding = RecoveryProfile {
 		id: profile.id(),
 		verifying_key: &profile.verification_key(),
 	};
-	match request.action {
-		RecoveryAction::Inspect => match inspect_recovery(&destination, job, profile, &mut scratch)
+	match &request.action {
+		RecoveryAction::Inspect => match inspect_recovery(&destination, job, binding, &mut scratch)
 		{
 			Ok(evidence) => RecoveryOutcome::inspected(evidence),
 			Err(error) => RecoveryOutcome::failure(kind(&error), error),
 		},
-		RecoveryAction::Finish => match finish_recovery(&destination, job, profile, &mut scratch) {
+		RecoveryAction::Finish => match finish_recovery(&destination, job, binding, &mut scratch) {
 			Ok(evidence) => RecoveryOutcome::inspected(evidence),
 			Err(RecoveryFinishError::Inspection(error)) => {
 				RecoveryOutcome::failure(kind(&error), error)
 			}
 			Err(error) => RecoveryOutcome::failure(ErrorKind::RecoveryRequired, error),
 		},
+		RecoveryAction::Retry { source_root } => retry(
+			&destination,
+			job,
+			binding,
+			&profile,
+			source_root,
+			&mut scratch,
+		),
+	}
+}
+
+fn retry(
+	destination: &DestinationRoot,
+	job: UnixComponent<'_>,
+	binding: RecoveryProfile<'_>,
+	profile: &LocalProfile,
+	source_root: &Path,
+	scratch: &mut [u8],
+) -> RecoveryOutcome {
+	let root = match open_directory(source_root.as_os_str())
+		.map_err(ReadError::from)
+		.and_then(ReadRoot::from_directory)
+	{
+		Ok(root) => root,
+		Err(error) => {
+			return RecoveryOutcome::failure(
+				ErrorKind::Io,
+				format_args!("could not open the supplied source root ({error})"),
+			);
+		}
+	};
+	let id = match profile.root_id(root.identity()) {
+		Ok(id) => id,
+		Err(error) => return RecoveryOutcome::failure(ErrorKind::Io, error),
+	};
+	match retry_recovery(
+		destination,
+		job,
+		binding,
+		RecoverySource { root: &root, id },
+		scratch,
+	) {
+		Ok(evidence) => RecoveryOutcome::inspected(evidence),
+		Err(error) => RecoveryOutcome::failure(retry_kind(&error), error),
+	}
+}
+
+fn retry_kind(error: &RecoveryRetryError) -> ErrorKind {
+	match error {
+		RecoveryRetryError::Recovery(RecoveryFinishError::Inspection(error)) => kind(error),
+		RecoveryRetryError::SourceMismatch
+		| RecoveryRetryError::OpenSource(ReadError::NotRegularFile | ReadError::IdentityChanged) => {
+			ErrorKind::SourceMismatch
+		}
+		RecoveryRetryError::OpenSource(ReadError::System(error))
+			if error.kind() == std::io::ErrorKind::NotFound =>
+		{
+			ErrorKind::SourceMismatch
+		}
+		RecoveryRetryError::OpenSource(_) | RecoveryRetryError::MeasureSource(_) => ErrorKind::Io,
+		RecoveryRetryError::Publish(PublishError::Conflict) => ErrorKind::Conflict,
+		_ => ErrorKind::RecoveryRequired,
 	}
 }
 

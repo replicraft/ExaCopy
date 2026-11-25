@@ -1,6 +1,6 @@
 # ExaCopy
 
-ExaCopy is a Rust project for file transfers, comparison, and backup. The Linux CLI compares regular files byte for byte and copies one regular file into an absent name. It verifies the private stage by independent BLAKE3 read-back, synchronizes publication intent before an exclusive rename, and commits a receipt. Recovery can inspect a retained job and complete the journal and receipt for an already-published copy.
+ExaCopy is a Rust project for file transfers, comparison, and backup. The Linux CLI compares regular files byte for byte and copies one regular file into an absent name. It verifies the private stage by independent BLAKE3 read-back, synchronizes publication intent before an exclusive rename, and commits a receipt. Recovery can inspect a retained job, retry a verified private stage, or complete the journal and receipt for an already-published copy.
 
 ```sh
 cargo run --locked -p exacopy-cli -- diff LEFT RIGHT --format json
@@ -8,6 +8,7 @@ cargo run --locked -p exacopy-cli -- profile init PRIVATE_PROFILE
 cargo run --locked -p exacopy-cli -- copy SOURCE TARGET --profile PRIVATE_PROFILE --format json
 cargo run --locked -p exacopy-cli -- recover inspect JOB_DIRECTORY --profile PRIVATE_PROFILE --format json
 cargo run --locked -p exacopy-cli -- recover finish JOB_DIRECTORY --profile PRIVATE_PROFILE --format json
+cargo run --locked -p exacopy-cli -- recover retry JOB_DIRECTORY --source-root SOURCE_DIRECTORY --profile PRIVATE_PROFILE --format json
 ```
 
 The copy report identifies the job directory inside the target's parent. See the [CLI guide](crates/clients/cli/README.md) for supported inputs, recovery outcomes, and exit codes.

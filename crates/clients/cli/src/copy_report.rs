@@ -54,6 +54,9 @@ pub(crate) enum ErrorKind {
 	#[serde(rename = "E_INTEGRITY")]
 	Integrity,
 	#[cfg(target_os = "linux")]
+	#[serde(rename = "E_SOURCE_MISMATCH")]
+	SourceMismatch,
+	#[cfg(target_os = "linux")]
 	#[serde(rename = "E_PROFILE_AUTHORIZATION")]
 	ProfileAuthorization,
 	#[cfg(target_os = "linux")]
@@ -72,7 +75,7 @@ impl ErrorKind {
 			#[cfg(target_os = "linux")]
 			Self::Io => 4,
 			#[cfg(target_os = "linux")]
-			Self::Integrity => 5,
+			Self::Integrity | Self::SourceMismatch => 5,
 			#[cfg(target_os = "linux")]
 			Self::ProfileAuthorization => 8,
 			#[cfg(target_os = "linux")]

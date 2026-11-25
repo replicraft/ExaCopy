@@ -442,3 +442,6 @@ impl Drop for Fixture {
 
 #[path = "linux_copy/recovery.rs"]
 mod recovery;
+
+#[path = "linux_copy/retry.rs"]
+mod retry;

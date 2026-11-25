@@ -53,7 +53,10 @@ fn execute_recovery(command: &RecoveryCommand) -> RecoveryOutcome {
 
 #[cfg(not(target_os = "linux"))]
 fn execute_recovery(command: &RecoveryCommand) -> RecoveryOutcome {
-	let _ = (command.action, &command.job, &command.profile);
+	let _ = (&command.job, &command.profile);
+	if let crate::args::RecoveryAction::Retry { source_root } = &command.action {
+		let _ = source_root;
+	}
 	RecoveryOutcome::failure(
 		crate::copy_report::ErrorKind::Unsupported,
 		"local recovery requires Linux",

@@ -1,7 +1,7 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
-pub(crate) const USAGE: &str = "Usage:\n  exacopy diff [--] LEFT RIGHT [--compare bytes] [--format human|json]\n  exacopy copy [--] SOURCE TARGET --profile DIR [--format human|json]\n  exacopy recover inspect|finish [--] JOB --profile DIR [--format human|json]\n  exacopy profile init [--] DIR";
+pub(crate) const USAGE: &str = "Usage:\n  exacopy diff [--] LEFT RIGHT [--compare bytes] [--format human|json]\n  exacopy copy [--] SOURCE TARGET --profile DIR [--format human|json]\n  exacopy recover inspect|finish [--] JOB --profile DIR [--format human|json]\n  exacopy recover retry [--] JOB --source-root DIR --profile DIR [--format human|json]\n  exacopy profile init [--] DIR";
 
 pub(crate) enum Command {
 	Help,
@@ -31,10 +31,10 @@ pub(crate) struct RecoveryCommand {
 	pub(crate) format: Format,
 }
 
-#[derive(Clone, Copy)]
 pub(crate) enum RecoveryAction {
 	Inspect,
 	Finish,
+	Retry { source_root: PathBuf },
 }
 
 #[derive(Clone, Copy)]
@@ -57,9 +57,10 @@ pub(crate) fn parse(mut args: impl Iterator<Item = OsString>) -> Result<Command,
 fn parse_recover(mut args: impl Iterator<Item = OsString>) -> Result<Command, &'static str> {
 	let action = match args.next().as_deref().and_then(OsStr::to_str) {
 		Some("--help" | "-h") if args.next().is_none() => return Ok(Command::Help),
-		Some("inspect") => RecoveryAction::Inspect,
-		Some("finish") => RecoveryAction::Finish,
-		_ => return Err("expected recover inspect or recover finish"),
+		Some("inspect") => Some(RecoveryAction::Inspect),
+		Some("finish") => Some(RecoveryAction::Finish),
+		Some("retry") => None,
+		_ => return Err("expected recover inspect, recover finish, or recover retry"),
 	};
 	let first = args.next().ok_or("recovery requires a job path")?;
 	let job = match first.to_str() {
@@ -71,6 +72,7 @@ fn parse_recover(mut args: impl Iterator<Item = OsString>) -> Result<Command, &'
 		_ => first,
 	};
 	let mut profile = None;
+	let mut source_root = None;
 	let mut format = None;
 	while let Some(flag) = args.next() {
 		match flag.to_str() {
@@ -78,12 +80,31 @@ fn parse_recover(mut args: impl Iterator<Item = OsString>) -> Result<Command, &'
 				profile = Some(args.next().ok_or("--profile requires a directory")?);
 			}
 			Some("--format") if format.is_none() => format = Some(parse_format(args.next())?),
-			Some("--profile" | "--format") => return Err("repeated recovery option"),
+			Some("--source-root") if action.is_some() => {
+				return Err("--source-root requires recover retry");
+			}
+			Some("--source-root") if source_root.is_none() => {
+				source_root = Some(
+					args.next()
+						.filter(|value| !value.as_encoded_bytes().starts_with(b"--"))
+						.ok_or("--source-root requires a directory")?,
+				);
+			}
+			Some("--profile" | "--format" | "--source-root") => {
+				return Err("repeated recovery option");
+			}
 			_ => return Err("unknown recovery option"),
 		}
 	}
 	Ok(Command::Recover(RecoveryCommand {
-		action,
+		action: match action {
+			Some(action) => action,
+			None => RecoveryAction::Retry {
+				source_root: source_root
+					.ok_or("recover retry requires an explicit --source-root DIR")?
+					.into(),
+			},
+		},
 		job: job.into(),
 		profile: profile
 			.ok_or("recovery requires an explicit --profile DIR")?

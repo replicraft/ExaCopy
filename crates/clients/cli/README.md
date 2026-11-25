@@ -47,15 +47,18 @@ The default text report identifies a successfully published copy and its committ
 
 If report output fails after publication, the CLI attempts to report the committed job on stderr and exits 4. The copy remains published. CLI process tests cover the report and authorization stringency, exact output content, authenticated job bindings, and exclusive publication under concurrency. These exercise the local portion of R-007–009, R-027–028, R-154 and R-194 and their corresponding acceptance cases. The development CLI and ext4 VM tests carry no release or power-loss qualification.
 
-## Inspect or finish a retained copy
+## Inspect, finish, or retry a retained copy
 
 ```sh
 cargo run --locked -p exacopy-cli -- recover inspect ./destination/.exacopy-JOB_UUID --profile ./private-profile --format json
 cargo run --locked -p exacopy-cli -- recover finish ./destination/.exacopy-JOB_UUID --profile ./private-profile --format json
+cargo run --locked -p exacopy-cli -- recover retry ./destination/.exacopy-JOB_UUID --source-root ./source-parent --profile ./private-profile --format json
 ```
 
 Use the job name from the copy report and the profile that created it. The inspection takes a shared lease, authenticates the owner and plan, validates the accepted journal prefix and available receipt, and checks the current stage and target. A successful check is a current observation. The command is read-only and leaves the job artifacts available for further recovery.
 
-For `published_needs_barriers` or `published_needs_receipt` with a clean journal, `recover finish` takes an exclusive lease, authenticates the same evidence again, and freshly measures the published file. It records a new recovery generation, synchronizes the current publication and missing evidence, and commits the receipt. It reuses a valid existing receipt. Repeating a completed recovery returns the existing completion. Retained stages, conflicts, and torn journals still require separate handling.
+For `published_needs_barriers` or `published_needs_receipt` with a clean journal, `recover finish` takes an exclusive lease, authenticates the same evidence again, and freshly measures the published file. It records a new recovery generation, synchronizes the current publication and missing evidence, and commits the receipt. It reuses a valid existing receipt. Repeating a completed recovery returns the existing completion.
+
+For `possible_retry` with a clean journal, `recover retry` takes an explicit grant for the original source directory. Supply the parent directory you selected when starting the copy. Recovery rereads the current source and retained stage, verifies required metadata, and records a new durable publication intent before an exclusive rename. It completes an already-published copy's receipt under the same lease. A mismatched source grant, identity, metadata, or stream returns `E_SOURCE_MISMATCH` or another integrity or I/O error, depending on the evidence that failed. Conflicts, torn journals, and missing prerequisites remain visible through inspection, with their evidence available for later recovery.
 
 The `exacopy.local_recovery_inspection` JSON schema version `1.0` includes the last accepted journal sequence and byte offset as decimal strings, whether the tail was clean or torn, and the disposition or blocking error. Exit `0` means the committed receipt and current target agree, `3` means an unrelated entry occupies the target, and `9` means the job still needs reconciliation or is in use. Exit `5` indicates invalid integrity evidence and `8` indicates that the supplied profile could not authenticate the job.
