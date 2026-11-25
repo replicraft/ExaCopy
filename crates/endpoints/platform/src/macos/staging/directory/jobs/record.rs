@@ -9,12 +9,11 @@ use super::super::super::super::{FILE_MODE, PhysicalFsid, acl, file::same_observ
 use super::super::super::close::close_writer;
 use super::checked_component;
 use super::{Creation, DirectoryLease, JobArtifact, JobDirectory, JobError, JobStep};
-use super::{JOURNAL, JournalDirectory, ManagedObjectIdentity, RECEIPTS, ReceiptDirectory};
+use super::{JOURNAL, JournalDirectory, ManagedObjectIdentity};
 
 pub(super) const OWNER: &[u8] = b"owner.cbor";
 pub(super) const PLAN: &[u8] = b"plan.cbor";
 pub(super) const FIRST_SEGMENT: &[u8] = b"00000000000000000001.exajnl";
-pub(super) const RECEIPT: &[u8] = b"receipt.cbor";
 
 pub(super) const MAX_RECORD_BYTES: usize = 64 * 1024;
 const CREATE_RECORD: OFlags = OFlags::WRONLY
@@ -91,29 +90,6 @@ impl JournalDirectory<'_> {
 	}
 }
 
-impl ReceiptDirectory<'_> {
-	/// Exclusively writes the supplied initial receipt bytes and synchronizes its namespace.
-	///
-	/// The caller supplies a receipt from the journal-coordinated transfer.
-	///
-	/// # Errors
-	/// Rejects empty records, records above 64 KiB, collisions, and failed
-	/// identity, write, close or barrier checks.
-	pub fn write_receipt(&self, bytes: &[u8]) -> Result<ManagedObjectIdentity, JobError> {
-		write_record(
-			&self.directory.lease,
-			checked_component(RECEIPT)?,
-			bytes,
-			Creation::new(self.job.name, JobArtifact::Receipt),
-			|| {
-				self.job.check_current()?;
-				self.directory
-					.check_current(&self.job.directory.lease, checked_component(RECEIPTS)?)
-			},
-		)
-	}
-}
-
 fn write_record(
 	lease: &DirectoryLease,
 	name: UnixComponent<'_>,
@@ -134,10 +110,7 @@ pub(super) fn write_record_with(
 	check_parent: impl Fn() -> Result<(), JobError>,
 	file_barrier: impl FnOnce(&File) -> rustix::io::Result<()>,
 ) -> Result<ManagedObjectIdentity, JobError> {
-	if bytes.is_empty() || bytes.len() > MAX_RECORD_BYTES {
-		return Err(JobError::InvalidLength);
-	}
-	let length = u64::try_from(bytes.len()).map_err(|_| JobError::InvalidLength)?;
+	let length = record_length(bytes)?;
 	creation.run(|creation| {
 		check_parent()?;
 		let (file, identity) = create_empty(lease, name, creation)?;
@@ -164,7 +137,14 @@ pub(super) fn write_record_with(
 	})
 }
 
-fn create_empty(
+pub(super) fn record_length(bytes: &[u8]) -> Result<u64, JobError> {
+	if bytes.is_empty() || bytes.len() > MAX_RECORD_BYTES {
+		return Err(JobError::InvalidLength);
+	}
+	u64::try_from(bytes.len()).map_err(|_| JobError::InvalidLength)
+}
+
+pub(super) fn create_empty(
 	lease: &DirectoryLease,
 	name: UnixComponent<'_>,
 	creation: &mut Creation,
@@ -177,7 +157,7 @@ fn create_empty(
 	Ok((file, identity))
 }
 
-fn check_record(
+pub(super) fn check_record(
 	parent: &DirectoryLease,
 	name: UnixComponent<'_>,
 	file: &File,

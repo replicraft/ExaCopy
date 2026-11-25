@@ -21,13 +21,15 @@ pub enum JobArtifact {
 	FirstSegment,
 	/// The receipts subdirectory.
 	Receipts,
+	/// The exclusively created pending receipt.
+	ReceiptPending,
 	/// The immutable initial receipt.
 	Receipt,
 	/// The stage subdirectory.
 	Stage,
 }
 
-/// The failed boundary of an attempted creation.
+/// The failed boundary of an attempted private artifact creation or publication.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum JobStep {
 	/// The exclusive creation syscall was attempted.
@@ -40,6 +42,10 @@ pub enum JobStep {
 	FileBarrier,
 	/// The writer closure could not be confirmed.
 	Close,
+	/// The closed record's bytes and binding were checked before publication.
+	Verify,
+	/// The exclusive private receipt rename was attempted.
+	Publish,
 	/// A namespace barrier on the containing directory was attempted.
 	NamespaceBarrier,
 	/// A post-operation check or thread policy restoration failed.
@@ -52,7 +58,7 @@ pub enum JobStep {
 pub enum JobError {
 	/// The checked APFS lease or materialization scope failed.
 	Managed(StageError),
-	/// The exclusive create found an occupant. It was never opened or changed.
+	/// A required name was occupied. The incumbent was never opened or changed.
 	Occupied {
 		/// The job whose name was used.
 		job: JobName,
@@ -65,9 +71,11 @@ pub enum JobError {
 	InvalidLength,
 	/// A held or named object no longer matches the required binding or metadata.
 	IdentityChanged,
+	/// The receipt read-back disagrees with the requested bytes.
+	ReceiptMismatch,
 	/// A filesystem operation failed.
 	System(io::Error),
-	/// A private entry may have been created. Preserve it for reconciliation.
+	/// A private entry may have been created or published. Preserve it for reconciliation.
 	Uncertain {
 		/// The job whose name was used.
 		job: JobName,
@@ -98,6 +106,7 @@ impl fmt::Display for JobError {
 			Self::IdentityChanged => {
 				formatter.write_str("private job object identity or metadata changed")
 			}
+			Self::ReceiptMismatch => formatter.write_str("private receipt read-back disagrees"),
 			Self::System(error) => write!(
 				formatter,
 				"private job descriptor operation failed ({error})"

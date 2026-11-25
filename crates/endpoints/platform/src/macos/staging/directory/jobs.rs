@@ -14,6 +14,7 @@ use super::{DirectoryIdentity, DirectoryLease, StageDirectory, StageError};
 
 mod error;
 mod identity;
+mod receipt;
 mod record;
 mod recovery;
 

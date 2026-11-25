@@ -16,6 +16,8 @@ pub enum RecoveryError {
 	NestedJob,
 	/// A fixed name was absent.
 	Missing(JobArtifact),
+	/// The fixed receipt staging name is occupied and requires reconciliation.
+	PendingReceipt,
 	/// A fixed object could not be admitted or no longer matches its binding.
 	InvalidObject(JobArtifact),
 	/// A selected stage or target cannot be admitted or its observation changed.
@@ -41,6 +43,9 @@ impl fmt::Display for RecoveryError {
 			Self::Managed(error) => write!(formatter, "managed recovery lease failed ({error})"),
 			Self::NestedJob => formatter.write_str("job recovery requires the private container"),
 			Self::Missing(artifact) => write!(formatter, "private recovery {artifact:?} is absent"),
+			Self::PendingReceipt => {
+				formatter.write_str("private receipt is pending reconciliation")
+			}
 			Self::InvalidObject(artifact) => {
 				write!(
 					formatter,

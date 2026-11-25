@@ -5,7 +5,7 @@ use std::os::fd::{AsRawFd as _, BorrowedFd};
 /// Darwin <sys/stdio.h>. The pinned libc does not expose this flag.
 const RENAME_NOFOLLOW_ANY: u32 = 0x0000_0010;
 
-pub(super) fn rename_exclusively(
+pub(in super::super) fn rename_exclusively(
 	from_directory: BorrowedFd<'_>,
 	stage: &CStr,
 	to_directory: BorrowedFd<'_>,

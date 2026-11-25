@@ -11,6 +11,7 @@ use super::super::super::StageBindingContext;
 use super::super::super::tests::{Fixture, context, name, open_staging};
 use super::{Creation, JobArtifact, JobError, JobName, JobStep, checked_component};
 
+mod receipt;
 mod recovery;
 
 const UUID: [u8; 16] = [

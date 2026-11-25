@@ -23,3 +23,4 @@ pub use error::{
 	DirectoryBarrierFailures, PublishError, PublishRejection, PublishedObservationError,
 };
 pub use evidence::PublishedFile;
+pub(super) use native::rename_exclusively;

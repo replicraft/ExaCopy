@@ -10,7 +10,8 @@ use self::record::{FIRST_SEGMENT_LIMIT, RECORD_LIMIT, RecordParent};
 use super::super::super::super::{
 	DIRECTORY_MODE, DIRECTORY_OPEN, PhysicalFsid, acl, with_materialization_disabled,
 };
-use super::record::{FIRST_SEGMENT, OWNER, PLAN, RECEIPT};
+use super::receipt::{RECEIPT, RECEIPT_PENDING, name_is_occupied};
+use super::record::{FIRST_SEGMENT, OWNER, PLAN};
 use super::{
 	DirectoryIdentity, DirectoryLease, JOURNAL, JobArtifact, JobName, ManagedObjectIdentity,
 	RECEIPTS, StageDirectory, StageError, checked_component,
@@ -140,7 +141,8 @@ impl RecoveryJob<'_> {
 	/// The result contains opaque bytes awaiting interpretation by the caller.
 	///
 	/// # Errors
-	/// Rejects unsafe or rebound names, invalid record extents and lease conflicts.
+	/// Reports a pending receipt by name without opening it. Rejects unsafe or
+	/// rebound final names, invalid record extents and lease conflicts.
 	pub fn open_receipt(&self) -> Result<Option<RecoveryRecord<'_>>, RecoveryError> {
 		with_materialization_disabled(|| {
 			self.check_current()?;
@@ -158,12 +160,22 @@ impl RecoveryJob<'_> {
 				)?;
 				return Ok(None);
 			};
+			directory.check_current(&self.directory.lease, RECEIPTS)?;
+			let pending = component(RECEIPT_PENDING.to_bytes(), JobArtifact::ReceiptPending)?;
+			if name_is_occupied(&directory.lease, pending)? {
+				return Err(RecoveryError::PendingReceipt);
+			}
 			let parent = RecordParent::Child {
 				job: self,
 				directory,
 				name: RECEIPTS,
 			};
-			RecoveryRecord::open_optional(parent, JobArtifact::Receipt, RECEIPT, RECORD_LIMIT)
+			RecoveryRecord::open_optional(
+				parent,
+				JobArtifact::Receipt,
+				RECEIPT.to_bytes(),
+				RECORD_LIMIT,
+			)
 		})
 	}
 
