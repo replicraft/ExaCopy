@@ -2,11 +2,12 @@ use std::error::Error;
 use std::fmt;
 use std::io;
 
+use exacopy_endpoint::IoError;
 use rustix::io::Errno;
 
 use super::super::source::ReadError;
 
-/// Failure while creating, checking, resizing, flushing, or closing a stage.
+/// Failure while preparing, writing, flushing, or closing a stage.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum StageError {
@@ -22,6 +23,12 @@ pub enum StageError {
 	InvalidLength,
 	/// No successful full file barrier followed the most recent write or resize.
 	Unflushed,
+	/// The file barrier failed. The stage remains private and unusable.
+	BarrierFailed(io::Error),
+	/// An earlier file barrier failed. The stage requires reconciliation.
+	PriorBarrierFailure,
+	/// Exact positional writing failed.
+	Write(IoError),
 	/// The pinned inode could not be reopened and checked for read-back.
 	ReadBack(ReadError),
 	/// A staging syscall failed.
@@ -52,6 +59,9 @@ impl fmt::Display for StageError {
 			Self::IdentityChanged => f.write_str("staged object identity or observations changed"),
 			Self::InvalidLength => f.write_str("file length is outside the supported offset range"),
 			Self::Unflushed => f.write_str("stage writes require a successful full file barrier"),
+			Self::BarrierFailed(source) => write!(f, "stage file synchronization failed: {source}"),
+			Self::PriorBarrierFailure => f.write_str("stage file barrier previously failed"),
+			Self::Write(source) => write!(f, "could not write the private stage: {source}"),
 			Self::ReadBack(source) => write!(f, "could not reopen the pinned stage: {source}"),
 			Self::System(source) => write!(f, "staging syscall failed: {source}"),
 		}
@@ -62,7 +72,8 @@ impl Error for StageError {
 	fn source(&self) -> Option<&(dyn Error + 'static)> {
 		match self {
 			Self::ReadBack(source) => Some(source),
-			Self::System(source) => Some(source),
+			Self::Write(source) => Some(source),
+			Self::BarrierFailed(source) | Self::System(source) => Some(source),
 			_ => None,
 		}
 	}

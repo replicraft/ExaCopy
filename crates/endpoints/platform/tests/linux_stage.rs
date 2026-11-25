@@ -147,10 +147,10 @@ fn stages_use_private_modes_and_support_out_of_order_positioned_write_and_read_b
 		.expect("write leading range second");
 	assert!(matches!(
 		stage.write_all_at(u64::MAX, b"!"),
-		Err(IoError::InvalidRange {
+		Err(StageError::Write(IoError::InvalidRange {
 			offset: u64::MAX,
 			length: 1
-		})
+		}))
 	));
 	stage.flush().expect("flush stage");
 	let stage = stage.close_writes().expect("close write access");

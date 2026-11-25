@@ -5,12 +5,16 @@ use std::os::unix::fs::FileExt;
 use exacopy_endpoint::{IoError, MAX_FILE_LENGTH, UnixComponent, read_exact_at, write_all_at};
 use exacopy_model::CopyBinding;
 use rustix::fs::{self, FileType, Mode, OFlags, Stat};
+use rustix::io;
 use rustix::process::geteuid;
 
 use super::super::handle::{FileIdentity, mount_id};
 use super::super::source::reopen_regular_read_only;
 use super::directory::{CHILD_RESOLVE, StageName, component};
 use super::{StageDirectory, StageError};
+
+#[cfg(test)]
+mod tests;
 
 const FILE_MODE: Mode = Mode::RUSR.union(Mode::WUSR);
 
@@ -22,7 +26,7 @@ const FILE_MODE: Mode = Mode::RUSR.union(Mode::WUSR);
 pub struct WriteStage<'stage> {
 	location: StageLocation<'stage>,
 	file: File,
-	flushed: Option<Stat>,
+	barrier: WriteBarrier,
 }
 
 impl<'stage> WriteStage<'stage> {
@@ -57,7 +61,7 @@ impl<'stage> WriteStage<'stage> {
 		Ok(Self {
 			location,
 			file: file.into(),
-			flushed: None,
+			barrier: WriteBarrier::Pending,
 		})
 	}
 
@@ -65,26 +69,31 @@ impl<'stage> WriteStage<'stage> {
 	///
 	/// # Errors
 	///
-	/// Returns a bounded-range, incomplete-transfer, or system error. An error
+	/// A prior file barrier failure prevents any further writes. Other failures
+	/// include bounded-range, incomplete-transfer, and system errors. An error
 	/// can leave partially written data in the private stage.
-	pub fn write_all_at(&mut self, offset: u64, bytes: &[u8]) -> Result<(), IoError> {
-		self.flushed = None;
+	pub fn write_all_at(&mut self, offset: u64, bytes: &[u8]) -> Result<(), StageError> {
+		self.barrier.require_usable()?;
+		self.barrier = WriteBarrier::Pending;
 		write_all_at(offset, bytes, |position, remaining| {
 			self.file.write_at(remaining, position)
 		})
+		.map_err(StageError::Write)
 	}
 
 	/// Sets the private file's exact logical length.
 	///
 	/// # Errors
 	///
-	/// Returns an error if the length exceeds the signed offset limit or resizing
-	/// fails. A subsequent close requires a successful full flush.
+	/// A prior file barrier failure prevents resizing. Returns an error if the
+	/// length exceeds the signed offset limit or resizing fails. A subsequent
+	/// close requires a successful full flush.
 	pub fn set_len(&mut self, length: u64) -> Result<(), StageError> {
+		self.barrier.require_usable()?;
 		if length > MAX_FILE_LENGTH {
 			return Err(StageError::InvalidLength);
 		}
-		self.flushed = None;
+		self.barrier = WriteBarrier::Pending;
 		Ok(fs::ftruncate(&self.file, length)?)
 	}
 
@@ -93,16 +102,25 @@ impl<'stage> WriteStage<'stage> {
 	/// # Errors
 	///
 	/// Returns an error for a changed stage name or inode, unsafe stage, or
-	/// failed file sync. Any failed flush prevents closure until another flush
-	/// succeeds.
+	/// failed file sync. A file sync failure permanently blocks this stage and
+	/// leaves its private entry for reconciliation.
 	pub fn flush(&mut self) -> Result<(), StageError> {
-		self.flushed = None;
+		self.flush_with(|file| fs::fsync(file))
+	}
+
+	fn flush_with(&mut self, sync: impl FnOnce(&File) -> io::Result<()>) -> Result<(), StageError> {
+		self.barrier.require_usable()?;
+		self.barrier = WriteBarrier::Pending;
 		let before = self.location.check_named_file()?;
-		fs::fsync(&self.file)?;
+		if let Err(source) = sync(&self.file) {
+			// Linux can report a writeback error only once for this open file.
+			self.barrier = WriteBarrier::Failed;
+			return Err(StageError::BarrierFailed(source.into()));
+		}
 		let after = fs::fstat(&self.file)?;
 		check_private_file(&after)?;
 		check_content_stamp(&before, &after)?;
-		self.flushed = Some(after);
+		self.barrier = WriteBarrier::Complete(after);
 		Ok(())
 	}
 
@@ -114,7 +132,11 @@ impl<'stage> WriteStage<'stage> {
 	/// unchanged stage entry, and a verified read-only reopen of the same inode.
 	/// An error releases the writer and leaves its private file in place.
 	pub fn close_writes(self) -> Result<ClosedStage<'stage>, StageError> {
-		let flushed = self.flushed.ok_or(StageError::Unflushed)?;
+		let flushed = match self.barrier {
+			WriteBarrier::Pending => return Err(StageError::Unflushed),
+			WriteBarrier::Complete(stat) => stat,
+			WriteBarrier::Failed => return Err(StageError::PriorBarrierFailure),
+		};
 		self.location.check_named_file()?;
 		let (read_back, stat) =
 			reopen_regular_read_only(&self.file).map_err(StageError::ReadBack)?;
@@ -132,6 +154,21 @@ impl<'stage> WriteStage<'stage> {
 			stat,
 			length,
 		})
+	}
+}
+
+enum WriteBarrier {
+	Pending,
+	Complete(Stat),
+	Failed,
+}
+
+impl WriteBarrier {
+	fn require_usable(&self) -> Result<(), StageError> {
+		match self {
+			Self::Pending | Self::Complete(_) => Ok(()),
+			Self::Failed => Err(StageError::PriorBarrierFailure),
+		}
 	}
 }
 
@@ -247,7 +284,10 @@ impl fmt::Debug for WriteStage<'_> {
 		formatter
 			.debug_struct("WriteStage")
 			.field("identity", &self.location.identity)
-			.field("flushed", &self.flushed.is_some())
+			.field(
+				"flushed",
+				&matches!(self.barrier, WriteBarrier::Complete(_)),
+			)
 			.finish_non_exhaustive()
 	}
 }
