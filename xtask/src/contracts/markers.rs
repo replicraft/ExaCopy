@@ -145,6 +145,11 @@ pub(super) const BINDINGS: &[Binding] = &[
 		Marker::Array { width: 3 },
 	),
 	Binding::new(
+		"linux-remote-capture-retirement",
+		"crates/storage/exacopy-journal/src/remote_download/retirement/wire.rs",
+		Marker::Array { width: 3 },
+	),
+	Binding::new(
 		"linux-remote-download-receipt",
 		"crates/storage/exacopy-journal/src/remote_download/finalization/wire.rs",
 		Marker::Array { width: 3 },

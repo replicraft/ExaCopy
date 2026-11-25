@@ -78,6 +78,8 @@ pub enum FrameKind {
 	RemoteStageAllocated = 37,
 	/// Authenticated physical identity of the fixed remote stage directory.
 	StageDirectoryPrepared = 38,
+	/// A sealed pre-intent remote capture was retired and its stage preserved.
+	RemoteCaptureRetired = 39,
 }
 
 impl FrameKind {
@@ -129,6 +131,7 @@ impl FrameKind {
 			code if code == Self::CredentialBlocked.code() => Self::CredentialBlocked,
 			code if code == Self::RemoteStageAllocated.code() => Self::RemoteStageAllocated,
 			code if code == Self::StageDirectoryPrepared.code() => Self::StageDirectoryPrepared,
+			code if code == Self::RemoteCaptureRetired.code() => Self::RemoteCaptureRetired,
 			_ => return None,
 		})
 	}

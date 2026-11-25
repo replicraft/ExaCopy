@@ -194,6 +194,15 @@ owner = "crates/storage/exacopy-journal/src/remote_download/finalization/wire.rs
 notes = "Remote-only kinds 4–9 and 18 for the explicit SFTP unnamed-stream policy. Structural declarations require separate authoritative replay and native qualification."
 
 [[contract]]
+id = "linux-remote-capture-retirement"
+kind = "transfer_journal"
+status = "implemented_private"
+version = "1.0"
+required_features = 7
+owner = "crates/storage/exacopy-journal/src/remote_download/retirement/wire.rs"
+notes = "Private kind 39 retires a sealed pre-intent capture while preserving the old stage. The 1024-byte reader checks exact authenticated scope, current predecessor and retained stage identities. Read-only history conveys no native or grant authority."
+
+[[contract]]
 id = "linux-remote-download-receipt"
 kind = "transfer_journal"
 status = "implemented_private"

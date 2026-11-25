@@ -84,3 +84,16 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/remote_finalization_replay.rs", test = "only_clear_exact_commit_associates_receipt_after_accepted_checkpoint", oracle = "A receipt associates only with the exact terminal commitment following an authenticated bootstrap and checked current checkpoint prefix. Foreign commitment, missing or malformed artifact and a torn suffix prevent association and retain the preceding accepted boundary." }
+
+[[obligation]]
+id = "P-049"
+requirement_ids = ["R-013", "R-017", "R-140", "R-255"]
+source = "src/remote_download/retirement.rs"
+symbols = ["RemoteCaptureRetired::from_frame", "RemoteRetirementCandidate::validate_synced"]
+assumptions = [
+    "The live caller holds the current writer lease, authenticates its grant and qualification independently, obtains current held stage and target observations and checks the selected prefix.",
+    "Replay reads historical declarations. A recorded grant digest, absence or retained identity does not prove a current observation or authorize deletion, reuse, allocation, write or publication.",
+    "The test uses a controlled journal sink to verify exact payload and file-barrier evidence. Physical persistence, process interruption and actual fresh SFTP source readback are outside this gate.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_finalization_replay/retirement.rs", test = "retirement::synced_retirement_admits_fresh_attempt_and_preserves_old_stage", oracle = "A synced exact retirement of a sealed stage leaves that stage and its checkpoint inventory retained. A later allocation uses fresh epochs and starts at zero covered extent. Stale checkpoint evidence cannot follow the new preparation." }

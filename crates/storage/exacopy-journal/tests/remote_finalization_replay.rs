@@ -425,3 +425,6 @@ fn unknown_signed_policy_is_refused_without_reading_a_journal() {
 		Err(RemoteDownloadError::Binding)
 	));
 }
+
+#[path = "remote_finalization_replay/retirement.rs"]
+mod retirement;

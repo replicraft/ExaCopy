@@ -7,6 +7,9 @@ use super::super::finalization::{
 use super::super::replay::{
 	RemoteDownloadReplay, RemoteReplayIssue, RemoteReplayMismatch as Mismatch,
 };
+use super::super::retirement::{
+	RecordedRetirementObservation, RemoteCaptureRetired, RemoteRetiredCapture, RetirementBinding,
+};
 use super::super::{
 	RemoteDownloadContext, RemoteDownloadError as Error, RemoteDownloadOwnerRecord,
 };
@@ -23,6 +26,7 @@ pub(in super::super) struct FinalizationHistory {
 	commitment: Option<Frame>,
 	committed_digest: Option<RemoteReceiptDigest>,
 	phase: Phase,
+	retirements: Vec<RemoteRetiredCapture>,
 }
 
 impl FinalizationHistory {
@@ -35,6 +39,7 @@ impl FinalizationHistory {
 			commitment: None,
 			committed_digest: None,
 			phase: Phase::Capture,
+			retirements: Vec::new(),
 		}
 	}
 
@@ -55,10 +60,93 @@ impl FinalizationHistory {
 			FrameKind::RemoteStageAllocated => {
 				self.allocation = Some(frame);
 				self.prepared = None;
+				self.phases.clear();
+				self.phase = Phase::Capture;
 			}
 			FrameKind::EntryPrepared => self.prepared = Some(frame),
 			_ => {}
 		}
+	}
+
+	pub(super) fn retirements(&self) -> &[RemoteRetiredCapture] {
+		&self.retirements
+	}
+
+	pub(super) fn retirement_record<'name>(
+		&self,
+		replay: &RemoteDownloadReplay,
+		owner: &RemoteDownloadOwnerRecord,
+		observed: RecordedRetirementObservation<'name>,
+	) -> Result<RemoteCaptureRetired<'name>, Error> {
+		if !matches!(
+			self.phase,
+			Phase::Sealed | Phase::Verified | Phase::MetadataReady
+		) {
+			return Err(Error::FrameBinding);
+		}
+		let bootstrap = replay
+			.stage_directory_prepared()
+			.ok_or(Error::FrameBinding)?;
+		let attempt = replay.attempts().last().ok_or(Error::FrameBinding)?;
+		let prepared = attempt.prepared().ok_or(Error::FrameBinding)?;
+		let destination = &owner.manifest().scope.destination;
+		if observed.directory != prepared.directory
+			|| observed.directory != bootstrap.directory()
+			|| observed.stage != prepared.file
+			|| observed.target.root != destination.root()
+			|| observed.target.parent != destination.parent()
+			|| observed.target.component.as_bytes() != destination.target()
+			|| observed.qualification_digest != self.expected_qualification
+		{
+			return Err(Error::Binding);
+		}
+		let binding = RetirementBinding {
+			context: RemoteDownloadContext::for_owner(owner),
+			scope: owner.manifest().scope.digest()?,
+			predecessor: replay.boundary().head,
+			bootstrap: bootstrap.head(),
+			allocation: attempt.allocation(),
+			prepared: prepared.head,
+			seal: self.seal().ok_or(Error::FrameBinding)?,
+			epochs: attempt.epochs(),
+		};
+		RemoteCaptureRetired::new(binding, observed)
+	}
+
+	pub(in super::super) fn accept_retirement(
+		&mut self,
+		replay: &RemoteDownloadReplay,
+		owner: &RemoteDownloadOwnerRecord,
+		frame: &Frame,
+	) -> Result<(), Mismatch> {
+		if !matches!(
+			self.phase,
+			Phase::Sealed | Phase::Verified | Phase::MetadataReady
+		) {
+			return Err(Mismatch::Order);
+		}
+		let record = RemoteCaptureRetired::from_frame(frame).map_err(Mismatch::Payload)?;
+		let expected = self
+			.retirement_record(replay, owner, record.observation())
+			.map_err(Mismatch::Payload)?;
+		if record != expected {
+			return Err(Mismatch::StageBinding);
+		}
+
+		let binding = record.binding();
+		let observed = record.observation();
+		self.retirements.push(RemoteRetiredCapture {
+			head: frame.head(),
+			seal: binding.seal,
+			allocation: binding.allocation,
+			prepared: binding.prepared,
+			directory: observed.directory,
+			stage: observed.stage,
+			grant_digest: observed.grant_digest,
+			qualification_digest: observed.qualification_digest,
+		});
+		self.phase = Phase::Retired;
+		Ok(())
 	}
 
 	pub(in super::super) fn accept(

@@ -10,6 +10,7 @@ use crate::frame::{
 
 use super::super::finalization::MAX_REMOTE_FINALIZATION_BYTES;
 use super::super::finalization_replay::{FinalizationHistory, RemoteFinalizationPhase};
+use super::super::retirement::MAX_REMOTE_RETIREMENT_BYTES;
 use super::super::{
 	MAX_REMOTE_BOOTSTRAP_PAYLOAD_BYTES, MAX_REMOTE_DOWNLOAD_PAYLOAD_BYTES, RemoteBootstrapTrust,
 	RemoteDownloadContext, RemoteDownloadError, RemoteDownloadOwner, RemoteDownloadOwnerRecord,
@@ -100,6 +101,8 @@ fn scan(
 			let profile_limit = if bootstrap.is_some() && kind == FrameKind::StageDirectoryPrepared
 			{
 				MAX_REMOTE_BOOTSTRAP_PAYLOAD_BYTES
+			} else if finalization.is_some() && kind == FrameKind::RemoteCaptureRetired {
+				MAX_REMOTE_RETIREMENT_BYTES
 			} else if finalization.is_some() && is_finalization_kind(kind) {
 				MAX_REMOTE_FINALIZATION_BYTES
 			} else if finalization.is_some() {
@@ -196,10 +199,18 @@ fn accept_extended(
 		kind,
 		problem,
 	};
+	if kind == FrameKind::RemoteCaptureRetired {
+		return history
+			.accept_retirement(replay, owner, &frame)
+			.map_err(mismatch);
+	}
 	if is_finalization_kind(kind) {
 		return history.accept(replay, owner, frame).map_err(mismatch);
 	}
-	if history.phase() != RemoteFinalizationPhase::Capture {
+	let admits_capture = history.phase() == RemoteFinalizationPhase::Capture
+		|| (history.phase() == RemoteFinalizationPhase::Retired
+			&& kind == FrameKind::RemoteStageAllocated);
+	if !admits_capture {
 		return Err(mismatch(RemoteReplayMismatch::Order));
 	}
 	validation.accept(replay, &frame)?;

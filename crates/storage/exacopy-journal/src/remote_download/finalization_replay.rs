@@ -14,6 +14,10 @@ use super::{
 	RemoteStageDirectoryPrepared,
 };
 
+use super::retirement::{
+	RemoteRetiredCapture, RemoteRetirementCandidate, RemoteRetirementObservation,
+};
+
 mod history;
 
 pub(super) use history::FinalizationHistory;
@@ -30,6 +34,8 @@ pub enum RemoteFinalizationPhase {
 	Verified,
 	/// Local metadata readiness was recorded.
 	MetadataReady,
+	/// The old sealed capture was retired and remains preserved. A fresh allocation may follow.
+	Retired,
 	/// Exclusive publication was intended. A missing observation requires reconciliation.
 	Intent,
 	/// The exact stage identity was recorded at the target.
@@ -98,6 +104,43 @@ impl RemoteFinalizationReplay<'_> {
 	#[must_use]
 	pub const fn issue(&self) -> Option<&RemoteReplayIssue> {
 		self.prefix.issue()
+	}
+
+	/// Returns the accepted retirement records while preserving their old stage inventory.
+	#[must_use]
+	pub fn retirements(&self) -> &[RemoteRetiredCapture] {
+		self.history.retirements()
+	}
+
+	/// Matches a retirement declaration to the selected clear pre-intent history.
+	///
+	/// Supply the independently authorized current grant and physical observations
+	/// under the same exclusive lease. Recheck current authority and writer head
+	/// before the journal append. This method performs no native observation.
+	///
+	/// # Errors
+	/// Refuses an unclean history, a sent intent, a mismatched grant, stage name or native identity,
+	/// or any prefix other than a sealed, verified, or metadata-ready capture.
+	pub fn retirement_candidate<'name>(
+		&self,
+		approved_grant_digest: [u8; 32],
+		observed: RemoteRetirementObservation<'name>,
+	) -> Result<RemoteRetirementCandidate<'name>, RemoteDownloadError> {
+		if self.issue().is_some() || approved_grant_digest != observed.grant_digest {
+			return Err(RemoteDownloadError::Binding);
+		}
+		let attempt = self
+			.prefix
+			.attempts()
+			.last()
+			.ok_or(RemoteDownloadError::FrameBinding)?;
+		if observed.stage_name.as_bytes() != attempt.name() {
+			return Err(RemoteDownloadError::Binding);
+		}
+		let record =
+			self.history
+				.retirement_record(&self.prefix, self.owner, observed.recorded()?)?;
+		Ok(RemoteRetirementCandidate::new(record))
 	}
 
 	/// Returns the accepted seal boundary, when present.

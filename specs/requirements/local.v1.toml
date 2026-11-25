@@ -1348,6 +1348,30 @@ target = "extended_segment_budget_refuses_payload_after_only_its_header"
 
 
 [[coverage]]
+id = "remote-sealed-capture-retirement"
+status = "implemented"
+requirement_ids = ["R-013", "R-017", "R-140", "R-255"]
+acceptance_ids = ["A-013", "A-017", "A-140", "A-255"]
+invariant_ids = ["INV-003", "INV-009", "INV-013", "INV-019", "INV-024"]
+scope = "Bounded canonical retirement of an exact sealed pre-intent remote capture, checked against historical bootstrap and stage evidence. A full-file barrier acknowledgement links the exact retirement to a subsequent fresh allocation."
+limits = "Historical and controlled writer evidence only. Native lease and grant admission, actual held provenance observations, fresh SFTP source reads and physical persistence require separate qualification. Retirement grants no authority to delete or reuse old stage contents."
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "obligation"
+state = "defined"
+path = "crates/storage/exacopy-journal/verification/obligations.toml"
+target = "P-049"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/remote_finalization_replay/retirement.rs"
+target = "exact_cuts_and_profile_limit_preserve_accepted_boundary"
+
+
+[[coverage]]
 id = "public-apply-intent-receipt"
 status = "implemented"
 requirement_ids = ["R-015", "R-155"]
