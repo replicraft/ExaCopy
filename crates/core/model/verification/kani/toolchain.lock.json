@@ -1,0 +1,26 @@
+{
+  "kani": {
+    "version": "0.68.0",
+    "source_revision": "0d2328a93f0e0ff66132d6bfa1a7d884877cf862",
+    "release_metadata": "https://api.github.com/repos/model-checking/kani/releases/tags/kani-0.68.0",
+    "archives": {
+      "aarch64-apple-darwin": {
+        "url": "https://github.com/model-checking/kani/releases/download/kani-0.68.0/kani-0.68.0-aarch64-apple-darwin.tar.gz",
+        "sha256": "a5d39a5d5e748253a553aa62f295c6c397287927a28e5e32691d7ff2eda0c398"
+      },
+      "x86_64-unknown-linux-gnu": {
+        "url": "https://github.com/model-checking/kani/releases/download/kani-0.68.0/kani-0.68.0-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "32e2b484d73ede0bbf64a2cf0879c4259422497d8aec4ee67d448de9ae7843d3"
+      }
+    }
+  },
+  "rust": {
+    "toolchain": "nightly-2026-08-21",
+    "release": "1.100.0-nightly",
+    "source_revision": "8925ea358a0f265ca61026aadc7ecc506c545cbe"
+  },
+  "cbmc": {
+    "version": "6.11.0",
+    "distribution": "Kani release archive"
+  }
+}
