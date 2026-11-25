@@ -122,11 +122,11 @@ quiescence. An installer lock only serializes installers and cannot exclude
 a concurrent direct launch. If lifecycle evidence is uncertain, stop and
 retain the installation.
 
-The first raw profile leaves stable launchers, PATH, service and task
-registration, system scope, updates/downgrades, transactional selector
-switching, purge, GUI, online delivery and native platform signatures for
-their separate implementation and release evidence. No remote URL or
-official key is provisioned by this profile.
+The raw profile leaves stable launchers, PATH, service and task registration,
+system scope, updates and downgrades, transactional selector switching, purge,
+GUI and native platform signatures for their separate implementation and
+release evidence. The [GitHub CLI release archive profile](online-cli-release-profile.md)
+uses these same signed descriptor and ownership rules for online delivery.
 
 ## Test bundles
 
