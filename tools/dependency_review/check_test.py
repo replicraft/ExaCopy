@@ -72,6 +72,17 @@ class ReviewInventoryTests(unittest.TestCase):
         snapshot = json.loads(compact_graph(self.graph))
         self.assertEqual(review_gaps(self.graph, snapshot, self.reviews), ({"bridge@1.0.0"}, ["shared@1.0.0"]))
 
+    def test_completed_scope_can_record_no_remaining_gaps(self):
+        self.reviews["assessment"]["bridge@1.0.0"]["review_gaps"] = []
+        self.assertEqual(review_gaps(self.graph, self.graph, self.reviews), ({"bridge@1.0.0"}, ["shared@1.0.0"]))
+
+    def test_rejects_malformed_gap_lists(self):
+        for gaps in (None, "pending", [""], ["  "], [1]):
+            with self.subTest(gaps=gaps):
+                self.reviews["assessment"]["bridge@1.0.0"]["review_gaps"] = gaps
+                with self.assertRaisesRegex(ValueError, "invalid scoped review gaps"):
+                    review_gaps(self.graph, self.graph, self.reviews)
+
     def test_rejects_changed_checksum_or_feature(self):
         for changes in ("checksum", "features"):
             with self.subTest(changes=changes):

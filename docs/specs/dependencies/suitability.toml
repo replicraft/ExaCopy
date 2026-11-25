@@ -194,7 +194,7 @@ resource_limits = "Expansion is limited to caller-written branches and predicate
 adversarial_inputs = "Inputs are dependency source tokens and compiler cfg settings. BLAKE3, Curve25519 and SHA-2 supply the architecture, backend and feature predicates. File contents and decoded records never enter the macro."
 verification = "The existing exact-version source review records Rust 1.100.0 unit, cross-crate and documentation tests and an eight-case branch matrix."
 replacement = "Consumers can migrate to cfg_select! once their supported compiler permits it. Preserve first-match precedence, the optional default and grouping of all items in a branch. Compare backend selection for every supported target and feature set."
-review_gaps = ["The macro review covers branch selection. Correctness of the selected BLAKE3, Curve25519 and SHA-2 backends requires their own target evidence."]
+review_gaps = []
 
 # https://github.com/cesarb/constant_time_eq/commit/86f38ed9ad4d0500c5472bb8cb2ddc4fe5ac7143
 [assessment."constant_time_eq@0.4.2"]

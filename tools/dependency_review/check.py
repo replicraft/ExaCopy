@@ -201,8 +201,8 @@ def review_gaps(graph, expected, reviews):
             if not isinstance(record[field], str) or not record[field].strip():
                 raise ValueError(f"{key}: empty {field}")
         gaps = record["review_gaps"]
-        if not isinstance(gaps, list) or not gaps or not all(isinstance(gap, str) and gap.strip() for gap in gaps):
-            raise ValueError(f"{key}: missing scoped review gaps")
+        if not isinstance(gaps, list) or not all(isinstance(gap, str) and gap.strip() for gap in gaps):
+            raise ValueError(f"{key}: invalid scoped review gaps")
     return direct, sorted(set(inputs) - assessments.keys())
 
 

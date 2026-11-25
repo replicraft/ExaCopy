@@ -27,7 +27,9 @@ uses the cached RustSec advisory database revision
 inputs to suitability review. Current source, license, advisory and maintenance
 checks belong to the review of the version under consideration.
 
-The suitability records have outstanding review gaps. For transitive packages,
+Each suitability record lists its remaining review gaps. An empty list records
+no outstanding gaps within that assessment's stated scope. Cargo Vet and native
+qualification retain their own criteria and evidence. For transitive packages,
 a purpose entry identifies the reason for inclusion, and an absent assessment
 indicates an open suitability entry in this inventory. Existing exact-version
 local and peer audit records live in [supply-chain](../../../supply-chain/README.md)
