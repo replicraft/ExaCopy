@@ -1,6 +1,6 @@
 # ExaCopy command-line interface
 
-The `exacopy` binary compares regular local files on Linux and in the opt-in managed APFS profile on macOS. Linux also supports creating and checking a portable content baseline for one regular file and copying a regular file to a new name. The default output is human-readable. Exact byte comparison is the default and can be requested explicitly.
+The `exacopy` binary compares regular local files on Linux and in the opt-in managed APFS profile on macOS. Linux also supports creating and checking a portable content baseline for one regular file and planning or copying a regular file to a new name. The default output is human-readable. Exact byte comparison is the default and can be requested explicitly.
 
 ```sh
 cargo run --locked -p exacopy-cli -- diff ./left ./right
@@ -62,6 +62,57 @@ Verification defaults to human output. The `exacopy.cli.verify` JSON report has 
 | 6 | Unsupported platform, read capability, manifest version or required feature |
 
 The current profile covers one regular file and a bounded unsigned JSON baseline. See the [independent manifest vectors and parser fuzz gate](../../core/codec/verification/manifest/README.md).
+
+## Export a plan for one regular file
+
+```sh
+mkdir -m 700 ./plan-bundle
+cargo run --locked -p exacopy-cli -- plan ./source-root/source ./destination-root/new-name --profile ./private-profile --output ./plan-bundle/plan.json
+```
+
+On Linux, `plan SOURCE DESTINATION --profile PROFILE --output FILE` reads
+one regular source and checks that the selected destination name is absent.
+Both parent directories must exist. The source and target are exact raw
+final filename components. An occupied target, including a dangling symlink,
+is a conflict. The source must meet the Linux basic metadata admission
+rules. Reads may update access time. The command creates no destination entry
+or copy job.
+
+Select an existing [private owner profile](#copy-one-regular-file). The
+profile is used to derive the plan's logical root IDs from the selected held
+parents. The profile seed and its aliases are refused as source inputs. The
+bundle directory must already exist, belong to the effective user, and have
+mode `0700`. Use a protected, symlink-free path that neither contains nor is
+inside the source parent, destination parent or profile directory. The CLI
+refuses uncertain mount ancestry and aliases of mounted subtrees.
+
+The requested output must be a new file with a basename other than `pages`.
+The CLI writes an unsigned Plan v1
+JSON envelope and a referenced canonical page at
+`pages/<lowercase-page-id>.exc` relative to the bundle. Keep both files
+together. Existing plan files are preserved. An existing page can be reused
+after checking its owner-private file and exact bytes. New files have mode
+`0600`. Wait for successful confirmation before reading the exported file.
+An interrupted export can leave its newly created files incomplete, and the
+CLI retains those files for inspection.
+
+The command prints `Wrote public plan DIGEST` to stdout after the bundle
+checks complete. Stderr carries diagnostics. The plan records a live source
+measurement, expected destination absence and a requested minimum durability
+of `process_crash`. The plan requires separate approval. Applying public
+plans remains unavailable, and the export reports no copy durability result.
+
+| Exit | Outcome |
+| --- | --- |
+| 0 | Plan bundle written and confirmation printed |
+| 2 | Invalid usage or selection, unavailable input parent or profile, or forbidden source |
+| 3 | Occupied destination or conflicting bundle entry |
+| 4 | Planning, observation, I/O, encoding or confirmation output failure |
+| 6 | Unsupported platform, unsafe output directory or uncertain bundle scope |
+
+If confirmation output fails after the bundle was written, the CLI exits 4
+and attempts to report that outcome on stderr. See the [read-only plan export
+contract and evidence](../../../docs/architecture/read-only-plan-export.md).
 
 ## Copy one regular file
 

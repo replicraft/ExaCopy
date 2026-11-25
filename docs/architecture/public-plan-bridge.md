@@ -2,9 +2,9 @@
 
 Decision PLN-003, 2026-11-25. The fixed Linux metadata-policy identifier
 and requested grant names below are selected for the initial local profile.
-The canonical body and page codecs are implemented. Export, apply and
-durable recovery binding remain separate implementation and qualification
-steps; this document does not claim they have passed.
+The canonical body and page codecs and the [read-only Linux export](read-only-plan-export.md)
+are implemented. Apply, durable recovery binding and integrated qualification
+remain open.
 
 This work package maps the public Plan v1 envelope and the existing
 [one-entry page codec](public-plan-pages.md) to a local Linux create-new
@@ -39,7 +39,7 @@ content and private journal digests.
 
 ## Plan creation
 
-An implementation can deliver public preview/export separately from apply.
+The read-only Linux exporter runs independently of apply.
 A caller selects source and destination using the normal two pathname
 arguments, the local owner profile, and an explicit export output outside
 both selected roots. Hold both parent capabilities. Check that the target
