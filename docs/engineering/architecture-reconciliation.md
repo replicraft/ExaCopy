@@ -149,3 +149,18 @@ namespace persistence and power-loss qualification remain separate. The
 affected native macOS tests and strict host checks passed, and Linux
 consumers passed strict cross-compilation. This extraction does not supply
 new native Linux execution or power-loss evidence.
+
+## SFTP adapter boundary
+
+The endpoint crate owns the live remote-source capability and its source
+epoch. The optional `exacopy-sftp` adapter supplies that capability from a
+consumed authenticated SSH session. The application selects this adapter
+and the portable private-capture engine; engines do not depend on SSH or
+SFTP. The adapter checks the application-owned connection binding around
+awaited operations and confirms the terminal source observation and close.
+
+The experimental application feature exposes composition for tests, not a
+remote-copy command. Server-reported size and timestamps are live
+observations, not stable file identity or snapshot evidence. Native Linux
+and Windows SSH execution, long-running transport renewal and the complete
+resumable CLI remain acceptance work.

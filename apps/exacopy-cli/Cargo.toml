@@ -7,6 +7,13 @@ license.workspace = true
 publish = false
 
 [features]
+experimental-ssh-capture = [
+	"dep:exacopy-sftp",
+	"dep:exacopy-ssh",
+	"dep:exacopy-transfer",
+	"exacopy-sftp/experimental-sftp",
+	"exacopy-ssh/experimental-ssh",
+]
 experimental-apfs-copy = ["dep:exacopy-content", "dep:exacopy-journal", "dep:exacopy-model", "dep:exacopy-transfer", "exacopy-transfer/experimental-apfs-copy"]
 experimental-windows-diff = ["dep:exacopy-diff", "dep:exacopy-endpoint", "dep:exacopy-platform", "exacopy-platform/experimental-windows-read"]
 
@@ -20,6 +27,8 @@ serde.workspace = true
 serde_json.workspace = true
 
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+exacopy-sftp = { workspace = true, optional = true }
+exacopy-ssh = { workspace = true, optional = true }
 exacopy-diff.workspace = true
 exacopy-endpoint.workspace = true
 exacopy-platform.workspace = true
@@ -54,3 +63,10 @@ exacopy-transfer = { workspace = true, optional = true }
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 blake3.workspace = true
 ed25519-dalek.workspace = true
+
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dev-dependencies]
+russh = { workspace = true, features = ["ring"] }
+russh-sftp = { workspace = true, features = ["raw-string"] }
+tokio = { workspace = true, features = ["io-util", "macros", "rt", "sync", "time"] }
+zeroize.workspace = true

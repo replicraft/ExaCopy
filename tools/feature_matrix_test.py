@@ -127,6 +127,44 @@ class FeatureMatrixTests(unittest.TestCase):
                 self.assertIn(feature, development)
                 self.assertIn(udp, development)
 
+    def test_sftp_profiles_are_explicit_and_app_capture_is_independent_of_apfs(self):
+        profiles = POLICY["profiles"]
+        adapter = "exacopy-sftp/experimental-sftp"
+        ssh = "exacopy-ssh/experimental-ssh"
+        app = "exacopy-cli/experimental-ssh-capture"
+        for target in POLICY["targets"]:
+            with self.subTest(target=target):
+                for name in ("default", "minimal", "all-stable"):
+                    flags = ",".join(profile_flags(POLICY, profiles[name], target)).split(",")
+                    for selector in (adapter, ssh, app):
+                        self.assertNotIn(selector, flags)
+                self.assertEqual(
+                    profile_flags(POLICY, profiles["experimental-sftp"], target),
+                    ["--no-default-features", "--features", f"{adapter},{ssh}"],
+                )
+                capture_flags = profile_flags(POLICY, profiles["experimental-ssh-capture"], target)
+                expected = ["--no-default-features"]
+                if target != WINDOWS:
+                    expected += ["--features", f"{app},{adapter},{ssh}"]
+                self.assertEqual(capture_flags, expected)
+
+    def test_sftp_capture_policy_refuses_implicit_apfs_or_missing_transport(self):
+        name = "experimental-ssh-capture"
+        profile = POLICY["profiles"][name]
+        selected = {
+            "exacopy-cli@0.1.0": {"experimental-ssh-capture"},
+            "exacopy-sftp@0.1.0": {"experimental-sftp"},
+            "exacopy-ssh@0.1.0": {"experimental-ssh"},
+            "exacopy-transfer@0.1.0": set(),
+        }
+        check_isolated_features(POLICY, MACOS, name, profile, selected)
+        implicit_apfs = selected | {"exacopy-transfer@0.1.0": {"experimental-apfs-copy"}}
+        with self.assertRaisesRegex(ValueError, "unexpected.*exacopy-transfer/experimental-apfs-copy"):
+            check_isolated_features(POLICY, MACOS, name, profile, implicit_apfs)
+        missing_transport = selected | {"exacopy-ssh@0.1.0": set()}
+        with self.assertRaisesRegex(ValueError, "missing.*exacopy-ssh/experimental-ssh"):
+            check_isolated_features(POLICY, MACOS, name, profile, missing_transport)
+
     def test_optional_dependency_is_scoped_to_its_named_consumer(self):
         rule = {"default_features": False, "features": [], "optional_consumers": ["ssh"]}
         policy = {

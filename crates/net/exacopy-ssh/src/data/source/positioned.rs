@@ -93,6 +93,25 @@ impl RemotePositionedRead<'_> {
 		self.source.before
 	}
 
+	/// Rechecks the held and named observations without reading or closing the file.
+	///
+	/// The result is live SFTP v3 metadata. EOF and handle closure are checked
+	/// separately by [finish](Self::finish).
+	///
+	/// # Errors
+	/// Refuses changed observations, expiry and session failures. A failed or
+	/// cancelled recheck fences the session.
+	pub async fn recheck(&mut self) -> Result<FileObservation, Error> {
+		let mut session = self.session.take().ok_or(Error::Closed)?;
+		session
+			.run(Instant::now() + OPERATION_TIMEOUT, async |wire| {
+				self.source.recheck(wire).await
+			})
+			.await?;
+		self.session = Some(session);
+		Ok(self.source.before)
+	}
+
 	/// Starts a positive interval within the observed file extent.
 	///
 	/// The window admits up to 128 MiB and 4,096 data requests. Its single

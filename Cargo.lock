@@ -787,10 +787,15 @@ dependencies = [
  "exacopy-model",
  "exacopy-plan",
  "exacopy-platform",
+ "exacopy-sftp",
+ "exacopy-ssh",
  "exacopy-transfer",
+ "russh",
+ "russh-sftp",
  "rustix",
  "serde",
  "serde_json",
+ "tokio",
  "uuid",
  "zeroize",
 ]
@@ -887,6 +892,18 @@ dependencies = [
  "libc",
  "rustix",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "exacopy-sftp"
+version = "0.1.0"
+dependencies = [
+ "exacopy-endpoint",
+ "exacopy-ssh",
+ "russh",
+ "russh-sftp",
+ "tokio",
+ "zeroize",
 ]
 
 [[package]]

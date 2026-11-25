@@ -7,6 +7,10 @@ schema_version = 2
 # Both endpoints must be workspace members and the normal group must permit the edge.
 concrete_external = ["apfs-mounted", "boringtun", "libc", "russh", "russh-sftp", "tokio", "tokio-util", "windows-sys"]
 
+[[inversion.adapter_transport]]
+from = "exacopy-sftp"
+to = "exacopy-ssh"
+
 [groups.core]
 members = { exacopy-model = "crates/foundation/exacopy-model" }
 normal.groups = ["foundation"]
@@ -57,13 +61,19 @@ members = { exacopy-ssh = "crates/net/exacopy-ssh", exacopy-wireguard = "crates/
 normal.groups = ["contracts"]
 normal.optional_external = ["boringtun", "bytes", "russh", "russh-sftp", "rustix", "tokio", "tokio-util", "zeroize", "hmac", "sha1"]
 
+[groups.adapters]
+role = "adapter"
+members = { exacopy-sftp = "crates/adapters/exacopy-sftp" }
+normal.groups = ["contracts", "network"]
+dev.external = ["russh", "russh-sftp", "tokio", "zeroize"]
+
 [groups.clients]
 role = "application"
 members = { exacopy-cli = "apps/exacopy-cli" }
-normal.groups = ["contracts", "operations", "platform", "core", "storage", "codecs"]
+normal.groups = ["contracts", "operations", "platform", "core", "storage", "codecs", "adapters", "network"]
 normal.external = ["blake3", "clap", "ed25519-dalek", "rustix", "serde", "serde_json", "uuid", "zeroize"]
 dev.groups = ["testkit"]
-dev.external = ["blake3", "ed25519-dalek", "rustix"]
+dev.external = ["blake3", "ed25519-dalek", "rustix", "russh", "russh-sftp", "tokio", "zeroize"]
 
 [groups.testkit]
 members = { exacopy-testkit = "crates/engineering/exacopy-testkit" }

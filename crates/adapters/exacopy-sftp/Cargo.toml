@@ -1,0 +1,23 @@
+[package]
+name = "exacopy-sftp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+experimental-sftp = ["dep:exacopy-endpoint", "dep:exacopy-ssh", "exacopy-ssh/experimental-ssh"]
+
+[dependencies]
+exacopy-endpoint = { workspace = true, optional = true }
+exacopy-ssh = { workspace = true, optional = true }
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dev-dependencies]
+russh = { workspace = true, features = ["ring"] }
+russh-sftp = { workspace = true, features = ["raw-string"] }
+tokio = { workspace = true, features = ["io-util", "macros", "rt", "sync", "time"] }
+zeroize.workspace = true
+
+[lints]
+workspace = true

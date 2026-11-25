@@ -18,20 +18,8 @@ pub mod linux_staging;
 #[cfg(all(target_os = "macos", feature = "experimental-apfs-copy"))]
 pub mod macos;
 
-#[cfg(any(
-	target_os = "linux",
-	all(target_os = "macos", feature = "experimental-apfs-copy")
-))]
 pub mod staging;
 
-#[cfg(any(
-	target_os = "linux",
-	all(target_os = "macos", feature = "experimental-apfs-copy")
-))]
 pub mod remote_capture;
 
-#[cfg(any(
-	target_os = "linux",
-	all(target_os = "macos", feature = "experimental-apfs-copy")
-))]
 pub mod remote_resume;

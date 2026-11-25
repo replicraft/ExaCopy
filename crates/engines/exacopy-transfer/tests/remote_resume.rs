@@ -1,8 +1,4 @@
 //! Exercise boundary ordering for a fresh private remote restart.
-#![cfg(any(
-	target_os = "linux",
-	all(target_os = "macos", feature = "experimental-apfs-copy")
-))]
 
 use std::{
 	future::Future,

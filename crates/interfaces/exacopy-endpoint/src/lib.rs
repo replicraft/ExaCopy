@@ -11,6 +11,7 @@ pub mod linux_staging;
 pub mod plan_bundle;
 mod positioned;
 mod read_view;
+pub mod remote_source;
 pub mod ssh_sftp;
 mod staging;
 pub mod wireguard;

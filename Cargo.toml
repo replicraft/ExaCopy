@@ -8,6 +8,7 @@ members = [
     "crates/interfaces/exacopy-endpoint",
     "crates/platform/exacopy-platform",
     "crates/net/exacopy-ssh",
+    "crates/adapters/exacopy-sftp",
     "crates/net/exacopy-wireguard",
     "crates/engines/exacopy-diff",
     "crates/engines/exacopy-transfer",
@@ -26,6 +27,8 @@ license = "Apache-2.0"
 
 [workspace.dependencies]
 # Internal crates
+exacopy-ssh = { path = "crates/net/exacopy-ssh", version = "=0.1.0" }
+exacopy-sftp = { path = "crates/adapters/exacopy-sftp", version = "=0.1.0" }
 exacopy-core = { path = "crates/foundation/exacopy-core", version = "=0.1.0" }
 exacopy-manifest = { path = "crates/formats/exacopy-manifest", version = "=0.1.0" }
 exacopy-plan = { path = "crates/formats/exacopy-plan", version = "=0.1.0" }

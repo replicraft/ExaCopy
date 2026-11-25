@@ -14,7 +14,8 @@
     "exacopy-platform",
     "exacopy-transfer",
     "exacopy-wireguard",
-    "exacopy-ssh"
+    "exacopy-ssh",
+    "exacopy-sftp"
   ],
   "engineering_packages": ["exacopy-testkit", "xtask"],
   "profiles": {
@@ -95,6 +96,25 @@
       "exact_features": ["exacopy-ssh/experimental-ssh"],
       "purpose": "Compile the opt-in read-only SSH/SFTP adapter for dependency review and synthetic in-process tests."
     },
+    "experimental-sftp": {
+      "defaults": false,
+      "check_cli": false,
+      "feature_statuses": [],
+      "exact_features": ["exacopy-sftp/experimental-sftp", "exacopy-ssh/experimental-ssh"],
+      "purpose": "Check the held SFTP source adapter and its selected transport without selecting an application workflow."
+    },
+    "experimental-ssh-capture": {
+      "defaults": false,
+      "check_cli": false,
+      "feature_statuses": [],
+      "exact_features": [
+        "exacopy-cli/experimental-ssh-capture",
+        "exacopy-sftp/experimental-sftp",
+        "exacopy-ssh/experimental-ssh"
+      ],
+      "targets": ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"],
+      "purpose": "Check application composition of a held SFTP source and private capture without enabling native APFS copy."
+    },
     "development-all": {
       "defaults": true,
       "check_cli": false,
@@ -131,7 +151,28 @@
         "purpose": "Enable the caller-routed, pinned-host, read-only SSH/SFTP library without enabling a product workflow."
       }
     },
+    "exacopy-sftp": {
+      "experimental-sftp": {
+        "status": "experimental",
+        "enables": ["dep:exacopy-endpoint", "dep:exacopy-ssh", "exacopy-ssh/experimental-ssh"],
+        "resolution_probe": ["exacopy-endpoint", "exacopy-ssh", "russh"],
+        "purpose": "Enable the held SFTP source capability over the exact experimental SSH transport."
+      }
+    },
     "exacopy-cli": {
+      "experimental-ssh-capture": {
+        "status": "experimental",
+        "targets": ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"],
+        "enables": [
+          "dep:exacopy-sftp",
+          "dep:exacopy-ssh",
+          "dep:exacopy-transfer",
+          "exacopy-sftp/experimental-sftp",
+          "exacopy-ssh/experimental-ssh"
+        ],
+        "resolution_probe": ["exacopy-sftp", "exacopy-ssh", "russh"],
+        "purpose": "Expose application wiring for private live SFTP capture without selecting a command or a native write adapter."
+      },
       "experimental-windows-diff": {
         "status": "experimental",
         "targets": [
@@ -228,19 +269,8 @@
       "experimental-apfs-copy": {
         "status": "experimental",
         "targets": ["aarch64-apple-darwin"],
-        "enables": [
-          "dep:blake3",
-          "dep:ed25519-dalek",
-          "dep:exacopy-content",
-          "dep:exacopy-endpoint",
-          "dep:exacopy-journal",
-          "dep:exacopy-model",
-          "dep:minicbor"
-        ],
-        "resolution_probe": [
-          "blake3", "ed25519-dalek", "exacopy-content", "exacopy-endpoint", "exacopy-journal",
-          "exacopy-model", "minicbor"
-        ],
+        "enables": ["dep:ed25519-dalek", "dep:exacopy-model", "dep:minicbor"],
+        "resolution_probe": [],
         "purpose": "Enable the managed APFS operation policies, canonical records, and recovery decisions."
       }
     }
@@ -332,9 +362,6 @@
     "blake3": {
       "default_features": false,
       "features": [],
-      "optional_targets": {
-        "exacopy-transfer": ["cfg(target_os = \"macos\")"]
-      },
       "purpose": "Source stream and independent stage read-back digests, and content bindings."
     },
     "clap": {

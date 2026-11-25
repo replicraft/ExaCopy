@@ -14,6 +14,8 @@ mod decision;
 #[cfg(test)]
 mod tests;
 
+pub use crate::remote_source::SourceEpoch;
+
 pub use decision::{
 	ConnectionFailure, FailureDecision, FailureSubject, PermanentFailure, RetryBlock,
 	RetryDecision, RetryError, RetryOwner, TransientFailure, VerifiedHealth,
@@ -35,18 +37,6 @@ impl ConnectionAttempt {
 	#[must_use]
 	pub const fn generation(self) -> NonZeroU64 {
 		self.generation
-	}
-}
-
-/// Identifies the source view accepted by the coordinator's own validation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SourceEpoch(NonZeroU64);
-
-impl SourceEpoch {
-	/// Wraps a source generation assigned under the caller's source identity contract.
-	#[must_use]
-	pub const fn new(generation: NonZeroU64) -> Self {
-		Self(generation)
 	}
 }
 
