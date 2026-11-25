@@ -78,6 +78,75 @@ def check_samples(samples, summary, count):
     require(summary == summarize(samples), "stored summary differs from the raw trials")
 
 
+def check_recovery_performance(path, minimum_trials):
+    report = read_json(path)
+    require(report["schema_version"] == 1 and report["protocol"] == "exacopy-linux-resume-v1"
+            and report["outcome"] == "passed", f"ineligible recovery evidence: {path}")
+    config = report["configuration"]
+    require(re.fullmatch(r"[0-9a-f]{40}", config["source_revision"]) is not None,
+            f"missing recovery revision: {path}")
+    require(all(re.fullmatch(r"[0-9a-f]{64}", config[key])
+                for key in ("cargo_lock_sha256", "exacopy_binary_sha256")),
+            f"missing recovery artifact digest: {path}")
+    current_helpers = {name: digest(ROOT / "tools/reference" / name) for name in ("common.py", "run.py")}
+    require(config["runner_sha256"] == digest(ROOT / "tools/benchmarks/linux_resume.py")
+            and config["reference_helper_sha256"] == current_helpers,
+            f"recovery runner provenance drift: {path}")
+    require(config["build_profile"] == "release" and config["platform"]["os"] == "Linux"
+            and config["platform"]["filesystem"] == "ext4", "unexpected recovery profile")
+    count = config["repeats"]
+    require(type(count) is int and minimum_trials <= count <= 30, "invalid recovery trial count")
+
+    evidence = report["evidence"]
+    fixture = evidence["fixture"]
+    require(fixture["logical_bytes"] == fixture["allocated_bytes"] == 128 * (1 << 20)
+            and fixture["same_uid_gid_checked"] is True and re.fullmatch(r"[0-9a-f]{64}", fixture["sha256"]),
+            "unexpected recovery fixture")
+    subjects = {"fresh_copy", "checkpoint_resume"}
+    for key in ("verified_samples", "summary", "excluded_warmup"):
+        require(set(evidence[key]) == subjects, f"missing recovery subject in {key}")
+    for subject in subjects:
+        warmup = evidence["excluded_warmup"][subject]
+        require(warmup["trial"] == 0, "invalid recovery warm-up ordinal")
+        check_recovery_sample(subject, warmup)
+        records = evidence["verified_samples"][subject]
+        require([item["trial"] for item in records] == list(range(1, count + 1)),
+                "invalid recovery trial ordinals")
+        samples = [check_recovery_sample(subject, item) for item in records]
+        check_samples(samples, evidence["summary"][subject], count)
+
+    control = evidence["trace_control"]
+    check_recovery_sample("checkpoint_resume", control, traced=True)
+    trace = control["stage_write_control"]
+    require(type(trace["writes"]) is int and trace["writes"] > 0
+            and trace["first_offset_bytes"] == control["retained_bytes"]
+            and trace["payload_bytes_written"] == fixture["logical_bytes"] - control["retained_bytes"]
+            and re.fullmatch(r"[0-9a-f]{64}", trace["trace_sha256"]),
+            "recovery trace does not demonstrate a suffix-only write")
+
+
+def check_recovery_sample(subject, sample, *, traced=False):
+    require(sample["verified"] is True, f"unverified recovery baseline trial: {subject}")
+    assurance = sample["assurance" if subject == "fresh_copy" else "input_copy_assurance"]
+    require(assurance["verification"] == "hash_readback"
+            and assurance["durability"] == "unconfirmed" and assurance["publication"] == "published"
+            and assurance["metadata"] == "complete_for_policy",
+            f"recovery baseline copy assurance differs: {subject}")
+    if subject == "checkpoint_resume":
+        result = sample["timed_report"]
+        require(type(sample["retained_bytes"]) is int and 0 < sample["retained_bytes"] <= 64 * (1 << 20)
+                and result["schema"] == "exacopy.local_recovery_inspection" and result["schema_version"] == "1.0"
+                and result["result"] == "inspected" and result["disposition"] == "complete"
+                and result["journal_tail"] == "clean", "checkpoint resume did not confirm completion")
+    if traced:
+        require("execution" not in sample, "traced execution must stay outside the timed results")
+        return None
+    execution = sample["execution"]
+    require(type(execution["exit_code"]) is int and execution["exit_code"] == 0,
+            f"failed recovery baseline trial: {subject}")
+    return {key: value for key, value in execution.items() if key != "exit_code"}
+
+
 def check_performance():
     directory = ROOT / "docs/specs/performance"
     workloads = read_json(directory / "workloads.v1.json")
@@ -86,6 +155,9 @@ def check_performance():
             "future workload has a conflicting evidence status")
     for lane in workloads["baseline"]:
         require(lane["status"] == "executed_pass", f"invalid baseline status: {lane['id']}")
+        if lane["id"] == "local-checkpoint-resume":
+            check_recovery_performance(directory / lane["evidence"], workloads["budgets"]["minimum_measured_trials"])
+            continue
         report = check_evidence(directory / lane["evidence"])
         evidence = report["evidence"]
         count = report["configuration"]["repeats"]

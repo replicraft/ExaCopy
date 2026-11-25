@@ -15,7 +15,20 @@ Comparison measurements cover process launch, the full relation decision and its
 
 The timed copy includes the CLI’s source read, staged write, readback, required metadata and persistence barriers, exclusive publication, receipt commitment and report. Profile creation and fixture generation are outside the clock. The validation pass independently compares bytes, checks the source identity and contents, checks the target mode and mtime, and inspects the authenticated committed job. The timing excludes the validation pass. The copy report marks durability `unconfirmed`. Do not sum multiworker CPU as wall time. Early mismatches have a useful latency but cannot be assigned full-extent throughput. Rsync runs in the guest as a compatibility control with different assurance, so the copy table has no relative rsync figure.
 
-The APFS measurements describe an Apple M1 Pro host reading warm files. The ext4 measurements describe a 4-vCPU aarch64 VM and a virtio-backed guest volume. Physical-media bandwidth, cold-cache comparisons and power-loss qualification remain outside the run. Verification phase timing, random I/O, million-entry trees, physical HDD/SATA/NVMe and network drives, lossy SFTP and embedded WireGuard, Android USB/wireless, recovery costs, GUI latency and repository growth have explicit workloads in the [future matrix](../specs/performance/workloads.v1.json).
+The APFS measurements describe an Apple M1 Pro host reading warm files. The ext4 measurements describe a 4-vCPU aarch64 VM and a virtio-backed guest volume. Physical-media bandwidth, cold-cache comparisons and power-loss qualification remain outside the run. Verification phase timing, random I/O, million-entry trees, physical HDD/SATA/NVMe and network drives, lossy SFTP and embedded WireGuard, Android USB/wireless, broader recovery scenarios, GUI latency and repository growth have explicit workloads in the [future matrix](../specs/performance/workloads.v1.json).
+
+## Linux checkpoint recovery
+
+The optimized CLI at `7cf7e9d72170db9576160edb57a3ff32c2381b58` completed five measured warm trials per operation after one excluded warm-up each. The source was one generated, fully allocated 128 MiB file on the same ext4 guest volume as the destination. The guest had four vCPUs, 4.79 GiB of RAM, and about 544 MiB of available filesystem space at the start. [Recovery measurements and configuration](../specs/performance/evidence/linux-ext4-checkpoint-resume.json)
+
+| Verified 128 MiB operation | Median wall time | Wall-time range | Median process CPU | Peak process RSS |
+| --- | ---: | ---: | ---: | ---: |
+| Fresh copy | 624 ms | 489–742 ms | 471 ms | 21.38 MiB |
+| Resume with a valid 64 MiB checkpoint | 601 ms | 566–965 ms | 546 ms | 21.38 MiB |
+
+The runner reconstructs a pre-publication fixture from an authenticated copy, keeping the first checkpoint and the matching private inode. Setup runs outside the clock. The timed resume includes revalidating the retained bytes against the source, writing the suffix, reading back the whole stage, applying metadata, publishing, committing the receipt, and reporting the result. GNU `cmp`, SHA-256, metadata and inode checks, journal and receipt inspection, and a repeat invocation validate the completed result outside the clock. A separate syscall trace found 16 successful stage writes totaling exactly 64 MiB from offset 64 MiB through EOF. The observed writes skipped the retained prefix. The wall-time ranges overlap, and resume used more median process CPU in this run. [Recovery samples and syscall trace summary](../specs/performance/evidence/linux-ext4-checkpoint-resume.json)
+
+The fixture models a retained pre-publication job. Process-kill recovery and power-loss behavior have separate evidence requirements. An earlier run stopped when fresh copy returned exit 4 with empty stdout and stderr under concurrent guest activity. The cause remains unconfirmed. Its samples are excluded from the five-trial results. [Incomplete execution record](../specs/performance/evidence/linux-ext4-checkpoint-resume-incomplete.json)
 
 ## Reproduce
 
@@ -35,3 +48,14 @@ PYTHONDONTWRITEBYTECODE=1 python3 tools/reference/run.py copy \
 ```
 
 Run `copy` on Linux. The comparison runner supports Linux and managed macOS. For an exact re-run of an archived source revision, follow the [archive procedure](../compatibility/local-references.md#reproduce-the-managed-apfs-differential). The runner refuses to count mismatches and produces a structured failed result. Preserve it with the captured diagnostics and any passing results from the same work package.
+
+The checkpoint runner requires Linux ext4, Python 3.11+, GNU `cmp`, `strace`, and at least 320 MiB of additional fixture space. For an archived production tree, place the checkpoint runner under its `tools/benchmarks/` directory, and pass the archived commit through `--source-revision`. Set `--repeats 5` to use the five-trial schedule. The example captures process output on tmpfs and keeps the file data and journal under `$SCRATCH`.
+
+```sh
+cargo build --locked --release -p exacopy-cli
+mkdir -p target/reference
+TMPDIR=/dev/shm PYTHONDONTWRITEBYTECODE=1 python3 tools/benchmarks/linux_resume.py \
+  --binary target/release/exacopy --scratch-parent "$SCRATCH" \
+  --hardware 'CPU, RAM, virtualization and filesystem topology' \
+  --output target/reference/checkpoint-resume.json
+```

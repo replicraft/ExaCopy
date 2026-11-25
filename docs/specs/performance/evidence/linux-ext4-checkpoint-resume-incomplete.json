@@ -1,0 +1,281 @@
+{
+  "schema_version": 1,
+  "protocol": "exacopy-linux-resume-v1",
+  "started_utc": "2026-11-25T08:46:52.923782+00:00",
+  "evidence": {
+    "fixture": {
+      "logical_bytes": 134217728,
+      "allocated_bytes": 134217728,
+      "mode": "0600",
+      "mtime_ns": 1700000000000000000,
+      "sha256": "2e3ead13a0d6de0a9649791f4d581869ee41bdaa28c141b80d6d2eaf6bfcca01",
+      "seed": "linux-resume-128m",
+      "generator": "exacopy-reference-v1 bounded SHAKE-256 blocks"
+    },
+    "verified_samples": {
+      "fresh_copy": [
+        {
+          "trial": 1,
+          "execution": {
+            "exit_code": 0,
+            "elapsed_ns": 4243258209,
+            "user_cpu_ns": 470373000,
+            "system_cpu_ns": 416799000,
+            "peak_rss_bytes": 22282240
+          },
+          "assurance": {
+            "schema": "exacopy.cli.copy",
+            "schema_version": "1.0",
+            "publication": "published",
+            "completed": 1,
+            "pending": 0,
+            "verification": "hash_readback",
+            "consistency": "live_observed",
+            "durability": "unconfirmed",
+            "preservation": "preserve",
+            "redundancy": "independent_writes",
+            "metadata": "complete_for_policy"
+          },
+          "verified": true
+        },
+        {
+          "trial": 2,
+          "execution": {
+            "exit_code": 4,
+            "elapsed_ns": 1165104174,
+            "user_cpu_ns": 141758000,
+            "system_cpu_ns": 128306000,
+            "peak_rss_bytes": 22282240
+          }
+        }
+      ],
+      "checkpoint_resume": [
+        {
+          "trial": 1,
+          "retained_bytes": 67108864,
+          "execution": {
+            "exit_code": 0,
+            "elapsed_ns": 3464748322,
+            "user_cpu_ns": 617988000,
+            "system_cpu_ns": 625202000,
+            "peak_rss_bytes": 22282240
+          },
+          "timed_report": {
+            "schema": "exacopy.local_recovery_inspection",
+            "schema_version": "1.0",
+            "result": "inspected",
+            "disposition": "complete",
+            "journal_sequence": "11",
+            "journal_offset": "3121",
+            "journal_tail": "clean"
+          },
+          "verified": true,
+          "input_copy_assurance": {
+            "schema": "exacopy.cli.copy",
+            "schema_version": "1.0",
+            "publication": "published",
+            "completed": 1,
+            "pending": 0,
+            "verification": "hash_readback",
+            "consistency": "live_observed",
+            "durability": "unconfirmed",
+            "preservation": "preserve",
+            "redundancy": "independent_writes",
+            "metadata": "complete_for_policy"
+          }
+        }
+      ]
+    },
+    "excluded_warmup": {
+      "fresh_copy": {
+        "trial": 0,
+        "execution": {
+          "exit_code": 0,
+          "elapsed_ns": 27883665523,
+          "user_cpu_ns": 2286905000,
+          "system_cpu_ns": 4747135000,
+          "peak_rss_bytes": 22282240
+        },
+        "assurance": {
+          "schema": "exacopy.cli.copy",
+          "schema_version": "1.0",
+          "publication": "published",
+          "completed": 1,
+          "pending": 0,
+          "verification": "hash_readback",
+          "consistency": "live_observed",
+          "durability": "unconfirmed",
+          "preservation": "preserve",
+          "redundancy": "independent_writes",
+          "metadata": "complete_for_policy"
+        },
+        "verified": true
+      },
+      "checkpoint_resume": {
+        "trial": 0,
+        "retained_bytes": 25165824,
+        "execution": {
+          "exit_code": 0,
+          "elapsed_ns": 14301703169,
+          "user_cpu_ns": 1209000000,
+          "system_cpu_ns": 2972831000,
+          "peak_rss_bytes": 22282240
+        },
+        "timed_report": {
+          "schema": "exacopy.local_recovery_inspection",
+          "schema_version": "1.0",
+          "result": "inspected",
+          "disposition": "complete",
+          "journal_sequence": "11",
+          "journal_offset": "3121",
+          "journal_tail": "clean"
+        },
+        "verified": true,
+        "input_copy_assurance": {
+          "schema": "exacopy.cli.copy",
+          "schema_version": "1.0",
+          "publication": "published",
+          "completed": 1,
+          "pending": 0,
+          "verification": "hash_readback",
+          "consistency": "live_observed",
+          "durability": "unconfirmed",
+          "preservation": "preserve",
+          "redundancy": "independent_writes",
+          "metadata": "complete_for_policy"
+        }
+      }
+    }
+  },
+  "configuration": {
+    "source_revision": "7cf7e9d72170db9576160edb57a3ff32c2381b58",
+    "build_profile": "release",
+    "exacopy_binary_sha256": "0525d16542a318b5157d7eaabf6175dc56bbe0931bdd5882ced057a65e2bf0ff",
+    "cargo_lock_sha256": "ebbe7a23da819caea738b58429928338b86ee486ba8bd1becca67cf6814b9109",
+    "workspace_lock_dependencies": [
+      "arrayvec 0.7.8",
+      "autocfg 1.5.1",
+      "bitflags 2.13.2",
+      "blake3 1.8.7",
+      "block-buffer 0.10.4",
+      "bumpalo 3.20.4",
+      "camino 1.2.6",
+      "cargo-platform 0.3.3",
+      "cargo_metadata 0.23.1",
+      "cc 1.11.2",
+      "cfg-if 1.0.5",
+      "chacha20 0.10.2",
+      "constant_time_eq 0.4.2",
+      "core_detect 1.0.0",
+      "cpufeatures 0.2.17",
+      "cpufeatures 0.3.1",
+      "crc32c 0.6.9",
+      "crypto-common 0.1.7",
+      "curve25519-dalek 4.1.3",
+      "curve25519-dalek-derive 0.1.1",
+      "digest 0.10.7",
+      "ed25519 2.2.3",
+      "ed25519-dalek 2.2.0",
+      "equivalent 1.0.3",
+      "errno 0.3.15",
+      "fiat-crypto 0.2.9",
+      "find-msvc-tools 0.1.15",
+      "futures-core 0.3.34",
+      "futures-task 0.3.34",
+      "futures-util 0.3.34",
+      "generic-array 0.14.7",
+      "getrandom 0.4.3",
+      "hashbrown 0.17.1",
+      "hax-lib 0.4.2",
+      "hax-lib-macros 0.4.2",
+      "hax-lib-macros-types 0.4.2",
+      "indexmap 2.14.2",
+      "itoa 1.0.19",
+      "js-sys 0.3.107",
+      "libc 0.2.191",
+      "linux-raw-sys 0.12.1",
+      "memchr 2.8.3",
+      "minicbor 2.3.0",
+      "num-bigint 0.4.8",
+      "num-integer 0.1.47",
+      "num-traits 0.2.19",
+      "pin-project-lite 0.2.18",
+      "proc-macro2 1.0.107",
+      "proptest 1.12.0",
+      "quote 1.0.47",
+      "r-efi 6.0.0",
+      "rand 0.10.4",
+      "rand_core 0.10.1",
+      "rand_xorshift 0.5.0",
+      "regex-syntax 0.8.12",
+      "rustc_version 0.4.1",
+      "rustix 1.1.6",
+      "rustversion 1.0.23",
+      "semver 1.0.28",
+      "serde 1.0.229",
+      "serde_core 1.0.229",
+      "serde_derive 1.0.229",
+      "serde_json 1.0.154",
+      "serde_spanned 1.1.3",
+      "sha2 0.10.9",
+      "shlex 2.0.1",
+      "signature 2.2.0",
+      "slab 0.4.12",
+      "subtle 2.6.1",
+      "syn 2.0.119",
+      "syn 3.0.10",
+      "thiserror 2.0.21",
+      "thiserror-impl 2.0.21",
+      "toml 1.2.1+spec-1.1.0",
+      "toml_datetime 1.1.3+spec-1.1.0",
+      "toml_parser 1.1.5+spec-1.1.0",
+      "toml_writer 1.2.0+spec-1.1.0",
+      "typenum 1.20.1",
+      "unarray 0.1.4",
+      "unicode-ident 1.0.27",
+      "uuid 1.29.3",
+      "version_check 0.9.5",
+      "wasm-bindgen 0.2.130",
+      "wasm-bindgen-macro 0.2.130",
+      "wasm-bindgen-macro-support 0.2.130",
+      "wasm-bindgen-shared 0.2.130",
+      "windows-link 0.2.1",
+      "windows-sys 0.61.2",
+      "winnow 1.0.5",
+      "zeroize 1.9.2",
+      "zmij 1.0.23"
+    ],
+    "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)\nbinary: rustc\ncommit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a\ncommit-date: 2026-11-09\nhost: aarch64-unknown-linux-gnu\nrelease: 1.100.0\nLLVM version: 23.1.5",
+    "cargo": "cargo 1.100.0 (3acc79c0c 2026-11-05)",
+    "platform": {
+      "os": "Linux",
+      "kernel": "6.8.0-147-generic",
+      "machine": "aarch64",
+      "version": "Ubuntu 24.04.5 LTS",
+      "filesystem": "ext4",
+      "python": "3.12.3"
+    },
+    "build_command": "cargo build --locked --release -p exacopy-cli",
+    "hardware": "Apple Silicon Lima VZ ARM64 guest, four vCPUs, virtio /dev/vda1 carries both source and destination, host backing medium not measured",
+    "guest_online_cpus": "4",
+    "guest_mem_total": "MemTotal:        5022236 kB",
+    "mount": "/dev/vda1 ext4   rw,relatime,discard,errors=remount-ro,commit=30",
+    "filesystem_bytes": {
+      "total": 15523123200,
+      "used": 14456303616,
+      "free": 1050042368
+    },
+    "cmp": "cmp (GNU diffutils) 3.10",
+    "strace": "strace -- version 6.8",
+    "runner_sha256": "e5c39a1da39cffe97edc25137064c9aa6b1913a358fdf652031b077e03ee48fd",
+    "reference_helper_sha256": {
+      "common.py": "bd7d586568384ff02674038940cfddbc9e3ede7b0a42a60ce8005dd7f745fc7c",
+      "run.py": "b568c1c52621826f6665dbacceca68638d8bcc74af4063c5434b090e82aeaa12"
+    },
+    "cache": "warm source and prepared retained stage, one excluded warm-up per subject",
+    "repeats": 9
+  },
+  "outcome": "failed",
+  "reason": "RuntimeError(\"copy failed: {'exit_code': 4, 'stdout': '', 'stderr': '', 'elapsed_ns': 1165104174, 'user_cpu_ns': 141758000, 'system_cpu_ns': 128306000, 'peak_rss_bytes': 22282240}\")",
+  "ended_utc": "2026-11-25T08:50:31.736967+00:00"
+}

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "invariants": [
     "TIME-01: Time the full user operation through its reported result, including integrity checks, policy metadata, required barriers and receipt commitment where applicable.",
     "TIME-02: Count only trials whose outcome matches the independent byte, metadata and state oracle for their workload.",
@@ -35,6 +35,15 @@
       "subjects": ["ExaCopy staged copy"],
       "measurements": ["wall_ns", "verified_logical_bytes_per_second", "user_cpu_ns", "system_cpu_ns", "per_process_peak_rss_bytes"],
       "evidence": "evidence/linux-ext4-copy.json"
+    },
+    {
+      "id": "local-checkpoint-resume",
+      "status": "executed_pass",
+      "acceptance": ["A-185", "A-324"],
+      "workload": "128 MiB deterministic regular file on guest ext4. Recover a freshly prepared synthetic pre-intent job with its first authenticated checkpoint and retained inode. Validate bytes, fixture metadata, journal and receipt commitment, and repeat invocation. Run a separate syscall trace to confirm which stage bytes were written.",
+      "subjects": ["ExaCopy staged copy from an absent target", "ExaCopy checkpointed resume to an absent target"],
+      "measurements": ["wall_ns", "user_cpu_ns", "system_cpu_ns", "per_process_peak_rss_bytes", "retained_logical_bytes", "stage_payload_write_bytes_in_trace_control"],
+      "evidence": "evidence/linux-ext4-checkpoint-resume.json"
     }
   ],
   "future": [
@@ -76,7 +85,7 @@
     {
       "id": "verification-and-recovery",
       "status": "not_executed",
-      "fixture": "Use the same 64 MiB and 4 GiB fixtures with independently checked stable snapshots of intended bytes. Interrupt at fixed staging fractions, just before publication and after publication. Corrupt one checkpoint in each relevant profile.",
+      "fixture": "Use 64 MiB and 4 GiB fixtures with independently checked stable snapshots of intended bytes. Interrupt at fixed staging fractions, just before publication and after publication. Corrupt one checkpoint in each relevant profile.",
       "prerequisite": "Stage timing instrumentation and deterministic crash-boundary estimates. Preserve ordinary readback/barrier behavior for every timed result.",
       "metrics": ["readback time and read amplification", "barrier and metadata time", "reconciliation latency", "time to verified completion", "validated retained bytes", "unnecessary retransmission"]
     },
