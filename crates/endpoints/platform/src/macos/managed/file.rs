@@ -9,8 +9,8 @@ use rustix::fs::{self, AtFlags, Stat};
 use rustix::io::Errno;
 
 use super::{
-	ManagedObjectIdentity, ManagedReadError, PhysicalFsid, ReadDirectory,
-	with_materialization_disabled,
+	BasicMetadata, ManagedObjectIdentity, ManagedReadError, ManagedTimestamp, PhysicalFsid,
+	ReadDirectory, metadata, with_materialization_disabled,
 };
 
 /// Held native identities of a managed source and its independently admitted parent.
@@ -86,6 +86,40 @@ impl<'root> ManagedRegularFile<'root> {
 					.ok_or(ManagedReadError::UnsupportedChild)?;
 			Ok(ManagedSourceIdentities { parent, file })
 		})
+	}
+
+	/// Returns the raw selected name bound to this held file.
+	#[must_use]
+	pub fn component(&self) -> UnixComponent<'_> {
+		self.name
+	}
+
+	/// Returns the inode change time observed at descriptor admission.
+	/// # Errors
+	/// Refuses an unavailable or malformed timestamp.
+	pub fn change_time(&self) -> Result<ManagedTimestamp, ManagedReadError> {
+		ManagedTimestamp::from_stat_parts(self.initial.st_ctime, self.initial.st_ctime_nsec)
+			.ok_or(ManagedReadError::UnsupportedChild)
+	}
+
+	/// Rechecks strict basic metadata and returns timestamps captured at admission.
+	/// Call before transferring data. Later reads can advance the source access time.
+	/// # Errors
+	/// Refuses unavailable or changed identity, lease or strict basic metadata evidence.
+	pub fn check_basic_metadata(&self) -> Result<BasicMetadata, ManagedReadError> {
+		with_materialization_disabled(|| self.check_basic_metadata_with_policy())
+	}
+
+	pub(super) fn check_basic_metadata_with_policy(
+		&self,
+	) -> Result<BasicMetadata, ManagedReadError> {
+		self.root.check_root()?;
+		self.check_file()?;
+		let metadata = BasicMetadata::from_stat(&self.initial)?;
+		metadata::check_inventory(self.file.as_fd())?;
+		self.root.check_root()?;
+		self.check_file()?;
+		Ok(metadata)
 	}
 
 	/// Read exactly the requested range of the captured extent.

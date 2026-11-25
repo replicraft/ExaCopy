@@ -27,6 +27,16 @@ pub(super) fn has_no_stage_acl_entries(fd: BorrowedFd<'_>) -> io::Result<bool> {
 	Ok(is_explicit_empty_acl(&response) || is_absent_acl(&response))
 }
 
+pub(super) fn has_basic_acl(fd: BorrowedFd<'_>) -> io::Result<bool> {
+	Ok(is_basic_acl(&descriptor_security(fd)?))
+}
+
+fn is_basic_acl(buffer: &AttributeBuffer) -> bool {
+	is_absent_acl(&buffer.0)
+		|| (is_explicit_empty_acl(&buffer.0)
+			&& buffer.0[PAYLOAD + FIELD_BYTES..PAYLOAD + ENTRY_COUNT] == [0; 2 * GUID_BYTES])
+}
+
 fn descriptor_security(fd: BorrowedFd<'_>) -> io::Result<AttributeBuffer> {
 	let mut request = attribute_request(SECURITY_MASK);
 	let mut buffer = AttributeBuffer([0; PAYLOAD + EMPTY_FILESEC_BYTES]);
@@ -155,6 +165,11 @@ fn rejects_uncertain_acl_payloads() {
 	);
 	write_field(&mut valid, PAYLOAD, FILESEC_MAGIC);
 	assert!(is_explicit_empty_acl(&valid));
+	assert!(is_basic_acl(&AttributeBuffer(valid)));
+	let mut extended_security_guid = valid;
+	extended_security_guid[PAYLOAD + FIELD_BYTES] = 1;
+	assert!(is_explicit_empty_acl(&extended_security_guid));
+	assert!(!is_basic_acl(&AttributeBuffer(extended_security_guid)));
 	for (offset, value) in [
 		(0, length + 1),
 		(0, length - 1),
@@ -189,6 +204,7 @@ fn fresh_stage_acl_absence_requires_the_exact_apfs_response() {
 	write_field(&mut absent, 0, PAYLOAD as u32);
 	write_field(&mut absent, RETURNED_ATTRS, libc::ATTR_CMN_RETURNED_ATTRS);
 	assert!(is_absent_acl(&absent));
+	assert!(is_basic_acl(&AttributeBuffer(absent)));
 	assert!(!is_explicit_empty_acl(&absent));
 	for (field, value) in [
 		(0, (PAYLOAD - FIELD_BYTES) as u32),

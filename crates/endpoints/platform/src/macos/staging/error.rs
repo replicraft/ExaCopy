@@ -3,7 +3,7 @@ use std::{fmt, io};
 use exacopy_endpoint::IoError;
 use rustix::io::Errno;
 
-use super::super::{ManagedReadError, thread_policy::PolicyError};
+use super::super::{BasicMetadataError, ManagedReadError, thread_policy::PolicyError};
 use super::StageIdentity;
 
 /// Failure to create, write, synchronize or reopen a managed APFS stage.
@@ -39,6 +39,12 @@ pub enum StageError {
 	InvalidRange,
 	/// The file did not have the expected private ownership, type, links, attributes or identity.
 	StageChanged,
+	/// The private stage could not satisfy the strict basic metadata profile.
+	BasicMetadata(BasicMetadataError),
+	/// The stage ownership or extent differs from the admitted source.
+	MetadataMismatch,
+	/// The stage timestamp update failed. Retain the private stage for reconciliation.
+	SetMetadata(io::Error),
 	/// The synchronous writer was previously retired after an uncertain outcome.
 	WriterRetired,
 	/// A fresh stream was requested after the writer had completed a write.
@@ -85,6 +91,11 @@ impl fmt::Display for StageError {
 			Self::InvalidLength => formatter.write_str("stage extent exceeds the offset limit"),
 			Self::InvalidRange => formatter.write_str("positioned range exceeds the stage bounds"),
 			Self::StageChanged => formatter.write_str("private stage identity or metadata changed"),
+			Self::BasicMetadata(error) => write!(formatter, "stage metadata refused ({error})"),
+			Self::MetadataMismatch => formatter.write_str("stage metadata differs from the source"),
+			Self::SetMetadata(error) => {
+				write!(formatter, "stage timestamp update failed ({error})")
+			}
 			Self::WriterRetired => formatter.write_str("stage writer was retired"),
 			Self::AlreadyWritten => {
 				formatter.write_str("stage writer has already transferred data")
@@ -109,14 +120,22 @@ impl std::error::Error for StageError {
 	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
 		match self {
 			Self::Managed(error) => Some(error),
+			Self::BasicMetadata(error) => Some(error),
 			Self::CreateUncertain { source, .. } => Some(source.as_ref()),
 			Self::Write(error) | Self::Read(error) => Some(error),
 			Self::EntropyUnavailable(error)
+			| Self::SetMetadata(error)
 			| Self::FileBarrier(error)
 			| Self::CloseWriter(error)
 			| Self::System(error) => Some(error),
 			_ => None,
 		}
+	}
+}
+
+impl From<BasicMetadataError> for StageError {
+	fn from(error: BasicMetadataError) -> Self {
+		Self::BasicMetadata(error)
 	}
 }
 

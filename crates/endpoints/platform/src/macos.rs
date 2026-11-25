@@ -30,11 +30,11 @@ mod managed;
 #[cfg(test)]
 mod tests;
 
-pub use managed::staging;
 pub use managed::{
-	ManagedObjectIdentity, ManagedReadError, ManagedReadGrant, ManagedReadRoot, ManagedRegularFile,
-	ManagedSourceIdentities, ManagedTimestamp,
+	BasicMetadata, BasicMetadataError, ManagedObjectIdentity, ManagedReadError, ManagedReadGrant,
+	ManagedReadRoot, ManagedRegularFile, ManagedSourceIdentities, ManagedTimestamp,
 };
+pub use managed::{publication, staging};
 
 /// A held directory for metadata probes on macOS.
 pub struct ReadRoot {

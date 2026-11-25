@@ -11,6 +11,7 @@ mod entropy;
 mod error;
 mod file;
 mod identity;
+mod metadata;
 mod reader;
 
 #[cfg(test)]
@@ -21,4 +22,5 @@ pub use directory::{ManagedStageGrant, ManagedStageRoot, StageDirectory};
 pub use error::StageError;
 pub use file::{ClosedStage, MAX_STAGE_IO_BYTES, WriteStage};
 pub use identity::{StageBindingContext, StageIdentity};
+pub use metadata::MetadataReadyStage;
 pub use reader::StageReader;

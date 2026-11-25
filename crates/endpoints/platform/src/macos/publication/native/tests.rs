@@ -1,0 +1,162 @@
+use std::fs::{self, File};
+use std::io::ErrorKind;
+use std::os::fd::AsFd as _;
+use std::os::unix::fs::{MetadataExt as _, symlink};
+use std::path::Path;
+
+use crate::scratch::Scratch;
+
+use super::rename_exclusively;
+
+const STAGE_BYTES: &[u8] = b"verified bytes\0\xff";
+const INCUMBENT_BYTES: &[u8] = b"incumbent bytes";
+
+fn identity(path: &Path) -> (u64, u64) {
+	let metadata = fs::symlink_metadata(path).expect("inspect generated fixture entry");
+	(metadata.dev(), metadata.ino())
+}
+
+fn write_new(path: &Path, bytes: &[u8]) {
+	use std::io::Write as _;
+
+	File::create_new(path)
+		.expect("exclusively create generated fixture")
+		.write_all(bytes)
+		.expect("write fixture");
+}
+
+#[test]
+fn native_exclusive_rename_moves_the_exact_stage() {
+	let stage = Scratch::new();
+	let destination = Scratch::new();
+	let stage_dir = stage.open();
+	let destination_dir = destination.open();
+	let stage_path = stage.path("stage");
+	let target = destination.path("target");
+	write_new(&stage_path, STAGE_BYTES);
+	let before = identity(&stage_path);
+
+	rename_exclusively(
+		stage_dir.as_fd(),
+		c"stage",
+		destination_dir.as_fd(),
+		c"target",
+	)
+	.expect("rename exclusive into absent name");
+	rustix::fs::fsync(stage_dir).expect("synchronize prior stage directory");
+	rustix::fs::fsync(destination_dir).expect("synchronize destination directory");
+
+	assert!(
+		matches!(stage_path.symlink_metadata(), Err(error) if error.kind() == ErrorKind::NotFound)
+	);
+	assert_eq!(identity(&target), before);
+	assert_eq!(fs::read(target).expect("read published stage"), STAGE_BYTES);
+}
+
+#[test]
+fn native_exclusive_rename_preserves_late_regular_and_symlink_incumbents() {
+	for is_symlink in [false, true] {
+		let stage = Scratch::new();
+		let destination = Scratch::new();
+		let stage_dir = stage.open();
+		let destination_dir = destination.open();
+		let stage_path = stage.path("stage");
+		let target = destination.path("target");
+		let referent = destination.path("referent");
+		write_new(&stage_path, STAGE_BYTES);
+		write_new(&referent, INCUMBENT_BYTES);
+		let stage_before = identity(&stage_path);
+		let referent_before = identity(&referent);
+		assert!(
+			matches!(target.symlink_metadata(), Err(error) if error.kind() == ErrorKind::NotFound)
+		);
+		std::thread::scope(|scope| {
+			scope
+				.spawn(|| {
+					if is_symlink {
+						symlink("referent", &target).expect("create generated late symbolic link");
+					} else {
+						write_new(&target, INCUMBENT_BYTES);
+					}
+				})
+				.join()
+				.expect("join late incumbent creator");
+		});
+		let target_before = identity(&target);
+
+		let error = rename_exclusively(
+			stage_dir.as_fd(),
+			c"stage",
+			destination_dir.as_fd(),
+			c"target",
+		)
+		.expect_err("refuse generated late incumbent");
+		match error.raw_os_error() {
+			Some(libc::EEXIST) => {}
+			Some(libc::ELOOP) if is_symlink => {}
+			errno => panic!("unexpected refused rename errno {errno:?}"),
+		}
+
+		assert_eq!(identity(&target), target_before);
+		assert_eq!(identity(&stage_path), stage_before);
+		assert_eq!(identity(&referent), referent_before);
+		assert_eq!(
+			fs::read(stage_path).expect("read retained stage"),
+			STAGE_BYTES
+		);
+		assert_eq!(
+			fs::read(referent).expect("read retained referent"),
+			INCUMBENT_BYTES
+		);
+		if is_symlink {
+			assert_eq!(
+				fs::read_link(target).expect("read untouched link"),
+				Path::new("referent")
+			);
+		} else {
+			assert_eq!(
+				fs::read(target).expect("read untouched incumbent"),
+				INCUMBENT_BYTES
+			);
+		}
+	}
+}
+
+#[test]
+fn native_exclusive_rename_preserves_an_incumbent_addressed_through_an_alias() {
+	let stage = Scratch::new();
+	let destination = Scratch::new();
+	let stage_dir = stage.open();
+	let destination_dir = destination.open();
+	let stage_path = stage.path("stage");
+	let target = destination.path("target");
+	let incumbent = destination.path("TARGET");
+	let referent = destination.path("referent");
+	write_new(&stage_path, STAGE_BYTES);
+	write_new(&referent, INCUMBENT_BYTES);
+	let stage_before = identity(&stage_path);
+	let incumbent_before = identity(&referent);
+	fs::hard_link(&referent, &incumbent).expect("install late fixture incumbent");
+	match target.symlink_metadata() {
+		Ok(_) => assert_eq!(identity(&target), incumbent_before),
+		Err(error) if error.kind() == ErrorKind::NotFound => {
+			fs::hard_link(&referent, &target).expect("reserve the distinct target spelling");
+		}
+		Err(error) => panic!("could not observe fixture target: {error}"),
+	}
+	let error = rename_exclusively(
+		stage_dir.as_fd(),
+		c"stage",
+		destination_dir.as_fd(),
+		c"target",
+	)
+	.expect_err("refuse the existing alias");
+	assert_eq!(error.raw_os_error(), Some(libc::EEXIST));
+	assert_eq!(identity(&stage_path), stage_before);
+	assert_eq!(identity(&target), incumbent_before);
+	assert_eq!(fs::read(stage_path).unwrap(), STAGE_BYTES);
+	assert_eq!(identity(&incumbent), incumbent_before);
+	assert_eq!(identity(&referent), incumbent_before);
+	assert_eq!(fs::read(incumbent).unwrap(), INCUMBENT_BYTES);
+	assert_eq!(fs::read(referent).unwrap(), INCUMBENT_BYTES);
+}

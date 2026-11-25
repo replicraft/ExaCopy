@@ -4,7 +4,7 @@ use std::io;
 use exacopy_endpoint::IoError;
 use rustix::io::Errno;
 
-use super::thread_policy::PolicyError;
+use super::{BasicMetadataError, thread_policy::PolicyError};
 
 /// Failure to admit a managed APFS root, select a regular file, or read it.
 #[derive(Debug)]
@@ -20,6 +20,8 @@ pub enum ManagedReadError {
 	UnsupportedChild,
 	/// The selected name, held identity, or observed metadata changed.
 	SourceChanged,
+	/// Strict basic metadata admission or observation failed.
+	BasicMetadata(BasicMetadataError),
 	/// The requested range exceeds the length recorded at open.
 	RangeOutsideFile,
 	/// A positioned read produced data at the recorded logical end.
@@ -46,6 +48,7 @@ impl fmt::Display for ManagedReadError {
 			Self::SourceChanged => {
 				formatter.write_str("selected child's identity or metadata changed")
 			}
+			Self::BasicMetadata(error) => write!(formatter, "source metadata refused ({error})"),
 			Self::RangeOutsideFile => formatter.write_str("read range exceeds the captured extent"),
 			Self::UnexpectedDataAfterEnd => {
 				formatter.write_str("source returned data beyond the captured extent")
@@ -72,11 +75,18 @@ impl std::error::Error for ManagedReadError {
 	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
 		match self {
 			Self::Read(error) => Some(error),
+			Self::BasicMetadata(error) => Some(error),
 			Self::System(error)
 			| Self::MaterializationPolicy(error)
 			| Self::RestoreMaterializationPolicy(error) => Some(error),
 			_ => None,
 		}
+	}
+}
+
+impl From<BasicMetadataError> for ManagedReadError {
+	fn from(error: BasicMetadataError) -> Self {
+		Self::BasicMetadata(error)
 	}
 }
 

@@ -14,12 +14,19 @@ use rustix::io::Errno;
 mod acl;
 mod error;
 mod file;
+#[allow(
+	unsafe_code,
+	reason = "bounded descriptor xattr and resource-fork queries"
+)]
+mod metadata;
 mod observation;
 #[allow(
 	unsafe_code,
 	reason = "bounded descriptor and relative-name physical FSID attributes on Darwin"
 )]
 mod physical_fsid;
+#[path = "publication/mod.rs"]
+pub mod publication;
 #[path = "staging/mod.rs"]
 pub mod staging;
 #[cfg(test)]
@@ -37,6 +44,7 @@ mod volume;
 
 pub use error::ManagedReadError;
 pub use file::{ManagedRegularFile, ManagedSourceIdentities};
+pub use metadata::{BasicMetadata, BasicMetadataError};
 pub use observation::{ManagedObjectIdentity, ManagedTimestamp};
 
 use self::physical_fsid::PhysicalFsid;
@@ -77,6 +85,10 @@ impl ManagedReadGrant {
 	/// the directory, any names, or any selected files, including through
 	/// aliases or previously retained handles. The read capability requires a
 	/// held lease throughout use.
+	///
+	/// Basic metadata admission covers attributes visible to the process and the
+	/// selected timestamp, mode, ownership and unnamed-stream profile. The root
+	/// owner must establish that this profile suffices for the selected child.
 	///
 	/// For path admission, every ancestor and its directory entries must be
 	/// protected against redirection through the initial open. Resolution
@@ -259,7 +271,12 @@ impl<'root> ReadDirectory<'root> {
 			OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
 			Mode::empty(),
 		)?;
-		let file = ManagedRegularFile::new(self, name, File::from(descriptor), before, length);
+		let descriptor = File::from(descriptor);
+		let initial = fs::fstat(&descriptor)?;
+		if !file::same_observation(&initial, &before) {
+			return Err(ManagedReadError::SourceChanged);
+		}
+		let file = ManagedRegularFile::new(self, name, descriptor, initial, length);
 		file.check_file()?;
 		Ok(file)
 	}

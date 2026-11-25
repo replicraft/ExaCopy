@@ -10,8 +10,20 @@ const ATTR_BITMAP_WORDS: usize = size_of::<libc::attribute_set_t>() / size_of::<
 const CAPABILITY_WORDS: usize = size_of::<libc::vol_capabilities_attr_t>() / size_of::<u32>();
 const START: usize = 1 + ATTR_BITMAP_WORDS;
 const RESPONSE_WORDS: usize = START + CAPABILITY_WORDS;
+const INTERFACES: usize = START + libc::VOL_CAPABILITIES_INTERFACES;
+const VALID: usize = CAPABILITY_WORDS / 2;
 
 pub(super) fn supports_managed_root(directory: BorrowedFd<'_>) -> io::Result<bool> {
+	let response = query_capabilities(directory)?;
+	Ok(supports_in_response(&response))
+}
+
+pub(super) fn supports_exclusive_rename(directory: BorrowedFd<'_>) -> io::Result<bool> {
+	let response = query_capabilities(directory)?;
+	Ok(reports_layout(&response) && supports_interfaces(&response, libc::VOL_CAP_INT_RENAME_EXCL))
+}
+
+fn query_capabilities(directory: BorrowedFd<'_>) -> io::Result<[u32; RESPONSE_WORDS]> {
 	let mut request = attribute_request(COMMON);
 	request.volattr = libc::ATTR_VOL_INFO | VOLUME_CAPS;
 	let mut response = [0; RESPONSE_WORDS];
@@ -30,22 +42,25 @@ pub(super) fn supports_managed_root(directory: BorrowedFd<'_>) -> io::Result<boo
 	if status != 0 {
 		return Err(io::Error::last_os_error());
 	}
-	Ok(supports_in_response(&response))
+	Ok(response)
+}
+
+fn reports_layout(response: &[u32; RESPONSE_WORDS]) -> bool {
+	usize::try_from(response[0]).ok() == Some(size_of_val(response))
+		&& response[1] == COMMON
+		&& response[2] == VOLUME_CAPS
+		&& response[3..START].iter().all(|&word| word == 0)
+}
+
+fn supports_interfaces(response: &[u32; RESPONSE_WORDS], bits: u32) -> bool {
+	response[INTERFACES] & response[INTERFACES + VALID] & bits == bits
 }
 
 fn supports_in_response(response: &[u32; RESPONSE_WORDS]) -> bool {
-	if usize::try_from(response[0]).ok() != Some(size_of_val(response))
-		|| response[1] != COMMON
-		|| response[2] != VOLUME_CAPS
-		|| response[3..START].iter().any(|&word| word != 0)
-	{
-		return false;
-	}
-	let interfaces = START + libc::VOL_CAPABILITIES_INTERFACES;
 	let format = START + libc::VOL_CAPABILITIES_FORMAT;
-	let valid = CAPABILITY_WORDS / 2;
-	response[interfaces] & response[interfaces + valid] & ACL_AND_FLOCK == ACL_AND_FLOCK
-		&& response[format + valid] & libc::VOL_CAP_FMT_NO_PERMISSIONS != 0
+	reports_layout(response)
+		&& supports_interfaces(response, ACL_AND_FLOCK)
+		&& response[format + VALID] & libc::VOL_CAP_FMT_NO_PERMISSIONS != 0
 		&& response[format] & libc::VOL_CAP_FMT_NO_PERMISSIONS == 0
 }
 
@@ -69,4 +84,21 @@ fn requires_reported_permission_acl_and_lock_support() {
 	}
 	exact[format] = libc::VOL_CAP_FMT_NO_PERMISSIONS;
 	assert!(!supports_in_response(&exact));
+}
+
+#[test]
+fn exclusive_rename_requires_positive_supported_and_valid_bits() {
+	let exclusive = libc::VOL_CAP_INT_RENAME_EXCL;
+	let mut exact = [0; RESPONSE_WORDS];
+	exact[0] = size_of_val(&exact) as u32;
+	exact[1] = COMMON;
+	exact[2] = VOLUME_CAPS;
+	exact[INTERFACES] = exclusive;
+	exact[INTERFACES + VALID] = exclusive;
+	assert!(reports_layout(&exact) && supports_interfaces(&exact, exclusive));
+	for index in [0, 1, 2, INTERFACES, INTERFACES + VALID] {
+		let mut uncertain = exact;
+		uncertain[index] = 0;
+		assert!(!(reports_layout(&uncertain) && supports_interfaces(&uncertain, exclusive)));
+	}
 }

@@ -96,7 +96,7 @@ impl<'stage> WriteStage<'stage> {
 	/// Returns the identity allocated before this private file was created.
 	#[must_use]
 	pub fn identity(&self) -> StageIdentity {
-		self.location.identity
+		self.location.identity()
 	}
 
 	/// Returns the transaction binding this writer will report to the model.
@@ -229,7 +229,7 @@ impl ClosedStage<'_> {
 	/// Returns the logical extent fixed before staging began.
 	#[must_use]
 	pub fn length(&self) -> u64 {
-		self.location.length
+		self.location.length()
 	}
 
 	/// Reports whether the declared extent was empty.
@@ -241,7 +241,7 @@ impl ClosedStage<'_> {
 	/// Returns the identity allocated for this stage before exclusive creation.
 	#[must_use]
 	pub fn identity(&self) -> StageIdentity {
-		self.location.identity
+		self.location.identity()
 	}
 
 	/// Returns the transaction binding fixed at exclusive creation.
@@ -253,7 +253,7 @@ impl ClosedStage<'_> {
 	/// Returns the checked public target component fixed at exclusive creation.
 	#[must_use]
 	pub fn target(&self) -> UnixComponent<'_> {
-		self.location.target
+		self.location.target()
 	}
 }
 
@@ -265,7 +265,7 @@ impl fmt::Debug for ClosedStage<'_> {
 	}
 }
 
-pub(super) struct StageLocation<'stage> {
+pub(in super::super) struct StageLocation<'stage> {
 	directory: &'stage StageDirectory<'stage>,
 	name: UnixComponent<'stage>,
 	target: UnixComponent<'stage>,
@@ -275,7 +275,46 @@ pub(super) struct StageLocation<'stage> {
 }
 
 impl StageLocation<'_> {
-	fn observe_identity(&self, expected: &Stat) -> Result<ManagedObjectIdentity, StageError> {
+	pub(super) fn identity(&self) -> StageIdentity {
+		self.identity
+	}
+
+	pub(super) fn length(&self) -> u64 {
+		self.length
+	}
+
+	pub(super) fn target(&self) -> UnixComponent<'_> {
+		self.target
+	}
+
+	pub(in super::super) fn stage_name(&self) -> UnixComponent<'_> {
+		self.name
+	}
+
+	pub(in super::super) fn directory(&self) -> &File {
+		self.directory.descriptor()
+	}
+
+	pub(in super::super) fn destination(&self) -> &File {
+		self.directory.destination()
+	}
+
+	pub(in super::super) fn check_directories(&self) -> Result<(), StageError> {
+		self.directory.check_current()
+	}
+
+	pub(super) fn named_stat(&self) -> Result<Stat, StageError> {
+		self.directory.named_stat(self.name)
+	}
+
+	pub(super) fn held_stat(&self) -> Result<Stat, StageError> {
+		Ok(fs::fstat(&self.anchor)?)
+	}
+
+	pub(super) fn observe_identity(
+		&self,
+		expected: &Stat,
+	) -> Result<ManagedObjectIdentity, StageError> {
 		with_materialization_disabled(|| {
 			self.check_observation(expected)?;
 			ManagedObjectIdentity::from_stat(expected, self.directory.physical_fsid())
@@ -288,9 +327,9 @@ impl StageLocation<'_> {
 	}
 
 	pub(super) fn check_observation(&self, expected: &Stat) -> Result<(), StageError> {
-		self.directory.check_current()?;
+		self.check_directories()?;
 		self.check_descriptor(&self.anchor, expected)?;
-		let named = self.directory.named_stat(self.name)?;
+		let named = self.named_stat()?;
 		if !same_observation(&named, expected) {
 			return Err(StageError::StageChanged);
 		}
