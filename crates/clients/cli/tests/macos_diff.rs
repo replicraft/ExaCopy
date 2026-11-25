@@ -153,7 +153,8 @@ impl Fixture {
 	}
 
 	fn compile_acl_helper(&self) {
-		let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../fixtures/macos/empty_acl.c");
+		let source =
+			Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../fixtures/macos/empty_acl.c");
 		let compile = Command::new("/usr/bin/cc")
 			.arg("-Wall")
 			.arg("-Wextra")
