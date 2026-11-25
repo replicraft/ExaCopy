@@ -187,7 +187,8 @@ cleanup() {
 		rmdir "$root/.lifecycle-lock" 2>/dev/null || :
 	fi
 	if [ -n "$scratch" ]; then
-		rm -f "$scratch/exacopy" "$scratch/release.manifest" "$scratch/release.sig" "$scratch/publisher.der" "$scratch/publisher.pem" || :
+		rm -f "$scratch/exacopy" "$scratch/release.manifest" "$scratch/release.sig" \
+			"$scratch/publisher.der" "$scratch/publisher.pem" "$scratch/attribute-names" || :
 		rmdir "$scratch" 2>/dev/null || :
 	fi
 }

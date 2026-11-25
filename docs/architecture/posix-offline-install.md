@@ -34,6 +34,8 @@ Stop all launches and uses of the selected version before uninstalling. No manag
 
 Repeat the installation's `--install-root` if you used one. Uninstall re-verifies the historical release signature, ownership records, and exact artifact bytes. It withdraws only the named version, removes its four known files and the resulting empty version directory, and retains the rollback sequence. A tampered file, unexpected entry, missing ownership, lock, or interrupted withdrawal blocks the operation. Preserve the evidence and reconcile with the owner if the installer reports an ambiguous state.
 
+On macOS, removal also refuses if the selected version directory or any of its four owned paths carries a resource fork. The signed raw release verifies the ordinary file bytes. A separately attached resource fork needs preservation before the version can be removed. Preview performs the same check. The check reads attribute names using the host `/usr/bin/xattr`.
+
 Profiles, saved credentials, journals, partial transfers, repositories, source and destination files, retained originals, shell startup files, PATH, and other installed versions are outside the removal scope. A stable launcher, profile migrations, safe service draining, managed update and rollback, purge, online downloads, system scope, and power-loss qualification remain later work. The script assumes cooperative processes of the installing UID and a trusted administrator.
 
 ## Verification

@@ -178,6 +178,20 @@ install_file() {
 	printf 'Installed: %s\n' "$version_dir/exacopy"
 }
 
+verify_removal_resource_forks() {
+	[ "$host_os" = Darwin ] || return 0
+	for installed_path do
+		# Inspect names only, without copying data from an independently attached fork.
+		(ulimit -f 64 && /usr/bin/xattr -s "$installed_path") > "$scratch/attribute-names" ||
+			fail 'cannot inspect installed resource fork'
+		if grep -Fqx 'com.apple.ResourceFork' "$scratch/attribute-names"; then
+			fail 'version has a resource fork; preserve it before removal'
+		elif [ "$?" -ne 1 ]; then
+			fail 'cannot inspect installed resource fork'
+		fi
+	done
+}
+
 uninstall_file() {
 	open_store
 	verify_installed
@@ -186,6 +200,8 @@ uninstall_file() {
 		[ "$version" = "$previous_version" ] && [ "$manifest_hash" = "$previous_hash" ] ||
 			fail 'history is inconsistent with installed version'
 	fi
+	verify_removal_resource_forks "$version_dir" "$version_dir/exacopy" \
+		"$version_dir/release.manifest" "$version_dir/release.sig" "$version_dir/intent"
 	if [ "$dry_run" = yes ]; then
 		printf 'Verified ownership. Would remove: %s\n' "$version_dir"
 		return

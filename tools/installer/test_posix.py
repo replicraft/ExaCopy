@@ -75,6 +75,8 @@ def test_install(temporary, options):
         home / ".config" / "exacopy" / "credentials": b"owner credentials\x00dummy",
         home / ".local" / "share" / "exacopy" / "profile" / "journal": b"owner journal\xffdummy",
         home / "backup-repository" / "pack": b"backup content\x00\xff",
+        home / "backup-repository" / "key": b"synthetic recovery key\x00",
+        home / ".exacopy" / "stages" / "partial": b"partial transfer\xff",
         home / ".exacopy" / "retained": b"retained incumbent",
         home / ".local" / "bin" / "exacopy": b"foreign launcher",
         home / ".profile": b"# existing PATH config\n",
@@ -181,6 +183,26 @@ def test_install(temporary, options):
     executable.write_bytes(bytes([signed_artifact[0] ^ 1]) + signed_artifact[1:])
     run("uninstall", "preserve tampered installation", "--quiesced", expected="SHA-256 mismatch")
     executable.write_bytes(signed_artifact)
+    if platform.system() == "Darwin":
+        darwin_resource_fork = "com.apple.ResourceFork"
+        fork_bytes = b"independently attached resource data\x00\xff"
+        for component in ("exacopy", "release.manifest", "release.sig", "intent"):
+            owned = directory / component
+            data_bytes = owned.read_bytes()
+            identity_before = owned.stat().st_ino
+            subprocess.run(["/usr/bin/xattr", "-wx", darwin_resource_fork, fork_bytes.hex(), owned],
+                           check=True, capture_output=True, timeout=10)
+            for arguments in (("--dry-run",), ("--quiesced",)):
+                run("uninstall", f"preserve resource fork on {component} during {arguments[0]}",
+                    *arguments, expected="resource fork")
+                assert owned.stat().st_ino == identity_before
+                assert owned.read_bytes() == data_bytes
+                raw_fork = subprocess.check_output(
+                    ["/usr/bin/xattr", "-px", darwin_resource_fork, owned], text=True, timeout=10)
+                assert bytes.fromhex(raw_fork) == fork_bytes
+                assert sha256(history.read_bytes()).digest() == history_digest
+            subprocess.run(["/usr/bin/xattr", "-d", darwin_resource_fork, owned],
+                           check=True, capture_output=True, timeout=10)
     run("uninstall", "remove only exact owned version files", "--quiesced")
     assert not directory.exists()
     assert sha256(history.read_bytes()).digest() == history_digest
@@ -188,7 +210,7 @@ def test_install(temporary, options):
     install("reinstall exact verified version")
     assert executable.read_bytes() == signed_artifact
     assert all(path.read_bytes() == data for path, data in user_paths.items())
-    print("pass preserved profile, credentials, journal, retained files, launcher and PATH")
+    print("pass preserved profile, credentials, journal, backup, recovery key, stage, retained files, launcher and PATH")
 
 
 if __name__ == "__main__":
