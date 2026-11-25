@@ -1176,3 +1176,26 @@ owner = "exacopy-transfer"
 level = "documentation"
 state = "reported"
 path = "docs/architecture/public-stage-inspection.md"
+
+
+[[coverage]]
+id = "experimental-wireguard-protocol"
+status = "implemented"
+requirement_ids = ["R-245", "R-247", "R-249"]
+acceptance_ids = ["A-245", "A-247", "A-249"]
+invariant_ids = ["INV-021", "INV-022"]
+scope = "Default-off BoringTun keyed packet backend with literal peer address confinement, bounded packets/counters/operations and matching-clock generation expiry."
+limits = "In-memory protocol result only. No sockets, DNS, inner TCP/port admission, kernel peer, suspend scenario or real route qualification. Upstream and transitive deployment admission remain open."
+
+[[coverage.evidence]]
+owner = "exacopy-wireguard"
+level = "test"
+state = "defined"
+path = "crates/network/wireguard/src/protocol/tests.rs"
+target = "actual_boringtun_handshake_and_encryption_round_trip_both_families"
+
+[[coverage.evidence]]
+owner = "exacopy-wireguard"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/wireguard-protocol.md"

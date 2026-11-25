@@ -111,15 +111,20 @@ def check_cli_graph(policy, target, graph):
             )
 
 
-def profile_flags(policy, profile, target):
-    flags = [] if profile["defaults"] else ["--no-default-features"]
-    features = sorted(
+def profile_features(policy, profile, target):
+    feature_packages = profile.get("feature_packages", policy["features"])
+    return sorted(
         f"{package}/{name}"
         for package, features in policy["features"].items()
         for name, entry in features.items()
-        if entry["status"] in profile["feature_statuses"]
+        if package in feature_packages and entry["status"] in profile["feature_statuses"]
         and target in entry.get("targets", policy["targets"])
     )
+
+
+def profile_flags(policy, profile, target):
+    flags = [] if profile["defaults"] else ["--no-default-features"]
+    features = profile_features(policy, profile, target)
     if features:
         flags.extend(["--features", ",".join(features)])
     return flags

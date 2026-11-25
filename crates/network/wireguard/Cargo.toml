@@ -1,0 +1,19 @@
+[package]
+name = "exacopy-wireguard"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+experimental-protocol = ["dep:boringtun", "dep:rustix"]
+
+[dependencies]
+boringtun = { workspace = true, optional = true }
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+rustix = { workspace = true, features = ["time"], optional = true }
+
+[lints]
+workspace = true

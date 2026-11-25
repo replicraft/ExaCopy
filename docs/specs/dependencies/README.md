@@ -10,8 +10,10 @@ normal and build dependencies. Identical profiles for the same target share a
 record. The profile and target definitions come from the [feature
 matrix](../features/matrix.json).
 
-The graph covers all production package roots, including the default-off APFS
-transfer library on macOS. Proof extraction, development-only feature
+The graph covers all production package roots. The experimental APFS, Windows
+staging and WireGuard protocol profiles have separate target records. The
+WireGuard profile builds an in-memory backend outside the CLI dependency graph.
+Proof extraction, development-only feature
 combinations, test-only dependencies and engineering roots are covered by the
 broader workspace supply-chain checks. Target resolution records build inputs
 for the selected target, including inputs compiled on the host. Native execution

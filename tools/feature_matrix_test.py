@@ -83,5 +83,25 @@ class FeatureMatrixTests(unittest.TestCase):
             self.assertNotIn(feature, ",".join(profile_flags(POLICY, profiles["development-all"], LINUX)))
 
 
+    def test_protocol_profile_isolated_and_default_off_on_every_target(self):
+        profiles = POLICY["profiles"]
+        feature = "exacopy-wireguard/experimental-protocol"
+        standalone = "experimental-wireguard-protocol"
+        for target in POLICY["targets"]:
+            with self.subTest(target=target):
+                for profile, config in profiles.items():
+                    flags = profile_flags(POLICY, config, target)
+                    if profile not in {standalone, "development-all"}:
+                        self.assertNotIn(feature, ",".join(flags).split(","))
+                self.assertEqual(
+                    profile_flags(POLICY, profiles[standalone], target),
+                    ["--no-default-features", "--features", feature],
+                )
+                self.assertIn(
+                    feature,
+                    ",".join(profile_flags(POLICY, profiles["development-all"], target)).split(","),
+                )
+
+
 if __name__ == "__main__":
     unittest.main()

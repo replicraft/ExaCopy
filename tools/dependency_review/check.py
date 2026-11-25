@@ -15,7 +15,7 @@ from apfs_source import (
     CONSUMER, CONSUMER_MANIFEST, KEY as APFS_KEY, PIN as APFS_PIN, dependency_manifest_matches,
     read_pin, verify_checkout, verify_consumer,
 )
-from feature_matrix import MATRIX, profile_flags
+from feature_matrix import MATRIX, profile_features, profile_flags
 
 SPEC = Path("docs/specs/dependencies")
 CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
@@ -119,16 +119,26 @@ def production_graph(policy, lock, offline, source, apfs_pin):
     inputs = {}
     resolutions = {}
     for target in policy["targets"]:
-        metadata = cargo("metadata", "--format-version", "1", "--filter-platform", target, offline=offline)
+        production_profiles = {
+            name: profile
+            for name, profile in policy["profiles"].items()
+            if target in profile.get("targets", policy["targets"])
+            and "verification" not in profile["feature_statuses"]
+        }
+        selected_features = sorted({
+            feature
+            for profile in production_profiles.values()
+            for feature in profile_features(policy, profile, target)
+        })
+        metadata_flags = ["--features", ",".join(selected_features)] if selected_features else []
+        metadata = cargo(
+            "metadata", "--format-version", "1", "--filter-platform", target, *metadata_flags,
+            offline=offline,
+        )
         metadata = json.loads(metadata)
         packages = packages_by_identity(metadata, target)
         workspace = set(metadata["workspace_members"])
-        for profile_name, profile in policy["profiles"].items():
-            if target not in profile.get("targets", policy["targets"]):
-                continue
-            # The verification and development profiles include proof-only inputs.
-            if "verification" in profile["feature_statuses"]:
-                continue
+        for profile_name, profile in production_profiles.items():
             parents, features = tree_inputs(cargo(
                 "tree", *roots, "--target", target, "--edges", "normal,build", "--prefix", "depth",
                 "--format", "|{p}\t{f}", *profile_flags(policy, profile, target), offline=offline,

@@ -11,7 +11,8 @@
     "exacopy-journal",
     "exacopy-model",
     "exacopy-platform",
-    "exacopy-transfer"
+    "exacopy-transfer",
+    "exacopy-wireguard"
   ],
   "engineering_packages": ["exacopy-testkit", "xtask"],
   "profiles": {
@@ -43,6 +44,7 @@
       "defaults": false,
       "check_cli": false,
       "feature_statuses": ["experimental"],
+      "feature_packages": ["exacopy-engine", "exacopy-transfer"],
       "targets": ["aarch64-apple-darwin"],
       "purpose": "Compile the opt-in transfer policies, native runtime, and managed APFS regressions."
     },
@@ -50,8 +52,16 @@
       "defaults": false,
       "check_cli": false,
       "feature_statuses": ["experimental"],
+      "feature_packages": ["exacopy-platform"],
       "targets": ["x86_64-pc-windows-msvc"],
       "purpose": "Compile the optional private NTFS staging capability and Windows qualification fixtures."
+    },
+    "experimental-wireguard-protocol": {
+      "defaults": false,
+      "check_cli": false,
+      "feature_statuses": ["experimental"],
+      "feature_packages": ["exacopy-wireguard"],
+      "purpose": "Check the in-memory WireGuard packet adapter in a separate workspace profile on each CI target."
     },
     "development-all": {
       "defaults": true,
@@ -61,6 +71,14 @@
     }
   },
   "features": {
+    "exacopy-wireguard": {
+      "experimental-protocol": {
+        "status": "experimental",
+        "enables": ["dep:boringtun", "dep:rustix"],
+        "resolution_probe": ["boringtun"],
+        "purpose": "Enable only the exact BoringTun protocol backend for the default-off in-memory packet adapter."
+      }
+    },
     "exacopy-model": {
       "proof-extraction": {
         "status": "verification",
@@ -137,6 +155,12 @@
       "features": ["alloc"],
       "purpose": "Encode the bounded raw-byte fields of public integrity manifests."
     },
+    "boringtun": {
+      "default_features": false,
+      "features": [],
+      "optional": true,
+      "purpose": "Supply WireGuard handshake and authenticated packet operations for the isolated experimental adapter."
+    },
     "blake3": {
       "default_features": false,
       "features": [],
@@ -190,8 +214,12 @@
     "rustix": {
       "default_features": true,
       "features": ["fs", "process"],
+      "optional_targets": {
+        "exacopy-wireguard": ["cfg(any(target_os = \"linux\", target_os = \"macos\"))"]
+      },
       "feature_additions": {
         "exacopy-cli": ["rand"],
+        "exacopy-wireguard": ["time"],
         "exacopy-platform": {
           "cfg(target_os = \"macos\")": ["try_close"]
         }

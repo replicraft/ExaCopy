@@ -5,6 +5,7 @@ members = [
     "crates/core/model",
     "crates/endpoints/endpoint",
     "crates/endpoints/platform",
+    "crates/network/wireguard",
     "crates/operations/diff",
     "crates/operations/transfer",
     "crates/runtime/engine",
@@ -36,6 +37,9 @@ exacopy-transfer = { path = "crates/operations/transfer", version = "=0.1.0" }
 # Public codec
 base64 = { version = "=0.23.1", default-features = false, features = ["alloc"] }
 chrono = { version = "=0.4.45", default-features = false, features = ["alloc"] }
+
+# Experimental network protocol
+boringtun = { version = "=0.7.1", default-features = false }
 
 # Integrity and framing
 blake3 = { version = "=1.8.7", default-features = false }

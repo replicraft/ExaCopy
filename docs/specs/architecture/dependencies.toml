@@ -39,6 +39,10 @@ normal.external = ["blake3", "ed25519-dalek", "minicbor", "uuid"]
 dev.groups = ["testkit"]
 dev.external = ["ed25519-dalek", "rustix"]
 
+[groups.network]
+members = { exacopy-wireguard = "crates/network/wireguard" }
+normal.optional_external = ["boringtun", "rustix"]
+
 [groups.runtime]
 members = { exacopy-engine = "crates/runtime/engine" }
 normal.groups = ["contracts", "operations", "platform", "core", "storage"]
