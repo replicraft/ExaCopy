@@ -6,5 +6,7 @@ mod association;
 mod fixture;
 #[path = "darwin_phases/publication.rs"]
 mod publication;
+#[path = "darwin_phases/recovery.rs"]
+mod recovery;
 #[path = "darwin_phases/wire.rs"]
 mod wire;

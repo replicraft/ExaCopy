@@ -29,6 +29,8 @@ pub(super) fn frame(kind: FrameKind, payload: &[u8], head: ChainHead) -> Frame {
 
 pub(super) struct Fixture<'a> {
 	pub(super) frame: Frame,
+	pub(super) job: Frame,
+	pub(super) owner: DarwinOwnerRecord,
 	identity: DarwinFileIdentity,
 	pub(super) length: StreamLength,
 	pub(super) stage: DarwinStageObservation<'a>,
@@ -38,12 +40,16 @@ pub(super) struct Fixture<'a> {
 
 impl<'a> Fixture<'a> {
 	pub(super) fn new(length: u64, target: &'a [u8]) -> Self {
+		Self::with_epoch(length, target, u64::MAX)
+	}
+
+	pub(super) fn with_epoch(length: u64, target: &'a [u8], epoch: u64) -> Self {
 		let mut job = [1; 16];
 		job[6] = 0x70;
 		job[8] = 0x80;
 		let context = JournalContext {
 			job: JournalJobId::from_bytes(job).unwrap(),
-			epoch: JournalEpoch::new(u64::MAX),
+			epoch: JournalEpoch::new(epoch),
 			plan_digest: PlanDigest::from_bytes([0x54; 32]),
 		};
 		let owner = DarwinOwnerRecord::sign(
@@ -104,11 +110,8 @@ impl<'a> Fixture<'a> {
 			},
 		)
 		.unwrap();
-		let frame = frame(
-			FrameKind::EntryPrepared,
-			&entry.encode(),
-			ChainHead::start(),
-		);
+		let job = frame(FrameKind::JobPrepared, &job.encode(), ChainHead::start());
+		let frame = frame(FrameKind::EntryPrepared, &entry.encode(), job.head());
 		let required = DarwinRequiredMetadata::new(
 			permissions.mode(),
 			permissions.owner(),
@@ -119,6 +122,8 @@ impl<'a> Fixture<'a> {
 		.unwrap();
 		Self {
 			frame,
+			job,
+			owner,
 			identity,
 			length: StreamLength::new(length).unwrap(),
 			stage,

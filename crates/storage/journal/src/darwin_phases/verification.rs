@@ -26,7 +26,7 @@ pub struct DarwinStreamEvidence {
 }
 
 impl DarwinStreamEvidence {
-	fn write(self, encoder: &mut PayloadEncoder) -> Result<(), PayloadWriteError> {
+	pub(super) fn write(self, encoder: &mut PayloadEncoder) -> Result<(), PayloadWriteError> {
 		encoder.map(3)?.u8(0)?;
 		write_identity(encoder, self.identity)?;
 		encoder
@@ -37,7 +37,7 @@ impl DarwinStreamEvidence {
 		Ok(())
 	}
 
-	fn read(decoder: &mut Decoder<'_>) -> Result<Self, DarwinPhaseError> {
+	pub(super) fn read(decoder: &mut Decoder<'_>) -> Result<Self, DarwinPhaseError> {
 		expect_map(decoder, 3)?;
 		expect_key(decoder, 0)?;
 		let identity = read_identity(decoder)?;

@@ -4,6 +4,7 @@ mod binding;
 mod durability;
 mod observation;
 mod receipt;
+mod recovery;
 
 pub use durability::{DarwinDurabilityRecorded, DarwinPublicationBarriers};
 pub use observation::{
@@ -11,3 +12,7 @@ pub use observation::{
 	DarwinPublishObserved,
 };
 pub use receipt::{DarwinReceiptCommitted, DarwinReceiptDigest};
+pub use recovery::{
+	DarwinPublishedRecoveryEvidence, DarwinRecoveryDecision, DarwinRecoveryDecisionFrames,
+	DarwinRecoveryHistory, DarwinRecoveryStarted,
+};

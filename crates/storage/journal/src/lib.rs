@@ -17,8 +17,10 @@ pub use darwin_phases::{
 	DarwinDurabilityRecorded, DarwinMetadataRecorded, DarwinNamespaceObservation,
 	DarwinPhaseBinding, DarwinPhaseDigest, DarwinPhaseError, DarwinPublicationBarriers,
 	DarwinPublicationNames, DarwinPublicationOutcome, DarwinPublishIntent, DarwinPublishObserved,
-	DarwinPublishTarget, DarwinReceiptCommitted, DarwinReceiptDigest, DarwinRequiredMetadata,
-	DarwinStageSealed, DarwinStreamEvidence, DarwinVerificationRecorded,
+	DarwinPublishTarget, DarwinPublishedRecoveryEvidence, DarwinReceiptCommitted,
+	DarwinReceiptDigest, DarwinRecoveryDecision, DarwinRecoveryDecisionFrames,
+	DarwinRecoveryHistory, DarwinRecoveryStarted, DarwinRequiredMetadata, DarwinStageSealed,
+	DarwinStreamEvidence, DarwinVerificationRecorded,
 };
 pub use darwin_prepared::{
 	DarwinEntryPreparation, DarwinEntryPrepared, DarwinJobPrepared, DarwinPreparedError,

@@ -16,7 +16,9 @@ pub use metadata::{DarwinMetadataRecorded, DarwinRequiredMetadata};
 pub use publication::{
 	DarwinDurabilityRecorded, DarwinNamespaceObservation, DarwinPublicationBarriers,
 	DarwinPublicationNames, DarwinPublicationOutcome, DarwinPublishObserved,
-	DarwinReceiptCommitted, DarwinReceiptDigest,
+	DarwinPublishedRecoveryEvidence, DarwinReceiptCommitted, DarwinReceiptDigest,
+	DarwinRecoveryDecision, DarwinRecoveryDecisionFrames, DarwinRecoveryHistory,
+	DarwinRecoveryStarted,
 };
 pub use seal::DarwinStageSealed;
 pub use verification::{DarwinStreamEvidence, DarwinVerificationRecorded};

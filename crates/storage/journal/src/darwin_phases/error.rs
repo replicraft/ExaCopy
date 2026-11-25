@@ -42,6 +42,8 @@ pub enum DarwinPhaseError {
 	MetadataMismatch,
 	/// The effect sequence must be nonzero.
 	InvalidEffectSequence,
+	/// Recovery could not allocate the next journal epoch.
+	InvalidRecoveryEpoch,
 	/// A frame reference uses a reserved sequence or digest.
 	InvalidReference,
 	/// A referenced frame occurs at or after the record that depends on it.
@@ -93,6 +95,7 @@ impl fmt::Display for DarwinPhaseError {
 			Self::BindingMismatch => "managed APFS phase prerequisite binding differs",
 			Self::MetadataMismatch => "managed APFS required metadata is unsupported or differs",
 			Self::InvalidEffectSequence => "managed APFS publication sequence is zero",
+			Self::InvalidRecoveryEpoch => "managed APFS recovery requires the next epoch",
 			Self::InvalidReference => "managed APFS evidence uses a reserved frame reference",
 			Self::InvalidFrameOrder => "managed APFS publication frames are out of order",
 			Self::InconsistentObservation => {

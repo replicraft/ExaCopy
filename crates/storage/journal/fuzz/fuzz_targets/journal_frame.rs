@@ -10,8 +10,8 @@ use exacopy_journal::frame::{
 	ChainHead, Frame, FrameKind, FrameReadError, FrameReader, FrameWriter,
 };
 use exacopy_journal::{
-	MAX_RANGE_PAGE_BYTES, RangeCheckpoint, RangePage, RangeResumeStarted, RecoveryDecision,
-	RecoveryStarted, RetainedPublicationDecision,
+	DarwinRecoveryDecision, DarwinRecoveryStarted, MAX_RANGE_PAGE_BYTES, RangeCheckpoint,
+	RangePage, RangeResumeStarted, RecoveryDecision, RecoveryStarted, RetainedPublicationDecision,
 };
 
 const WIRE_PAYLOAD_LIMIT: usize = 1_048_576;
@@ -33,6 +33,22 @@ impl Read for BoundedRead<'_> {
 
 fuzz_target!(|input: &[u8]| {
 	check_recovery_payload(input);
+	if let Some(start) = check_darwin_recovery_start(input) {
+		check_darwin_recovery_envelope(
+			input,
+			FrameKind::RecoveryStarted,
+			start.preceding(),
+			|frame| DarwinRecoveryStarted::from_frame(frame).is_ok(),
+		);
+	}
+	if let Ok(decision) = DarwinRecoveryDecision::decode(input) {
+		check_darwin_recovery_envelope(
+			input,
+			FrameKind::RecoveryDecision,
+			decision.started(),
+			|frame| DarwinRecoveryDecision::from_frame(frame).is_ok(),
+		);
+	}
 	if let Some(resume) = check_recovery_start_payload(input) {
 		check_resume_envelope(input, resume);
 	}
@@ -88,6 +104,13 @@ fuzz_target!(|input: &[u8]| {
 						}
 					}
 					FrameKind::RecoveryStarted => {
+						if let Some(start) = check_darwin_recovery_start(frame.payload()) {
+							assert_eq!(
+								DarwinRecoveryStarted::from_frame(&frame).is_ok(),
+								start.preceding() == previous
+									&& previous.sequence().checked_add(1) == Some(sequence),
+							);
+						}
 						if let Some(resume) = check_recovery_start_payload(frame.payload()) {
 							let preceding = resume.evidence().preceding;
 							let frame_matches = preceding == previous
@@ -99,7 +122,16 @@ fuzz_target!(|input: &[u8]| {
 							assert!(RecoveryStarted::from_frame(&frame).is_err());
 						}
 					}
-					FrameKind::RecoveryDecision => check_recovery_payload(frame.payload()),
+					FrameKind::RecoveryDecision => {
+						check_recovery_payload(frame.payload());
+						if let Ok(decision) = DarwinRecoveryDecision::decode(frame.payload()) {
+							assert_eq!(
+								DarwinRecoveryDecision::from_frame(&frame).is_ok(),
+								decision.started() == previous
+									&& previous.sequence().checked_add(1) == Some(sequence),
+							);
+						}
+					}
 					_ => {}
 				}
 				consumed = end;
@@ -138,24 +170,41 @@ fuzz_target!(|input: &[u8]| {
 });
 
 fn check_recovery_payload(input: &[u8]) {
+	if let Ok(published) = DarwinRecoveryDecision::decode(input) {
+		assert_eq!(published.encode(), input);
+		assert!(RecoveryDecision::decode(input).is_err());
+		assert!(RetainedPublicationDecision::decode(input).is_err());
+	}
 	if let Ok(retained) = RetainedPublicationDecision::decode(input) {
 		assert_eq!(retained.encode(), input);
 		assert!(RecoveryDecision::decode(input).is_err());
+		assert!(DarwinRecoveryDecision::decode(input).is_err());
 	}
 	if let Ok(published) = RecoveryDecision::decode(input) {
 		assert_eq!(published.encode(), input);
 		assert!(RetainedPublicationDecision::decode(input).is_err());
+		assert!(DarwinRecoveryDecision::decode(input).is_err());
 	}
+}
+
+fn check_darwin_recovery_start(input: &[u8]) -> Option<DarwinRecoveryStarted> {
+	let started = DarwinRecoveryStarted::decode(input).ok()?;
+	assert_eq!(started.encode(), input);
+	assert!(RecoveryStarted::decode(input).is_err());
+	assert!(RangeResumeStarted::decode(input).is_err());
+	Some(started)
 }
 
 fn check_recovery_start_payload(input: &[u8]) -> Option<RangeResumeStarted> {
 	if let Ok(start) = RecoveryStarted::decode(input) {
 		assert_eq!(start.encode(), input);
 		assert!(RangeResumeStarted::decode(input).is_err());
+		assert!(DarwinRecoveryStarted::decode(input).is_err());
 	}
 	let resume = RangeResumeStarted::decode(input).ok()?;
 	assert_eq!(resume.encode(), input);
 	assert!(RecoveryStarted::decode(input).is_err());
+	assert!(DarwinRecoveryStarted::decode(input).is_err());
 	Some(resume)
 }
 
@@ -164,7 +213,7 @@ fn check_resume_envelope(payload: &[u8], resume: RangeResumeStarted) {
 	let Some(sequence) = preceding.sequence().checked_add(1) else {
 		return;
 	};
-	let frame = write_and_read_start(preceding, payload);
+	let frame = write_and_read_recovery(FrameKind::RecoveryStarted, preceding, payload);
 	assert_eq!(frame.head().sequence(), sequence);
 	assert_eq!(RangeResumeStarted::from_frame(&frame), Ok(resume));
 	assert!(RecoveryStarted::from_frame(&frame).is_err());
@@ -172,18 +221,35 @@ fn check_resume_envelope(payload: &[u8], resume: RangeResumeStarted) {
 	let mut other_digest = preceding.digest();
 	other_digest[0] ^= 1;
 	if let Some(other_head) = ChainHead::after(preceding.sequence(), other_digest) {
-		let other_frame = write_and_read_start(other_head, payload);
+		let other_frame = write_and_read_recovery(FrameKind::RecoveryStarted, other_head, payload);
 		assert!(RangeResumeStarted::from_frame(&other_frame).is_err());
 	}
 }
 
-fn write_and_read_start(anchor: ChainHead, payload: &[u8]) -> Frame {
+fn check_darwin_recovery_envelope(
+	payload: &[u8],
+	kind: FrameKind,
+	prior: ChainHead,
+	accept: impl Fn(&Frame) -> bool,
+) {
+	if prior.sequence().checked_add(1).is_none() {
+		return;
+	}
+	assert!(accept(&write_and_read_recovery(kind, prior, payload)));
+	let mut digest = prior.digest();
+	digest[0] ^= 1;
+	if let Some(fork) = ChainHead::after(prior.sequence(), digest) {
+		assert!(!accept(&write_and_read_recovery(kind, fork, payload)));
+	}
+}
+
+fn write_and_read_recovery(kind: FrameKind, anchor: ChainHead, payload: &[u8]) -> Frame {
 	let mut writer = FrameWriter::new(Vec::new(), anchor);
 	writer
-		.append(FrameKind::RecoveryStarted, payload)
-		.expect("write the bounded recovery start");
+		.append(kind, payload)
+		.expect("write the bounded recovery record");
 	FrameReader::new(BoundedRead(&writer.into_inner()), anchor)
 		.next_frame()
 		.expect("read the generated recovery envelope")
-		.expect("generated recovery start is present")
+		.expect("generated recovery record is present")
 }

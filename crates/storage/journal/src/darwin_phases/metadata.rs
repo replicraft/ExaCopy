@@ -58,7 +58,7 @@ impl DarwinRequiredMetadata {
 		self.permissions
 	}
 
-	fn write(self, encoder: &mut PayloadEncoder) -> Result<(), PayloadWriteError> {
+	pub(super) fn write(self, encoder: &mut PayloadEncoder) -> Result<(), PayloadWriteError> {
 		encoder
 			.map(5)?
 			.u8(0)?
@@ -73,7 +73,7 @@ impl DarwinRequiredMetadata {
 		write_timestamp(encoder, self.modified_at)
 	}
 
-	fn read(decoder: &mut Decoder<'_>) -> Result<Self, DarwinPhaseError> {
+	pub(super) fn read(decoder: &mut Decoder<'_>) -> Result<Self, DarwinPhaseError> {
 		expect_map(decoder, 5)?;
 		expect_key(decoder, 0)?;
 		let mode = decoder.u32()?;
