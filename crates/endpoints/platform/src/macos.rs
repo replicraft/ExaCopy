@@ -31,7 +31,10 @@ mod managed;
 mod tests;
 
 pub use managed::staging;
-pub use managed::{ManagedReadError, ManagedReadGrant, ManagedReadRoot, ManagedRegularFile};
+pub use managed::{
+	ManagedObjectIdentity, ManagedReadError, ManagedReadGrant, ManagedReadRoot, ManagedRegularFile,
+	ManagedSourceIdentities, ManagedTimestamp,
+};
 
 /// A held directory for metadata probes on macOS.
 pub struct ReadRoot {

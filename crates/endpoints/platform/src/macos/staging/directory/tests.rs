@@ -1,6 +1,6 @@
 use std::fs::{self, File};
 use std::io::Write as _;
-use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _, symlink};
+use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _, symlink};
 use std::path::Path;
 
 use rustix::fs::{FlockOperation, flock};
@@ -36,6 +36,16 @@ fn authorized_source_and_private_stage_share_an_exclusive_destination_lease() {
 	let source = root
 		.open_regular_source(parent, name(b"source"), grant())
 		.expect("borrow the destination lease for an independently authorized source");
+	let source_ids = source.observe_identities().expect("observe held source");
+	let destination = root.observe_identity().expect("observe held destination");
+	assert_eq!(source_ids.parent, destination);
+	assert_eq!(
+		source_ids.file.inode().get(),
+		fs::metadata(&source_path)
+			.expect("observe fixture inode")
+			.ino()
+	);
+	assert_eq!(source_ids.file.physical_fsid(), destination.physical_fsid());
 
 	assert!(matches!(
 		ManagedReadRoot::open_provisioned_path(parent, grant()),
@@ -43,6 +53,9 @@ fn authorized_source_and_private_stage_share_an_exclusive_destination_lease() {
 	));
 	{
 		let directory = open_staging(&root);
+		let stage_parent = directory.observe_identity().expect("observe stage parent");
+		assert_ne!(stage_parent.inode(), destination.inode());
+		assert_eq!(stage_parent.physical_fsid(), destination.physical_fsid());
 		let mut copy = [0; PAYLOAD.len()];
 		source
 			.read_exact_at(0, &mut copy)
@@ -50,12 +63,21 @@ fn authorized_source_and_private_stage_share_an_exclusive_destination_lease() {
 		assert_eq!(&copy, PAYLOAD);
 		let mut writer =
 			make_stage(&directory, source.length()).expect("create a new private stage");
+		let stage_id = writer
+			.observe_identity()
+			.expect("observe exclusive stage inode");
+		assert_ne!(stage_id.inode(), source_ids.file.inode());
+		assert_eq!(stage_id.physical_fsid(), destination.physical_fsid());
 		writer
 			.write_next(&copy)
 			.expect("write source bytes to stage");
 		let closed = writer
 			.flush_and_close()
 			.expect("synchronize and close stage");
+		assert_eq!(
+			closed.observe_identity().expect("observe closed stage"),
+			stage_id
+		);
 		let read_back = closed.open_read_back().expect("reopen private stage");
 		read_back
 			.read_exact_at(0, &mut copy)

@@ -8,7 +8,19 @@ use exacopy_endpoint::{MAX_INTERRUPTED_RETRIES, UnixComponent, read_exact_at};
 use rustix::fs::{self, AtFlags, Stat};
 use rustix::io::Errno;
 
-use super::{ManagedReadError, PhysicalFsid, ReadDirectory, with_materialization_disabled};
+use super::{
+	ManagedObjectIdentity, ManagedReadError, PhysicalFsid, ReadDirectory,
+	with_materialization_disabled,
+};
+
+/// Held native identities of a managed source and its independently admitted parent.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ManagedSourceIdentities {
+	/// The source directory identity held by the lease.
+	pub parent: ManagedObjectIdentity,
+	/// The source file identity checked against the selected name.
+	pub file: ManagedObjectIdentity,
+}
 
 /// A held, read-only view of a regular file beneath a managed APFS directory.
 ///
@@ -58,6 +70,22 @@ impl<'root> ManagedRegularFile<'root> {
 	#[must_use]
 	pub fn is_empty(&self) -> bool {
 		self.length == 0
+	}
+
+	/// Revalidates the native identities of the selected file and its held parent.
+	/// This observes metadata without reading file contents or probing EOF.
+	/// # Errors
+	/// Refuses changed identities, unavailable observations, or a failed policy check.
+	pub fn observe_identities(&self) -> Result<ManagedSourceIdentities, ManagedReadError> {
+		with_materialization_disabled(|| {
+			self.root.check_root()?;
+			self.check_file()?;
+			let parent = self.root.identity.observe(self.root.directory)?;
+			let file =
+				ManagedObjectIdentity::from_stat(&self.initial, self.root.identity.physical_fsid)
+					.ok_or(ManagedReadError::UnsupportedChild)?;
+			Ok(ManagedSourceIdentities { parent, file })
+		})
 	}
 
 	/// Read exactly the requested range of the captured extent.
@@ -147,6 +175,8 @@ pub(super) fn same_observation(current: &Stat, initial: &Stat) -> bool {
 	current.st_dev == initial.st_dev
 		&& current.st_ino == initial.st_ino
 		&& current.st_gen == initial.st_gen
+		&& current.st_birthtime == initial.st_birthtime
+		&& current.st_birthtime_nsec == initial.st_birthtime_nsec
 		&& current.st_mode == initial.st_mode
 		&& current.st_uid == initial.st_uid
 		&& current.st_gid == initial.st_gid

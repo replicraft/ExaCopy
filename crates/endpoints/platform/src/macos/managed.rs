@@ -14,6 +14,7 @@ use rustix::io::Errno;
 mod acl;
 mod error;
 mod file;
+mod observation;
 #[allow(
 	unsafe_code,
 	reason = "bounded descriptor and relative-name physical FSID attributes on Darwin"
@@ -35,7 +36,8 @@ mod thread_policy;
 mod volume;
 
 pub use error::ManagedReadError;
-pub use file::ManagedRegularFile;
+pub use file::{ManagedRegularFile, ManagedSourceIdentities};
+pub use observation::{ManagedObjectIdentity, ManagedTimestamp};
 
 use self::physical_fsid::PhysicalFsid;
 use self::thread_policy::with_materialization_disabled;
@@ -291,11 +293,33 @@ struct DirectoryIdentity {
 	inode: libc::ino_t,
 	generation: u32,
 	physical_fsid: PhysicalFsid,
+	birth: ManagedTimestamp,
 }
 
 impl DirectoryIdentity {
+	fn from_stat(stat: &Stat, physical_fsid: PhysicalFsid) -> Result<Self, ManagedReadError> {
+		let observation = ManagedObjectIdentity::from_stat(stat, physical_fsid)
+			.ok_or(ManagedReadError::UnsupportedNamespace)?;
+		Ok(Self {
+			device: stat.st_dev,
+			inode: stat.st_ino,
+			generation: stat.st_gen,
+			physical_fsid,
+			birth: observation.birth(),
+		})
+	}
+
 	fn matches_stat(self, stat: &Stat) -> bool {
-		self.device == stat.st_dev && self.inode == stat.st_ino && self.generation == stat.st_gen
+		Self::from_stat(stat, self.physical_fsid).is_ok_and(|identity| self == identity)
+	}
+
+	fn observe(self, directory: &File) -> Result<ManagedObjectIdentity, ManagedReadError> {
+		let stat = fs::fstat(directory)?;
+		if !self.matches_stat(&stat) {
+			return Err(ManagedReadError::UnsupportedNamespace);
+		}
+		ManagedObjectIdentity::from_stat(&stat, self.physical_fsid)
+			.ok_or(ManagedReadError::UnsupportedNamespace)
 	}
 }
 
@@ -360,10 +384,5 @@ fn capture_directory(directory: &File) -> Result<DirectoryIdentity, ManagedReadE
 	}
 	let physical_fsid =
 		PhysicalFsid::held(directory.as_fd())?.ok_or(ManagedReadError::UnsupportedNamespace)?;
-	Ok(DirectoryIdentity {
-		device: stat.st_dev,
-		inode: stat.st_ino,
-		generation: stat.st_gen,
-		physical_fsid,
-	})
+	DirectoryIdentity::from_stat(&stat, physical_fsid)
 }

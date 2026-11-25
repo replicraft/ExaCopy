@@ -17,6 +17,10 @@ const WORDS: usize = VALUE_START + FSID_WORDS;
 pub(super) struct PhysicalFsid([u32; 2]);
 
 impl PhysicalFsid {
+	pub(super) const fn words(self) -> [u32; 2] {
+		self.0
+	}
+
 	pub(super) fn held(fd: BorrowedFd<'_>) -> io::Result<Option<Self>> {
 		let mut request = attribute_request(REQUESTED);
 		let mut output = [0; WORDS];

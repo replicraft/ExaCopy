@@ -9,7 +9,8 @@ use rustix::fs::{self, FileType, Mode, OFlags, Stat};
 use rustix::io::Errno;
 
 use super::super::{
-	EVENT_ONLY, FILE_MODE, PhysicalFsid, acl, file::same_observation, with_materialization_disabled,
+	EVENT_ONLY, FILE_MODE, ManagedObjectIdentity, PhysicalFsid, acl, file::same_observation,
+	with_materialization_disabled,
 };
 use super::close::close_writer;
 use super::{StageDirectory, StageError, StageIdentity};
@@ -32,6 +33,14 @@ pub struct WriteStage<'stage> {
 }
 
 impl<'stage> WriteStage<'stage> {
+	/// Revalidates the held and named inode before recording stage preparation.
+	/// # Errors
+	/// Refuses a retired writer or a changed or unavailable stage observation.
+	pub fn observe_identity(&self) -> Result<ManagedObjectIdentity, StageError> {
+		self.file.as_ref().ok_or(StageError::WriterRetired)?;
+		self.location.observe_identity(&self.observed)
+	}
+
 	pub(super) fn create(
 		directory: &'stage StageDirectory<'stage>,
 		name: UnixComponent<'stage>,
@@ -210,6 +219,13 @@ pub struct ClosedStage<'stage> {
 }
 
 impl ClosedStage<'_> {
+	/// Revalidates the held and named private inode after the writer closed.
+	/// # Errors
+	/// Refuses a changed or unavailable stage observation.
+	pub fn observe_identity(&self) -> Result<ManagedObjectIdentity, StageError> {
+		self.location.observe_identity(&self.observed)
+	}
+
 	/// Returns the logical extent fixed before staging began.
 	#[must_use]
 	pub fn length(&self) -> u64 {
@@ -259,6 +275,14 @@ pub(super) struct StageLocation<'stage> {
 }
 
 impl StageLocation<'_> {
+	fn observe_identity(&self, expected: &Stat) -> Result<ManagedObjectIdentity, StageError> {
+		with_materialization_disabled(|| {
+			self.check_observation(expected)?;
+			ManagedObjectIdentity::from_stat(expected, self.directory.physical_fsid())
+				.ok_or(StageError::StageChanged)
+		})
+	}
+
 	pub(super) fn check_process(&self) -> Result<(), StageError> {
 		self.directory.check_process()
 	}

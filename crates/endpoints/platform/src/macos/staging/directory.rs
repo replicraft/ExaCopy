@@ -10,8 +10,8 @@ use rustix::fs::{self, AtFlags, FileType, FlockOperation, Mode, Stat};
 use rustix::io::Errno;
 
 use super::super::{
-	DIRECTORY_OPEN, DirectoryIdentity, ManagedReadError, ManagedReadGrant, ManagedRegularFile,
-	PhysicalFsid, ReadDirectory, capture_directory, check_directory_authority,
+	DIRECTORY_OPEN, DirectoryIdentity, ManagedObjectIdentity, ManagedReadError, ManagedReadGrant,
+	ManagedRegularFile, PhysicalFsid, ReadDirectory, capture_directory, check_directory_authority,
 	open_provisioned_directory, provisioned_path_components, volume, with_materialization_disabled,
 };
 use super::entropy::fill_stage_entropy;
@@ -70,6 +70,13 @@ impl ManagedStageRoot {
 			let lease = DirectoryLease::bind(reopened.into(), imported)?;
 			Ok(Self { lease })
 		})
+	}
+
+	/// Returns a fresh identity observation of the held destination parent.
+	/// # Errors
+	/// Refuses an invalid lease, changed identity or unavailable filesystem evidence.
+	pub fn observe_identity(&self) -> Result<ManagedObjectIdentity, StageError> {
+		with_materialization_disabled(|| self.lease.observe_identity())
 	}
 
 	/// Opens a separately authorized source under this destination's exclusive lease.
@@ -131,15 +138,9 @@ impl ManagedStageRoot {
 				DIRECTORY_OPEN,
 				Mode::empty(),
 			)?;
-			let lease = DirectoryLease::bind(
-				child.into(),
-				DirectoryIdentity {
-					device: observed.st_dev,
-					inode: observed.st_ino,
-					generation: observed.st_gen,
-					physical_fsid: self.lease.identity.physical_fsid,
-				},
-			)?;
+			let identity =
+				DirectoryIdentity::from_stat(&observed, self.lease.identity.physical_fsid)?;
+			let lease = DirectoryLease::bind(child.into(), identity)?;
 			let directory = StageDirectory {
 				root: self,
 				name,
@@ -167,6 +168,16 @@ pub struct StageDirectory<'root> {
 }
 
 impl StageDirectory<'_> {
+	/// Returns a fresh identity observation of the held and named staging directory.
+	/// # Errors
+	/// Refuses changed or unavailable namespace evidence and invalid leases.
+	pub fn observe_identity(&self) -> Result<ManagedObjectIdentity, StageError> {
+		with_materialization_disabled(|| {
+			self.check_current()?;
+			Ok(self.lease.identity.observe(&self.lease.file)?)
+		})
+	}
+
 	/// Exclusively creates a private file bound to its transaction, target and logical extent.
 	///
 	/// The adapter generates the attempt's StageId before creation. Attempts within this
@@ -318,6 +329,11 @@ impl DirectoryLease {
 			self.owner,
 			self.identity,
 		)?)
+	}
+
+	fn observe_identity(&self) -> Result<ManagedObjectIdentity, StageError> {
+		self.check_current()?;
+		Ok(self.identity.observe(&self.file)?)
 	}
 
 	fn named_stat(&self, name: UnixComponent<'_>) -> Result<Stat, StageError> {
