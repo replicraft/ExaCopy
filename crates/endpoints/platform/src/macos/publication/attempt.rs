@@ -9,9 +9,13 @@ use rustix::io::Errno;
 
 use super::super::file::same_observation;
 use super::super::staging::MetadataReadyStage;
-use super::super::{ManagedReadError, PhysicalFsid, volume, with_materialization_disabled};
+use super::super::{
+	ManagedObjectIdentity, ManagedReadError, PhysicalFsid, volume, with_materialization_disabled,
+};
+use super::evidence::PublicationObservation;
 use super::{
-	DirectoryBarrierFailures, PublishError, PublishRejection, PublishedObservationError, native,
+	DirectoryBarrierFailures, PublishError, PublishRejection, PublishedFile,
+	PublishedObservationError, native,
 };
 
 impl MetadataReadyStage<'_> {
@@ -28,7 +32,10 @@ impl MetadataReadyStage<'_> {
 	/// retains the incumbent and stage. An uncertain call or incomplete
 	/// post-rename evidence requires reconciliation. A returned error never
 	/// authorizes cleanup or blind retry.
-	pub fn publish_no_clobber(self, authorization: PublishNoClobber) -> Result<(), PublishError> {
+	pub fn publish_no_clobber(
+		self,
+		authorization: PublishNoClobber,
+	) -> Result<PublishedFile, PublishError> {
 		self.publish_with_barriers(authorization, |directory| {
 			fs::fsync(directory).map_err(Into::into)
 		})
@@ -38,7 +45,7 @@ impl MetadataReadyStage<'_> {
 		self,
 		authorization: PublishNoClobber,
 		mut sync: impl FnMut(&File) -> io::Result<()>,
-	) -> Result<(), PublishError> {
+	) -> Result<PublishedFile, PublishError> {
 		if authorization.binding() != self.binding() {
 			return Err(PublishError::Rejected {
 				reason: PublishRejection::BindingMismatch,
@@ -81,7 +88,7 @@ impl MetadataReadyStage<'_> {
 						stage_barrier,
 						destination_barrier,
 					),
-					observation: self.observe_publication().err(),
+					observation: self.observe_publication(),
 				})
 			}
 			Err(error) if error.raw_os_error() == Some(libc::EEXIST) => Ok(RenameOutcome::Conflict),
@@ -89,9 +96,10 @@ impl MetadataReadyStage<'_> {
 		}
 	}
 
-	fn observe_publication(&self) -> Result<(), PublishedObservationError> {
-		self.location
-			.check_directories()
+	fn observe_publication(&self) -> Result<PublicationObservation, PublishedObservationError> {
+		let (stage_directory, destination_directory) = self
+			.location
+			.observe_directories()
 			.map_err(|error| PublishedObservationError::Directories(Box::new(error)))?;
 		match fs::statat(
 			self.location.directory(),
@@ -118,7 +126,13 @@ impl MetadataReadyStage<'_> {
 		{
 			return Err(PublishedObservationError::NamesChanged);
 		}
-		Ok(())
+		let target = ManagedObjectIdentity::from_stat(&named, destination_fsid)
+			.ok_or(PublishedObservationError::NamesChanged)?;
+		Ok(PublicationObservation {
+			target,
+			stage_directory,
+			destination_directory,
+		})
 	}
 }
 
@@ -128,14 +142,14 @@ pub(super) enum RenameOutcome {
 	Uncertain(io::Error),
 	Renamed {
 		barriers: Option<DirectoryBarrierFailures>,
-		observation: Option<PublishedObservationError>,
+		observation: Result<PublicationObservation, PublishedObservationError>,
 	},
 }
 
 pub(super) fn finish_attempt(
 	attempt: Option<Result<RenameOutcome, PublishRejection>>,
 	policy: Result<(), ManagedReadError>,
-) -> Result<(), PublishError> {
+) -> Result<PublishedFile, PublishError> {
 	let policy_error = policy.err();
 	match attempt {
 		None => Err(PublishError::Rejected {
@@ -153,14 +167,14 @@ pub(super) fn finish_attempt(
 		}),
 		Some(Ok(RenameOutcome::Renamed {
 			barriers: None,
-			observation: None,
-		})) if policy_error.is_none() => Ok(()),
+			observation: Ok(observation),
+		})) if policy_error.is_none() => Ok(PublishedFile::new(observation)),
 		Some(Ok(RenameOutcome::Renamed {
 			barriers,
 			observation,
 		})) => Err(PublishError::Renamed {
 			barriers,
-			observation,
+			observation: observation.err(),
 			policy_error,
 		}),
 	}

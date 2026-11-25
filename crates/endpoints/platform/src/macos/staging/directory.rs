@@ -265,6 +265,16 @@ impl StageDirectory<'_> {
 		Ok(())
 	}
 
+	pub(super) fn observe_directories(
+		&self,
+	) -> Result<(ManagedObjectIdentity, ManagedObjectIdentity), StageError> {
+		self.check_current()?;
+		Ok((
+			self.lease.identity.observe(&self.lease.file)?,
+			self.root.lease.identity.observe(&self.root.lease.file)?,
+		))
+	}
+
 	pub(super) fn destination(&self) -> &File {
 		&self.root.lease.file
 	}

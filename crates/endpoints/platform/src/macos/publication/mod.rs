@@ -13,6 +13,7 @@
 
 mod attempt;
 mod error;
+mod evidence;
 #[allow(unsafe_code, reason = "Darwin descriptor-relative exclusive rename")]
 mod native;
 #[cfg(test)]
@@ -21,3 +22,4 @@ mod tests;
 pub use error::{
 	DirectoryBarrierFailures, PublishError, PublishRejection, PublishedObservationError,
 };
+pub use evidence::PublishedFile;

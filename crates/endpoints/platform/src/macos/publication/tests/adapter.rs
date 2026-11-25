@@ -202,14 +202,27 @@ fn verified_stage_is_published_under_its_bound_target() {
 	let source_path = fixture.source.path(SOURCE_NAME);
 	let target_path = fixture.destination.path(TARGET_NAME);
 	let old_stage = identity(&stage_path);
+	let sealed_identity = ready
+		.observe_identity()
+		.expect("observe metadata-ready stage");
+	let stage_directory = directory
+		.observe_identity()
+		.expect("observe held stage directory");
+	let destination_directory = root.observe_identity().expect("observe held destination");
 	let required = ready.metadata();
 	let old_source = identity(&source_path);
 	let authorization = fixture.authorize(ready.binding());
 	assert_ne!(old_stage, old_source);
 
-	ready
+	let published = ready
 		.publish_no_clobber(authorization)
 		.expect("publish real authorized stage");
+	assert_eq!(published.target_identity(), sealed_identity);
+	assert_eq!(published.synced_stage_directory(), stage_directory);
+	assert_eq!(
+		published.synced_destination_directory(),
+		destination_directory
+	);
 
 	assert!(
 		matches!(stage_path.symlink_metadata(), Err(error) if error.kind() == io::ErrorKind::NotFound)

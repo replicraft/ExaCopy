@@ -299,8 +299,10 @@ impl StageLocation<'_> {
 		self.directory.destination()
 	}
 
-	pub(in super::super) fn check_directories(&self) -> Result<(), StageError> {
-		self.directory.check_current()
+	pub(in super::super) fn observe_directories(
+		&self,
+	) -> Result<(ManagedObjectIdentity, ManagedObjectIdentity), StageError> {
+		self.directory.observe_directories()
 	}
 
 	pub(super) fn named_stat(&self) -> Result<Stat, StageError> {
@@ -327,7 +329,7 @@ impl StageLocation<'_> {
 	}
 
 	pub(super) fn check_observation(&self, expected: &Stat) -> Result<(), StageError> {
-		self.check_directories()?;
+		self.directory.check_current()?;
 		self.check_descriptor(&self.anchor, expected)?;
 		let named = self.named_stat()?;
 		if !same_observation(&named, expected) {
