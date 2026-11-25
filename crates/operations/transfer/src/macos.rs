@@ -11,6 +11,7 @@ mod error;
 pub mod job;
 pub mod plan;
 pub mod receipt;
+pub mod replay;
 
 #[cfg(test)]
 mod tests;

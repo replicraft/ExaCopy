@@ -31,7 +31,7 @@ By passing `--managed-macos`, the non-root owner attests that each input parent 
 
 Provision each parent with mode `0700` and an explicit empty extended ACL. Each selected file must be an owner-private, single-link regular file with mode `0600`. Processes outside the cooperating namespace must hold no access handles to the selected files, including handles obtained before provisioning. Every participating same-user process must hold an exclusive Darwin `flock` on the parent directory before changing it, its selected names or files, including through other handles or aliases. The adapter holds a shared advisory lock on each parent during comparison.
 
-On macOS, omitting the flag returns `E_UNSUPPORTED_PLATFORM`. Using it outside macOS returns the same code. Successful comparisons use the standard report and exit codes and describe live observations. The managed APFS profile covers read-only byte comparison. Mac copy and recovery require separate adapter work.
+On macOS, omitting the flag returns `E_UNSUPPORTED_PLATFORM`. Using it outside macOS returns the same code. Successful comparisons use the standard report and exit codes and describe live observations. The CLI exposes managed APFS comparison. Managed APFS copy and recovery remain under library qualification.
 
 The native CLI tests compile a small fixture provisioner with the Apple C compiler and use fresh owner-private directories in `/private/tmp` on local APFS.
 
