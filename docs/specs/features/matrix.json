@@ -113,6 +113,11 @@
       },
       "purpose": "Sign and verify transaction journal records and receipts."
     },
+    "getrandom": {
+      "default_features": false,
+      "features": ["std"],
+      "purpose": "Obtain the fixed-width stage-attempt entropy prefix from the macOS system random source."
+    },
     "hax-lib": {
       "default_features": false,
       "features": ["macros"],
@@ -181,7 +186,7 @@
       "minicbor", "rustc_version", "semver", "sha2", "shlex", "signature", "subtle",
       "typenum", "version_check", "zeroize"
     ],
-    "macos_io": ["errno", "libc"]
+    "macos_io": ["cfg-if", "errno", "getrandom", "libc"]
   },
   "targets": {
     "x86_64-unknown-linux-gnu": {

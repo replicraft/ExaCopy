@@ -7,7 +7,6 @@ mod capabilities;
 )]
 mod close;
 mod directory;
-#[allow(unsafe_code, reason = "fixed-size Darwin native entropy request")]
 mod entropy;
 mod error;
 mod file;

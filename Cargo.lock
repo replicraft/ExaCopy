@@ -304,6 +304,7 @@ dependencies = [
  "exacopy-diff",
  "exacopy-endpoint",
  "exacopy-model",
+ "getrandom",
  "libc",
  "rustix",
  "windows-sys",

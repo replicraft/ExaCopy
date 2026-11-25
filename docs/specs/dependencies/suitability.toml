@@ -8,7 +8,7 @@ bitflags = "Typed operating-system flags in rustix."
 blake3 = "Source-stream and independent stage read-back digests, content bindings, and authenticated-record hashing."
 block-buffer = "Fixed-size block buffering for the digest traits and SHA-512."
 cc = "Compile BLAKE3's target-specific native implementation inputs."
-cfg-if = "Select architecture and feature-specific implementations in the hash and signature stack."
+cfg-if = "Select architecture and feature-specific implementations in hash, signature and system entropy dependencies."
 constant_time_eq = "Fixed-length digest equality in BLAKE3."
 cpufeatures = "Runtime architecture feature selection in BLAKE3, Curve25519, and SHA-2."
 crc32c = "Detect torn or corrupt journal frames before authenticated record decoding."
@@ -21,6 +21,7 @@ ed25519-dalek = "Sign and verify journal records and receipts."
 errno = "Access native thread-local error codes in the rustix libc backend."
 find-msvc-tools = "Locate the MSVC compiler and toolchain for cc."
 generic-array = "Use type-level sizes for arrays in the digest stack."
+getrandom = "Fill the fixed-width random prefix of each macOS stage-attempt identity from the operating system."
 itoa = "Format integer fields in CLI JSON output."
 libc = "Expose macOS ABI types, flags, and functions needed by the native adapter and OS wrappers."
 linux-raw-sys = "Provide Linux syscall ABI definitions for rustix."
@@ -79,6 +80,18 @@ adversarial_inputs = "Public keys, signatures, and signed structures are decoded
 verification = "Journal and transfer tests exercise authenticated records and rejection; ExaCopy's model proofs use a cryptographic trust assumption."
 replacement = "An independently reviewed implementation must preserve Ed25519 encoding and strict verification semantics or define explicit migration for authenticated records."
 review_gaps = ["Selected constant-time, strict verification, and transitive implementation review", "Independent exact-version suitability evidence"]
+
+# The locked archive identifies upstream commit 5e7cd5733536844a9856dc7259bd4696bbe5e3ae.
+[assessment."getrandom@0.4.3"]
+archive_sha256 = "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099"
+release_observation = "The packaged upstream changelog dates 0.4.3 to 2026-06-17 and records WebAssembly backend changes. The manifest declares MIT OR Apache-2.0 and Rust 1.85."
+security_history = "No getrandom advisory in the recorded RustSec snapshot."
+unsafe_exposure = "The selected macOS backend calls libc getentropy with an exclusive mutable buffer and checks the return value. The shared fill wrapper validates complete initialization before returning success. build.rs reads Cargo's sanitizer cfg to select MemorySanitizer support."
+resource_limits = "ExaCopy supplies a stack-allocated 12-byte buffer. The macOS backend uses one getentropy call for this size and allocates no heap storage on success."
+adversarial_inputs = "Callers supply no external bytes to the random source. A failed call discards the prefix and prevents exclusive stage creation. A nonrepeating process-local serial remains part of every successful identity."
+verification = "Native platform fixtures exercise successful stage creation, attempt identity separation and refusal before effects on injected entropy failure. Source review confirms the default macOS backend and that std error conversion preserves system errno."
+replacement = "Use an equivalent fallible system entropy API and preserve the 12-byte prefix, serial encoding, and refusal before creation."
+review_gaps = ["Independent exact-version review against the workspace Cargo Vet criterion", "Qualify the selected backend for every supported macOS release profile"]
 
 [assessment."libc@0.2.191"]
 archive_sha256 = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
