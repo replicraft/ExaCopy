@@ -48,7 +48,14 @@ exact frame consumption. This closes permissive upstream parsing in the
 selected profile. Frames are capped at 256 KiB; only one request is outstanding.
 Listings allow at most 4,096 entries in 128 replies. Whole-file reads use
 caller-owned buffers up to 4 MiB and requests up to 32 KiB, with a 4,096
-request limit. Connect and each operation have 20-second timeouts. Cancellation,
+request limit. `open_read` also supports incremental reads with caller-owned
+1–32 KiB buffers, at most 128 MiB and 4,096 data requests plus the final EOF
+probe. Its single 20-second deadline includes caller processing between reads.
+Bytes remain provisional until EOF, held metadata, successful CLOSE and named
+metadata checks complete; only then may the session be reused. Dropping an
+unfinished reader or cancelling a started read fences it. This bounded
+prototype does not yet provide positioned reads or resumable transfer jobs.
+Connect and each operation have 20-second timeouts. Cancellation,
 started-operation error or timeout fences the session rather than reusing an uncertain channel.
 These conservative prototype limits do not implement the final scheduler.
 

@@ -11,6 +11,8 @@ mod shape;
 mod wire;
 
 pub use connection::{Ed25519Key, Password, connect, connect_with_ed25519};
-pub use data::{FileObservation, ReadOnlySftp};
+pub use data::{
+	FileObservation, MAX_READ_CHUNK_BYTES, MAX_STREAM_BYTES, ReadOnlySftp, RemoteReadFile,
+};
 pub use error::Error;
 pub use known_hosts::{KnownHostTrust, KnownHostsError};

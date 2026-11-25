@@ -42,6 +42,13 @@ pub enum Error {
 	Closed,
 	/// A path, size, or operation exceeded the admitted bounds.
 	Limit,
+	/// The caller tried to finish a stream before consuming its captured extent.
+	IncompleteRead {
+		/// Captured logical byte length.
+		expected: u64,
+		/// Logical bytes received so far.
+		read: u64,
+	},
 	/// A source observation changed during the operation.
 	Changed,
 	/// The requested source is outside the regular-file profile.
@@ -54,6 +61,12 @@ impl std::fmt::Display for Error {
 			Self::HostKey(error) => return error.fmt(formatter),
 			Self::Credential(error) => return error.fmt(formatter),
 			Self::Version(error) => return error.fmt(formatter),
+			Self::IncompleteRead { expected, read } => {
+				return write!(
+					formatter,
+					"SFTP stream stopped after {read} of {expected} bytes"
+				);
+			}
 			_ => {}
 		}
 		formatter.write_str(match self {
@@ -75,7 +88,10 @@ impl std::fmt::Display for Error {
 			Self::Limit => "SFTP operation exceeded its configured bounds",
 			Self::Changed => "SFTP source observation changed",
 			Self::UnsupportedSource => "SFTP source is outside the supported regular-file profile",
-			Self::HostKey(_) | Self::Credential(_) | Self::Version(_) => unreachable!(),
+			Self::HostKey(_)
+			| Self::Credential(_)
+			| Self::Version(_)
+			| Self::IncompleteRead { .. } => unreachable!(),
 		})
 	}
 }

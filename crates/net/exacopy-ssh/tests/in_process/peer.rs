@@ -10,7 +10,7 @@ use russh::keys::{HashAlg, PrivateKey};
 use russh::{Channel, ChannelId, server};
 use russh_sftp::{protocol as sftp, server as sftp_server};
 use tokio::io::DuplexStream;
-use tokio::sync::oneshot;
+use tokio::sync::{Notify, oneshot};
 
 use super::key_auth;
 
@@ -25,6 +25,7 @@ pub(super) struct Calls {
 	pub(super) subsystem: AtomicUsize,
 	pub(super) unsupported: AtomicUsize,
 	pub(super) close: AtomicUsize,
+	pub(super) read: AtomicUsize,
 }
 
 struct Peer {
@@ -32,6 +33,7 @@ struct Peer {
 	calls: Arc<Calls>,
 	subsystem: bool,
 	early_eof: bool,
+	generated: Option<Generated>,
 }
 
 impl server::Handler for Peer {
@@ -86,6 +88,8 @@ impl server::Handler for Peer {
 			calls: self.calls.clone(),
 			listed: false,
 			early_eof: self.early_eof,
+			generated: self.generated.take(),
+			held_checks: 0,
 		};
 		sftp_server::run(self.channel.take().unwrap().into_stream(), state).await;
 		Ok(())
@@ -106,6 +110,45 @@ struct Files {
 	calls: Arc<Calls>,
 	listed: bool,
 	early_eof: bool,
+	generated: Option<Generated>,
+	held_checks: usize,
+}
+
+pub(super) struct Generated {
+	pub(super) observed_length: u64,
+	pub(super) actual_length: u64,
+	pub(super) max_reply: u32,
+	pub(super) changed_handle: bool,
+	pub(super) changed_name: bool,
+	pub(super) refuse_close: bool,
+	pub(super) pending_read: Option<Arc<Notify>>,
+}
+
+impl Generated {
+	pub(super) const fn new(length: u64) -> Self {
+		Self {
+			observed_length: length,
+			actual_length: length,
+			max_reply: 4093,
+			changed_handle: false,
+			changed_name: false,
+			refuse_close: false,
+			pending_read: None,
+		}
+	}
+}
+
+impl Files {
+	fn attributes(&self, changed: bool) -> sftp::FileAttributes {
+		let mut attrs = file_attrs();
+		if let Some(generated) = &self.generated {
+			attrs.size = Some(generated.observed_length);
+			if changed {
+				attrs.mtime = Some(23);
+			}
+		}
+		attrs
+	}
 }
 
 fn file_attrs() -> sftp::FileAttributes {
@@ -127,17 +170,28 @@ impl sftp_server::Handler for Files {
 
 	async fn lstat(&mut self, id: u32, path: sftp::SftpString) -> Result<sftp::Attrs, Self::Error> {
 		assert_eq!(path.as_bytes(), NAME);
+		let changed = self
+			.generated
+			.as_ref()
+			.is_some_and(|file| file.changed_name)
+			&& self.calls.close.load(Ordering::Relaxed) != 0;
 		Ok(sftp::Attrs {
 			id,
-			attrs: file_attrs(),
+			attrs: self.attributes(changed),
 		})
 	}
 
 	async fn fstat(&mut self, id: u32, file: sftp::SftpHandle) -> Result<sftp::Attrs, Self::Error> {
 		assert_eq!(file.as_bytes(), &[0, 255]);
+		self.held_checks += 1;
+		let changed = self
+			.generated
+			.as_ref()
+			.is_some_and(|file| file.changed_handle)
+			&& self.held_checks > 1;
 		Ok(sftp::Attrs {
 			id,
-			attrs: file_attrs(),
+			attrs: self.attributes(changed),
 		})
 	}
 
@@ -192,6 +246,22 @@ impl sftp_server::Handler for Files {
 	) -> Result<sftp::Data, Self::Error> {
 		assert_eq!(file.as_bytes(), &[0, 255]);
 		assert!(len > 0);
+		self.calls.read.fetch_add(1, Ordering::Relaxed);
+		if let Some(generated) = &self.generated {
+			if let Some(started) = &generated.pending_read {
+				started.notify_one();
+				std::future::pending::<()>().await;
+			}
+			let remaining = generated.actual_length.saturating_sub(offset);
+			let count = remaining.min(u64::from(len.min(generated.max_reply)));
+			if count == 0 {
+				return Err(sftp::StatusCode::Eof);
+			}
+			let data = (offset..offset + count)
+				.map(|index| (index % 251) as u8)
+				.collect();
+			return Ok(sftp::Data { id, data });
+		}
 		let start = usize::try_from(offset).unwrap();
 		if start >= CONTENT.len() || self.early_eof {
 			return Err(sftp::StatusCode::Eof);
@@ -209,6 +279,13 @@ impl sftp_server::Handler for Files {
 		_file: sftp::SftpHandle,
 	) -> Result<sftp::Status, Self::Error> {
 		self.calls.close.fetch_add(1, Ordering::Relaxed);
+		if self
+			.generated
+			.as_ref()
+			.is_some_and(|file| file.refuse_close)
+		{
+			return Err(sftp::StatusCode::Failure);
+		}
 		Ok(sftp::Status {
 			id,
 			status_code: sftp::StatusCode::Ok,
@@ -254,6 +331,34 @@ pub(super) fn peer_with_rekey(
 	Arc<Calls>,
 	oneshot::Receiver<server::Handle>,
 ) {
+	configured_peer(subsystem, early_eof, rekey_time_limit, terminated, None)
+}
+
+pub(super) fn generated_peer(
+	generated: Generated,
+) -> (DuplexStream, HostKeyFingerprint, Arc<Calls>) {
+	let (stream, fingerprint, calls, _) = configured_peer(
+		true,
+		false,
+		server::Config::default().limits.rekey_time_limit,
+		None,
+		Some(generated),
+	);
+	(stream, fingerprint, calls)
+}
+
+fn configured_peer(
+	subsystem: bool,
+	early_eof: bool,
+	rekey_time_limit: Duration,
+	terminated: Option<oneshot::Sender<()>>,
+	generated: Option<Generated>,
+) -> (
+	DuplexStream,
+	HostKeyFingerprint,
+	Arc<Calls>,
+	oneshot::Receiver<server::Handle>,
+) {
 	let key = fixture_key();
 	let pin = HostKeyFingerprint::from_sha256(
 		key.public_key()
@@ -268,6 +373,7 @@ pub(super) fn peer_with_rekey(
 		calls: calls.clone(),
 		subsystem,
 		early_eof,
+		generated,
 	};
 	let config = server::Config {
 		keys: vec![key],

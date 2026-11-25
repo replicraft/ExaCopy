@@ -12,7 +12,7 @@ use exacopy_endpoint::UnixComponent;
 use exacopy_endpoint::ssh_sftp::{
 	CredentialSource, HostKeyFingerprint, InteractionPolicy, SshAuthority,
 };
-use exacopy_ssh::{Ed25519Key, KnownHostTrust, connect_with_ed25519};
+use exacopy_ssh::{Ed25519Key, KnownHostTrust, MAX_READ_CHUNK_BYTES, connect_with_ed25519};
 use russh::keys::{HashAlg, PrivateKey, PublicKey};
 use zeroize::Zeroizing;
 
@@ -24,6 +24,8 @@ const STARTUP_TIMEOUT: Duration = Duration::from_secs(3);
 const FIXTURE_TIMEOUT: Duration = Duration::from_secs(25);
 const MAX_DIAGNOSTIC_BYTES: u64 = 4096;
 const FILE_NAME: &str = "fixture.bin";
+const LARGE_FILE_NAME: &str = "generated.bin";
+const LARGE_LENGTH: u64 = 5 * 1024 * 1024 + 19;
 const CONTENT: &[u8] = b"independent OpenSSH readback";
 
 type FixtureResult<T> = Result<T, Box<dyn std::error::Error>>;
@@ -98,6 +100,25 @@ async fn check_contents(
 	let mut readback = [0; CONTENT.len()];
 	assert_eq!(sftp.read_file(&path, &mut readback).await?, before);
 	assert_eq!(readback, CONTENT);
+
+	let path = [UnixComponent::new(LARGE_FILE_NAME.as_bytes())?];
+	let mut source = sftp.open_read(&path).await?;
+	let observation = source.observation();
+	assert_eq!(observation.length, LARGE_LENGTH);
+	let mut chunk = [0; MAX_READ_CHUNK_BYTES];
+	let mut total = 0;
+	loop {
+		let count = source.read_next(&mut chunk).await?;
+		if count == 0 {
+			break;
+		}
+		for (index, byte) in chunk[..count].iter().enumerate() {
+			assert_eq!(*byte, generated_byte(total + index as u64));
+		}
+		total += count as u64;
+	}
+	assert_eq!(total, LARGE_LENGTH);
+	assert_eq!(source.finish().await?, observation);
 	Ok(())
 }
 
@@ -131,6 +152,7 @@ impl Fixture {
 		let data = fixture.path.join("data");
 		DirBuilder::new().mode(0o700).create(&data)?;
 		protected_file(&data.join(FILE_NAME))?.write_all(CONTENT)?;
+		write_generated_file(&data.join(LARGE_FILE_NAME))?;
 		Ok(fixture)
 	}
 
@@ -275,4 +297,23 @@ fn protected_file(path: &Path) -> io::Result<File> {
 		.write(true)
 		.mode(0o600)
 		.open(path)
+}
+
+fn write_generated_file(path: &Path) -> io::Result<()> {
+	let mut file = protected_file(path)?;
+	let mut chunk = [0; MAX_READ_CHUNK_BYTES];
+	let mut total = 0;
+	while total < LARGE_LENGTH {
+		let count = (LARGE_LENGTH - total).min(chunk.len() as u64) as usize;
+		for (index, byte) in chunk[..count].iter_mut().enumerate() {
+			*byte = generated_byte(total + index as u64);
+		}
+		file.write_all(&chunk[..count])?;
+		total += count as u64;
+	}
+	Ok(())
+}
+
+fn generated_byte(offset: u64) -> u8 {
+	(offset % 251) as u8
 }
