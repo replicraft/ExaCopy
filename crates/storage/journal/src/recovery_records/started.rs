@@ -11,7 +11,7 @@ use crate::{JournalContext, JournalEntryId, JournalEpoch, OwnerDigest, PublishIn
 /// The authenticated owner and exact journal boundary from which recovery starts.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RecoveryStartEvidence {
-	/// Exact reference to the original publication intent.
+	/// Exact reference to the cited publication intent.
 	pub intent: ChainHead,
 	/// Last frame before starting this recovery generation.
 	pub preceding: ChainHead,
@@ -32,8 +32,8 @@ impl RecoveryStarted {
 	/// Constructs a recovery record for the next generation after the preceding journal state.
 	///
 	/// # Errors
-	/// Rejects a skipped, repeated or exhausted generation, reserved references, and an
-	/// original intent reference that disagrees with the preceding journal boundary.
+	/// Rejects a skipped, repeated or exhausted generation, reserved references, and a
+	/// cited intent reference that disagrees with the preceding journal boundary.
 	pub fn new(
 		context: JournalContext,
 		entry: JournalEntryId,
@@ -76,7 +76,7 @@ impl RecoveryStarted {
 		self.prior_epoch
 	}
 
-	/// Returns the exact original intent, preceding head, and owner envelope digest.
+	/// Returns the exact cited intent, preceding head, and owner envelope digest.
 	#[must_use]
 	pub const fn evidence(&self) -> RecoveryStartEvidence {
 		self.evidence
@@ -121,13 +121,13 @@ impl RecoveryStarted {
 		})
 	}
 
-	/// Binds this recovery start to the original intent frame and independently trusted owner.
+	/// Binds this recovery start to the cited intent frame and independently trusted owner.
 	///
 	/// Supply the intent from the verified local chain. The caller checks synchronization,
 	/// current OS ownership, and the active generation against the preceding journal state.
 	///
 	/// # Errors
-	/// Rejects a wrong kind, different job, entry, plan, owner, or original generation.
+	/// Rejects a wrong kind, different job, entry, plan, owner, or an intent generation after the prior epoch.
 	pub fn validate_intent<'a>(
 		&self,
 		intent_frame: &'a Frame,

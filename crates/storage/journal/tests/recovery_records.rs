@@ -2,6 +2,8 @@
 
 #[path = "recovery_records/bindings.rs"]
 mod bindings;
+#[path = "recovery_records/retained.rs"]
+mod retained;
 
 use exacopy_endpoint::MAX_FILE_LENGTH;
 use exacopy_journal::frame::{ChainHead, Frame, FrameKind, FrameReader, FrameWriter};

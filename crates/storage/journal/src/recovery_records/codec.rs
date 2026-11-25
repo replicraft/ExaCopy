@@ -63,13 +63,20 @@ pub(super) fn decode_frame<T>(
 		return Err(RecoveryRecordError::WrongRecordKind { expected, actual });
 	}
 	let record = decode(frame.payload())?;
-	let prior = predecessor(&record);
+	require_predecessor(predecessor(&record), frame)?;
+	Ok(record)
+}
+
+pub(super) fn require_predecessor(
+	prior: ChainHead,
+	frame: &Frame,
+) -> Result<(), RecoveryRecordError> {
 	if prior.sequence().checked_add(1) != Some(frame.head().sequence())
 		|| prior.digest() != frame.previous_digest()
 	{
 		return Err(RecoveryRecordError::InvalidFrameOrder);
 	}
-	Ok(record)
+	Ok(())
 }
 
 pub(super) fn require_reference(reference: ChainHead) -> Result<(), RecoveryRecordError> {

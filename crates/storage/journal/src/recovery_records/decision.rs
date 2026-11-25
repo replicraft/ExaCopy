@@ -37,13 +37,13 @@ pub struct PublishedRecoveryEvidence {
 /// The preceding frames from the independently scanned and checked journal chain.
 #[derive(Clone, Copy, Debug)]
 pub struct RecoveryDecisionFrames<'a> {
-	/// The kind-19 start immediately before the decision.
+	/// The kind-19 start in the decision's recovery epoch.
 	pub started: &'a Frame,
-	/// The original verified kind-7 publication intent.
+	/// The latest prior kind-7 publication intent cited by the recovery start.
 	pub intent: &'a Frame,
-	/// The original kind-5 verification record cited by the decision.
+	/// The exact kind-5 verification record cited by the decision.
 	pub verification: &'a Frame,
-	/// The original kind-6 metadata record cited by the decision.
+	/// The exact kind-6 metadata record cited by the decision.
 	pub metadata: &'a Frame,
 }
 

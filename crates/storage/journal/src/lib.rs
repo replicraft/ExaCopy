@@ -32,7 +32,8 @@ pub use publication_records::{
 };
 pub use recovery_records::{
 	PublishedRecoveryEvidence, RecoveryDecision, RecoveryDecisionFrames, RecoveryDirectories,
-	RecoveryRecordError, RecoveryStartEvidence, RecoveryStarted,
+	RecoveryRecordError, RecoveryStartEvidence, RecoveryStarted, RetainedPublicationDecision,
+	RetainedPublicationEvidence,
 };
 pub use verification_records::{
 	BasicMetadata, MetadataOmission, MetadataRecorded, StageSealed, StreamDigest, StreamEvidence,
