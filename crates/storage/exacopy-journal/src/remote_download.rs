@@ -2,6 +2,7 @@
 
 mod bootstrap;
 mod error;
+pub mod finalization_policy;
 mod owner;
 mod records;
 pub mod replay;

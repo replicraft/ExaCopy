@@ -23,3 +23,5 @@ pub mod staging;
 pub mod remote_capture;
 
 pub mod remote_resume;
+
+pub mod remote_metadata;

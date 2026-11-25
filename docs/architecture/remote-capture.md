@@ -29,6 +29,22 @@ journal replay, efficient range reuse and exclusive publication require their
 own adapters and admission. This helper does not enable a CLI command or
 issue a publication permit.
 
+Ordinary SFTP cannot establish the existing required-data metadata profile.
+The engine's default metadata admission therefore refuses it before job or
+stage allocation. An explicit `sftp-data-only-v1` selection admits one
+unnamed logical stream and binds its versioned policy digest into the signed
+scope. It excludes unenumerated additional streams as well as source mode,
+ownership, timestamps, ACLs, xattrs, flags, link topology, sparse layout and
+storage representation. Unknown additional streams are excluded content,
+not evidence that no such content exists.
+
+This selection still requires complete independent byte and EOF verification,
+restrictive local metadata and separate publication qualification. Its receipt
+must report the exact omissions and a non-clean outcome. The policy helper
+does not itself enable a CLI option, establish native facts or authorize a
+writable reopen; the caller checks the recorded policy against its current
+selection before effects.
+
 The separate `remote_resume` coordinator admits a fresh pass from a
 matching authenticated scope and a clean pre-intent history with an absent
 target. Restart uses the latest consumed allocation to check consecutive run
