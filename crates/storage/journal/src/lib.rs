@@ -8,6 +8,7 @@ mod intent;
 mod owner;
 mod prepared;
 mod publication_records;
+mod recovery_records;
 mod verification_records;
 
 pub use durable::{DurableJournal, DurableJournalError, SyncedFrame};
@@ -28,6 +29,10 @@ pub use prepared::{
 pub use publication_records::{
 	DurabilityRecorded, LOCAL_RECEIPT_LOCATION, LinuxPublicationBarriers, NamespaceObservation,
 	PublicationOutcome, PublicationRecordError, PublishObserved, ReceiptCommitted, ReceiptDigest,
+};
+pub use recovery_records::{
+	PublishedRecoveryEvidence, RecoveryDecision, RecoveryDecisionFrames, RecoveryDirectories,
+	RecoveryRecordError, RecoveryStartEvidence, RecoveryStarted,
 };
 pub use verification_records::{
 	BasicMetadata, MetadataOmission, MetadataRecorded, StageSealed, StreamDigest, StreamEvidence,
