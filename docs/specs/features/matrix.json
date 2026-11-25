@@ -60,6 +60,15 @@
         "purpose": "Expose annotations for the pinned hax extraction path."
       }
     },
+    "exacopy-platform": {
+      "windows-read-fixture": {
+        "status": "experimental",
+        "targets": ["x86_64-pc-windows-msvc"],
+        "enables": [],
+        "resolution_probe": [],
+        "purpose": "Compile private held-directory and exact comparison fixtures. Windows API dependencies are test-only."
+      }
+    },
     "exacopy-transfer": {
       "experimental-apfs-copy": {
         "status": "experimental",

@@ -1,0 +1,44 @@
+name: Windows NTFS read qualification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+  EXPECTED_RUST_HOST: x86_64-pc-windows-msvc
+
+jobs:
+  qualify:
+    name: Held-directory read comparison (Windows x64 NTFS)
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.100.0
+        shell: bash
+        run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
+      - name: Run native fixed NTFS fixture
+        shell: pwsh
+        run: |
+          # The runner's TEMP can be on a different filesystem. The wrapper verifies
+          # the profile directory's actual drive type, format, and reparse ancestry.
+          & ./.github/ci/windows-ntfs.ps1 `
+            -Repository $env:GITHUB_WORKSPACE `
+            -LocalNtfsRoot $env:USERPROFILE `
+            -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'exacopy-windows-ntfs')
+      - name: Retain raw Windows evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-ntfs-qualification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-evidence/
+            ${{ runner.temp }}/exacopy-windows-ntfs/
+          if-no-files-found: error
+          retention-days: 90

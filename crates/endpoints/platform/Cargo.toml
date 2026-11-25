@@ -6,6 +6,14 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+windows-read-fixture = []
+
+[[test]]
+name = "windows_read"
+path = "tests/windows_read.rs"
+required-features = ["windows-read-fixture"]
+
 [target.'cfg(target_os = "linux")'.dependencies]
 exacopy-endpoint.workspace = true
 exacopy-model.workspace = true
@@ -16,6 +24,11 @@ exacopy-endpoint.workspace = true
 exacopy-model.workspace = true
 libc.workspace = true
 rustix = { workspace = true, features = ["try_close"] }
+
+[target.'cfg(target_os = "windows")'.dev-dependencies]
+exacopy-diff.workspace = true
+exacopy-endpoint.workspace = true
+windows-sys = { workspace = true, features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_SystemServices", "Win32_System_Threading"] }
 
 [lints]
 workspace = true

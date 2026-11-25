@@ -301,10 +301,12 @@ dependencies = [
 name = "exacopy-platform"
 version = "0.1.0"
 dependencies = [
+ "exacopy-diff",
  "exacopy-endpoint",
  "exacopy-model",
  "libc",
  "rustix",
+ "windows-sys",
 ]
 
 [[package]]

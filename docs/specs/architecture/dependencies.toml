@@ -18,7 +18,9 @@ dev.groups = ["testkit"]
 members = { exacopy-platform = "crates/endpoints/platform" }
 normal.groups = ["contracts", "core"]
 normal.external = ["libc", "rustix"]
-dev.groups = ["testkit"]
+# The private Windows fixture composes the checked read view and the exact comparison engine.
+dev.groups = ["testkit", "contracts", "operations"]
+dev.external = ["windows-sys"]
 
 [groups.storage]
 members = { exacopy-content = "crates/storage/content", exacopy-journal = "crates/storage/journal" }
