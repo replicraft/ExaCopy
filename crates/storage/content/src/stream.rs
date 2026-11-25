@@ -81,25 +81,37 @@ fn stream_at<E>(
 	invalid_input: fn(StreamInputError) -> E,
 	mut transfer: impl FnMut(u64, &mut [u8]) -> Result<(), E>,
 ) -> Result<ContentDigest, E> {
+	validate_stream_input(length, scratch.len()).map_err(invalid_input)?;
+	let mut hasher = blake3::Hasher::new();
+	visit_between(0, length, scratch, invalid_input, |offset, chunk| {
+		transfer(offset, chunk)?;
+		hasher.update(chunk);
+		Ok(())
+	})?;
+	Ok(ContentDigest(hasher.finalize()))
+}
+
+pub(super) fn visit_between<E>(
+	mut offset: u64,
+	end: u64,
+	scratch: &mut [u8],
+	invalid_input: fn(StreamInputError) -> E,
+	mut visit: impl FnMut(u64, &mut [u8]) -> Result<(), E>,
+) -> Result<(), E> {
 	let scratch_len = scratch.len();
-	validate_stream_input(length, scratch_len).map_err(invalid_input)?;
-	let invalid_length = || invalid_input(StreamInputError::FileTooLong { length });
+	let invalid_length = || invalid_input(StreamInputError::FileTooLong { length: end });
 	let invalid_scratch = || {
 		invalid_input(StreamInputError::ScratchTooLarge {
 			length: scratch_len,
 		})
 	};
 	let width = u64::try_from(scratch_len).map_err(|_| invalid_scratch())?;
-	let mut hasher = blake3::Hasher::new();
-	let mut offset = 0;
-	while offset < length {
-		let bytes = width.min(length - offset);
+	while offset < end {
+		let bytes = width.min(end - offset);
 		let next = offset.checked_add(bytes).ok_or_else(invalid_length)?;
 		let count = usize::try_from(bytes).map_err(|_| invalid_scratch())?;
-		let chunk = &mut scratch[..count];
-		transfer(offset, chunk)?;
-		hasher.update(chunk);
+		visit(offset, &mut scratch[..count])?;
 		offset = next;
 	}
-	Ok(ContentDigest(hasher.finalize()))
+	Ok(())
 }

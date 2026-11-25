@@ -122,3 +122,73 @@ impl<R: Error + 'static, W: Error + 'static> Error for CopyMeasureError<R, W> {
 		}
 	}
 }
+
+/// Why a copy that considers historical ranges could not finish.
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum ResumeMeasureError<S, T, W> {
+	/// The stream length or scratch buffer was rejected before I/O.
+	InvalidInput(StreamInputError),
+	/// A candidate is not the next nonempty range within the source extent.
+	InvalidCandidate {
+		/// The candidate's absolute start.
+		offset: u64,
+		/// The candidate's logical byte count.
+		length: u64,
+	},
+	/// The source reader did not supply a complete requested range.
+	Source(MeasureError<S>),
+	/// The stage reader failed inside the captured stage extent.
+	Stage(MeasureError<T>),
+	/// The stage writer did not write a requested range in full.
+	Write {
+		/// Start of the failed range in bytes.
+		offset: u64,
+		/// The stage writer's original error.
+		source: W,
+	},
+	/// The source supplied differing bytes on two reads of the same range.
+	SourceChanged {
+		/// The range's absolute start.
+		offset: u64,
+		/// The range's logical byte count.
+		length: u64,
+	},
+}
+
+impl<S: fmt::Display, T: fmt::Display, W: fmt::Display> fmt::Display
+	for ResumeMeasureError<S, T, W>
+{
+	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			Self::InvalidInput(error) => fmt::Display::fmt(error, formatter),
+			Self::InvalidCandidate { offset, length } => write!(
+				formatter,
+				"invalid checkpoint range at {offset} with length {length}"
+			),
+			Self::Source(error) => write!(formatter, "source {error}"),
+			Self::Stage(error) => write!(formatter, "stage {error}"),
+			Self::Write { offset, source } => {
+				write!(formatter, "stage write at {offset} failed: {source}")
+			}
+			Self::SourceChanged { offset, length } => write!(
+				formatter,
+				"source changed between reads of the range at {offset} with length {length}"
+			),
+		}
+	}
+}
+
+impl<S: Error + 'static, T: Error + 'static, W: Error + 'static> Error
+	for ResumeMeasureError<S, T, W>
+{
+	fn source(&self) -> Option<&(dyn Error + 'static)> {
+		match self {
+			Self::InvalidInput(error) => Some(error),
+			Self::InvalidCandidate { .. } | Self::SourceChanged { .. } => None,
+			Self::Source(error) => Some(error),
+			Self::Stage(error) => Some(error),
+			Self::Write { source, .. } => Some(source),
+		}
+	}
+}
