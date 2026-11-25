@@ -9,3 +9,15 @@ failure-output = "immediate-final"
 path = "junit.xml"
 store-success-output = false
 store-failure-output = true
+
+[profile.ci-experimental-ssh]
+inherits = "ci"
+
+[profile.ci-experimental-sftp]
+inherits = "ci"
+
+[profile.ci-experimental-ssh-capture]
+inherits = "ci"
+
+[profile.ci-experimental-apfs-copy]
+inherits = "ci"
