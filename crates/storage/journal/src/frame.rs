@@ -81,6 +81,20 @@ pub struct Frame {
 }
 
 impl Frame {
+	pub(crate) fn from_verified_parts(
+		kind: FrameKind,
+		payload: Vec<u8>,
+		head: ChainHead,
+		previous_digest: [u8; DIGEST_BYTES],
+	) -> Self {
+		Self {
+			kind,
+			payload,
+			head,
+			previous_digest,
+		}
+	}
+
 	/// Returns the envelope's record discriminator.
 	#[must_use]
 	pub const fn kind(&self) -> FrameKind {
@@ -269,12 +283,12 @@ impl<R: Read> FrameReader<R> {
 			.checked_add(frame_bytes)
 			.ok_or_else(|| self.corrupt(FrameProblem::OffsetOverflow))?;
 		self.head = ChainHead { sequence, digest };
-		Ok(Some(Frame {
+		Ok(Some(Frame::from_verified_parts(
 			kind,
 			payload,
-			head: self.head,
+			self.head,
 			previous_digest,
-		}))
+		)))
 	}
 
 	fn check_magic(&self, prefix: &[u8]) -> Result<(), FrameReadError> {

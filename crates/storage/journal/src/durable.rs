@@ -8,7 +8,7 @@ use std::fs::File;
 use std::io::{self, BufReader, Read as _, Seek as _, SeekFrom};
 
 use crate::frame::{
-	ChainHead, FRAME_OVERHEAD_BYTES, FrameKind, FrameReader, FrameWriteError, FrameWriter,
+	ChainHead, FRAME_OVERHEAD_BYTES, Frame, FrameKind, FrameReader, FrameWriteError, FrameWriter,
 	MAX_PAYLOAD_BYTES,
 };
 
@@ -187,6 +187,28 @@ impl DurableJournal {
 	) -> Result<SyncedFrame, DurableJournalError> {
 		let barrier = self.barrier;
 		self.append_with_barrier(kind, payload, |file| barrier.sync(file))
+	}
+
+	/// Appends an owned payload and returns the exact frame and evidence of its file barrier.
+	///
+	/// Use this when later records must bind the accepted frame and inspect its original payload.
+	/// The frame includes the writer's actual preceding digest.
+	///
+	/// # Errors
+	/// Applies the same limits, failure behavior and prerequisites as [`Self::append`].
+	pub fn append_frame(
+		&mut self,
+		kind: FrameKind,
+		payload: Vec<u8>,
+	) -> Result<(Frame, SyncedFrame), DurableJournalError> {
+		let previous = self
+			.writer
+			.as_ref()
+			.ok_or(DurableJournalError::Retired)?
+			.head();
+		let synced = self.append(kind, &payload)?;
+		let frame = Frame::from_verified_parts(kind, payload, synced.head(), previous.digest());
+		Ok((frame, synced))
 	}
 
 	fn append_with_barrier(

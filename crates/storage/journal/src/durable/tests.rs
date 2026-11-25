@@ -24,8 +24,8 @@ fn synced_frames_are_visible_from_a_separate_read_handle() {
 		.append(FrameKind::JobPrepared, OWNER_PAYLOAD)
 		.expect("append and sync owner frame");
 	assert_eq!(first.barrier(), JournalFileBarrier::SyncAll);
-	let second = journal
-		.append(FrameKind::PublishIntent, INTENT_PAYLOAD)
+	let (record, second) = journal
+		.append_frame(FrameKind::PublishIntent, INTENT_PAYLOAD.to_vec())
 		.expect("append and sync intent frame");
 
 	let mut reader = scratch.reader();
@@ -40,6 +40,7 @@ fn synced_frames_are_visible_from_a_separate_read_handle() {
 		.next_frame()
 		.expect("valid intent frame")
 		.expect("intent frame is present");
+	assert_eq!(intent, record);
 	assert_eq!(intent.kind(), second.kind());
 	assert_eq!(intent.head(), second.head());
 	assert_eq!(intent.payload(), INTENT_PAYLOAD);
