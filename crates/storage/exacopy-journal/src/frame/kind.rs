@@ -74,6 +74,8 @@ pub enum FrameKind {
 	InstallCommitted = 35,
 	/// Credential acquisition blocked.
 	CredentialBlocked = 36,
+	/// Private filename allocation for a fresh remote capture attempt.
+	RemoteStageAllocated = 37,
 }
 
 impl FrameKind {
@@ -123,6 +125,7 @@ impl FrameKind {
 			code if code == Self::InstallObserved.code() => Self::InstallObserved,
 			code if code == Self::InstallCommitted.code() => Self::InstallCommitted,
 			code if code == Self::CredentialBlocked.code() => Self::CredentialBlocked,
+			code if code == Self::RemoteStageAllocated.code() => Self::RemoteStageAllocated,
 			_ => return None,
 		})
 	}

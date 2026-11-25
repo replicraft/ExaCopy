@@ -24,3 +24,15 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/public_apply_intent.rs", test = "enclosing_kind_and_exact_predecessor_are_required", oracle = "An accepted kind-7 envelope names the exact prior metadata digest and sequence. The legacy reader rejects the same public frame, and the public reader refuses a wrong record kind or altered predecessor." }
+
+[[obligation]]
+id = "P-043"
+requirement_ids = ["R-013", "R-140", "R-216"]
+source = "src/remote_download/owner.rs"
+symbols = ["RemoteDownloadOwnerRecord::decode"]
+assumptions = [
+    "The selected local key and owner profile come from independent trust. Ed25519 and BLAKE3 are trusted primitives.",
+    "This Rust gate covers canonical format admission and frame binding. The application verifies actual scope, earlier frame identities, held observations, and directory and durability prerequisites.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_download.rs", test = "independent_owner_and_frame_vectors_round_trip_in_the_remote_profile", oracle = "Independent canonical CBOR and OpenSSL signatures match the exact Rust owner and private payloads. The selected profile validates the envelope and the frame decoder validates the exact framing predecessor." }

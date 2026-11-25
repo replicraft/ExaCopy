@@ -11,6 +11,7 @@ mod owner;
 mod prepared;
 mod publication_records;
 mod recovery_records;
+pub mod remote_download;
 mod verification_records;
 
 pub use darwin_phases::{

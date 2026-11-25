@@ -1,6 +1,6 @@
 mod apply;
 mod apply_codec;
-mod codec;
+pub(crate) mod codec;
 mod darwin;
 mod darwin_codec;
 mod darwin_identity;

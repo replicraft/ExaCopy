@@ -20,10 +20,11 @@ pub(super) type BodyBytes = Cursor<[u8; MAX_BODY_BYTES]>;
 type EnvelopeBytes = Cursor<[u8; MAX_ENVELOPE_BYTES]>;
 
 #[derive(Clone, Copy)]
-pub(super) enum OwnerDomain {
+pub(crate) enum OwnerDomain {
 	LinuxV1,
 	DarwinManagedApfs,
 	LinuxPublicApply,
+	LinuxRemoteDownload,
 }
 
 impl OwnerDomain {
@@ -32,27 +33,35 @@ impl OwnerDomain {
 			Self::LinuxV1 => (1, b"ExaCopy/owner/v1\0"),
 			Self::DarwinManagedApfs => (2, b"ExaCopy/owner/darwin-managed-apfs/v1\0"),
 			Self::LinuxPublicApply => (3, b"ExaCopy/owner/linux-public-apply/v1\0"),
+			Self::LinuxRemoteDownload => (4, b"ExaCopy/owner/linux-remote-download/v1\0"),
 		}
 	}
 
-	pub(super) fn signature_input(self, body: &[u8]) -> Vec<u8> {
+	pub(crate) fn signature_input(self, body: &[u8]) -> Vec<u8> {
 		let (_, prefix) = self.wire();
 		[prefix, body].concat()
 	}
 }
 
-pub(super) struct Envelope<'a> {
-	pub(super) body: &'a [u8],
-	pub(super) public_key: [u8; 32],
-	pub(super) signature: [u8; 64],
+pub(crate) struct Envelope<'a> {
+	pub(crate) body: &'a [u8],
+	pub(crate) public_key: [u8; 32],
+	pub(crate) signature: [u8; 64],
 }
 
 pub(super) fn encode_envelope(
 	envelope: &Envelope<'_>,
 	domain: OwnerDomain,
 ) -> Result<EnvelopeBytes, OwnerError> {
+	encode_envelope_bounded(envelope, domain)
+}
+
+pub(crate) fn encode_envelope_bounded<const N: usize>(
+	envelope: &Envelope<'_>,
+	domain: OwnerDomain,
+) -> Result<Cursor<[u8; N]>, OwnerError> {
 	let (code, _) = domain.wire();
-	let mut encoder = Encoder::new(Cursor::new([0; MAX_ENVELOPE_BYTES]));
+	let mut encoder = Encoder::new(Cursor::new([0; N]));
 	encoder
 		.map(4)?
 		.u64(0)?
@@ -70,11 +79,18 @@ pub(super) fn decode_envelope(
 	bytes: &[u8],
 	domain: OwnerDomain,
 ) -> Result<Envelope<'_>, OwnerError> {
+	decode_envelope_bounded::<MAX_BODY_BYTES, MAX_ENVELOPE_BYTES>(bytes, domain)
+}
+
+pub(crate) fn decode_envelope_bounded<const BODY: usize, const ENVELOPE: usize>(
+	bytes: &[u8],
+	domain: OwnerDomain,
+) -> Result<Envelope<'_>, OwnerError> {
 	let mut decoder = Decoder::new(bytes);
 	map(&mut decoder, 4)?;
 	key(&mut decoder, 0)?;
 	let body = decoder.bytes()?;
-	if body.len() > MAX_BODY_BYTES {
+	if body.len() > BODY {
 		return Err(OwnerError::Length);
 	}
 	key(&mut decoder, 1)?;
@@ -93,7 +109,7 @@ pub(super) fn decode_envelope(
 		public_key,
 		signature,
 	};
-	if encoded_bytes(&encode_envelope(&envelope, domain)?) != bytes {
+	if encoded_bytes(&encode_envelope_bounded::<ENVELOPE>(&envelope, domain)?) != bytes {
 		return Err(OwnerError::NonCanonical);
 	}
 	Ok(envelope)
@@ -270,7 +286,7 @@ fn decode_directories(decoder: &mut Decoder<'_>) -> Result<Vec<OwnerStateDirecto
 	Ok(names)
 }
 
-pub(super) fn encoded_bytes<const N: usize>(encoded: &Cursor<[u8; N]>) -> &[u8] {
+pub(crate) fn encoded_bytes<const N: usize>(encoded: &Cursor<[u8; N]>) -> &[u8] {
 	&encoded.get_ref()[..encoded.position()]
 }
 

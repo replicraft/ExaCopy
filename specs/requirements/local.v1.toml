@@ -1209,6 +1209,36 @@ path = "docs/architecture/public-stage-inspection.md"
 
 
 [[coverage]]
+id = "remote-download-journal-format"
+status = "implemented"
+requirement_ids = ["R-013", "R-140", "R-216"]
+acceptance_ids = ["A-013", "A-140", "A-216"]
+invariant_ids = ["INV-013", "INV-014", "INV-019", "INV-024"]
+scope = "Bounded authenticated private SFTP scope and deterministic write-ahead allocation, native stage binding, inline prefix checkpoint and uncertainty frames."
+limits = "Format admission and structural chain checks only. Concrete replay, capture wiring, local qualification, publication and native crash evidence remain separate."
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "obligation"
+state = "defined"
+path = "crates/storage/exacopy-journal/verification/obligations.toml"
+target = "P-043"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/remote_download.rs"
+target = "owner_requires_external_key_profile_and_distinct_signature_domain"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/remote_download.rs"
+target = "exact_predecessor_sequence_digest_and_kind_are_required"
+
+[[coverage]]
 id = "public-apply-intent-receipt"
 status = "implemented"
 requirement_ids = ["R-015", "R-155"]

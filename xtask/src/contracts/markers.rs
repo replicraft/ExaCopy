@@ -130,6 +130,16 @@ pub(super) const BINDINGS: &[Binding] = &[
 		Marker::Array { width: 3 },
 	),
 	Binding::new(
+		"linux-remote-download-owner",
+		"crates/storage/exacopy-journal/src/remote_download/owner.rs",
+		Marker::Array { width: 3 },
+	),
+	Binding::new(
+		"linux-remote-download-records",
+		"crates/storage/exacopy-journal/src/remote_download/records/wire.rs",
+		Marker::Array { width: 3 },
+	),
+	Binding::new(
 		"darwin-managed-apfs-owner",
 		"crates/storage/exacopy-journal/src/owner/darwin_codec.rs",
 		Marker::pair("FORMAT_MAJOR", "FORMAT_MINOR", "MANAGED_APFS_REQUIRED"),
