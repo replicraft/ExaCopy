@@ -79,3 +79,35 @@ code, build script, or ambient privileges. Callers own the documented hashing
 and comparison contracts. Rust 1.100.0 doctest and all-target checks passed.
 This audit identifies the crates.io archive. Upstream Git provenance is unverified.
 """
+
+[[audits.itoa]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.0.19"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+3bd1574e617a9a6c1f8f8181bd7e841e1f20e4277607ef28945765188d6284d4.
+Packaged source matches the signed upstream tag. Reviewed input type sealing,
+buffer initialization, digit bounds, reciprocal arithmetic and the borrowed
+string lifetime. The crate performs no ambient I/O. Native Rust 1.100.0 and
+Miri checks passed against the exact source with ExaCopy's resolved feature set.
+ExaCopy enables only the empty default feature through serde_json. The optional
+no-panic proc macro was outside the resolved build and this evidence.
+"""
+
+[[audits.version_check]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.9.5"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a.
+The registry archive names the corroborated upstream release commit. The probe
+uses the configured RUSTC or PATH compiler with fixed version-query arguments.
+It inherits the build environment, trusts UTF-8 stdout even after a nonzero
+exit, and imposes no child timeout. The compiler and build host must be trusted.
+ExaCopy uses this only in generic-array's build script to select a conversion
+implementation. Rust 1.100.0 tests, doctests and isolated compiler probes passed.
+The released archive omits the historical sample fixtures. There is no unsafe
+code, native linkage, network access, or direct file mutation.
+"""
