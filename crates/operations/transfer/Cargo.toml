@@ -6,6 +6,18 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+experimental-apfs-copy = [
+	"dep:blake3",
+	"dep:ed25519-dalek",
+	"dep:exacopy-content",
+	"dep:exacopy-endpoint",
+	"dep:exacopy-journal",
+	"dep:exacopy-model",
+	"dep:exacopy-platform",
+	"dep:minicbor",
+]
+
 [target.'cfg(target_os = "linux")'.dependencies]
 blake3.workspace = true
 ed25519-dalek.workspace = true
@@ -20,14 +32,14 @@ minicbor.workspace = true
 rustix.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-blake3.workspace = true
-ed25519-dalek.workspace = true
-exacopy-content.workspace = true
-exacopy-endpoint.workspace = true
-exacopy-journal.workspace = true
-exacopy-model.workspace = true
-exacopy-platform.workspace = true
-minicbor.workspace = true
+blake3 = { workspace = true, optional = true }
+ed25519-dalek = { workspace = true, optional = true }
+exacopy-content = { workspace = true, optional = true }
+exacopy-endpoint = { workspace = true, optional = true }
+exacopy-journal = { workspace = true, optional = true }
+exacopy-model = { workspace = true, optional = true }
+exacopy-platform = { workspace = true, optional = true }
+minicbor = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 ed25519-dalek.workspace = true
