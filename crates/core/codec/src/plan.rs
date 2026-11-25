@@ -10,12 +10,14 @@ use crate::document::{DocumentPageKind, DocumentRef};
 mod error;
 mod evidence;
 mod extensions;
+mod json;
 mod policy;
 mod wire;
 
 pub use error::PlanError;
 pub use evidence::{PlanResourceLimits, PlanSourceView, UnixTimestamp};
 pub use extensions::PlanExtensions;
+pub use json::{MAX_PLAN_JSON_BYTES, PlanJsonError, PublicPlan};
 pub use policy::{
 	PlanConflict, PlanConsistency, PlanDurability, PlanFidelity, PlanOperation, PlanPolicy,
 	PlanPreservation, PlanPublication, PlanSourceRetirement, PlanStorage, PlanVerification,

@@ -1,0 +1,96 @@
+{
+  "digest": "f56279d502586ab629f03e50bf011c97d0b71d5f36737a27c90808142fc7618e",
+  "body": {
+    "schema_version": "1.0",
+    "plan_id": "019a0000-0000-7000-8000-000000000002",
+    "operation": "move",
+    "created_at": "2023-11-15t03:43:20.123456789+05:30",
+    "expires_at": "2023-11-15T22:13:20Z",
+    "source_roots": [
+      "ffeeddcc-bbaa-4988-8776-554433221100"
+    ],
+    "destination_root": "18291f52-8015-48ff-af49-546767ec49cd",
+    "entry_pages": [
+      {
+        "page_id": "830c1b608b286c1fcd558507a9d5a8ed74b5fb1bb88cffdfc3c3b5be4f83bd93",
+        "page_kind": "plan_entries",
+        "encoded_bytes": "209",
+        "entry_count": "1"
+      },
+      {
+        "page_id": "e92bccef4cd4713eadb2688b6f9b110a4c9522339f6678b54d49326deca73c0f",
+        "page_kind": "plan_entries",
+        "encoded_bytes": "221",
+        "entry_count": "1"
+      }
+    ],
+    "policy": {
+      "preservation": "protected_move",
+      "conflict": "protected-replace",
+      "verification": "sha256_readback",
+      "storage": "shared-cow",
+      "publication": "new_tree",
+      "consistency": "application_consistent",
+      "minimum_durability": "qualified_power_loss",
+      "fidelity": "portable",
+      "source_retirement": "quarantine",
+      "follow_symlinks": false
+    },
+    "resource_limits": {
+      "buffer_budget_bytes": "18446744073709551615",
+      "io_inflight_max": 64
+    },
+    "approval_required": true,
+    "source_views": [
+      {
+        "view_id": "e57d5e90-ad55-446e-a983-4cc60a94290a",
+        "root_id": "ffeeddcc-bbaa-4988-8776-554433221100",
+        "consistency": "application_consistent",
+        "provider": "observation-é-é",
+        "measurement_id": "00112233-4455-4677-8899-aabbccddeeff",
+        "source_identity": {
+          "platform": "macos",
+          "volume_id_base64": "dgA=",
+          "object_id_base64": "/29iag==",
+          "generation_base64": "Zw=="
+        },
+        "observed_at": "1969-12-31T23:59:59.000000042Z",
+        "snapshot_token_digest": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "stable_until": "1970-01-01T00:00:01Z"
+      },
+      {
+        "view_id": "e57d5e90-ad55-446e-a983-4cc60a94290b",
+        "root_id": "ffeeddcc-bbaa-4988-8776-554433221100",
+        "consistency": "live_observed",
+        "provider": "live-observation",
+        "measurement_id": "00112233-4455-4677-8899-aabbccddeeff",
+        "source_identity": null,
+        "observed_at": "1970-01-01T00:00:00Z",
+        "snapshot_token_digest": null,
+        "stable_until": null
+      }
+    ],
+    "required_grants": [
+      "read-content",
+      "create-new",
+      "présérve"
+    ],
+    "estimated_working_bytes": "3",
+    "conflict_count": "0",
+    "entry_count": "2",
+    "complete": true,
+    "extensions": {
+      "org.exacopy": {
+        "z": [
+          null,
+          false,
+          true,
+          -18446744073709551616,
+          18446744073709551615
+        ],
+        "long": "é"
+      },
+      "z.test": null
+    }
+  }
+}

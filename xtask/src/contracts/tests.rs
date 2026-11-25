@@ -46,6 +46,31 @@ fn root() -> &'static Path {
 }
 
 #[test]
+fn public_plan_json_version_cannot_drift_from_the_inventory() {
+	let fixture = Fixture::new();
+	let owner = "crates/core/codec/src/plan/json.rs";
+	let text = format!(
+		r#"id = "public-plan-json"
+kind = "plan"
+status = "implemented"
+version = "1.0"
+owner = "{owner}"
+"#
+	);
+	let record: Contract = toml::from_str(&text).unwrap();
+	fixture.write(owner, r#"const VERSION: &str = "1.0";"#);
+	assert_eq!(check_record(fixture.root(), &record), Ok(()));
+	for source in [
+		r#"const VERSION: &str = "2.0";"#,
+		r#"const VERSION: &str = "01.0";"#,
+		"const VERSION: [u8; 2] = [1, 0];",
+	] {
+		fixture.write(owner, source);
+		assert!(check_record(fixture.root(), &record).is_err(), "{source}");
+	}
+}
+
+#[test]
 fn canonical_plan_body_has_its_own_version_and_kind_binding() {
 	let fixture = Fixture::new();
 	let owner = "crates/core/codec/src/plan/wire.rs";

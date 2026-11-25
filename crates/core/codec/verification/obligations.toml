@@ -39,3 +39,16 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/plan_body.rs", test = "canonical_policy_and_resource_intent_are_bound_to_the_expected_digest", oracle = "The independent protected-plan vector matches its digest. A modified declared policy, budget or page order fails under the original expected digest." }
+
+[[obligation]]
+id = "P-039"
+requirement_ids = ["R-154", "R-182"]
+source = "src/plan/json.rs"
+symbols = ["PublicPlan::from_json", "PublicPlan::to_json"]
+assumptions = [
+    "This Rust gate exercises JSON object admission for the implemented unsigned Plan profile, not universal parser refinement.",
+    "The caller bounds file reads before supplying an in-memory envelope and independently authorizes roots and approvals.",
+    "The body digest assumes BLAKE3 collision resistance and conveys no authority.",
+]
+gates = ["rust"]
+rust = { file = "tests/plan_json.rs", test = "all_structs_are_map_only_and_reject_missing_duplicate_and_unknown_fields", oracle = "The independent envelope decodes, but positional arrays, absent required fields, duplicate fields and unknown fields fail closed at the exercised schema objects." }

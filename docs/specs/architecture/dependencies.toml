@@ -11,7 +11,7 @@ dev.external = ["proptest"]
 
 [groups.codecs]
 members = { exacopy-codec = "crates/core/codec" }
-normal.external = ["base64", "blake3", "minicbor", "serde", "serde_json", "uuid"]
+normal.external = ["base64", "blake3", "chrono", "minicbor", "serde", "serde_json", "uuid"]
 
 [groups.contracts]
 members = { exacopy-endpoint = "crates/endpoints/endpoint" }

@@ -52,6 +52,7 @@ class FeatureMatrixTests(unittest.TestCase):
         graph["ed25519-dalek"] = {"zeroize"}
         graph["clap"] = {"error-context", "help", "std", "usage"}
         graph["base64"] = {"alloc"}
+        graph["chrono"] = {"alloc"}
         check_cli_graph(POLICY, LINUX, graph)
         defaulted = deepcopy(graph)
         defaulted["clap"].add("default")
@@ -61,6 +62,10 @@ class FeatureMatrixTests(unittest.TestCase):
         defaulted["base64"].update({"std", "simd-unsafe"})
         with self.assertRaisesRegex(ValueError, "CLI dependency base64"):
             check_cli_graph(POLICY, LINUX, defaulted)
+        clock_enabled = deepcopy(graph)
+        clock_enabled["chrono"].update({"clock", "std"})
+        with self.assertRaisesRegex(ValueError, "CLI dependency chrono"):
+            check_cli_graph(POLICY, LINUX, clock_enabled)
         corrupted = deepcopy(graph)
         del corrupted["blake3"]
         corrupted["unreviewed-network-library"] = set()

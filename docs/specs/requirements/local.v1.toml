@@ -980,7 +980,7 @@ requirement_ids = ["R-155", "R-182"]
 acceptance_ids = ["A-155", "A-182"]
 invariant_ids = ["INV-013", "INV-018", "INV-019"]
 scope = "Complete registered canonical Plan v1 body with typed policy/evidence fields, bounded opaque extensions and caller-selected expected digest admission."
-limits = "Scoped codec only: JSON envelope, approval signatures, true descendant reconciliation and filesystem authority remain outside this result. Construction's transient encoding can exceed the 1MiB admitted-body limit."
+limits = "Scoped canonical codec only: approval signatures, true descendant reconciliation and filesystem authority remain outside this result. Construction's transient encoding can exceed the 1MiB admitted-body limit."
 
 [[coverage.evidence]]
 owner = "exacopy-codec"
@@ -1001,3 +1001,33 @@ owner = "exacopy-codec"
 level = "documentation"
 state = "reported"
 path = "docs/architecture/public-plan-body.md"
+
+
+[[coverage]]
+id = "public-plan-json"
+status = "implemented"
+requirement_ids = ["R-154", "R-182"]
+acceptance_ids = ["A-154", "A-182"]
+invariant_ids = ["INV-013", "INV-018", "INV-019"]
+scope = "Bounded unsigned public Plan JSON with strict object fields, exact extension integers, checked RFC3339 normalization and canonical-body digest binding."
+limits = "No attached approval, bundle traversal, execution authority or native effects. Wire caps are not peak-memory bounds. P-039 is a scoped Rust parser admission check."
+
+[[coverage.evidence]]
+owner = "exacopy-codec"
+level = "obligation"
+state = "defined"
+path = "crates/core/codec/verification/obligations.toml"
+target = "P-039"
+
+[[coverage.evidence]]
+owner = "exacopy-codec"
+level = "test"
+state = "defined"
+path = "crates/core/codec/tests/plan_json.rs"
+target = "all_structs_are_map_only_and_reject_missing_duplicate_and_unknown_fields"
+
+[[coverage.evidence]]
+owner = "exacopy-codec"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/public-plan-json.md"

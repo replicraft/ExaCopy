@@ -203,9 +203,15 @@
       "features": ["derive"],
       "purpose": "Describe stable field and enum names for CLI reports."
     },
+    "chrono": {
+      "default_features": false,
+      "features": ["alloc"],
+      "purpose": "Parse and format public Plan UTC timestamps without clock or timezone database support."
+    },
     "serde_json": {
       "default_features": true,
       "features": [],
+      "feature_additions": {"exacopy-codec": ["raw_value"]},
       "purpose": "Serialize the versioned CLI report on all command targets."
     },
     "uuid": {
@@ -249,7 +255,7 @@
       "minicbor", "rustc_version", "semver", "sha2", "shlex", "signature", "subtle",
       "typenum", "version_check", "zeroize"
     ],
-    "linux_manifests": ["base64", "exacopy-codec"],
+    "linux_manifests": ["autocfg", "base64", "chrono", "exacopy-codec", "num-traits"],
     "macos_io": ["apfs-mounted", "cfg-if", "errno", "getrandom", "libc"]
   },
   "targets": {

@@ -9,9 +9,10 @@ publish = false
 [dependencies]
 base64.workspace = true
 blake3.workspace = true
+chrono.workspace = true
 minicbor.workspace = true
 serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
 uuid.workspace = true
 
 [lints]

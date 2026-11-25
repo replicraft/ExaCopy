@@ -52,6 +52,7 @@ completed 250,000 inputs without failure artifacts. Exact hashes, bounds,
 raw results and the corrected fixture history are retained at
 `/private/tmp/exacopy-plan-envelope.GOZW69/evidence/fixture-revision`.
 
-JSON/RFC3339 envelope parsing, cryptographic approvals, actual page-tree
-validation, CLI export and apply are separate work. Private Linux plans
+[Unsigned JSON/RFC3339 parsing](public-plan-json.md) is implemented separately.
+Cryptographic approvals, actual page-tree validation, CLI export and apply
+remain separate work. Private Linux plans
 and their persisted journal contexts keep their existing representation.
