@@ -138,9 +138,9 @@ fn copy_kind(error: &LocalCopyError) -> ErrorKind {
 			recording: None,
 		} => ErrorKind::Conflict,
 		LocalCopyError::Plan(_) => ErrorKind::InvalidRequest,
-		LocalCopyError::InspectTarget(error) | LocalCopyError::CreateStage(error) => {
-			stage_kind(error)
-		}
+		LocalCopyError::InspectTarget(error)
+		| LocalCopyError::CreateStage(error)
+		| LocalCopyError::CreateCheckpoints(error) => stage_kind(error),
 		LocalCopyError::Source(error) => read_kind(error),
 		LocalCopyError::SourcePolicy(error) => stage_failure_kind(error),
 		LocalCopyError::Stage(error) => stage_failure_kind(error.failure()),
@@ -173,8 +173,10 @@ fn stage_failure_kind(error: &StageFailure) -> ErrorKind {
 		| StageFailure::SourceAttributes(_)
 		| StageFailure::UnsupportedSourceMode { .. } => ErrorKind::Unsupported,
 		StageFailure::Source(error) => read_kind(error),
-		StageFailure::Stage(error) => stage_kind(error),
-		StageFailure::Copy(_) | StageFailure::EntryJournal(_) => ErrorKind::Io,
+		StageFailure::Stage(error) | StageFailure::CheckpointPage(error) => stage_kind(error),
+		StageFailure::Copy(_)
+		| StageFailure::EntryJournal(_)
+		| StageFailure::CheckpointJournal(_) => ErrorKind::Io,
 		_ => ErrorKind::Integrity,
 	}
 }
@@ -212,5 +214,71 @@ fn stage_kind(error: &StageError) -> ErrorKind {
 			ErrorKind::Unsupported
 		}
 		_ => ErrorKind::Io,
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use exacopy_journal::frame::FrameKind;
+	use exacopy_journal::{DurableJournalError, VerificationRecordError};
+	use exacopy_platform::linux::StageError;
+	use exacopy_transfer::linux::{LocalCopyError, StageFailure};
+	use rustix::io::Errno;
+
+	use super::{ErrorKind, copy_kind, stage_failure_kind};
+
+	#[test]
+	fn prepublication_checkpoint_sync_failures_are_io_errors() {
+		for errno in [Errno::NOSPC, Errno::IO] {
+			let directory =
+				LocalCopyError::CreateCheckpoints(StageError::DirectoryBarrierFailed(errno.into()));
+			let journal = StageFailure::CheckpointJournal(DurableJournalError::Sync(errno.into()));
+			assert!(
+				matches!(copy_kind(&directory), ErrorKind::Io),
+				"{directory:?}"
+			);
+			for error in [
+				StageError::BarrierFailed(errno.into()),
+				StageError::DirectoryBarrierFailed(errno.into()),
+			] {
+				let page = StageFailure::CheckpointPage(error);
+				assert!(
+					matches!(stage_failure_kind(&page), ErrorKind::Io),
+					"{page:?}"
+				);
+			}
+			assert!(
+				matches!(stage_failure_kind(&journal), ErrorKind::Io),
+				"{journal:?}"
+			);
+		}
+	}
+
+	#[test]
+	fn checkpoint_identity_and_evidence_failures_keep_their_classifications() {
+		let directory = LocalCopyError::CreateCheckpoints(StageError::UnsafeDirectory);
+		let page = StageFailure::CheckpointPage(StageError::IdentityChanged);
+		let evidence =
+			StageFailure::CheckpointEvidence(VerificationRecordError::InvalidCheckpointRange);
+		assert!(matches!(copy_kind(&directory), ErrorKind::Unsupported));
+		assert!(matches!(stage_failure_kind(&page), ErrorKind::Conflict));
+		assert!(matches!(
+			stage_failure_kind(&evidence),
+			ErrorKind::Integrity
+		));
+	}
+
+	#[test]
+	fn publication_journal_sync_failures_require_recovery() {
+		for kind in [FrameKind::PublishIntent, FrameKind::PublishObserved] {
+			let error = LocalCopyError::Journal {
+				kind,
+				source: DurableJournalError::Sync(Errno::IO.into()),
+			};
+			assert!(
+				matches!(copy_kind(&error), ErrorKind::RecoveryRequired),
+				"{error:?}"
+			);
+		}
 	}
 }
