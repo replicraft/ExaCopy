@@ -1,0 +1,29 @@
+[workspace]
+members = ["crates/core/model"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.100.0"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+# Domain identifiers
+uuid = { version = "1.29", default-features = false }
+
+# Test and verification
+hax-lib = { version = "=0.4.2", default-features = false, features = ["macros"] }
+proptest = { version = "1.12", default-features = false, features = ["std"] }
+
+[workspace.lints.rust]
+missing_docs = "warn"
+unsafe_op_in_unsafe_fn = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+
+[profile.release]
+overflow-checks = true

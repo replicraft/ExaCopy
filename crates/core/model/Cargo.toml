@@ -1,0 +1,20 @@
+[package]
+name = "exacopy-model"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+proof-extraction = ["dep:hax-lib"]
+
+[dependencies]
+hax-lib = { workspace = true, optional = true }
+uuid.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true
