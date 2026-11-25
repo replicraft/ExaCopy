@@ -161,3 +161,58 @@ impl Error for DarwinStageReadBackError {
 		}
 	}
 }
+
+impl From<super::protocol::ProtocolError<RecoveryError>> for DarwinInspectionError {
+	fn from(error: super::protocol::ProtocolError<RecoveryError>) -> Self {
+		use super::protocol::ProtocolError;
+
+		match error {
+			ProtocolError::Platform(error) => Self::Platform(error),
+			ProtocolError::Identity(error) => Self::Identity(error),
+			ProtocolError::ArtifactTooLarge { artifact, limit } => Self::ArtifactTooLarge {
+				artifact: artifact.into(),
+				limit,
+			},
+			ProtocolError::Read { artifact, error } => Self::Read {
+				artifact: artifact.into(),
+				error,
+			},
+			ProtocolError::Plan(error) => Self::Plan(error),
+			ProtocolError::PlanBinding => Self::PlanBinding,
+			ProtocolError::Preparation(error) => Self::Preparation(error),
+			ProtocolError::Replay(error) => Self::Replay(error),
+			ProtocolError::StageReadBack(error) => Self::StageReadBack(error.into()),
+		}
+	}
+}
+
+impl From<super::protocol::RecordKind> for JobArtifact {
+	fn from(kind: super::protocol::RecordKind) -> Self {
+		use super::protocol::RecordKind;
+
+		match kind {
+			RecordKind::Plan => Self::Plan,
+			RecordKind::Owner => Self::Owner,
+			RecordKind::Receipt => Self::Receipt,
+		}
+	}
+}
+
+impl From<super::readback::ReadBackError<RecoveryError>> for DarwinStageReadBackError {
+	fn from(error: super::readback::ReadBackError<RecoveryError>) -> Self {
+		use super::readback::ReadBackError;
+
+		match error {
+			ReadBackError::MissingVerification => Self::MissingVerification,
+			ReadBackError::StageBinding => Self::StageBinding,
+			ReadBackError::Phase(error) => Self::Phase(error),
+			ReadBackError::ScratchTooLarge { length } => Self::ScratchTooLarge { length },
+			ReadBackError::Input(error) => Self::Input(error),
+			ReadBackError::Platform(error) => Self::Platform(error),
+			ReadBackError::Read(error) => Self::Read(error),
+			ReadBackError::DigestMismatch => Self::DigestMismatch,
+			ReadBackError::InitialMetadataMismatch => Self::InitialMetadataMismatch,
+			ReadBackError::FinalMetadataMismatch => Self::FinalMetadataMismatch,
+		}
+	}
+}

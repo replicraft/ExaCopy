@@ -12,7 +12,7 @@ use super::{
 	DarwinReplayStatus, replay_journal,
 };
 
-mod fixture;
+pub(in crate::macos) mod fixture;
 mod receipt;
 mod recovery;
 

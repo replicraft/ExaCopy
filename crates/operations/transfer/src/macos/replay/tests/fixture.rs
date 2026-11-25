@@ -22,16 +22,16 @@ use crate::macos::plan::{
 
 pub(super) const OWNER_UID: NonZeroU32 = NonZeroU32::new(501).unwrap();
 
-pub(super) struct Fixture {
-	pub(super) plan: DarwinCopyPlan<'static>,
-	pub(super) owner: DarwinOwnerRecord,
-	pub(super) key: VerifyingKey,
-	pub(super) stage: DarwinStageObservation<'static>,
-	pub(super) records: History,
+pub(in crate::macos) struct Fixture {
+	pub(in crate::macos) plan: DarwinCopyPlan<'static>,
+	pub(in crate::macos) owner: DarwinOwnerRecord,
+	pub(in crate::macos) key: VerifyingKey,
+	pub(in crate::macos) stage: DarwinStageObservation<'static>,
+	pub(in crate::macos) records: History,
 }
 
 impl Fixture {
-	pub(super) fn new() -> Self {
+	pub(in crate::macos) fn new() -> Self {
 		let attempt = PlanAttempt {
 			job: JournalJobId::from_bytes(uuid(0x11, 7)).unwrap(),
 			epoch: JournalEpoch::new(1),
@@ -234,8 +234,8 @@ impl Fixture {
 }
 
 #[derive(Default)]
-pub(super) struct History {
-	pub(super) bytes: Vec<u8>,
+pub(in crate::macos) struct History {
+	pub(in crate::macos) bytes: Vec<u8>,
 	pub(super) frames: Vec<Frame>,
 	pub(super) ends: Vec<usize>,
 }

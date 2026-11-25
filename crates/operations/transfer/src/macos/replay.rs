@@ -17,7 +17,7 @@ mod recovery;
 mod validate;
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 pub use error::DarwinReplayError;
 

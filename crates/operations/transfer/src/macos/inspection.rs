@@ -1,31 +1,22 @@
 //! Read-only inspection of a private managed APFS copy job and its initial history.
 
-use std::io::{self, BufReader, Read as _};
-use std::num::NonZeroU32;
-
 use ed25519_dalek::VerifyingKey;
 use exacopy_content::ContentDigest;
-use exacopy_endpoint::UnixComponent;
-use exacopy_journal::frame::FrameKind;
-use exacopy_journal::{
-	DarwinEntryPrepared, DarwinPreparedError, DarwinReceiptDigest, DarwinStageObservation,
-	MAX_OWNER_BYTES, OwnerError, OwnerProfileId, RootCapabilityId,
-};
+use exacopy_journal::{DarwinReceiptDigest, OwnerProfileId, RootCapabilityId};
 use exacopy_platform::macos::ManagedObjectIdentity;
-use exacopy_platform::macos::staging::jobs::{
-	JobArtifact, JobName, RecoveryFileObservation, RecoveryInventory, RecoveryJob, RecoveryRecord,
-};
+use exacopy_platform::macos::staging::jobs::{RecoveryFileObservation, RecoveryJob};
 
-use super::job::{STAGE_PAYLOAD, native_identity};
-use super::plan::{DarwinCopyPlan, MAX_DARWIN_COPY_PLAN_BYTES};
-use super::receipt::MAX_DARWIN_COPY_RECEIPT_BYTES;
-use super::replay::{
-	DarwinJournalReplay, DarwinReplayAuthority, DarwinReplayStatus, replay_journal,
-};
+use super::replay::DarwinJournalReplay;
 
+mod capabilities;
 mod error;
+mod native;
+mod protocol;
 mod readback;
+
 pub use error::{DarwinInspectionError, DarwinStageReadBackError};
+
+use protocol::{NamespaceOnly, StageReadBack};
 
 /// Trust inputs independently supplied by the caller holding the recovered destination.
 #[derive(Clone, Copy, Debug)]
@@ -78,7 +69,9 @@ pub fn inspect_job(
 	job: &RecoveryJob<'_>,
 	authority: DarwinInspectionAuthority<'_>,
 ) -> Result<DarwinJobInspection, DarwinInspectionError> {
-	inspect(job, authority, |_, _, _| Ok(())).map(|(inspection, ())| inspection)
+	protocol::inspect(job, authority, NamespaceOnly)
+		.map(|(inspection, ())| inspection.into())
+		.map_err(Into::into)
 }
 
 /// Checks the retained private stage against accepted historical verification.
@@ -96,106 +89,7 @@ pub fn inspect_job_with_stage_read_back(
 	authority: DarwinInspectionAuthority<'_>,
 	scratch: &mut [u8],
 ) -> Result<(DarwinJobInspection, ContentDigest), DarwinInspectionError> {
-	inspect(job, authority, |replay, prepared, names| {
-		readback::verify(replay, prepared, names, scratch)
-			.map_err(DarwinInspectionError::StageReadBack)
-	})
-}
-
-fn inspect<T>(
-	job: &RecoveryJob<'_>,
-	authority: DarwinInspectionAuthority<'_>,
-	observe: impl FnOnce(
-		&DarwinJournalReplay,
-		Option<DarwinStageObservation<'_>>,
-		&RecoveryInventory<'_>,
-	) -> Result<T, DarwinInspectionError>,
-) -> Result<(DarwinJobInspection, T), DarwinInspectionError> {
-	let plan_bytes = read_record(
-		job.open_plan()?,
-		JobArtifact::Plan,
-		MAX_DARWIN_COPY_PLAN_BYTES,
-	)?;
-	let plan = DarwinCopyPlan::decode(&plan_bytes, authority.profile)
-		.map_err(DarwinInspectionError::Plan)?;
-	let destination = plan.destination();
-	if JobName::from_uuid_bytes(*plan.attempt().job.as_bytes()).ok() != Some(job.name())
-		|| destination.root_id != authority.destination_root
-		|| native_identity(job.observe_destination()?)? != destination.root_identity
-	{
-		return Err(DarwinInspectionError::PlanBinding);
-	}
-	let owner = read_record(job.open_owner()?, JobArtifact::Owner, MAX_OWNER_BYTES)?;
-	let mut segment = job.open_first_segment()?;
-	let replay = replay_journal(
-		BufReader::new(&mut segment),
-		&plan,
-		&owner,
-		DarwinReplayAuthority {
-			profile: authority.profile,
-			key: authority.key,
-			state_root: native_identity(job.identity())?,
-			state_root_uid: NonZeroU32::new(job.owner_uid()).ok_or(OwnerError::InvalidOwnerUid)?,
-		},
-	)
-	.map_err(DarwinInspectionError::Replay)?;
-	let prepared = replay
-		.frame(FrameKind::EntryPrepared)
-		.map(DarwinEntryPrepared::from_frame)
-		.transpose()
-		.map_err(DarwinInspectionError::Preparation)?
-		.map(|entry| entry.preparation().stage);
-	let stage_name = match prepared {
-		Some(stage) => stage.component,
-		None => UnixComponent::new(STAGE_PAYLOAD)
-			.map_err(DarwinPreparedError::InvalidComponent)
-			.map_err(DarwinInspectionError::Preparation)?,
-	};
-	let names = job.inventory(stage_name, destination.component)?;
-	let receipt = match job.open_receipt()? {
-		None => DarwinReceiptArtifact::Missing,
-		Some(record) if replay.status() == DarwinReplayStatus::Complete => {
-			let bytes = read_record(record, JobArtifact::Receipt, MAX_DARWIN_COPY_RECEIPT_BYTES)?;
-			let receipt = replay
-				.validate_receipt(&plan, &bytes)
-				.map_err(DarwinInspectionError::Replay)?;
-			DarwinReceiptArtifact::MatchesCommitment(receipt.digest())
-		}
-		Some(_) => DarwinReceiptArtifact::PresentUncommitted,
-	};
-	let observed = observe(&replay, prepared, &names)?;
-	names.revalidate()?;
-	segment.revalidate()?;
-	let stage_directory = names.stage_directory_identity();
-	let stage = names.stage();
-	let target = names.target();
-	drop(names);
-	Ok((
-		DarwinJobInspection {
-			plan_bytes,
-			replay,
-			receipt,
-			stage_directory,
-			stage,
-			target,
-		},
-		observed,
-	))
-}
-
-fn read_record(
-	mut record: RecoveryRecord<'_>,
-	artifact: JobArtifact,
-	limit: usize,
-) -> Result<Vec<u8>, DarwinInspectionError> {
-	let length = usize::try_from(record.len())
-		.ok()
-		.filter(|&length| length <= limit)
-		.ok_or(DarwinInspectionError::ArtifactTooLarge { artifact, limit })?;
-	let mut buffer = vec![0; length];
-	record
-		.read_exact(&mut buffer)
-		.map_err(|error: io::Error| DarwinInspectionError::Read { artifact, error })?;
-	record.revalidate()?;
-	Ok(buffer)
+	protocol::inspect(job, authority, StageReadBack(scratch))
+		.map(|(inspection, digest)| (inspection.into(), digest))
+		.map_err(Into::into)
 }
