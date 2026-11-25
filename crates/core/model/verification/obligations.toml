@@ -1,0 +1,41 @@
+schema_version = 1
+
+[[obligation]]
+id = "P-001"
+requirement_ids = ["R-007", "R-015"]
+source = "src/transaction.rs"
+symbols = ["CopySession::apply", "CopyEffect"]
+assumptions = ["The executor honors the read-only request and the supplied binding."]
+gates = ["rust"]
+rust = { test = "every_phase_checks_event_order_stop_rules_and_completion_binding", file = "tests/transaction.rs", oracle = "Every accepted event emits only the expected read or exclusive-publication request, or emits no request." }
+
+[[obligation]]
+id = "P-002"
+requirement_ids = ["R-008", "R-320"]
+source = "src/transaction.rs"
+symbols = ["CopyEffect", "PublishNoClobber"]
+assumptions = ["The model's exclusive publication primitive preserves an incumbent atomically.", "The abstract destination is a single protected namespace entry."]
+gates = ["rust", "tlc"]
+rust = { test = "repeated_prepare_and_publish_intent_cannot_authorize_a_second_effect", file = "tests/transaction.rs", oracle = "The publication event authorizes a single exclusive request for the bound stage." }
+tlc = { spec = "verification/tla/CopyRecovery.tla", config = "verification/tla/CopyRecovery.cfg", negative_control = "verification/tla/CopyRecoveryEarlyPublication.cfg", model_bounds = ["One entry and target name, two epochs, one crash."], seeds = ["TLC seed and fingerprint index 0."], oracle = "TLC exhausts the safety configuration including incumbent preservation and detects the deliberate early-publication mutation." }
+
+[[obligation]]
+id = "P-003"
+requirement_ids = ["R-015", "R-017", "R-320"]
+source = "src/transaction.rs"
+symbols = ["CopySession::apply", "CopyPhase"]
+assumptions = ["The caller reports only established identity, quiescence, data and journal barriers, verification, metadata and sealing observations.", "The coordinator gives each new attempt a unique binding."]
+gates = ["rust", "tlc"]
+rust = { test = "tlc_early_publication_counterexample_stops_before_namespace_effect", file = "tests/transaction.rs", oracle = "The Rust trace rejects publication intent before the reported stage is verified and sealed." }
+tlc = { spec = "verification/tla/CopyRecovery.tla", config = "verification/tla/CopyRecovery.cfg", negative_control = "verification/tla/CopyRecoveryEarlyPublication.cfg", model_bounds = ["One entry and target name, two epochs, one crash."], seeds = ["TLC seed and fingerprint index 0."], oracle = "TLC exhausts the safety configuration and rejects the early-publication mutant specifically through PriorPublicationEvidence." }
+
+[[obligation]]
+id = "P-004"
+requirement_ids = ["R-018", "R-176", "R-178", "R-179", "R-181", "R-319", "R-321"]
+source = "src/range.rs"
+symbols = ["checked_range_end"]
+assumptions = ["The proof covers one positive write range. Allocation, partition and permit ownership have separate obligations.", "Charon and Aeneas preserve the semantics of the selected Rust operations and the pinned scalar models."]
+gates = ["rust", "lean", "kani"]
+rust = { test = "checked_ranges_agree_with_wide_integer_arithmetic", file = "tests/range.rs", seeds = ["ChaCha 0x4558_4143_5241_4E47, 1024 cases and persisted regressions."], oracle = "Compare the executable result with a wider integer oracle for contained half-open ranges." }
+lean = { theorem = "ExaCopy.Proofs.checked_range_end_spec", proof = "verification/Proofs/Range.lean", generated = "verification/Generated/Funs.lean", axioms_tcb = ["propext", "Classical.choice", "Quot.sound", "Lean 4.31.0 kernel", "Pinned Charon, Aeneas and hax scalar models."], oracle = "Regenerate Lean from the actual Rust function, check the exact mathematical specification in the kernel and verify the theorem's axiom dependencies." }
+kani = { harness = "kani_checks::range::checked_range_end_matches_wide_arithmetic", file = "verification/kani/range.rs", unwind_bound = 1, model_bounds = ["Full Cartesian product of three u64 inputs with no harness assumptions."], oracle = "Prove equivalence to the wider integer oracle and reach all six guard-behavior covers with unwinding assertions enabled." }
