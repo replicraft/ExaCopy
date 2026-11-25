@@ -2,7 +2,9 @@ use minicbor::encode::{self, Write};
 use minicbor::{Decoder, Encoder};
 
 use super::PreparedError;
-use crate::{JournalEntryId, JournalEpoch, JournalJobId, LinuxFileIdentity, PlanDigest};
+use crate::{
+	JournalEntryId, JournalEpoch, JournalJobId, LinuxFileIdentity, PlanDigest, PublishIntentContext,
+};
 
 const VERSION_MAJOR: u16 = 1;
 const VERSION_MINOR: u16 = 0;
@@ -25,8 +27,39 @@ pub(crate) fn write_header<W: Write>(
 	context: &JournalContext,
 	entry: Option<JournalEntryId>,
 ) -> Result<(), encode::Error<W::Error>> {
+	write_header_prefix(
+		encoder,
+		context.job,
+		context.epoch,
+		if entry.is_some() { 7 } else { 6 },
+	)?;
+	if let Some(entry) = entry {
+		encoder.u8(3)?.bytes(entry.as_bytes())?;
+	}
+	write_header_suffix(encoder, context.plan_digest)
+}
+
+pub(crate) fn write_effect_header<W: Write>(
+	encoder: &mut Encoder<W>,
+	context: &PublishIntentContext,
+) -> Result<(), encode::Error<W::Error>> {
+	write_header_prefix(encoder, context.job, context.epoch, 8)?;
 	encoder
-		.map(if entry.is_some() { 7 } else { 6 })?
+		.u8(3)?
+		.bytes(context.entry.as_bytes())?
+		.u8(4)?
+		.u64(context.effect_sequence)?;
+	write_header_suffix(encoder, context.plan_digest)
+}
+
+fn write_header_prefix<W: Write>(
+	encoder: &mut Encoder<W>,
+	job: JournalJobId,
+	epoch: JournalEpoch,
+	fields: u64,
+) -> Result<(), encode::Error<W::Error>> {
+	encoder
+		.map(fields)?
 		.u8(0)?
 		.map(3)?
 		.u8(0)?
@@ -36,15 +69,19 @@ pub(crate) fn write_header<W: Write>(
 		.u8(2)?
 		.u64(REQUIRED_FEATURES)?
 		.u8(1)?
-		.bytes(context.job.as_bytes())?
+		.bytes(job.as_bytes())?
 		.u8(2)?
-		.u64(context.epoch.get())?;
-	if let Some(entry) = entry {
-		encoder.u8(3)?.bytes(entry.as_bytes())?;
-	}
+		.u64(epoch.get())?;
+	Ok(())
+}
+
+fn write_header_suffix<W: Write>(
+	encoder: &mut Encoder<W>,
+	plan_digest: PlanDigest,
+) -> Result<(), encode::Error<W::Error>> {
 	encoder
 		.u8(5)?
-		.bytes(context.plan_digest.as_bytes())?
+		.bytes(plan_digest.as_bytes())?
 		.u8(6)?
 		.u64(REQUIRED_FEATURES)?
 		.u8(10)?;
@@ -63,6 +100,24 @@ pub(crate) fn read_entry_header(
 	expect_key(decoder, 3)?;
 	let entry = JournalEntryId::from_bytes(read_fixed(decoder)?);
 	Ok((read_header_suffix(decoder, job, epoch)?, entry))
+}
+
+pub(crate) fn read_effect_header(
+	decoder: &mut Decoder<'_>,
+) -> Result<PublishIntentContext, PreparedError> {
+	let (job, epoch) = read_header_prefix(decoder, 8)?;
+	expect_key(decoder, 3)?;
+	let entry = JournalEntryId::from_bytes(read_fixed(decoder)?);
+	expect_key(decoder, 4)?;
+	let effect_sequence = decoder.u64()?;
+	let context = read_header_suffix(decoder, job, epoch)?;
+	Ok(PublishIntentContext {
+		job,
+		epoch,
+		entry,
+		effect_sequence,
+		plan_digest: context.plan_digest,
+	})
 }
 
 fn read_header_prefix(

@@ -7,6 +7,7 @@ pub mod frame;
 mod intent;
 mod owner;
 mod prepared;
+mod publication_records;
 mod verification_records;
 
 pub use durable::{DurableJournal, DurableJournalError, SyncedFrame};
@@ -23,6 +24,10 @@ pub use prepared::{
 	DestinationRootBinding, EntryPreparation, EntryPrepared, JobPrepared, JournalContext,
 	LiveSourceView, ObservedTimestamp, PreparedError, PreparedTarget, RootCapabilityId,
 	SourceInodeMetadata, SourceTimes, TargetObservation,
+};
+pub use publication_records::{
+	DurabilityRecorded, LOCAL_RECEIPT_LOCATION, LinuxPublicationBarriers, NamespaceObservation,
+	PublicationOutcome, PublicationRecordError, PublishObserved, ReceiptCommitted, ReceiptDigest,
 };
 pub use verification_records::{
 	BasicMetadata, MetadataOmission, MetadataRecorded, StageSealed, StreamDigest, StreamEvidence,
