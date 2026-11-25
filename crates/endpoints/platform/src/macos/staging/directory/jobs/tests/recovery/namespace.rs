@@ -6,6 +6,8 @@ use super::super::{DATA, RECEIPT, RECEIPTS, STAGE, job_context, name};
 use super::{Fixture, RecoveryError, TARGET, job_name, job_path, open_staging};
 use crate::macos::staging::jobs::{JobArtifact, RecoveryName};
 
+mod revalidation;
+
 const RECEIPT_BYTES: &[u8] = b"opaque immutable receipt fixture";
 const STAGE_BYTES: &[u8] = b"private observed extent";
 const TARGET_BYTES: &[u8] = b"unrelated target extent";
