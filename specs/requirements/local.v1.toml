@@ -1209,6 +1209,36 @@ path = "docs/architecture/public-stage-inspection.md"
 
 
 [[coverage]]
+id = "public-apply-intent-receipt"
+status = "implemented"
+requirement_ids = ["R-015", "R-155"]
+acceptance_ids = ["A-015", "A-155"]
+invariant_ids = ["INV-003", "INV-013", "INV-018", "INV-019"]
+scope = "Bounded mandatory intent and receipt v2 envelopes connect a private effect to its signed owner, approved public Plan entry, qualification and frame evidence."
+limits = "Codec assertions only. Authorization, fresh evidence, publication, recovery and process-crash durability require independent checks and remain outside this gate."
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "obligation"
+state = "defined"
+path = "crates/storage/exacopy-journal/verification/obligations.toml"
+target = "P-042"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/public_apply_intent.rs"
+target = "independently_encoded_vector_has_mandatory_version_and_owner_association"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "test"
+state = "defined"
+path = "crates/engines/exacopy-transfer/src/linux/receipt/public_apply/tests.rs"
+target = "independently_encoded_v2_artifact_fixes_the_exact_receipt_domain"
+
+[[coverage]]
 id = "experimental-wireguard-protocol"
 status = "implemented"
 requirement_ids = ["R-245", "R-247", "R-249"]

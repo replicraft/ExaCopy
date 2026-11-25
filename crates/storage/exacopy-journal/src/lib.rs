@@ -29,9 +29,11 @@ pub use darwin_prepared::{
 };
 pub use durable::{DurableJournal, DurableJournalError, JournalFileBarrier, SyncedFrame};
 pub use intent::{
-	IntentError, JournalEntryId, JournalEpoch, JournalJobId, LinuxFileIdentity, PlanDigest,
-	PublicationPrimitive, PublishIntent, PublishIntentContext, PublishIntentTarget,
-	VerificationDigest,
+	ApplyCrashProfile, ApplyIntentEvidence, ApplyProcessCrashEnvironment, ApplyQualification,
+	ApplyQualificationDigest, IntentError, JournalEntryId, JournalEpoch, JournalJobId,
+	LinuxFileIdentity, MAX_PUBLIC_APPLY_INTENT_BYTES, PlanDigest, PublicApplyAssociation,
+	PublicApplyIntent, PublicApplyIntentError, PublicationPrimitive, PublishIntent,
+	PublishIntentContext, PublishIntentTarget, VerificationDigest,
 };
 pub use owner::{
 	ApplyMetadataPolicyDigest, ApplyRequestedDurability, ApprovedPublicPlanDigest,

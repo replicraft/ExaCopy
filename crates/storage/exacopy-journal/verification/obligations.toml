@@ -12,3 +12,15 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/public_apply_owner.rs", test = "independent_profile_and_signature_domain_are_mandatory", oracle = "The independent signed public-apply fixture admits only under its selected profile/key and domain. Foreign profile, foreign key and other signature prefixes are rejected." }
+
+[[obligation]]
+id = "P-042"
+requirement_ids = ["R-015", "R-155"]
+source = "src/intent/public_apply.rs"
+symbols = ["PublicApplyIntent::decode", "PublicApplyIntent::from_frame"]
+assumptions = [
+    "The codec accepts recorded claims. A caller independently verifies the signed owner, full chain, qualification, time and actual effect prerequisites.",
+    "This Rust check exercises frame and format admission. Executor decisions and native durability have separate obligations.",
+]
+gates = ["rust"]
+rust = { file = "tests/public_apply_intent.rs", test = "enclosing_kind_and_exact_predecessor_are_required", oracle = "An accepted kind-7 envelope names the exact prior metadata digest and sequence. The legacy reader rejects the same public frame, and the public reader refuses a wrong record kind or altered predecessor." }

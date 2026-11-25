@@ -1,10 +1,17 @@
 mod cbor;
 mod error;
 mod identity;
+mod public_apply;
 
 pub use error::IntentError;
 pub use identity::{
 	JournalEntryId, JournalEpoch, JournalJobId, LinuxFileIdentity, PlanDigest, VerificationDigest,
+};
+
+pub use public_apply::{
+	ApplyCrashProfile, ApplyIntentEvidence, ApplyProcessCrashEnvironment, ApplyQualification,
+	ApplyQualificationDigest, MAX_PUBLIC_APPLY_INTENT_BYTES, PublicApplyAssociation,
+	PublicApplyIntent, PublicApplyIntentError,
 };
 
 use exacopy_endpoint::{MAX_UNIX_COMPONENT_BYTES, UnixComponent};

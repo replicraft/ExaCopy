@@ -10,6 +10,11 @@ use exacopy_journal::{
 use minicbor::encode::write::{Cursor, EndOfArray};
 use minicbor::{Decoder, Encoder, encode};
 
+mod public_apply;
+pub use public_apply::{
+	MAX_PUBLIC_APPLY_RECEIPT_BYTES, PublicApplyReceipt, PublicApplyReceiptError,
+};
+
 #[cfg(test)]
 mod tests;
 

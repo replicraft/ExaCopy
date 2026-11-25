@@ -161,6 +161,17 @@ reconciliation with retained private evidence. Record both public and
 private plan digests in the apply result and in recoverable authenticated
 evidence. Keep public receipt fields separate from private receipt bytes.
 
+The private v2 intent and receipt codecs now implement this association boundary.
+The mandatory intent wrapper binds the signed owner, approved Plan and entry,
+private effect, consecutive verification and metadata frame references,
+qualification observation and intent UTC. Its enclosing frame must name the
+exact metadata predecessor. The receipt wrapper binds that same association,
+intent and qualification to the private copy receipt, using a separate digest
+domain. Legacy and public readers refuse each other's encodings. P-042 checks
+format and frame admission against an independently encoded vector. These
+payloads record claims: they do not authenticate the owner, establish native
+qualification or enable publication. The public apply CLI remains disabled.
+
 The existing Linux CLI receipt explicitly reports durability `unconfirmed`.
 The bridge must resolve that implementation gap to satisfy the default. Start
 with a narrow local ext4 process-crash qualification: scope it to the tested

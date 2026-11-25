@@ -18,7 +18,10 @@ pub use plan::{
 	DestinationPlanBinding, LocalCopyPlan, LocalCopyPlanError, MAX_LOCAL_COPY_PLAN_BYTES,
 	PlanAttempt, SourcePlanBinding,
 };
-pub use receipt::{CopyReceipt, MAX_COPY_RECEIPT_BYTES, ReceiptError, ReceiptEvidence};
+pub use receipt::{
+	CopyReceipt, MAX_COPY_RECEIPT_BYTES, MAX_PUBLIC_APPLY_RECEIPT_BYTES, PublicApplyReceipt,
+	PublicApplyReceiptError, ReceiptError, ReceiptEvidence,
+};
 pub use recovery::{
 	AuthenticatedPublicStage, FinishFailure, FinishReceiptDirectory, InspectionError,
 	LeaseInventory, LeaseReadError, PublicStageHistory, PublicStageInspection,

@@ -107,6 +107,11 @@ pub(super) const BINDINGS: &[Binding] = &[
 		Marker::pair("FORMAT_MAJOR", "FORMAT_MINOR", "REQUIRED_FEATURES"),
 	),
 	Binding::new(
+		"linux-public-apply-intent",
+		"crates/storage/exacopy-journal/src/intent/public_apply.rs",
+		Marker::Array { width: 3 },
+	),
+	Binding::new(
 		"linux-range-page",
 		"crates/storage/exacopy-journal/src/verification_records/ranges.rs",
 		Marker::Scalar {
@@ -118,6 +123,11 @@ pub(super) const BINDINGS: &[Binding] = &[
 		"linux-copy-receipt",
 		"crates/engines/exacopy-transfer/src/linux/receipt.rs",
 		Marker::pair("MAJOR_VERSION", "MINOR_VERSION", "REQUIRED_FEATURES"),
+	),
+	Binding::new(
+		"linux-public-apply-receipt",
+		"crates/engines/exacopy-transfer/src/linux/receipt/public_apply.rs",
+		Marker::Array { width: 3 },
 	),
 	Binding::new(
 		"darwin-managed-apfs-owner",

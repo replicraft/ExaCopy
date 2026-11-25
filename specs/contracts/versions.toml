@@ -119,6 +119,15 @@ required_features = 0
 owner = "crates/storage/exacopy-journal/src/intent.rs"
 
 [[contract]]
+id = "linux-public-apply-intent"
+kind = "transfer_journal"
+status = "implemented_private"
+version = "2.0"
+required_features = 1
+owner = "crates/storage/exacopy-journal/src/intent/public_apply.rs"
+notes = "Mandatory Linux public-apply wrapper under frame kind 7. Binds the signed owner, approved Plan and entry, private effect, exact verification and metadata heads, qualification observation and UTC. Legacy and public readers refuse each other's payloads."
+
+[[contract]]
 id = "linux-range-page"
 kind = "transfer_journal"
 status = "implemented_private"
@@ -132,6 +141,15 @@ status = "implemented_private"
 version = "1.0"
 required_features = 0
 owner = "crates/engines/exacopy-transfer/src/linux/receipt.rs"
+
+[[contract]]
+id = "linux-public-apply-receipt"
+kind = "transfer_journal"
+status = "implemented_private"
+version = "2.0"
+required_features = 1
+owner = "crates/engines/exacopy-transfer/src/linux/receipt/public_apply.rs"
+notes = "Mandatory private public-apply artifact. Wraps the exact private copy receipt and binds the public association, intent frame and qualification record. Has its own BLAKE3 digest domain. Legacy and public readers refuse each other's artifacts."
 
 [[contract]]
 id = "darwin-managed-apfs-owner"
