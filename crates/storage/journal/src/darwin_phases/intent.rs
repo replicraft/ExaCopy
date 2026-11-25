@@ -116,6 +116,18 @@ impl<'a> DarwinPublishIntent<'a> {
 		self.target
 	}
 
+	/// Returns the digest of the independent read-back verification evidence.
+	#[must_use]
+	pub const fn verification_digest(&self) -> DarwinPhaseDigest {
+		self.verification_digest
+	}
+
+	/// Returns the digest of the pre-rename metadata and full stage-file barrier evidence.
+	#[must_use]
+	pub const fn metadata_digest(&self) -> DarwinPhaseDigest {
+		self.metadata_digest
+	}
+
 	/// Binds the exact canonical intent payload.
 	#[must_use]
 	pub fn record_digest(&self) -> DarwinPhaseDigest {

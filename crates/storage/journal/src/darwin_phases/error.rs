@@ -42,6 +42,12 @@ pub enum DarwinPhaseError {
 	MetadataMismatch,
 	/// The effect sequence must be nonzero.
 	InvalidEffectSequence,
+	/// A frame reference uses a reserved sequence or digest.
+	InvalidReference,
+	/// A referenced frame occurs at or after the record that depends on it.
+	InvalidFrameOrder,
+	/// The outcome disagrees with the observed target or private stage name.
+	InconsistentObservation,
 	/// The public target is not a valid raw Unix filename component.
 	InvalidComponent,
 }
@@ -87,6 +93,11 @@ impl fmt::Display for DarwinPhaseError {
 			Self::BindingMismatch => "managed APFS phase prerequisite binding differs",
 			Self::MetadataMismatch => "managed APFS required metadata is unsupported or differs",
 			Self::InvalidEffectSequence => "managed APFS publication sequence is zero",
+			Self::InvalidReference => "managed APFS evidence uses a reserved frame reference",
+			Self::InvalidFrameOrder => "managed APFS publication frames are out of order",
+			Self::InconsistentObservation => {
+				"managed APFS outcome disagrees with namespace observations"
+			}
 			Self::InvalidComponent => "invalid managed APFS publication filename component",
 		};
 		formatter.write_str(message)

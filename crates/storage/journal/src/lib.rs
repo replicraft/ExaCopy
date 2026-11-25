@@ -14,9 +14,11 @@ mod recovery_records;
 mod verification_records;
 
 pub use darwin_phases::{
-	DarwinMetadataRecorded, DarwinPhaseBinding, DarwinPhaseDigest, DarwinPhaseError,
-	DarwinPublishIntent, DarwinPublishTarget, DarwinRequiredMetadata, DarwinStageSealed,
-	DarwinStreamEvidence, DarwinVerificationRecorded,
+	DarwinDurabilityRecorded, DarwinMetadataRecorded, DarwinNamespaceObservation,
+	DarwinPhaseBinding, DarwinPhaseDigest, DarwinPhaseError, DarwinPublicationBarriers,
+	DarwinPublicationNames, DarwinPublicationOutcome, DarwinPublishIntent, DarwinPublishObserved,
+	DarwinPublishTarget, DarwinReceiptCommitted, DarwinReceiptDigest, DarwinRequiredMetadata,
+	DarwinStageSealed, DarwinStreamEvidence, DarwinVerificationRecorded,
 };
 pub use darwin_prepared::{
 	DarwinEntryPreparation, DarwinEntryPrepared, DarwinJobPrepared, DarwinPreparedError,
