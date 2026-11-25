@@ -37,6 +37,8 @@ metadata, raw output, corpus additions and any crash artifacts. A failed
 or incomplete campaign fails the lane. These lanes exercise manifest JSON,
 public document references and plan-entry page admission, leaving native
 file verification to the Linux integration tests.
+The canonical Plan body lane also exercises opaque extension admission,
+including its 1 MiB body limit and a generated oversized input.
 
 ## Windows held-directory NTFS qualification
 

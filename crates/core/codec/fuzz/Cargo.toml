@@ -28,5 +28,12 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "plan_body"
+path = "fuzz_targets/plan_body.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]
 resolver = "3"

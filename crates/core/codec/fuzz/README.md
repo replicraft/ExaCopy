@@ -54,3 +54,23 @@ input bytes, a two-second input timeout, a 90-second campaign cap and a
 768 MiB RSS limit. It checks the budget actually completed and records
 sanitizer symbols, exact input and lockfile hashes, the resolved dependency
 graph, engine output, and any failure artifacts.
+
+## Public Plan bodies and extensions
+
+The `plan_body` target checks both the digest-bound Plan body and the standalone
+extension reader. It derives an expected Plan digest over each arbitrary input
+so malformed bodies reach the field decoders. Accepted input must reproduce
+its canonical bytes and typed bounds. A changed expected digest must fail.
+
+The corpus includes independent complete and incomplete bodies, canonical
+extension maps, malformed maps, bounds violations, unsupported version and
+values, and a generated input one byte over the 1 MiB profile.
+
+```sh
+bash crates/core/codec/verification/plan_body/check-fuzz.sh
+```
+
+The runner uses AddressSanitizer and 250,000 inputs with seed 441038, a
+1,048,577-byte input limit, a two-second input timeout, a 90-second campaign
+cap, and a 768 MiB RSS limit. It records the sanitizer symbols, source and
+lockfile hashes, resolved graph, result and retained failure artifacts.
