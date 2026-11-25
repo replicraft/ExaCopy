@@ -7,6 +7,7 @@
 | Private write, quiescence, and independent BLAKE3 read-back | R-007/A-007, R-018/A-018, R-021/A-021, R-023/A-023, R-025/A-025 | INV-001, INV-002, INV-003, INV-004, INV-013 |
 | Live source observation and selected native metadata | R-016/A-016, R-026/A-026, R-043/A-043, R-062/A-062 | INV-003, INV-005, INV-019, INV-020 |
 | Signed ownership, framed records, and first durable intent prerequisites | R-039/A-039, R-040/A-040, R-041/A-041, R-045/A-045 | INV-006, INV-009, INV-019 |
+| Flush-backed range checkpoints and immutable pages | R-042/A-042 | INV-006, INV-009 |
 
 ## Verified private stage
 
@@ -24,6 +25,14 @@ The initial local owner profile uses strict Ed25519 verification over `ExaCopy/o
 
 The `EXAJNL01` frame codec bounds payloads before allocation, checks version and kind, and verifies CRC32C and a domain-separated BLAKE3 predecessor chain. The reader stops at corruption or an incomplete trailing record and retains the last verified boundary. It never searches for later magic. The kind-7 verification reference is a domain-separated digest of the complete canonical kind-5 payload.
 
+## Range checkpoints
+
+During a journaled copy, the synchronous stage writer measures consecutive ranges of the unnamed stream. A range ends at 64 MiB or at the first completed read after two seconds. The writer finishes that chunk, checks the source observation and flushes the held stage. It then exclusively creates and synchronizes the canonical page in the owner-approved `checkpoints/` directory before synchronizing the kind-3 journal frame. The page includes the range bounds and BLAKE3 digest. The journal binds its ordinal, exact encoded length, domain-separated page digest, and the measurement identifier derived from the original `EntryPrepared` payload.
+
+The local profile records up to 4,096 ranges. The remaining bytes still feed the whole-file digest and go through the independent stage read-back. Recovery resolves only pages referenced by an accepted journal prefix. It checks their digest, source observation, ordinal, and contiguous coverage within the prepared extent. A process interruption can leave a synchronized page without a journal reference. That page remains private and contributes no accepted evidence. These checkpoints record completed barrier calls and historical measurements. Reusing partial ranges requires fresh source and stage verification and remains open.
+
+Current readers accept earlier local jobs without the checkpoint directory. New local plans use the existing plan and receipt encodings, and their signed owner record allows the additional directory. Older recovery readers refuse that layout and do not accept the new stage checkpoint sequence.
+
 ## Publication and recovery evidence
 
 `plan_new_file` observes a regular source and an absent target under caller-authorized roots. Its private v1 CBOR plan binds the root capabilities, device and inode observations, raw components, logical length, modification and change times, and the fixed verification and metadata policies. Applying the plan reopens the source under the same authorization and checks those observations again. The coordinator synchronizes the plan and signed owner artifacts before the preparation frame. The caller supplies the trusted local profile key and fresh ownership token.
@@ -38,7 +47,7 @@ For a clean accepted journal and an already-published target, `recover finish` h
 
 For a retry, the journal appends kinds 19, 5, 6, 20, and 7 in order. Kind 20 uses a distinct retry discriminator and reserves a new sequence even if interrupted before kind 7. The existing already-published decision encoding remains readable. The previous intent remains active until a new compatible kind 7 is accepted. That new intent binds the fresh verification digest, and Linux publication requires the model's one-shot authorization after synchronization. Publication observations, barriers, and the receipt refer to that active effect. Replay rejects contradictory evidence and preserves torn segments. Resuming partial ranges remains open.
 
-The process-kill tests stop the actual copy process at six boundaries from synchronized preparation through receipt commitment. The retry campaign also kills recovery after the retry decision, after the retry intent, and after rename before its observation. Late-incumbent tests introduce a target after synchronized intent and verify preservation. These experiments exercise a running kernel and its caches. Power-loss qualification needs storage fault evidence.
+The process-kill tests stop the actual copy process at six boundaries from synchronized preparation through receipt commitment. The range tests stop it after synchronizing the first page and after synchronizing its journal reference. The retry campaign also kills recovery after the retry decision, after the retry intent, and after rename before its observation. Late-incumbent tests introduce a target after synchronized intent and verify preservation. These experiments exercise a running kernel and its caches. Power-loss qualification needs storage fault evidence.
 
 ## Checks
 
