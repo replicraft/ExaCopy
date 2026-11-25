@@ -17,31 +17,23 @@ impl<R: Read> Scan<R> {
 		owner: &OwnerRecord,
 	) -> Result<Option<Frame>, JournalReplayError> {
 		while let Some(frame) = self.read_next()? {
-			match frame.kind() {
-				FrameKind::StageSealed => return Ok(Some(frame)),
-				FrameKind::RangeCheckpoint => {
-					let record = RangeCheckpoint::from_frame(&frame)?;
-					let count = self.summary.checkpoints.len();
-					require_binding(
-						FrameKind::RangeCheckpoint,
-						record.context == context
-							&& record.entry == entry
-							&& record.source == source
-							&& usize::try_from(record.page.ordinal()).ok() == count.checked_add(1)
-							&& owner
-								.manifest()
-								.directories
-								.contains(&OwnerStateDirectory::Checkpoints),
-					)?;
-					self.summary.checkpoints.push(record);
-				}
-				found => {
-					return Err(JournalReplayError::UnexpectedRecord {
-						expected: Some(FrameKind::StageSealed),
-						found,
-					});
-				}
+			if frame.kind() != FrameKind::RangeCheckpoint {
+				return Ok(Some(frame));
 			}
+			let record = RangeCheckpoint::from_frame(&frame)?;
+			let count = self.summary.checkpoints.len();
+			require_binding(
+				FrameKind::RangeCheckpoint,
+				record.context == context
+					&& record.entry == entry
+					&& record.source == source
+					&& usize::try_from(record.page.ordinal()).ok() == count.checked_add(1)
+					&& owner
+						.manifest()
+						.directories
+						.contains(&OwnerStateDirectory::Checkpoints),
+			)?;
+			self.summary.checkpoints.push(record);
 		}
 		Ok(None)
 	}

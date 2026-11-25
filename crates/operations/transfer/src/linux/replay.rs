@@ -5,15 +5,15 @@ use std::io::Read;
 use exacopy_journal::frame::{ChainHead, Frame, FrameKind, FrameReadError, FrameReader};
 use exacopy_journal::{
 	DurabilityRecorded, DurableJournal, EntryPrepared, JobPrepared, JournalContext, JournalEntryId,
-	JournalEpoch, LinuxFileIdentity, LiveSourceView, MetadataRecorded, ObservedTimestamp,
-	OwnerRecord, OwnerStateDirectory, OwnerTimestamp, PublishIntent, PublishIntentContext,
-	PublishObserved, RangeCheckpoint, ReceiptCommitted, SourceMeasurementId, StageSealed,
-	VerificationRecorded,
+	JournalEpoch, LinuxFileIdentity, LiveSourceView, MetadataRecorded, OwnerRecord,
+	OwnerStateDirectory, PublishIntentContext, PublishObserved, RangeCheckpoint, ReceiptCommitted,
+	SourceInodeMetadata, SourceMeasurementId, StageSealed, VerificationRecorded,
 };
 
 use super::LocalCopyPlan;
 
 mod error;
+mod preintent;
 mod ranges;
 mod suffix;
 
@@ -63,6 +63,10 @@ pub struct JournalReplay {
 	pub source: Option<LiveSourceView>,
 	/// Source link count observed at preparation.
 	pub source_link_count: Option<u64>,
+	/// Prepared source permissions, ownership, and link count.
+	pub source_metadata: Option<SourceInodeMetadata>,
+	/// Exact original entry preparation anchor for immutable range evidence.
+	pub preparation_head: Option<ChainHead>,
 	/// Stage identity from entry preparation.
 	pub stage: Option<LinuxFileIdentity>,
 	/// Ordered references to data barriers and immutable range pages from the original run.
@@ -145,6 +149,8 @@ pub fn replay_journal(
 			tail: JournalTail::Clean,
 			source: None,
 			source_link_count: None,
+			source_metadata: None,
+			preparation_head: None,
 			stage: None,
 			checkpoints: Vec::new(),
 			sealed: None,
@@ -265,85 +271,16 @@ impl<R: Read> Scan<R> {
 		self.summary.source_link_count = Some(prepared.source_metadata.link_count());
 		self.summary.stage = Some(stage);
 
-		let Some(frame) = self.read_ranges(
+		self.summary.source_metadata = Some(prepared.source_metadata);
+		self.summary.preparation_head = Some(frame.head());
+
+		let next = self.read_ranges(
 			context,
 			entry_id,
 			SourceMeasurementId::from_prepared_payload(frame.payload()),
 			owner,
-		)?
-		else {
-			return Ok(());
-		};
-		let sealed = StageSealed::from_frame(&frame)?;
-		require_binding(
-			FrameKind::StageSealed,
-			sealed.context == context
-				&& sealed.entry == entry_id
-				&& sealed.stage == stage
-				&& sealed.length.get() == source.length,
 		)?;
-		self.summary.sealed = Some(sealed);
-
-		let Some(verification_frame) = self.next(Some(FrameKind::VerificationRecorded))? else {
-			return Ok(());
-		};
-		let verification = VerificationRecorded::from_frame(&verification_frame)?;
-		require_binding(
-			FrameKind::VerificationRecorded,
-			verification.context == context
-				&& verification.entry == entry_id
-				&& verification.source().identity == prepared.source.identity()
-				&& verification.stage().identity == stage
-				&& verification.source().length.get() == source.length
-				&& verification.stage().length == sealed.length,
-		)?;
-		self.summary.verification = Some(verification);
-		self.summary.verification_head = Some(verification_frame.head());
-
-		let Some(metadata_frame) = self.next(Some(FrameKind::MetadataRecorded))? else {
-			return Ok(());
-		};
-		let metadata = MetadataRecorded::from_frame(&metadata_frame)?;
-		let source_times = prepared.source.times();
-		require_binding(
-			FrameKind::MetadataRecorded,
-			metadata.context == context
-				&& metadata.entry == entry_id
-				&& metadata.stage == stage
-				&& metadata.metadata.mode() == prepared.source_metadata.mode()
-				&& metadata.metadata.uid == prepared.source_metadata.owner()
-				&& metadata.metadata.gid == prepared.source_metadata.group()
-				&& same_time(metadata.metadata.accessed_at, source_times.accessed_at)
-				&& same_time(metadata.metadata.modified_at, source_times.modified_at),
-		)?;
-		self.summary.metadata = Some(metadata);
-		self.summary.metadata_head = Some(metadata_frame.head());
-
-		let Some(intent_frame) = self.next(Some(FrameKind::PublishIntent))? else {
-			return Ok(());
-		};
-		let intent = PublishIntent::from_frame(&intent_frame)?;
-		require_binding(
-			FrameKind::PublishIntent,
-			intent.context == publication_context(context, entry_id)
-				&& intent.target.stage == stage
-				&& intent.target.parent == destination.root.identity
-				&& intent.target.component == destination.component
-				&& intent.target.verification_digest == verification.record_digest(),
-		)?;
-		self.summary.intent = Some(intent.context);
-		self.summary.intent_head = Some(intent_frame.head());
-		self.summary.last_effect_sequence = intent.context.effect_sequence;
-
-		self.replay_suffix(
-			suffix::PublicationFrames {
-				verification: verification_frame,
-				metadata: metadata_frame,
-				intent: intent_frame,
-			},
-			plan,
-			owner,
-		)
+		self.replay_preintent(next, plan, owner, prepared)
 	}
 }
 
@@ -355,10 +292,6 @@ fn publication_context(context: JournalContext, entry: JournalEntryId) -> Publis
 		effect_sequence: PUBLICATION_EFFECT_SEQUENCE,
 		plan_digest: context.plan_digest,
 	}
-}
-
-fn same_time(actual: OwnerTimestamp, source: ObservedTimestamp) -> bool {
-	actual.seconds() == source.seconds() && actual.nanoseconds() == source.nanoseconds()
 }
 
 fn require_binding(kind: FrameKind, matches: bool) -> Result<(), JournalReplayError> {

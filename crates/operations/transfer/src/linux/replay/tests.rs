@@ -2,9 +2,9 @@ use std::io;
 
 use exacopy_journal::frame::{FrameProblem, FrameWriter};
 use exacopy_journal::{
-	JournalEpoch, LinuxPublicationBarriers, ObservedTimestamp, OwnerDigest, PlanDigest,
-	PublicationOutcome, ReceiptDigest, SourceTimes, StreamEvidence, StreamLength,
-	VerificationDigest,
+	JournalEpoch, LinuxPublicationBarriers, ObservedTimestamp, OwnerDigest, OwnerTimestamp,
+	PlanDigest, PublicationOutcome, PublishIntent, ReceiptDigest, SourceTimes, StreamEvidence,
+	StreamLength, VerificationDigest,
 };
 
 use super::*;

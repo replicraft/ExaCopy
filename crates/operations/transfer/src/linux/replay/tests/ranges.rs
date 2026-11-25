@@ -1,5 +1,5 @@
 use ed25519_dalek::SigningKey;
-use exacopy_journal::{RangePage, StreamDigest};
+use exacopy_journal::{RangePage, RangeResumeEvidence, RangeResumeStarted, StreamDigest};
 
 use super::*;
 
@@ -89,6 +89,105 @@ fn checkpoints_bind_to_allowed_owner_directory_and_exact_preparation() {
 		&[(FrameKind::RangeCheckpoint, checkpoint.encode())],
 	);
 	assert_checkpoint_mismatch(original.replay(&bytes));
+}
+
+#[test]
+fn range_resume_binds_the_original_stage_and_resets_preintent_evidence() {
+	let fixture = with_checkpoints();
+	let records = fixture.records();
+	let prepared = EntryPrepared::new(records.job.context, records.seal.entry, records.entry)
+		.unwrap()
+		.encode();
+	let source = SourceMeasurementId::from_prepared_payload(&prepared);
+	let checkpoint = RangeCheckpoint {
+		context: records.job.context,
+		entry: records.seal.entry,
+		page: page(1, 0, source).reference(),
+		source,
+	};
+	let prefix = journal_prefix(
+		&records.job,
+		&prepared,
+		&[
+			(FrameKind::RangeCheckpoint, checkpoint.encode()),
+			(FrameKind::StageSealed, records.seal.encode()),
+			(
+				FrameKind::VerificationRecorded,
+				records.verification.encode(),
+			),
+			(FrameKind::MetadataRecorded, records.metadata.encode()),
+		],
+	);
+	let original = fixture.replay(&prefix).unwrap();
+	let evidence = RangeResumeEvidence {
+		preparation: original.preparation_head.unwrap(),
+		preceding: original.boundary.head,
+		stage: STAGE,
+		stage_directory: STAGE_DIRECTORY,
+		authorization: fixture.owner.digest(),
+	};
+	let epoch = JournalEpoch::new(original.latest_epoch.get() + 1);
+	let context = JournalContext {
+		epoch,
+		..records.job.context
+	};
+	let entry = records.seal.entry;
+
+	let make_history = |evidence| {
+		let record =
+			RangeResumeStarted::new(context, entry, original.latest_epoch, evidence).unwrap();
+		let mut bytes = prefix.clone();
+		FrameWriter::new(&mut bytes, original.boundary.head)
+			.append(FrameKind::RecoveryStarted, &record.encode())
+			.unwrap();
+		bytes
+	};
+	for incompatible in [
+		RangeResumeEvidence {
+			preparation: ChainHead::after(2, [0x42; 32]).unwrap(),
+			..evidence
+		},
+		RangeResumeEvidence {
+			authorization: OwnerDigest::from_bytes([0x33; 32]),
+			..evidence
+		},
+		RangeResumeEvidence {
+			stage: OTHER_STAGE,
+			..evidence
+		},
+		RangeResumeEvidence {
+			stage_directory: fixture.plan.destination().root.identity,
+			..evidence
+		},
+	] {
+		assert!(matches!(
+			fixture.replay(&make_history(incompatible)),
+			Err(JournalReplayError::RecordBinding {
+				kind: FrameKind::RecoveryStarted
+			})
+		));
+	}
+
+	let mut resumed = make_history(evidence);
+	let current = fixture.replay(&resumed).unwrap();
+	assert_eq!(current.latest_epoch, epoch);
+	assert_eq!(current.checkpoints, [checkpoint]);
+	assert_eq!(current.recovery_stage_directory, Some(STAGE_DIRECTORY));
+	assert!(current.sealed.is_none());
+	assert!(current.verification.is_none());
+	assert!(current.verification_head.is_none());
+	assert!(current.metadata.is_none());
+	assert!(current.metadata_head.is_none());
+	assert!(current.intent.is_none());
+	FrameWriter::new(&mut resumed, current.boundary.head)
+		.append(FrameKind::StageSealed, &records.seal.encode())
+		.unwrap();
+	assert!(matches!(
+		fixture.replay(&resumed),
+		Err(JournalReplayError::RecordBinding {
+			kind: FrameKind::StageSealed
+		})
+	));
 }
 
 fn with_checkpoints() -> Fixture {

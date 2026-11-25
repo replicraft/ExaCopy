@@ -40,7 +40,13 @@ pub(super) fn classify(
 	if stage.is_some() && !stage_matches {
 		return Ok(unresolved(RecoveryIssue::UnrecognizedStage));
 	}
+	let changed_directory = journal.recovery_stage_directory.is_some_and(|identity| {
+		Some(identity) != names.stage_directory_identity().map(native_identity)
+	});
 	if journal.intent.is_none() {
+		if changed_directory {
+			return Ok(unresolved(RecoveryIssue::StageDirectoryBinding));
+		}
 		return Ok(match (stage, target, journal.stage, journal.tail) {
 			(_, Some(_), _, _) => unresolved(RecoveryIssue::ContradictoryNames),
 			(None, None, Some(_), _) => unresolved(RecoveryIssue::MissingStageAndTarget),
@@ -50,11 +56,7 @@ pub(super) fn classify(
 	}
 
 	match (stage, target) {
-		(Some(_), None)
-			if journal.recovery_stage_directory.is_some_and(|identity| {
-				Some(identity) != names.stage_directory_identity().map(native_identity)
-			}) =>
-		{
+		(Some(_), None) if changed_directory => {
 			Ok(unresolved(RecoveryIssue::StageDirectoryBinding))
 		}
 		(Some(_), None) => Ok(private_stage(journal)),

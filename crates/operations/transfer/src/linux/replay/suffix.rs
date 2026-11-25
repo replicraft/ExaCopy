@@ -206,7 +206,7 @@ impl<R: Read> Scan<R> {
 	}
 }
 
-fn check_stage_directory(
+pub(super) fn check_stage_directory(
 	kind: FrameKind,
 	stage_directory: LinuxFileIdentity,
 	plan: &LocalCopyPlan<'_>,
