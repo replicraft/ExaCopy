@@ -1,0 +1,37 @@
+{
+  "digest": "1b5da4b4183f24b696c458f368fe04bc64c3ec2aebfe4fbcaedf1e52d23cd7c0",
+  "body": {
+    "schema_version": "1.0",
+    "plan_id": "019a0000-0000-7000-8000-000000000002",
+    "operation": "repair",
+    "created_at": "1970-01-01T00:00:00Z",
+    "expires_at": null,
+    "source_roots": [],
+    "destination_root": "18291f52-8015-48ff-af49-546767ec49cd",
+    "entry_pages": [],
+    "policy": {
+      "preservation": "preserve",
+      "conflict": "error",
+      "verification": "blake3_readback",
+      "storage": "independent",
+      "publication": "per_file",
+      "consistency": "auto",
+      "minimum_durability": "process_crash",
+      "fidelity": "required-data",
+      "source_retirement": "none",
+      "follow_symlinks": false
+    },
+    "resource_limits": {
+      "buffer_budget_bytes": "0",
+      "io_inflight_max": 0.10e1
+    },
+    "approval_required": false,
+    "source_views": [],
+    "required_grants": [],
+    "estimated_working_bytes": "0",
+    "conflict_count": "0",
+    "entry_count": "0",
+    "complete": false,
+    "extensions": {}
+  }
+}

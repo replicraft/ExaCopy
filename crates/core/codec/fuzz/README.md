@@ -74,3 +74,23 @@ The runner uses AddressSanitizer and 250,000 inputs with seed 441038, a
 1,048,577-byte input limit, a two-second input timeout, a 90-second campaign
 cap, and a 768 MiB RSS limit. It records the sanitizer symbols, source and
 lockfile hashes, resolved graph, result and retained failure artifacts.
+
+
+## Unsigned public Plan JSON
+
+The `plan_json` target parses arbitrary unsigned envelopes, reserializes
+accepted values and checks exact canonical-body and digest preservation.
+The corpus includes complete and incomplete independent vectors, attached
+approval, invalid timestamps, extension integer extremes, duplicates and
+integer-valued versus fractional resource-count spellings. The runner adds
+an input one byte over the JSON limit without changing committed seeds.
+
+```sh
+bash crates/core/codec/verification/plan_json/check-fuzz.sh
+```
+
+This AddressSanitizer campaign requires 250,000 inputs with seed 441039,
+an 8,388,609-byte input limit, a two-second input timeout, a 90-second
+campaign cap and a 768 MiB RSS limit. Exact input hashes, resolved graph,
+sanitizer symbols, completion status and failure artifacts are retained.
+The independent nightly lane uses the same locked runner.

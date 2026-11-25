@@ -133,6 +133,8 @@ jobs:
             runner: crates/core/codec/verification/plan_entries/check-fuzz.sh
           - parser: plan-body
             runner: crates/core/codec/verification/plan_body/check-fuzz.sh
+          - parser: plan-json
+            runner: crates/core/codec/verification/plan_json/check-fuzz.sh
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

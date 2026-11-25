@@ -37,3 +37,10 @@ bench = false
 
 [workspace]
 resolver = "3"
+
+[[bin]]
+name = "plan_json"
+path = "fuzz_targets/plan_json.rs"
+test = false
+doc = false
+bench = false
