@@ -1,5 +1,13 @@
 # ExaCopy command-line interface
 
+Use `exacopy --version` or `exacopy -V` on Linux, macOS, or Windows.
+The first line is `exacopy <version>` using the version of the running build.
+The next line shows the current executable path as reported by the operating
+system, escaped on one line, or `unknown` when unavailable. The operating
+system may return a symlink path used to launch the command. Install origin
+currently reports `unknown`. The command uses no local transfer profile and
+exits 0 after successful output, or 2 if output fails.
+
 The `exacopy` binary compares regular local files on Linux and in the opt-in managed APFS profile on macOS. Linux also supports creating and checking a portable content baseline for one regular file and planning or copying a regular file to a new name. The default output is human-readable. Exact byte comparison is the default and can be requested explicitly.
 
 ```sh

@@ -2,6 +2,13 @@ inventory_version = 1
 policy = "docs/architecture/contract-versioning.md"
 
 [[contract]]
+id = "exacopy.cli.version"
+kind = "cli_output"
+status = "implemented"
+owner = "apps/exacopy-cli/src/command/version.rs"
+notes = "Standalone --version/-V diagnostic. The first line is exacopy followed by the build version from workspace metadata. Later lines display the operating-system-reported executable path and the currently unknown install origin."
+
+[[contract]]
 id = "exacopy.cli.verify"
 kind = "cli_output"
 status = "implemented"

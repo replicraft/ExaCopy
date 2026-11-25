@@ -8,6 +8,8 @@ use crate::copy_report::CopyOutcome;
 use crate::recovery_report::RecoveryOutcome;
 use crate::report::{INCONCLUSIVE, Outcome, Report};
 
+mod version;
+
 /// Dispatches CLI arguments and renders the resulting exit status.
 pub fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
 	let mut stdout = io::stdout().lock();
@@ -23,6 +25,16 @@ pub fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
 		Command::Help(help) => match write!(stdout, "{help}").and_then(|()| stdout.flush()) {
 			Ok(()) => ExitCode::SUCCESS,
 			Err(_) => ExitCode::from(INCONCLUSIVE),
+		},
+		Command::Version => match version::write(&mut stdout) {
+			Ok(()) => ExitCode::SUCCESS,
+			Err(error) => {
+				let _ = writeln!(
+					stderr,
+					"exacopy: could not write version information ({error})"
+				);
+				ExitCode::from(INCONCLUSIVE)
+			}
 		},
 		Command::Diff(diff) => run_diff(diff, &mut stdout, &mut stderr),
 		Command::Copy(copy) => {

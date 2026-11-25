@@ -51,6 +51,8 @@ const MANAGED_APFS: &str = "Attest that both input parent paths stably resolve t
 
 pub(crate) fn parse(args: impl Iterator<Item = OsString>) -> Result<Command, String> {
 	let mut args: Vec<OsString> = args.collect();
+	let standalone_version =
+		matches!(args.as_slice(), [flag] if flag == "--version" || flag == "-V");
 	let mut cli = definition();
 	cli.build();
 	let (scope, prefix) = command_scope(&cli, &args);
@@ -64,6 +66,16 @@ pub(crate) fn parse(args: impl Iterator<Item = OsString>) -> Result<Command, Str
 		Err(error) if error.kind() == ErrorKind::DisplayHelp => {
 			Ok(Command::Help(error.to_string()))
 		}
+		Err(error) if error.kind() == ErrorKind::DisplayVersion => {
+			if standalone_version {
+				Ok(Command::Version)
+			} else {
+				Err(invalid_invocation(
+					&mut diagnostic_scope,
+					"request version by itself",
+				))
+			}
+		}
 		Err(error) => Err(invalid_invocation(
 			&mut diagnostic_scope,
 			error_message(&error),
@@ -74,6 +86,7 @@ pub(crate) fn parse(args: impl Iterator<Item = OsString>) -> Result<Command, Str
 fn definition() -> Cli {
 	Cli::new("exacopy")
 		.bin_name("exacopy")
+		.version(env!("CARGO_PKG_VERSION"))
 		.about("Compare, verify, or copy regular files and recover retained copies.")
 		.no_binary_name(true)
 		.disable_help_subcommand(true)

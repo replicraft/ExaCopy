@@ -7,6 +7,7 @@ pub(crate) use parser::parse;
 
 pub(crate) enum Command {
 	Help(String),
+	Version,
 	Diff(DiffCommand),
 	Copy(CopyCommand),
 	Plan(PlanCommand),

@@ -98,7 +98,11 @@ fn check_text(root: &Path, path: &Path, text: &str, findings: &mut Findings) {
 		findings.add(path, "missing or invalid contract policy path");
 	}
 
-	let mut missing = BTreeSet::from(["local-owner-seed", "rust-library-apis"]);
+	let mut missing = BTreeSet::from([
+		"exacopy.cli.version",
+		"local-owner-seed",
+		"rust-library-apis",
+	]);
 	missing.extend(PLANNED.iter().map(|(id, _)| *id));
 	missing.extend(markers::BINDINGS.iter().map(|binding| binding.id));
 
@@ -137,6 +141,11 @@ fn check_record(root: &Path, record: &Contract) -> Result<(), String> {
 		return binding.check(root, record);
 	}
 	let (kind, status, owner) = match record.id.as_str() {
+		"exacopy.cli.version" => (
+			Kind::CliOutput,
+			Status::Implemented,
+			Some(Path::new("apps/exacopy-cli/src/command/version.rs")),
+		),
 		"local-owner-seed" => (
 			Kind::LocalProfile,
 			Status::DevelopmentUnversioned,
