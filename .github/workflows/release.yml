@@ -1,0 +1,415 @@
+name: CLI release
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a signed release using the protected release environments
+        type: boolean
+        default: false
+      sequence:
+        description: Publisher's next positive release sequence (required to publish)
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: exacopy-cli-release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+  PYTHON_VERSION: "3.14.7"
+
+jobs:
+  native:
+    name: Build and test candidate (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+    env:
+      EXPECTED_RUST_HOST: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Verify exact tag, source and Cargo versions
+        run: bash .github/ci/capture.sh release-source python -B .github/ci/release_candidate.py check-source
+      - name: Fetch and admit pinned Pomologie source
+        run: bash .github/ci/capture.sh release-apfs python -B tools/apfs_source.py --fetch
+      - name: Install the pinned native Rust toolchain
+        run: bash .github/ci/capture.sh release-rust bash .github/ci/install.sh rust
+      - name: Check feature isolation
+        run: bash .github/ci/capture.sh release-features python -B tools/feature_matrix.py --target "$EXPECTED_RUST_HOST"
+      - name: Install pinned nextest
+        run: bash .github/ci/capture.sh release-nextest-setup bash .github/ci/install.sh nextest
+      - name: Run native workspace tests with defaults disabled
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/exacopy-release-tests
+        run: |
+          bash .github/ci/capture.sh release-nextest cargo +1.100.0 nextest run \
+            --locked --release --workspace --no-default-features --profile ci --no-tests fail
+          test -s "$CARGO_TARGET_DIR/nextest/ci/junit.xml"
+      - name: Build archived source, inventory compiled crates and test the fixture archive
+        env:
+          RELEASE_PUBLISH: ${{ inputs.publish }}
+        run: |
+          reproducibility=()
+          if [[ "$RELEASE_PUBLISH" == true ]]; then reproducibility+=(--require-reproducible); fi
+          bash .github/ci/capture.sh release-candidate python -u -B .github/ci/release_candidate.py build \
+            --target "$EXPECTED_RUST_HOST" --output "$RUNNER_TEMP/exacopy-release" "${reproducibility[@]}"
+      - name: Retain native evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-native-evidence-${{ matrix.target }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-evidence/
+            ${{ runner.temp }}/exacopy-release/build/
+            ${{ runner.temp }}/exacopy-release/rebuild/
+            ${{ runner.temp }}/exacopy-release-tests/nextest/ci/junit.xml
+          if-no-files-found: error
+          retention-days: 90
+      - name: Upload fixture archive for checksum review
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-fixture-archive-${{ matrix.target }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-release/fixture/
+          if-no-files-found: error
+          compression-level: 0
+      - name: Upload the ephemeral public test anchor
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-fixture-trust-${{ matrix.target }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-release/fixture-trust/
+          if-no-files-found: error
+      - name: Upload unsigned signing inputs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-unsigned-${{ matrix.target }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-release/unsigned-cli/
+            ${{ runner.temp }}/exacopy-release/build/exacopy.cdx.json
+            ${{ runner.temp }}/exacopy-release/build/build-provenance.json
+          if-no-files-found: error
+          compression-level: 0
+
+  fixture-index:
+    name: Verify the three fixture assets and generate their checksum index
+    needs: native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Confirm the source/tag identity
+        run: python -B .github/ci/release_candidate.py check-source
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-fixture-archive-*-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-fixtures
+          merge-multiple: true
+          digest-mismatch: error
+      - name: Create and check fixture indexes
+        run: |
+          python -B .github/ci/release_candidate_test.py -v
+          python -B tools/release/package_test.py -v
+          python -B tools/release/package.py checksums --artifact-dir "$RUNNER_TEMP/exacopy-fixtures"
+          (cd "$RUNNER_TEMP/exacopy-fixtures" && sha256sum --strict -c SHA256SUMS.txt)
+          printf '%s\n' 'Fixture-signed archives were exercised on three hosted runners.' \
+            'The fixture certificates confer no production publisher trust.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain checksummed test archives
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-fixture-index-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-fixtures/
+          if-no-files-found: error
+          compression-level: 0
+
+  latest-fixture:
+    name: Verify final archive and index on ${{ matrix.target }}
+    needs: fixture-index
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            archive: exacopy-cli-x86_64-unknown-linux-gnu.tar.gz
+          - os: macos-15
+            target: aarch64-apple-darwin
+            archive: exacopy-cli-aarch64-apple-darwin.tar.gz
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            archive: exacopy-cli-x86_64-pc-windows-msvc.zip
+    env:
+      FIXTURE_ARCHIVE: ${{ matrix.archive }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-fixture-index-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-fixtures
+          digest-mismatch: error
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-fixture-trust-${{ matrix.target }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-fixture-trust
+          digest-mismatch: error
+      - name: Exercise latest acquisition with exact POSIX fixture archive and index
+        if: runner.os != 'Windows'
+        run: |
+          pin=$(cat "$RUNNER_TEMP/exacopy-fixture-trust/fixture-publisher.sha256")
+          bash .github/ci/capture.sh release-latest-fixture python -B tools/installer/test_latest.py \
+            --archive "$RUNNER_TEMP/exacopy-fixtures/$FIXTURE_ARCHIVE" \
+            --checksum-index "$RUNNER_TEMP/exacopy-fixtures/SHA256SUMS.txt" \
+            --publisher-cert "$RUNNER_TEMP/exacopy-fixture-trust/fixture-publisher.der" \
+            --publisher-sha256 "$pin" --version "${GITHUB_REF_NAME#v}"
+      - name: Exercise the Windows verification path with the exact fixture archive and index
+        if: runner.os == 'Windows'
+        run: |
+          pin=$(cat "$RUNNER_TEMP/exacopy-fixture-trust/fixture-publisher.sha256")
+          bash .github/ci/capture.sh release-latest-fixture pwsh -NoLogo -NoProfile -NonInteractive \
+            -File .github/ci/release_windows_fixture.ps1 -Archive "$RUNNER_TEMP/exacopy-fixtures/$FIXTURE_ARCHIVE" \
+            -Index "$RUNNER_TEMP/exacopy-fixtures/SHA256SUMS.txt" \
+            -Certificate "$RUNNER_TEMP/exacopy-fixture-trust/fixture-publisher.der" \
+            -PublisherSha256 "$pin" -Version "${GITHUB_REF_NAME#v}"
+      - name: Retain archive interoperability results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-fixture-results-${{ matrix.target }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-evidence/
+          if-no-files-found: error
+          retention-days: 90
+
+  require-release-ci:
+    name: Require protected tag and successful revision-bound main CI
+    if: inputs.publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Check main CI and offline installer results
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -B .github/ci/release_signed.py require-ci
+
+  macos-sign:
+    name: Developer ID sign and notarize the macOS CLI
+    if: inputs.publish
+    needs: [require-release-ci, latest-fixture]
+    runs-on: macos-15
+    timeout-minutes: 30
+    environment: release-macos-signing
+    env:
+      NATIVE_TARGET: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-unsigned-${{ env.NATIVE_TARGET }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-unsigned
+          digest-mismatch: error
+      - name: Admit exact unsigned build
+        run: |
+          python -B .github/ci/release_signed.py prepare-native --target "$NATIVE_TARGET" \
+            --unsigned "$RUNNER_TEMP/exacopy-unsigned" --output "$RUNNER_TEMP/exacopy-native"
+      - name: Sign, verify and notarize
+        env:
+          EXACOPY_MACOS_CERT_P12_B64: ${{ secrets.EXACOPY_MACOS_CERT_P12_B64 }}
+          EXACOPY_MACOS_CERT_PASSWORD: ${{ secrets.EXACOPY_MACOS_CERT_PASSWORD }}
+          EXACOPY_MACOS_SIGNING_IDENTITY: ${{ vars.EXACOPY_MACOS_SIGNING_IDENTITY }}
+          EXACOPY_MACOS_TEAM_ID: ${{ vars.EXACOPY_MACOS_TEAM_ID }}
+          EXACOPY_APPLE_NOTARY_KEY_B64: ${{ secrets.EXACOPY_APPLE_NOTARY_KEY_B64 }}
+          EXACOPY_APPLE_NOTARY_KEY_ID: ${{ vars.EXACOPY_APPLE_NOTARY_KEY_ID }}
+          EXACOPY_APPLE_NOTARY_ISSUER_ID: ${{ vars.EXACOPY_APPLE_NOTARY_ISSUER_ID }}
+        run: bash .github/ci/release_macos_sign.sh "$RUNNER_TEMP/exacopy-native"
+      - name: Smoke test the signed CLI and bind evidence to it
+        run: |
+          python -B .github/ci/release_signed.py record-native --target "$NATIVE_TARGET" \
+            --unsigned "$RUNNER_TEMP/exacopy-unsigned" --output "$RUNNER_TEMP/exacopy-native"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-native-signed-${{ env.NATIVE_TARGET }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-native/
+          if-no-files-found: error
+
+  windows-sign:
+    name: Authenticode sign the Windows CLI
+    if: inputs.publish
+    needs: [require-release-ci, latest-fixture]
+    runs-on: windows-2025
+    timeout-minutes: 25
+    environment: release-windows-signing
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      NATIVE_TARGET: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-unsigned-${{ env.NATIVE_TARGET }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-unsigned
+          digest-mismatch: error
+      - name: Admit exact unsigned build
+        run: |
+          python -B .github/ci/release_signed.py prepare-native --target "$NATIVE_TARGET" \
+            --unsigned "$RUNNER_TEMP/exacopy-unsigned" --output "$RUNNER_TEMP/exacopy-native"
+      - uses: Azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        env:
+          AZURE_CORE_OUTPUT: none
+        with:
+          client-id: ${{ vars.EXACOPY_AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.EXACOPY_AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.EXACOPY_AZURE_SUBSCRIPTION_ID }}
+      - uses: Azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          endpoint: ${{ vars.EXACOPY_WINDOWS_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.EXACOPY_WINDOWS_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.EXACOPY_WINDOWS_CERTIFICATE_PROFILE }}
+          files: ${{ runner.temp }}\exacopy-native\exacopy.exe
+          file-digest: SHA256
+          timestamp-digest: SHA256
+          exclude-environment-credential: true
+          cache-dependencies: false
+      - name: Verify the native publisher and timestamp
+        shell: pwsh
+        env:
+          EXACOPY_WINDOWS_SIGNER_SUBJECT: ${{ vars.EXACOPY_WINDOWS_SIGNER_SUBJECT }}
+        run: ./.github/ci/release_windows_signature.ps1 -Directory (Join-Path $env:RUNNER_TEMP 'exacopy-native')
+      - name: Smoke test the signed CLI and bind evidence to it
+        run: |
+          python -B .github/ci/release_signed.py record-native --target "$NATIVE_TARGET" \
+            --unsigned "$RUNNER_TEMP/exacopy-unsigned" --output "$RUNNER_TEMP/exacopy-native"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-native-signed-${{ env.NATIVE_TARGET }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-native/
+          if-no-files-found: error
+
+  publisher-sign:
+    name: Sign and verify the stable release archives
+    if: inputs.publish
+    needs: [macos-sign, windows-sign]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: release-publisher-signing
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-unsigned-*-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-unsigned
+          digest-mismatch: error
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-native-signed-*-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-native
+          digest-mismatch: error
+      - name: Sign the exact native artifacts and their SBOM and provenance digests
+        env:
+          RELEASE_SEQUENCE: ${{ inputs.sequence }}
+          EXACOPY_RELEASE_PRIVATE_KEY_PEM: ${{ secrets.EXACOPY_RELEASE_PRIVATE_KEY_PEM }}
+          EXACOPY_RELEASE_PUBLISHER_CERT_DER_B64: ${{ secrets.EXACOPY_RELEASE_PUBLISHER_CERT_DER_B64 }}
+          EXACOPY_RELEASE_PUBLISHER_SHA256: ${{ vars.EXACOPY_RELEASE_PUBLISHER_SHA256 }}
+          EXACOPY_RELEASE_VALIDITY_DAYS: ${{ vars.EXACOPY_RELEASE_VALIDITY_DAYS }}
+        run: |
+          python -B .github/ci/release_signed.py sign --sequence "$RELEASE_SEQUENCE" \
+            --unsigned "$RUNNER_TEMP/exacopy-unsigned" --native "$RUNNER_TEMP/exacopy-native" \
+            --output "$RUNNER_TEMP/exacopy-signed-release"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-production-signed-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-signed-release/
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    name: Stage, verify and publish the GitHub release
+    if: inputs.publish
+    needs: publisher-sign
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: release-publication
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-production-signed-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-signed-release
+          digest-mismatch: error
+      - name: Publish the verified draft as latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXACOPY_IMMUTABILITY_READ_TOKEN: ${{ secrets.EXACOPY_IMMUTABILITY_READ_TOKEN }}
+        run: python -B .github/ci/release_signed.py publish --output "$RUNNER_TEMP/exacopy-signed-release"
