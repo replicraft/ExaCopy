@@ -334,3 +334,5 @@ fn inspect(fixture: &Fixture, resolution: Resolution) -> Findings {
 
 mod inversion;
 mod placement;
+
+mod transport;

@@ -211,7 +211,7 @@ fn check_workspace(
 		}
 	}
 	let mut graph = graph::Graph::new();
-	let mut inversion = inversion::Check::new(root, &workspace, &matrix.inversion);
+	let mut inversion = inversion::Check::new(root, &workspace, &matrix.inversion, path, findings);
 	for (&name, package) in &workspace {
 		let manifest = package.manifest_path.as_std_path();
 		placement::check(root, package, findings);
@@ -249,6 +249,7 @@ fn check_workspace(
 					}
 					if dependency.kind == DependencyKind::Normal
 						&& !target_member.group.engineering
+						&& !inversion.is_workspace_composition(to)
 						&& let Some((_, used)) =
 							transitions.iter_mut().find(|((from, to, cfg), _)| {
 								(*from, *to, Some(*cfg))
@@ -279,7 +280,7 @@ fn check_workspace(
 			}
 		}
 	}
-	inversion.check(findings);
+	inversion.check(path, findings);
 	for ((from, to, target), used) in transitions {
 		if !used {
 			findings.add(

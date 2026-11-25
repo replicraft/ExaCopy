@@ -103,8 +103,15 @@ unchanged; the broader `minicbor/alloc` selection was rejected in review.
 
 The schema-2 dependency checker derives composition roles from canonical
 package locations and inspects Cargo declarations, including aliases,
-optional/target-specific edges and engine dependency closures. Negative
-fixtures cover misplaced executables, alternate binary source paths,
+optional/target-specific edges and engine dependency closures. `crates/net/`
+owns transports. Endpoint integrations under `crates/adapters/` may use a
+transport through an exact normal dependency pair listed in the
+[dependency matrix](../../specs/architecture/dependencies.toml). The pair
+also requires the normal group allowance. Applications with an executable
+target select the concrete adapters and transports. The engine closure check
+follows workspace edges and rejects concrete adapters, transports,
+applications, and declared concrete external dependencies. Negative fixtures
+cover the transport boundary, misplaced executables, alternate binary source paths,
 cross-package target sources and invalid fuzz workspace exemptions.
 Source review remains necessary for capability authority and macro
 behavior; a permitted graph does not prove workflow correctness.
