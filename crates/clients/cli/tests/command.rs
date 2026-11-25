@@ -52,3 +52,25 @@ fn unsupported_platform_returns_structured_inconclusive_result() {
 	assert_eq!(report["error"]["code"], "E_UNSUPPORTED_PLATFORM");
 	assert!(report.get("consistency").is_none());
 }
+
+#[cfg(not(target_os = "linux"))]
+#[test]
+fn copy_refuses_unsupported_platform_without_accessing_inputs() {
+	let output = exacopy()
+		.args([
+			"copy",
+			"source",
+			"target",
+			"--profile",
+			"profile",
+			"--format",
+			"json",
+		])
+		.output()
+		.expect("invoke copy on unsupported platform");
+	assert_eq!(output.status.code(), Some(6));
+	assert!(output.stderr.is_empty());
+	let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("read report");
+	assert_eq!(report["publication"], "not_published");
+	assert_eq!(report["error"]["code"], "E_UNSUPPORTED");
+}

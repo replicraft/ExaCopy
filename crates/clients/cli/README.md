@@ -1,6 +1,6 @@
 # ExaCopy command-line interface
 
-The `exacopy` binary compares two regular local storage files on Linux. The default output is human-readable. Exact byte comparison is the default and can be requested explicitly.
+The `exacopy` binary compares regular local files and copies one regular file to a new name on Linux. The default output is human-readable. Exact byte comparison is the default and can be requested explicitly.
 
 ```sh
 cargo run --locked -p exacopy-cli -- diff ./left ./right
@@ -18,3 +18,31 @@ Each input may be absolute or relative to the current working directory. The com
 The `exacopy.cli.diff` JSON summary has `schema_version` set to `1.0`, `relation` set to `bytes`, a `result` of `equal`, `different`, or `inconclusive`, and a `complete` Boolean for the relation decision. Successful decisions carry `consistency` set to `live_observed`. The lengths and offset are unsigned decimal strings. A first-byte offset is zero-based and establishes inequality. The summary reports a single witness. Inconclusive comparisons include an `error` with a stable code and an explanation. Invocation errors are written to stderr. The paged diff report, shell completions, and generated argument parser are outside this initial command.
 
 The command exercises the byte comparison and exit-status portions of the local CLI design. It has no persistent job, mutation, or publication authority. See the [diff crate](../../operations/diff/README.md) for evidence scope and source-observation limits.
+
+## Copy one regular file
+
+```sh
+cargo run --locked -p exacopy-cli -- profile init ./private-profile
+cargo run --locked -p exacopy-cli -- copy ./source ./new-name --profile ./private-profile --format json
+```
+
+Create the profile once under a parent owned by your account or root. A parent writable by other accounts also needs the sticky bit. The CLI creates an owner-only directory (0700) with an owner-only Ed25519 seed file (0600). Keep the profile separate from data being transferred and select the same profile explicitly for later operations on the job. The path to the profile identifies the local authorization. The seed stays in the profile. The final profile and seed components must be regular directory and file entries respectively, with no symlinks and a single link to the seed. Restrictive creation masks or interrupted initialization can leave an incomplete profile for the caller to inspect.
+
+The destination must be a previously absent name beneath a managed directory. An existing directory, dangling symlink, hard link, or file at that name is a conflict. The adapter refuses source symlinks and unsupported metadata. Source and target are selected as raw final filename components, with the same parent handling as `diff`. Use `copy --` when the source starts with a dash. Names starting with `.exacopy-` are reserved at the destination for the private jobs.
+
+The CLI retains each started job in the destination parent under `.exacopy-<job-uuid>` with a signed owner record, a plan, a journal, and a committed receipt on success. A late failure may report the job name so its evidence can be inspected. The CLI leaves any private job material in place. The source is read-only and may have an access-time update.
+
+The default text report identifies a successfully published copy and its committed receipt. `--format json` emits an `exacopy.cli.copy` 1.0 summary. The successful summary includes a UUIDv7 job ID, the job directory component, a decimal byte count, the BLAKE3 stream digest, and the committed receipt digest. The receipt represents a live-observed source, independent logical writes and buffered BLAKE3 read-back, and the adapter's basic metadata policy. Durability remains unconfirmed. Check [verified staging](../../../docs/verified-staging.md) and the [Linux adapter](../../../docs/local-adapter.md) for the metadata, barrier, and filesystem evidence limits.
+
+| Exit | Outcome |
+| --- | --- |
+| 0 | Exclusive publication and committed receipt |
+| 2 | Invalid usage or request |
+| 3 | Conflict or stale plan |
+| 4 | I/O, resource or report failure |
+| 5 | Integrity failure |
+| 6 | Unsupported platform, required capability or metadata |
+| 8 | Profile authorization failed |
+| 9 | Publication or its journal evidence requires reconciliation |
+
+If report output fails after publication, the CLI attempts to report the committed job on stderr and exits 4. The copy remains published. CLI process tests cover the report and authorization stringency, exact output content, authenticated job bindings, and exclusive publication under concurrency. These exercise the local portion of R-007–009, R-027–028, R-154 and R-194 and their corresponding acceptance cases. The development CLI and ext4 VM tests carry no release or power-loss qualification.

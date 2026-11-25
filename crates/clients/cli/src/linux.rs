@@ -1,13 +1,9 @@
-use std::ffi::OsStr;
-use std::fs::File;
-use std::os::unix::ffi::OsStrExt as _;
 use std::path::Path;
 
 use exacopy_diff::linux::{MAX_SCRATCH_BYTES, Side};
-use exacopy_endpoint::UnixComponent;
 use exacopy_platform::linux::{ReadRoot, SourceFile};
-use rustix::fs::{self, Mode, OFlags};
 
+use crate::linux_path::{open_directory, split};
 use crate::report::{ErrorCode, Failure, Outcome};
 
 pub(crate) fn compare(left: &Path, right: &Path) -> Outcome {
@@ -37,26 +33,15 @@ fn compare_files(left: &Path, right: &Path) -> Result<Outcome, Failure> {
 }
 
 fn open(path: &Path, side: Side) -> Result<SourceFile, Failure> {
-	let bytes = path.as_os_str().as_bytes();
-	let (parent, name) = match bytes.iter().rposition(|byte| *byte == b'/') {
-		None => (&b"."[..], bytes),
-		Some(0) => (&b"/"[..], &bytes[1..]),
-		Some(index) => (&bytes[..index], &bytes[index + 1..]),
-	};
-	let name = UnixComponent::new(name).map_err(|error| Failure {
+	let (parent, name) = split(path).map_err(|error| Failure {
 		code: ErrorCode::InvalidPath,
 		message: format!("{side} input path is invalid ({error})"),
 	})?;
-	let root = fs::open(
-		OsStr::from_bytes(parent),
-		OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC,
-		Mode::empty(),
-	)
-	.map_err(|error| Failure {
+	let root = open_directory(parent).map_err(|error| Failure {
 		code: ErrorCode::OpenInput,
 		message: format!("could not open the {side} input directory ({error})"),
 	})?;
-	let root = ReadRoot::from_directory(File::from(root)).map_err(|error| Failure {
+	let root = ReadRoot::from_directory(root).map_err(|error| Failure {
 		code: ErrorCode::OpenInput,
 		message: format!("could not bind the {side} input directory ({error})"),
 	})?;

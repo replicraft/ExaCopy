@@ -236,12 +236,19 @@ dependencies = [
 name = "exacopy-cli"
 version = "0.1.0"
 dependencies = [
+ "blake3",
+ "ed25519-dalek",
+ "exacopy-content",
  "exacopy-diff",
  "exacopy-endpoint",
+ "exacopy-journal",
  "exacopy-platform",
+ "exacopy-transfer",
  "rustix",
  "serde",
  "serde_json",
+ "uuid",
+ "zeroize",
 ]
 
 [[package]]
