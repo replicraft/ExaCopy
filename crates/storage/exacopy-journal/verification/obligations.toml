@@ -97,3 +97,16 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/remote_finalization_replay/retirement.rs", test = "retirement::synced_retirement_admits_fresh_attempt_and_preserves_old_stage", oracle = "A synced exact retirement of a sealed stage leaves that stage and its checkpoint inventory retained. A later allocation uses fresh epochs and starts at zero covered extent. Stale checkpoint evidence cannot follow the new preparation." }
+
+[[obligation]]
+id = "P-047"
+requirement_ids = ["R-013", "R-015", "R-017", "R-140"]
+source = "src/remote_download/qualification.rs"
+symbols = ["verify_remote_destination_qualification"]
+assumptions = [
+    "The caller independently selects the attestor, current ordinary owner key, exact tested build and reviewed campaign definition and evidence.",
+    "The destination adapter establishes the current physical facts and the admitted route class corresponds to the separately authorized actual route.",
+    "The fixtures exercise portable attestation verification. Native campaign execution, effect admission, and filesystem and power-loss qualification are separate.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_destination_qualification.rs", test = "independent_signed_records_project_matching_current_destination_facts", oracle = "Independent canonical CBOR and Ed25519 records authenticate both exact transport profile classes and project only matching destination facts with the distinct complete-record digest." }

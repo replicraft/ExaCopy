@@ -6,6 +6,7 @@ pub mod finalization;
 pub mod finalization_policy;
 pub mod finalization_replay;
 mod owner;
+pub mod qualification;
 mod records;
 pub mod replay;
 pub mod retirement;

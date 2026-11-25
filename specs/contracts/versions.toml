@@ -203,6 +203,14 @@ owner = "crates/storage/exacopy-journal/src/remote_download/retirement/wire.rs"
 notes = "Private kind 39 retires a sealed pre-intent capture while preserving the old stage. The 1024-byte reader checks exact authenticated scope, current predecessor and retained stage identities. Read-only history conveys no native or grant authority."
 
 [[contract]]
+id = "linux-remote-destination-qualification"
+kind = "transfer_journal"
+status = "implemented_private"
+version = "1"
+owner = "crates/storage/exacopy-journal/src/remote_download/qualification/wire.rs"
+notes = "Bounded signed destination attestation with separate attestor role, signature and record digest domains. Requires independently selected tested build, route profile class, complete campaign evidence and exact current destination facts."
+
+[[contract]]
 id = "linux-remote-download-receipt"
 kind = "transfer_journal"
 status = "implemented_private"

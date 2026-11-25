@@ -150,6 +150,14 @@ pub(super) const BINDINGS: &[Binding] = &[
 		Marker::Array { width: 3 },
 	),
 	Binding::new(
+		"linux-remote-destination-qualification",
+		"crates/storage/exacopy-journal/src/remote_download/qualification/wire.rs",
+		Marker::Scalar {
+			version: "VERSION",
+			magic: None,
+		},
+	),
+	Binding::new(
 		"linux-remote-download-receipt",
 		"crates/storage/exacopy-journal/src/remote_download/finalization/wire.rs",
 		Marker::Array { width: 3 },

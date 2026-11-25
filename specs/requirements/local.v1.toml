@@ -1315,6 +1315,43 @@ state = "defined"
 path = "crates/engines/exacopy-transfer/src/remote_metadata.rs"
 target = "only_explicit_data_only_selection_admits_scope_binding"
 
+[[coverage]]
+id = "remote-download-destination-qualification-record"
+status = "implemented"
+requirement_ids = ["R-013", "R-015", "R-017", "R-140"]
+acceptance_ids = ["A-013", "A-015", "A-017", "A-140"]
+invariant_ids = ["INV-013", "INV-019", "INV-024", "INV-032"]
+scope = "Authenticates a bounded private remote destination attestation under the independently selected qualification role, tested build, transport profile class, campaign definition and complete campaign evidence. Requires exact current native facts."
+limits = "Attestation verification only. Current artifact provenance, separately admitted live source scope and transport, native campaign execution, application effect authority and crash durability have their own evidence."
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "obligation"
+state = "defined"
+path = "crates/storage/exacopy-journal/verification/obligations.toml"
+target = "P-047"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/remote_destination_qualification.rs"
+target = "selected_attestor_is_independent_of_the_ordinary_owner"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/remote_destination_qualification.rs"
+target = "campaign_evidence_build_and_profile_class_cannot_be_substituted"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/remote_destination_qualification.rs"
+target = "independently_signed_native_fact_substitutions_do_not_project"
+
 
 [[coverage]]
 id = "remote-download-finalization-replay"
