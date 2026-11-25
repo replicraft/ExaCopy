@@ -1304,3 +1304,18 @@ owner = "exacopy-platform"
 level = "documentation"
 state = "reported"
 path = "docs/architecture/ssh-transport.md"
+
+[[coverage]]
+id = "connection-retry-policy"
+status = "implemented"
+requirement_ids = ["R-231", "R-255", "R-256", "R-257", "R-261"]
+acceptance_ids = ["A-231", "A-255", "A-256", "A-257", "A-261"]
+invariant_ids = ["INV-021", "INV-023"]
+scope = "Pure bounded-state retry scheduling with capped equal jitter, fresh attempt-labeled admission, stale completion fencing, expiry and revocation."
+limits = "Policy tests only; transport classification, durable jobs, credential reacquisition, range resume, real route enforcement and extracted proof remain open."
+
+[[coverage.evidence]]
+owner = "exacopy-endpoint"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/connection-retry.md"

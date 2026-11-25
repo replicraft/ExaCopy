@@ -1,6 +1,7 @@
 //! Bounded operation contracts shared by storage adapters.
 #![forbid(unsafe_code)]
 
+pub mod connection_retry;
 pub mod linux_copy;
 pub mod linux_job;
 pub mod linux_publication;
