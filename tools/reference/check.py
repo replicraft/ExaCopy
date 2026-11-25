@@ -6,12 +6,12 @@ from pathlib import Path
 import re
 
 from common import MACOS_ACL_FIXTURE, ROOT, digest, require
-from run import summarize
+from run import MIB, PROTOCOL, summarize
 
 
 REQUIRED_TARGETS = {
     "adb", "beyond-compare-pro", "fastcopy", "freefilesync", "kopia", "openmtp",
-    "openssh", "restic", "rsync", "teracopy", "winscp", "wireguard",
+    "cmp", "openssh", "restic", "rsync", "teracopy", "winscp", "wireguard",
 }
 
 # The first measured revision used the helper before its shared fixture path was fixed.
@@ -28,11 +28,25 @@ def read_json(path):
         return json.load(stream)
 
 
+def is_sha256(value):
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
+def evidence_path(directory, filename):
+    root = (directory / "evidence").resolve()
+    path = (directory / filename).resolve()
+    require(path.is_relative_to(root) and path.is_file(), f"missing or out-of-scope evidence: {filename}")
+    return path
+
+
 def check_evidence(path):
     report = read_json(path)
-    require(report["schema_version"] == 1 and report["outcome"] == "passed", f"ineligible evidence: {path}")
+    require(report["schema_version"] == 1 and report["protocol"] == PROTOCOL and report["outcome"] == "passed",
+            f"ineligible evidence: {path}")
     config = report["configuration"]
     require(re.fullmatch(r"[0-9a-f]{40}", config["source_revision"]) is not None, f"missing revision: {path}")
+    require(all(is_sha256(config[key]) for key in ("exacopy_binary_sha256", "cargo_lock_sha256", "cmp_sha256")),
+            f"missing artifact digest: {path}")
     recorded = (config["runner_sha256"], config["fixture_helper_sha256"])
     current = tuple(digest(ROOT / "tools/reference" / name) for name in ("run.py", "common.py"))
     historical = HISTORICAL_RUNNER.get(config["source_revision"])
@@ -40,34 +54,194 @@ def check_evidence(path):
     return report
 
 
-def check_compatibility():
-    directory = ROOT / "docs/specs/compatibility"
+# The retained v1 differential suite specifies the generated fixture and witness for each case.
+# Keep the expected cases independent of the recorded outcomes and the production comparator.
+DIFFERENTIAL_CASES = {
+    "empty-equal": (0, 0, None, False),
+    "binary-equal": (3 * MIB, 3 * MIB, None, False),
+    "first-byte": (3 * MIB, 3 * MIB, 0, False),
+    "middle-byte": (3 * MIB, 3 * MIB, 3 * MIB // 2, False),
+    "final-byte": (3 * MIB, 3 * MIB, 3 * MIB - 1, False),
+    "shorter": (4096, 4095, None, False),
+    "sparse-byte": (6 * MIB, 6 * MIB, 4 * MIB + 17, True),
+}
+
+
+def check_diff_header(report):
+    return (report["schema"], report["schema_version"], report["relation"]) == (
+        "exacopy.cli.diff", "1.0", "bytes")
+
+
+def rsync_transfer_item(item):
+    return isinstance(item, str) and len(item) == 11 and item.startswith(">f")
+
+
+def check_differential(evidence):
+    cases = evidence["cases"]
+    require(len(cases) == len(DIFFERENTIAL_CASES) and {case["case"] for case in cases} == DIFFERENTIAL_CASES.keys(),
+            "missing or duplicate differential fixture")
+    for case in cases:
+        name = case["case"]
+        left, right, offset, sparse = DIFFERENTIAL_CASES[name]
+        require((case["left_bytes"], case["right_bytes"], case["first_byte"]) == (left, right, offset)
+                and case["sparse_fixture"] is sparse, f"wrong fixture for {name}")
+        different = left != right or offset is not None
+        hashes = case["sha256"]
+        require(len(hashes) == 2 and all(is_sha256(item) for item in hashes)
+                and (hashes[0] != hashes[1]) is different, f"wrong fixture digests for {name}")
+        require(case["fixture_preserved"] is True, f"fixture changed for {name}")
+        require(case["cmp_exit"] == int(different), f"cmp result contradicts fixture for {name}")
+        require(case["rsync_exit"] == 0 and (
+            rsync_transfer_item(case["rsync_itemized_change"]) if different else case["rsync_itemized_change"] == ""
+        ), f"rsync result contradicts fixture for {name}")
+        reports = case["exa_copy"]
+        require(set(reports) == {"1", "4", "16"}, f"missing worker report for {name}")
+        for workers, run in reports.items():
+            report = run["report"]
+            require(run["exit_code"] == int(different) and check_diff_header(report)
+                    and report["complete"] is True and report["consistency"] == "live_observed",
+                    f"invalid ExaCopy report for {name} with {workers} workers")
+            if different:
+                expected = ({"kind": "length", "left": str(left), "right": str(right)} if left != right
+                            else {"kind": "first_byte", "offset": str(offset)})
+                require(report["result"] == "different" and report["difference"] == expected,
+                        f"wrong ExaCopy difference witness for {name} with {workers} workers")
+            else:
+                require(report["result"] == "equal" and report["length"] == str(left),
+                        f"incorrect ExaCopy equality for {name} with {workers} workers")
+    control = evidence["symlink_control"]
+    report = control["exa_copy"]
+    require(control["cmp_exit"] == 0 and control["exa_copy_exit"] == 2 and check_diff_header(report)
+            and report["result"] == "inconclusive" and report["complete"] is False
+            and report["error"]["code"] == "E_OPEN_INPUT", "missing final symlink refusal")
+
+
+def check_copy_evidence(evidence, count):
+    control = evidence["incumbent_control"]
+    require(control["exacopy_exit"] == 3 and control["exacopy_error"] == "E_CONFLICT"
+            and control["rsync_exit"] == 0 and control["rsync_itemized_change"] == ""
+            and control["source_and_incumbent_preserved"] is True, "missing incumbent-preservation evidence")
+    reference = evidence["rsync_copy"]
+    require(reference["reference_exit"] == 0 and reference["cmp_exit"] == 0 and rsync_transfer_item(reference["item"]),
+            "rsync absent-target copy did not pass the byte oracle")
+    cases = evidence["workloads"]
+    require(len(cases) == 2 and {(case["case"], case["bytes"]) for case in cases}
+            == {("small-copy", 4096), ("large-copy", 64 * MIB)}, "wrong verified copy workloads")
+    for case in cases:
+        assurance = case["assurance"]
+        require(assurance == {
+            "schema": "exacopy.cli.copy", "schema_version": "1.0",
+            "publication": "published", "completed": 1, "pending": 0, "verification": "hash_readback",
+            "consistency": "live_observed", "durability": "unconfirmed", "preservation": "preserve",
+            "redundancy": "independent_writes", "metadata": "complete_for_policy",
+        } and is_sha256(case["sha256"]), f"invalid verified copy report for {case['case']}")
+        check_samples(case["verified_samples"], case["summary"], count)
+
+
+def check_reference_profile(target, profile, configuration, lane):
+    platform = configuration["platform"]
+    os_profile = (platform["os"], platform["filesystem"])
+    platform_matches = all(platform[key] and re.search(
+        rf"(?<![\w.]){re.escape(platform[key])}(?![\w.])", profile["platform"]) for key in ("version", "machine"))
+    require(os_profile in {("Darwin", "apfs"), ("Linux", "ext4")}
+            and (lane != "copy" or os_profile == ("Linux", "ext4"))
+            and platform["filesystem"] in profile["filesystem"].lower()
+            and platform_matches,
+            f"evidence platform disagrees with {profile['id']}")
+    require(is_sha256(configuration["rsync_sha256"]), f"missing rsync digest for {profile['id']}")
+    if target == "rsync":
+        version = re.fullmatch(r"rsync\s+version (\S+)\s+protocol version (\d+)", configuration["rsync_version"])
+        expected = f"{version[1]}, protocol version {version[2]} reported by binary" if version else ""
+    else:
+        cmp_version = configuration["cmp_version"]
+        if os_profile[0] == "Darwin":
+            version = re.search(r"PROJECT:(patch_cmds-\d+)\b", cmp_version)
+            expected = f"Apple {version[1]}" if version else ""
+        else:
+            version = re.fullmatch(r"cmp \(GNU diffutils\) (\S+)", cmp_version)
+            expected = f"GNU diffutils {version[1]}" if version else ""
+    require(expected == profile["reference_version"], f"reference version disagrees with {profile['id']}")
+
+
+def check_prior_attempt(path, report):
+    attempt = read_json(path)
+    config = report["configuration"]
+    require(attempt["schema_version"] == 1 and attempt["protocol"] == PROTOCOL
+            and attempt["outcome"] in {"blocked", "failed"} and attempt["lane"] == report["lane"]
+            and attempt["source_revision"] == config["source_revision"]
+            and attempt["binary_sha256"] == config["exacopy_binary_sha256"]
+            and attempt["filesystem"] == config["platform"]["filesystem"]
+            and attempt["copy_result"]["exit_code"] != 0 and is_sha256(attempt["raw_log_sha256"]),
+            f"invalid retained failed reference attempt: {path}")
+
+
+def check_startup_probe(path, target, profile):
+    report = read_json(path)
+    # This startup-only probe predates the versioned paired runner and has its own record shape.
+    require(target == "freefilesync" and report["outcome"] == "blocked"
+            and report["reference_version"] == profile["reference_version"].split()[0]
+            and report["reference_file_sha256"] and all(map(is_sha256, report["reference_file_sha256"].values()))
+            and report["processes"] and all(run["exit"] != 0 or run["timed_out"]
+                                            for run in report["processes"].values()),
+            f"invalid retained startup probe: {path}")
+
+
+def check_compatibility(directory=ROOT / "docs/specs/compatibility"):
     inventory = read_json(directory / "inventory.v1.json")
     require(inventory["schema_version"] == 1, "unknown compatibility inventory schema")
     targets = inventory["targets"]
     ids = {target["id"] for target in targets}
     require(len(ids) == len(targets) and REQUIRED_TARGETS.issubset(ids), "missing or duplicate compatibility target")
+    classified_evidence = set()
     for target in targets:
-        require(target["primary_sources"], f"missing reference provenance: {target['id']}")
+        target_id = target["id"]
+        require(target["primary_sources"], f"missing reference provenance: {target_id}")
         profiles = target["profiles"]
         require(profiles and len({profile["id"] for profile in profiles}) == len(profiles),
-                f"missing or duplicate profiles: {target['id']}")
+                f"missing or duplicate profiles: {target_id}")
         for profile in profiles:
+            profile_id = profile["id"]
             require(profile["acceptance"] and all(re.fullmatch(r"A-\d{3}", id) for id in profile["acceptance"]),
-                    f"missing acceptance IDs: {profile['id']}")
+                    f"missing acceptance IDs: {profile_id}")
+            require(all(profile[key] for key in (
+                "reference_version", "platform", "filesystem", "configuration_and_invocation",
+                "fixtures", "expected_behavior", "actual_exacopy_behavior", "reproduction",
+            )), f"incomplete reference profile: {profile_id}")
+            require(bool(profile["known_deviation"]) == bool(profile["deviation_rationale"]),
+                    f"unexplained deviation in {profile_id}")
             if profile["status"] == "executed_pass":
-                report = check_evidence(directory / profile["evidence"])
-                evidence = report["evidence"]
-                if report["lane"] == "differential":
-                    require(len(evidence["cases"]) == 7 and all(case["fixture_preserved"] for case in evidence["cases"]),
-                            "differential evidence has missing cases or a changed fixture")
-                    require(evidence["symlink_control"]["exa_copy_exit"] == 2, "missing symlink refusal")
+                path = evidence_path(directory, profile["evidence"])
+                report = check_evidence(path)
+                classified_evidence.add(path)
+                lane = report["lane"]
+                require((target_id, lane) in {("cmp", "differential"), ("rsync", "differential"), ("rsync", "copy")},
+                        f"unexpected target and evidence lane for {profile_id}")
+                require((profile_id == "local-copy-to-absent-and-incumbent") == (lane == "copy"),
+                        f"wrong evidence lane for {profile_id}")
+                config = report["configuration"]
+                check_reference_profile(target_id, profile, config, lane)
+                if lane == "differential":
+                    check_differential(report["evidence"])
                 else:
-                    require(report["lane"] == "copy" and evidence["incumbent_control"]["source_and_incumbent_preserved"],
-                            "missing incumbent-preservation evidence")
+                    count = config["repeats"]
+                    require(type(count) is int and 5 <= count <= 30, "invalid copy evidence trial count")
+                    check_copy_evidence(report["evidence"], count)
+                if "prior_attempt" in profile:
+                    path = evidence_path(directory, profile["prior_attempt"])
+                    check_prior_attempt(path, report)
+                    classified_evidence.add(path)
+                require("startup_probe" not in profile, f"expected paired evidence in {profile_id}")
             else:
-                require(profile["status"] == "not_executed" and profile["evidence"] is None,
-                        f"unrecognized status or an unclassified artifact: {profile['id']}")
+                require(profile["status"] == "not_executed" and profile["evidence"] is None
+                        and "prior_attempt" not in profile,
+                        f"unrecognized status or an unclassified artifact: {profile_id}")
+                if "startup_probe" in profile:
+                    path = evidence_path(directory, profile["startup_probe"])
+                    check_startup_probe(path, target_id, profile)
+                    classified_evidence.add(path)
+    retained_evidence = {path.resolve() for path in (directory / "evidence").rglob("*.json")}
+    unclassified = retained_evidence - classified_evidence
+    require(not unclassified, f"reference evidence has no classified profile: {sorted(unclassified)}")
 
 
 def check_samples(samples, summary, count):
