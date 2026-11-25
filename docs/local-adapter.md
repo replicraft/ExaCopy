@@ -29,6 +29,8 @@ The native tests create private fixtures and exercise descriptor-scoped reads, h
 
 The simulator exercised 120 bounded histories, including short I/O, ambiguous effects, conflicts, process restart, and loss of volatile namespace and data. The filename [fuzz target](../crates/endpoints/endpoint/fuzz/README.md) checks raw component acceptance and byte preservation. These checks cover fixture behavior and tested adapter semantics. Process-kill recovery, physical storage fault campaigns and filesystem profile qualification remain separate requirements.
 
+The Linux run measured 105 of 117 endpoint lines and 483 of 520 platform lines. Nightly CI checks each package against the 85% line coverage target. The [P-013 evidence gate](../crates/endpoints/endpoint/verification/obligations.toml) verifies every byte sequence of length 0 through 255 within its symbolic array model and rejects every sequence at the first oversized length. This verifies component admission and byte borrowing. Filesystem containment is exercised by native adapter tests under their stated assumptions.
+
 ```sh
 cargo test --locked -p exacopy-platform
 cargo nextest run --locked -p exacopy-endpoint -p exacopy-test-support

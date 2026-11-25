@@ -19,6 +19,27 @@ case "$1" in
 				.branches.count > 0 and .branches.covered * 100 >= .branches.count * 90)
 		' "$report"
 		;;
+	endpoint-coverage)
+		report="$evidence/endpoint-coverage.json"
+		summary="$evidence/endpoint-coverage-summary.json"
+		minimum_line_coverage=85
+		cargo +1.100.0 llvm-cov nextest --locked -p exacopy-endpoint -p exacopy-platform \
+			--json --show-missing-lines --output-path "$report" --no-tests fail
+		jq '
+			def source_lines($crate):
+				[.data[0].files[] |
+					select(.filename | test("(^|/)crates/endpoints/" + $crate + "/src/")) |
+					.summary.lines] |
+				{count: (map(.count) | add // 0), covered: (map(.covered) | add // 0)};
+			if (.data | length) != 1 then error("expected one coverage data set") else
+				{"exacopy-endpoint": source_lines("endpoint"), "exacopy-platform": source_lines("platform")}
+			end
+		' "$report" > "$summary"
+		cat "$summary"
+		jq -e --argjson minimum "$minimum_line_coverage" '
+			all(.[]; .count > 0 and .covered * 100 >= .count * $minimum)
+		' "$summary"
+		;;
 	mutation)
 		cargo +1.100.0 mutants --package exacopy-model --output "$evidence" --no-shuffle \
 			--file crates/core/model/src/identity.rs \
@@ -38,7 +59,7 @@ case "$1" in
 		' "$report"
 		;;
 	*)
-		printf 'Usage: assurance.sh coverage|mutation\n' >&2
+		printf 'Usage: assurance.sh coverage|endpoint-coverage|mutation\n' >&2
 		exit 2
 		;;
 esac
