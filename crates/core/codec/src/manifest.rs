@@ -2,6 +2,8 @@ use core::fmt;
 
 use uuid::Uuid;
 
+use crate::portable::{MAX_LOGICAL_LENGTH, valid_unix_basename};
+
 mod canonical;
 mod error;
 mod json;
@@ -10,8 +12,6 @@ pub use error::{ManifestError, ManifestInvalid, ManifestUnsupported};
 
 /// Maximum encoded JSON bytes admitted by the single-file manifest profile.
 pub const MAX_MANIFEST_JSON_BYTES: usize = 16 * 1024;
-const MAX_BASENAME_BYTES: usize = 255;
-const MAX_LOGICAL_LENGTH: u64 = i64::MAX as u64;
 const MANIFEST_DOMAIN: &[u8] = b"ExaCopy/manifest/v1\0";
 
 /// One regular file's unnamed stream in the unsigned portable manifest profile.
@@ -42,11 +42,7 @@ impl SingleFileManifest {
 		if manifest_id.is_nil() || root_id.is_nil() {
 			return Err(ManifestInvalid::Identifier.into());
 		}
-		if basename.is_empty()
-			|| basename.len() > MAX_BASENAME_BYTES
-			|| matches!(basename, b"." | b"..")
-			|| basename.iter().any(|byte| matches!(byte, b'/' | 0))
-		{
+		if !valid_unix_basename(basename) {
 			return Err(ManifestInvalid::Basename.into());
 		}
 		if length > MAX_LOGICAL_LENGTH {

@@ -5,9 +5,11 @@ use serde::de::{self, Deserializer, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::portable::MAX_BASENAME_BYTES;
+
 use super::{
-	MAX_BASENAME_BYTES, MAX_MANIFEST_JSON_BYTES, ManifestError, ManifestInvalid,
-	ManifestUnsupported, SingleFileManifest,
+	MAX_MANIFEST_JSON_BYTES, ManifestError, ManifestInvalid, ManifestUnsupported,
+	SingleFileManifest,
 };
 
 const SCHEMA_VERSION: &str = "1.0";

@@ -1,41 +1,20 @@
-use core::convert::Infallible;
-
 use minicbor::Encoder;
-use minicbor::encode::{Error, Write};
+
+use crate::cbor::{BodyBytes, EncodeError, canonical_bytes};
+use crate::portable::{BLAKE3_CODE, REGULAR_CODE, UNIX_BYTES_CODE};
 
 use super::SingleFileManifest;
 
-const BLAKE3_CODE: u8 = 0;
 const LIVE_OBSERVED_CODE: u8 = 0;
-const REGULAR_CODE: u8 = 0;
-const UNIX_BYTES_CODE: u8 = 1;
 
 pub(super) fn encode(manifest: &SingleFileManifest) -> Vec<u8> {
-	let mut encoder = Encoder::new(BodyBytes(Vec::new()));
-	match encode_body(&mut encoder, manifest) {
-		Ok(()) => encoder.into_writer().0,
-		Err(error) => match error.into_write() {
-			Some(never) => match never {},
-			None => unreachable!("fixed body encoding uses only infallible CBOR primitives"),
-		},
-	}
-}
-
-struct BodyBytes(Vec<u8>);
-
-impl Write for BodyBytes {
-	type Error = Infallible;
-
-	fn write_all(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
-		self.0.extend_from_slice(bytes);
-		Ok(())
-	}
+	canonical_bytes(|encoder| encode_body(encoder, manifest))
 }
 
 fn encode_body(
 	encoder: &mut Encoder<BodyBytes>,
 	manifest: &SingleFileManifest,
-) -> Result<(), Error<Infallible>> {
+) -> Result<(), EncodeError> {
 	encoder
 		.map(9)?
 		.u8(0)?
@@ -60,7 +39,7 @@ fn encode_body(
 fn encode_entry(
 	encoder: &mut Encoder<BodyBytes>,
 	manifest: &SingleFileManifest,
-) -> Result<(), Error<Infallible>> {
+) -> Result<(), EncodeError> {
 	// Entry text keys follow the encoded-key order. The path, component and
 	// stream use their numeric allocations from the common field registry.
 	encoder
