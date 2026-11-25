@@ -1,8 +1,13 @@
+use std::fs::File;
+
 use exacopy_model::PublishNoClobber;
 use rustix::fs::{self, RenameFlags};
-use rustix::io::Errno;
+use rustix::io::{self, Errno};
 
 use super::{ClosedStage, DirectoryBarriersError, PublishError};
+
+#[cfg(test)]
+mod tests;
 
 impl ClosedStage<'_> {
 	/// Consumes the stage and matching model authorization for one exclusive rename.
@@ -20,6 +25,14 @@ impl ClosedStage<'_> {
 	/// post-rename barrier leaves the successful rename in effect.
 	/// No failure path removes or rolls back namespace entries.
 	pub fn publish_no_clobber(self, authorization: PublishNoClobber) -> Result<(), PublishError> {
+		self.publish_with_barriers(authorization, |directory| fs::fsync(directory))
+	}
+
+	fn publish_with_barriers(
+		self,
+		authorization: PublishNoClobber,
+		mut sync: impl FnMut(&File) -> io::Result<()>,
+	) -> Result<(), PublishError> {
 		if authorization.binding() != self.location.binding {
 			return Err(PublishError::BindingMismatch);
 		}
@@ -36,8 +49,8 @@ impl ClosedStage<'_> {
 		)
 		.map_err(rename_error)?;
 
-		let stage_result = fs::fsync(stage);
-		let destination_result = fs::fsync(destination);
+		let stage_result = sync(stage);
+		let destination_result = sync(destination);
 		let error = match (stage_result, destination_result) {
 			(Ok(()), Ok(())) => return Ok(()),
 			(Err(stage), Ok(())) => DirectoryBarriersError::Stage(stage.into()),

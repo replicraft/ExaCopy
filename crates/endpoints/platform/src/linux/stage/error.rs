@@ -7,6 +7,9 @@ use rustix::io::Errno;
 
 use super::super::source::ReadError;
 
+#[cfg(test)]
+mod tests;
+
 /// Failure while preparing, writing, flushing, or closing a stage.
 #[derive(Debug)]
 #[non_exhaustive]
