@@ -15,6 +15,10 @@ use super::{
 	mount_id, open_checked_record, open_path, recheck_regular,
 };
 
+mod retained;
+
+pub use retained::RetainedStage;
+
 #[cfg(test)]
 mod tests;
 
@@ -40,7 +44,7 @@ impl DestinationRoot {
 	}
 }
 
-/// Exclusive cooperative access to the fixed records of one held private job.
+/// Exclusive cooperative access to one held private job and its recovery effects.
 ///
 /// The caller establishes current record authority and publication evidence
 /// before using mutation methods. Hold this lease until record writers close

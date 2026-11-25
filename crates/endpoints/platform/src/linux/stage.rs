@@ -12,4 +12,5 @@ pub use file::{ClosedStage, WriteStage};
 pub(super) use directory::{
 	CHILD_RESOLVE, check_private_child, component, create_private_directory, sync_directory,
 };
-pub(super) use file::create_private_file;
+pub(super) use file::{check_no_visible_attributes, create_private_file};
+pub(super) use publish::PublicationNames;

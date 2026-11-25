@@ -79,7 +79,7 @@ fn check_metadata(stat: &Stat, source: SourceObservation) -> Result<(), StageErr
 	Ok(())
 }
 
-pub(super) fn check_no_visible_attributes(file: &File) -> Result<(), StageError> {
+pub(in crate::linux) fn check_no_visible_attributes(file: &File) -> Result<(), StageError> {
 	let size = fs::flistxattr_query(file)
 		.map_err(|source| StageError::ExtendedAttributesUnavailable(source.into()))?;
 	if size != 0 {

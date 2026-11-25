@@ -10,7 +10,7 @@ pub use handle::FileIdentity;
 pub use job::{JobDirectory, JournalDirectory, ReceiptDirectory, TargetStatus};
 pub use recovery::{
 	RecoveryFile, RecoveryInventory, RecoveryJob, RecoveryReadLease, RecoveryReceiptDirectory,
-	RecoveryWriteLease,
+	RecoveryWriteLease, RetainedStage,
 };
 pub use source::{
 	ExtendedAttributes, ReadError, ReadRoot, SourceFile, SourceObservation, SourceTimestamp,

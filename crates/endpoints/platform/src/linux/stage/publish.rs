@@ -1,12 +1,13 @@
+use std::ffi::OsStr;
 use std::fs::File;
 
 use exacopy_model::PublishNoClobber;
-use rustix::fs::{self, AtFlags, FileType, Mode, OFlags, RenameFlags};
+use rustix::fs::{self, AtFlags, FileType, Mode, OFlags, RenameFlags, Stat};
 use rustix::io::{self, Errno};
 
 use super::super::handle::{FileIdentity, mount_id};
 use super::directory::CHILD_RESOLVE;
-use super::{ClosedStage, DirectoryBarriersError, PublishError, StageError};
+use super::{ClosedStage, DestinationRoot, DirectoryBarriersError, PublishError, StageError};
 
 #[cfg(test)]
 mod tests;
@@ -34,32 +35,59 @@ impl ClosedStage<'_> {
 	fn publish_with_barriers(
 		self,
 		authorization: PublishNoClobber,
-		mut sync: impl FnMut(&File) -> io::Result<()>,
+		sync: impl FnMut(&File) -> io::Result<()>,
 	) -> Result<(), PublishError> {
 		if authorization.binding() != self.location.binding {
 			return Err(PublishError::BindingMismatch);
 		}
 		self.check_current().map_err(PublishError::StageChanged)?;
 
-		let stage = &self.location.directory.directory;
-		let destination = &self.location.directory.root.directory;
+		let stage = self.location.directory;
+		let names = PublicationNames {
+			stage: &stage.directory,
+			stage_name: self.location.name.as_os_str(),
+			destination: stage.root,
+			target_name: self.location.target.as_os_str(),
+		};
+		names.rename()?;
+		names.sync_directories(sync)?;
+		stage
+			.check_current()
+			.map_err(PublishError::ObservationFailed)?;
+		names
+			.observe_target(self.identity())
+			.map_err(PublishError::ObservationFailed)?;
+		Ok(())
+	}
+}
+
+pub(in crate::linux) struct PublicationNames<'scope> {
+	pub stage: &'scope File,
+	pub stage_name: &'scope OsStr,
+	pub destination: &'scope DestinationRoot,
+	pub target_name: &'scope OsStr,
+}
+
+impl PublicationNames<'_> {
+	pub(in crate::linux) fn rename(&self) -> Result<(), PublishError> {
 		fs::renameat_with(
-			stage,
-			self.location.name.as_os_str(),
-			destination,
-			self.location.target.as_os_str(),
+			self.stage,
+			self.stage_name,
+			&self.destination.directory,
+			self.target_name,
 			RenameFlags::NOREPLACE,
 		)
-		.map_err(rename_error)?;
+		.map_err(rename_error)
+	}
 
-		let stage_result = sync(stage);
-		let destination_result = sync(destination);
+	pub(in crate::linux) fn sync_directories(
+		&self,
+		mut sync: impl FnMut(&File) -> io::Result<()>,
+	) -> Result<(), PublishError> {
+		let stage_result = sync(self.stage);
+		let destination_result = sync(&self.destination.directory);
 		let error = match (stage_result, destination_result) {
-			(Ok(()), Ok(())) => {
-				return self
-					.observe_publication()
-					.map_err(PublishError::ObservationFailed);
-			}
+			(Ok(()), Ok(())) => return Ok(()),
 			(Err(stage), Ok(())) => DirectoryBarriersError::Stage(stage.into()),
 			(Ok(()), Err(destination)) => DirectoryBarriersError::Destination(destination.into()),
 			(Err(stage), Err(destination)) => DirectoryBarriersError::Both {
@@ -70,33 +98,30 @@ impl ClosedStage<'_> {
 		Err(PublishError::BarriersFailed(error))
 	}
 
-	fn observe_publication(&self) -> Result<(), StageError> {
-		let stage = self.location.directory;
-		stage.check_current()?;
-		match fs::statat(
-			&stage.directory,
-			self.location.name.as_os_str(),
-			AtFlags::SYMLINK_NOFOLLOW,
-		) {
+	pub(in crate::linux) fn observe_target(
+		&self,
+		identity: FileIdentity,
+	) -> Result<Stat, StageError> {
+		match fs::statat(self.stage, self.stage_name, AtFlags::SYMLINK_NOFOLLOW) {
 			Err(Errno::NOENT) => {}
 			Ok(_) => return Err(StageError::IdentityChanged),
 			Err(error) => return Err(error.into()),
 		}
 		let target = fs::openat2(
-			&stage.root.directory,
-			self.location.target.as_os_str(),
+			&self.destination.directory,
+			self.target_name,
 			OFlags::PATH | OFlags::CLOEXEC | OFlags::NOFOLLOW,
 			Mode::empty(),
 			CHILD_RESOLVE,
 		)?;
 		let stat = fs::fstat(&target)?;
 		if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile
-			|| FileIdentity::from_stat(&stat) != self.identity()
-			|| mount_id(&target)? != stage.root.mount
+			|| FileIdentity::from_stat(&stat) != identity
+			|| mount_id(&target)? != self.destination.mount
 		{
 			return Err(StageError::IdentityChanged);
 		}
-		Ok(())
+		Ok(stat)
 	}
 }
 

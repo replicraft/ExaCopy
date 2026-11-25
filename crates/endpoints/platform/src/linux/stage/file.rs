@@ -16,6 +16,8 @@ use super::{StageDirectory, StageError};
 
 mod metadata;
 
+pub(in crate::linux) use metadata::check_no_visible_attributes;
+
 #[cfg(test)]
 mod tests;
 
@@ -254,7 +256,7 @@ impl ClosedStage<'_> {
 			{
 				return Err(StageError::MetadataMismatch);
 			}
-			metadata::check_no_visible_attributes(&self.file)?;
+			check_no_visible_attributes(&self.file)?;
 		}
 		Ok(())
 	}
