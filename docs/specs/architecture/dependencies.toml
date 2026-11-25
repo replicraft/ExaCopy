@@ -35,9 +35,13 @@ normal.external = ["blake3", "ed25519-dalek", "minicbor"]
 dev.groups = ["testkit"]
 dev.external = ["ed25519-dalek", "rustix"]
 
+[groups.runtime]
+members = { exacopy-engine = "crates/runtime/engine" }
+normal.groups = ["contracts", "operations", "platform"]
+
 [groups.clients]
 members = { exacopy-cli = "crates/clients/cli" }
-normal.groups = ["contracts", "operations", "platform", "storage"]
+normal.groups = ["contracts", "operations", "platform", "runtime", "storage"]
 normal.external = ["blake3", "ed25519-dalek", "rustix", "serde", "serde_json", "uuid", "zeroize"]
 dev.groups = ["testkit"]
 

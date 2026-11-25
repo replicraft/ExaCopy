@@ -23,6 +23,7 @@ exacopy-platform.workspace = true
 blake3.workspace = true
 ed25519-dalek.workspace = true
 exacopy-content.workspace = true
+exacopy-engine.workspace = true
 exacopy-journal.workspace = true
 exacopy-transfer.workspace = true
 rustix = { workspace = true, features = ["rand"] }

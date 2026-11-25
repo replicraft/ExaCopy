@@ -1,22 +1,18 @@
 use exacopy_content::ContentDigest;
+use exacopy_endpoint::linux_copy::{CopySourceObservation, InodeTimestamp};
 use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{
 	BasicMetadata, DurableJournal, DurableJournalError, EntryPreparation, EntryPrepared,
 	JournalContext, JournalEntryId, LinuxFileIdentity, LiveSourceView, MetadataRecorded,
-	ObservedTimestamp, OwnerError, OwnerTimestamp, PreparedError, PreparedTarget,
-	SourceInodeMetadata, SourceMeasurementId, SourceTimes, StageSealed, StreamDigest,
-	StreamEvidence, StreamLength, SyncedFrame, TargetObservation, VerificationRecordError,
-	VerificationRecorded,
+	ObservedTimestamp, OwnerError, OwnerTimestamp, PreparedTarget, SourceInodeMetadata,
+	SourceMeasurementId, SourceTimes, StageSealed, StreamDigest, StreamEvidence, StreamLength,
+	SyncedFrame, TargetObservation, VerificationRecordError, VerificationRecorded,
 };
-use exacopy_platform::linux::{SourceObservation, SourceTimestamp};
 
-use super::super::job::native_identity;
-use super::super::{DestinationPlanBinding, StageFailure, VerifiedStage};
-use super::LocalCopyError;
+use crate::linux_staging::StageFailure;
 
-pub(super) fn timestamp(value: SourceTimestamp) -> Result<ObservedTimestamp, PreparedError> {
-	ObservedTimestamp::new(value.seconds(), value.nanoseconds())
-}
+use super::super::DestinationPlanBinding;
+use super::CopyError;
 
 pub(in crate::linux) struct EntryEvidence<'name> {
 	pub(super) context: JournalContext,
@@ -27,30 +23,34 @@ pub(in crate::linux) struct EntryEvidence<'name> {
 }
 
 impl<'name> EntryEvidence<'name> {
-	pub(super) fn new(
-		observation: SourceObservation,
+	pub(super) fn new<R, S, P>(
+		observation: CopySourceObservation,
+		identity: LinuxFileIdentity,
+		length: u64,
 		context: JournalContext,
 		entry: JournalEntryId,
 		destination: DestinationPlanBinding<'name>,
-	) -> Result<Self, LocalCopyError> {
-		let time = |value| timestamp(value).map_err(LocalCopyError::Preparation);
+	) -> Result<Self, CopyError<R, S, P>> {
+		let time = |value: InodeTimestamp| {
+			ObservedTimestamp::new(value.seconds, value.nanoseconds).map_err(CopyError::Preparation)
+		};
 		let source = LiveSourceView::new(
-			native_identity(observation.identity()),
-			observation.len(),
+			identity,
+			length,
 			SourceTimes {
-				accessed_at: time(observation.accessed_at())?,
-				modified_at: time(observation.modified_at())?,
-				changed_at: time(observation.changed_at())?,
+				accessed_at: time(observation.accessed_at)?,
+				modified_at: time(observation.modified_at)?,
+				changed_at: time(observation.changed_at)?,
 			},
 		)
-		.map_err(LocalCopyError::Preparation)?;
+		.map_err(CopyError::Preparation)?;
 		let metadata = SourceInodeMetadata::no_visible_extended_attributes(
-			observation.mode(),
-			observation.owner(),
-			observation.group(),
-			observation.link_count(),
+			observation.mode,
+			observation.owner,
+			observation.group,
+			observation.links,
 		)
-		.map_err(LocalCopyError::Preparation)?;
+		.map_err(CopyError::Preparation)?;
 		Ok(Self::from_preparation(
 			context,
 			entry,
@@ -80,11 +80,11 @@ impl<'name> EntryEvidence<'name> {
 		}
 	}
 
-	pub(super) fn record(
+	pub(super) fn record<R, S>(
 		&self,
 		journal: &mut DurableJournal,
 		stage: LinuxFileIdentity,
-	) -> Result<SourceMeasurementId, StageFailure> {
+	) -> Result<SourceMeasurementId, crate::linux_staging::StageFailure<R, S>> {
 		let entry = EntryPrepared::new(
 			self.context,
 			self.entry,
@@ -101,17 +101,6 @@ impl<'name> EntryEvidence<'name> {
 			.append(FrameKind::EntryPrepared, &payload)
 			.map_err(StageFailure::EntryJournal)?;
 		Ok(SourceMeasurementId::from_prepared_payload(&payload))
-	}
-
-	pub(in crate::linux) fn seal(
-		&self,
-		stage: &VerifiedStage<'_>,
-	) -> Result<SealEvidence, SealError> {
-		self.seal_stream(
-			native_identity(stage.identity()),
-			stage.length(),
-			stage.digest(),
-		)
 	}
 
 	pub(in crate::linux) fn seal_stream(
@@ -199,7 +188,7 @@ pub(in crate::linux) enum SealError {
 	},
 }
 
-impl From<SealError> for LocalCopyError {
+impl<R, S, P> From<SealError> for CopyError<R, S, P> {
 	fn from(error: SealError) -> Self {
 		match error {
 			SealError::Verification(error) => Self::Verification(error),

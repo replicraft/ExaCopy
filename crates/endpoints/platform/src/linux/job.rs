@@ -29,14 +29,7 @@ pub(super) const FIRST_SEGMENT: &str = "00000000000000000001.exajnl";
 pub(super) const RECEIPTS: &str = "receipts";
 pub(super) const RECEIPT: &str = "receipt.cbor";
 
-/// Advisory observation of a relative publication target.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TargetStatus {
-	/// The name was absent when inspected.
-	Absent,
-	/// An entry of any type occupied the name.
-	Occupied,
-}
+pub use exacopy_endpoint::linux_copy::TargetObservation as TargetStatus;
 
 impl DestinationRoot {
 	/// Observes one target without following a final symlink.

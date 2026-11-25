@@ -1,5 +1,6 @@
 //! Linux handle-relative source, staging, and exclusive publication primitives.
 
+mod copy_capabilities;
 mod handle;
 mod job;
 mod publication_capabilities;

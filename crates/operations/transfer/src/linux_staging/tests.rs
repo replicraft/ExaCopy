@@ -99,15 +99,21 @@ struct Directory<'a> {
 	readback: u8,
 }
 
-impl<'stage, 'trace: 'stage> StagingDirectory<'stage> for Directory<'trace> {
-	type Writer = Writer<'stage>;
+impl StagingDirectory for Directory<'_> {
+	type Error = io::Error;
+	type Identity = u8;
+	type Metadata = Metadata;
+	type Writer<'stage>
+		= Writer<'stage>
+	where
+		Self: 'stage;
 
 	fn create_file(
-		&'stage self,
+		&self,
 		_: UnixComponent<'_>,
 		_: UnixComponent<'_>,
 		_: CopyBinding,
-	) -> Result<Self::Writer, io::Error> {
+	) -> Result<Self::Writer<'_>, io::Error> {
 		self.trace.borrow_mut().push(Effect::Create);
 		Ok(Writer {
 			trace: self.trace,

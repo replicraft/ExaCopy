@@ -194,3 +194,78 @@ fn late_preflight_conflict_and_changed_source_create_no_private_job() {
 	assert_absent(&fixture.path(JOB_DIRECTORY));
 	assert_absent(&fixture.path(TARGET));
 }
+
+#[test]
+fn conflicting_destination_capabilities_refuse_before_private_job_creation() {
+	use exacopy_endpoint::linux_copy::{CopyDestinationView, TargetObservation};
+	use exacopy_endpoint::linux_job::{JobBootstrapRoot, JobFileIdentity};
+	use exacopy_platform::linux::{JobDirectory, ReadRoot, StageError};
+	use exacopy_transfer::linux::{
+		CopyError, PlanningRoots, copy_with_capabilities, plan_new_file,
+	};
+
+	struct InconsistentDestination<'root>(&'root DestinationRoot);
+
+	impl CopyDestinationView for InconsistentDestination<'_> {
+		type Error = StageError;
+
+		fn identity(&self) -> JobFileIdentity {
+			CopyDestinationView::identity(self.0)
+		}
+
+		fn observe_target(&self, name: UnixComponent<'_>) -> Result<TargetObservation, StageError> {
+			self.0.target_status(name)
+		}
+	}
+
+	impl<'held> JobBootstrapRoot<'held> for InconsistentDestination<'_> {
+		type Error = StageError;
+		type Job = JobDirectory<'held>;
+
+		fn identity(&self) -> JobFileIdentity {
+			let mut identity = CopyDestinationView::identity(self.0);
+			identity.inode ^= 1;
+			identity
+		}
+
+		fn create_job_directory(
+			&'held self,
+			name: UnixComponent<'_>,
+		) -> Result<Self::Job, Self::Error> {
+			self.0.create_job_directory(name)
+		}
+
+		fn sync_directory(&self) -> Result<(), Self::Error> {
+			self.0.sync_directory()
+		}
+	}
+
+	let fixture = DestinationFixture::new();
+	let source_bytes = b"retained source";
+	fs::write(fixture.path("source"), source_bytes).expect("write source");
+	let source = ReadRoot::from_directory(File::open(&fixture.0).expect("open source parent"))
+		.expect("admit source root");
+	let destination = fixture.open_root();
+	let roots = copy_roots(&source, &destination);
+	let target = UnixComponent::new(TARGET.as_bytes()).expect("target component");
+	let input = UnixComponent::new(b"source").expect("source component");
+	let plan = plan_new_file(roots, copy_attempt(), input, target).expect("admit initial plan");
+
+	let inconsistent = InconsistentDestination(&destination);
+	let roots = PlanningRoots {
+		source: roots.source,
+		source_id: roots.source_id,
+		destination: &inconsistent,
+		destination_id: roots.destination_id,
+	};
+	let signer = fixture_signer();
+	let error = copy_with_capabilities(roots, &plan, copy_profile(&signer), &mut [0; 7])
+		.expect_err("bootstrap identity must agree with the destination view");
+	assert!(matches!(error, CopyError::StalePlan), "{error}");
+	assert_absent(&fixture.path(JOB_DIRECTORY));
+	assert_absent(&fixture.path(TARGET));
+	assert_eq!(
+		fs::read(fixture.path("source")).expect("read source"),
+		source_bytes
+	);
+}

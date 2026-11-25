@@ -11,7 +11,7 @@ use exacopy_journal::{
 	PublicationRecordError, PublishIntent, PublishIntentContext, PublishIntentTarget,
 	PublishObserved, ReceiptCommitted, ReceiptDigest, SyncedFrame,
 };
-use exacopy_model::{CopyBinding, CopyEffect, CopyEvent, CopySession};
+use exacopy_model::{CopyBinding, CopyEffect, CopyEvent, CopySession, PublishNoClobber};
 
 use crate::linux_staging::{StageFailure, observe};
 
@@ -60,6 +60,19 @@ impl Publication<'_, '_> {
 		sealed: &SealEvidence,
 		metadata: &SyncedFrame,
 	) -> Result<SyncedFrame, ProtocolError<R, S, P::Error>> {
+		self.complete_using(journal, session, sealed, metadata, |permit| {
+			stage.publish_no_clobber(permit)
+		})
+	}
+
+	pub(super) fn complete_using<R, S, P>(
+		&self,
+		journal: &mut DurableJournal,
+		session: &mut CopySession,
+		sealed: &SealEvidence,
+		metadata: &SyncedFrame,
+		publish: impl FnOnce(PublishNoClobber) -> Result<(), PublicationFailure<P>>,
+	) -> Result<SyncedFrame, ProtocolError<R, S, P>> {
 		let context = self.intent_context();
 		let destination = self.plan.destination();
 		let intent = PublishIntent {
@@ -89,7 +102,7 @@ impl Publication<'_, '_> {
 				return Err(ProtocolError::Model(StageFailure::UnexpectedEffect));
 			}
 		};
-		if let Err(failure) = stage.publish_no_clobber(authorization) {
+		if let Err(failure) = publish(authorization) {
 			let (event, source) = match failure {
 				PublicationFailure::Conflict(source) => (CopyEvent::Conflict, source),
 				PublicationFailure::Uncertain(source) => (CopyEvent::OutcomeUncertain, source),
@@ -139,8 +152,8 @@ impl Publication<'_, '_> {
 	}
 }
 
-pub(super) fn persist_receipt<'job, R, P, J: ReceiptWorkspace<'job>>(
-	job: &'job J,
+pub(super) fn persist_receipt<R, P, J: ReceiptWorkspace>(
+	job: &J,
 	journal: &mut DurableJournal,
 	context: PublishIntentContext,
 	receipt: &CopyReceipt<'_>,

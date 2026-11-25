@@ -23,11 +23,14 @@ impl ExclusivePublication for ClosedStage<'_> {
 	}
 }
 
-impl<'job, 'root: 'job> ReceiptWorkspace<'job> for JobDirectory<'root> {
+impl ReceiptWorkspace for JobDirectory<'_> {
 	type Error = StageError;
-	type Directory = ReceiptDirectory<'job>;
+	type Directory<'job>
+		= ReceiptDirectory<'job>
+	where
+		Self: 'job;
 
-	fn create_receipt_directory(&'job self) -> Result<Self::Directory, Self::Error> {
+	fn create_receipt_directory(&self) -> Result<Self::Directory<'_>, Self::Error> {
 		JobDirectory::create_receipt_directory(self)
 	}
 

@@ -6,6 +6,7 @@
     "exacopy-content",
     "exacopy-diff",
     "exacopy-endpoint",
+    "exacopy-engine",
     "exacopy-journal",
     "exacopy-model",
     "exacopy-platform",
@@ -181,7 +182,7 @@
     "linux_verified_transfer": [
       "arrayvec", "blake3", "block-buffer", "cc", "cfg-if", "constant_time_eq",
       "cpufeatures", "crc32c", "crypto-common", "curve25519-dalek", "curve25519-dalek-derive",
-      "digest", "ed25519", "ed25519-dalek", "exacopy-content", "exacopy-journal",
+      "digest", "ed25519", "ed25519-dalek", "exacopy-content", "exacopy-engine", "exacopy-journal",
       "exacopy-transfer", "find-msvc-tools", "generic-array", "linux-raw-sys",
       "minicbor", "rustc_version", "semver", "sha2", "shlex", "signature", "subtle",
       "typenum", "version_check", "zeroize"

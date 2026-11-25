@@ -17,11 +17,13 @@ use std::time::{Duration, Instant};
 use exacopy_journal::{JournalEntryId, JournalEpoch, JournalJobId};
 use rustix::process::Signal;
 
-use super::{
-	CopyProfile, CopyRoots, DestinationRoot, LocalCopyError, OwnerProfileId, OwnerTimestamp,
-	OwnerToken, PlanAttempt, PublishError, ReadRoot, RootCapabilityId, SigningKey, UnixComponent,
-	copy_new_file, plan_new_file,
-};
+use ed25519_dalek::SigningKey;
+use exacopy_endpoint::UnixComponent;
+use exacopy_journal::{OwnerProfileId, OwnerTimestamp, OwnerToken, RootCapabilityId};
+use exacopy_platform::linux::{DestinationRoot, PublishError, ReadRoot};
+
+use super::super::PlanAttempt;
+use super::{CopyProfile, CopyRoots, LocalCopyError, copy_new_file, plan_new_file};
 
 mod evidence;
 mod metadata_resume;

@@ -4,7 +4,7 @@ use exacopy_content::ContentDigest;
 use exacopy_model::{CopyPhase, CopySession};
 use exacopy_platform::linux::{ClosedStage, FileIdentity, SourceFile, StageDirectory};
 
-use crate::linux_staging::{self, StageRecords as StageRecordSink};
+use crate::linux_staging;
 
 mod error;
 mod job;
@@ -15,9 +15,11 @@ mod recovery;
 mod replay;
 
 pub use error::{StageCopyError, StageFailure};
-pub use job::{JobBootstrap, JobBootstrapError, JobStep, PreparedJob};
-use local_copy::checkpoints::StageRecords;
-pub use local_copy::{CopyProfile, CopyRoots, LocalCopyError, copy_new_file, plan_new_file};
+pub use job::{BootstrapError, JobBootstrap, JobBootstrapError, JobStep, PreparedJob};
+pub use local_copy::{
+	CopyError, CopyProfile, CopyRoots, LocalCopyError, PlanningRoots, copy_new_file,
+	copy_with_capabilities, plan_new_file, plan_with_capabilities,
+};
 pub use plan::{
 	DestinationPlanBinding, LocalCopyPlan, LocalCopyPlanError, MAX_LOCAL_COPY_PLAN_BYTES,
 	PlanAttempt, SourcePlanBinding,
@@ -89,26 +91,8 @@ pub fn stage_verified<'stage>(
 	request: StageRequest<'_>,
 	scratch: &mut [u8],
 ) -> Result<VerifiedStage<'stage>, StageCopyError> {
-	stage_with_preparation(source, directory, request, scratch, None)
-}
-
-fn stage_with_preparation<'stage>(
-	source: &SourceFile,
-	directory: &'stage StageDirectory<'_>,
-	request: StageRequest<'_>,
-	scratch: &mut [u8],
-	records: Option<StageRecords<'_, '_>>,
-) -> Result<VerifiedStage<'stage>, StageCopyError> {
-	let mut records = records;
-	let records = records
-		.as_mut()
-		.map(|records| records as &mut dyn StageRecordSink<_, _, _>);
 	let (stage, session, digest) =
-		linux_staging::stage_verified(source, directory, request, scratch, records)?.into_parts();
-	#[cfg(test)]
-	local_copy::crash_tests::pause_metadata_at(
-		local_copy::crash_tests::Checkpoint::CopyMetadataApplied,
-	);
+		linux_staging::stage_verified(source, directory, request, scratch, None)?.into_parts();
 	Ok(VerifiedStage {
 		stage,
 		session,

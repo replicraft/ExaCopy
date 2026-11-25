@@ -12,6 +12,7 @@ behavior, recovery paths and their evidence.
 | Owner | Boundary |
 | --- | --- |
 | Applications | Parse user intent, select the concrete platform implementation and compose capabilities with engines. Render engine results and map them to exit status or UI state. |
+| Local runtime | Compose held native capabilities with reusable operation policies. Linux CLI planning and fresh execution use `exacopy-engine`. |
 | Core model | Own typed identities, checked ranges and pure preserve-mode transitions. Keep OS, database, async runtime, network implementation and presentation dependencies outside this boundary. |
 | Endpoint contracts | Define bounded capabilities that callers can supply and adapters can implement. Represent unsupported operations explicitly. |
 | Operation engines | Own comparison, transfer orchestration, recovery decisions and eventual synchronization/conflict policy. Consume capabilities. |
@@ -25,7 +26,9 @@ Run the [engineering policy check](testing.md). Source review also follows
 the actual call graph because a permitted package edge does not establish
 how authority moves through a function.
 
-Transfer staging consumes endpoint read, write, close and metadata capabilities.
+Linux planning and fresh execution consume endpoint observations, staging,
+checkpoint, and publication capabilities. Transfer staging consumes endpoint
+read, write, close and metadata capabilities.
 Linux job bootstrap and publication, and the experimental APFS publication
 coordinator, sequence their effects through supplied capabilities. Native
 facades preserve the existing entry points and translate adapter failures.

@@ -53,24 +53,35 @@ pub trait StagingSource: ReadView {
 }
 
 /// A private directory that can exclusively allocate a new stage.
-pub trait StagingDirectory<'stage> {
-	/// The exclusive data writer bound to this directory.
-	type Writer: StageWriter;
+pub trait StagingDirectory {
+	/// The exact adapter error from stage operations.
+	type Error;
+
+	/// The device and inode identity domain for stages and sources.
+	type Identity: Copy + Eq;
+
+	/// The captured source metadata type accepted by this directory's stages.
+	type Metadata: SourceMetadata;
+
+	/// The exclusive data writer bound to the borrow of this directory.
+	type Writer<'stage>: StageWriter<Error = Self::Error, Identity = Self::Identity, Metadata = Self::Metadata>
+	where
+		Self: 'stage;
 
 	/// Creates a private file bound to the target and attempt.
 	/// # Errors
 	/// Returns an error if the stage name is occupied or cannot be safely allocated.
 	fn create_file(
-		&'stage self,
+		&self,
 		name: UnixComponent<'_>,
 		target: UnixComponent<'_>,
 		binding: CopyBinding,
-	) -> Result<Self::Writer, <Self::Writer as StageWriter>::Error>;
+	) -> Result<Self::Writer<'_>, Self::Error>;
 
 	/// Synchronizes the private directory entries.
 	/// # Errors
 	/// Returns an error if directory identity or the barrier cannot be confirmed.
-	fn sync_directory(&self) -> Result<(), <Self::Writer as StageWriter>::Error>;
+	fn sync_directory(&self) -> Result<(), Self::Error>;
 }
 
 /// The exclusive synchronous data writer for a newly allocated private file.

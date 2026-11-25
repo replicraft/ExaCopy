@@ -28,17 +28,19 @@ pub trait ExclusivePublication {
 }
 
 /// The owned job namespace in which a receipt can be recorded.
-pub trait ReceiptWorkspace<'job> {
+pub trait ReceiptWorkspace {
 	/// The failure to create or synchronize an owned directory or entry.
 	type Error;
 
 	/// The privately held directory in which the receipt may be created.
-	type Directory: ReceiptDirectory<Error = Self::Error>;
+	type Directory<'job>: ReceiptDirectory<Error = Self::Error>
+	where
+		Self: 'job;
 
 	/// Exclusively creates and holds a private receipt directory.
 	/// # Errors
 	/// Fails if the directory already exists or cannot be safely created.
-	fn create_receipt_directory(&'job self) -> Result<Self::Directory, Self::Error>;
+	fn create_receipt_directory(&self) -> Result<Self::Directory<'_>, Self::Error>;
 
 	/// Synchronizes the job directory containing the receipt directory entry.
 	/// # Errors

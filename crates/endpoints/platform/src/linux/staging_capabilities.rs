@@ -42,15 +42,21 @@ impl StagingSource for SourceFile {
 	}
 }
 
-impl<'stage, 'root: 'stage> StagingDirectory<'stage> for StageDirectory<'root> {
-	type Writer = WriteStage<'stage>;
+impl StagingDirectory for StageDirectory<'_> {
+	type Error = StageError;
+	type Identity = FileIdentity;
+	type Metadata = SourceObservation;
+	type Writer<'stage>
+		= WriteStage<'stage>
+	where
+		Self: 'stage;
 
 	fn create_file(
-		&'stage self,
+		&self,
 		name: UnixComponent<'_>,
 		target: UnixComponent<'_>,
 		binding: CopyBinding,
-	) -> Result<Self::Writer, StageError> {
+	) -> Result<Self::Writer<'_>, StageError> {
 		StageDirectory::create_file(self, name, target, binding)
 	}
 

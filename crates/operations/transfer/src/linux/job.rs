@@ -4,6 +4,7 @@ use std::fs::File;
 
 use ed25519_dalek::SigningKey;
 use exacopy_endpoint::UnixComponent;
+use exacopy_endpoint::linux_job::{JobBootstrapRoot, JobWorkspace};
 use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{
 	DurableJournal, DurableJournalError, JobPrepared, JournalContext, LinuxFileIdentity,
@@ -69,22 +70,6 @@ impl<'root> PreparedJob<'root> {
 		Ok(job)
 	}
 
-	pub(super) fn with_plan(
-		destination: &'root DestinationRoot,
-		plan: &LocalCopyPlan<'_>,
-		profile: super::CopyProfile<'_>,
-	) -> Result<(Self, DurableJournal), JobBootstrapError> {
-		let request = JobBootstrap {
-			name: plan.attempt().job_name,
-			context: plan.context(),
-			destination_id: plan.destination().root.id,
-			profile: profile.id,
-			created: profile.created,
-			owner_token: profile.owner_token,
-		};
-		Self::prepare(destination, request, profile.signer, Some(&plan.encode()))
-	}
-
 	fn prepare(
 		destination: &'root DestinationRoot,
 		request: JobBootstrap<'_>,
@@ -98,10 +83,6 @@ impl<'root> PreparedJob<'root> {
 			initial_frame: prepared.initial_frame,
 		};
 		Ok((job, prepared.journal))
-	}
-
-	pub(super) const fn directory(&self) -> &JobDirectory<'root> {
-		&self.directory
 	}
 
 	/// Returns the exact signed owner record written to this job's private root.
@@ -125,6 +106,31 @@ impl<'root> PreparedJob<'root> {
 		self.directory.sync_directory()?;
 		Ok(stage)
 	}
+}
+
+pub(super) fn prepare_durable_copy<'root, Root>(
+	destination: &'root Root,
+	plan: &LocalCopyPlan<'_>,
+	profile: super::CopyProfile<'_>,
+) -> Result<(Root::Job, DurableJournal), BootstrapError<Root::Error>>
+where
+	Root: JobBootstrapRoot<'root, Job: JobWorkspace<Segment = File>>,
+{
+	let request = JobBootstrap {
+		name: plan.attempt().job_name,
+		context: plan.context(),
+		destination_id: plan.destination().root.id,
+		profile: profile.id,
+		created: profile.created,
+		owner_token: profile.owner_token,
+	};
+	let prepared = protocol::prepare::<_, DurableJournal>(
+		destination,
+		request,
+		profile.signer,
+		Some(&plan.encode()),
+	)?;
+	Ok((prepared.directory, prepared.journal))
 }
 
 pub(super) fn native_identity(identity: FileIdentity) -> LinuxFileIdentity {
@@ -152,16 +158,19 @@ pub enum JobStep {
 	SyncDestination,
 }
 
+/// The error returned by the native Linux bootstrap entry point.
+pub type JobBootstrapError = BootstrapError<StageError>;
+
 /// A failed job bootstrap leaves any created private entries for inspection.
 #[derive(Debug)]
 #[non_exhaustive]
-pub enum JobBootstrapError {
+pub enum BootstrapError<S> {
 	/// A held directory operation failed.
 	Platform {
 		/// The attempted namespace operation.
 		step: JobStep,
 		/// The adapter's cause.
-		source: StageError,
+		source: S,
 	},
 	/// Signing or validating the bounded owner manifest failed.
 	Owner(OwnerError),
@@ -177,7 +186,7 @@ pub enum JobBootstrapError {
 	Journal(DurableJournalError),
 }
 
-impl fmt::Display for JobBootstrapError {
+impl<S: fmt::Display> fmt::Display for BootstrapError<S> {
 	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
 			Self::Platform { step, source } => write!(
@@ -205,7 +214,7 @@ impl fmt::Display for JobBootstrapError {
 	}
 }
 
-impl Error for JobBootstrapError {
+impl<S: Error + 'static> Error for BootstrapError<S> {
 	fn source(&self) -> Option<&(dyn Error + 'static)> {
 		match self {
 			Self::Platform { source, .. } => Some(source),
@@ -236,8 +245,8 @@ impl InitialJournal for DurableJournal {
 	}
 }
 
-impl From<BootstrapFailure<StageError, DurableJournalError>> for JobBootstrapError {
-	fn from(error: BootstrapFailure<StageError, DurableJournalError>) -> Self {
+impl<S> From<BootstrapFailure<S, DurableJournalError>> for BootstrapError<S> {
+	fn from(error: BootstrapFailure<S, DurableJournalError>) -> Self {
 		match error {
 			BootstrapFailure::Namespace(step, source) => Self::Platform { step, source },
 			BootstrapFailure::Owner(source) => Self::Owner(source),

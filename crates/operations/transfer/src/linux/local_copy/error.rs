@@ -4,38 +4,38 @@ use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{
 	DurableJournalError, OwnerError, PreparedError, PublicationRecordError, VerificationRecordError,
 };
-use exacopy_platform::linux::{PublishError, ReadError, StageError};
 
-use super::super::{
-	JobBootstrapError, LocalCopyPlanError, ReceiptError, StageCopyError, StageFailure,
-};
+use crate::linux_staging::{StageCopyError, StageFailure};
+
+use super::super::job::BootstrapError;
+use super::super::{LocalCopyPlanError, ReceiptError};
 
 /// A refused or incomplete single-file copy or planning operation.
 #[derive(Debug)]
 #[non_exhaustive]
-pub enum LocalCopyError {
+pub enum CopyError<R, S, P> {
 	/// The target was already occupied at preflight.
 	Conflict,
 	/// The held roots or source observations did not match the exact plan.
 	StalePlan,
 	/// A target lookup failed.
-	InspectTarget(StageError),
+	InspectTarget(S),
 	/// The planned source could not be opened.
-	Source(ReadError),
+	Source(R),
 	/// The source, attributes, or stream limits were outside the supported profile.
-	SourcePolicy(StageFailure),
+	SourcePolicy(StageFailure<R, S>),
 	/// The local plan could not be constructed.
 	Plan(LocalCopyPlanError),
 	/// A preparation observation could not be validated.
 	Preparation(PreparedError),
 	/// The private job could not be established.
-	Bootstrap(JobBootstrapError),
+	Bootstrap(BootstrapError<S>),
 	/// The stage directory could not be created and synchronized.
-	CreateStage(StageError),
+	CreateStage(S),
 	/// The immutable checkpoint directory could not be created and synchronized.
-	CreateCheckpoints(StageError),
+	CreateCheckpoints(S),
 	/// The copy or read-back of the private stage failed.
-	Stage(StageCopyError),
+	Stage(StageCopyError<R, S>),
 	/// Verified-stage evidence could not be encoded.
 	Verification(VerificationRecordError),
 	/// A native metadata timestamp could not be encoded.
@@ -49,25 +49,25 @@ pub enum LocalCopyError {
 		source: DurableJournalError,
 	},
 	/// The publication model rejected an expected step.
-	PublicationModel(StageFailure),
+	PublicationModel(StageFailure<R, S>),
 	/// Construction of a publication, barrier, or receipt commitment record failed.
 	PublicationRecord(PublicationRecordError),
 	/// Publication did not report a confirmed exclusive rename and matching post-state.
 	Publication {
 		/// The adapter's exact outcome or error.
-		source: PublishError,
+		source: P,
 		/// A failure to synchronize the uncertain observation, if one occurred.
 		recording: Option<DurableJournalError>,
 	},
 	/// An already-published copy's receipt could not be constructed.
 	Receipt(ReceiptError),
 	/// An already-published copy's receipt namespace or directory barrier failed.
-	ReceiptNamespace(StageError),
+	ReceiptNamespace(S),
 	/// An already-published copy's receipt could not be written or synchronized.
 	ReceiptIo(io::Error),
 }
 
-impl fmt::Display for LocalCopyError {
+impl<R: fmt::Display, S: fmt::Display, P: fmt::Display> fmt::Display for CopyError<R, S, P> {
 	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
 			Self::Conflict => formatter.write_str("target was already occupied"),
@@ -135,7 +135,7 @@ impl fmt::Display for LocalCopyError {
 	}
 }
 
-impl Error for LocalCopyError {
+impl<R: Error + 'static, S: Error + 'static, P: Error + 'static> Error for CopyError<R, S, P> {
 	fn source(&self) -> Option<&(dyn Error + 'static)> {
 		match self {
 			Self::Conflict | Self::StalePlan => None,

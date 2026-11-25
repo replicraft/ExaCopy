@@ -1,27 +1,27 @@
 use exacopy_content::RangeMeasurement;
+use exacopy_endpoint::linux_copy::CheckpointPages;
+use exacopy_endpoint::linux_job::JobFileIdentity;
 use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{
 	DurableJournal, RangeCheckpoint, RangePage, SourceMeasurementId, StreamDigest,
 };
-use exacopy_platform::linux::{CheckpointDirectory, FileIdentity, ReadError, StageError};
 
-use crate::linux_staging::StageRecords as StageRecordSink;
+use crate::linux_staging::{StageFailure, StageRecords as StageRecordSink};
 
-use super::super::StageFailure;
-use super::super::job::native_identity;
+use super::planning::journal_identity;
 use super::records::EntryEvidence;
 
-pub(in crate::linux) struct StageRecords<'job, 'name> {
+pub(in crate::linux) struct StageRecords<'job, 'name, Pages> {
 	entry: &'job EntryEvidence<'name>,
-	pages: &'job CheckpointDirectory<'job>,
+	pages: &'job Pages,
 	journal: &'job mut DurableJournal,
 	ordinal: u32,
 }
 
-impl<'job, 'name> StageRecords<'job, 'name> {
+impl<'job, 'name, Pages> StageRecords<'job, 'name, Pages> {
 	pub(super) const fn new(
 		entry: &'job EntryEvidence<'name>,
-		pages: &'job CheckpointDirectory<'job>,
+		pages: &'job Pages,
 		journal: &'job mut DurableJournal,
 	) -> Self {
 		Self {
@@ -33,16 +33,25 @@ impl<'job, 'name> StageRecords<'job, 'name> {
 	}
 }
 
-impl StageRecordSink<FileIdentity, ReadError, StageError> for StageRecords<'_, '_> {
-	fn begin(&mut self, stage: FileIdentity) -> Result<SourceMeasurementId, StageFailure> {
-		self.entry.record(self.journal, native_identity(stage))
+impl<Identity, ReadError, Pages> StageRecordSink<Identity, ReadError, Pages::Error>
+	for StageRecords<'_, '_, Pages>
+where
+	Identity: Into<JobFileIdentity>,
+	Pages: CheckpointPages,
+{
+	fn begin(
+		&mut self,
+		stage: Identity,
+	) -> Result<SourceMeasurementId, StageFailure<ReadError, Pages::Error>> {
+		self.entry
+			.record(self.journal, journal_identity(stage.into()))
 	}
 
 	fn record(
 		&mut self,
 		measurement: SourceMeasurementId,
 		range: RangeMeasurement,
-	) -> Result<(), StageFailure> {
+	) -> Result<(), StageFailure<ReadError, Pages::Error>> {
 		let page = RangePage::new(
 			self.ordinal,
 			range.offset,
@@ -52,7 +61,7 @@ impl StageRecordSink<FileIdentity, ReadError, StageError> for StageRecords<'_, '
 		)
 		.map_err(StageFailure::CheckpointEvidence)?;
 		self.pages
-			.write_page(self.ordinal, &page.encode())
+			.persist_page(self.ordinal, &page.encode())
 			.map_err(StageFailure::CheckpointPage)?;
 		#[cfg(test)]
 		super::crash_tests::pause_range_at(super::crash_tests::Checkpoint::RangePageSynced);

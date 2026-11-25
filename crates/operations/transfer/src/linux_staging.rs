@@ -112,13 +112,12 @@ pub fn stage_verified<'stage, S, D>(
 	request: StageRequest<'_>,
 	scratch: &mut [u8],
 	records: Option<
-		&mut dyn StageRecords<S::Identity, S::Error, <D::Writer as StageWriter>::Error>,
+		&mut dyn StageRecords<S::Identity, S::Error, <D::Writer<'stage> as StageWriter>::Error>,
 	>,
-) -> StageResult<VerifiedStage<<D::Writer as StageWriter>::Reader>, S, D::Writer>
+) -> StageResult<VerifiedStage<<D::Writer<'stage> as StageWriter>::Reader>, S, D::Writer<'stage>>
 where
 	S: StagingSource,
-	D: StagingDirectory<'stage>,
-	D::Writer: StageWriter<Identity = S::Identity, Metadata = S::Metadata>,
+	D: StagingDirectory<Identity = S::Identity, Metadata = S::Metadata>,
 {
 	let mut session = CopySession::new(request.binding);
 	let result = prepare(source, directory, request, scratch, &mut session, records);
@@ -142,13 +141,12 @@ fn prepare<'stage, S, D>(
 	scratch: &mut [u8],
 	session: &mut CopySession,
 	records: Option<
-		&mut dyn StageRecords<S::Identity, S::Error, <D::Writer as StageWriter>::Error>,
+		&mut dyn StageRecords<S::Identity, S::Error, <D::Writer<'stage> as StageWriter>::Error>,
 	>,
-) -> PreparedStage<S, D::Writer>
+) -> PreparedStage<S, D::Writer<'stage>>
 where
 	S: StagingSource,
-	D: StagingDirectory<'stage>,
-	D::Writer: StageWriter<Identity = S::Identity, Metadata = S::Metadata>,
+	D: StagingDirectory<Identity = S::Identity, Metadata = S::Metadata>,
 {
 	validate_stream_input(source.length(), scratch.len()).map_err(StageFailure::Input)?;
 	check_source(source)?;

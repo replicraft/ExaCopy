@@ -241,6 +241,7 @@ dependencies = [
  "exacopy-content",
  "exacopy-diff",
  "exacopy-endpoint",
+ "exacopy-engine",
  "exacopy-journal",
  "exacopy-platform",
  "exacopy-transfer",
@@ -272,6 +273,15 @@ name = "exacopy-endpoint"
 version = "0.1.0"
 dependencies = [
  "exacopy-model",
+]
+
+[[package]]
+name = "exacopy-engine"
+version = "0.1.0"
+dependencies = [
+ "exacopy-endpoint",
+ "exacopy-platform",
+ "exacopy-transfer",
 ]
 
 [[package]]
