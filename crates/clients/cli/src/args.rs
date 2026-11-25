@@ -2,7 +2,7 @@ use std::ffi::{OsStr, OsString};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
-pub(crate) const USAGE: &str = "Usage:\n  exacopy diff [--] LEFT RIGHT [--compare bytes] [--workers N] [--format human|json]\n  exacopy copy [--] SOURCE TARGET --profile DIR [--format human|json]\n  exacopy recover inspect|finish [--] JOB --profile DIR [--format human|json]\n  exacopy recover retry [--] JOB --source-root DIR --profile DIR [--format human|json]\n  exacopy profile init [--] DIR";
+pub(crate) const USAGE: &str = "Usage:\n  exacopy diff [--] LEFT RIGHT [--compare bytes] [--workers N] [--format human|json]\n  exacopy copy [--] SOURCE TARGET --profile DIR [--format human|json]\n  exacopy recover inspect|finish [--] JOB --profile DIR [--format human|json]\n  exacopy recover retry [--] JOB --source-root DIR --profile DIR [--format human|json]\n  exacopy recover resume [--] JOB --source-root DIR --profile DIR [--format human|json]\n  exacopy profile init [--] DIR";
 
 const MAX_DIFF_WORKERS: usize = 16;
 
@@ -44,7 +44,22 @@ pub(crate) struct RecoveryCommand {
 pub(crate) enum RecoveryAction {
 	Inspect,
 	Finish,
-	Retry { source_root: PathBuf },
+	FromSource {
+		action: SourceRecoveryAction,
+		source_root: PathBuf,
+	},
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum SourceRecoveryAction {
+	Retry,
+	Resume,
+}
+
+enum RecoveryVerb {
+	Inspect,
+	Finish,
+	FromSource(SourceRecoveryAction),
 }
 
 #[derive(Clone, Copy)]
@@ -67,10 +82,15 @@ pub(crate) fn parse(mut args: impl Iterator<Item = OsString>) -> Result<Command,
 fn parse_recover(mut args: impl Iterator<Item = OsString>) -> Result<Command, &'static str> {
 	let action = match args.next().as_deref().and_then(OsStr::to_str) {
 		Some("--help" | "-h") if args.next().is_none() => return Ok(Command::Help),
-		Some("inspect") => Some(RecoveryAction::Inspect),
-		Some("finish") => Some(RecoveryAction::Finish),
-		Some("retry") => None,
-		_ => return Err("expected recover inspect, recover finish, or recover retry"),
+		Some("inspect") => RecoveryVerb::Inspect,
+		Some("finish") => RecoveryVerb::Finish,
+		Some("retry") => RecoveryVerb::FromSource(SourceRecoveryAction::Retry),
+		Some("resume") => RecoveryVerb::FromSource(SourceRecoveryAction::Resume),
+		_ => {
+			return Err(
+				"expected recover inspect, recover finish, recover retry, or recover resume",
+			);
+		}
 	};
 	let first = args.next().ok_or("recovery requires a job path")?;
 	let job = match first.to_str() {
@@ -87,11 +107,20 @@ fn parse_recover(mut args: impl Iterator<Item = OsString>) -> Result<Command, &'
 	while let Some(flag) = args.next() {
 		match flag.to_str() {
 			Some("--profile") if profile.is_none() => {
-				profile = Some(args.next().ok_or("--profile requires a directory")?);
+				profile = Some(
+					args.next()
+						.filter(|value| {
+							!matches!(
+								action,
+								RecoveryVerb::FromSource(SourceRecoveryAction::Resume)
+							) || !value.as_encoded_bytes().starts_with(b"--")
+						})
+						.ok_or("--profile requires a directory")?,
+				);
 			}
 			Some("--format") if format.is_none() => format = Some(parse_format(args.next())?),
-			Some("--source-root") if action.is_some() => {
-				return Err("--source-root requires recover retry");
+			Some("--source-root") if !matches!(action, RecoveryVerb::FromSource(_)) => {
+				return Err("--source-root requires recover retry or recover resume");
 			}
 			Some("--source-root") if source_root.is_none() => {
 				source_root = Some(
@@ -108,10 +137,19 @@ fn parse_recover(mut args: impl Iterator<Item = OsString>) -> Result<Command, &'
 	}
 	Ok(Command::Recover(RecoveryCommand {
 		action: match action {
-			Some(action) => action,
-			None => RecoveryAction::Retry {
+			RecoveryVerb::Inspect => RecoveryAction::Inspect,
+			RecoveryVerb::Finish => RecoveryAction::Finish,
+			RecoveryVerb::FromSource(action) => RecoveryAction::FromSource {
+				action,
 				source_root: source_root
-					.ok_or("recover retry requires an explicit --source-root DIR")?
+					.ok_or(match action {
+						SourceRecoveryAction::Retry => {
+							"recover retry requires an explicit --source-root DIR"
+						}
+						SourceRecoveryAction::Resume => {
+							"recover resume requires an explicit --source-root DIR"
+						}
+					})?
 					.into(),
 			},
 		},

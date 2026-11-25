@@ -16,6 +16,7 @@ fn help_describes_diff_and_exits_successfully() {
 	assert!(usage.contains("--format human|json"));
 	assert!(usage.contains("--workers N"));
 	assert!(usage.contains("exacopy recover retry [--] JOB --source-root DIR"));
+	assert!(usage.contains("exacopy recover resume [--] JOB --source-root DIR"));
 }
 
 #[test]
@@ -193,7 +194,61 @@ fn retry_requires_one_explicit_source_root_and_profile() {
 }
 
 #[test]
-fn source_root_option_is_restricted_to_retry() {
+fn resume_requires_one_explicit_source_root_and_profile() {
+	for (options, error) in [
+		(
+			&["--profile", "profile"][..],
+			"recover resume requires an explicit --source-root DIR",
+		),
+		(
+			&["--source-root", "source"],
+			"recovery requires an explicit --profile DIR",
+		),
+		(
+			&["--source-root", "--profile", "profile"],
+			"--source-root requires a directory",
+		),
+		(
+			&["--source-root", "source", "--profile", "--format"],
+			"--profile requires a directory",
+		),
+		(
+			&[
+				"--profile",
+				"profile",
+				"--source-root",
+				"one",
+				"--source-root",
+				"two",
+			],
+			"repeated recovery option",
+		),
+		(
+			&[
+				"--source-root",
+				"source",
+				"--profile",
+				"one",
+				"--profile",
+				"two",
+			],
+			"repeated recovery option",
+		),
+	] {
+		let output = exacopy()
+			.args(["recover", "resume", "job"])
+			.args(options)
+			.output()
+			.expect("invoke invalid resume command");
+		assert_eq!(output.status.code(), Some(2));
+		assert!(output.stdout.is_empty());
+		let stderr = String::from_utf8_lossy(&output.stderr);
+		assert!(stderr.contains(error), "{options:?}: {stderr}");
+	}
+}
+
+#[test]
+fn source_root_option_requires_source_based_recovery() {
 	for action in ["inspect", "finish"] {
 		let output = exacopy()
 			.args([
@@ -206,36 +261,39 @@ fn source_root_option_is_restricted_to_retry() {
 				"source",
 			])
 			.output()
-			.expect("invoke recovery command with a retry-only option");
+			.expect("invoke recovery command with a source-only option");
 		assert_eq!(output.status.code(), Some(2));
 		assert!(output.stdout.is_empty());
 		assert!(
 			String::from_utf8_lossy(&output.stderr)
-				.contains("--source-root requires recover retry")
+				.contains("--source-root requires recover retry or recover resume")
 		);
 	}
 }
 
 #[cfg(not(target_os = "linux"))]
 #[test]
-fn retry_refuses_unsupported_platform_without_accessing_inputs() {
-	let output = exacopy()
-		.args([
-			"recover",
-			"retry",
-			"job",
-			"--source-root",
-			"absent-source-root",
-			"--profile",
-			"absent-profile",
-			"--format",
-			"json",
-		])
-		.output()
-		.expect("invoke retry on unsupported platform");
-	assert_eq!(output.status.code(), Some(6));
-	assert!(output.stderr.is_empty());
-	let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("read report");
-	assert_eq!(report["result"], "failed");
-	assert_eq!(report["code"], "E_UNSUPPORTED");
+fn source_based_recovery_refuses_unsupported_platform_without_accessing_inputs() {
+	for action in ["retry", "resume"] {
+		let output = exacopy()
+			.args([
+				"recover",
+				action,
+				"job",
+				"--source-root",
+				"absent-source-root",
+				"--profile",
+				"absent-profile",
+				"--format",
+				"json",
+			])
+			.output()
+			.expect("invoke recovery on unsupported platform");
+		assert_eq!(output.status.code(), Some(6));
+		assert!(output.stderr.is_empty());
+		let report: serde_json::Value =
+			serde_json::from_slice(&output.stdout).expect("read report");
+		assert_eq!(report["result"], "failed");
+		assert_eq!(report["code"], "E_UNSUPPORTED");
+	}
 }

@@ -39,6 +39,24 @@ fn retries_a_retained_inode_and_repeats_without_changing_the_receipt() {
 }
 
 #[test]
+fn resume_leaves_an_active_intent_for_explicit_retry() {
+	let retained = Retained::new();
+	let stage_inode = fs::metadata(retained.stage()).unwrap().ino();
+	let initial_journal = fs::read(retained.journal()).unwrap();
+
+	let result = retained.recover("resume", SOURCE_ROOT, 9);
+	assert_eq!(result["disposition"], "possible_retry");
+	assert_eq!(result["journal_tail"], "clean");
+	assert_eq!(fs::read(retained.journal()).unwrap(), initial_journal);
+	assert_eq!(fs::metadata(retained.stage()).unwrap().ino(), stage_inode);
+	assert!(!retained.fixture.path(TARGET).exists());
+	assert!(!retained.receipt().exists());
+
+	assert_eq!(retained.retry(SOURCE_ROOT, 0)["disposition"], "complete");
+	assert_eq!(fs::read(retained.fixture.path(TARGET)).unwrap(), DATA);
+}
+
+#[test]
 fn rejects_wrong_source_grants_and_changed_source_bytes_without_leaking_paths() {
 	let retained = Retained::new();
 	let journal = fs::read(retained.journal()).unwrap();
@@ -147,10 +165,14 @@ impl Retained {
 	}
 
 	fn retry(&self, source_root: &str, exit: i32) -> Value {
+		self.recover("retry", source_root, exit)
+	}
+
+	fn recover(&self, action: &str, source_root: &str, exit: i32) -> Value {
 		let output = self
 			.fixture
 			.command()
-			.args(["recover", "retry"])
+			.args(["recover", action])
 			.arg(&self.job)
 			.args([
 				"--source-root",
@@ -161,7 +183,7 @@ impl Retained {
 				"json",
 			])
 			.output()
-			.expect("retry a retained job");
+			.expect("recover a retained job");
 		assert_eq!(output.status.code(), Some(exit), "{output:?}");
 		assert!(output.stderr.is_empty());
 		let report: Value = serde_json::from_slice(&output.stdout).expect("decode report");

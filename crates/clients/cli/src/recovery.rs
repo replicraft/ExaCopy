@@ -5,10 +5,10 @@ use exacopy_endpoint::UnixComponent;
 use exacopy_platform::linux::{DestinationRoot, PublishError, ReadError, ReadRoot, StageError};
 use exacopy_transfer::linux::{
 	RecoveryFinishError, RecoveryInspectError, RecoveryProfile, RecoveryRetryError, RecoverySource,
-	finish_recovery, inspect_recovery, retry_recovery,
+	finish_recovery, inspect_recovery, resume_recovery, retry_recovery,
 };
 
-use crate::args::{RecoveryAction, RecoveryCommand};
+use crate::args::{RecoveryAction, RecoveryCommand, SourceRecoveryAction};
 use crate::copy_report::ErrorKind;
 use crate::linux_path::{open_destination, open_directory, split};
 use crate::profile::LocalProfile;
@@ -49,7 +49,11 @@ pub(crate) fn execute(request: &RecoveryCommand) -> RecoveryOutcome {
 			}
 			Err(error) => RecoveryOutcome::failure(ErrorKind::RecoveryRequired, error),
 		},
-		RecoveryAction::Retry { source_root } => retry(
+		RecoveryAction::FromSource {
+			action,
+			source_root,
+		} => recover_from_source(
+			*action,
 			&destination,
 			job,
 			binding,
@@ -60,7 +64,8 @@ pub(crate) fn execute(request: &RecoveryCommand) -> RecoveryOutcome {
 	}
 }
 
-fn retry(
+fn recover_from_source(
+	action: SourceRecoveryAction,
 	destination: &DestinationRoot,
 	job: UnixComponent<'_>,
 	binding: RecoveryProfile<'_>,
@@ -84,19 +89,18 @@ fn retry(
 		Ok(id) => id,
 		Err(error) => return RecoveryOutcome::failure(ErrorKind::Io, error),
 	};
-	match retry_recovery(
-		destination,
-		job,
-		binding,
-		RecoverySource { root: &root, id },
-		scratch,
-	) {
+	let source = RecoverySource { root: &root, id };
+	let result = match action {
+		SourceRecoveryAction::Retry => retry_recovery(destination, job, binding, source, scratch),
+		SourceRecoveryAction::Resume => resume_recovery(destination, job, binding, source, scratch),
+	};
+	match result {
 		Ok(evidence) => RecoveryOutcome::inspected(evidence),
-		Err(error) => RecoveryOutcome::failure(retry_kind(&error), error),
+		Err(error) => RecoveryOutcome::failure(source_recovery_kind(&error), error),
 	}
 }
 
-fn retry_kind(error: &RecoveryRetryError) -> ErrorKind {
+fn source_recovery_kind(error: &RecoveryRetryError) -> ErrorKind {
 	match error {
 		RecoveryRetryError::Recovery(RecoveryFinishError::Inspection(error)) => kind(error),
 		RecoveryRetryError::SourceMismatch
