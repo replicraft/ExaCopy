@@ -60,17 +60,7 @@ impl StageReader<'_> {
 		self.stage.location.check_process()?;
 		with_materialization_disabled(|| {
 			self.check_current()?;
-			let mut retries = MAX_INTERRUPTED_RETRIES;
-			loop {
-				match self.file.read_at(&mut [0], self.stage.length()) {
-					Ok(0) => break,
-					Ok(_) => return Err(StageError::UnexpectedDataAfterEnd),
-					Err(error) if error.kind() == io::ErrorKind::Interrupted && retries > 0 => {
-						retries -= 1;
-					}
-					Err(error) => return Err(error.into()),
-				}
-			}
+			check_logical_eof(&self.file, self.stage.length())?;
 			self.check_current()
 		})
 	}
@@ -82,6 +72,20 @@ impl StageReader<'_> {
 		self.stage
 			.location
 			.check_descriptor(&self.file, &self.stage.observed)
+	}
+}
+
+pub(super) fn check_logical_eof(file: &File, length: u64) -> Result<(), StageError> {
+	let mut retries = MAX_INTERRUPTED_RETRIES;
+	loop {
+		match file.read_at(&mut [0], length) {
+			Ok(0) => return Ok(()),
+			Ok(_) => return Err(StageError::UnexpectedDataAfterEnd),
+			Err(error) if error.kind() == io::ErrorKind::Interrupted && retries > 0 => {
+				retries -= 1;
+			}
+			Err(error) => return Err(error.into()),
+		}
 	}
 }
 

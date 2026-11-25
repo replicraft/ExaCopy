@@ -24,7 +24,9 @@ mod name;
 mod record;
 
 pub use error::RecoveryError;
-pub use inventory::{RecoveryFileObservation, RecoveryInventory, RecoveryName};
+pub use inventory::{
+	RecoveryFileObservation, RecoveryInventory, RecoveryName, RecoveryStageReader,
+};
 pub use record::RecoveryRecord;
 
 impl StageDirectory<'_> {

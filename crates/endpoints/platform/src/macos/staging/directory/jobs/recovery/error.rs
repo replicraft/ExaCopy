@@ -10,7 +10,7 @@ use super::{JobArtifact, RecoveryName, StageError};
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum RecoveryError {
-	/// The already supplied managed namespace lease failed revalidation.
+	/// A managed APFS lease, native metadata or bounded read check failed.
 	Managed(StageError),
 	/// The supplied staging directory belongs to a job and cannot contain one.
 	NestedJob,
@@ -40,7 +40,9 @@ pub enum RecoveryError {
 impl fmt::Display for RecoveryError {
 	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
-			Self::Managed(error) => write!(formatter, "managed recovery lease failed ({error})"),
+			Self::Managed(error) => {
+				write!(formatter, "managed APFS recovery check failed ({error})")
+			}
 			Self::NestedJob => formatter.write_str("job recovery requires the private container"),
 			Self::Missing(artifact) => write!(formatter, "private recovery {artifact:?} is absent"),
 			Self::PendingReceipt => {

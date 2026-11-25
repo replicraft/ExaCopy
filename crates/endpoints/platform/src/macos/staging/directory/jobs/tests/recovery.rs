@@ -9,6 +9,7 @@ use super::{
 };
 
 mod namespace;
+mod readback;
 const OWNER_BYTES: &[u8] = b"opaque owner fixture";
 const PLAN_BYTES: &[u8] = b"opaque canonical plan fixture";
 const JOURNAL_BYTES: &[u8] = b"opaque journal prefix";

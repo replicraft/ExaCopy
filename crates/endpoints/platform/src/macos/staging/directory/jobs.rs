@@ -25,7 +25,7 @@ pub use error::{JobArtifact, JobError, JobStep};
 pub use identity::JobName;
 pub use recovery::{
 	RecoveryError, RecoveryFileObservation, RecoveryInventory, RecoveryJob, RecoveryName,
-	RecoveryRecord,
+	RecoveryRecord, RecoveryStageReader,
 };
 
 const JOURNAL: &[u8] = b"journal";

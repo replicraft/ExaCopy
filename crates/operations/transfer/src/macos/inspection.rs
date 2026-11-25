@@ -4,15 +4,16 @@ use std::io::{self, BufReader, Read as _};
 use std::num::NonZeroU32;
 
 use ed25519_dalek::VerifyingKey;
+use exacopy_content::ContentDigest;
 use exacopy_endpoint::UnixComponent;
 use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{
-	DarwinEntryPrepared, DarwinPreparedError, DarwinReceiptDigest, MAX_OWNER_BYTES, OwnerError,
-	OwnerProfileId, RootCapabilityId,
+	DarwinEntryPrepared, DarwinPreparedError, DarwinReceiptDigest, DarwinStageObservation,
+	MAX_OWNER_BYTES, OwnerError, OwnerProfileId, RootCapabilityId,
 };
 use exacopy_platform::macos::ManagedObjectIdentity;
 use exacopy_platform::macos::staging::jobs::{
-	JobArtifact, JobName, RecoveryFileObservation, RecoveryJob, RecoveryRecord,
+	JobArtifact, JobName, RecoveryFileObservation, RecoveryInventory, RecoveryJob, RecoveryRecord,
 };
 
 use super::job::{STAGE_PAYLOAD, native_identity};
@@ -23,7 +24,8 @@ use super::replay::{
 };
 
 mod error;
-pub use error::DarwinInspectionError;
+mod readback;
+pub use error::{DarwinInspectionError, DarwinStageReadBackError};
 
 /// Trust inputs independently supplied by the caller holding the recovered destination.
 #[derive(Clone, Copy, Debug)]
@@ -76,6 +78,39 @@ pub fn inspect_job(
 	job: &RecoveryJob<'_>,
 	authority: DarwinInspectionAuthority<'_>,
 ) -> Result<DarwinJobInspection, DarwinInspectionError> {
+	inspect(job, authority, |_, _, _| Ok(())).map(|(inspection, ())| inspection)
+}
+
+/// Checks the retained private stage against accepted historical verification.
+///
+/// This opt-in inspection can advance the stage's access time. If the replay
+/// includes required metadata, it must match both before and after the reads.
+/// The returned digest describes the private stage observed during this
+/// inspection. Neither the source nor the public target is opened for content.
+///
+/// # Errors
+/// Refuses missing verification, changed bindings, invalid scratch bounds,
+/// ineligible stage metadata, I/O failures, and digest or recorded metadata mismatches.
+pub fn inspect_job_with_stage_read_back(
+	job: &RecoveryJob<'_>,
+	authority: DarwinInspectionAuthority<'_>,
+	scratch: &mut [u8],
+) -> Result<(DarwinJobInspection, ContentDigest), DarwinInspectionError> {
+	inspect(job, authority, |replay, prepared, names| {
+		readback::verify(replay, prepared, names, scratch)
+			.map_err(DarwinInspectionError::StageReadBack)
+	})
+}
+
+fn inspect<T>(
+	job: &RecoveryJob<'_>,
+	authority: DarwinInspectionAuthority<'_>,
+	observe: impl FnOnce(
+		&DarwinJournalReplay,
+		Option<DarwinStageObservation<'_>>,
+		&RecoveryInventory<'_>,
+	) -> Result<T, DarwinInspectionError>,
+) -> Result<(DarwinJobInspection, T), DarwinInspectionError> {
 	let plan_bytes = read_record(
 		job.open_plan()?,
 		JobArtifact::Plan,
@@ -104,14 +139,14 @@ pub fn inspect_job(
 		},
 	)
 	.map_err(DarwinInspectionError::Replay)?;
-	let stage_name = match replay.frame(FrameKind::EntryPrepared) {
-		Some(entry) => {
-			DarwinEntryPrepared::from_frame(entry)
-				.map_err(DarwinInspectionError::Preparation)?
-				.preparation()
-				.stage
-				.component
-		}
+	let prepared = replay
+		.frame(FrameKind::EntryPrepared)
+		.map(DarwinEntryPrepared::from_frame)
+		.transpose()
+		.map_err(DarwinInspectionError::Preparation)?
+		.map(|entry| entry.preparation().stage);
+	let stage_name = match prepared {
+		Some(stage) => stage.component,
 		None => UnixComponent::new(STAGE_PAYLOAD)
 			.map_err(DarwinPreparedError::InvalidComponent)
 			.map_err(DarwinInspectionError::Preparation)?,
@@ -128,20 +163,24 @@ pub fn inspect_job(
 		}
 		Some(_) => DarwinReceiptArtifact::PresentUncommitted,
 	};
+	let observed = observe(&replay, prepared, &names)?;
 	names.revalidate()?;
 	segment.revalidate()?;
 	let stage_directory = names.stage_directory_identity();
 	let stage = names.stage();
 	let target = names.target();
 	drop(names);
-	Ok(DarwinJobInspection {
-		plan_bytes,
-		replay,
-		receipt,
-		stage_directory,
-		stage,
-		target,
-	})
+	Ok((
+		DarwinJobInspection {
+			plan_bytes,
+			replay,
+			receipt,
+			stage_directory,
+			stage,
+			target,
+		},
+		observed,
+	))
 }
 
 fn read_record(

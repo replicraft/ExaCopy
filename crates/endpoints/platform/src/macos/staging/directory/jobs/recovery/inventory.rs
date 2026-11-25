@@ -14,6 +14,10 @@ use super::{
 	RecoveryJob, acl, check_absent, component, lookup_stat, name, with_materialization_disabled,
 };
 
+mod readback;
+
+pub use readback::RecoveryStageReader;
+
 const OBSERVE: OFlags = EVENT_ONLY
 	.union(OFlags::NOFOLLOW)
 	.union(OFlags::NONBLOCK)
