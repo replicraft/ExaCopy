@@ -38,7 +38,7 @@ find-msvc-tools = "Locate the MSVC compiler and toolchain for cc."
 generic-array = "Use type-level sizes for arrays in the digest stack."
 getrandom = "Read system entropy for macOS stage identities and WireGuard key and protocol generation through their respective versions."
 hex = "Hexadecimal representations used internally by BoringTun."
-hmac = "HMAC interface used for WireGuard BLAKE2s key derivation."
+hmac = "HMAC interface used for WireGuard BLAKE2s key derivation and OpenSSH version-1 hashed hostname matching."
 inout = "Borrowed buffer interfaces for the RustCrypto transform APIs."
 ip_network = "IP prefix representations for BoringTun's table dependency."
 ip_network_table = "Prefix lookups in BoringTun's broader crate; the fixed-peer adapter uses its own exact address pair."
@@ -166,7 +166,7 @@ salsa20 = "Core stream transform compiled by scrypt and upstream encrypted key s
 scrypt = "Memory-hard key derivation used by encrypted private key dependencies."
 sec1 = "SEC 1 curve point and key encoding used by upstream SSH key libraries."
 serde_bytes = "Encode and decode byte sequences distinctly from generic sequences in SFTP packets."
-sha1 = "Legacy known-hosts and key-format compatibility compiled by the SSH libraries; not the selected host fingerprint or exchange digest."
+sha1 = "SHA-1 primitive used directly only for matching OpenSSH version-1 hashed hostname labels. Upstream SSH key-format compatibility also compiles it. Host-key fingerprints use SHA-256."
 sha3 = "SHA-3 hash functions compiled by upstream Russh and ML-KEM."
 shake = "SHAKE extendable-output functions compiled by ML-KEM."
 slab = "Indexed storage used for futures task bookkeeping."
@@ -911,3 +911,27 @@ adversarial_inputs = "The AEAD boundary accepts peer-controlled ciphertext and a
 verification = "A pinned Rust 1.100.0 ARM64 macOS probe matched an upstream AES-256-GCM known-answer vector and rejected a changed tag. NASM 3.02 reassembly matched the archived 17 Windows objects' non-debug COFF section contents, relocations and defined external symbols. Whole object bytes differ. Windows native execution and complete source-to-object reproduction remain open."
 replacement = "Preserve SSH AEAD algorithm negotiation, nonce and authentication semantics, packet bounds, portable fallbacks, and explicit native toolchain and distribution notices. Revisit target-specific build and advisory policy."
 review_gaps = ["Independent whole-version safe-to-deploy audit", "Native Windows and Linux qualification of selected native crypto paths", "Distribution notice packaging and complete published native object provenance"]
+
+# https://github.com/RustCrypto/MACs/tree/0236c8eb50098dd7f277a71ab89caaeb1e7314df/hmac
+[assessment."hmac@0.13.0"]
+archive_sha256 = "6303bc9732ae41b04cb554b844a762b4115a61bfaa81e3e83050991eeb56863f"
+release_observation = "The locked crates.io archive declares MIT OR Apache-2.0 and records upstream commit 0236c8eb50098dd7f277a71ab89caaeb1e7314df. All five shipped runtime source files, the original manifest and both license notices matched those at that commit. The direct optional SSH edge adds no package identity or HMAC feature."
+security_history = "The recorded RustSec snapshot 263a4d951a0867d4bddc29dddd6d59427c78f9a7 lists no package advisory. ExaCopy uses this version directly for compatibility with OpenSSH hostname labels. The salt and tag are public trust-store fields. SSH verifies the peer key independently through the authenticated key exchange and explicit SHA-256 pin."
+unsafe_exposure = "This package ships no build script or handwritten unsafe code. Hmac<Sha1> wraps the digest block buffer and HmacCore, which uses fixed hash state and type-sized blocks. The selected path still inherits the pinned digest, block buffer, comparison and SHA-1 backend exposure."
+resource_limits = "Each hashed row uses a 20-byte public salt and full 20-byte tag. ExaCopy checks at most two canonical host tokens per entry, with at most 4,096 input lines and a 1 MiB snapshot. The HMAC core normalizes the salt into a fixed 64-byte SHA-1 block and holds fixed-size hash state."
+adversarial_inputs = "The caller requires supported version-1 labels with canonical Base64 and exact decoded lengths before evaluation. Digest verify_slice rejects a wrong tag length and compares the full finalized tag with ct_eq. Unmatched opaque revocations still deny the exact listed key."
+verification = "The experimental SSH suite passed 22 locked offline tests on ARM64 macOS, including positive label matching, malformed labels and credential gating on revocation. Independent OpenSSH 9.7p1 ssh-keygen -H/-F and Python HMAC probes over nine synthetic labels corroborate the selected format."
+replacement = "Use a reviewed complete HMAC implementation producing identical OpenSSH version-1 label tags and preserve full tag and revocation semantics, or explicitly drop hashed label support."
+review_gaps = ["Whole-version Cargo Vet safe-to-deploy admission and transitive audit coverage remain open. The selected tests cover the current ARM64 macOS path."]
+
+# https://github.com/RustCrypto/hashes/tree/2f00175af936de46b3ddefe65c4de93cb4e876e4/sha1
+[assessment."sha1@0.11.0"]
+archive_sha256 = "aacc4cc499359472b4abe1bf11d0b12e688af9a805fa5e3016f9a386dc2d0214"
+release_observation = "The locked crates.io archive declares MIT OR Apache-2.0 and records upstream commit 2f00175af936de46b3ddefe65c4de93cb4e876e4. All eight shipped runtime source files, the original manifest and both license notices matched those at that commit. The direct optional SSH edge requests no default features. Upstream SSH edges still enable alloc and oid through feature unification."
+security_history = "The recorded RustSec snapshot 263a4d951a0867d4bddc29dddd6d59427c78f9a7 lists no package advisory. SHA-1 collision resistance is broken. ExaCopy's direct use is the legacy public-salt hostname index inside HMAC. SSH host-key fingerprinting and peer authentication use separate mechanisms."
+unsafe_exposure = "No build script. The core processes 64-byte blocks with a software implementation or unsafe CPU intrinsics for AArch64 or x86 SHA instructions. Default dispatch checks the required CPU features through cpufeatures before entering accelerated code and falls back to software. Other architecture and explicit backend configurations remain outside the selected runtime evidence."
+resource_limits = "SHA-1's state and buffered blocks have fixed sizes, with work linear in the small canonical authority spelling fed to HMAC. The SSH parser bounds the complete file, each line, the number of records and the admissible hostname length."
+adversarial_inputs = "The digest receives canonical host spelling from the typed authority and a fixed-width public salt through HMAC. The input parser rejects malformed or oversized record fields before matching. SHA-1 labels convey neither host identity nor integrity of the trust store."
+verification = "The selected HMAC-SHA1 call path passed the 22-test ARM64 macOS SSH run. OpenSSH 9.7p1 synthetic label generation and lookup were independently compared with Python HMAC-SHA1. The run does not establish which ARM64 compression branch executed."
+replacement = "Use a reviewed compatible SHA-1 digest solely inside OpenSSH version-1 hostname matching, or explicitly drop hashed labels. Changing the digest would change the stored-format contract."
+review_gaps = ["Whole-version Cargo Vet safe-to-deploy admission and transitive audit coverage remain open.", "Selected tests do not qualify software and accelerated backend parity or native Linux and Windows behavior."]

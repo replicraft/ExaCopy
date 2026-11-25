@@ -8,9 +8,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use exacopy_endpoint::UnixComponent;
 use exacopy_endpoint::ssh_sftp::{
 	CredentialRefusal, CredentialSource, HostKeyFingerprint, HostKeyRefusal, InteractionPolicy,
-	KnownHostStatus, SshAuthority,
+	SshAuthority,
 };
-use exacopy_ssh::{Error, Password, connect};
+use exacopy_ssh::{Error, KnownHostTrust, Password, connect};
 use russh::keys::ssh_key::private::{Ed25519Keypair, KeypairData};
 use russh::keys::{HashAlg, PrivateKey};
 use russh::{Channel, ChannelId, server};
@@ -226,8 +226,7 @@ fn peer_with_handle(
 	Arc<Calls>,
 	oneshot::Receiver<server::Handle>,
 ) {
-	let secret = Ed25519Keypair::from_seed(&[17; 32]);
-	let key = PrivateKey::new(KeypairData::Ed25519(secret), "").unwrap();
+	let key = fixture_key();
 	let pin = HostKeyFingerprint::from_sha256(
 		key.public_key()
 			.fingerprint(HashAlg::Sha256)
@@ -256,6 +255,17 @@ fn peer_with_handle(
 	(client, pin, calls, receive_handle)
 }
 
+fn fixture_key() -> PrivateKey {
+	let seed = Ed25519Keypair::from_seed(&[17; 32]);
+	PrivateKey::new(KeypairData::Ed25519(seed), "").unwrap()
+}
+
+fn fixture_trust(target: &SshAuthority, marker: &str) -> KnownHostTrust {
+	let key = fixture_key().public_key().to_openssh().unwrap();
+	let record = format!("{marker}{} {key}", target.host());
+	KnownHostTrust::from_snapshot(target, Ok(record.as_bytes())).unwrap()
+}
+
 fn authority(account: &str) -> SshAuthority {
 	SshAuthority::new("sftp.example", NonZeroU16::new(22).unwrap(), account).unwrap()
 }
@@ -268,7 +278,7 @@ async fn raw_listing_and_short_reads_use_a_pinned_authenticated_connection() {
 		stream,
 		&target,
 		pin,
-		|_, _| KnownHostStatus::Unknown,
+		fixture_trust(&target, ""),
 		&target,
 		|request| {
 			assert_eq!(request.authority(), &target);
@@ -298,25 +308,52 @@ async fn raw_listing_and_short_reads_use_a_pinned_authenticated_connection() {
 #[tokio::test]
 async fn a_mismatched_pin_or_revocation_never_requests_or_sends_a_credential() {
 	let target = authority("transfer");
-	for (known, expected) in [
-		(KnownHostStatus::Unknown, HostKeyRefusal::PinMismatch),
-		(KnownHostStatus::Revoked, HostKeyRefusal::Revoked),
+	for (revoked, expected) in [
+		(false, HostKeyRefusal::PinMismatch),
+		(true, HostKeyRefusal::Revoked),
 	] {
 		let (stream, pin, calls) = peer(true, false);
-		let selected = if known == KnownHostStatus::Unknown {
-			HostKeyFingerprint::from_sha256([0; 32])
-		} else {
+		let selected = if revoked {
 			pin
+		} else {
+			HostKeyFingerprint::from_sha256([0; 32])
 		};
+		let marker = if revoked { "@revoked " } else { "" };
 		let result = connect(
 			stream,
 			&target,
 			selected,
-			move |_, _| known,
+			fixture_trust(&target, marker),
 			&target,
 			|_| panic!("broker called before trust"),
 		);
 		assert!(matches!(result.await, Err(Error::HostKey(refusal)) if refusal == expected));
+		assert_eq!(calls.auth.load(Ordering::Relaxed), 0);
+		assert_eq!(calls.subsystem.load(Ordering::Relaxed), 0);
+	}
+}
+
+#[tokio::test]
+async fn a_hashed_revocation_blocks_a_matching_pin_before_credentials() {
+	// OpenSSH 9.7p1 ssh-keygen -H output for [sftp.example]:22 and
+	// [unrelated.example]:22, respectively. The second label is opaque
+	// and still denies the identical offered key in a dedicated store.
+	let target = authority("transfer");
+	for host in [
+		"|1|2cIMKsRMeh/zQvVDh4zUxqCLaCM=|O3vD620kwtsYVvIcqYDajCL+kF8=",
+		"|1|JTlkQlMnT3yxcQv+AMyBywfWpBM=|EWeOMzItF31gFl0QJdB7Cqz2J94=",
+	] {
+		let (stream, pin, calls) = peer(true, false);
+		let key = fixture_key().public_key().to_openssh().unwrap();
+		let record = format!("@revoked {host} {key}");
+		let trust = KnownHostTrust::from_snapshot(&target, Ok(record.as_bytes())).unwrap();
+		let result = connect(stream, &target, pin, trust, &target, |_| {
+			panic!("broker called before trust")
+		});
+		assert!(matches!(
+			result.await,
+			Err(Error::HostKey(HostKeyRefusal::Revoked))
+		));
 		assert_eq!(calls.auth.load(Ordering::Relaxed), 0);
 		assert_eq!(calls.subsystem.load(Ordering::Relaxed), 0);
 	}
@@ -331,7 +368,7 @@ async fn a_credential_for_another_account_cannot_be_acquired_or_sent() {
 		stream,
 		&target,
 		pin,
-		|_, _| KnownHostStatus::Unknown,
+		fixture_trust(&target, ""),
 		&other,
 		|_| panic!("broker called for an unrelated account"),
 	)
@@ -351,7 +388,7 @@ async fn a_refused_sftp_subsystem_never_falls_back_to_a_shell() {
 		stream,
 		&target,
 		pin,
-		|_, _| KnownHostStatus::Unknown,
+		fixture_trust(&target, ""),
 		&target,
 		|_| Password::new(SECRET.to_owned()),
 	)
@@ -371,7 +408,7 @@ async fn early_eof_refuses_incomplete_reads_and_fences_the_session() {
 		stream,
 		&target,
 		pin,
-		|_, _| KnownHostStatus::Unknown,
+		fixture_trust(&target, ""),
 		&target,
 		|_| Password::new(SECRET.to_owned()),
 	)
@@ -394,7 +431,7 @@ async fn a_peer_initiated_channel_is_refused_and_the_connection_is_fenced() {
 		stream,
 		&target,
 		pin,
-		|_, _| KnownHostStatus::Unknown,
+		fixture_trust(&target, ""),
 		&target,
 		|_| Password::new(SECRET.to_owned()),
 	)
@@ -408,4 +445,25 @@ async fn a_peer_initiated_channel_is_refused_and_the_connection_is_fenced() {
 		Err(Error::UnsolicitedChannel)
 	));
 	assert!(matches!(session.stat(&path).await, Err(Error::Closed)));
+}
+
+#[tokio::test]
+async fn a_store_for_another_authority_refuses_before_the_broker() {
+	let (stream, pin, calls) = peer(true, false);
+	let target = authority("transfer");
+	let other = authority("other");
+	let result = connect(
+		stream,
+		&target,
+		pin,
+		fixture_trust(&other, ""),
+		&target,
+		|_| panic!("broker called for trust scoped elsewhere"),
+	)
+	.await;
+	assert!(matches!(
+		result,
+		Err(Error::HostKey(HostKeyRefusal::TrustUnavailable))
+	));
+	assert_eq!(calls.auth.load(Ordering::Relaxed), 0);
 }

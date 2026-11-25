@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use exacopy_endpoint::ssh_sftp::{
-	CredentialRequest, CredentialSource, HostKeyFingerprint, InteractionPolicy, KnownHostStatus,
-	SshAuthority, verify_host,
+	CredentialRequest, CredentialSource, HostKeyFingerprint, HostKeyRefusal, InteractionPolicy,
+	KnownHostStatus, SshAuthority, verify_host,
 };
 use russh::client::{self, ChannelOpenHandle, Handler, Msg};
 use russh::keys::{Algorithm, HashAlg, PublicKey, PublicKeyOrCertificate};
@@ -17,6 +17,7 @@ use zeroize::Zeroizing;
 use crate::data::ReadOnlySftp;
 use crate::error::Error;
 use crate::fence::FencedStream;
+use crate::known_hosts::KnownHostTrust;
 use crate::wire::Wire;
 
 const MAX_PASSWORD_BYTES: usize = 4096;
@@ -42,18 +43,15 @@ impl Password {
 	}
 }
 
-pub(crate) struct HostCheck<T> {
+pub(crate) struct HostCheck {
 	authority: SshAuthority,
 	pin: HostKeyFingerprint,
-	lookup: Option<T>,
+	trust: KnownHostTrust,
 	verified: Option<oneshot::Sender<(HostKeyFingerprint, KnownHostStatus)>>,
 	initial_complete: bool,
 }
 
-impl<T> Handler for HostCheck<T>
-where
-	T: FnOnce(&SshAuthority, HostKeyFingerprint) -> KnownHostStatus + Send,
-{
+impl Handler for HostCheck {
 	type Error = Error;
 
 	async fn check_server_key(
@@ -68,8 +66,7 @@ where
 			.sha256()
 			.ok_or(Error::Protocol)?;
 		let fingerprint = HostKeyFingerprint::from_sha256(fingerprint);
-		let lookup = self.lookup.take().ok_or(Error::Protocol)?;
-		let known = lookup(&self.authority, fingerprint);
+		let known = self.trust.status(&self.authority, fingerprint);
 		verify_host(&self.authority, fingerprint, known, Some(self.pin)).map_err(Error::HostKey)?;
 		self.verified
 			.take()
@@ -183,33 +180,35 @@ where
 
 /// Connects to a pinned SFTP peer over a stream supplied by the route owner.
 ///
-/// The trust lookup uses previously acquired authority-scoped observations and
-/// must be bounded and nonblocking, as must the supplied credential broker.
-/// The caller owns route enforcement and credential acquisition. The adapter calls the broker at most once, on the
-/// same connection, after the library and local policy accept the peer.
+/// Supply the parsed trust snapshot for this authority. The caller owns
+/// route enforcement and provides a bounded, nonblocking credential broker.
+/// The adapter calls the broker at most once, after accepting host trust on
+/// the same connection.
 ///
 /// # Errors
 /// A failure to establish SSH/SFTP or acquire an approved credential is returned.
 /// The adapter makes no connection retries and never opens a shell.
-pub async fn connect<S, T, B>(
+pub async fn connect<S, B>(
 	stream: S,
 	authority: &SshAuthority,
 	pin: HostKeyFingerprint,
-	trust: T,
+	trust: KnownHostTrust,
 	credential_authority: &SshAuthority,
 	broker: B,
 ) -> Result<ReadOnlySftp, Error>
 where
 	S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-	T: FnOnce(&SshAuthority, HostKeyFingerprint) -> KnownHostStatus + Send + 'static,
 	B: FnOnce(CredentialRequest<'_>) -> Result<Password, Error>,
 {
+	if !trust.binds(authority) {
+		return Err(Error::HostKey(HostKeyRefusal::TrustUnavailable));
+	}
 	timeout(CONNECT_DEADLINE, async {
 		let (verified, checked) = oneshot::channel();
 		let handler = HostCheck {
 			authority: authority.clone(),
 			pin,
-			lookup: Some(trust),
+			trust,
 			verified: Some(verified),
 			initial_complete: false,
 		};

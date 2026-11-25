@@ -889,8 +889,10 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "exacopy-endpoint",
+ "hmac 0.13.0",
  "russh",
  "russh-sftp",
+ "sha1",
  "tokio",
  "tokio-util",
  "zeroize",

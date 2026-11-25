@@ -98,6 +98,8 @@
         "enables": [
           "dep:bytes",
           "dep:exacopy-endpoint",
+          "dep:hmac",
+          "dep:sha1",
           "dep:russh",
           "dep:russh-sftp",
           "dep:tokio",
@@ -107,6 +109,8 @@
         "resolution_probe": [
           "bytes",
           "exacopy-endpoint",
+          "hmac",
+          "sha1",
           "russh",
           "russh-sftp",
           "tokio",
@@ -214,6 +218,18 @@
     }
   },
   "production_dependencies": {
+    "hmac": {
+      "default_features": false,
+      "features": [],
+      "optional": true,
+      "purpose": "Match OpenSSH v1 hashed host labels through bounded HMAC-SHA1; never an SSH authentication algorithm."
+    },
+    "sha1": {
+      "default_features": false,
+      "features": [],
+      "optional": true,
+      "purpose": "Supply only the digest in OpenSSH hashed-host label compatibility; host-key fingerprints remain SHA256."
+    },
     "apfs-mounted": {
       "default_features": false,
       "features": [],

@@ -6,9 +6,11 @@ mod connection;
 mod data;
 mod error;
 mod fence;
+mod known_hosts;
 mod shape;
 mod wire;
 
 pub use connection::{Password, connect};
 pub use data::{FileObservation, ReadOnlySftp};
 pub use error::Error;
+pub use known_hosts::{KnownHostTrust, KnownHostsError};

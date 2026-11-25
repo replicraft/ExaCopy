@@ -42,7 +42,7 @@ dev.external = ["ed25519-dalek", "rustix"]
 [groups.network]
 members = { exacopy-ssh = "crates/network/ssh", exacopy-wireguard = "crates/network/wireguard" }
 normal.groups = ["contracts"]
-normal.optional_external = ["boringtun", "bytes", "russh", "russh-sftp", "rustix", "tokio", "tokio-util", "zeroize"]
+normal.optional_external = ["boringtun", "bytes", "russh", "russh-sftp", "rustix", "tokio", "tokio-util", "zeroize", "hmac", "sha1"]
 
 [groups.runtime]
 members = { exacopy-engine = "crates/runtime/engine" }
