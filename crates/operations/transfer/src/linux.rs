@@ -163,6 +163,7 @@ fn prepare<'stage>(
 fn check_source(source: &SourceFile) -> Result<(), StageFailure> {
 	let attributes = source.extended_attributes().map_err(StageFailure::Source)?;
 	source.recheck_observation().map_err(StageFailure::Source)?;
+	source.check_logical_eof().map_err(StageFailure::Source)?;
 	if attributes != ExtendedAttributes::NoneVisible {
 		return Err(StageFailure::SourceAttributes(attributes));
 	}

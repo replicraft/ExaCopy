@@ -6,6 +6,7 @@ mod common;
 
 use std::ffi::OsStr;
 use std::fs::{self, File, OpenOptions};
+use std::io::Write as _;
 use std::os::unix::ffi::OsStrExt as _;
 use std::os::unix::fs::symlink;
 
@@ -150,6 +151,29 @@ fn rejects_crossing_the_proc_mount_from_a_root_directory_handle() {
 		matches!(&result, Err(ReadError::System(error)) if error.raw_os_error() == Some(Errno::XDEV.raw_os_error())),
 		"expected mount-boundary rejection at the proc mount: {result:?}",
 	);
+}
+
+#[test]
+fn checks_the_observed_eof_without_accepting_an_appended_suffix() {
+	let scratch = Scratch::new();
+	let path = scratch.path("source");
+	let mut writer = OpenOptions::new()
+		.create_new(true)
+		.append(true)
+		.open(path)
+		.expect("create source fixture");
+	let root = ReadRoot::from_directory(scratch.open()).expect("admit fixture");
+	let source = root
+		.open_regular(UnixComponent::new(b"source").expect("admitted name"))
+		.expect("open empty source");
+	source
+		.check_logical_eof()
+		.expect("empty stream ends at zero");
+	writer.write_all(b"visible data").expect("append a suffix");
+	assert!(matches!(
+		source.check_logical_eof(),
+		Err(ReadError::UnexpectedDataAfterEnd)
+	));
 }
 
 #[test]

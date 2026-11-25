@@ -5,7 +5,7 @@ use std::io;
 use std::os::fd::AsFd;
 use std::os::unix::fs::FileExt;
 
-use exacopy_endpoint::{IoError, UnixComponent};
+use exacopy_endpoint::{IoError, MAX_INTERRUPTED_RETRIES, UnixComponent};
 use rustix::fs::{self, FileType, Mode, OFlags, ResolveFlags, Stat};
 use rustix::io::Errno;
 use rustix::path::DecInt;
@@ -36,6 +36,8 @@ pub enum ReadError {
 	InvalidTimestamp,
 	/// The held inode's size, modification time, change time, or basic metadata changed.
 	SourceChanged,
+	/// A positioned read returned data beyond the captured extent.
+	UnexpectedDataAfterEnd,
 	/// The visible extended-attribute name list exceeds the Linux VFS limit.
 	ExtendedAttributeListTooLarge,
 	/// The kernel could not inspect the extended-attribute name list.
@@ -62,6 +64,9 @@ impl fmt::Display for ReadError {
 			Self::InvalidLength => formatter.write_str("file length exceeds the supported range"),
 			Self::InvalidTimestamp => formatter.write_str("source has an invalid timestamp"),
 			Self::SourceChanged => formatter.write_str("source metadata changed after open"),
+			Self::UnexpectedDataAfterEnd => {
+				formatter.write_str("source returned data beyond its recorded length")
+			}
 			Self::ExtendedAttributeListTooLarge => {
 				formatter.write_str("source extended-attribute name list exceeds the Linux limit")
 			}
@@ -218,6 +223,29 @@ impl SourceFile {
 	pub fn recheck_observation(&self) -> Result<(), ReadError> {
 		let stat = fs::fstat(&self.file)?;
 		self.observation.recheck(SourceObservation::capture(&stat)?)
+	}
+
+	/// Checks that a positioned read encounters EOF at the captured logical length.
+	///
+	/// Some virtual inodes report a nominal size unrelated to their stream.
+	/// This one-byte probe detects extra data without including it in the copy.
+	///
+	/// # Errors
+	/// Reports unexpected data, an unsupported probe, or a read failure.
+	pub fn check_logical_eof(&self) -> Result<(), ReadError> {
+		let mut remaining_retries = MAX_INTERRUPTED_RETRIES;
+		loop {
+			match self.file.read_at(&mut [0], self.len()) {
+				Ok(0) => return Ok(()),
+				Ok(_) => return Err(ReadError::UnexpectedDataAfterEnd),
+				Err(error)
+					if error.kind() == io::ErrorKind::Interrupted && remaining_retries > 0 =>
+				{
+					remaining_retries -= 1;
+				}
+				Err(error) => return Err(ReadError::System(error)),
+			}
+		}
 	}
 
 	/// Inspect whether this process can see extended attribute names on the held inode.
