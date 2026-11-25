@@ -21,6 +21,7 @@ license = "Apache-2.0"
 # Internal crates
 exacopy-content = { path = "crates/storage/content", version = "=0.1.0" }
 exacopy-endpoint = { path = "crates/endpoints/endpoint", version = "=0.1.0" }
+exacopy-journal = { path = "crates/storage/journal", version = "=0.1.0" }
 exacopy-model = { path = "crates/core/model", version = "=0.1.0" }
 exacopy-platform = { path = "crates/endpoints/platform", version = "=0.1.0" }
 

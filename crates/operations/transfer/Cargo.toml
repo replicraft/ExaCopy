@@ -7,8 +7,10 @@ license.workspace = true
 publish = false
 
 [target.'cfg(target_os = "linux")'.dependencies]
+ed25519-dalek.workspace = true
 exacopy-content.workspace = true
 exacopy-endpoint.workspace = true
+exacopy-journal.workspace = true
 exacopy-model.workspace = true
 exacopy-platform.workspace = true
 

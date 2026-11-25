@@ -8,8 +8,10 @@ use exacopy_platform::linux::{
 };
 
 mod error;
+mod job;
 
 pub use error::{StageCopyError, StageFailure};
+pub use job::{JobBootstrap, JobBootstrapError, JobStep, PreparedJob};
 
 const SPECIAL_MODE_BITS: u32 = 0o7000;
 
