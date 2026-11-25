@@ -402,7 +402,7 @@ In ExaCopy's root `Cargo.toml`, extend the existing dependency table.
 
 ```toml
 [workspace.dependencies]
-apfs-mounted = { path = "../pomologie/apfs/crates/platform/apfs-mounted", default-features = false }
+apfs-mounted = { version = "=0.1.0", path = "../pomologie/apfs/crates/platform/apfs-mounted", default-features = false }
 ```
 
 In the consuming platform package, extend its existing macOS table.
@@ -414,7 +414,9 @@ apfs-mounted.workspace = true
 
 Cargo reads the package's `Cargo.toml` at the named directory and rebuilds
 changed dependency source. The dependency retains its own workspace
-inheritance. ExaCopy uses its root lockfile for the resolved build.
+inheritance. Cargo requires the sibling package version to be exactly 0.1.0.
+The source verifier checks the pinned Git commit, tree and archive. ExaCopy
+uses its root lockfile for the resolved build.
 The package exists in the inspected local revision. Supply that source to
 clean-room builds before enabling the dependency.
 [Cargo path dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#specifying-path-dependencies)

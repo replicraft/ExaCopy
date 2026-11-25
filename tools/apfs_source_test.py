@@ -116,7 +116,7 @@ class ApfsSourceTests(unittest.TestCase):
                 read_pin(toml(values))
 
     def test_workspace_declaration_requires_disabled_defaults_and_target_inheritance(self):
-        workspace_dep = {"path": WORKSPACE_PATH, "default-features": False}
+        workspace_dep = {"path": WORKSPACE_PATH, "version": "=0.1.0", "default-features": False}
         root = {"workspace": {"dependencies": {NAME: workspace_dep}}}
         member = {"target": {MACOS_CFG: {"dependencies": {NAME: {"workspace": True}}}}}
         verify_consumer(root, member)
@@ -125,3 +125,11 @@ class ApfsSourceTests(unittest.TestCase):
         workspace_dep["default-features"] = True
         with self.assertRaisesRegex(ValueError, "without default features"):
             verify_consumer(root, member)
+
+    def test_workspace_declaration_requires_exact_local_version(self):
+        member = {"target": {MACOS_CFG: {"dependencies": {NAME: {"workspace": True}}}}}
+        base = {"path": WORKSPACE_PATH, "default-features": False}
+        for requirement in ({}, {"version": "0.1.0"}, {"version": "*"}, {"version": "=0.1.1"}):
+            with self.subTest(requirement=requirement), self.assertRaisesRegex(ValueError, r"require =0\.1\.0"):
+                root = {"workspace": {"dependencies": {NAME: base | requirement}}}
+                verify_consumer(root, member)

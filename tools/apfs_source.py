@@ -17,7 +17,8 @@ SIBLING = Path("pomologie/apfs")
 MEMBER = Path("crates/platform/apfs-mounted")
 WORKSPACE_PATH = (Path("..") / SIBLING / MEMBER).as_posix()
 NAME = "apfs-mounted"
-KEY = f"{NAME}@0.1.0"
+VERSION = "0.1.0"
+KEY = f"{NAME}@{VERSION}"
 REPOSITORY = "https://github.com/pomologie/apfs"
 CONSUMER = "exacopy-platform"
 CONSUMER_MANIFEST = Path("crates/endpoints/platform/Cargo.toml")
@@ -38,8 +39,12 @@ def read_pin(contents):
 def verify_consumer(root_manifest, platform_manifest):
     workspace_dep = root_manifest["workspace"]["dependencies"].get(NAME)
     platform_dep = platform_manifest.get("target", {}).get(MACOS_CFG, {}).get("dependencies", {}).get(NAME)
-    if workspace_dep != {"path": WORKSPACE_PATH, "default-features": False} or platform_dep != {"workspace": True}:
-        raise ValueError("apfs-mounted must be inherited without default features in the macOS dependency table")
+    expected_workspace_dep = {"path": WORKSPACE_PATH, "version": f"={VERSION}", "default-features": False}
+    if workspace_dep != expected_workspace_dep or platform_dep != {"workspace": True}:
+        raise ValueError(
+            f"{NAME} must require ={VERSION} from the pinned local path without default features "
+            "and be inherited in the macOS dependency table"
+        )
 
 
 def sibling(source):
