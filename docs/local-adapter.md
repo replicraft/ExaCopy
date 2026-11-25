@@ -13,7 +13,7 @@
 
 Positioned I/O validates the whole byte range against the signed 64-bit file extent before touching the backend. A partial call advances only by its confirmed count, and an interruption retries at the same position. Sixteen consecutive retries without progress return the original OS error. Early EOF, zero progress during writes and counts larger than the supplied suffix have separate errors. An I/O failure can leave the buffer or private stage partially changed. All storage handles remain private and an operation returns only after its synchronous request completes.
 
-The Unix component type preserves raw bytes and accepts at most 255 bytes. It rejects NUL, slash, empty names, `.` and `..`. The Windows adapter will require its own lossless UTF-16 component and handle rules. Exclusive new-name publication and independently reported barriers are common requirements. Linux uses `RENAME_NOREPLACE` and `fsync` on held directories. The specified Windows and macOS candidates use their corresponding handle-based and exclusive rename primitives and require separate native evidence.
+The Unix component type preserves raw bytes and accepts at most 255 bytes. It rejects NUL, slash, empty names, `.` and `..`. The Windows lexical contract preserves admitted UTF-16 units and rejects traversal, separators, alternate-stream syntax, reserved device stems, and ambiguous edge whitespace and periods. Exclusive new-name publication and independently reported barriers are common requirements. Linux uses `RENAME_NOREPLACE` and `fsync` on held directories.
 
 ## Linux authority and ordering
 
@@ -37,3 +37,9 @@ cargo nextest run --locked -p exacopy-endpoint -p exacopy-test-support
 ```
 
 This work package has no on-disk application format, public CLI or application publication path. The next work package couples these operations to streamed hash verification and the coordinator. The application release gate still requires the locked dependency audits.
+
+## Windows and macOS progress
+
+The Windows type establishes the lexical part of R-058 and R-059. Its tests include a sweep of every UTF-16 code unit in an interior position and mixed-case DOS devices. Rust 1.100.0 cross-checks the Windows x86-64 MSVC target. A native NTFS gate must establish one-component openings relative to a held disk directory, refusal of reparse and non-regular entries, and reliable volume and file identity through namespace changes. Native Windows file access and publication remain pending. [Windows filename rules](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file) · [Directory-relative opening](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntcreatefile)
+
+The macOS probe observes one raw component relative to a held materialized local directory outside File Provider-managed locations. It leaves the candidate unopened. Native ARM64 APFS tests exercise missing names, links, special files, and name replacement. A regular-looking name still lacks the pinned readable-open guarantee required for data access. A managed-root candidate needs positive ACL evidence, cross-principal tests, and explicit File Provider behavior before it can allow byte reads. Native macOS copy and exclusive publication remain pending. [Darwin open](https://github.com/apple/darwin-xnu/blob/main/bsd/man/man2/open.2) · [Apple dataless file guidance](https://developer.apple.com/documentation/technotes/tn3150-getting-ready-for-data-less-files)
