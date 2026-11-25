@@ -1031,3 +1031,72 @@ owner = "exacopy-codec"
 level = "documentation"
 state = "reported"
 path = "docs/architecture/public-plan-json.md"
+
+
+[[coverage]]
+id = "two-way-sync-classifier"
+status = "implemented"
+requirement_ids = ["R-269", "R-270"]
+acceptance_ids = ["A-269", "A-270"]
+invariant_ids = ["INV-025"]
+scope = "Read-only regular-file two-way change classification using caller-validated common history, complete inventory and verified stream/required metadata evidence."
+limits = "No inventory producer, baseline persistence, approvals, mutation, tombstone publication or formal sync proof."
+
+[[coverage.evidence]]
+owner = "exacopy-model"
+level = "test"
+state = "defined"
+path = "crates/core/model/tests/sync.rs"
+target = "verified_common_file_follows_the_three_way_preview_table"
+
+[[coverage.evidence]]
+owner = "exacopy-model"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/sync-classification.md"
+
+
+[[coverage]]
+id = "ssh-sftp-admission"
+status = "implemented"
+requirement_ids = ["R-228", "R-229"]
+acceptance_ids = ["A-228", "A-229"]
+invariant_ids = ["INV-030"]
+scope = "Bounded explicit SSH authority, host trust before credential requests, interaction policy and conservative SFTP v3 capability assessment."
+limits = "No transport, trust-store parser, credential broker implementation or native remote effects; full acceptance remains open."
+
+[[coverage.evidence]]
+owner = "exacopy-endpoint"
+level = "test"
+state = "defined"
+path = "crates/endpoints/endpoint/tests/ssh_sftp.rs"
+target = "trust_policy_refuses_downgrades_even_with_an_explicit_pin"
+
+[[coverage.evidence]]
+owner = "exacopy-endpoint"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/remote-admission.md"
+
+
+[[coverage]]
+id = "embedded-route-admission"
+status = "implemented"
+requirement_ids = ["R-245", "R-247", "R-248", "R-249"]
+acceptance_ids = ["A-245", "A-247", "A-248", "A-249"]
+invariant_ids = ["INV-021", "INV-022"]
+scope = "Bounded exact literal stream/DNS grants tied to an approved embedded profile, actor, generation and single-use permit."
+limits = "Caller supplies truthful serialized observations. No packet routing, sockets, AllowedIPs, DNS implementation or cryptographic qualification."
+
+[[coverage.evidence]]
+owner = "exacopy-endpoint"
+level = "test"
+state = "defined"
+path = "crates/endpoints/endpoint/src/wireguard/tests.rs"
+target = "mandatory_route_rejects_direct_system_and_unavailable_at_bind_or_consumption"
+
+[[coverage.evidence]]
+owner = "exacopy-endpoint"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/remote-admission.md"
