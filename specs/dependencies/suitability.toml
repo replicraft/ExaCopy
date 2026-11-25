@@ -49,7 +49,7 @@ linux-raw-sys = "Provide Linux syscall ABI definitions for rustix."
 lock_api = "Lock guard abstraction for parking_lot's internally synchronized state."
 memchr = "Byte search used by serde_json."
 minicbor = "Read and write bounded, explicitly encoded journal records and receipts."
-nix = "Clock and Unix ABI abstractions selected by BoringTun."
+nix = "Checked uname for Linux destination qualification. Optional transport dependencies select their own narrowly scoped Unix APIs."
 num-traits = "Implement Chrono numeric traits for calendar enums with default features disabled."
 once_cell = "Lazy state initialization in the tracing infrastructure."
 opaque-debug = "Cryptographic state Debug implementations that omit underlying state values."
@@ -259,6 +259,17 @@ adversarial_inputs = "Callers validate explicit tags, lengths, the required vers
 verification = "Journal fixtures and transfer codec tests check existing canonical bytes and rejection behavior. A 250,000-input AddressSanitizer journal fuzz run exercised framed and raw journal records on macOS."
 replacement = "Preserve canonical CBOR bytes and existing rejection behavior or introduce a versioned dual-reader transition."
 review_gaps = ["Review the complete package for the required Cargo Vet criteria", "Independent exact-version suitability evidence"]
+
+[assessment."nix@0.31.4"]
+archive_sha256 = "2bc81ce8148d3b4f3274da811f11cdd824ae661ee4ef732cdb229825cf5be7f7"
+release_observation = "The exact locked archive was reviewed only for the Linux exacopy-platform feature=feature uname call path."
+security_history = "The recorded inventory and the local source review do not replace an advisory or full-package audit."
+unsafe_exposure = "src/sys/utsname.rs uses a zero-initialized libc::utsname, checks libc::uname through Errno::result before output access, and reinterprets bounded c_char array slices as bytes. build.rs configures target aliases. ExaCopy does not add Linux unsafe code."
+resource_limits = "The selected Linux uname call uses one fixed stack buffer. Field conversion stops at NUL or the array length. The adapter separately bounds and cross-checks procfs fields and the exact mount row."
+adversarial_inputs = "uname syscall failure becomes a typed kernel I/O refusal before qualification or dependent effects. Procfs observations and authenticated evidence must independently match."
+verification = "Linux-target Clippy compiles typed EPERM and ENOSYS refusal fixtures. Native execution and accepted filesystem qualification are separate."
+replacement = "An equivalent fallible uname binding must check the kernel return before reading fixed output and preserve bounded exact bytes and errno."
+review_gaps = ["Independent selected uname ABI and behavior review on native x86-64 and AArch64 Linux", "Optional transport feature paths and complete Cargo Vet review remain outside this scoped assessment"]
 
 [assessment."rustix@1.1.6"]
 archive_sha256 = "e5e76742e5294153d4dde1207dbec5bdd81eef6fabdc0d2118babadabfd858aa"

@@ -68,6 +68,7 @@ uuid = { version = "1.29", default-features = false }
 apfs-mounted = { version = "=0.1.0", path = "../pomologie/apfs/crates/platform/apfs-mounted", default-features = false }
 getrandom = { version = "=0.4.3", default-features = false, features = ["std"] }
 libc = "=0.2.191"
+nix = { version = "=0.31.4", default-features = false }
 rustix = { version = "1.1.6", features = ["fs", "process"] }
 windows-sys = { version = "=0.61.2", default-features = false }
 

@@ -32,7 +32,8 @@ pub use plan_bundle::{
 };
 pub use process_crash::{
 	ProcessCrashEligibility, ProcessCrashEnvironment, ProcessCrashProfileError,
-	ProcessCrashProfileId, observe_process_crash_environment,
+	ProcessCrashProfileId, RemoteDestinationEligibility, RemoteDestinationEligibilityError,
+	observe_process_crash_environment, observe_remote_destination,
 };
 pub use recovery::{
 	FreshRecoveryStage, RecoveryFile, RecoveryInventory, RecoveryJob, RecoveryReadLease,

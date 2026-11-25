@@ -56,7 +56,12 @@ class FeatureMatrixTests(unittest.TestCase):
         graph["clap@4.6.10"] = {"error-context", "help", "std", "usage"}
         graph["base64@0.23.1"] = {"alloc"}
         graph["chrono@0.4.45"] = {"alloc"}
+        graph["nix@0.31.4"] = {"feature"}
         check_cli_graph(POLICY, LINUX, graph)
+        unrelated_nix = deepcopy(graph)
+        unrelated_nix["nix@0.31.4"].add("mman")
+        with self.assertRaisesRegex(ValueError, "CLI dependency nix"):
+            check_cli_graph(POLICY, LINUX, unrelated_nix)
         defaulted = deepcopy(graph)
         defaulted["clap@4.6.10"].add("default")
         with self.assertRaisesRegex(ValueError, "CLI dependency clap"):

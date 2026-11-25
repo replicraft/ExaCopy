@@ -5,7 +5,7 @@ schema_version = 2
 [inversion]
 # Use [[inversion.adapter_transport]] for an exact normal adapter → transport edge.
 # Both endpoints must be workspace members and the normal group must permit the edge.
-concrete_external = ["apfs-mounted", "boringtun", "libc", "russh", "russh-sftp", "tokio", "tokio-util", "windows-sys"]
+concrete_external = ["apfs-mounted", "boringtun", "libc", "nix", "russh", "russh-sftp", "tokio", "tokio-util", "windows-sys"]
 
 [[inversion.adapter_transport]]
 from = "exacopy-sftp"
@@ -36,7 +36,7 @@ dev.groups = ["testkit"]
 role = "adapter"
 members = { exacopy-platform = "crates/platform/exacopy-platform" }
 normal.groups = ["contracts", "core"]
-normal.external = ["apfs-mounted", "getrandom", "libc", "rustix", "windows-sys"]
+normal.external = ["apfs-mounted", "getrandom", "libc", "nix", "rustix", "windows-sys"]
 # The private Windows fixture composes the checked read view and the exact comparison engine.
 dev.groups = ["testkit", "contracts", "operations"]
 dev.external = ["windows-sys"]

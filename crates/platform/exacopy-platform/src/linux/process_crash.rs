@@ -10,6 +10,11 @@ use super::mount_observation::ProcMounts;
 use super::{DestinationRoot, ReadRoot, StageError};
 
 mod mount;
+mod remote_destination;
+
+pub use remote_destination::{
+	RemoteDestinationEligibility, RemoteDestinationEligibilityError, observe_remote_destination,
+};
 #[cfg(test)]
 mod tests;
 

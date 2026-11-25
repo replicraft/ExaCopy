@@ -149,11 +149,15 @@ impl MountObservations {
 	}
 
 	pub(super) fn record(&self, id: u64) -> Option<MountRecord<'_>> {
+		parse_record(self.record_bytes(id)?)
+	}
+
+	pub(super) fn record_bytes(&self, id: u64) -> Option<&[u8]> {
 		let index = self
 			.entries
 			.binary_search_by_key(&id, |entry| entry.0)
 			.ok()?;
-		parse_record(&self.bytes[self.entries[index].1.clone()])
+		Some(&self.bytes[self.entries[index].1.clone()])
 	}
 
 	pub(super) fn parse(bytes: &[u8]) -> io::Result<Self> {

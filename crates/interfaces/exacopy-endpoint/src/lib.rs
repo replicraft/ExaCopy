@@ -7,6 +7,7 @@ pub mod linux_copy;
 pub mod linux_job;
 pub mod linux_publication;
 pub mod linux_recovery;
+pub mod linux_remote_qualification;
 pub mod linux_staging;
 pub mod plan_bundle;
 mod positioned;
