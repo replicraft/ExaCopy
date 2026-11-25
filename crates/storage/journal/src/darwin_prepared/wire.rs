@@ -7,7 +7,7 @@ use minicbor::{Decoder, Encoder};
 use crate::prepared::wire::{expect_key, expect_map, read_fixed};
 use crate::{
 	DarwinFileIdentity, DarwinVolumeIdentity, JournalContext, JournalEntryId, JournalEpoch,
-	JournalJobId, OwnerTimestamp, PlanDigest, PreparedError,
+	JournalJobId, OwnerTimestamp, PlanDigest, PreparedError, PublishIntentContext,
 };
 
 const VERSION_MAJOR: u64 = 2;
@@ -29,6 +29,19 @@ pub(crate) fn write_header<W: Write>(
 	if let Some(entry) = entry {
 		encoder.u8(3)?.bytes(entry.as_bytes())?;
 	}
+	write_suffix(encoder, context.plan_digest)
+}
+
+pub(crate) fn write_effect_header<W: Write>(
+	encoder: &mut Encoder<W>,
+	context: &PublishIntentContext,
+) -> Result<(), encode::Error<W::Error>> {
+	write_prefix(encoder, context.job, context.epoch, 8)?;
+	encoder
+		.u8(3)?
+		.bytes(context.entry.as_bytes())?
+		.u8(4)?
+		.u64(context.effect_sequence)?;
 	write_suffix(encoder, context.plan_digest)
 }
 
@@ -87,6 +100,24 @@ pub(crate) fn read_entry_header(
 	expect_key(decoder, 3)?;
 	let entry = JournalEntryId::from_bytes(read_fixed(decoder)?);
 	Ok((read_suffix(decoder, job, epoch)?, entry))
+}
+
+pub(crate) fn read_effect_header(
+	decoder: &mut Decoder<'_>,
+) -> Result<PublishIntentContext, PreparedError> {
+	let (job, epoch) = read_prefix(decoder, 8)?;
+	expect_key(decoder, 3)?;
+	let entry = JournalEntryId::from_bytes(read_fixed(decoder)?);
+	expect_key(decoder, 4)?;
+	let effect_sequence = decoder.u64()?;
+	let context = read_suffix(decoder, job, epoch)?;
+	Ok(PublishIntentContext {
+		job,
+		epoch,
+		entry,
+		effect_sequence,
+		plan_digest: context.plan_digest,
+	})
 }
 
 fn read_prefix(

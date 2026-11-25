@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+mod darwin_phases;
 mod darwin_prepared;
 mod durable;
 pub mod frame;
@@ -12,6 +13,11 @@ mod publication_records;
 mod recovery_records;
 mod verification_records;
 
+pub use darwin_phases::{
+	DarwinMetadataRecorded, DarwinPhaseBinding, DarwinPhaseDigest, DarwinPhaseError,
+	DarwinPublishIntent, DarwinPublishTarget, DarwinRequiredMetadata, DarwinStageSealed,
+	DarwinStreamEvidence, DarwinVerificationRecorded,
+};
 pub use darwin_prepared::{
 	DarwinEntryPreparation, DarwinEntryPrepared, DarwinJobPrepared, DarwinPreparedError,
 	DarwinRootBinding, DarwinSourceMetadata, DarwinSourceTimes, DarwinSourceView, DarwinStageId,
