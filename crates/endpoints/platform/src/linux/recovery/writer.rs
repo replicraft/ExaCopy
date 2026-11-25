@@ -1,6 +1,7 @@
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{Seek as _, SeekFrom};
+use std::sync::{Mutex, MutexGuard};
 
 use exacopy_endpoint::UnixComponent;
 use rustix::fs::{self, FlockOperation, OFlags};
@@ -15,8 +16,10 @@ use super::{
 	mount_id, open_checked_record, open_path, recheck_regular,
 };
 
+mod resume;
 mod retained;
 
+pub use resume::RecoveryStageDirectory;
 pub use retained::RetainedStage;
 
 #[cfg(test)]
@@ -40,7 +43,11 @@ impl DestinationRoot {
 			return Err(StageError::IdentityChanged);
 		}
 		let lock = lock_job(&job, FlockOperation::NonBlockingLockExclusive)?;
-		Ok(RecoveryWriteLease { job, lock })
+		Ok(RecoveryWriteLease {
+			job,
+			lock,
+			stage_access: Mutex::new(()),
+		})
 	}
 }
 
@@ -54,9 +61,16 @@ impl DestinationRoot {
 pub struct RecoveryWriteLease<'root> {
 	job: RecoveryJob<'root>,
 	lock: File,
+	stage_access: Mutex<()>,
 }
 
 impl RecoveryWriteLease<'_> {
+	fn try_stage_access(&self) -> Result<MutexGuard<'_, ()>, StageError> {
+		self.stage_access
+			.try_lock()
+			.map_err(|_| StageError::JobBusy)
+	}
+
 	/// Returns the held inspection capability protected by the exclusive lease.
 	#[must_use]
 	pub fn job(&self) -> &RecoveryJob<'_> {

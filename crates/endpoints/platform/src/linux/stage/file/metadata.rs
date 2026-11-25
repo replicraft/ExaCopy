@@ -22,7 +22,22 @@ impl ClosedStage<'_> {
 	/// Rejects unsupported metadata, changed stage state, failed required syscalls and
 	/// metadata read-back mismatches. On error the capability is consumed and the private
 	/// entry remains for reconciliation.
-	pub fn apply_metadata(mut self, source: SourceObservation) -> Result<Self, StageError> {
+	pub fn apply_metadata(self, source: SourceObservation) -> Result<Self, StageError> {
+		self.apply_metadata_with_access_time(source, source.accessed_at())
+	}
+
+	/// Applies and verifies required metadata using a previously captured access time.
+	///
+	/// A resumed copy can preserve the pre-read access time from its authenticated
+	/// journal while taking the remaining metadata from the current observation.
+	///
+	/// # Errors
+	/// Has the same requirements and failure effects as [`Self::apply_metadata`].
+	pub fn apply_metadata_with_access_time(
+		mut self,
+		source: SourceObservation,
+		accessed_at: SourceTimestamp,
+	) -> Result<Self, StageError> {
 		self.check_current()?;
 		if source.mode() & !ORDINARY_PERMISSIONS != 0 {
 			return Err(StageError::UnsupportedMode);
@@ -37,18 +52,18 @@ impl ClosedStage<'_> {
 
 		let mode = Mode::from_raw_mode(source.mode());
 		let times = Timestamps {
-			last_access: as_timespec(source.accessed_at())?,
+			last_access: as_timespec(accessed_at)?,
 			last_modification: as_timespec(source.modified_at())?,
 		};
 		fs::fchmod(&self.file, mode)?;
 		fs::futimens(&self.file, &times)?;
 		let before = self.location.check_named_file(mode)?;
-		check_metadata(&before, source)?;
+		check_metadata(&before, source, accessed_at)?;
 
 		fs::fsync(&self.file).map_err(|source| StageError::BarrierFailed(source.into()))?;
 		let after = self.location.check_named_file(mode)?;
 		check_content_stamp(&before, &after)?;
-		check_metadata(&after, source)?;
+		check_metadata(&after, source, accessed_at)?;
 		check_no_visible_attributes(&self.file)?;
 		self.stat = after;
 		self.metadata_applied = true;
@@ -65,12 +80,16 @@ fn as_timespec(timestamp: SourceTimestamp) -> Result<Timespec, StageError> {
 	})
 }
 
-fn check_metadata(stat: &Stat, source: SourceObservation) -> Result<(), StageError> {
+fn check_metadata(
+	stat: &Stat,
+	source: SourceObservation,
+	accessed_at: SourceTimestamp,
+) -> Result<(), StageError> {
 	if u64::try_from(stat.st_size) != Ok(source.len())
 		|| stat.st_uid != source.owner()
 		|| stat.st_gid != source.group()
-		|| stat.st_atime != source.accessed_at().seconds()
-		|| u32::try_from(stat.st_atime_nsec) != Ok(source.accessed_at().nanoseconds())
+		|| stat.st_atime != accessed_at.seconds()
+		|| u32::try_from(stat.st_atime_nsec) != Ok(accessed_at.nanoseconds())
 		|| stat.st_mtime != source.modified_at().seconds()
 		|| u32::try_from(stat.st_mtime_nsec) != Ok(source.modified_at().nanoseconds())
 	{

@@ -299,6 +299,10 @@ pub(super) fn reopen_regular_for_append(pinned: &impl AsFd) -> Result<(File, Sta
 	reopen_regular(pinned, OFlags::RDWR | OFlags::APPEND | OFlags::NOATIME)
 }
 
+pub(super) fn reopen_regular_for_write(pinned: &impl AsFd) -> Result<(File, Stat), ReadError> {
+	reopen_regular(pinned, OFlags::WRONLY)
+}
+
 fn reopen_regular(pinned: &impl AsFd, flags: OFlags) -> Result<(File, Stat), ReadError> {
 	let pinned_stat = fs::fstat(pinned)?;
 	if FileType::from_raw_mode(pinned_stat.st_mode) != FileType::RegularFile {

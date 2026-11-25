@@ -9,7 +9,8 @@ use rustix::fs::{self, FileType, Mode, OFlags, ResolveFlags};
 use rustix::process::geteuid;
 
 use super::super::handle::{FileIdentity, file_identity, mount_id};
-use super::super::job::JobDirectory;
+use super::super::job::{JobDirectory, STAGE};
+use super::super::recovery::RecoveryJob;
 use super::file::create_private_file;
 use super::{StageError, WriteStage};
 
@@ -103,7 +104,7 @@ impl DestinationRoot {
 	}
 }
 
-/// A newly created, held private staging directory on the destination mount.
+/// A held private staging directory on the destination mount.
 ///
 /// Paths and descriptors are kept private. Code running with the same effective
 /// user or elevated privileges is trusted by this interface.
@@ -111,8 +112,14 @@ pub struct StageDirectory<'root> {
 	pub(super) root: &'root DestinationRoot,
 	pub(super) directory: File,
 	name: StageName,
-	job: Option<&'root JobDirectory<'root>>,
+	parent: StageParent<'root>,
 	identity: FileIdentity,
+}
+
+enum StageParent<'root> {
+	Root,
+	CopyJob(&'root JobDirectory<'root>),
+	RecoveryJob(&'root RecoveryJob<'root>),
 }
 
 impl<'root> StageDirectory<'root> {
@@ -127,9 +134,24 @@ impl<'root> StageDirectory<'root> {
 			root,
 			directory,
 			name: StageName(name.into()),
-			job,
+			parent: job.map_or(StageParent::Root, StageParent::CopyJob),
 			identity,
 		})
+	}
+
+	pub(in crate::linux) fn for_recovery(
+		root: &'root DestinationRoot,
+		job: &'root RecoveryJob<'root>,
+		directory: File,
+		identity: FileIdentity,
+	) -> Self {
+		Self {
+			root,
+			directory,
+			name: OsStr::new(STAGE).into(),
+			parent: StageParent::RecoveryJob(job),
+			identity,
+		}
 	}
 
 	/// Returns the identity of the held private staging directory.
@@ -189,12 +211,16 @@ impl<'root> StageDirectory<'root> {
 	}
 
 	pub(super) fn check_current(&self) -> Result<(), StageError> {
-		let parent = if let Some(job) = self.job {
-			job.check_current()?;
-			job.directory()
-		} else {
-			self.root.check_current()?;
-			&self.root.directory
+		let parent = match self.parent {
+			StageParent::Root => {
+				self.root.check_current()?;
+				&self.root.directory
+			}
+			StageParent::CopyJob(job) => {
+				job.check_current()?;
+				job.directory()
+			}
+			StageParent::RecoveryJob(job) => job.directory_for_stage()?,
 		};
 		check_private_child(
 			parent,
@@ -286,7 +312,13 @@ impl StageName {
 
 impl From<UnixComponent<'_>> for StageName {
 	fn from(name: UnixComponent<'_>) -> Self {
-		Self(component(name).into())
+		Self::from(component(name))
+	}
+}
+
+impl From<&OsStr> for StageName {
+	fn from(name: &OsStr) -> Self {
+		Self(name.into())
 	}
 }
 

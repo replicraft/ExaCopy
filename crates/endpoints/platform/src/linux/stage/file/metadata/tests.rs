@@ -9,7 +9,7 @@ use exacopy_model::{
 use rustix::fs::{self as linux, Timespec, Timestamps, XattrFlags};
 
 use super::{ClosedStage, SourceObservation, StageError};
-use crate::linux::{DestinationRoot, ReadRoot, StageDirectory};
+use crate::linux::{DestinationRoot, ReadRoot, SourceTimestamp, StageDirectory};
 use crate::scratch::Scratch;
 
 const SOURCE: &str = "metadata-source";
@@ -63,6 +63,36 @@ fn verified_permissions_and_nanosecond_times_survive_publication() {
 	);
 	assert_eq!(fs::read(target).expect("read published bytes"), PAYLOAD);
 	assert!(fixture.path(STAGE_DIR).exists());
+}
+
+#[test]
+fn metadata_can_preserve_a_previously_captured_access_time() {
+	let fixture = Scratch::new();
+	let source = observed_source(&fixture, 0o440);
+	let root = DestinationRoot::from_directory(fixture.open()).unwrap();
+	let directory = root.create_stage_directory(component(STAGE_DIR)).unwrap();
+	let accessed_at = SourceTimestamp::new(1_671_000_004, 123_456_789).unwrap();
+	assert!(SourceTimestamp::new(1_671_000_004, 1_000_000_000).is_err());
+	let binding = binding();
+	let sealed = stage(&directory, binding, PAYLOAD)
+		.apply_metadata_with_access_time(source, accessed_at)
+		.unwrap();
+	sealed.publish_no_clobber(authorization(binding)).unwrap();
+
+	let attributes = fs::metadata(fixture.path(TARGET)).unwrap();
+	assert_eq!(attributes.mode() & 0o7777, source.mode());
+	assert_eq!(attributes.uid(), source.owner());
+	assert_eq!(attributes.gid(), source.group());
+	assert_eq!(attributes.atime(), accessed_at.seconds());
+	assert_eq!(
+		attributes.atime_nsec(),
+		i64::from(accessed_at.nanoseconds())
+	);
+	assert_eq!(attributes.mtime(), source.modified_at().seconds());
+	assert_eq!(
+		attributes.mtime_nsec(),
+		i64::from(source.modified_at().nanoseconds())
+	);
 }
 
 #[test]

@@ -138,12 +138,23 @@ pub struct SourceTimestamp {
 
 impl SourceTimestamp {
 	fn capture(seconds: i64, nanoseconds: impl TryInto<u32>) -> Result<Self, ReadError> {
+		Self::new(
+			seconds,
+			nanoseconds
+				.try_into()
+				.map_err(|_| ReadError::InvalidTimestamp)?,
+		)
+	}
+
+	/// Constructs an observed inode timestamp from seconds and a nanosecond fraction.
+	///
+	/// # Errors
+	/// Rejects a nanosecond fraction outside the interval from zero to one second.
+	pub fn new(seconds: i64, nanoseconds: u32) -> Result<Self, ReadError> {
 		const NANOS_PER_SECOND: u32 = 1_000_000_000;
-		let nanoseconds = nanoseconds
-			.try_into()
-			.ok()
-			.filter(|nanos| *nanos < NANOS_PER_SECOND)
-			.ok_or(ReadError::InvalidTimestamp)?;
+		if nanoseconds >= NANOS_PER_SECOND {
+			return Err(ReadError::InvalidTimestamp);
+		}
 		Ok(Self {
 			seconds,
 			nanoseconds,

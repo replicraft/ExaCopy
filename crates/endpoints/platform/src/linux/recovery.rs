@@ -24,7 +24,9 @@ mod lease;
 mod writer;
 
 pub use lease::RecoveryReadLease;
-pub use writer::{RecoveryReceiptDirectory, RecoveryWriteLease, RetainedStage};
+pub use writer::{
+	RecoveryReceiptDirectory, RecoveryStageDirectory, RecoveryWriteLease, RetainedStage,
+};
 
 #[cfg(test)]
 mod tests;

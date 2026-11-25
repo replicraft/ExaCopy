@@ -12,7 +12,7 @@ pub use job::{
 };
 pub use recovery::{
 	RecoveryFile, RecoveryInventory, RecoveryJob, RecoveryReadLease, RecoveryReceiptDirectory,
-	RecoveryWriteLease, RetainedStage,
+	RecoveryStageDirectory, RecoveryWriteLease, RetainedStage,
 };
 pub use source::{
 	ExtendedAttributes, ReadError, ReadRoot, SourceFile, SourceObservation, SourceTimestamp,

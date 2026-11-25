@@ -1,5 +1,6 @@
 use std::ffi::OsStr;
 use std::fs::File;
+use std::sync::MutexGuard;
 
 use exacopy_model::{CopyBinding, PublishNoClobber};
 use rustix::fs;
@@ -40,6 +41,7 @@ impl RecoveryWriteLease<'_> {
 			.as_ref()
 			.ok_or(StageError::IdentityChanged)?;
 		let retained = RetainedStage {
+			_access: self.try_stage_access()?,
 			inventory,
 			stage,
 			directory_identity: private.identity,
@@ -57,6 +59,7 @@ impl RecoveryWriteLease<'_> {
 #[derive(Debug)]
 #[must_use]
 pub struct RetainedStage<'lease> {
+	_access: MutexGuard<'lease, ()>,
 	inventory: &'lease RecoveryInventory<'lease>,
 	stage: &'lease RecoveryFile,
 	directory_identity: FileIdentity,

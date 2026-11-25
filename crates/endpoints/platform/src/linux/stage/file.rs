@@ -10,7 +10,7 @@ use rustix::io;
 use rustix::process::geteuid;
 
 use super::super::handle::{FileIdentity, mount_id};
-use super::super::source::{SourceObservation, reopen_regular_read_only};
+use super::super::source::{SourceObservation, reopen_regular_for_write, reopen_regular_read_only};
 use super::directory::{CHILD_RESOLVE, StageName, component};
 use super::{StageDirectory, StageError};
 
@@ -23,7 +23,7 @@ mod tests;
 
 pub(in crate::linux) const FILE_MODE: Mode = Mode::RUSR.union(Mode::WUSR);
 
-/// Exclusive synchronous writer for one newly created private file.
+/// Exclusive synchronous writer for one private staged file.
 ///
 /// The data handle cannot be extracted or cloned. Each write and resize holds a
 /// mutable borrow for the entire operation. Dropping the writer retains the
@@ -63,7 +63,37 @@ impl<'stage> WriteStage<'stage> {
 		})
 	}
 
-	/// Returns the identity of the exclusively created stage.
+	pub(in crate::linux) fn reopen(
+		directory: &'stage StageDirectory<'stage>,
+		name: &OsStr,
+		target: &OsStr,
+		binding: CopyBinding,
+		pinned: &File,
+		expected: SourceObservation,
+	) -> Result<Self, StageError> {
+		directory.check_current()?;
+		let (file, stat) = reopen_regular_for_write(pinned).map_err(StageError::ReadBack)?;
+		check_stage_file(&stat, FILE_MODE)?;
+		check_no_visible_attributes(&file)?;
+		if mount_id(&file)? != directory.root.mount
+			|| SourceObservation::capture(&stat).map_err(StageError::ReadBack)? != expected
+		{
+			return Err(StageError::IdentityChanged);
+		}
+		Ok(Self {
+			location: StageLocation {
+				directory,
+				name: name.into(),
+				target: target.into(),
+				binding,
+				identity: expected.identity(),
+			},
+			file,
+			barrier: WriteBarrier::Pending,
+		})
+	}
+
+	/// Returns the identity of the held stage.
 	#[must_use]
 	pub fn identity(&self) -> FileIdentity {
 		self.location.identity
@@ -215,6 +245,14 @@ impl ClosedStage<'_> {
 	#[must_use]
 	pub fn length(&self) -> u64 {
 		self.length
+	}
+
+	/// Requests a full barrier on the checked private staging directory.
+	///
+	/// # Errors
+	/// Fails if the directory became unsafe or detached, or if its barrier fails.
+	pub fn sync_stage_directory(&self) -> Result<(), StageError> {
+		self.location.directory.sync_directory()
 	}
 
 	/// Reads the complete buffer at the specified absolute byte position.
