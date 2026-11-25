@@ -95,3 +95,40 @@ admission, and failure controls in disposable directories. On Windows,
 executing it. Passing those checks does not qualify installation and
 uninstallation on native Windows. The native ACL, rename, stream,
 active-process, and interruption cases still need a dedicated test run.
+
+### Opt-in native NTFS lifecycle fixture
+
+Use PowerShell 7.4 or newer with a trusted Pester 5.5+ installation, a
+non-elevated Windows user, and an owner-controlled fixed NTFS volume.
+Prevent concurrent ExaCopy launches during the run. From the repository
+root, run:
+
+```powershell
+Import-Module Pester -MinimumVersion 5.5.0
+$cases = New-PesterContainer -Path ./tools/install/windows/Lifecycle.Tests.ps1
+Invoke-Pester -Container $cases -Output Detailed -CI
+```
+
+For a built native CLI binary, pass its path as container data:
+
+```powershell
+$artifact = (Resolve-Path ./target/release/exacopy.exe).ProviderPath
+$cases = New-PesterContainer -Path ./tools/install/windows/Lifecycle.Tests.ps1 `
+    -Data @{ Artifact = $artifact }
+Invoke-Pester -Container $cases -Output Detailed -CI
+```
+
+The fixture prints a new owner-private evidence path under
+`%LOCALAPPDATA%\.ExaCopy-install-*`. It supplies this disposable layout to
+the shipped lifecycle functions and leaves the ordinary ExaCopy install
+root alone. It signs only the synthetic fixture bundle with an ephemeral
+key. The optional built binary is verified and copied without being run.
+Without an artifact path, lifecycle checks use a synthetic PE header.
+
+The cases check exact hashes of synthetic profile settings, a key, a job
+journal, and a repository object before and after the installer operations.
+They cover dry-run, idempotence, exact reinstall and uninstall, an
+unowned directory and a junction, unexpected files, a locked executable,
+tampering, named streams, and an unexpected ACL. The fixture retains
+its disposable evidence for inspection. This manual test needs a native
+run before its results can contribute to Windows qualification.
