@@ -14,6 +14,8 @@ use exacopy_platform::linux::{
 	DestinationRoot, ReadRoot, RecoveryInventory, RecoveryWriteLease, SourceFile,
 };
 
+#[cfg(test)]
+use super::super::local_copy::crash_tests::{Checkpoint, pause_at};
 use super::super::{LocalCopyPlan, StageFailure, check_source, observe};
 use super::classify::verify;
 use super::finish::{acquire_lease, append, completion, finish_leased, required};
@@ -229,6 +231,8 @@ impl Retry<'_, '_> {
 		)
 		.map_err(RecoveryFinishError::Decision)?;
 		let _ = append(&mut writer, FrameKind::RecoveryDecision, &decision.encode())?;
+		#[cfg(test)]
+		pause_at(Checkpoint::RetryDecisionSynced);
 		let effect = PublishIntentContext {
 			job: context.job,
 			epoch,
@@ -247,6 +251,8 @@ impl Retry<'_, '_> {
 			},
 		};
 		let intent = append(&mut writer, FrameKind::PublishIntent, &intent.encode())?;
+		#[cfg(test)]
+		pause_at(Checkpoint::RetryIntentSynced);
 		check_source(&source).map_err(RecoveryRetryError::SourcePolicy)?;
 		let Some(CopyEffect::PublishNoClobber(authorization)) = session
 			.apply(binding, CopyEvent::PublishIntentRecorded)
@@ -258,6 +264,8 @@ impl Retry<'_, '_> {
 		capability
 			.publish_no_clobber(authorization)
 			.map_err(RecoveryRetryError::Publish)?;
+		#[cfg(test)]
+		pause_at(Checkpoint::RetryRenamedAndSynced);
 		let observed = PublishObserved::new(
 			effect,
 			intent.head(),

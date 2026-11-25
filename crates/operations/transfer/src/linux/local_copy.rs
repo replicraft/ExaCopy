@@ -24,7 +24,7 @@ mod error;
 mod records;
 
 #[cfg(test)]
-mod crash_tests;
+pub(super) mod crash_tests;
 
 pub use error::LocalCopyError;
 use records::{EntryEvidence, SealEvidence};

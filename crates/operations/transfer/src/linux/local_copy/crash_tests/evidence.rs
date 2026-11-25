@@ -17,10 +17,10 @@ use super::{
 };
 
 pub(super) const STAGE_DIRECTORY: &str = "stage";
-const SEGMENT: &str = "journal/00000000000000000001.exajnl";
+pub(super) const SEGMENT: &str = "journal/00000000000000000001.exajnl";
 const PLAN: &str = "plan.cbor";
 const OWNER: &str = "owner.cbor";
-const SUCCESS_ORDER: &[FrameKind] = &[
+pub(super) const SUCCESS_ORDER: &[FrameKind] = &[
 	FrameKind::JobPrepared,
 	FrameKind::EntryPrepared,
 	FrameKind::StageSealed,
@@ -34,7 +34,7 @@ const SUCCESS_ORDER: &[FrameKind] = &[
 
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct Snapshot {
-	identity: LinuxFileIdentity,
+	pub(super) identity: LinuxFileIdentity,
 	bytes: Vec<u8>,
 	mode: u32,
 	uid: u32,
@@ -71,7 +71,7 @@ impl Snapshot {
 		}
 	}
 
-	fn assert_copied_from(&self, source: &Self) {
+	pub(super) fn assert_copied_from(&self, source: &Self) {
 		assert_ne!(self.identity, source.identity, "copy aliases its source");
 		assert_eq!(self.bytes, source.bytes, "copy has different bytes");
 		assert_eq!(self.mode, source.mode, "copy has different mode");
@@ -96,6 +96,7 @@ pub(super) fn assert_crash(fixture: &Fixture, checkpoint: Checkpoint, source: &S
 		Checkpoint::IntentSynced | Checkpoint::RenamedAndSynced => FrameKind::PublishIntent,
 		Checkpoint::ReceiptSynced => FrameKind::DurabilityRecorded,
 		Checkpoint::ReceiptCommitted => FrameKind::ReceiptCommitted,
+		_ => panic!("unexpected normal copy checkpoint {checkpoint:?}"),
 	};
 	let journal = Journal::read(fixture, last_kind);
 	let plan_bytes =
@@ -118,6 +119,7 @@ pub(super) fn assert_crash(fixture: &Fixture, checkpoint: Checkpoint, source: &S
 			assert_absent(&stage);
 			Snapshot::read(&target)
 		}
+		_ => panic!("unexpected normal copy checkpoint {checkpoint:?}"),
 	};
 	published.assert_copied_from(source);
 	journal.assert_seal(&plan, source, &published);
@@ -175,36 +177,11 @@ struct Journal(Vec<Frame>);
 
 impl Journal {
 	fn read(fixture: &Fixture, last_kind: FrameKind) -> Self {
-		let file =
-			File::open(fixture.job().join(SEGMENT)).expect("reopen raw first journal segment");
-		let length = file.metadata().expect("stat reopened first segment").len();
-		let mut reader = FrameReader::new(file, ChainHead::start());
-		let mut frames = Vec::new();
-		for expected in SUCCESS_ORDER.iter().copied() {
-			let frame = reader
-				.next_frame()
-				.expect("read the journal through a clean frame boundary")
-				.expect("find the expected surviving frame");
-			assert_eq!(frame.kind(), expected, "unexpected surviving journal frame");
-			assert_eq!(
-				frame.head().sequence(),
-				u64::try_from(frames.len()).expect("frame count fits u64") + 1,
-				"journal sequence must be contiguous"
-			);
-			frames.push(frame);
-			if expected == last_kind {
-				break;
-			}
-		}
-		assert!(
-			reader
-				.next_frame()
-				.expect("read clean journal EOF")
-				.is_none(),
-			"journal contains a frame after the stopped boundary {last_kind:?}"
-		);
-		assert_eq!(reader.offset(), length, "read the entire journal segment");
-		Self(frames)
+		let last = SUCCESS_ORDER
+			.iter()
+			.position(|kind| *kind == last_kind)
+			.expect("stop after a normal copy frame");
+		Self(read_frames(fixture, &SUCCESS_ORDER[..=last]))
 	}
 
 	fn frame(&self, kind: FrameKind) -> &Frame {
@@ -402,7 +379,37 @@ impl Journal {
 	}
 }
 
-fn assert_absent(path: &Path) {
+pub(super) fn read_frames(fixture: &Fixture, order: &[FrameKind]) -> Vec<Frame> {
+	let file = File::open(fixture.job().join(SEGMENT)).expect("reopen raw first journal segment");
+	let length = file.metadata().expect("stat reopened first segment").len();
+	let mut reader = FrameReader::new(file, ChainHead::start());
+	let mut frames = Vec::new();
+	for &expected in order {
+		let frame = reader
+			.next_frame()
+			.expect("read the journal through a clean frame boundary")
+			.expect("find the expected surviving frame");
+		assert_eq!(frame.kind(), expected, "unexpected surviving journal frame");
+		assert_eq!(
+			frame.head().sequence(),
+			u64::try_from(frames.len()).expect("frame count fits u64") + 1,
+			"journal sequence must be contiguous"
+		);
+		frames.push(frame);
+	}
+	assert!(
+		reader
+			.next_frame()
+			.expect("read clean journal EOF")
+			.is_none(),
+		"journal contains a frame after the stopped boundary {:?}",
+		order.last()
+	);
+	assert_eq!(reader.offset(), length, "read the entire journal segment");
+	frames
+}
+
+pub(super) fn assert_absent(path: &Path) {
 	assert_eq!(
 		fs::symlink_metadata(path)
 			.expect_err("fixture name must be absent")

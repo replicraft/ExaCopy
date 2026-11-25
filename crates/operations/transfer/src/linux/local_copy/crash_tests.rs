@@ -23,6 +23,7 @@ use super::{
 };
 
 mod evidence;
+mod retry;
 
 use evidence::{STAGE_DIRECTORY, Snapshot, assert_conflict, assert_crash};
 
@@ -41,17 +42,20 @@ const INCUMBENT_BYTES: &[u8] = b"late incumbent owned by another writer";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
-pub(super) enum Checkpoint {
+pub(in crate::linux) enum Checkpoint {
 	PlanSynced = 1,
 	StageSealed,
 	IntentSynced,
 	RenamedAndSynced,
 	ReceiptSynced,
 	ReceiptCommitted,
+	RetryDecisionSynced,
+	RetryIntentSynced,
+	RetryRenamedAndSynced,
 }
 
 impl Checkpoint {
-	const ORDER: [Self; 6] = [
+	const COPY_ORDER: [Self; 6] = [
 		Self::PlanSynced,
 		Self::StageSealed,
 		Self::IntentSynced,
@@ -59,13 +63,27 @@ impl Checkpoint {
 		Self::ReceiptSynced,
 		Self::ReceiptCommitted,
 	];
+	const RETRY_ORDER: [Self; 3] = [
+		Self::RetryDecisionSynced,
+		Self::RetryIntentSynced,
+		Self::RetryRenamedAndSynced,
+	];
+
+	fn worker(self) -> (&'static str, &'static [Self]) {
+		match self {
+			Self::RetryDecisionSynced | Self::RetryIntentSynced | Self::RetryRenamedAndSynced => {
+				("retry::retry_worker", &Self::RETRY_ORDER)
+			}
+			_ => ("copy_worker", &Self::COPY_ORDER),
+		}
+	}
 }
 
 thread_local! {
 	static CHECKPOINT_CHANNEL: RefCell<Option<UnixStream>> = const { RefCell::new(None) };
 }
 
-pub(super) fn pause_at(checkpoint: Checkpoint) {
+pub(in crate::linux) fn pause_at(checkpoint: Checkpoint) {
 	CHECKPOINT_CHANNEL.with_borrow_mut(|channel| {
 		if let Some(channel) = channel {
 			channel
@@ -135,13 +153,7 @@ fn kill_at(checkpoint: Checkpoint) {
 	let fixture = Fixture::new();
 	let source = Snapshot::read(&fixture.source());
 	let (mut worker, _stream) = fixture.pause_worker(checkpoint);
-	worker.0.kill().expect("SIGKILL the blocked fixture worker");
-	let status = worker.finish();
-	assert_eq!(
-		status.signal(),
-		Some(Signal::KILL.as_raw()),
-		"expected SIGKILL at {checkpoint:?}, observed {status}"
-	);
+	worker.kill_at(checkpoint);
 	assert_eq!(
 		Snapshot::read(&fixture.source()),
 		source,
@@ -153,20 +165,12 @@ fn kill_at(checkpoint: Checkpoint) {
 #[test]
 #[ignore = "subprocess entrypoint for the native copy crash tests"]
 fn copy_worker() {
-	let root = env::current_dir().expect("locate the isolated fixture root");
-	let channel = UnixStream::connect(root.join(SOCKET)).expect("connect to the fixture parent");
-	channel
-		.set_read_timeout(Some(TIMEOUT))
-		.expect("bound the child's checkpoint wait");
-	CHECKPOINT_CHANNEL.with(|socket| socket.replace(Some(channel)));
-	let source = ReadRoot::from_directory(
-		File::open(root.join(SOURCE_DIRECTORY)).expect("hold the source directory"),
-	)
-	.expect("admit the held source directory");
+	let root = connect_checkpoint();
+	let source = open_source(&root);
 	let destination = open_destination(&root.join(DESTINATION_DIRECTORY));
 	let roots = CopyRoots {
 		source: &source,
-		source_id: RootCapabilityId::from_bytes(uuid_v4(1)).expect("fixture source UUID"),
+		source_id: source_id(),
 		destination: &destination,
 		destination_id: RootCapabilityId::from_bytes(uuid_v4(2)).expect("fixture target UUID"),
 	};
@@ -199,6 +203,27 @@ fn copy_worker() {
 		),
 		"a worker surviving the checkpoints must see the late incumbent, got {result:?}"
 	);
+}
+
+fn connect_checkpoint() -> PathBuf {
+	let root = env::current_dir().expect("locate the isolated fixture root");
+	let channel = UnixStream::connect(root.join(SOCKET)).expect("connect to the fixture parent");
+	channel
+		.set_read_timeout(Some(TIMEOUT))
+		.expect("bound the child's checkpoint wait");
+	CHECKPOINT_CHANNEL.with(|socket| socket.replace(Some(channel)));
+	root
+}
+
+fn open_source(root: &Path) -> ReadRoot {
+	ReadRoot::from_directory(
+		File::open(root.join(SOURCE_DIRECTORY)).expect("hold the source directory"),
+	)
+	.expect("admit the held source directory")
+}
+
+fn source_id() -> RootCapabilityId {
+	RootCapabilityId::from_bytes(uuid_v4(1)).expect("fixture source UUID")
 }
 
 const fn uuid_v4(marker: u8) -> [u8; 16] {
@@ -268,17 +293,19 @@ impl Fixture {
 	}
 
 	fn pause_worker(&self, stop: Checkpoint) -> (Worker, UnixStream) {
-		let listener = UnixListener::bind(self.0.join(SOCKET)).expect("bind checkpoint socket");
+		let socket = self.0.join(SOCKET);
+		let listener = UnixListener::bind(&socket).expect("bind checkpoint socket");
 		listener
 			.set_nonblocking(true)
 			.expect("bound the wait for the child to connect");
 		let (_, module) = module_path!()
 			.split_once("::")
 			.expect("derive the libtest module name");
+		let (entrypoint, checkpoints) = stop.worker();
 		let worker = Command::new(env::current_exe().expect("locate the test binary"))
 			.current_dir(&self.0)
 			.args(["--exact", "--ignored", "--nocapture"])
-			.arg(format!("{module}::copy_worker"))
+			.arg(format!("{module}::{entrypoint}"))
 			.stdout(Stdio::null())
 			.spawn()
 			.expect("spawn the Linux fixture worker");
@@ -296,10 +323,11 @@ impl Fixture {
 				Err(error) => panic!("accept the fixture worker's connection: {error}"),
 			}
 		};
+		fs::remove_file(socket).expect("release the checkpoint socket name for the next worker");
 		stream
 			.set_read_timeout(Some(TIMEOUT))
 			.expect("bound the parent's checkpoint wait");
-		for checkpoint in Checkpoint::ORDER {
+		for &checkpoint in checkpoints {
 			let mut ready = [0_u8; 1];
 			stream
 				.read_exact(&mut ready)
@@ -329,6 +357,16 @@ impl Drop for Fixture {
 struct Worker(Child);
 
 impl Worker {
+	fn kill_at(&mut self, checkpoint: Checkpoint) {
+		self.0.kill().expect("SIGKILL the blocked fixture worker");
+		let status = self.finish();
+		assert_eq!(
+			status.signal(),
+			Some(Signal::KILL.as_raw()),
+			"expected SIGKILL at {checkpoint:?}, observed {status}"
+		);
+	}
+
 	fn finish(&mut self) -> ExitStatus {
 		let deadline = Instant::now() + TIMEOUT;
 		loop {
