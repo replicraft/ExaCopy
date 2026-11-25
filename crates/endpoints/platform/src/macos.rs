@@ -5,6 +5,8 @@
 //! against replacement by a special file. `O_EVTONLY` is documented for
 //! event notifications, and `/dev/fd` duplicates descriptors with existing
 //! access rights. A metadata probe cannot authorize a readable open.
+//! Independently provisioned directories can use the explicit [ManagedReadRoot]
+//! capability with a trusted-owner grant and checked local APFS evidence.
 //!
 //! The caller supplies a held, materialized directory on a local filesystem
 //! outside File Provider-managed namespaces. A lookup through a dataless
@@ -23,8 +25,12 @@ use exacopy_endpoint::UnixComponent;
 use rustix::fs::{self, AtFlags, Dev, FileType};
 use rustix::io::Errno;
 
+mod managed;
+
 #[cfg(test)]
 mod tests;
+
+pub use managed::{ManagedReadError, ManagedReadGrant, ManagedReadRoot, ManagedRegularFile};
 
 /// A held directory for metadata probes on macOS.
 pub struct ReadRoot {
