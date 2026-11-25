@@ -2,12 +2,12 @@ use std::fmt;
 
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 
-use super::codec::{self, Envelope};
+use super::codec::{self, Envelope, OwnerDomain};
 use super::{OwnerError, OwnerManifest, OwnerProfileId};
 
 /// The on-disk byte ceiling for one complete signed `owner.cbor` envelope.
 pub const MAX_OWNER_BYTES: usize = 64 * 1024;
-const SIGNATURE_DOMAIN: &[u8] = b"ExaCopy/owner/v1\0";
+const DOMAIN: OwnerDomain = OwnerDomain::LinuxV1;
 
 /// The BLAKE3 digest of one complete canonical signed owner envelope.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -58,14 +58,14 @@ impl OwnerRecord {
 		let encoded_body = codec::encode_body(&manifest, &public_key)?;
 		let body = codec::encoded_bytes(&encoded_body);
 		let signature = profile_key
-			.try_sign(&signature_input(body))
+			.try_sign(&DOMAIN.signature_input(body))
 			.map_err(|_| OwnerError::InvalidSignature)?;
 		let envelope = Envelope {
 			body,
 			public_key,
 			signature: signature.to_bytes(),
 		};
-		let encoded = codec::encode_envelope(&envelope)?;
+		let encoded = codec::encode_envelope(&envelope, DOMAIN)?;
 		Ok(Self {
 			manifest,
 			verifying_key,
@@ -87,7 +87,7 @@ impl OwnerRecord {
 		if bytes.len() > MAX_OWNER_BYTES {
 			return Err(OwnerError::Length);
 		}
-		let envelope = codec::decode_envelope(bytes)?;
+		let envelope = codec::decode_envelope(bytes, DOMAIN)?;
 		let public_key = expected_key.to_bytes();
 		if envelope.public_key != public_key {
 			return Err(OwnerError::UntrustedKey);
@@ -98,7 +98,7 @@ impl OwnerRecord {
 		}
 		let signature = Signature::from_bytes(&envelope.signature);
 		expected_key
-			.verify_strict(&signature_input(envelope.body), &signature)
+			.verify_strict(&DOMAIN.signature_input(envelope.body), &signature)
 			.map_err(|_| OwnerError::InvalidSignature)?;
 		Ok(Self {
 			manifest,
@@ -140,8 +140,4 @@ impl fmt::Debug for OwnerRecord {
 			.field("verifying_key", &self.verifying_key)
 			.finish_non_exhaustive()
 	}
-}
-
-fn signature_input(body: &[u8]) -> Vec<u8> {
-	[SIGNATURE_DOMAIN, body].concat()
 }

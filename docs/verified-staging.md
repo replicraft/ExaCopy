@@ -1,6 +1,6 @@
 # Single-file verification, publication, and replay
 
-`exacopy-content` owns bounded standard BLAKE3-256 stream measurement. `exacopy-transfer` owns Linux copy sequencing, its private plan and receipt, and journal replay. `exacopy-journal` owns framing, canonical payloads, and signed owner records. `exacopy-diff` provides read-only byte comparison for the Linux command line.
+`exacopy-content` owns bounded standard BLAKE3-256 stream measurement. `exacopy-transfer` owns Linux copy sequencing, its private plan and receipt, and journal replay. `exacopy-journal` owns framing, canonical payloads, and signed owner records. `exacopy-diff` provides read-only byte comparison on Linux and managed APFS.
 
 | Scope | Requirements and acceptance cases | Invariants |
 | --- | --- | --- |
@@ -23,6 +23,8 @@ The Linux baseline checks that source attributes can be inspected and no extende
 The already authorized destination can create a new owner-private job directory. Its capabilities exclusively create `owner.cbor`, `journal/`, the first segment `journal/00000000000000000001.exajnl`, and `stage/`. `PreparedJob` writes the signed owner file, requests its file barrier, and synchronizes the segment entry and both enclosing namespace levels. It then writes a canonical `JobPrepared` frame binding the signed owner digest, canonical plan digest, capability UUID and held destination identity. The writer only returns evidence after `sync_all` succeeds. Any failure preserves the entries already created, and an existing job name cannot be adopted by bootstrap.
 
 The initial local owner profile uses strict Ed25519 verification over `ExaCopy/owner/v1\0` followed by the exact deterministic CBOR body. Verification requires the independently expected profile and key. Linux device and inode are stored as fixed little-endian values with unavailable generation recorded explicitly. A persisted identity is an observation and requires revalidation after reopening.
+
+The managed APFS owner codec has an explicit profile version and a distinct Ed25519 signature domain. Its signed claims bind the job and plan to a Darwin device, physical FSID, inode and the non-root owner's UID. The codec records unavailable inode generation as null and retains birth time as a supporting observation. Both decoders enforce their selected profile, and the Linux v1 golden bytes remain valid. A future Darwin coordinator must validate live directory authority and identity before using the authenticated claims to prepare or recover a job.
 
 The `EXAJNL01` frame codec bounds payloads before allocation, checks version and kind, and verifies CRC32C and a domain-separated BLAKE3 predecessor chain. The reader stops at corruption or an incomplete trailing record and retains the last verified boundary. It never searches for later magic. The kind-7 verification reference is a domain-separated digest of the complete canonical kind-5 payload.
 

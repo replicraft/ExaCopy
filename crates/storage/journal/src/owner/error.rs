@@ -1,6 +1,6 @@
 use std::fmt;
 
-/// The owner evidence could not be encoded or interpreted under the local v1 profile.
+/// The owner evidence could not be encoded or interpreted under the selected local profile.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum OwnerError {
@@ -38,6 +38,10 @@ pub enum OwnerError {
 	UnsupportedPolicy,
 	/// The state-directory allowlist has an unsupported name, count, or order.
 	InvalidDirectories,
+	/// The Darwin state-root volume differs from the destination observation.
+	DarwinVolumeMismatch,
+	/// The managed APFS state-root UID is outside the admitted non-root range.
+	InvalidOwnerUid,
 }
 
 impl fmt::Display for OwnerError {
@@ -58,6 +62,10 @@ impl fmt::Display for OwnerError {
 			Self::InvalidTimestamp => "owner timestamp has out-of-range nanoseconds",
 			Self::UnsupportedIdentity => "owner record identity is unsupported",
 			Self::VolumeMismatch => "owner state-root device differs from the destination device",
+			Self::DarwinVolumeMismatch => {
+				"owner state-root volume differs from the destination volume"
+			}
+			Self::InvalidOwnerUid => "owner state-root UID is outside the admitted Darwin range",
 			Self::UnsupportedPolicy => "owner policy is unsupported",
 			Self::InvalidDirectories => "owner state-directory allowlist is invalid",
 		};

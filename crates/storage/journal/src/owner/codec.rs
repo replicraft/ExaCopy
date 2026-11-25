@@ -12,13 +12,32 @@ const FORMAT_MINOR: u64 = 0;
 const REQUIRED_FEATURES: u64 = 0;
 const LINUX_PLATFORM: u64 = 1;
 const PRESERVE_POLICY: u64 = 0;
-const DOMAIN_CODE: u64 = 1;
 // The closed local profile has fixed fields and at most five known component names.
-const MAX_BODY_BYTES: usize = 512;
+pub(super) const MAX_BODY_BYTES: usize = 512;
 const MAX_ENVELOPE_BYTES: usize = MAX_BODY_BYTES + 112;
 
-type BodyBytes = Cursor<[u8; MAX_BODY_BYTES]>;
+pub(super) type BodyBytes = Cursor<[u8; MAX_BODY_BYTES]>;
 type EnvelopeBytes = Cursor<[u8; MAX_ENVELOPE_BYTES]>;
+
+#[derive(Clone, Copy)]
+pub(super) enum OwnerDomain {
+	LinuxV1,
+	DarwinManagedApfs,
+}
+
+impl OwnerDomain {
+	fn wire(self) -> (u64, &'static [u8]) {
+		match self {
+			Self::LinuxV1 => (1, b"ExaCopy/owner/v1\0"),
+			Self::DarwinManagedApfs => (2, b"ExaCopy/owner/darwin-managed-apfs/v1\0"),
+		}
+	}
+
+	pub(super) fn signature_input(self, body: &[u8]) -> Vec<u8> {
+		let (_, prefix) = self.wire();
+		[prefix, body].concat()
+	}
+}
 
 pub(super) struct Envelope<'a> {
 	pub(super) body: &'a [u8],
@@ -26,7 +45,11 @@ pub(super) struct Envelope<'a> {
 	pub(super) signature: [u8; 64],
 }
 
-pub(super) fn encode_envelope(envelope: &Envelope<'_>) -> Result<EnvelopeBytes, OwnerError> {
+pub(super) fn encode_envelope(
+	envelope: &Envelope<'_>,
+	domain: OwnerDomain,
+) -> Result<EnvelopeBytes, OwnerError> {
+	let (code, _) = domain.wire();
 	let mut encoder = Encoder::new(Cursor::new([0; MAX_ENVELOPE_BYTES]));
 	encoder
 		.map(4)?
@@ -37,11 +60,14 @@ pub(super) fn encode_envelope(envelope: &Envelope<'_>) -> Result<EnvelopeBytes, 
 		.u64(2)?
 		.bytes(&envelope.signature)?
 		.u64(3)?
-		.u64(DOMAIN_CODE)?;
+		.u64(code)?;
 	Ok(encoder.into_writer())
 }
 
-pub(super) fn decode_envelope(bytes: &[u8]) -> Result<Envelope<'_>, OwnerError> {
+pub(super) fn decode_envelope(
+	bytes: &[u8],
+	domain: OwnerDomain,
+) -> Result<Envelope<'_>, OwnerError> {
 	let mut decoder = Decoder::new(bytes);
 	map(&mut decoder, 4)?;
 	key(&mut decoder, 0)?;
@@ -54,7 +80,8 @@ pub(super) fn decode_envelope(bytes: &[u8]) -> Result<Envelope<'_>, OwnerError> 
 	key(&mut decoder, 2)?;
 	let signature = fixed_bytes(&mut decoder)?;
 	key(&mut decoder, 3)?;
-	if decoder.u64()? != DOMAIN_CODE {
+	let (code, _) = domain.wire();
+	if decoder.u64()? != code {
 		return Err(OwnerError::WrongDomain);
 	}
 	finish(decoder)?;
@@ -64,7 +91,7 @@ pub(super) fn decode_envelope(bytes: &[u8]) -> Result<Envelope<'_>, OwnerError> 
 		public_key,
 		signature,
 	};
-	if encoded_bytes(&encode_envelope(&envelope)?) != bytes {
+	if encoded_bytes(&encode_envelope(&envelope, domain)?) != bytes {
 		return Err(OwnerError::NonCanonical);
 	}
 	Ok(envelope)
@@ -197,7 +224,7 @@ fn decode_version(decoder: &mut Decoder<'_>) -> Result<(), OwnerError> {
 	Ok(())
 }
 
-fn decode_timestamp(decoder: &mut Decoder<'_>) -> Result<OwnerTimestamp, OwnerError> {
+pub(super) fn decode_timestamp(decoder: &mut Decoder<'_>) -> Result<OwnerTimestamp, OwnerError> {
 	map(decoder, 2)?;
 	key(decoder, 0)?;
 	let seconds = decoder.i64()?;
@@ -245,25 +272,27 @@ pub(super) fn encoded_bytes<const N: usize>(encoded: &Cursor<[u8; N]>) -> &[u8] 
 	&encoded.get_ref()[..encoded.position()]
 }
 
-fn map(decoder: &mut Decoder<'_>, fields: u64) -> Result<(), OwnerError> {
+pub(super) fn map(decoder: &mut Decoder<'_>, fields: u64) -> Result<(), OwnerError> {
 	if decoder.map()? != Some(fields) {
 		return Err(OwnerError::InvalidCbor);
 	}
 	Ok(())
 }
 
-fn key(decoder: &mut Decoder<'_>, field: u64) -> Result<(), OwnerError> {
+pub(super) fn key(decoder: &mut Decoder<'_>, field: u64) -> Result<(), OwnerError> {
 	if decoder.u64()? != field {
 		return Err(OwnerError::InvalidCbor);
 	}
 	Ok(())
 }
 
-fn fixed_bytes<const N: usize>(decoder: &mut Decoder<'_>) -> Result<[u8; N], OwnerError> {
+pub(super) fn fixed_bytes<const N: usize>(
+	decoder: &mut Decoder<'_>,
+) -> Result<[u8; N], OwnerError> {
 	decoder.bytes()?.try_into().map_err(|_| OwnerError::Length)
 }
 
-fn finish(decoder: Decoder<'_>) -> Result<(), OwnerError> {
+pub(super) fn finish(decoder: Decoder<'_>) -> Result<(), OwnerError> {
 	if decoder.position() != decoder.input().len() {
 		return Err(OwnerError::TrailingBytes);
 	}

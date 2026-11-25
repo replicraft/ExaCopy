@@ -1,8 +1,13 @@
 mod codec;
+mod darwin;
+mod darwin_codec;
+mod darwin_identity;
 mod error;
 mod manifest;
 mod record;
 
+pub use darwin::{DarwinOwnerManifest, DarwinOwnerRecord};
+pub use darwin_identity::{DarwinFileIdentity, DarwinVolumeIdentity};
 pub use error::OwnerError;
 pub use manifest::{
 	OwnerManifest, OwnerProfileId, OwnerStateDirectory, OwnerTimestamp, OwnerToken,

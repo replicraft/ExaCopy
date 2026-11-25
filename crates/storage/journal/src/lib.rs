@@ -18,6 +18,7 @@ pub use intent::{
 	VerificationDigest,
 };
 pub use owner::{
+	DarwinFileIdentity, DarwinOwnerManifest, DarwinOwnerRecord, DarwinVolumeIdentity,
 	MAX_OWNER_BYTES, OwnerDigest, OwnerError, OwnerManifest, OwnerProfileId, OwnerRecord,
 	OwnerStateDirectory, OwnerTimestamp, OwnerToken,
 };
