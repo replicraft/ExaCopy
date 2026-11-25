@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the declared model obligations and retain revision-bound EVS-1 evidence."""
+"""Run workspace members' declared obligations and retain revision-bound EVS-1 evidence."""
 
 import argparse
 from datetime import datetime, timezone
@@ -18,9 +18,7 @@ import uuid
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MODEL = ROOT / "crates/core/model"
-VERIFICATION = MODEL / "verification"
-VERIFY_COMMAND = "crates/core/model/verification/check.sh"
+DEFAULT_KANI_PIN = Path("crates/core/model/verification/kani/toolchain.lock.json")
 GATES = ("rust", "lean", "kani", "tlc")
 RUN_TIMEOUT_SECONDS = 900
 TOOL_QUERY_TIMEOUT_SECONDS = 30
@@ -48,28 +46,49 @@ def revision():
     )
 
 
-def tool_version(gate):
+def workspace_obligations(gate_filter):
+    metadata = json.loads(query("cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"))
+    members = set(metadata["workspace_members"])
+    for package in sorted(metadata["packages"], key=lambda entry: entry["manifest_path"]):
+        if package["id"] not in members:
+            continue
+        crate_root = Path(package["manifest_path"]).parent
+        ledger = crate_root / "verification/obligations.toml"
+        if not ledger.is_file():
+            continue
+        with ledger.open("rb") as manifest:
+            obligations = tomllib.load(manifest)["obligation"]
+        for obligation in obligations:
+            for gate in obligation["gates"]:
+                if gate_filter is None or gate == gate_filter:
+                    yield package["name"], crate_root, obligation, gate
+
+
+def tool_version(crate_root, gate):
+    verification = crate_root / "verification"
     if gate == "rust":
         return "cargo-nextest", query("cargo", "nextest", "--version").splitlines()[0]
     if gate == "lean":
-        return "Lean", (VERIFICATION / "lean-toolchain").read_text(encoding="utf-8").strip()
+        return "Lean", (verification / "lean-toolchain").read_text(encoding="utf-8").strip()
     if gate == "kani":
-        lock = read_json(VERIFICATION / "kani/toolchain.lock.json")
+        crate_pin = verification / "kani/toolchain.lock.json"
+        lock = read_json(crate_pin if crate_pin.exists() else ROOT / DEFAULT_KANI_PIN)
         return "Kani", lock["kani"]["version"]
-    lock = read_json(VERIFICATION / "tla/toolchain.lock.json")
+    lock = read_json(verification / "tla/toolchain.lock.json")
     return "TLC", f"TLC {lock['tlc']['version']} (tla2tools {lock['tlc']['release']})"
 
 
-def gate_command(gate, link):
+def gate_command(package, crate_root, gate, link):
     if gate == "rust":
         return [
-            "cargo", "nextest", "run", "--locked", "-p", "exacopy-model",
+            "cargo", "nextest", "run", "--locked", "-p", package,
             "--no-tests", "fail", "--", "--exact", link["test"],
         ]
-    return [VERIFY_COMMAND, gate]
+    script = crate_root / "verification/check.sh"
+    return [script.relative_to(ROOT).as_posix(), gate]
 
 
-def run_gate(command, gate, log, trace):
+def run_gate(command, gate, link, log, trace):
     """Include both full TLC reports and distribute the negative trace separately."""
     started = datetime.now(timezone.utc)
     clock = time.monotonic_ns()
@@ -101,8 +120,8 @@ def run_gate(command, gate, log, trace):
                 output.write(f"\nCould not start evidence command: {error}\n".encode())
                 result = 127
             if gate == "tlc":
-                positive = Path(scratch) / "CopyRecovery.log"
-                negative = Path(scratch) / "CopyRecoveryEarlyPublication.log"
+                positive = Path(scratch) / (Path(link["config"]).stem + ".log")
+                negative = Path(scratch) / (Path(link["negative_control"]).stem + ".log")
                 if positive.is_file():
                     report = positive.read_bytes()
                     output.write(b"\n--- TLC safety report ---\n" + report)
@@ -119,11 +138,11 @@ def run_gate(command, gate, log, trace):
     return started, (time.monotonic_ns() - clock) // 1_000_000, result, state_count
 
 
-def record_gate(output_dir, obligation, gate, source_revision, target):
+def record_gate(output_dir, package, crate_root, obligation, gate, source_revision, target):
     link = obligation[gate]
-    command = gate_command(gate, link)
-    source = MODEL / obligation["source"]
-    generated = MODEL / link["generated"] if gate == "lean" else None
+    command = gate_command(package, crate_root, gate, link)
+    source = crate_root / obligation["source"]
+    generated = crate_root / link["generated"] if gate == "lean" else None
     input_digest = digest(source)
     lockfile_digest = digest(ROOT / "Cargo.lock")
     extraction_digest = digest(generated) if generated else None
@@ -131,11 +150,11 @@ def record_gate(output_dir, obligation, gate, source_revision, target):
     log = output_dir / f"{evidence_id}.log"
     trace = output_dir / f"{evidence_id}.trace"
     try:
-        tool, version = tool_version(gate)
+        tool, version = tool_version(crate_root, gate)
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         print(f"{obligation['id']} {gate} version could not be read: {error}", flush=True)
         tool, version = gate, "unavailable"
-    started, duration, status, state_count = run_gate(command, gate, log, trace)
+    started, duration, status, state_count = run_gate(command, gate, link, log, trace)
     try:
         current_commit, dirty = revision()
         same_inputs = (
@@ -169,7 +188,7 @@ def record_gate(output_dir, obligation, gate, source_revision, target):
     record = {
         "schema_version": 1,
         "evidence_id": evidence_id,
-        "requirement_ids": obligation["requirement_ids"],
+        "requirement_ids": obligation.get("requirement_ids", []),
         "obligation_ids": [obligation["id"]],
         "kind": "test" if gate == "rust" else gate,
         "repository": "replicraft/ExaCopy",
@@ -227,16 +246,11 @@ def main():
         line.removeprefix("host: ") for line in query("rustc", "-vV").splitlines()
         if line.startswith("host: ")
     )
-    with (VERIFICATION / "obligations.toml").open("rb") as manifest:
-        obligations = tomllib.load(manifest)["obligation"]
-    work = [
-        (obligation, gate) for obligation in obligations for gate in obligation["gates"]
-        if args.gate is None or args.gate == gate
-    ]
+    work = list(workspace_obligations(args.gate))
     if not work:
         parser.error("The requested selection has no obligations")
     output.mkdir(parents=True, exist_ok=True)
-    results = [record_gate(output, obligation, gate, commit, target) for obligation, gate in work]
+    results = [record_gate(output, *scope, commit, target) for scope in work]
     return 0 if all(results) else 1
 
 
