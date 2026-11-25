@@ -101,9 +101,9 @@ fn field(bytes: &[u8], offset: usize) -> Option<u32> {
 	Some(u32::from_ne_bytes(value))
 }
 
-// Test setup uses only a freshly created synthetic directory descriptor.
-#[cfg(test)]
-pub(super) fn set_fixture_empty_acl(fd: BorrowedFd<'_>) -> io::Result<()> {
+// The caller may only set security metadata on a freshly created directory
+// whose descriptor has been bound to the exclusive creation.
+pub(super) fn set_empty_acl_on_fresh_directory(fd: BorrowedFd<'_>) -> io::Result<()> {
 	const SET_PAYLOAD: usize = size_of::<libc::attrreference_t>();
 	let mut request = attribute_request(libc::ATTR_CMN_EXTENDED_SECURITY);
 	let mut buffer = AttributeBuffer([0; PAYLOAD + EMPTY_FILESEC_BYTES]);
@@ -129,6 +129,10 @@ pub(super) fn set_fixture_empty_acl(fd: BorrowedFd<'_>) -> io::Result<()> {
 }
 
 #[cfg(test)]
+pub(super) fn set_fixture_empty_acl(fd: BorrowedFd<'_>) -> io::Result<()> {
+	set_empty_acl_on_fresh_directory(fd)
+}
+
 fn write_field(bytes: &mut [u8], offset: usize, value: u32) {
 	bytes[offset..offset + FIELD_BYTES].copy_from_slice(&value.to_ne_bytes());
 }

@@ -16,6 +16,7 @@ mod reader;
 #[cfg(test)]
 mod tests;
 
+pub use directory::jobs;
 pub use directory::{ManagedStageGrant, ManagedStageRoot, StageDirectory};
 pub use error::StageError;
 pub use file::{ClosedStage, MAX_STAGE_IO_BYTES, WriteStage};

@@ -18,6 +18,8 @@ use super::entropy::fill_stage_entropy;
 use super::identity::RANDOM_STAGE_ID_BYTES;
 use super::{StageBindingContext, StageError, WriteStage};
 
+pub mod jobs;
+
 #[cfg(test)]
 mod tests;
 
@@ -143,6 +145,7 @@ impl ManagedStageRoot {
 			let lease = DirectoryLease::bind(child.into(), identity)?;
 			let directory = StageDirectory {
 				root: self,
+				job: None,
 				name,
 				lease,
 			};
@@ -160,9 +163,10 @@ impl fmt::Debug for ManagedStageRoot {
 	}
 }
 
-/// A held provisioned private directory with an exclusive lease on it and its destination parent.
+/// A held private directory with exclusive leases on its namespace ancestors.
 pub struct StageDirectory<'root> {
 	root: &'root ManagedStageRoot,
+	job: Option<&'root jobs::JobDirectory<'root>>,
 	name: UnixComponent<'root>,
 	lease: DirectoryLease,
 }
@@ -206,6 +210,12 @@ impl StageDirectory<'_> {
 		entropy: impl FnOnce(&mut [u8; RANDOM_STAGE_ID_BYTES]) -> io::Result<()>,
 	) -> Result<WriteStage<'stage>, StageError> {
 		self.check_process()?;
+		if self
+			.job
+			.is_some_and(|job| job.name().job_id() != context.job())
+		{
+			return Err(StageError::JobBindingMismatch);
+		}
 		if length > MAX_FILE_LENGTH {
 			return Err(StageError::InvalidLength);
 		}
@@ -245,7 +255,10 @@ impl StageDirectory<'_> {
 		self.check_process()?;
 		self.root.lease.check_current()?;
 		self.lease.check_current()?;
-		let named = self.root.lease.named_stat(self.name)?;
+		let named = match self.job {
+			Some(job) => job.named_stage_stat(self.name)?,
+			None => self.root.lease.named_stat(self.name)?,
+		};
 		if !self.lease.identity.matches_stat(&named) {
 			return Err(StageError::DirectoryChanged);
 		}
@@ -299,20 +312,23 @@ impl DirectoryLease {
 		if !volume::supports_managed_root(file.as_fd())? {
 			return Err(ManagedReadError::UnsupportedNamespace.into());
 		}
-		let lease_process = process::id();
+		let lease = Self::lock(file, owner, identity)?;
+		lease.check_current()?;
+		Ok(lease)
+	}
+
+	fn lock(file: File, owner: u32, identity: DirectoryIdentity) -> Result<Self, StageError> {
 		match fs::flock(&file, FlockOperation::NonBlockingLockExclusive) {
 			Ok(()) => {}
 			Err(Errno::AGAIN) => return Err(StageError::DirectoryBusy),
 			Err(error) => return Err(error.into()),
 		}
-		let lease = Self {
+		Ok(Self {
 			file,
 			owner,
 			identity,
-			lease_process,
-		};
-		lease.check_current()?;
-		Ok(lease)
+			lease_process: process::id(),
+		})
 	}
 
 	fn check_process(&self) -> Result<(), StageError> {

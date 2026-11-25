@@ -18,6 +18,8 @@ pub enum StageError {
 	DirectoryChanged,
 	/// A root or requested operation failed the existing managed APFS or thread policy checks.
 	Managed(ManagedReadError),
+	/// A stage context names a different job than its parent directory.
+	JobBindingMismatch,
 	/// The stage name or public target already has an occupant.
 	NameCollision,
 	/// A creation may have occurred. Reconcile the retained private name before retrying.
@@ -66,6 +68,7 @@ impl fmt::Display for StageError {
 			Self::Managed(error) => {
 				write!(formatter, "managed APFS evidence unavailable ({error})")
 			}
+			Self::JobBindingMismatch => formatter.write_str("stage context names a different job"),
 			Self::NameCollision => formatter.write_str("stage or target name is occupied"),
 			Self::CreateUncertain { source, .. } => {
 				write!(

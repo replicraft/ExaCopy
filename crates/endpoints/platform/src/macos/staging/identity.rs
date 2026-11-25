@@ -28,6 +28,10 @@ impl StageBindingContext {
 		Self { job, entry, epoch }
 	}
 
+	pub(super) const fn job(self) -> JobId {
+		self.job
+	}
+
 	pub(super) fn allocate(
 		self,
 		entropy: impl FnOnce(&mut [u8; RANDOM_STAGE_ID_BYTES]) -> io::Result<()>,
