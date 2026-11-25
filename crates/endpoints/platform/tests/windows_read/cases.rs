@@ -12,7 +12,7 @@ use windows_sys::Win32::Storage::FileSystem::{
 	FILE_WRITE_DATA, SYNCHRONIZE,
 };
 
-use crate::native::{HeldDirectory, Refusal};
+use crate::native::{HeldDirectory, ReadRefusal, Refusal};
 
 pub(crate) struct Fixture(pub(crate) PathBuf);
 
@@ -87,7 +87,7 @@ fn ordinary_ntfs_opens_existing_child_by_component_and_reads_at_explicit_offsets
 	assert_eq!(file.read_at(6, &mut buffer).unwrap(), 0);
 	assert!(matches!(
 		file.read_at(i64::MAX as u64, &mut buffer),
-		Err(Refusal::InvalidReadRange)
+		Err(ReadRefusal::InvalidRange)
 	));
 }
 
