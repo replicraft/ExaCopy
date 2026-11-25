@@ -143,6 +143,10 @@ impl ReadRoot {
 		self.identity
 	}
 
+	pub(super) const fn directory(&self) -> &File {
+		&self.directory
+	}
+
 	/// Open a regular child with read-only rights, refusing links and mount crossings.
 	///
 	/// Reopening the pinned inode requires the calling thread's Linux procfs

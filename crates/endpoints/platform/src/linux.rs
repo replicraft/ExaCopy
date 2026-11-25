@@ -3,6 +3,8 @@
 mod copy_capabilities;
 mod handle;
 mod job;
+mod mount_observation;
+mod process_crash;
 mod publication_capabilities;
 mod recovery;
 mod recovery_capabilities;
@@ -13,6 +15,10 @@ mod staging_capabilities;
 pub use handle::FileIdentity;
 pub use job::{
 	CheckpointDirectory, JobDirectory, JournalDirectory, ReceiptDirectory, TargetStatus,
+};
+pub use process_crash::{
+	ProcessCrashEligibility, ProcessCrashEnvironment, ProcessCrashProfileError,
+	ProcessCrashProfileId, observe_process_crash_environment,
 };
 pub use recovery::{
 	RecoveryFile, RecoveryInventory, RecoveryJob, RecoveryReadLease, RecoveryReceiptDirectory,
@@ -25,3 +31,5 @@ pub use stage::{
 	ClosedStage, DestinationRoot, DirectoryBarriersError, PublishError, StageDirectory, StageError,
 	WriteStage,
 };
+
+pub use mount_observation::MountObservations;
