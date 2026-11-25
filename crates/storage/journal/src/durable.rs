@@ -5,13 +5,17 @@ mod tests;
 
 use std::fmt;
 use std::fs::File;
-use std::io::{self, Seek as _};
+use std::io::{self, BufReader, Read as _, Seek as _, SeekFrom};
 
-use crate::frame::{ChainHead, FRAME_OVERHEAD_BYTES, FrameKind, FrameWriteError, FrameWriter};
+use crate::frame::{
+	ChainHead, FRAME_OVERHEAD_BYTES, FrameKind, FrameReader, FrameWriteError, FrameWriter,
+};
 
 pub use error::DurableJournalError;
 
-/// Owns the sole writer for a fresh journal file and barriers each complete frame.
+const MAX_FIRST_SEGMENT_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Owns the sole writer for a journal file and barriers each complete frame.
 pub struct DurableJournal {
 	writer: Option<FrameWriter<File>>,
 	end: u64,
@@ -33,6 +37,73 @@ impl DurableJournal {
 		Ok(Self {
 			writer: Some(FrameWriter::new(file, ChainHead::start())),
 			end: 0,
+		})
+	}
+
+	/// Resumes appending to an authorized first segment after rereading and syncing it.
+	///
+	/// The caller supplies the pinned, readable and writable file handle, holds exclusive
+	/// mutation access, and authenticates and semantically validates its nonempty journal prefix
+	/// to establish `expected_head` and `expected_end`. This method verifies the envelopes and
+	/// requests a fresh file barrier. The caller owns decisions about recovered effects and
+	/// any required owner-record and directory-entry barriers.
+	///
+	/// # Errors
+	///
+	/// Fails for an empty prefix, a segment above 64 MiB, a nonregular handle, a length or
+	/// chain-head mismatch, a damaged or incomplete frame, or failed I/O. File bytes are preserved.
+	pub fn resume_first_segment(
+		file: File,
+		expected_head: ChainHead,
+		expected_end: u64,
+	) -> Result<Self, DurableJournalError> {
+		Self::resume_with_barrier(file, expected_head, expected_end, File::sync_all)
+	}
+
+	fn resume_with_barrier(
+		mut file: File,
+		expected_head: ChainHead,
+		expected_end: u64,
+		sync: impl FnOnce(&File) -> io::Result<()>,
+	) -> Result<Self, DurableJournalError> {
+		if expected_head == ChainHead::start() || expected_end == 0 {
+			return Err(DurableJournalError::EmptyPrefix);
+		}
+		if expected_end > MAX_FIRST_SEGMENT_BYTES {
+			return Err(DurableJournalError::SegmentTooLarge {
+				length: expected_end,
+				limit: MAX_FIRST_SEGMENT_BYTES,
+			});
+		}
+		check_length(&file, expected_end)?;
+		file.rewind().map_err(DurableJournalError::Inspect)?;
+		let (head, end) = {
+			// Read at most one byte past the bounded expected length to observe EOF there.
+			let bytes = (&mut file).take(expected_end + 1);
+			let mut reader = FrameReader::new(BufReader::new(bytes), ChainHead::start());
+			while reader
+				.next_frame()
+				.map_err(DurableJournalError::ReadFrame)?
+				.is_some()
+			{}
+			(reader.head(), reader.offset())
+		};
+		if end != expected_end {
+			return Err(DurableJournalError::UnexpectedLength {
+				expected: expected_end,
+				actual: end,
+			});
+		}
+		if head != expected_head {
+			return Err(DurableJournalError::UnexpectedHead);
+		}
+		file.seek(SeekFrom::Start(end))
+			.map_err(DurableJournalError::Inspect)?;
+		check_file(&mut file, end)?;
+		sync(&file).map_err(DurableJournalError::Sync)?;
+		Ok(Self {
+			writer: Some(FrameWriter::new(file, head)),
+			end,
 		})
 	}
 
@@ -128,6 +199,20 @@ fn frame_end(offset: u64, payload_bytes: usize) -> Option<u64> {
 }
 
 fn check_file(file: &mut File, expected_end: u64) -> Result<(), DurableJournalError> {
+	check_length(file, expected_end)?;
+	let cursor = file
+		.stream_position()
+		.map_err(DurableJournalError::Inspect)?;
+	if cursor != expected_end {
+		return Err(DurableJournalError::UnexpectedCursor {
+			expected: expected_end,
+			actual: cursor,
+		});
+	}
+	Ok(())
+}
+
+fn check_length(file: &File, expected_end: u64) -> Result<(), DurableJournalError> {
 	let metadata = file.metadata().map_err(DurableJournalError::Inspect)?;
 	if !metadata.is_file() {
 		return Err(DurableJournalError::NotRegularFile);
@@ -136,15 +221,6 @@ fn check_file(file: &mut File, expected_end: u64) -> Result<(), DurableJournalEr
 		return Err(DurableJournalError::UnexpectedLength {
 			expected: expected_end,
 			actual: metadata.len(),
-		});
-	}
-	let cursor = file
-		.stream_position()
-		.map_err(DurableJournalError::Inspect)?;
-	if cursor != expected_end {
-		return Err(DurableJournalError::UnexpectedCursor {
-			expected: expected_end,
-			actual: cursor,
 		});
 	}
 	Ok(())
