@@ -1040,7 +1040,7 @@ requirement_ids = ["R-269", "R-270"]
 acceptance_ids = ["A-269", "A-270"]
 invariant_ids = ["INV-025"]
 scope = "Read-only regular-file two-way change classification using caller-validated common history, complete inventory and verified stream/required metadata evidence."
-limits = "No inventory producer, baseline persistence, approvals, mutation, tombstone publication or formal sync proof."
+limits = "P-041 provides finite classifier replay and a separate abstract baseline admission model. Inventory production, approvals, execution and native qualification remain open."
 
 [[coverage.evidence]]
 owner = "exacopy-model"
@@ -1054,6 +1054,36 @@ owner = "exacopy-model"
 level = "documentation"
 state = "reported"
 path = "docs/architecture/sync-classification.md"
+
+
+[[coverage]]
+id = "sync-baseline-admission-model"
+status = "implemented"
+requirement_ids = ["R-269", "R-270"]
+acceptance_ids = ["A-269", "A-270"]
+invariant_ids = ["INV-025", "INV-026"]
+scope = "P-041 models one regular-file path with complete paired observations, matching receipts from both endpoints and a current predecessor for abstract baseline admission. A separate Rust test replays all 432 finite classifier subjects."
+limits = "The implemented artifacts are a finite model and a classifier test. Baseline persistence, mutating synchronization, protected transfer, version retention, multi-path consistency, crash and power-loss qualification and unbounded refinement remain open."
+
+[[coverage.evidence]]
+owner = "exacopy-model"
+level = "obligation"
+state = "defined"
+path = "crates/foundation/exacopy-model/verification/obligations.toml"
+target = "P-041"
+
+[[coverage.evidence]]
+owner = "exacopy-model"
+level = "test"
+state = "defined"
+path = "crates/foundation/exacopy-model/tests/sync_tlc.rs"
+target = "sync_classifier_matches_all_tlc_subjects"
+
+[[coverage.evidence]]
+owner = "exacopy-model"
+level = "documentation"
+state = "reported"
+path = "crates/foundation/exacopy-model/verification/tla/SYNC_BASELINE.md"
 
 
 [[coverage]]

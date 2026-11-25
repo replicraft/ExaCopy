@@ -39,3 +39,13 @@ gates = ["rust", "lean", "kani"]
 rust = { test = "checked_ranges_agree_with_wide_integer_arithmetic", file = "tests/range.rs", seeds = ["ChaCha 0x4558_4143_5241_4E47, 1024 cases and persisted regressions."], oracle = "Compare the executable result with a wider integer oracle for contained half-open ranges." }
 lean = { theorem = "ExaCopy.Proofs.checked_range_end_spec", proof = "verification/Proofs/Range.lean", generated = "verification/Generated/Funs.lean", axioms_tcb = ["propext", "Classical.choice", "Quot.sound", "Lean 4.31.0 kernel", "Pinned Charon, Aeneas and hax scalar models."], oracle = "Regenerate Lean from the actual Rust function, check the exact mathematical specification in the kernel and verify the theorem's axiom dependencies." }
 kani = { harness = "kani_checks::range::checked_range_end_matches_wide_arithmetic", file = "verification/kani/range.rs", unwind_bound = 1, model_bounds = ["Full Cartesian product of three u64 inputs with no harness assumptions."], oracle = "Prove equivalence to the wider integer oracle and reach all six guard-behavior covers with unwinding assertions enabled." }
+
+[[obligation]]
+id = "P-041"
+requirement_ids = ["R-269", "R-270"]
+source = "src/sync.rs"
+symbols = ["classify_two_way_path"]
+assumptions = ["One fixed endpoint pair, raw path and policy with truthful complete, unavailable or unsupported observations.", "The abstract matching receipt binds the side, scan generation and observed evidence. Receipt authenticity and retention are supplied assumptions.", "Rust replay links only the finite classifier subjects to implementation. Baseline admission and generation advancement exist solely in the TLA+ model."]
+gates = ["rust", "tlc"]
+rust = { test = "sync_classifier_matches_all_tlc_subjects", file = "tests/sync_tlc.rs", oracle = "Compare the public Rust classifier with all 432 distinct rows from the independently modeled TLA+ decision matrix, including content-only and required-metadata-only differences." }
+tlc = { spec = "verification/tla/SyncBaseline.tla", config = "verification/tla/SyncBaseline.cfg", negative_control = "verification/tla/SyncBaselineTreatUnknownAsAbsent.cfg", model_bounds = ["One path, two fixed endpoints, 432 initial classifier subjects, one scan at generation 1, one competing generation advance and at most one receipt per endpoint."], seeds = ["TLC seed and fingerprint index 0."], oracle = "Exhaust all reachable states and require an exact 432-row table match. Require complete, known observations and paired matching receipts for modeled baseline admission at the current predecessor, and detect unknown-as-absence, receipt bypass and stale-generation controls." }

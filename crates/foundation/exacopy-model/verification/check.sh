@@ -15,7 +15,10 @@ check_miri() (
 case ${1:-all} in
 	lean) exec "$verification_dir/lean-check.sh" ;;
 	kani) exec "$verification_dir/kani/check.sh" ;;
-	tlc) exec "$verification_dir/tla/check.sh" ;;
+	tlc)
+		"$verification_dir/tla/check.sh"
+		exec python3 -B "$verification_dir/tla/check-sync.py"
+		;;
 	miri) check_miri ;;
 	all)
 		status=0

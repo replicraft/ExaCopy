@@ -36,3 +36,6 @@ TLC 2.19 at revision `5a47802` ran on macOS 14.7.2 Arm64 under Temurin `21.0.8+9
 | `CopyRecoveryUnverifiedRetry.cfg` | 12 | 524 | 253 | 37 | `PriorPublicationEvidence` failed at state 16. |
 
 In the [normalized negative trace](CopyRecoveryEarlyPublication.trace.json), `Prepare` creates the private stage, `StartAttempt` bypasses intent, and `ApplyNoClobber` publishes the empty stage at the absent target. The retained-stage mutant allows a new intent immediately after the epoch changes. Its trace reaches publication with evidence still at `retained`. All configurations use the same atomic no-clobber rule.
+
+The [sync classifier and baseline model](SYNC_BASELINE.md) documents its
+separate bounds, negative controls and Rust replay.
