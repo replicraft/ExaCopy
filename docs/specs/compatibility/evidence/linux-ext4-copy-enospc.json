@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "protocol": "exacopy-reference-v1",
+  "lane": "copy",
+  "outcome": "blocked",
+  "source_revision": "7cf7e9d72170db9576160edb57a3ff32c2381b58",
+  "binary_sha256": "0525d16542a318b5157d7eaabf6175dc56bbe0931bdd5882ced057a65e2bf0ff",
+  "filesystem": "ext4",
+  "repeats": 5,
+  "copy_result": {
+    "exit_code": 4,
+    "stdout": "",
+    "stderr": ""
+  },
+  "runner_diagnostic": "OSError: [Errno 28] No space left on device",
+  "runner_failure_phase": "Opening the failed result JSON after the first copy assertion failed.",
+  "completed_case_count": null,
+  "raw_log_sha256": "c55c76175417b2956abe7ba8fd78d6e29510a1ef13859ce06e40c7c9a89c2938",
+  "retry": "The same binary ran successfully on freshly generated fixtures after its build cache was removed."
+}

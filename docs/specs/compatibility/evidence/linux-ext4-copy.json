@@ -1,0 +1,254 @@
+{
+  "schema_version": 1,
+  "protocol": "exacopy-reference-v1",
+  "lane": "copy",
+  "outcome": "passed",
+  "configuration": {
+    "source_revision": "7cf7e9d72170db9576160edb57a3ff32c2381b58",
+    "build_profile": "release",
+    "exacopy_binary_sha256": "0525d16542a318b5157d7eaabf6175dc56bbe0931bdd5882ced057a65e2bf0ff",
+    "cargo_lock_sha256": "ebbe7a23da819caea738b58429928338b86ee486ba8bd1becca67cf6814b9109",
+    "workspace_lock_dependencies": [
+      "arrayvec 0.7.8",
+      "autocfg 1.5.1",
+      "bitflags 2.13.2",
+      "blake3 1.8.7",
+      "block-buffer 0.10.4",
+      "bumpalo 3.20.4",
+      "camino 1.2.6",
+      "cargo-platform 0.3.3",
+      "cargo_metadata 0.23.1",
+      "cc 1.11.2",
+      "cfg-if 1.0.5",
+      "chacha20 0.10.2",
+      "constant_time_eq 0.4.2",
+      "core_detect 1.0.0",
+      "cpufeatures 0.2.17",
+      "cpufeatures 0.3.1",
+      "crc32c 0.6.9",
+      "crypto-common 0.1.7",
+      "curve25519-dalek 4.1.3",
+      "curve25519-dalek-derive 0.1.1",
+      "digest 0.10.7",
+      "ed25519 2.2.3",
+      "ed25519-dalek 2.2.0",
+      "equivalent 1.0.3",
+      "errno 0.3.15",
+      "fiat-crypto 0.2.9",
+      "find-msvc-tools 0.1.15",
+      "futures-core 0.3.34",
+      "futures-task 0.3.34",
+      "futures-util 0.3.34",
+      "generic-array 0.14.7",
+      "getrandom 0.4.3",
+      "hashbrown 0.17.1",
+      "hax-lib 0.4.2",
+      "hax-lib-macros 0.4.2",
+      "hax-lib-macros-types 0.4.2",
+      "indexmap 2.14.2",
+      "itoa 1.0.19",
+      "js-sys 0.3.107",
+      "libc 0.2.191",
+      "linux-raw-sys 0.12.1",
+      "memchr 2.8.3",
+      "minicbor 2.3.0",
+      "num-bigint 0.4.8",
+      "num-integer 0.1.47",
+      "num-traits 0.2.19",
+      "pin-project-lite 0.2.18",
+      "proc-macro2 1.0.107",
+      "proptest 1.12.0",
+      "quote 1.0.47",
+      "r-efi 6.0.0",
+      "rand 0.10.4",
+      "rand_core 0.10.1",
+      "rand_xorshift 0.5.0",
+      "regex-syntax 0.8.12",
+      "rustc_version 0.4.1",
+      "rustix 1.1.6",
+      "rustversion 1.0.23",
+      "semver 1.0.28",
+      "serde 1.0.229",
+      "serde_core 1.0.229",
+      "serde_derive 1.0.229",
+      "serde_json 1.0.154",
+      "serde_spanned 1.1.3",
+      "sha2 0.10.9",
+      "shlex 2.0.1",
+      "signature 2.2.0",
+      "slab 0.4.12",
+      "subtle 2.6.1",
+      "syn 2.0.119",
+      "syn 3.0.10",
+      "thiserror 2.0.21",
+      "thiserror-impl 2.0.21",
+      "toml 1.2.1+spec-1.1.0",
+      "toml_datetime 1.1.3+spec-1.1.0",
+      "toml_parser 1.1.5+spec-1.1.0",
+      "toml_writer 1.2.0+spec-1.1.0",
+      "typenum 1.20.1",
+      "unarray 0.1.4",
+      "unicode-ident 1.0.27",
+      "uuid 1.29.3",
+      "version_check 0.9.5",
+      "wasm-bindgen 0.2.130",
+      "wasm-bindgen-macro 0.2.130",
+      "wasm-bindgen-macro-support 0.2.130",
+      "wasm-bindgen-shared 0.2.130",
+      "windows-link 0.2.1",
+      "windows-sys 0.61.2",
+      "winnow 1.0.5",
+      "zeroize 1.9.2",
+      "zmij 1.0.23"
+    ],
+    "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)\nbinary: rustc\ncommit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a\ncommit-date: 2026-11-09\nhost: aarch64-unknown-linux-gnu\nrelease: 1.100.0\nLLVM version: 23.1.5",
+    "cargo": "cargo 1.100.0 (3acc79c0c 2026-11-05)",
+    "platform": {
+      "os": "Linux",
+      "kernel": "6.8.0-147-generic",
+      "machine": "aarch64",
+      "version": "Ubuntu 24.04.5 LTS",
+      "filesystem": "ext4",
+      "python": "3.12.3"
+    },
+    "hardware": "Lima aarch64 guest on Apple M1 Pro; 4 vCPU; 4.8 GiB RAM; virtio /dev/vda1 backed by internal Apple SSD; ext4 rw,relatime,discard,errors=remount-ro,commit=30",
+    "cmp_version": "cmp (GNU diffutils) 3.10",
+    "cmp_sha256": "58f9f2038d6eb030a70357c2e67ad9b048af0ca09eca754a5a70990e3e79b41f",
+    "runner_sha256": "b568c1c52621826f6665dbacceca68638d8bcc74af4063c5434b090e82aeaa12",
+    "fixture_helper_sha256": "bd7d586568384ff02674038940cfddbc9e3ede7b0a42a60ce8005dd7f745fc7c",
+    "cache": "warm: fresh fixtures, read before trials; one warm-up excluded",
+    "repeats": 5,
+    "rsync_version": "rsync  version 3.2.7  protocol version 31",
+    "rsync_sha256": "954f2a06af7b00bdf0117491c31072b178446e39fcf5ea6a5133d5752dd1fb8f"
+  },
+  "evidence": {
+    "workloads": [
+      {
+        "case": "small-copy",
+        "bytes": 4096,
+        "assurance": {
+          "schema": "exacopy.cli.copy",
+          "schema_version": "1.0",
+          "publication": "published",
+          "completed": 1,
+          "pending": 0,
+          "verification": "hash_readback",
+          "consistency": "live_observed",
+          "durability": "unconfirmed",
+          "preservation": "preserve",
+          "redundancy": "independent_writes",
+          "metadata": "complete_for_policy"
+        },
+        "sha256": "2db2bdbbd1132eba19278fdb292b8abcf4bbe5442cf2700b6f62479bed466cf8",
+        "verified_samples": [
+          {
+            "elapsed_ns": 26307861,
+            "user_cpu_ns": 0,
+            "system_cpu_ns": 4228000,
+            "peak_rss_bytes": 19529728
+          },
+          {
+            "elapsed_ns": 78632861,
+            "user_cpu_ns": 1069000,
+            "system_cpu_ns": 4278000,
+            "peak_rss_bytes": 19529728
+          },
+          {
+            "elapsed_ns": 84131022,
+            "user_cpu_ns": 1084000,
+            "system_cpu_ns": 9759000,
+            "peak_rss_bytes": 19529728
+          },
+          {
+            "elapsed_ns": 69923150,
+            "user_cpu_ns": 0,
+            "system_cpu_ns": 15363000,
+            "peak_rss_bytes": 19529728
+          },
+          {
+            "elapsed_ns": 46709173,
+            "user_cpu_ns": 2759000,
+            "system_cpu_ns": 4599000,
+            "peak_rss_bytes": 19529728
+          }
+        ],
+        "summary": {
+          "elapsed_median_ns": 69923150,
+          "elapsed_min_ns": 26307861,
+          "elapsed_max_ns": 84131022,
+          "cpu_median_ns": 7358000,
+          "peak_rss_bytes": 19529728
+        }
+      },
+      {
+        "case": "large-copy",
+        "bytes": 67108864,
+        "assurance": {
+          "schema": "exacopy.cli.copy",
+          "schema_version": "1.0",
+          "publication": "published",
+          "completed": 1,
+          "pending": 0,
+          "verification": "hash_readback",
+          "consistency": "live_observed",
+          "durability": "unconfirmed",
+          "preservation": "preserve",
+          "redundancy": "independent_writes",
+          "metadata": "complete_for_policy"
+        },
+        "sha256": "2f8320d9664c494e6da74515903ad6329dccf00e0c70e9f71d5e5ca43c3b7ed0",
+        "verified_samples": [
+          {
+            "elapsed_ns": 836572908,
+            "user_cpu_ns": 278899000,
+            "system_cpu_ns": 257317000,
+            "peak_rss_bytes": 21532672
+          },
+          {
+            "elapsed_ns": 1473116451,
+            "user_cpu_ns": 286981000,
+            "system_cpu_ns": 422846000,
+            "peak_rss_bytes": 21532672
+          },
+          {
+            "elapsed_ns": 1234526194,
+            "user_cpu_ns": 250785000,
+            "system_cpu_ns": 508459000,
+            "peak_rss_bytes": 21532672
+          },
+          {
+            "elapsed_ns": 970983442,
+            "user_cpu_ns": 333743000,
+            "system_cpu_ns": 276357000,
+            "peak_rss_bytes": 21532672
+          },
+          {
+            "elapsed_ns": 1075496994,
+            "user_cpu_ns": 171801000,
+            "system_cpu_ns": 133623000,
+            "peak_rss_bytes": 21532672
+          }
+        ],
+        "summary": {
+          "elapsed_median_ns": 1075496994,
+          "elapsed_min_ns": 836572908,
+          "elapsed_max_ns": 1473116451,
+          "cpu_median_ns": 610100000,
+          "peak_rss_bytes": 21532672
+        }
+      }
+    ],
+    "rsync_copy": {
+      "reference_exit": 0,
+      "cmp_exit": 0,
+      "item": ">f+++++++++"
+    },
+    "incumbent_control": {
+      "exacopy_exit": 3,
+      "exacopy_error": "E_CONFLICT",
+      "rsync_exit": 0,
+      "rsync_itemized_change": "",
+      "source_and_incumbent_preserved": true
+    }
+  }
+}

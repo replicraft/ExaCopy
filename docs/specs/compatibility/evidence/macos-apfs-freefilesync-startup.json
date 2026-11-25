@@ -1,0 +1,119 @@
+{
+  "outcome": "blocked",
+  "basis": "Both launch paths aborted with SIGABRT before any comparison result or log. No paired result.",
+  "reference_sources": [
+    "https://freefilesync.org/manual.php?topic=command-line",
+    "https://freefilesync.org/manual.php?topic=comparison-settings",
+    "https://freefilesync.org/manual.php?topic=schedule-batch-jobs"
+  ],
+  "reference_bundle_identifier": "org.freefilesync.FreeFileSync",
+  "reference_version": "14.13",
+  "reference_build": "14.13",
+  "reference_file_sha256": {
+    "FreeFileSync": "946cdeaa7b460d7e1e69f8fa307986618175a6d76d64e483c229722463b266bf",
+    "FreeFileSync_main": "fd720d8620e7c79f79491a8bfe23fd077bd9780e407cae7108c5a42a1aa7b594"
+  },
+  "platform": {
+    "sw_vers": {
+      "command": [
+        "/usr/bin/sw_vers"
+      ],
+      "exit": 0,
+      "stdout": "ProductName:\t\tmacOS\nProductVersion:\t\t14.7.2\nBuildVersion:\t\t23H311\n",
+      "stderr": ""
+    },
+    "machine": {
+      "command": [
+        "/usr/bin/uname",
+        "-m"
+      ],
+      "exit": 0,
+      "stdout": "arm64\n",
+      "stderr": ""
+    },
+    "mount": "/dev/disk3s5 on /System/Volumes/Data (apfs, local, journaled, nobrowse, protect, root data)"
+  },
+  "configuration": {
+    "xml": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<FreeFileSync XmlType=\"BATCH\" XmlFormat=\"23\">\n    <Notes/>\n    <GridViewType>Difference</GridViewType>\n    <Compare><Variant>Content</Variant><Symlinks>Exclude</Symlinks><IgnoreTimeShift/></Compare>\n    <Synchronize>\n        <Differences LeftOnly=\"none\" LeftNewer=\"none\" RightNewer=\"none\" RightOnly=\"none\"/>\n        <DeletionPolicy>Versioning</DeletionPolicy>\n        <VersioningFolder Style=\"Replace\">${SCRATCH}/versions</VersioningFolder>\n    </Synchronize>\n    <Filter><Include><Item>*</Item></Include><Exclude/><SizeMin Unit=\"None\">0</SizeMin><SizeMax Unit=\"None\">0</SizeMax><TimeSpan Type=\"None\">0</TimeSpan></Filter>\n    <FolderPairs><Pair><Left>${SCRATCH}/left</Left><Right>${SCRATCH}/right</Right></Pair></FolderPairs>\n    <Errors Ignore=\"false\" Retry=\"0\" Delay=\"5\"/>\n    <PostSyncCommand Condition=\"Completion\"/>\n    <LogFolder>${SCRATCH}/logs</LogFolder>\n    <EmailNotification Condition=\"Always\"/>\n    <Batch><ProgressDialog Minimized=\"true\" AutoClose=\"true\"/><ErrorDialog>Cancel</ErrorDialog><PostSyncAction>None</PostSyncAction></Batch>\n</FreeFileSync>",
+    "alternate_global_settings": "Absent before and after. App documentation accepts an alternate path.",
+    "compare_mode": "File Content",
+    "directions": "No action in all four categories"
+  },
+  "fixture": {
+    "relative_paths": [
+      "left/sample.bin",
+      "right/sample.bin"
+    ],
+    "bytes_hex": "007fff414243",
+    "mtime_epoch_seconds": 1700000000
+  },
+  "processes": {
+    "probe": {
+      "command": [
+        "/Applications/FreeFileSync.app/Contents/MacOS/FreeFileSync",
+        "${SCRATCH}/equal.ffs_batch",
+        "${SCRATCH}/GlobalSettings.xml"
+      ],
+      "exit": -6,
+      "timed_out": false,
+      "stdout": "",
+      "stderr": "",
+      "files": [
+        "equal.ffs_batch",
+        "left",
+        "left/sample.bin",
+        "logs",
+        "right",
+        "right/sample.bin",
+        "versions"
+      ]
+    },
+    "direct-probe": {
+      "command": [
+        "/Applications/FreeFileSync.app/Contents/MacOS/FreeFileSync_main",
+        "${SCRATCH}/equal.ffs_batch",
+        "${SCRATCH}/GlobalSettings.xml"
+      ],
+      "exit": -6,
+      "timed_out": false,
+      "stdout": "",
+      "stderr": "",
+      "files": [
+        "equal.ffs_batch",
+        "left",
+        "left/sample.bin",
+        "logs",
+        "probe.json",
+        "right",
+        "right/sample.bin",
+        "versions"
+      ]
+    }
+  },
+  "diagnostics": {
+    "signature_verification": {
+      "command": [
+        "/usr/bin/codesign",
+        "--verify",
+        "/Applications/FreeFileSync.app"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "/Applications/FreeFileSync.app: invalid signature (code or signature have been modified)\nIn architecture: arm64\n"
+    },
+    "main_display_id": 0,
+    "has_gui_session": false,
+    "causal_attribution": "Neither signature verification failure nor unavailable GUI session was established as the cause of SIGABRT."
+  },
+  "actual_exacopy_behavior": "No paired ExaCopy execution.",
+  "fixture_state_after": {
+    "left/sample.bin": {
+      "bytes_hex": "007fff414243",
+      "mtime_epoch_seconds": 1700000000
+    },
+    "right/sample.bin": {
+      "bytes_hex": "007fff414243",
+      "mtime_epoch_seconds": 1700000000
+    }
+  }
+}

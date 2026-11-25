@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "scope": "Reference workflow evidence for the recorded builds. Acceptance IDs retain their architecture-pack meaning; these profiles can exercise subsets.",
   "status_meanings": {
     "executed_pass": "The named bounded differential ran and passed. Evidence contains the decision and setup.",
@@ -12,7 +12,8 @@
       "name": "cmp",
       "primary_sources": [
         "https://github.com/apple-oss-distributions/patch_cmds",
-        "https://man.openbsd.org/cmp"
+        "https://man.openbsd.org/cmp",
+        "https://www.gnu.org/software/diffutils/manual/html_node/Invoking-cmp.html"
       ],
       "profiles": [
         {
@@ -32,7 +33,26 @@
             "A-100"
           ],
           "evidence": "evidence/macos-apfs-differential.json",
-          "reproduction": "../../docs/compatibility/local-references.md"
+          "reproduction": "../../compatibility/local-references.md#reproduce-the-managed-apfs-differential"
+        },
+        {
+          "id": "linux-ext4-exact-bytes",
+          "status": "executed_pass",
+          "reference_version": "GNU diffutils 3.10",
+          "platform": "Ubuntu 24.04.5 LTS aarch64 Lima guest",
+          "filesystem": "ext4",
+          "configuration_and_invocation": "cmp -s LEFT RIGHT; exacopy diff LEFT RIGHT --compare bytes --workers N --format json (N=1,4,16)",
+          "fixtures": "Seven generated regular-file pairs: empty, equal binary, first/middle/last changed bytes, unequal length, sparse mismatch; final symlink control.",
+          "expected_behavior": "Exact relation agrees with cmp and the generated witness. Input bytes, identity, mode, link count, mtime and namespace are preserved.",
+          "actual_exacopy_behavior": "All 21 regular-file results matched cmp and the generated witness. The final symlink returned exit 2/E_OPEN_INPUT with complete=false.",
+          "known_deviation": "cmp followed the final symlink and returned equality.",
+          "deviation_rationale": "Capability-scoped admission refuses redirection through the final path component.",
+          "acceptance": [
+            "A-093",
+            "A-100"
+          ],
+          "evidence": "evidence/linux-ext4-differential.json",
+          "reproduction": "../../compatibility/local-references.md#reproduce-the-linux-ext4-checks"
         }
       ]
     },
@@ -60,18 +80,37 @@
             "A-100"
           ],
           "evidence": "evidence/macos-apfs-differential.json",
-          "reproduction": "../../docs/compatibility/local-references.md"
+          "reproduction": "../../compatibility/local-references.md#reproduce-the-managed-apfs-differential"
+        },
+        {
+          "id": "linux-ext4-checksum-preview",
+          "status": "executed_pass",
+          "reference_version": "3.2.7, protocol version 31 reported by binary",
+          "platform": "Ubuntu 24.04.5 LTS aarch64 Lima guest",
+          "filesystem": "ext4",
+          "configuration_and_invocation": "rsync --dry-run --checksum --itemize-changes --out-format=%i -- LEFT RIGHT; ExaCopy exact diff with 1/4/16 workers.",
+          "fixtures": "The same seven generated pairs as the Linux cmp profile, with equal mtimes and modes for equal-sized pairs.",
+          "expected_behavior": "Rsync gives a content transfer item only for different pairs. GNU cmp independently establishes the exact relation.",
+          "actual_exacopy_behavior": "All 21 ExaCopy comparisons agreed with cmp and the rsync dry-run itemization. All seven regular-file pairs retained their inputs.",
+          "known_deviation": "Rsync plans updates using a checksum and prints an itemization. ExaCopy reports the exact relation and a difference witness.",
+          "deviation_rationale": "A checksum match is advisory and does not establish byte-exact equality.",
+          "acceptance": [
+            "A-093",
+            "A-100"
+          ],
+          "evidence": "evidence/linux-ext4-differential.json",
+          "reproduction": "../../compatibility/local-references.md#reproduce-the-linux-ext4-checks"
         },
         {
           "id": "local-copy-to-absent-and-incumbent",
           "status": "executed_pass",
           "reference_version": "3.2.7, protocol version 31 reported by binary",
-          "platform": "Ubuntu 24.04.5 LTS aarch64 guest",
+          "platform": "Ubuntu 24.04.5 LTS aarch64 Lima guest",
           "filesystem": "ext4",
           "configuration_and_invocation": "rsync --ignore-existing --itemize-changes --out-format=%i -- SOURCE TARGET; exacopy copy SOURCE TARGET --profile PROFILE --format json.",
-          "fixtures": "Generated 4096-byte source, absent target and different 4096-byte incumbent; separate 64 MiB ExaCopy copy workload.",
+          "fixtures": "Generated 4096-byte source, absent target and different 4096-byte incumbent. ExaCopy also publishes fresh 4 KiB and 64 MiB targets in six trials per size.",
           "expected_behavior": "The new target compares equal by cmp; the existing target and source stay byte- and identity-stable.",
-          "actual_exacopy_behavior": "New targets passed independent cmp and committed-state inspection. The existing target caused exit 3/E_CONFLICT with no publication.",
+          "actual_exacopy_behavior": "All twelve new targets passed independent cmp, mode and mtime checks, distinct identity checks and committed-state inspection. The existing target caused exit 3/E_CONFLICT with no publication.",
           "known_deviation": "Rsync exited 0 with an empty itemization for the incumbent. ExaCopy exits 3 and reports an explicit conflict.",
           "deviation_rationale": "A skipped incumbent cannot satisfy a preserved copy request. Rsync skip is only tested without an incumbent-creation race.",
           "acceptance": [
@@ -80,8 +119,9 @@
             "A-185",
             "A-194"
           ],
-          "evidence": "../performance/evidence/linux-ext4-copy.json",
-          "reproduction": "../../docs/compatibility/local-references.md"
+          "evidence": "evidence/linux-ext4-copy.json",
+          "prior_attempt": "evidence/linux-ext4-copy-enospc.json",
+          "reproduction": "../../compatibility/local-references.md#reproduce-the-linux-ext4-checks"
         },
         {
           "id": "remote-delta-resume",
@@ -232,9 +272,31 @@
       "name": "FreeFileSync",
       "primary_sources": [
         "https://freefilesync.org/manual.php?topic=synchronization-settings",
-        "https://freefilesync.org/archive.php"
+        "https://freefilesync.org/archive.php",
+        "https://freefilesync.org/manual.php?topic=command-line",
+        "https://freefilesync.org/manual.php?topic=comparison-settings"
       ],
       "profiles": [
+        {
+          "id": "macos-local-file-content",
+          "status": "not_executed",
+          "reference_version": "14.13 (installed macOS app bundle)",
+          "platform": "macOS 14.7.2 (23H311) arm64",
+          "filesystem": "Local journaled APFS",
+          "configuration_and_invocation": "Pass a private scratch .ffs_batch and alternate scratch GlobalSettings.xml to the bundle executable. Select File Content comparison, exclude symlinks, assign no synchronization action in all four categories, cancel on error and close automatically.",
+          "fixtures": "Two scratch directories each contain sample.bin with hex bytes 007fff414243 and mtime 1700000000. A paired case should also flip a byte on one side while retaining the size and mtime.",
+          "expected_behavior": "Identify the equal pair and the same-size mismatch by content. Compare pair decisions against ExaCopy and the generated bytes.",
+          "actual_exacopy_behavior": "ExaCopy supports exact comparison of regular files on managed APFS. The reference startup probe aborted and no paired comparison ran.",
+          "known_deviation": null,
+          "deviation_rationale": null,
+          "acceptance": [
+            "A-093",
+            "A-100"
+          ],
+          "evidence": null,
+          "startup_probe": "evidence/macos-apfs-freefilesync-startup.json",
+          "reproduction": "../../compatibility/local-references.md#freefilesync-startup-probe"
+        },
         {
           "id": "two-way-preview-and-versioning",
           "status": "not_executed",
