@@ -6,7 +6,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use exacopy_endpoint::UnixComponent;
 use exacopy_journal::frame::{ChainHead, FrameReader};
-use exacopy_journal::{JournalEntryId, JournalEpoch, JournalJobId, ObservedTimestamp};
+use exacopy_journal::{
+	DarwinEntryPrepared, JournalEntryId, JournalEpoch, JournalJobId, ObservedTimestamp,
+	TargetObservation,
+};
 use exacopy_platform::macos::staging::jobs::{JobArtifact, JobError};
 use exacopy_platform::macos::staging::{ManagedStageGrant, ManagedStageRoot, StageError};
 use exacopy_platform::macos::{BasicMetadataError, ManagedReadError, ManagedReadGrant};
@@ -179,6 +182,123 @@ fn refuses_extended_attributes_before_creating_private_state() {
 	fixture.assert_no_job();
 	assert_eq!(fs::read(fixture.0.join(SOURCE)).unwrap(), PAYLOAD);
 	assert!(!fixture.0.join(TARGET).exists());
+}
+
+#[test]
+fn admitted_entry_synchronizes_exact_kind_2_before_exposing_the_empty_stage() {
+	let fixture = Fixture::new();
+	let root = fixture.root();
+	let source = fixture.source(&root);
+	let container = root.open_stage_directory(component(PRIVATE)).unwrap();
+	let signer = SigningKey::from_bytes(&[4; 32]);
+	let request = fixture.request(&source, &container, &signer);
+	let plan = fixture.plan(&root, request);
+	let name = JobName::from_uuid_bytes(*plan.attempt().job.as_bytes()).unwrap();
+	let path = fixture.0.join(PRIVATE).join(name.to_string());
+	let destination = admit_destination(plan.destination(), request).unwrap();
+	with_admitted_job(&plan, request, name, destination, |job| {
+		let predecessor = job.initial_frame().head();
+		job.with_admitted_entry(|entry| {
+			assert_eq!(entry.job_name(), name);
+			assert_eq!(
+				entry.synced().barrier(),
+				JournalFileBarrier::DarwinFullFsync
+			);
+			assert_eq!(entry.synced().kind(), FrameKind::EntryPrepared);
+			assert_eq!(entry.synced().head(), entry.frame().head());
+			assert_eq!(entry.frame().previous_digest(), predecessor.digest());
+			assert_eq!(entry.frame().head().sequence(), 2);
+			let record = entry.preparation();
+			assert_eq!(record.entry(), plan.attempt().entry);
+			assert_eq!(record.context(), plan.context());
+			assert_eq!(
+				record.preparation().source.identity(),
+				plan.source().file_identity
+			);
+			assert_eq!(record.preparation().source.length(), plan.source().length);
+			assert_eq!(
+				record.preparation().source.component(),
+				plan.source().component
+			);
+			assert_eq!(
+				record.preparation().target_component,
+				plan.destination().component
+			);
+			assert_eq!(
+				record.target_observation(),
+				TargetObservation::AbsentObserved
+			);
+			let stage = path.join("stage");
+			assert!(matches!(open_root(&stage), Err(StageError::DirectoryBusy)));
+			let stage_file = fs::metadata(stage.join("payload")).unwrap();
+			assert_eq!(stage_file.len(), 0);
+			assert_eq!(
+				stage_file.ino(),
+				record.preparation().stage.identity.inode().get()
+			);
+			assert_eq!(record.preparation().stage.component.as_bytes(), b"payload");
+			let mut reader = FrameReader::new(
+				File::open(path.join(FIRST_SEGMENT)).unwrap(),
+				ChainHead::start(),
+			);
+			let first = reader.next_frame().unwrap().unwrap();
+			assert_eq!(first.head(), predecessor);
+			let actual = reader.next_frame().unwrap().unwrap();
+			assert_eq!(&actual, entry.frame());
+			assert_eq!(&DarwinEntryPrepared::from_frame(&actual).unwrap(), record);
+			assert!(reader.next_frame().unwrap().is_none());
+		})
+		.unwrap();
+		let duplicate = job
+			.with_admitted_entry(|_| panic!("second preparation was admitted"))
+			.unwrap_err();
+		assert_eq!(duplicate.job(), name);
+		assert!(matches!(
+			duplicate.failure(),
+			EntryPreparationFailure::AlreadyAttempted
+		));
+	})
+	.unwrap();
+	assert_eq!(fs::read(fixture.0.join(SOURCE)).unwrap(), PAYLOAD);
+	assert!(!fixture.0.join(TARGET).exists());
+	assert!(open_root(&path.join("stage")).is_ok());
+}
+
+#[test]
+fn entry_preparation_refuses_source_rebinding_after_kind_1() {
+	let fixture = Fixture::new();
+	let root = fixture.root();
+	let source = fixture.source(&root);
+	let container = root.open_stage_directory(component(PRIVATE)).unwrap();
+	let signer = SigningKey::from_bytes(&[4; 32]);
+	let request = fixture.request(&source, &container, &signer);
+	let plan = fixture.plan(&root, request);
+	let name = JobName::from_uuid_bytes(*plan.attempt().job.as_bytes()).unwrap();
+	let path = fixture.0.join(PRIVATE).join(name.to_string());
+	let destination = admit_destination(plan.destination(), request).unwrap();
+	with_admitted_job(&plan, request, name, destination, |job| {
+		let retained_source = fixture.0.join("retained-source");
+		fs::rename(fixture.0.join(SOURCE), &retained_source).unwrap();
+		let refusal = job
+			.with_prepared_entry(|_| panic!("rebound source reached its operation"))
+			.unwrap_err();
+		assert_eq!(refusal.job(), name);
+		assert!(matches!(
+			refusal.failure(),
+			EntryPreparationFailure::Source(JobAdmissionError::Source(
+				ManagedReadError::SourceChanged
+			))
+		));
+		assert_eq!(fs::read(retained_source).unwrap(), PAYLOAD);
+		assert!(!path.join("stage").exists());
+		let mut reader = FrameReader::new(
+			File::open(path.join(FIRST_SEGMENT)).unwrap(),
+			ChainHead::start(),
+		);
+		assert!(reader.next_frame().unwrap().is_some());
+		assert!(reader.next_frame().unwrap().is_none());
+	})
+	.unwrap();
 }
 
 struct Fixture(PathBuf);

@@ -17,11 +17,13 @@ use exacopy_platform::macos::staging::jobs::{JobDirectory, JobName, JournalDirec
 use super::plan::DarwinCopyPlan;
 
 mod admission;
+mod entry;
 mod error;
 
 #[cfg(test)]
 mod tests;
 
+pub use entry::{EntryPreparationError, EntryPreparationFailure, PreparedDarwinEntry};
 pub use error::{JobAdmissionError, JobBootstrapError, JobPreparationError, JobPreparationStep};
 
 use self::admission::{admit_destination, check_source, native_identity};
@@ -66,12 +68,16 @@ pub struct JobBootstrap<'held, 'profile> {
 #[derive(Debug)]
 pub struct PreparedDarwinJob<'job> {
 	// The writer closes before the journal directory lease is released.
-	_journal: DurableJournal,
+	journal: DurableJournal,
 	_journal_directory: JournalDirectory<'job>,
 	job: &'job JobDirectory<'job>,
 	owner: DarwinOwnerRecord,
 	preparation: DarwinJobPrepared,
 	initial_frame: SyncedFrame,
+	plan: DarwinCopyPlan<'job>,
+	source: &'job ManagedRegularFile<'job>,
+	source_root_id: RootCapabilityId,
+	entry_attempted: bool,
 }
 
 impl PreparedDarwinJob<'_> {
@@ -131,7 +137,7 @@ pub fn with_prepared_job<T>(
 	let name = JobName::from_uuid_bytes(*attempt.job.as_bytes())
 		.map_err(JobAdmissionError::InvalidJobName)?;
 	let destination = admit_destination(plan.destination(), request)?;
-	check_source(plan.source(), request)?;
+	check_source(plan.source(), request.source, request.source_root_id)?;
 	with_admitted_job(plan, request, name, destination, operation)
 }
 
@@ -146,17 +152,18 @@ fn with_admitted_job<T>(
 		.container
 		.create_job_directory(name)
 		.map_err(JobBootstrapError::Create)?;
-	let mut prepared = prepare_created_job(plan, request.profile, &job, destination)
+	let mut prepared = prepare_created_job(*plan, request, &job, destination)
 		.map_err(|source| JobBootstrapError::Retained { job: name, source })?;
 	Ok(operation(&mut prepared))
 }
 
 fn prepare_created_job<'job>(
-	plan: &DarwinCopyPlan<'_>,
-	profile: DarwinJobProfile<'_>,
+	plan: DarwinCopyPlan<'job>,
+	request: JobBootstrap<'job, '_>,
 	job: &'job JobDirectory<'job>,
 	destination: DarwinRootBinding,
 ) -> Result<PreparedDarwinJob<'job>, JobPreparationError> {
+	let profile = request.profile;
 	let context = plan.context();
 	let state_root_uid = NonZeroU32::new(job.owner_uid()).ok_or(OwnerError::InvalidOwnerUid)?;
 	let owner = DarwinOwnerRecord::sign(
@@ -191,11 +198,15 @@ fn prepare_created_job<'job>(
 		.append(FrameKind::JobPrepared, &preparation.encode())
 		.map_err(JobPreparationError::Journal)?;
 	Ok(PreparedDarwinJob {
-		_journal: journal,
+		journal,
 		_journal_directory: journal_directory,
 		job,
 		owner,
 		preparation,
 		initial_frame,
+		plan,
+		source: request.source,
+		source_root_id: request.source_root_id,
+		entry_attempted: false,
 	})
 }

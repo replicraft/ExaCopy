@@ -1,8 +1,8 @@
 use exacopy_journal::{
 	DarwinFileIdentity, DarwinRootBinding, DarwinVolumeIdentity, ObservedTimestamp, OwnerError,
-	OwnerTimestamp,
+	OwnerTimestamp, RootCapabilityId,
 };
-use exacopy_platform::macos::{ManagedObjectIdentity, ManagedTimestamp};
+use exacopy_platform::macos::{ManagedObjectIdentity, ManagedRegularFile, ManagedTimestamp};
 
 use super::{JobAdmissionError, JobBootstrap};
 use crate::macos::plan::{DestinationPlanBinding, SourcePlanBinding};
@@ -30,10 +30,10 @@ pub(super) fn admit_destination(
 
 pub(super) fn check_source(
 	planned: SourcePlanBinding<'_>,
-	request: JobBootstrap<'_, '_>,
+	source: &ManagedRegularFile<'_>,
+	source_root_id: RootCapabilityId,
 ) -> Result<(), JobAdmissionError> {
-	let source = request.source;
-	if (request.source_root_id, source.component(), source.length())
+	if (source_root_id, source.component(), source.length())
 		!= (planned.root_id, planned.component, planned.length)
 	{
 		return Err(JobAdmissionError::SourceMismatch);
