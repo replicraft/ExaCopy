@@ -1,0 +1,58 @@
+# Direct dependency allowances by architectural role. Omitted entries deny the edge.
+# Each package has one role and a workspace-relative directory.
+schema_version = 1
+
+[groups.core]
+members = { exacopy-model = "crates/core/model" }
+normal.external = ["uuid"]
+normal.optional_external = ["hax-lib"] # Extraction annotations, only with proof-extraction.
+dev.groups = ["testkit"]
+dev.external = ["proptest"]
+
+[groups.contracts]
+members = { exacopy-endpoint = "crates/endpoints/endpoint" }
+normal.groups = ["core"]
+dev.groups = ["testkit"]
+
+[groups.platform]
+members = { exacopy-platform = "crates/endpoints/platform" }
+normal.groups = ["contracts", "core"]
+normal.external = ["libc", "rustix"]
+dev.groups = ["testkit"]
+
+[groups.storage]
+members = { exacopy-content = "crates/storage/content", exacopy-journal = "crates/storage/journal" }
+normal.groups = ["contracts", "core"]
+normal.external = ["blake3", "crc32c", "ed25519-dalek", "minicbor", "rustix"]
+dev.groups = ["testkit"]
+
+[groups.operations]
+members = { exacopy-diff = "crates/operations/diff", exacopy-transfer = "crates/operations/transfer" }
+normal.groups = ["contracts", "core", "storage"]
+normal.external = ["blake3", "ed25519-dalek", "minicbor"]
+dev.groups = ["testkit"]
+dev.external = ["ed25519-dalek", "rustix"]
+
+[groups.clients]
+members = { exacopy-cli = "crates/clients/cli" }
+normal.groups = ["contracts", "operations", "platform", "storage"]
+normal.external = ["blake3", "ed25519-dalek", "rustix", "serde", "serde_json", "uuid", "zeroize"]
+dev.groups = ["testkit"]
+
+[groups.testkit]
+members = { exacopy-testkit = "crates/engineering/exacopy-testkit" }
+engineering = true
+normal.groups = ["contracts"]
+dev.groups = ["core"]
+
+[groups.tooling]
+members = { xtask = "xtask" }
+engineering = true
+normal.external = ["cargo_metadata", "proc-macro2", "serde", "serde_json", "sha2", "syn", "toml"]
+
+# Transfer still hosts concrete native entry points, including durable stage/job recovery.
+# Move native composition to the client boundary before removing this allowance.
+[[transitional_normal]]
+from = "exacopy-transfer"
+to = "exacopy-platform"
+targets = ['cfg(target_os = "linux")', 'cfg(target_os = "macos")']

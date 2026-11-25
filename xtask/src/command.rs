@@ -50,7 +50,9 @@ pub(crate) fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
 					.flat_map(|project| &project.obligations)
 					.map(|obligation| obligation.gates.len())
 					.sum::<usize>();
-				println!("EES-1 workspace, Rust source and EVS-1 obligation structure passed.");
+				println!(
+					"EES-1 workspace, architecture dependencies, Rust source and EVS-1 obligation structure passed."
+				);
 				println!(
 					"{gates} declared verification gates require independent execution and evidence. Review main's call graph and domain ownership."
 				);

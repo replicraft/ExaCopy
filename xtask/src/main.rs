@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+mod architecture;
 mod command;
 mod evidence;
 mod finding;

@@ -6,6 +6,7 @@ use std::path::Path;
 use cargo_metadata::{CargoOpt, DependencyKind, Metadata, MetadataCommand, Package, PackageId};
 use toml::{Table, Value};
 
+use crate::architecture;
 use crate::finding::Findings;
 
 const APP_VERSION: &str = "1.100.0";
@@ -65,7 +66,8 @@ pub(crate) fn check(metadata: &Metadata, files: &[std::path::PathBuf], findings:
 			_ => (),
 		}
 	}
-	check_production_graph(metadata, findings);
+	let engineering_packages = architecture::check(metadata, findings);
+	check_production_graph(metadata, &engineering_packages, findings);
 }
 
 fn check_workspace_manifest(path: &Path, findings: &mut Findings) {
@@ -280,7 +282,11 @@ fn inherited(entry: &Value) -> bool {
 	entry.get("workspace").and_then(Value::as_bool) == Some(true)
 }
 
-fn check_production_graph(metadata: &Metadata, findings: &mut Findings) {
+fn check_production_graph(
+	metadata: &Metadata,
+	engineering_packages: &BTreeSet<String>,
+	findings: &mut Findings,
+) {
 	let Some(graph) = &metadata.resolve else {
 		findings.add(
 			metadata.workspace_root.as_std_path(),
@@ -289,6 +295,9 @@ fn check_production_graph(metadata: &Metadata, findings: &mut Findings) {
 		return;
 	};
 	for package in metadata.workspace_packages() {
+		if engineering_packages.contains(package.name.as_str()) {
+			continue;
+		}
 		let mut seen = HashSet::new();
 		let mut pending = vec![&package.id];
 		while let Some(id) = pending.pop() {
@@ -297,12 +306,13 @@ fn check_production_graph(metadata: &Metadata, findings: &mut Findings) {
 			}
 			if id != &package.id
 				&& let Some(dependency) = metadata.packages.iter().find(|entry| entry.id == *id)
-				&& is_test_only(&dependency.name)
+				&& (is_test_only(&dependency.name)
+					|| engineering_packages.contains(dependency.name.as_str()))
 			{
 				findings.add(
 					package.manifest_path.as_std_path(),
 					format_args!(
-						"test-only dependency {} leaks into the production graph",
+						"engineering or test-only dependency {} leaks into the production graph",
 						dependency.name
 					),
 				);
@@ -334,9 +344,7 @@ fn production_dependencies<'a>(
 fn is_test_only(name: &str) -> bool {
 	matches!(
 		name,
-		"test-support"
-			| "exacopy-test-support"
-			| "proptest"
+		"proptest"
 			| "proptest-state-machine"
 			| "rstest"
 			| "insta"
