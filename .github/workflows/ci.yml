@@ -83,6 +83,24 @@ jobs:
           bash .github/ci/capture.sh experimental-ssh cargo +1.100.0 nextest run --locked \
             -p exacopy-ssh --features experimental-ssh --profile ci --no-tests fail
           test -s "$CARGO_TARGET_DIR/nextest/ci/junit.xml"
+      - name: Run opt-in SFTP source adapter tests
+        if: ${{ !cancelled() && steps.nextest.outcome == 'success' && (runner.os == 'Linux' || runner.os == 'macOS') }}
+        env:
+          CARGO_TARGET_DIR: target/experimental-sftp
+        run: |
+          bash .github/ci/capture.sh experimental-sftp cargo +1.100.0 nextest run --locked \
+            -p exacopy-sftp --features experimental-sftp --profile ci --no-tests fail \
+            -E 'test(/^source::tests::/)'
+          test -s "$CARGO_TARGET_DIR/nextest/ci/junit.xml"
+      - name: Run opt-in held SFTP CLI capture tests
+        if: ${{ !cancelled() && steps.nextest.outcome == 'success' && (runner.os == 'Linux' || runner.os == 'macOS') }}
+        env:
+          CARGO_TARGET_DIR: target/experimental-ssh-capture
+        run: |
+          bash .github/ci/capture.sh experimental-ssh-capture cargo +1.100.0 nextest run --locked \
+            -p exacopy-cli --features experimental-ssh-capture --profile ci --no-tests fail \
+            -E 'test(/^assembly::remote_ssh::tests::/)'
+          test -s "$CARGO_TARGET_DIR/nextest/ci/junit.xml"
       - name: Run opt-in managed APFS transfer tests
         if: ${{ !cancelled() && steps.nextest.outcome == 'success' && runner.os == 'macOS' }}
         env:
@@ -103,6 +121,8 @@ jobs:
             ${{ runner.temp }}/exacopy-evidence/
             target/nextest/ci/junit.xml
             target/experimental-ssh/nextest/ci/junit.xml
+            target/experimental-sftp/nextest/ci/junit.xml
+            target/experimental-ssh-capture/nextest/ci/junit.xml
             target/experimental-apfs-copy/nextest/ci/junit.xml
           if-no-files-found: error
           retention-days: 30
