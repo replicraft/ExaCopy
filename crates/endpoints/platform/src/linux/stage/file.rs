@@ -13,6 +13,8 @@ use super::super::source::reopen_regular_read_only;
 use super::directory::{CHILD_RESOLVE, StageName, component};
 use super::{StageDirectory, StageError};
 
+mod metadata;
+
 #[cfg(test)]
 mod tests;
 
@@ -36,19 +38,7 @@ impl<'stage> WriteStage<'stage> {
 		target: UnixComponent<'_>,
 		binding: CopyBinding,
 	) -> Result<Self, StageError> {
-		let file = fs::openat2(
-			&directory.directory,
-			component(name),
-			OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::CLOEXEC | OFlags::NOFOLLOW,
-			FILE_MODE,
-			CHILD_RESOLVE,
-		)
-		.map_err(StageError::on_create)?;
-		let stat = fs::fstat(&file)?;
-		check_private_file(&stat)?;
-		if mount_id(&file)? != directory.root.mount {
-			return Err(StageError::IdentityChanged);
-		}
+		let (file, stat) = create_private_file(directory, name, OFlags::WRONLY)?;
 		let identity = FileIdentity::from_stat(&stat);
 		let location = StageLocation {
 			directory,
@@ -60,9 +50,15 @@ impl<'stage> WriteStage<'stage> {
 
 		Ok(Self {
 			location,
-			file: file.into(),
+			file,
 			barrier: WriteBarrier::Pending,
 		})
+	}
+
+	/// Returns the identity of the exclusively created stage.
+	#[must_use]
+	pub fn identity(&self) -> FileIdentity {
+		self.location.identity
 	}
 
 	/// Writes a complete buffer at the specified absolute byte position.
@@ -111,14 +107,14 @@ impl<'stage> WriteStage<'stage> {
 	fn flush_with(&mut self, sync: impl FnOnce(&File) -> io::Result<()>) -> Result<(), StageError> {
 		self.barrier.require_usable()?;
 		self.barrier = WriteBarrier::Pending;
-		let before = self.location.check_named_file()?;
+		let before = self.location.check_named_file(FILE_MODE)?;
 		if let Err(source) = sync(&self.file) {
 			// Linux can report a writeback error only once for this open file.
 			self.barrier = WriteBarrier::Failed;
 			return Err(StageError::BarrierFailed(source.into()));
 		}
 		let after = fs::fstat(&self.file)?;
-		check_private_file(&after)?;
+		check_stage_file(&after, FILE_MODE)?;
 		check_content_stamp(&before, &after)?;
 		self.barrier = WriteBarrier::Complete(after);
 		Ok(())
@@ -137,10 +133,10 @@ impl<'stage> WriteStage<'stage> {
 			WriteBarrier::Complete(stat) => stat,
 			WriteBarrier::Failed => return Err(StageError::PriorBarrierFailure),
 		};
-		self.location.check_named_file()?;
+		self.location.check_named_file(FILE_MODE)?;
 		let (read_back, stat) =
 			reopen_regular_read_only(&self.file).map_err(StageError::ReadBack)?;
-		check_private_file(&stat)?;
+		check_stage_file(&stat, FILE_MODE)?;
 		check_content_stamp(&flushed, &stat)?;
 		let length = u64::try_from(stat.st_size).map_err(|_| StageError::InvalidLength)?;
 		if length > MAX_FILE_LENGTH {
@@ -153,6 +149,7 @@ impl<'stage> WriteStage<'stage> {
 			file: read_back,
 			stat,
 			length,
+			metadata_applied: false,
 		})
 	}
 }
@@ -181,6 +178,7 @@ pub struct ClosedStage<'stage> {
 	file: File,
 	stat: Stat,
 	length: u64,
+	metadata_applied: bool,
 }
 
 impl ClosedStage<'_> {
@@ -222,8 +220,22 @@ impl ClosedStage<'_> {
 	}
 
 	pub(super) fn check_current(&self) -> Result<(), StageError> {
-		let current = self.location.check_named_file()?;
-		check_content_stamp(&self.stat, &current)
+		let current = self
+			.location
+			.check_named_file(Mode::from_raw_mode(self.stat.st_mode))?;
+		check_content_stamp(&self.stat, &current)?;
+		if self.stat.st_uid != current.st_uid || self.stat.st_gid != current.st_gid {
+			return Err(StageError::IdentityChanged);
+		}
+		if self.metadata_applied {
+			if self.stat.st_atime != current.st_atime
+				|| self.stat.st_atime_nsec != current.st_atime_nsec
+			{
+				return Err(StageError::MetadataMismatch);
+			}
+			metadata::check_no_visible_attributes(&self.file)?;
+		}
+		Ok(())
 	}
 }
 
@@ -236,7 +248,7 @@ pub(super) struct StageLocation<'stage> {
 }
 
 impl StageLocation<'_> {
-	fn check_named_file(&self) -> Result<Stat, StageError> {
+	fn check_named_file(&self, expected_mode: Mode) -> Result<Stat, StageError> {
 		self.directory.check_current()?;
 		let file = fs::openat2(
 			&self.directory.directory,
@@ -251,16 +263,37 @@ impl StageLocation<'_> {
 		{
 			return Err(StageError::IdentityChanged);
 		}
-		check_private_file(&stat)?;
+		check_stage_file(&stat, expected_mode)?;
 		Ok(stat)
 	}
 }
 
-fn check_private_file(stat: &Stat) -> Result<(), StageError> {
+pub(super) fn create_private_file(
+	directory: &StageDirectory<'_>,
+	name: UnixComponent<'_>,
+	access: OFlags,
+) -> Result<(File, Stat), StageError> {
+	let file = fs::openat2(
+		&directory.directory,
+		component(name),
+		access | OFlags::CREATE | OFlags::EXCL | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+		FILE_MODE,
+		CHILD_RESOLVE,
+	)
+	.map_err(StageError::on_create)?;
+	let stat = fs::fstat(&file)?;
+	check_stage_file(&stat, FILE_MODE)?;
+	if mount_id(&file)? != directory.root.mount {
+		return Err(StageError::IdentityChanged);
+	}
+	Ok((file.into(), stat))
+}
+
+fn check_stage_file(stat: &Stat, expected_mode: Mode) -> Result<(), StageError> {
 	if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile
 		|| stat.st_uid != geteuid().as_raw()
 		|| stat.st_nlink != 1
-		|| Mode::from_raw_mode(stat.st_mode) != FILE_MODE
+		|| Mode::from_raw_mode(stat.st_mode) != expected_mode
 	{
 		return Err(StageError::UnsafeFile);
 	}

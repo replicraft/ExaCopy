@@ -28,10 +28,22 @@ pub enum StageError {
 	Unflushed,
 	/// The file barrier failed. The stage remains private and unusable.
 	BarrierFailed(io::Error),
+	/// A requested directory barrier failed.
+	DirectoryBarrierFailed(io::Error),
 	/// An earlier file barrier failed. The stage requires reconciliation.
 	PriorBarrierFailure,
 	/// Exact positional writing failed.
 	Write(IoError),
+	/// The source requests special permission bits outside the metadata baseline.
+	UnsupportedMode,
+	/// Source UID/GID cannot be represented by this new file's existing ownership.
+	DifferentOwnership,
+	/// Visible destination extended attributes are outside the metadata baseline.
+	UnexpectedExtendedAttributes,
+	/// Destination extended attributes could not be inspected.
+	ExtendedAttributesUnavailable(io::Error),
+	/// Required metadata did not match the read-back observation.
+	MetadataMismatch,
 	/// The pinned inode could not be reopened and checked for read-back.
 	ReadBack(ReadError),
 	/// A staging syscall failed.
@@ -63,8 +75,22 @@ impl fmt::Display for StageError {
 			Self::InvalidLength => f.write_str("file length is outside the supported offset range"),
 			Self::Unflushed => f.write_str("stage writes require a successful full file barrier"),
 			Self::BarrierFailed(source) => write!(f, "stage file synchronization failed: {source}"),
+			Self::DirectoryBarrierFailed(source) => {
+				write!(f, "directory synchronization failed: {source}")
+			}
 			Self::PriorBarrierFailure => f.write_str("stage file barrier previously failed"),
 			Self::Write(source) => write!(f, "could not write the private stage: {source}"),
+			Self::UnsupportedMode => f.write_str("stage cannot restore special permission bits"),
+			Self::DifferentOwnership => f.write_str("source and stage ownership do not match"),
+			Self::UnexpectedExtendedAttributes => {
+				f.write_str("stage has extended attributes outside the supported profile")
+			}
+			Self::ExtendedAttributesUnavailable(source) => {
+				write!(f, "could not inspect stage extended attributes: {source}")
+			}
+			Self::MetadataMismatch => {
+				f.write_str("stage metadata did not match the required values")
+			}
 			Self::ReadBack(source) => write!(f, "could not reopen the pinned stage: {source}"),
 			Self::System(source) => write!(f, "staging syscall failed: {source}"),
 		}
@@ -76,7 +102,10 @@ impl Error for StageError {
 		match self {
 			Self::ReadBack(source) => Some(source),
 			Self::Write(source) => Some(source),
-			Self::BarrierFailed(source) | Self::System(source) => Some(source),
+			Self::BarrierFailed(source)
+			| Self::DirectoryBarrierFailed(source)
+			| Self::ExtendedAttributesUnavailable(source)
+			| Self::System(source) => Some(source),
 			_ => None,
 		}
 	}

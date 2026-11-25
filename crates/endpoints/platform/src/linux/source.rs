@@ -5,11 +5,18 @@ use std::io;
 use std::os::fd::AsFd;
 use std::os::unix::fs::FileExt;
 
-use exacopy_endpoint::{IoError, MAX_FILE_LENGTH, UnixComponent};
+use exacopy_endpoint::{IoError, UnixComponent};
 use rustix::fs::{self, FileType, Mode, OFlags, ResolveFlags, Stat};
+use rustix::io::Errno;
 use rustix::path::DecInt;
 
 use super::handle::FileIdentity;
+
+mod observation;
+mod xattrs;
+
+pub use observation::{SourceObservation, SourceTimestamp};
+pub use xattrs::ExtendedAttributes;
 
 /// Failure to bind a read capability, select a regular file, or read a range.
 #[derive(Debug)]
@@ -25,6 +32,14 @@ pub enum ReadError {
 	IdentityChanged,
 	/// The observed regular-file size cannot be represented by the adapter.
 	InvalidLength,
+	/// The filesystem reported an invalid nanosecond fraction.
+	InvalidTimestamp,
+	/// The held inode's size, modification time, change time, or basic metadata changed.
+	SourceChanged,
+	/// The visible extended-attribute name list exceeds the Linux VFS limit.
+	ExtendedAttributeListTooLarge,
+	/// The kernel could not inspect the extended-attribute name list.
+	ExtendedAttributesUnreadable(io::Error),
 	/// The requested range extends beyond the length captured at open.
 	RangeOutsideFile,
 	/// Exact positional I/O could not complete.
@@ -45,6 +60,17 @@ impl fmt::Display for ReadError {
 				formatter.write_str("reopened file does not match the pinned file")
 			}
 			Self::InvalidLength => formatter.write_str("file length exceeds the supported range"),
+			Self::InvalidTimestamp => formatter.write_str("source has an invalid timestamp"),
+			Self::SourceChanged => formatter.write_str("source metadata changed after open"),
+			Self::ExtendedAttributeListTooLarge => {
+				formatter.write_str("source extended-attribute name list exceeds the Linux limit")
+			}
+			Self::ExtendedAttributesUnreadable(error) => {
+				write!(
+					formatter,
+					"source extended-attribute inspection failed ({error})"
+				)
+			}
 			Self::RangeOutsideFile => {
 				formatter.write_str("read range exceeds the recorded file length")
 			}
@@ -60,14 +86,14 @@ impl Error for ReadError {
 	fn source(&self) -> Option<&(dyn Error + 'static)> {
 		match self {
 			Self::Io(error) => Some(error),
-			Self::System(error) => Some(error),
+			Self::ExtendedAttributesUnreadable(error) | Self::System(error) => Some(error),
 			_ => None,
 		}
 	}
 }
 
-impl From<rustix::io::Errno> for ReadError {
-	fn from(error: rustix::io::Errno) -> Self {
+impl From<Errno> for ReadError {
+	fn from(error: Errno) -> Self {
 		Self::System(error.into())
 	}
 }
@@ -111,7 +137,7 @@ impl ReadRoot {
 	/// # Errors
 	///
 	/// Fails for disallowed entry types or paths, unsupported kernel resolution or
-	/// procfs, an identity mismatch, an invalid length, or a filesystem error.
+	/// procfs, an identity mismatch, invalid file metadata, or a filesystem error.
 	pub fn open_regular(&self, name: UnixComponent<'_>) -> Result<SourceFile, ReadError> {
 		let pinned = fs::openat2(
 			&self.directory,
@@ -121,34 +147,27 @@ impl ReadRoot {
 			CHILD_RESOLUTION,
 		)?;
 		let (file, stat) = reopen_regular_read_only(&pinned)?;
-		let length = u64::try_from(stat.st_size)
-			.ok()
-			.filter(|length| *length <= MAX_FILE_LENGTH)
-			.ok_or(ReadError::InvalidLength)?;
-
 		Ok(SourceFile {
 			file,
-			identity: FileIdentity::from_stat(&stat),
-			length,
+			observation: SourceObservation::capture(&stat)?,
 		})
 	}
 }
 
-/// A read-only regular-file descriptor and the identity and length captured at open.
+/// A read-only regular-file descriptor and the basic metadata captured at open.
 ///
 /// Reads observe live file contents. Other writers can change those contents,
 /// and reading may update access times.
 pub struct SourceFile {
 	file: File,
-	identity: FileIdentity,
-	length: u64,
+	observation: SourceObservation,
 }
 
 impl fmt::Debug for SourceFile {
 	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
 		formatter
 			.debug_struct("SourceFile")
-			.field("length", &self.length)
+			.field("length", &self.len())
 			.finish_non_exhaustive()
 	}
 }
@@ -157,19 +176,50 @@ impl SourceFile {
 	/// Return the identity of the held descriptor.
 	#[must_use]
 	pub fn identity(&self) -> FileIdentity {
-		self.identity
+		self.observation.identity()
 	}
 
 	/// Return the length captured at open.
 	#[must_use]
 	pub fn len(&self) -> u64 {
-		self.length
+		self.observation.len()
 	}
 
 	/// Return whether the file was empty at open.
 	#[must_use]
 	pub fn is_empty(&self) -> bool {
-		self.length == 0
+		self.observation.is_empty()
+	}
+
+	/// Return the observation captured when this inode was opened.
+	#[must_use]
+	pub fn observation(&self) -> SourceObservation {
+		self.observation
+	}
+
+	/// Compare the held inode with the observation captured at open.
+	///
+	/// Access-time changes are ignored because ordinary reads can update that timestamp.
+	/// An equal observation is a live-source change check with the filesystem's timestamp
+	/// resolution and visibility limits.
+	///
+	/// # Errors
+	/// Fails if the descriptor cannot be inspected or a tracked field changed.
+	pub fn recheck_observation(&self) -> Result<(), ReadError> {
+		let stat = fs::fstat(&self.file)?;
+		self.observation.recheck(SourceObservation::capture(&stat)?)
+	}
+
+	/// Inspect whether this process can see extended attribute names on the held inode.
+	///
+	/// The Linux descriptor query obtains the list size without allocating a name buffer.
+	/// Permissions can hide some namespaces. Linux's regular file has one logical byte
+	/// stream in this adapter; attributes are metadata.
+	///
+	/// # Errors
+	/// Fails when inspection is unreadable or the visible list exceeds the Linux limit.
+	pub fn extended_attributes(&self) -> Result<ExtendedAttributes, ReadError> {
+		xattrs::inspect(&self.file)
 	}
 
 	/// Fill a buffer from the given offset without changing the file cursor.
@@ -185,7 +235,7 @@ impl SourceFile {
 		let length = u64::try_from(buffer.len()).map_err(|_| ReadError::RangeOutsideFile)?;
 		if offset
 			.checked_add(length)
-			.is_none_or(|end| end > self.length)
+			.is_none_or(|end| end > self.len())
 		{
 			return Err(ReadError::RangeOutsideFile);
 		}

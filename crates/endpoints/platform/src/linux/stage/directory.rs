@@ -9,7 +9,11 @@ use rustix::fs::{self, FileType, Mode, OFlags, ResolveFlags};
 use rustix::process::geteuid;
 
 use super::super::handle::{FileIdentity, file_identity, mount_id};
+use super::file::create_private_file;
 use super::{StageError, WriteStage};
+
+#[cfg(test)]
+mod tests;
 
 const DIRECTORY_FLAGS: OFlags = OFlags::RDONLY
 	.union(OFlags::DIRECTORY)
@@ -31,6 +35,7 @@ pub(super) const CHILD_RESOLVE: ResolveFlags = ResolveFlags::BENEATH
 pub struct DestinationRoot {
 	pub(super) directory: File,
 	pub(super) mount: u64,
+	identity: FileIdentity,
 }
 
 impl DestinationRoot {
@@ -51,7 +56,28 @@ impl DestinationRoot {
 		)?
 		.into();
 		let mount = mount_id(&directory)?;
-		Ok(Self { directory, mount })
+		let identity = file_identity(&directory)?;
+		Ok(Self {
+			directory,
+			mount,
+			identity,
+		})
+	}
+
+	/// Returns the identity of the held destination directory.
+	#[must_use]
+	pub fn identity(&self) -> FileIdentity {
+		self.identity
+	}
+
+	/// Requests a full barrier on the held destination directory.
+	///
+	/// # Errors
+	///
+	/// A failed barrier prevents any dependent publication attempt.
+	pub fn sync_directory(&self) -> Result<(), StageError> {
+		check_managed_parent(&self.directory)?;
+		sync_directory(&self.directory)
 	}
 
 	/// Exclusively creates and holds an owner-private staging directory.
@@ -105,6 +131,39 @@ pub struct StageDirectory<'root> {
 }
 
 impl StageDirectory<'_> {
+	/// Returns the identity of the held private staging directory.
+	#[must_use]
+	pub fn identity(&self) -> FileIdentity {
+		self.identity
+	}
+
+	/// Requests a full barrier on the checked private staging directory.
+	///
+	/// # Errors
+	///
+	/// Fails if the held directory became unsafe or detached, or if the
+	/// directory barrier fails. A failed barrier prevents dependent effects.
+	pub fn sync_directory(&self) -> Result<(), StageError> {
+		self.check_current()?;
+		sync_directory(&self.directory)
+	}
+
+	/// Exclusively creates a private file for application-owned transaction records.
+	///
+	/// The returned read/write descriptor is limited to the newly created file
+	/// inside this private staging directory. The record writer owns its format,
+	/// file barrier, and the response to an uncertain write or barrier.
+	///
+	/// # Errors
+	///
+	/// Rejects collisions, unsafe or detached directories, and syscall failures.
+	/// If creation preceded a later error, the new entry remains in place.
+	pub fn create_record(&self, name: UnixComponent<'_>) -> Result<File, StageError> {
+		self.check_current()?;
+		let (file, _) = create_private_file(self, name, OFlags::RDWR)?;
+		Ok(file)
+	}
+
 	/// Exclusively creates a new, owner-private regular file for this binding and target.
 	///
 	/// The target is fixed here for the lifetime of the stage.
@@ -138,6 +197,10 @@ impl StageDirectory<'_> {
 		}
 		Ok(())
 	}
+}
+
+fn sync_directory(directory: &File) -> Result<(), StageError> {
+	fs::fsync(directory).map_err(|source| StageError::DirectoryBarrierFailed(source.into()))
 }
 
 fn check_managed_parent(directory: &File) -> Result<(), StageError> {

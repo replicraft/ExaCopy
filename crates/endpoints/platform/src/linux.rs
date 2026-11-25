@@ -5,7 +5,9 @@ mod source;
 mod stage;
 
 pub use handle::FileIdentity;
-pub use source::{ReadError, ReadRoot, SourceFile};
+pub use source::{
+	ExtendedAttributes, ReadError, ReadRoot, SourceFile, SourceObservation, SourceTimestamp,
+};
 pub use stage::{
 	ClosedStage, DestinationRoot, DirectoryBarriersError, PublishError, StageDirectory, StageError,
 	WriteStage,
