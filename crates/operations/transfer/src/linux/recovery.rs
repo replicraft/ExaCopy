@@ -1,7 +1,7 @@
 //! Read-only inspection of one private Linux copy job.
 
 use ed25519_dalek::VerifyingKey;
-use exacopy_content::validate_stream_input;
+use exacopy_content::{CheckpointCandidate, validate_stream_input};
 use exacopy_endpoint::UnixComponent;
 use exacopy_journal::{MAX_OWNER_BYTES, OwnerProfileId, OwnerRecord, OwnerStateDirectory};
 use exacopy_platform::linux::{DestinationRoot, RecoveryFile, RecoveryInventory, RecoveryJob};
@@ -16,12 +16,15 @@ mod artifacts;
 mod classify;
 mod error;
 mod finish;
+mod resume;
 mod retry;
+mod source;
 
-use artifacts::{check_range_pages, open_receipt, read_artifact, recheck_receipt, recheck_record};
+use artifacts::{load_range_pages, open_receipt, read_artifact, recheck_receipt, recheck_record};
 use classify::classify;
 pub use error::{RecoveryInspectError, RecoveryStep};
 pub use finish::{RecoveryFinishError, finish_recovery};
+pub use resume::resume_recovery;
 pub use retry::{RecoveryRetryError, RecoverySource, retry_recovery};
 
 /// Ownership trust supplied independently of the selected job directory.
@@ -135,6 +138,7 @@ struct RecoveryHistory {
 	plan_bytes: Vec<u8>,
 	journal_file: RecoveryFile,
 	journal: JournalReplay,
+	ranges: Vec<CheckpointCandidate>,
 	receipt: Option<RecoveryFile>,
 }
 
@@ -187,7 +191,7 @@ impl RecoveryHistory {
 			.map_err(RecoveryStep::Journal.platform())?;
 		let journal = replay_journal(&mut journal_file, &plan, &owner)
 			.map_err(RecoveryInspectError::Journal)?;
-		check_range_pages(job, &journal, plan.source().length)?;
+		let ranges = load_range_pages(job, &journal, plan.source().length)?;
 		let receipt = open_receipt(job)?;
 		if let Some(file) = &receipt {
 			artifacts::check_receipt(file, &plan, &journal)?;
@@ -199,6 +203,7 @@ impl RecoveryHistory {
 			plan_bytes,
 			journal_file,
 			journal,
+			ranges,
 			receipt,
 		})
 	}

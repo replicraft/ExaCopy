@@ -4,7 +4,8 @@ use exacopy_content::{ContentDigest, copy_and_measure_at, measure_at, validate_s
 use exacopy_endpoint::UnixComponent;
 use exacopy_model::{CopyBinding, CopyEffect, CopyEvent, CopyPhase, CopySession};
 use exacopy_platform::linux::{
-	ClosedStage, ExtendedAttributes, FileIdentity, SourceFile, StageDirectory,
+	ClosedStage, ExtendedAttributes, FileIdentity, SourceFile, SourceTimestamp, StageDirectory,
+	WriteStage,
 };
 
 mod error;
@@ -27,7 +28,7 @@ pub use receipt::{CopyReceipt, MAX_COPY_RECEIPT_BYTES, ReceiptError, ReceiptEvid
 pub use recovery::{
 	RecoveryDisposition, RecoveryFinishError, RecoveryInspectError, RecoveryInspection,
 	RecoveryIssue, RecoveryProfile, RecoveryRetryError, RecoverySource, RecoveryStep,
-	finish_recovery, inspect_recovery, retry_recovery,
+	finish_recovery, inspect_recovery, resume_recovery, retry_recovery,
 };
 pub use replay::{
 	JournalBoundary, JournalReplay, JournalReplayError, JournalTail, MAX_LOCAL_JOURNAL_BYTES,
@@ -150,12 +151,7 @@ fn prepare<'stage>(
 	} else {
 		None
 	};
-	if !matches!(
-		session.apply(request.binding, CopyEvent::StagePrepared)?,
-		Some(CopyEffect::ReadSource(read)) if read.binding() == request.binding
-	) {
-		return Err(StageFailure::UnexpectedEffect);
-	}
+	begin_stage_reads(session, request.binding)?;
 
 	let source_digest = if let Some(checkpoints) = checkpoints {
 		checkpoints.copy(source, &mut writable, scratch)?
@@ -168,13 +164,46 @@ fn prepare<'stage>(
 		)
 		.map_err(StageFailure::Copy)?
 	};
-	writable
-		.set_len(source.len())
-		.map_err(StageFailure::Stage)?;
-	observe(session, request.binding, CopyEvent::WritersJoined)?;
-	writable.flush().map_err(StageFailure::Stage)?;
-	observe(session, request.binding, CopyEvent::DataFlushed)?;
+	flush_written_stage(&mut writable, source.len(), session, request.binding)?;
+	verify_written_stage(
+		writable,
+		source,
+		source.observation().accessed_at(),
+		source_digest,
+		scratch,
+		session,
+		request.binding,
+	)
+}
 
+fn begin_stage_reads(session: &mut CopySession, binding: CopyBinding) -> Result<(), StageFailure> {
+	match session.apply(binding, CopyEvent::StagePrepared)? {
+		Some(CopyEffect::ReadSource(read)) if read.binding() == binding => Ok(()),
+		_ => Err(StageFailure::UnexpectedEffect),
+	}
+}
+
+fn flush_written_stage(
+	writable: &mut WriteStage<'_>,
+	length: u64,
+	session: &mut CopySession,
+	binding: CopyBinding,
+) -> Result<(), StageFailure> {
+	writable.set_len(length).map_err(StageFailure::Stage)?;
+	observe(session, binding, CopyEvent::WritersJoined)?;
+	writable.flush().map_err(StageFailure::Stage)?;
+	observe(session, binding, CopyEvent::DataFlushed)
+}
+
+fn verify_written_stage<'stage>(
+	writable: WriteStage<'stage>,
+	source: &SourceFile,
+	accessed_at: SourceTimestamp,
+	source_digest: ContentDigest,
+	scratch: &mut [u8],
+	session: &mut CopySession,
+	binding: CopyBinding,
+) -> Result<(ClosedStage<'stage>, ContentDigest), StageFailure> {
 	let stage = writable.close_writes().map_err(StageFailure::Stage)?;
 	if stage.length() != source.len() {
 		return Err(StageFailure::LengthMismatch {
@@ -189,16 +218,16 @@ fn prepare<'stage>(
 	if stage_digest != source_digest {
 		return Err(StageFailure::DigestMismatch);
 	}
-	observe(session, request.binding, CopyEvent::ReadbackVerified)?;
+	observe(session, binding, CopyEvent::ReadbackVerified)?;
 
 	check_source(source)?;
 	let stage = stage
-		.apply_metadata(source.observation())
+		.apply_metadata_with_access_time(source.observation(), accessed_at)
 		.map_err(StageFailure::Stage)?;
-	directory.sync_directory().map_err(StageFailure::Stage)?;
+	stage.sync_stage_directory().map_err(StageFailure::Stage)?;
 	check_source(source)?;
-	observe(session, request.binding, CopyEvent::MetadataReady)?;
-	observe(session, request.binding, CopyEvent::StageSealed)?;
+	observe(session, binding, CopyEvent::MetadataReady)?;
+	observe(session, binding, CopyEvent::StageSealed)?;
 	Ok((stage, source_digest))
 }
 

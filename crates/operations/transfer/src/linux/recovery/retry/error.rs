@@ -4,7 +4,7 @@ use exacopy_content::MeasureError;
 use exacopy_journal::VerificationRecordError;
 use exacopy_platform::linux::{PublishError, ReadError};
 
-use super::super::super::StageFailure;
+use super::super::super::{LocalCopyError, StageFailure};
 use super::super::{RecoveryFinishError, RecoveryInspectError, RecoveryIssue};
 
 /// A retained-stage recovery attempt that could not establish or publish its evidence.
@@ -29,6 +29,10 @@ pub enum RecoveryRetryError {
 	EffectSequenceExhausted,
 	/// The new epoch session did not accept its expected event.
 	Model(StageFailure),
+	/// Preparing, rewriting or fully verifying the retained partial stage failed.
+	ResumeStage(StageFailure),
+	/// Recording or publishing the newly verified copy failed.
+	ResumeCopy(Box<LocalCopyError>),
 	/// The exclusive rename or its postconditions failed after the fresh synchronized intent.
 	Publish(PublishError),
 }
@@ -70,6 +74,10 @@ impl fmt::Display for RecoveryRetryError {
 				formatter.write_str("publication effect sequence is exhausted")
 			}
 			Self::Model(error) => write!(formatter, "retry transition rejected ({error})"),
+			Self::ResumeStage(error) => write!(formatter, "partial stage resume failed ({error})"),
+			Self::ResumeCopy(error) => {
+				write!(formatter, "resumed copy could not complete ({error})")
+			}
 			Self::Publish(error) => write!(formatter, "retry publication failed ({error})"),
 		}
 	}
@@ -80,7 +88,10 @@ impl Error for RecoveryRetryError {
 		match self {
 			Self::Recovery(error) => Some(error),
 			Self::OpenSource(error) => Some(error),
-			Self::Model(error) | Self::SourcePolicy(error) => Some(error),
+			Self::Model(error) | Self::SourcePolicy(error) | Self::ResumeStage(error) => {
+				Some(error)
+			}
+			Self::ResumeCopy(error) => Some(error.as_ref()),
 			Self::MeasureSource(error) => Some(error),
 			Self::Verification(error) => Some(error),
 			Self::Publish(error) => Some(error),

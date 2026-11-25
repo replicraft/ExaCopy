@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt;
 
-use exacopy_content::{CopyMeasureError, MeasureError, StreamInputError};
+use exacopy_content::{CopyMeasureError, MeasureError, ResumeMeasureError, StreamInputError};
 use exacopy_endpoint::IoError;
 use exacopy_journal::{DurableJournalError, PreparedError, VerificationRecordError};
 use exacopy_model::{CopyPhase, TransitionError};
@@ -75,6 +75,8 @@ pub enum StageFailure {
 	Alias,
 	/// A bounded source read or stage write failed while copying.
 	Copy(CopyMeasureError<ReadError, StageError>),
+	/// Reading the source or stage, writing a range, or confirming repeated reads failed.
+	Resume(ResumeMeasureError<ReadError, ReadError, StageError>),
 	/// Independent read-back could not complete.
 	Readback(MeasureError<IoError>),
 	/// The closed stage length differs from the source length.
@@ -127,6 +129,7 @@ impl fmt::Display for StageFailure {
 			}
 			Self::Alias => formatter.write_str("source and private stage alias the same inode"),
 			Self::Copy(error) => write!(formatter, "source-to-stage transfer failed ({error})"),
+			Self::Resume(error) => write!(formatter, "partial range transfer failed ({error})"),
 			Self::Readback(error) => {
 				write!(formatter, "independent stage read-back failed ({error})")
 			}
@@ -155,6 +158,7 @@ impl Error for StageFailure {
 			Self::CheckpointEvidence(error) => Some(error),
 			Self::EntryJournal(error) | Self::CheckpointJournal(error) => Some(error),
 			Self::Copy(error) => Some(error),
+			Self::Resume(error) => Some(error),
 			Self::Readback(error) => Some(error),
 			Self::Model(error) => Some(error),
 			_ => None,

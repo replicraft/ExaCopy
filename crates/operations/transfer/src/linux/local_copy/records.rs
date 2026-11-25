@@ -16,7 +16,7 @@ pub(super) fn timestamp(value: SourceTimestamp) -> Result<ObservedTimestamp, Pre
 	ObservedTimestamp::new(value.seconds(), value.nanoseconds())
 }
 
-pub(super) struct EntryEvidence<'name> {
+pub(in crate::linux) struct EntryEvidence<'name> {
 	pub(super) context: JournalContext,
 	pub(super) entry: JournalEntryId,
 	source: LiveSourceView,
@@ -49,7 +49,23 @@ impl<'name> EntryEvidence<'name> {
 			observation.link_count(),
 		)
 		.map_err(LocalCopyError::Preparation)?;
-		Ok(Self {
+		Ok(Self::from_preparation(
+			context,
+			entry,
+			source,
+			metadata,
+			destination,
+		))
+	}
+
+	pub(in crate::linux) const fn from_preparation(
+		context: JournalContext,
+		entry: JournalEntryId,
+		source: LiveSourceView,
+		metadata: SourceInodeMetadata,
+		destination: DestinationPlanBinding<'name>,
+	) -> Self {
+		Self {
 			context,
 			entry,
 			source,
@@ -59,7 +75,7 @@ impl<'name> EntryEvidence<'name> {
 				component: destination.component,
 				observation: TargetObservation::AbsentObserved,
 			},
-		})
+		}
 	}
 
 	pub(super) fn record(
@@ -85,7 +101,10 @@ impl<'name> EntryEvidence<'name> {
 		Ok(SourceMeasurementId::from_prepared_payload(&payload))
 	}
 
-	pub(super) fn seal(&self, stage: &VerifiedStage<'_>) -> Result<SealEvidence, LocalCopyError> {
+	pub(in crate::linux) fn seal(
+		&self,
+		stage: &VerifiedStage<'_>,
+	) -> Result<SealEvidence, LocalCopyError> {
 		let stage_evidence = StreamEvidence {
 			identity: native_identity(stage.identity()),
 			length: StreamLength::new(stage.length()).map_err(LocalCopyError::Verification)?,
@@ -132,14 +151,14 @@ impl<'name> EntryEvidence<'name> {
 	}
 }
 
-pub(super) struct SealEvidence {
+pub(in crate::linux) struct SealEvidence {
 	sealed: StageSealed,
-	pub(super) verification: VerificationRecorded,
+	pub(in crate::linux) verification: VerificationRecorded,
 	metadata: MetadataRecorded,
 }
 
 impl SealEvidence {
-	pub(super) fn record(
+	pub(in crate::linux) fn record(
 		&self,
 		journal: &mut DurableJournal,
 	) -> Result<SyncedFrame, LocalCopyError> {

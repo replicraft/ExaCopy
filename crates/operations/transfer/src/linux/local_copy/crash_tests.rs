@@ -24,6 +24,7 @@ use super::{
 
 mod evidence;
 mod ranges;
+mod resume;
 mod retry;
 
 use evidence::{STAGE_DIRECTORY, Snapshot, assert_conflict, assert_crash};
@@ -55,6 +56,9 @@ pub(in crate::linux) enum Checkpoint {
 	RetryRenamedAndSynced,
 	RangePageSynced,
 	RangeFrameSynced,
+	RangeResumeStartedSynced,
+	RangeResumeDataFlushed,
+	RangeResumeIntentSynced,
 }
 
 impl Checkpoint {
@@ -76,6 +80,11 @@ impl Checkpoint {
 		Self::RangePageSynced,
 		Self::RangeFrameSynced,
 	];
+	const RESUME_ORDER: [Self; 3] = [
+		Self::RangeResumeStartedSynced,
+		Self::RangeResumeDataFlushed,
+		Self::RangeResumeIntentSynced,
+	];
 
 	fn worker(self) -> (&'static str, &'static [Self]) {
 		match self {
@@ -85,6 +94,9 @@ impl Checkpoint {
 			Self::RangePageSynced | Self::RangeFrameSynced => {
 				("ranges::range_worker", &Self::RANGE_ORDER)
 			}
+			Self::RangeResumeStartedSynced
+			| Self::RangeResumeDataFlushed
+			| Self::RangeResumeIntentSynced => ("resume::resume_worker", &Self::RESUME_ORDER),
 			_ => ("copy_worker", &Self::COPY_ORDER),
 		}
 	}

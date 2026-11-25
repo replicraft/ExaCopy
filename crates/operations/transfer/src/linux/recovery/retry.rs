@@ -10,15 +10,14 @@ use exacopy_journal::{
 use exacopy_model::{
 	CopyBinding, CopyEffect, CopyEvent, CopySession, EntryId, JobId, RunEpoch, StageId,
 };
-use exacopy_platform::linux::{
-	DestinationRoot, ReadRoot, RecoveryInventory, RecoveryWriteLease, SourceFile,
-};
+use exacopy_platform::linux::{DestinationRoot, ReadRoot, RecoveryInventory, RecoveryWriteLease};
 
 #[cfg(test)]
 use super::super::local_copy::crash_tests::{Checkpoint, pause_at};
 use super::super::{LocalCopyPlan, StageFailure, check_source, observe};
 use super::classify::verify;
 use super::finish::{acquire_lease, append, completion, finish_leased, required};
+use super::source::open_source;
 use super::{
 	RecoveryDisposition, RecoveryFinishError, RecoveryHistory, RecoveryInspectError,
 	RecoveryInspection, RecoveryIssue, RecoveryProfile, RecoveryStep, native_identity,
@@ -108,7 +107,7 @@ impl Retry<'_, '_> {
 			.map(native_identity)
 			.ok_or(RecoveryFinishError::IncompleteEvidence)?;
 		let stage = native_identity(stage_file.identity());
-		let source = self.open_source(source)?;
+		let source = open_source(&self.plan, journal, source)?;
 		let prior_intent = required(journal.intent_head)?;
 		let prior_measurements = required(journal.verification)?;
 		let mut metadata = required(journal.metadata)?;
@@ -274,38 +273,5 @@ impl Retry<'_, '_> {
 		.map_err(RecoveryFinishError::Publication)?;
 		let _ = append(&mut writer, FrameKind::PublishObserved, &observed.encode())?;
 		Ok(())
-	}
-
-	fn open_source(&self, grant: RecoverySource<'_>) -> Result<SourceFile, RecoveryRetryError> {
-		let planned = self.plan.source();
-		if grant.id != planned.root_id
-			|| native_identity(grant.root.identity()) != planned.root_identity
-		{
-			return Err(RecoveryRetryError::SourceMismatch);
-		}
-		let source = grant
-			.root
-			.open_regular(planned.component)
-			.map_err(RecoveryRetryError::OpenSource)?;
-		let current = source.observation();
-		let modified = current.modified_at();
-		let changed = current.changed_at();
-		let journal = &self.history.journal;
-		let original = required(journal.metadata)?;
-		if native_identity(source.identity()) != planned.file_identity
-			|| current.len() != planned.length
-			|| modified.seconds() != planned.modified_at.seconds()
-			|| modified.nanoseconds() != planned.modified_at.nanoseconds()
-			|| changed.seconds() != planned.changed_at.seconds()
-			|| changed.nanoseconds() != planned.changed_at.nanoseconds()
-			|| current.mode() != original.metadata.mode()
-			|| current.owner() != original.metadata.uid
-			|| current.group() != original.metadata.gid
-			|| Some(current.link_count()) != journal.source_link_count
-		{
-			return Err(RecoveryRetryError::SourceMismatch);
-		}
-		check_source(&source).map_err(RecoveryRetryError::SourcePolicy)?;
-		Ok(source)
 	}
 }

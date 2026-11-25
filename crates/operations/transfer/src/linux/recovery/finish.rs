@@ -8,7 +8,9 @@ use exacopy_journal::{
 	PublicationOutcome, PublishObserved, PublishedRecoveryEvidence, ReceiptCommitted,
 	ReceiptDigest, RecoveryDecision, RecoveryStartEvidence, RecoveryStarted, SyncedFrame,
 };
-use exacopy_platform::linux::{DestinationRoot, RecoveryInventory, RecoveryWriteLease};
+use exacopy_platform::linux::{
+	DestinationRoot, RecoveryFile, RecoveryInventory, RecoveryWriteLease,
+};
 
 use super::super::{CopyReceipt, JournalTail, LocalCopyPlan, ReceiptEvidence};
 use super::{
@@ -225,7 +227,7 @@ impl CompleteCopy<'_, '_> {
 			durability,
 		)
 		.map_err(RecoveryFinishError::Publication)?;
-		self.sync_receipt(lease, &receipt)?;
+		sync_receipt(lease, &receipt, self.history.receipt.as_ref())?;
 		self.names
 			.recheck()
 			.map_err(completion(RecoveryStep::Namespace))?;
@@ -236,35 +238,35 @@ impl CompleteCopy<'_, '_> {
 		)?;
 		Ok(())
 	}
+}
 
-	fn sync_receipt(
-		&self,
-		lease: &RecoveryWriteLease<'_>,
-		receipt: &CopyReceipt<'_>,
-	) -> Result<(), RecoveryFinishError> {
-		let receipts = lease
-			.open_receipt_directory()
-			.map_err(completion(RecoveryStep::Receipt))?;
-		if let Some(current) = &self.history.receipt {
-			receipts
-				.sync_receipt(current)
-				.map_err(completion(RecoveryStep::Receipt))?;
-		} else {
-			let mut file = receipts
-				.create_receipt()
-				.map_err(completion(RecoveryStep::Receipt))?;
-			file.write_all(&receipt.encode())
-				.map_err(RecoveryFinishError::WriteReceipt)?;
-			file.sync_all().map_err(RecoveryFinishError::WriteReceipt)?;
-		}
+pub(super) fn sync_receipt(
+	lease: &RecoveryWriteLease<'_>,
+	receipt: &CopyReceipt<'_>,
+	existing: Option<&RecoveryFile>,
+) -> Result<(), RecoveryFinishError> {
+	let receipts = lease
+		.open_receipt_directory()
+		.map_err(completion(RecoveryStep::Receipt))?;
+	if let Some(current) = existing {
 		receipts
-			.sync_directory()
+			.sync_receipt(current)
 			.map_err(completion(RecoveryStep::Receipt))?;
-		lease
-			.sync_job_directory()
-			.map_err(completion(RecoveryStep::Job))?;
-		Ok(())
+	} else {
+		let mut file = receipts
+			.create_receipt()
+			.map_err(completion(RecoveryStep::Receipt))?;
+		file.write_all(&receipt.encode())
+			.map_err(RecoveryFinishError::WriteReceipt)?;
+		file.sync_all().map_err(RecoveryFinishError::WriteReceipt)?;
 	}
+	receipts
+		.sync_directory()
+		.map_err(completion(RecoveryStep::Receipt))?;
+	lease
+		.sync_job_directory()
+		.map_err(completion(RecoveryStep::Job))?;
+	Ok(())
 }
 
 pub(super) fn required<T>(value: Option<T>) -> Result<T, RecoveryFinishError> {

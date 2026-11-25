@@ -22,7 +22,7 @@ use super::{
 
 pub(super) mod checkpoints;
 mod error;
-mod records;
+pub(super) mod records;
 
 #[cfg(test)]
 pub(super) mod crash_tests;
@@ -242,15 +242,15 @@ fn capture_source<'name>(
 	})
 }
 
-struct Publication<'plan, 'name> {
-	context: JournalContext,
-	plan: &'plan LocalCopyPlan<'name>,
-	binding: CopyBinding,
-	stage_directory: exacopy_journal::LinuxFileIdentity,
+pub(super) struct Publication<'plan, 'name> {
+	pub(super) context: JournalContext,
+	pub(super) plan: &'plan LocalCopyPlan<'name>,
+	pub(super) binding: CopyBinding,
+	pub(super) stage_directory: exacopy_journal::LinuxFileIdentity,
 }
 
 impl Publication<'_, '_> {
-	fn intent_context(&self) -> PublishIntentContext {
+	pub(super) fn intent_context(&self) -> PublishIntentContext {
 		PublishIntentContext {
 			job: self.context.job,
 			epoch: self.context.epoch,
@@ -260,7 +260,7 @@ impl Publication<'_, '_> {
 		}
 	}
 
-	fn complete(
+	pub(super) fn complete(
 		&self,
 		journal: &mut DurableJournal,
 		session: &mut exacopy_model::CopySession,
@@ -282,7 +282,11 @@ impl Publication<'_, '_> {
 		};
 		let synced = append(journal, FrameKind::PublishIntent, &intent.encode())?;
 		#[cfg(test)]
-		crash_tests::pause_at(crash_tests::Checkpoint::IntentSynced);
+		crash_tests::pause_at(if self.context.epoch == self.plan.context().epoch {
+			crash_tests::Checkpoint::IntentSynced
+		} else {
+			crash_tests::Checkpoint::RangeResumeIntentSynced
+		});
 		let authorization = match session
 			.apply(self.binding, CopyEvent::PublishIntentRecorded)
 			.map_err(super::StageFailure::Model)
