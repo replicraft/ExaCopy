@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 use std::path::{self, Path};
 
-use exacopy_diff::{Side, macos};
+use exacopy_diff::Side;
 use exacopy_endpoint::UnixComponent;
 use exacopy_platform::macos::{ManagedReadGrant, ManagedReadRoot, ManagedRegularFile};
 
@@ -25,10 +25,7 @@ fn compare_files(
 	let (right_root, right_name) = open_parent(right, Side::Right)?;
 	let left = open_file(&left_root, left_name, Side::Left)?;
 	let right = open_file(&right_root, right_name, Side::Right)?;
-	diff::compare(|scratch| match workers {
-		Some(workers) => macos::compare_parallel(&left, &right, scratch, workers),
-		None => macos::compare(&left, &right, scratch),
-	})
+	diff::compare(&left, &right, workers)
 }
 
 fn open_parent(path: &Path, side: Side) -> Result<(ManagedReadRoot, UnixComponent<'_>), Failure> {

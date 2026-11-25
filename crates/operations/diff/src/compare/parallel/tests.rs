@@ -5,10 +5,13 @@ use std::sync::{Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
 
-use exacopy_endpoint::MAX_FILE_LENGTH;
+use exacopy_endpoint::{MAX_FILE_LENGTH, ReadView};
 
-use super::{MAX_WORKERS, compare_views_parallel, partition};
-use crate::compare::{CompareError, Difference, LiveComparison, MAX_SCRATCH_BYTES, ReadView, Side};
+use super::partition;
+use crate::{
+	CompareError, Difference, LiveComparison, MAX_SCRATCH_BYTES, MAX_WORKERS, Side,
+	compare_parallel,
+};
 
 const TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -110,7 +113,7 @@ fn returns_first_mismatch_for_every_pair_of_positions_and_odd_buffer_sizes() {
 					let right = View::new(&right_bytes);
 					let expected = u64::try_from(first).expect("fixture offset fits");
 					assert_eq!(
-						compare_views_parallel(
+						compare_parallel(
 							&left,
 							&right,
 							&mut vec![0; scratch_len],
@@ -133,7 +136,7 @@ fn reads_every_offset_once_per_side_in_its_independent_scratch_window() {
 	let left = View::new(bytes);
 	let right = View::new(bytes);
 	assert_eq!(
-		compare_views_parallel(&left, &right, &mut [0; 17], ceiling(3)).expect("compare fixture"),
+		compare_parallel(&left, &right, &mut [0; 17], ceiling(3)).expect("compare fixture"),
 		LiveComparison::Equal { length }
 	);
 	for view in [&left, &right] {
@@ -166,17 +169,17 @@ fn reads_every_offset_once_per_side_in_its_independent_scratch_window() {
 fn validates_before_reading_and_does_not_start_workers_for_length_only_results() {
 	let empty = View::new(b"");
 	let nonempty = View::new(b"ab");
-	let error = compare_views_parallel(&nonempty, &nonempty, &mut [0; 4], ceiling(MAX_WORKERS + 1))
-		.unwrap_err();
+	let error =
+		compare_parallel(&nonempty, &nonempty, &mut [0; 4], ceiling(MAX_WORKERS + 1)).unwrap_err();
 	assert!(
 		matches!(error, CompareError::TooManyWorkers { workers } if workers == MAX_WORKERS + 1)
 	);
 	assert!(matches!(
-		compare_views_parallel(&nonempty, &nonempty, &mut [0], ceiling(2)),
+		compare_parallel(&nonempty, &nonempty, &mut [0], ceiling(2)),
 		Err(CompareError::InsufficientScratch)
 	));
 	assert!(matches!(
-		compare_views_parallel(
+		compare_parallel(
 			&nonempty,
 			&nonempty,
 			&mut vec![0; MAX_SCRATCH_BYTES + 1],
@@ -187,11 +190,11 @@ fn validates_before_reading_and_does_not_start_workers_for_length_only_results()
 	assert_eq!(nonempty.checks.load(Ordering::Relaxed), 0);
 
 	assert_eq!(
-		compare_views_parallel(&empty, &empty, &mut [], ceiling(2)).expect("empty equality"),
+		compare_parallel(&empty, &empty, &mut [], ceiling(2)).expect("empty equality"),
 		LiveComparison::Equal { length: 0 }
 	);
 	assert_eq!(
-		compare_views_parallel(&empty, &nonempty, &mut [], ceiling(2)).expect("length difference"),
+		compare_parallel(&empty, &nonempty, &mut [], ceiling(2)).expect("length difference"),
 		LiveComparison::Different(Difference::Length { left: 0, right: 2 })
 	);
 	for view in [&nonempty, &empty] {
@@ -224,7 +227,7 @@ fn ordered_results_require_all_earlier_reads_but_allow_later_speculation() {
 			..View::new(b"aaaaaaaa")
 		};
 		let right = View::new(b"baaaaaaa");
-		let result = compare_views_parallel(&left, &right, &mut [0; 16], ceiling(2));
+		let result = compare_parallel(&left, &right, &mut [0; 16], ceiling(2));
 		if earlier_error {
 			assert!(matches!(
 				result,
@@ -285,8 +288,7 @@ fn waits_for_started_workers_before_the_final_observation_check() {
 	};
 
 	thread::scope(|scope| {
-		let comparison =
-			scope.spawn(|| compare_views_parallel(&left, &right, &mut [0; 16], ceiling(2)));
+		let comparison = scope.spawn(|| compare_parallel(&left, &right, &mut [0; 16], ceiling(2)));
 		await_first
 			.recv_timeout(TIMEOUT)
 			.expect("first mismatch had an outstanding read");
@@ -327,7 +329,7 @@ fn a_started_worker_panic_is_inconclusive() {
 	};
 	let right = View::new(b"baaa");
 	assert!(matches!(
-		compare_views_parallel(&left, &right, &mut [0; 8], ceiling(2)),
+		compare_parallel(&left, &right, &mut [0; 8], ceiling(2)),
 		Err(CompareError::WorkerPanicked { offset: 2 })
 	));
 }

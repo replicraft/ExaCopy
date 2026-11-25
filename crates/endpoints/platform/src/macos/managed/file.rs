@@ -4,7 +4,7 @@ use std::io;
 use std::os::fd::AsFd as _;
 use std::os::unix::fs::FileExt as _;
 
-use exacopy_endpoint::{MAX_INTERRUPTED_RETRIES, UnixComponent, read_exact_at};
+use exacopy_endpoint::{MAX_INTERRUPTED_RETRIES, ReadView, UnixComponent, read_exact_at};
 use rustix::fs::{self, AtFlags, Stat};
 use rustix::io::Errno;
 
@@ -223,6 +223,22 @@ impl<'root> ManagedRegularFile<'root> {
 				Err(error) => return Err(error.into()),
 			}
 		}
+	}
+}
+
+impl ReadView for ManagedRegularFile<'_> {
+	type Error = ManagedReadError;
+
+	fn length(&self) -> u64 {
+		ManagedRegularFile::length(self)
+	}
+
+	fn recheck_observation(&self) -> Result<(), Self::Error> {
+		self.revalidate()
+	}
+
+	fn read_exact_at(&self, offset: u64, buffer: &mut [u8]) -> Result<(), Self::Error> {
+		ManagedRegularFile::read_exact_at(self, offset, buffer)
 	}
 }
 

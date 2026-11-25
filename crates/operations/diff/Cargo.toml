@@ -6,11 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
-[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
-exacopy-endpoint.workspace = true
-exacopy-platform.workspace = true
-
-[dev-dependencies]
+[dependencies]
 exacopy-endpoint.workspace = true
 
 [lints]

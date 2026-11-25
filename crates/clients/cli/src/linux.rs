@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 use std::path::Path;
 
-use exacopy_diff::linux::{self, Side};
+use exacopy_diff::Side;
 use exacopy_platform::linux::{ReadRoot, SourceFile};
 
 use crate::diff;
@@ -22,10 +22,7 @@ fn compare_files(
 ) -> Result<Outcome, Failure> {
 	let left = open(left, Side::Left)?;
 	let right = open(right, Side::Right)?;
-	diff::compare(|scratch| match workers {
-		Some(workers) => linux::compare_parallel(&left, &right, scratch, workers),
-		None => linux::compare(&left, &right, scratch),
-	})
+	diff::compare(&left, &right, workers)
 }
 
 fn open(path: &Path, side: Side) -> Result<SourceFile, Failure> {

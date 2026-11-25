@@ -5,7 +5,7 @@ use std::io;
 use std::os::fd::AsFd;
 use std::os::unix::fs::FileExt;
 
-use exacopy_endpoint::{IoError, MAX_INTERRUPTED_RETRIES, UnixComponent};
+use exacopy_endpoint::{IoError, MAX_INTERRUPTED_RETRIES, ReadView, UnixComponent};
 use rustix::fs::{self, FileType, Mode, OFlags, ResolveFlags, Stat};
 use rustix::io::Errno;
 use rustix::path::DecInt;
@@ -270,6 +270,23 @@ impl SourceFile {
 			self.file.read_at(remaining, position)
 		})
 		.map_err(ReadError::Io)
+	}
+}
+
+impl ReadView for SourceFile {
+	type Error = ReadError;
+
+	fn length(&self) -> u64 {
+		self.len()
+	}
+
+	fn recheck_observation(&self) -> Result<(), Self::Error> {
+		SourceFile::recheck_observation(self)?;
+		self.check_logical_eof()
+	}
+
+	fn read_exact_at(&self, offset: u64, buffer: &mut [u8]) -> Result<(), Self::Error> {
+		SourceFile::read_exact_at(self, offset, buffer)
 	}
 }
 

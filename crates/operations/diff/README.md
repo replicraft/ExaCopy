@@ -1,6 +1,6 @@
 # Exact file comparison
 
-`exacopy_diff::linux::compare` takes two already opened Linux `SourceFile` capabilities and caller-owned scratch. It compares the recorded logical extents of the held descriptors. It uses no pathname lookups, creates no files, and holds no mutation capability. Ordinary reads may update access times.
+`exacopy_diff::compare` takes two already opened capabilities implementing `exacopy_endpoint::ReadView` and caller-owned scratch. It compares the recorded logical extents of the held views. The comparator creates no files and receives only read and observation capabilities. Ordinary reads may update access times.
 
 The comparator checks the logical end and recorded metadata of each file before and after each decision. It compares nonempty extents of equal lengths in successive positional windows, reading sparse holes as logical zero bytes. A successful result describes the live observations. An observation change, failed exact read, or invalid input makes the comparison inconclusive. The caller must supply storage files on filesystems where the captured length describes the logical byte stream. Linux virtual files can report synthetic lengths and fall outside this scope.
 
@@ -12,12 +12,13 @@ This slice covers the local single-file portions of R-007, R-093, R-097 and R-10
 
 ```sh
 cargo nextest run --locked -p exacopy-diff
+cargo nextest run --locked -p exacopy-cli --test linux_diff_capabilities
 cargo test --locked -p exacopy-diff --doc
 ```
 
 ## Bounded parallel comparison
 
-The opt-in `exacopy_diff::linux::compare_parallel` entry point uses the same held read-only views, observation checks, and byte comparison. The caller chooses a worker ceiling from 1 through 16. The active count also depends on the stream extent and scratch available. The same 8 MiB cap applies to the entire comparison, split among disjoint worker buffers. Each worker reads a contiguous logical range in order. The comparison has no work queue and uses at most two held file capabilities.
+The opt-in `exacopy_diff::compare_parallel` entry point uses the same held read-only views, observation checks, and byte comparison. The caller chooses a worker ceiling from 1 through 16. The active count also depends on the stream extent and scratch available. The same 8 MiB cap applies to the entire comparison, split among disjoint worker buffers. Each worker reads a contiguous logical range in order. The comparison has no work queue and uses at most two held file capabilities.
 
 The coordinator joins the workers and reduces their outcomes in byte order. A mismatch can only be returned if every earlier window read successfully and compared equal. An outstanding speculative read in a later range joins before any result is returned. Thread start and worker panic failures are inconclusive. The final observation check follows the joins. Files remain live-observed, and results use only the bytes actually read.
 
@@ -29,6 +30,8 @@ Run the local gate using the TLC and Temurin versions pinned in the [TLC toolcha
 crates/operations/diff/verification/check.sh
 ```
 
-## Managed APFS on macOS
+## Native adapters
 
-`exacopy_diff::macos::compare` and `compare_parallel` take two managed APFS read handles from `exacopy_platform::macos`. The platform adapter admits and revalidates both files under the trusted owner's managed-root grant. The same byte comparator, scratch and worker bounds, result types, and error phases apply. Adapter failures propagate with their side and operation. Results describe live observations of the held views. See the [CLI instructions](../../clients/cli/README.md#managed-apfs-comparison-on-macos) for the grant and native fixture test. The fixture exercises the adapter on its host filesystem.
+The CLI opens Linux `SourceFile` or macOS `ManagedRegularFile` capabilities and supplies them to the shared comparator. On Linux, the adapter checks captured metadata and probes for logical EOF. On macOS, the adapter admits and revalidates both files under the trusted owner's managed-root grant. Adapter failures propagate with their original cause, comparison side, and operation. See the [CLI instructions](../../clients/cli/README.md#managed-apfs-comparison-on-macos) for the grant and native fixture test.
+
+Library callers migrate from `exacopy_diff::linux` or `exacopy_diff::macos` to `exacopy_diff::{compare, compare_parallel}`. Both native handle types implement `ReadView` directly.

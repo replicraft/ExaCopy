@@ -3,7 +3,9 @@ use std::ops::Range;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 
-use super::{CompareError, LiveComparison, ReadView, compare_views_with, first_difference};
+use exacopy_endpoint::ReadView;
+
+use super::{CompareError, LiveComparison, compare_views_with, first_difference};
 
 #[cfg(test)]
 mod tests;
@@ -11,7 +13,18 @@ mod tests;
 /// Maximum positioned read workers in one comparison.
 pub const MAX_WORKERS: usize = 16;
 
-pub(crate) fn compare_views_parallel<V>(
+/// Compares held live views using bounded, concurrent positioned reads.
+///
+/// Workers share the caller's scratch, bounded by [`crate::MAX_SCRATCH_BYTES`],
+/// and each reads a disjoint logical range. The caller supplies a worker
+/// ceiling through [`MAX_WORKERS`]. A one-worker comparison runs on the calling
+/// thread. All started workers join before returning. Observation and result
+/// semantics match [`crate::compare()`]. Speculative reads can pass the first difference.
+///
+/// # Errors
+/// Invalid input, an observation failure, a worker start failure or panic,
+/// or a read failure before a first difference makes the result inconclusive.
+pub fn compare_parallel<V>(
 	left: &V,
 	right: &V,
 	scratch: &mut [u8],
@@ -32,12 +45,12 @@ where
 		if workers == 1 {
 			first_difference(left, right, 0..length, scratch, || true)
 		} else {
-			compare_parallel(left, right, length, scratch, workers)
+			compare_ranges(left, right, length, scratch, workers)
 		}
 	})
 }
 
-fn compare_parallel<V>(
+fn compare_ranges<V>(
 	left: &V,
 	right: &V,
 	length: u64,

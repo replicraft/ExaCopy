@@ -1,8 +1,9 @@
 use std::cell::{Cell, RefCell};
 use std::io::{self, ErrorKind};
 
-use super::{CompareError, Difference, LiveComparison, MAX_FILE_LENGTH, MAX_SCRATCH_BYTES};
-use super::{ReadView, Side, compare_views};
+use exacopy_endpoint::{MAX_FILE_LENGTH, ReadView};
+
+use crate::{CompareError, Difference, LiveComparison, MAX_SCRATCH_BYTES, Side, compare};
 
 struct View<'a> {
 	bytes: &'a [u8],
@@ -57,7 +58,7 @@ impl ReadView for View<'_> {
 fn equal_inputs_read_every_byte_with_exact_tail_width() {
 	let left = View::new(b"abc\x00\x00\xffz");
 	let right = View::new(left.bytes);
-	let result = compare_views(&left, &right, &mut [0; 5]).expect("comparison completes");
+	let result = compare(&left, &right, &mut [0; 5]).expect("comparison completes");
 
 	assert_eq!(result, LiveComparison::Equal { length: 7 });
 	for view in [&left, &right] {
@@ -79,7 +80,7 @@ fn independently_checks_each_mismatch_position_with_multiple_window_widths() {
 			let window = scratch_len / 2;
 
 			assert_eq!(
-				compare_views(&left, &right, &mut vec![0; scratch_len]).expect("difference"),
+				compare(&left, &right, &mut vec![0; scratch_len]).expect("difference"),
 				LiveComparison::Different(Difference::FirstByte { offset })
 			);
 			for view in [&left, &right] {
@@ -119,7 +120,7 @@ fn reports_different_lengths_and_empty_equality_without_data_reads() {
 			length: right_len,
 			..View::new(b"")
 		};
-		assert_eq!(compare_views(&left, &right, &mut []).unwrap(), expected);
+		assert_eq!(compare(&left, &right, &mut []).unwrap(), expected);
 		for view in [&left, &right] {
 			assert!(view.reads.borrow().is_empty());
 			assert_eq!(view.checks.get(), 2);
@@ -139,7 +140,7 @@ fn refuses_out_of_bounds_input_before_observing_or_reading_either_file() {
 		(&ordinary, &too_large, Side::Right),
 	] {
 		assert!(matches!(
-			compare_views(left, right, &mut [0; 2]),
+			compare(left, right, &mut [0; 2]),
 			Err(CompareError::FileTooLong { side, length })
 				if side == expected_side && length == too_large.length
 		));
@@ -147,12 +148,12 @@ fn refuses_out_of_bounds_input_before_observing_or_reading_either_file() {
 
 	let mut maximum_scratch = vec![0; MAX_SCRATCH_BYTES + 1];
 	assert!(matches!(
-		compare_views(&ordinary, &ordinary, &mut maximum_scratch),
+		compare(&ordinary, &ordinary, &mut maximum_scratch),
 		Err(CompareError::ScratchTooLarge { length }) if length == maximum_scratch.len()
 	));
 	for size in [0, 1] {
 		assert!(matches!(
-			compare_views(&ordinary, &ordinary, &mut [0][..size]),
+			compare(&ordinary, &ordinary, &mut [0][..size]),
 			Err(CompareError::InsufficientScratch)
 		));
 	}
@@ -162,7 +163,7 @@ fn refuses_out_of_bounds_input_before_observing_or_reading_either_file() {
 	}
 
 	assert_eq!(
-		compare_views(
+		compare(
 			&ordinary,
 			&ordinary,
 			&mut maximum_scratch[..MAX_SCRATCH_BYTES],
@@ -184,7 +185,7 @@ fn read_failure_overrides_equality_and_reports_side_and_requested_offset() {
 			Side::Left => (&broken, &ordinary),
 			Side::Right => (&ordinary, &broken),
 		};
-		let error = compare_views(left, right, &mut [0; 4]).unwrap_err();
+		let error = compare(left, right, &mut [0; 4]).unwrap_err();
 		let detail = std::error::Error::source(&error)
 			.and_then(|source| source.downcast_ref::<io::Error>())
 			.unwrap();
@@ -221,7 +222,7 @@ fn observation_failure_makes_every_kind_of_decision_inconclusive() {
 					fail_check: (failing_side == Side::Right).then_some(boundary),
 					..View::new(right_bytes)
 				};
-				let error = compare_views(&left, &right, &mut [0; 2]).unwrap_err();
+				let error = compare(&left, &right, &mut [0; 2]).unwrap_err();
 				assert!(matches!(
 					error,
 					CompareError::Observation { side, .. } if side == failing_side

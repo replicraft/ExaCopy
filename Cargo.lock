@@ -264,7 +264,6 @@ name = "exacopy-diff"
 version = "0.1.0"
 dependencies = [
  "exacopy-endpoint",
- "exacopy-platform",
 ]
 
 [[package]]

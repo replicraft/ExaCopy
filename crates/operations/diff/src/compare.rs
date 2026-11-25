@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use exacopy_endpoint::MAX_FILE_LENGTH;
+use exacopy_endpoint::{MAX_FILE_LENGTH, ReadView};
 
 use self::error::{CompareError, Side};
 
@@ -42,17 +42,18 @@ pub enum Difference {
 	},
 }
 
-pub(crate) trait ReadView {
-	type Error;
-
-	fn length(&self) -> u64;
-
-	fn recheck_observation(&self) -> Result<(), Self::Error>;
-
-	fn read_exact_at(&self, offset: u64, buffer: &mut [u8]) -> Result<(), Self::Error>;
-}
-
-pub(crate) fn compare_views<V: ReadView>(
+/// Compares the recorded logical extents of two held, read-only file views.
+///
+/// Both observations are rechecked before and after the comparison. An equal
+/// result covers every byte in both recorded extents. A difference reports
+/// unequal lengths or the first unequal byte. Results describe live observations.
+/// The caller supplies at most [`MAX_SCRATCH_BYTES`] of scratch for the two
+/// read buffers. Unequal lengths and empty inputs need no scratch.
+///
+/// # Errors
+/// Invalid extents or scratch sizes, a failed observation check, or an
+/// incomplete positional read makes the result inconclusive.
+pub fn compare<V: ReadView>(
 	left: &V,
 	right: &V,
 	scratch: &mut [u8],

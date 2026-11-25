@@ -4,7 +4,7 @@ schema_version = 1
 id = "P-036"
 requirement_ids = ["R-082", "R-093", "R-097", "R-100"]
 source = "src/compare/parallel.rs"
-symbols = ["compare_views_parallel", "compare_parallel", "partition"]
+symbols = ["compare_parallel", "compare_ranges", "partition"]
 assumptions = [
     "An exact positioned read fills its supplied bytes synchronously or returns an error.",
     "The serial oracle and model use one fixed set of per-range observations. Actual live inputs may change.",

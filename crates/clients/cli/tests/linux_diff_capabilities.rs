@@ -8,9 +8,7 @@ use std::os::unix::fs::{DirBuilderExt as _, FileExt as _, MetadataExt as _};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use exacopy_diff::linux::{
-	CompareError, Difference, LiveComparison, Side, compare, compare_parallel,
-};
+use exacopy_diff::{CompareError, Difference, LiveComparison, Side, compare, compare_parallel};
 use exacopy_endpoint::UnixComponent;
 use exacopy_platform::linux::{ReadError, ReadRoot, SourceFile};
 
