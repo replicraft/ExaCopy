@@ -21,7 +21,7 @@ pub(in crate::linux) use metadata::check_no_visible_attributes;
 #[cfg(test)]
 mod tests;
 
-const FILE_MODE: Mode = Mode::RUSR.union(Mode::WUSR);
+pub(in crate::linux) const FILE_MODE: Mode = Mode::RUSR.union(Mode::WUSR);
 
 /// Exclusive synchronous writer for one newly created private file.
 ///
@@ -273,22 +273,36 @@ pub(super) struct StageLocation<'stage> {
 impl StageLocation<'_> {
 	fn check_named_file(&self, expected_mode: Mode) -> Result<Stat, StageError> {
 		self.directory.check_current()?;
-		let file = fs::openat2(
+		check_named_file(
 			&self.directory.directory,
 			self.name.as_os_str(),
-			OFlags::PATH | OFlags::CLOEXEC | OFlags::NOFOLLOW,
-			Mode::empty(),
-			CHILD_RESOLVE,
-		)?;
-		let stat = fs::fstat(&file)?;
-		if FileIdentity::from_stat(&stat) != self.identity
-			|| mount_id(&file)? != self.directory.root.mount
-		{
-			return Err(StageError::IdentityChanged);
-		}
-		check_stage_file(&stat, expected_mode)?;
-		Ok(stat)
+			self.identity,
+			self.directory.root.mount,
+			expected_mode,
+		)
 	}
+}
+
+pub(in crate::linux) fn check_named_file(
+	directory: &File,
+	name: &OsStr,
+	identity: FileIdentity,
+	mount: u64,
+	expected_mode: Mode,
+) -> Result<Stat, StageError> {
+	let file = fs::openat2(
+		directory,
+		name,
+		OFlags::PATH | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+		Mode::empty(),
+		CHILD_RESOLVE,
+	)?;
+	let stat = fs::fstat(&file)?;
+	if FileIdentity::from_stat(&stat) != identity || mount_id(&file)? != mount {
+		return Err(StageError::IdentityChanged);
+	}
+	check_stage_file(&stat, expected_mode)?;
+	Ok(stat)
 }
 
 pub(in crate::linux) fn create_private_file(

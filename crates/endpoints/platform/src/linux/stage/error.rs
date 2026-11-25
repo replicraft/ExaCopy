@@ -26,6 +26,10 @@ pub enum StageError {
 	IdentityChanged,
 	/// The file length falls outside the supported signed offset range.
 	InvalidLength,
+	/// A checkpoint ordinal falls outside the supported page count.
+	InvalidCheckpointOrdinal,
+	/// A checkpoint page is empty or exceeds the supported page size.
+	InvalidCheckpointPageLength,
 	/// No successful full file barrier followed the most recent write or resize.
 	Unflushed,
 	/// The file barrier failed. The stage remains private and unusable.
@@ -76,6 +80,12 @@ impl fmt::Display for StageError {
 			Self::UnsafeFile => f.write_str("file failed the private staging policy"),
 			Self::IdentityChanged => f.write_str("staged object identity or observations changed"),
 			Self::InvalidLength => f.write_str("file length is outside the supported offset range"),
+			Self::InvalidCheckpointOrdinal => {
+				f.write_str("checkpoint page ordinal is out of bounds")
+			}
+			Self::InvalidCheckpointPageLength => {
+				f.write_str("checkpoint page length is out of bounds")
+			}
 			Self::Unflushed => f.write_str("stage writes require a successful full file barrier"),
 			Self::BarrierFailed(source) => write!(f, "stage file synchronization failed: {source}"),
 			Self::DirectoryBarrierFailed(source) => {

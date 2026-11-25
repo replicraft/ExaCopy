@@ -10,7 +10,10 @@ use rustix::io::Errno;
 use rustix::process::geteuid;
 
 use super::handle::{FileIdentity, file_identity, mount_id};
-use super::job::{FIRST_SEGMENT, JOURNAL, OWNER, PLAN, RECEIPT, RECEIPTS, STAGE};
+use super::job::{
+	CHECKPOINTS, FIRST_SEGMENT, JOURNAL, OWNER, PLAN, RECEIPT, RECEIPTS, STAGE, check_page_length,
+	checkpoint_page_name,
+};
 use super::source::{
 	ExtendedAttributes, ReadError, SourceObservation, check_logical_eof, reopen_regular_read_only,
 	reopen_regular_without_atime, xattrs,
@@ -105,6 +108,16 @@ impl RecoveryJob<'_> {
 	/// Fails for unsafe, missing, or detached records or enclosing directories.
 	pub fn open_first_segment(&self) -> Result<RecoveryFile, StageError> {
 		self.open_record(Some(OsStr::new(JOURNAL)), OsStr::new(FIRST_SEGMENT))
+	}
+
+	/// Opens an ordinal checkpoint page read-only under the caller's job lease.
+	/// # Errors
+	/// Rejects invalid ordinals, unsafe or missing records, and out-of-bounds lengths.
+	pub fn open_checkpoint_page(&self, ordinal: u32) -> Result<RecoveryFile, StageError> {
+		let name = checkpoint_page_name(ordinal)?;
+		let file = self.open_record(Some(OsStr::new(CHECKPOINTS)), OsStr::new(&name))?;
+		check_page_length(file.len())?;
+		Ok(file)
 	}
 
 	/// Opens the fixed receipt record read-only.

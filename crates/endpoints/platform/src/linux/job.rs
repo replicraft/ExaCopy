@@ -12,6 +12,11 @@ use super::stage::{
 	create_private_directory, create_private_file, sync_directory,
 };
 
+mod checkpoint;
+
+pub use checkpoint::CheckpointDirectory;
+pub(super) use checkpoint::{CHECKPOINTS, check_page_length, checkpoint_page_name};
+
 #[cfg(test)]
 mod tests;
 
