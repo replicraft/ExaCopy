@@ -18,6 +18,8 @@ The Linux baseline checks that source attributes can be inspected and no extende
 
 `stage_verified` returns a `VerifiedStage` with the pinned stage and its `ReadyToPublish` model state. It exposes phase, length, identity, and digest. The copy coordinator uses the same staging path and records `EntryPrepared` before writing any stage data. Its source consistency checks include a bounded EOF probe at the recorded length. A copy, metadata, or prepublication barrier failure leaves any allocated stage private.
 
+On managed APFS, `copy_verified_stage` streams the authorized source into an unwritten private stage of the same length with at most 1 MiB of caller-owned scratch. It independently reads and hashes the closed stage after the file barrier, then revalidates the source. A successful result owns the verified private stage and its digest. An error carries the allocated stage identity for reconciliation. Required metadata, the durable journal and publication are separate coordinator work.
+
 ## Versioned private job evidence
 
 The already authorized destination can create a new owner-private job directory. Its capabilities exclusively create `owner.cbor`, `journal/`, the first segment `journal/00000000000000000001.exajnl`, and `stage/`. `PreparedJob` writes the signed owner file, requests its file barrier, and synchronizes the segment entry and both enclosing namespace levels. It then writes a canonical `JobPrepared` frame binding the signed owner digest, canonical plan digest, capability UUID and held destination identity. The writer only returns evidence after `sync_all` succeeds. Any failure preserves the entries already created, and an existing job name cannot be adopted by bootstrap.

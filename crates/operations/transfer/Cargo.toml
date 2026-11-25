@@ -19,5 +19,14 @@ minicbor.workspace = true
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 rustix.workspace = true
 
+[target.'cfg(target_os = "macos")'.dependencies]
+exacopy-content.workspace = true
+exacopy-model.workspace = true
+exacopy-platform.workspace = true
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+blake3.workspace = true
+exacopy-endpoint.workspace = true
+
 [lints]
 workspace = true

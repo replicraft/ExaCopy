@@ -17,7 +17,8 @@ use super::{StageDirectory, StageError, StageIdentity};
 const PRIVATE_OPEN: OFlags = OFlags::CLOEXEC
 	.union(OFlags::NONBLOCK)
 	.union(OFlags::NOFOLLOW);
-pub(super) const MAX_STAGE_IO_BYTES: usize = 1024 * 1024;
+/// Maximum byte count accepted by one private stage read or write.
+pub const MAX_STAGE_IO_BYTES: usize = 1024 * 1024;
 
 /// Sole synchronous writer for a newly created private file and declared logical extent.
 ///
@@ -93,6 +94,22 @@ impl<'stage> WriteStage<'stage> {
 	#[must_use]
 	pub fn binding(&self) -> CopyBinding {
 		self.identity().binding()
+	}
+
+	/// Returns the declared extent only while this writer has never transferred data.
+	///
+	/// # Errors
+	/// Refuses retired writers, writers from another process, and writers that have
+	/// already completed a nonempty write.
+	pub fn unwritten_length(&self) -> Result<u64, StageError> {
+		self.location.check_process()?;
+		if self.file.is_none() {
+			return Err(StageError::WriterRetired);
+		}
+		if self.position != 0 {
+			return Err(StageError::AlreadyWritten);
+		}
+		Ok(self.location.length)
 	}
 
 	/// Completes the next positioned chunk using at most 1 MiB from the supplied buffer.

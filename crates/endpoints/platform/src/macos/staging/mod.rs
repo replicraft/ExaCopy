@@ -18,6 +18,6 @@ mod tests;
 
 pub use directory::{ManagedStageGrant, ManagedStageRoot, StageDirectory};
 pub use error::StageError;
-pub use file::{ClosedStage, WriteStage};
+pub use file::{ClosedStage, MAX_STAGE_IO_BYTES, WriteStage};
 pub use identity::{StageBindingContext, StageIdentity};
 pub use reader::StageReader;

@@ -39,6 +39,8 @@ pub enum StageError {
 	StageChanged,
 	/// The synchronous writer was previously retired after an uncertain outcome.
 	WriterRetired,
+	/// A fresh stream was requested after the writer had completed a write.
+	AlreadyWritten,
 	/// Sequential writes have not covered the complete declared extent.
 	Incomplete,
 	/// A positioned write failed, possibly after a prefix was transferred.
@@ -81,6 +83,9 @@ impl fmt::Display for StageError {
 			Self::InvalidRange => formatter.write_str("positioned range exceeds the stage bounds"),
 			Self::StageChanged => formatter.write_str("private stage identity or metadata changed"),
 			Self::WriterRetired => formatter.write_str("stage writer was retired"),
+			Self::AlreadyWritten => {
+				formatter.write_str("stage writer has already transferred data")
+			}
 			Self::Incomplete => formatter.write_str("stage extent has incomplete writes"),
 			Self::Write(error) => write!(formatter, "stage write failed ({error})"),
 			Self::Read(error) => write!(formatter, "stage read-back failed ({error})"),
