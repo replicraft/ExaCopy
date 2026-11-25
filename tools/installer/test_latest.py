@@ -364,15 +364,24 @@ def exercise_release(base, release):
     assert [f"{method} {url}" for method, url, _ in actual] == list(allowed)
     assert all(not Path(scratch).exists() for _, _, scratch in actual)
     executable = root / "versions" / release.version / "exacopy"
+    launcher = home / ".local" / "bin" / "exacopy"
+    assert str(launcher) in run.stdout and launcher.readlink() == executable
     assert str(executable) in run.stdout and executable.stat().st_mode & 0o777 == 0o700
     with tarfile.open(release.archive, "r:gz") as archive, executable.open("rb") as installed:
         with archive.extractfile("exacopy") as packed:
             assert sha256_stream(installed) == sha256_stream(packed)
+    launched = subprocess.run([launcher, "--version"], env=environment, capture_output=True, text=True, timeout=30)
+    assert launched.returncode == 0 and launched.stdout.splitlines()[:1] == [f"exacopy {release.version}"], launched
+    incumbent = launcher.parent / "unrelated command"
+    preserved = b"launcher directory incumbent\x00\xff"
+    incumbent.write_bytes(preserved)
     run = subprocess.run([str(source / "uninstall.sh"), *credentials, "--quiesced"], env=environment,
                          capture_output=True, text=True, timeout=120)
     assert run.returncode == 0 and not executable.exists(), run
+    assert not launcher.exists() and not launcher.is_symlink()
+    assert incumbent.read_bytes() == preserved
     assert (root / ".high-water").is_file()
-    print(f"pass release candidate install/reverify/uninstall for {ARCHIVE}")
+    print(f"pass release candidate install, stable launcher execution and owned withdrawal for {ARCHIVE}")
 
 
 def sha256_stream(stream):

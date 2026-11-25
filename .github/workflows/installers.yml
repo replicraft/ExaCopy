@@ -74,6 +74,17 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           bash .github/ci/capture.sh installer-posix-latest python3 -u -B tools/installer/test_latest.py
+      - name: Run standalone POSIX launcher lifecycle fixtures
+        id: posix_launcher
+        if: runner.os != 'Windows'
+        run: |
+          bash .github/ci/capture.sh installer-posix-launcher python3 -u -B tools/installer/test_posix_launcher.py
+      - name: Run standalone PowerShell launcher construction fixtures
+        id: windows_launcher
+        if: runner.os == 'Windows'
+        run: |
+          bash .github/ci/capture.sh installer-windows-launcher pwsh -NoLogo -NoProfile -NonInteractive \
+            -File tools/install/windows/launcher-fixture.ps1
       - name: Check release packaging and publication controls
         run: |
           release_python=python3
@@ -89,7 +100,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Retain failed fixture input
-        if: ${{ !cancelled() && (steps.posix.outcome == 'failure' || steps.windows.outcome == 'failure' || steps.posix_latest.outcome == 'failure') }}
+        if: >-
+          ${{ !cancelled() && (steps.posix.outcome == 'failure' || steps.windows.outcome == 'failure' ||
+          steps.posix_latest.outcome == 'failure' || steps.posix_launcher.outcome == 'failure' ||
+          steps.windows_launcher.outcome == 'failure') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: offline-installer-failed-input-${{ matrix.os }}-${{ github.run_attempt }}

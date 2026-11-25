@@ -197,7 +197,7 @@ jobs:
             --checksum-index "$RUNNER_TEMP/exacopy-fixtures/SHA256SUMS.txt" \
             --publisher-cert "$RUNNER_TEMP/exacopy-fixture-trust/fixture-publisher.der" \
             --publisher-sha256 "$pin" --version "${GITHUB_REF_NAME#v}"
-      - name: Exercise the Windows verification path with the exact fixture archive and index
+      - name: Exercise Windows package verification and launcher lifecycle
         if: runner.os == 'Windows'
         run: |
           pin=$(cat "$RUNNER_TEMP/exacopy-fixture-trust/fixture-publisher.sha256")
