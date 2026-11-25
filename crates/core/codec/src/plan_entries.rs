@@ -5,12 +5,10 @@ use core::fmt;
 use uuid::Uuid;
 
 use crate::document::{DocumentError, DocumentPageKind, DocumentRef, document_page_id};
+use crate::plan_identity::PlanSourceIdentity;
 use crate::portable::{MAX_LOGICAL_LENGTH, valid_unix_basename};
 
 mod wire;
-
-/// Maximum bytes in each opaque identity atom of the supported plan-page profile.
-pub const MAX_PLAN_IDENTITY_BYTES: usize = 256;
 
 /// A root-relative plan path consisting of one raw Unix component.
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -19,35 +17,6 @@ pub struct PlanPath<'page> {
 	pub root_id: Uuid,
 	/// Exact single component with no display annotation.
 	pub basename: &'page [u8],
-}
-
-/// Namespace of an opaque native identity observation.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-#[repr(u8)]
-pub enum PlanIdentityPlatform {
-	/// Linux native identity.
-	Linux = 0,
-	/// Windows native identity.
-	Windows = 1,
-	/// macOS native identity.
-	Macos = 2,
-	/// Identity in a remote observation namespace.
-	Remote = 3,
-	/// Identity in a repository observation namespace.
-	Repository = 4,
-}
-
-/// Opaque source identity in a selected observation namespace.
-#[derive(Clone, Copy, Eq, PartialEq)]
-pub struct PlanSourceIdentity<'page> {
-	/// Namespace of this past observation.
-	pub platform: PlanIdentityPlatform,
-	/// Opaque stable-volume bytes.
-	pub volume_id: &'page [u8],
-	/// Opaque object bytes.
-	pub object_id: &'page [u8],
-	/// Optional reuse-detection observation.
-	pub generation: Option<&'page [u8]>,
 }
 
 /// Fields of one regular-file, create-new plan entry.
@@ -99,19 +68,11 @@ impl<'page> PlanEntriesPage<'page> {
 		if entry.source == entry.destination || entry.stream_length > MAX_LOGICAL_LENGTH {
 			return Err(DocumentError::InvalidEntry);
 		}
-		if let Some(identity) = entry.source_identity {
-			for atom in [
-				Some(identity.volume_id),
-				Some(identity.object_id),
-				identity.generation,
-			]
-			.into_iter()
-			.flatten()
-			{
-				if atom.is_empty() || atom.len() > MAX_PLAN_IDENTITY_BYTES {
-					return Err(DocumentError::InvalidEntry);
-				}
-			}
+		if entry
+			.source_identity
+			.is_some_and(|identity| !identity.is_bounded())
+		{
+			return Err(DocumentError::InvalidEntry);
 		}
 		Ok(Self(entry))
 	}

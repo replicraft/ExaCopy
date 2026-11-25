@@ -2,9 +2,9 @@
 
 use core::fmt;
 
-use minicbor::Decoder;
+use minicbor::{Decoder, Encoder};
 
-use crate::cbor::canonical_bytes;
+use crate::cbor::{BodyBytes, EncodeError, canonical_bytes};
 
 const PAGE_DOMAIN: &[u8] = b"ExaCopy/document-page/v1\0";
 // The map prefix, four keys, digest, kind, maximum encoded length and u64 count.
@@ -107,19 +107,21 @@ impl DocumentRef {
 	/// Encodes the registered numeric reference map in deterministic CBOR.
 	#[must_use]
 	pub fn canonical_cbor(self) -> Vec<u8> {
-		canonical_bytes(|encoder| {
-			encoder
-				.map(4)?
-				.u8(0)?
-				.bytes(&self.page_id)?
-				.u8(1)?
-				.u16(self.kind as u16)?
-				.u8(2)?
-				.u32(self.encoded_bytes)?
-				.u8(3)?
-				.u64(self.item_count)?;
-			Ok(())
-		})
+		canonical_bytes(|encoder| self.write_to(encoder))
+	}
+
+	pub(crate) fn write_to(self, encoder: &mut Encoder<BodyBytes>) -> Result<(), EncodeError> {
+		encoder
+			.map(4)?
+			.u8(0)?
+			.bytes(&self.page_id)?
+			.u8(1)?
+			.u16(self.kind as u16)?
+			.u8(2)?
+			.u32(self.encoded_bytes)?
+			.u8(3)?
+			.u64(self.item_count)?;
+		Ok(())
 	}
 
 	/// Decodes a single complete canonical reference.
@@ -131,20 +133,24 @@ impl DocumentRef {
 			return Err(DocumentError::Size);
 		}
 		let mut decoder = Decoder::new(input);
-		expect_map(&mut decoder, 4)?;
-		expect_key(&mut decoder, 0)?;
-		let page_id = fixed_bytes(&mut decoder)?;
-		expect_key(&mut decoder, 1)?;
-		let kind = DocumentPageKind::read(decoder.u16()?)?;
-		expect_key(&mut decoder, 2)?;
-		let encoded_bytes = decoder.u64()?;
-		expect_key(&mut decoder, 3)?;
-		let item_count = decoder.u64()?;
-		let reference = Self::new(page_id, kind, encoded_bytes, item_count)?;
+		let reference = Self::read_from(&mut decoder)?;
 		if reference.canonical_cbor() != input {
 			return Err(DocumentError::NonCanonical);
 		}
 		Ok(reference)
+	}
+
+	pub(crate) fn read_from(decoder: &mut Decoder<'_>) -> Result<Self, DocumentError> {
+		expect_map(decoder, 4)?;
+		expect_key(decoder, 0)?;
+		let page_id = fixed_bytes(decoder)?;
+		expect_key(decoder, 1)?;
+		let kind = DocumentPageKind::read(decoder.u16()?)?;
+		expect_key(decoder, 2)?;
+		let encoded_bytes = decoder.u64()?;
+		expect_key(decoder, 3)?;
+		let item_count = decoder.u64()?;
+		Self::new(page_id, kind, encoded_bytes, item_count)
 	}
 
 	pub(crate) fn verify(self, kind: DocumentPageKind, page: &[u8]) -> Result<(), DocumentError> {

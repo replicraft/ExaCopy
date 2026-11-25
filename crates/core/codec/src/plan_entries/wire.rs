@@ -6,9 +6,10 @@ use uuid::Uuid;
 
 use crate::cbor::{BodyBytes, EncodeError, canonical_bytes};
 use crate::document::{DocumentError, DocumentPageKind, expect_key, expect_map, fixed_bytes};
+use crate::plan_identity::{read_identity, write_identity};
 use crate::portable::{BLAKE3_CODE, REGULAR_CODE, UNIX_BYTES_CODE};
 
-use super::{PlanEntry, PlanIdentityPlatform, PlanPath, PlanSourceIdentity};
+use super::{PlanEntry, PlanPath};
 
 const VERSION: [u8; 2] = [1, 0];
 const LEAF_LEVEL: u8 = 0;
@@ -91,33 +92,6 @@ fn write_path(encoder: &mut Encoder<BodyBytes>, path: PlanPath<'_>) -> Result<()
 	Ok(())
 }
 
-fn write_identity(
-	encoder: &mut Encoder<BodyBytes>,
-	identity: Option<PlanSourceIdentity<'_>>,
-) -> Result<(), EncodeError> {
-	match identity {
-		Some(identity) => {
-			encoder
-				.map(4)?
-				.u8(0)?
-				.u8(identity.platform as u8)?
-				.u8(1)?
-				.bytes(identity.volume_id)?
-				.u8(2)?
-				.bytes(identity.object_id)?
-				.u8(3)?;
-			match identity.generation {
-				Some(generation) => encoder.bytes(generation)?,
-				None => encoder.null()?,
-			};
-		}
-		None => {
-			encoder.null()?;
-		}
-	}
-	Ok(())
-}
-
 pub(super) fn decode(input: &[u8]) -> Result<PlanEntry<'_>, DocumentError> {
 	let mut decoder = Decoder::new(input);
 	expect_map(&mut decoder, 6)?;
@@ -194,42 +168,6 @@ fn read_path<'page>(decoder: &mut Decoder<'page>) -> Result<PlanPath<'page>, Doc
 	expect_key(decoder, 1)?;
 	let basename = decoder.bytes()?;
 	Ok(PlanPath { root_id, basename })
-}
-
-fn read_identity<'page>(
-	decoder: &mut Decoder<'page>,
-) -> Result<Option<PlanSourceIdentity<'page>>, DocumentError> {
-	if decoder.datatype()? == Type::Null {
-		decoder.null()?;
-		return Ok(None);
-	}
-	expect_map(decoder, 4)?;
-	expect_key(decoder, 0)?;
-	let platform = match decoder.u8()? {
-		0 => PlanIdentityPlatform::Linux,
-		1 => PlanIdentityPlatform::Windows,
-		2 => PlanIdentityPlatform::Macos,
-		3 => PlanIdentityPlatform::Remote,
-		4 => PlanIdentityPlatform::Repository,
-		_ => return Err(DocumentError::Unsupported),
-	};
-	expect_key(decoder, 1)?;
-	let volume_id = decoder.bytes()?;
-	expect_key(decoder, 2)?;
-	let object_id = decoder.bytes()?;
-	expect_key(decoder, 3)?;
-	let generation = if decoder.datatype()? == Type::Null {
-		decoder.null()?;
-		None
-	} else {
-		Some(decoder.bytes()?)
-	};
-	Ok(Some(PlanSourceIdentity {
-		platform,
-		volume_id,
-		object_id,
-		generation,
-	}))
 }
 
 fn read_stream(decoder: &mut Decoder<'_>) -> Result<(u64, [u8; 32]), DocumentError> {
