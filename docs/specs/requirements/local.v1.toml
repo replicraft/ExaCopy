@@ -972,3 +972,32 @@ owner = "exacopy-platform"
 level = "documentation"
 state = "reported"
 path = "docs/architecture/windows-private-staging.md"
+
+[[coverage]]
+id = "public-plan-body"
+status = "implemented"
+requirement_ids = ["R-155", "R-182"]
+acceptance_ids = ["A-155", "A-182"]
+invariant_ids = ["INV-013", "INV-018", "INV-019"]
+scope = "Complete registered canonical Plan v1 body with typed policy/evidence fields, bounded opaque extensions and caller-selected expected digest admission."
+limits = "Scoped codec only: JSON envelope, approval signatures, true descendant reconciliation and filesystem authority remain outside this result. Construction's transient encoding can exceed the 1MiB admitted-body limit."
+
+[[coverage.evidence]]
+owner = "exacopy-codec"
+level = "obligation"
+state = "defined"
+path = "crates/core/codec/verification/obligations.toml"
+target = "P-038"
+
+[[coverage.evidence]]
+owner = "exacopy-codec"
+level = "test"
+state = "defined"
+path = "crates/core/codec/tests/plan_body.rs"
+target = "canonical_policy_and_resource_intent_are_bound_to_the_expected_digest"
+
+[[coverage.evidence]]
+owner = "exacopy-codec"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/public-plan-body.md"

@@ -16,6 +16,7 @@ enum Marker {
 	Report,
 	Manifest,
 	DocumentPage,
+	PlanBody,
 	Scalar {
 		version: &'static str,
 		magic: Option<&'static str>,
@@ -60,6 +61,11 @@ pub(super) const BINDINGS: &[Binding] = &[
 		"public-plan-entries-page",
 		"crates/core/codec/src/plan_entries/wire.rs",
 		Marker::DocumentPage,
+	),
+	Binding::new(
+		"public-plan-body",
+		"crates/core/codec/src/plan/wire.rs",
+		Marker::PlanBody,
 	),
 	Binding::new(
 		"local-journal-frame",
@@ -134,6 +140,7 @@ impl Binding {
 			Marker::Report => (Kind::CliOutput, Status::Implemented),
 			Marker::Manifest => (Kind::Manifest, Status::Implemented),
 			Marker::DocumentPage => (Kind::DocumentPage, Status::Implemented),
+			Marker::PlanBody => (Kind::Plan, Status::Implemented),
 			_ => (Kind::TransferJournal, Status::ImplementedPrivate),
 		};
 		record.check_classification(kind, status, Some(Path::new(self.owner)))?;
@@ -187,7 +194,7 @@ impl Marker {
 				None,
 				None,
 			),
-			Self::DocumentPage => {
+			Self::DocumentPage | Self::PlanBody => {
 				let Expr::Array(values) = constant(file, "VERSION")? else {
 					return Err("expected a VERSION array".into());
 				};

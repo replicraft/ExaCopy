@@ -27,6 +27,7 @@ enum Kind {
 	Repository,
 	Manifest,
 	DocumentPage,
+	Plan,
 	Ipc,
 	Mcp,
 	RemoteProtocol,

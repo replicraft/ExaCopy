@@ -26,3 +26,16 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/plan_entries.rs", test = "document_reference_rejects_other_kind_and_wrong_digest", oracle = "A portable golden PlanEntries leaf verifies only in its own kind and digest domain. Wrong kind, digest, count, length, and excessive input fail closed." }
+
+[[obligation]]
+id = "P-038"
+requirement_ids = ["R-155"]
+source = "src/plan.rs"
+symbols = ["PlanBody::from_canonical_cbor", "digest_bytes"]
+assumptions = [
+    "The caller supplies the expected digest bound by its parent or reviewed record.",
+    "This Rust gate covers the canonical Plan body and digest without interpreting an approval or authorizing a filesystem effect.",
+    "The digest-binding result assumes BLAKE3 collision resistance.",
+]
+gates = ["rust"]
+rust = { file = "tests/plan_body.rs", test = "canonical_policy_and_resource_intent_are_bound_to_the_expected_digest", oracle = "The independent protected-plan vector matches its digest. A modified declared policy, budget or page order fails under the original expected digest." }

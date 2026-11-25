@@ -46,6 +46,29 @@ fn root() -> &'static Path {
 }
 
 #[test]
+fn canonical_plan_body_has_its_own_version_and_kind_binding() {
+	let fixture = Fixture::new();
+	let owner = "crates/core/codec/src/plan/wire.rs";
+	let text = format!(
+		r#"id = "public-plan-body"
+kind = "plan"
+status = "implemented"
+version = "1.0"
+owner = "{owner}"
+"#
+	);
+	let record: Contract = toml::from_str(&text).unwrap();
+	fixture.write(owner, "const VERSION: [u8; 2] = [1, 0];");
+	assert_eq!(check_record(fixture.root(), &record), Ok(()));
+	fixture.write(owner, "const VERSION: [u8; 2] = [2, 0];");
+	assert!(check_record(fixture.root(), &record).is_err());
+	fixture.write(owner, "const VERSION: [u8; 2] = [1, 0];");
+	let wrong_kind: Contract =
+		toml::from_str(&text.replace("kind = \"plan\"", "kind = \"document_page\"")).unwrap();
+	assert!(check_record(fixture.root(), &wrong_kind).is_err());
+}
+
+#[test]
 fn public_page_version_is_bound_to_its_canonical_wire_marker() {
 	let fixture = Fixture::new();
 	let owner = "crates/core/codec/src/plan_entries/wire.rs";

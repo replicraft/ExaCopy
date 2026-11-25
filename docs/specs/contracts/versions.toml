@@ -46,6 +46,14 @@ owner = "crates/core/codec/src/plan_entries/wire.rs"
 notes = "One regular create-new leaf and its DocumentRef. No Plan envelope, page-tree traversal or apply authority."
 
 [[contract]]
+id = "public-plan-body"
+kind = "plan"
+status = "implemented"
+version = "1.0"
+owner = "crates/core/codec/src/plan/wire.rs"
+notes = "Complete registered canonical body and expected-digest admission. JSON envelope, approval verification and apply remain separate."
+
+[[contract]]
 id = "local-owner-seed"
 kind = "local_profile"
 status = "development_unversioned"
