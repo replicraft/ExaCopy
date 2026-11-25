@@ -5,6 +5,7 @@ members = [
     "crates/endpoints/platform",
     "crates/operations/transfer",
     "crates/storage/content",
+    "crates/storage/journal",
     "crates/testing/test-support",
     "xtask",
 ]
@@ -25,6 +26,7 @@ exacopy-platform = { path = "crates/endpoints/platform", version = "=0.1.0" }
 
 # Integrity and framing
 blake3 = { version = "=1.8.7", default-features = false }
+crc32c = "=0.6.9"
 
 # Domain identifiers
 uuid = { version = "1.29", default-features = false }
