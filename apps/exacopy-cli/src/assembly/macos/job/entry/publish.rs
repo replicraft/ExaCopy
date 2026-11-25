@@ -35,7 +35,7 @@ impl<'entry> PreparedDarwinEntry<'entry> {
 					source: self.preparation.preparation().source.identity(),
 					plan: &self.plan,
 				},
-				self.journal,
+				&mut self.journal,
 				&NativeReceiptStore(self.job),
 				scratch,
 			)

@@ -7,6 +7,7 @@ use exacopy_endpoint::UnixComponent;
 use rustix::fs::{self, FlockOperation, OFlags};
 use rustix::io::Errno;
 
+use super::super::journal_segment::LinuxJournalSegment;
 use super::super::source::reopen_regular_for_append;
 use super::super::stage::{create_private_directory, create_private_file, sync_directory};
 use super::lease::{lock_job, reopen_directory};
@@ -47,6 +48,7 @@ impl DestinationRoot {
 			job,
 			lock,
 			stage_access: Mutex::new(()),
+			journal_access: Mutex::new(()),
 		})
 	}
 }
@@ -62,6 +64,7 @@ pub struct RecoveryWriteLease<'root> {
 	job: RecoveryJob<'root>,
 	lock: File,
 	stage_access: Mutex<()>,
+	journal_access: Mutex<()>,
 }
 
 impl RecoveryWriteLease<'_> {
@@ -79,17 +82,32 @@ impl RecoveryWriteLease<'_> {
 
 	/// Opens the exact inspected first segment for appending at its captured end.
 	///
-	/// Only use the returned descriptor to rescan and append through the journal
-	/// writer while the lease is held. The caller verifies a complete, supported
+	/// The returned segment keeps this lease borrowed and prevents a second
+	/// journal writer through it. The caller verifies a complete, supported
 	/// chain and handles uncertain writes. Opening neither creates nor truncates
 	/// the segment.
 	///
+	/// # Examples
+	/// A segment cannot escape the lease that opened it.
+	/// ```compile_fail,E0515
+	/// use exacopy_platform::linux::{LinuxJournalSegment, RecoveryFile, RecoveryWriteLease, StageError};
+	/// fn detach<'root>(lease: RecoveryWriteLease<'root>, expected: &RecoveryFile)
+	///     -> Result<LinuxJournalSegment<'root>, StageError> {
+	///     lease.open_first_segment_for_append(expected)
+	/// }
+	/// ```
+	///
 	/// # Errors
-	/// Rejects missing, unsafe, rebound, or changed segments and reopen failures.
+	/// Rejects missing, unsafe, rebound, or changed segments, an already open
+	/// writer in this lease, and reopen failures.
 	pub fn open_first_segment_for_append(
 		&self,
 		expected: &RecoveryFile,
-	) -> Result<File, StageError> {
+	) -> Result<LinuxJournalSegment<'_>, StageError> {
+		let writer = self
+			.journal_access
+			.try_lock()
+			.map_err(|_| StageError::JobBusy)?;
 		let job = &self.job;
 		let mount = job.root.mount;
 		let parent = &job.directory.file;
@@ -131,7 +149,7 @@ impl RecoveryWriteLease<'_> {
 		)?;
 		journal.recheck(parent, journal_name, mount)?;
 		job.recheck()?;
-		Ok(file)
+		Ok(LinuxJournalSegment::recovered(file, writer))
 	}
 
 	/// Requests file and directory barriers for an observed, already-published name.

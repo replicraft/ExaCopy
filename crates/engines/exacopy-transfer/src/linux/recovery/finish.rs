@@ -1,6 +1,7 @@
 use exacopy_endpoint::UnixComponent;
 
 use super::super::CopyReceipt;
+use super::super::job::check_linux_barrier;
 use super::{InspectionError, RecoveryInspection, RecoveryProfile, RecoveryStep};
 use super::{LeaseReadError, RecoveryLease};
 
@@ -24,6 +25,7 @@ pub fn finish_with_lease<L: RecoveryLease>(
 	profile: RecoveryProfile<'_>,
 	scratch: &mut [u8],
 ) -> Result<RecoveryInspection, FinishFailure<LeaseReadError<L>, L::EffectError>> {
+	check_linux_barrier::<L::Segment<'_>>().map_err(FinishFailure::Resume)?;
 	protocol::finish(&held::HeldRecovery(lease), name, profile, scratch)
 		.map_err(FinishFailure::from)
 }

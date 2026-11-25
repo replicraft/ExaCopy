@@ -1,7 +1,7 @@
-use std::fs::File;
-
 use exacopy_journal::{DarwinFileIdentity, OwnerError};
-use exacopy_platform::macos::staging::jobs::{JobDirectory, JobError, JournalDirectory};
+use exacopy_platform::macos::staging::jobs::{
+	DarwinJournalSegment, JobDirectory, JobError, JournalDirectory,
+};
 
 use exacopy_transfer::macos::job::bootstrap::{
 	BootstrapError, PrivateJob, PrivateJournalDirectory,
@@ -53,10 +53,12 @@ impl PrivateJob for NativeJob<'_> {
 	}
 }
 
-impl PrivateJournalDirectory for NativeJournalDirectory<'_> {
+impl<'job> PrivateJournalDirectory for NativeJournalDirectory<'job> {
 	type Error = JobError;
 
-	fn create_first_segment(&self) -> Result<File, JobError> {
+	type Segment = DarwinJournalSegment<'job>;
+
+	fn create_first_segment(self) -> Result<Self::Segment, JobError> {
 		self.0.create_first_segment()
 	}
 }

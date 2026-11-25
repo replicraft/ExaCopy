@@ -1,12 +1,12 @@
-use std::fs::{self, File};
+use std::fs;
 use std::io::{Seek as _, SeekFrom, Write as _};
 use std::os::unix::fs::symlink;
 
-use exacopy_endpoint::UnixComponent;
+use exacopy_endpoint::{JournalSegment, UnixComponent};
 use rustix::fs::{OFlags, fcntl_getfl};
 
 use super::{FIRST_SEGMENT, JOURNAL, RECEIPT, RECEIPTS};
-use crate::linux::{DestinationRoot, StageError};
+use crate::linux::{DestinationRoot, LinuxJournalSegment, StageError};
 use crate::scratch::Scratch;
 
 const JOB: &str = "recovery-writer-job";
@@ -67,15 +67,21 @@ fn only_the_exact_private_journal_inode_reopens_for_append() {
 		.try_recovery_write_lease(name(JOB), inspection.identity())
 		.unwrap();
 	let segment = writer.job().open_first_segment().unwrap();
+	let opened = writer.open_first_segment_for_append(&segment).unwrap();
+	assert!(matches!(
+		writer.open_first_segment_for_append(&segment),
+		Err(StageError::JobBusy)
+	));
+	drop(opened);
 	let mut append = writer.open_first_segment_for_append(&segment).unwrap();
 	assert_eq!(append.stream_position().unwrap(), segment.len());
-	let flags = fcntl_getfl(&append).unwrap();
+	let flags = append.flags().unwrap();
 	assert_eq!(flags & OFlags::ACCMODE, OFlags::RDWR);
 	assert!(flags.contains(OFlags::APPEND | OFlags::NOATIME));
 	// Moving the cursor for rescans never converts the descriptor to overwrite mode.
 	append.seek(SeekFrom::Start(0)).unwrap();
 	append.write_all(b" and suffix").unwrap();
-	append.sync_all().unwrap();
+	append.sync().unwrap();
 	drop(append);
 
 	let segment_path = scratch.path(JOB).join(JOURNAL).join(FIRST_SEGMENT);
@@ -195,8 +201,26 @@ fn name(component: &str) -> UnixComponent<'_> {
 	UnixComponent::new(component.as_bytes()).expect("valid fixture component")
 }
 
-fn bootstrap_segment(root: &DestinationRoot) -> File {
+fn bootstrap_segment(root: &DestinationRoot) -> LinuxJournalSegment<'static> {
 	let job = root.create_job_directory(name(JOB)).unwrap();
 	let journal = job.create_journal_directory().unwrap();
 	journal.create_first_segment().unwrap()
+}
+
+#[test]
+fn fresh_segment_keeps_the_original_open_description_locked() {
+	let (_scratch, root) = fixture();
+	// The bootstrap job and its journal directory have already been dropped.
+	let writer = bootstrap_segment(&root);
+	let job = root.open_recovery_job(name(JOB)).unwrap();
+	assert!(matches!(
+		root.try_recovery_write_lease(name(JOB), job.identity()),
+		Err(StageError::JobBusy)
+	));
+	assert!(matches!(job.try_read_lease(), Err(StageError::JobBusy)));
+	drop(writer);
+	assert!(
+		root.try_recovery_write_lease(name(JOB), job.identity())
+			.is_ok()
+	);
 }

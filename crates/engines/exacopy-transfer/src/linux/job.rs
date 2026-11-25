@@ -1,11 +1,10 @@
 use std::error::Error;
 use std::fmt;
-use std::fs::File;
 
 use ed25519_dalek::SigningKey;
-use exacopy_endpoint::UnixComponent;
 use exacopy_endpoint::linux_copy::CopyWorkspace;
 use exacopy_endpoint::linux_job::{JobBootstrapRoot, JobWorkspace};
+use exacopy_endpoint::{JournalFileBarrier, JournalSegment, UnixComponent};
 use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{
 	DurableJournal, DurableJournalError, JobPrepared, JournalContext, OwnerDigest, OwnerError,
@@ -49,7 +48,7 @@ pub struct PreparedJob<D> {
 	initial_frame: SyncedFrame,
 }
 
-impl<D: JobWorkspace<Segment = File>> PreparedJob<D> {
+impl<D: JobWorkspace> PreparedJob<D> {
 	/// Creates an exclusive private job here and persists its ownership and preparation frame.
 	///
 	/// A full file barrier precedes the directory barriers for the owner record. The first
@@ -66,8 +65,11 @@ impl<D: JobWorkspace<Segment = File>> PreparedJob<D> {
 	) -> Result<Self, BootstrapError<D::Error>>
 	where
 		R: JobBootstrapRoot<'root, Job = D, Error = D::Error>,
+		D::Segment: JournalSegment,
 	{
-		let prepared = protocol::prepare::<_, DurableJournal>(destination, request, signer, None)?;
+		check_linux_barrier::<D::Segment>().map_err(BootstrapError::Journal)?;
+		let prepared =
+			protocol::prepare::<_, WorkspaceJournal<D>>(destination, request, signer, None)?;
 		Ok(Self {
 			directory: prepared.directory,
 			owner: prepared.owner,
@@ -101,16 +103,35 @@ impl<D: JobWorkspace<Segment = File>> PreparedJob<D> {
 	}
 }
 
+type WorkspaceJournal<Job> = DurableJournal<<Job as JobWorkspace>::Segment>;
+type PreparedCopyResult<Job, E> = Result<(Job, WorkspaceJournal<Job>), BootstrapError<E>>;
+type PreparedPublicResult<Job, E> =
+	Result<(Job, WorkspaceJournal<Job>, OwnerDigest), BootstrapError<E>>;
+
+pub(super) fn check_linux_barrier<S: JournalSegment>() -> Result<(), DurableJournalError> {
+	let expected = JournalFileBarrier::SyncAll;
+	if S::BARRIER != expected {
+		return Err(DurableJournalError::UnexpectedBarrier {
+			expected,
+			actual: S::BARRIER,
+		});
+	}
+	Ok(())
+}
+
 pub(super) fn prepare_durable_copy<'root, Root>(
 	destination: &'root Root,
 	plan: &LocalCopyPlan<'_>,
 	profile: super::CopyProfile<'_>,
-) -> Result<(Root::Job, DurableJournal), BootstrapError<Root::Error>>
+) -> PreparedCopyResult<Root::Job, Root::Error>
 where
-	Root: JobBootstrapRoot<'root, Job: JobWorkspace<Segment = File>>,
+	Root: JobBootstrapRoot<'root>,
+	<Root::Job as JobWorkspace>::Segment: JournalSegment,
 {
+	check_linux_barrier::<<Root::Job as JobWorkspace>::Segment>()
+		.map_err(BootstrapError::Journal)?;
 	let request = copy_bootstrap_request(plan, profile);
-	let prepared = protocol::prepare::<_, DurableJournal>(
+	let prepared = protocol::prepare::<_, WorkspaceJournal<Root::Job>>(
 		destination,
 		request,
 		profile.signer,
@@ -124,11 +145,14 @@ pub(super) fn prepare_public_stage<'root, Root>(
 	plan: &LocalCopyPlan<'_>,
 	profile: super::CopyProfile<'_>,
 	binding: PublicApplyBinding,
-) -> Result<(Root::Job, DurableJournal, OwnerDigest), BootstrapError<Root::Error>>
+) -> PreparedPublicResult<Root::Job, Root::Error>
 where
-	Root: JobBootstrapRoot<'root, Job: JobWorkspace<Segment = File>>,
+	Root: JobBootstrapRoot<'root>,
+	<Root::Job as JobWorkspace>::Segment: JournalSegment,
 {
-	let prepared = protocol::prepare_public::<_, DurableJournal>(
+	check_linux_barrier::<<Root::Job as JobWorkspace>::Segment>()
+		.map_err(BootstrapError::Journal)?;
+	let prepared = protocol::prepare_public::<_, WorkspaceJournal<Root::Job>>(
 		destination,
 		copy_bootstrap_request(plan, profile),
 		profile.signer,
@@ -244,13 +268,13 @@ impl<S: Error + 'static> Error for BootstrapError<S> {
 	}
 }
 
-impl InitialJournal for DurableJournal {
-	type Segment = File;
+impl<S: JournalSegment> InitialJournal for DurableJournal<S> {
+	type Segment = S;
 	type Error = DurableJournalError;
 	type Frame = SyncedFrame;
 
-	fn from_new_segment(segment: File) -> Result<Self, Self::Error> {
-		Self::from_new_file(segment)
+	fn from_new_segment(segment: S) -> Result<Self, Self::Error> {
+		DurableJournal::from_new_segment(segment)
 	}
 
 	fn append_job_prepared(

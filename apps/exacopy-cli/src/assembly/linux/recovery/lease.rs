@@ -8,9 +8,9 @@ use exacopy_endpoint::linux_publication::{
 use exacopy_journal::{LinuxFileIdentity, ObservedTimestamp};
 use exacopy_model::{CopyBinding, PublishNoClobber};
 use exacopy_platform::linux::{
-	ClosedStage, DestinationRoot, FileIdentity, PublishError, ReadError, RecoveryFile, RecoveryJob,
-	RecoveryReceiptDirectory, RecoveryStageDirectory, RecoveryWriteLease, RetainedStage,
-	SourceObservation, SourceTimestamp, StageError, WriteStage,
+	ClosedStage, DestinationRoot, FileIdentity, LinuxJournalSegment, PublishError, ReadError,
+	RecoveryFile, RecoveryJob, RecoveryReceiptDirectory, RecoveryStageDirectory,
+	RecoveryWriteLease, RetainedStage, SourceObservation, SourceTimestamp, StageError, WriteStage,
 };
 use exacopy_transfer::linux::{
 	CopyCheckpoint, FinishReceiptDirectory, InspectionError, LeaseInventory, ReceiptLease,
@@ -45,6 +45,10 @@ impl<'root> NativeLease<'root> {
 
 impl RecoveryLease for NativeLease<'_> {
 	type File = RecoveryFile;
+	type Segment<'lease>
+		= LinuxJournalSegment<'lease>
+	where
+		Self: 'lease;
 	type Job<'lease>
 		= RecoveryJob<'lease>
 	where
@@ -54,7 +58,7 @@ impl RecoveryLease for NativeLease<'_> {
 		self.0.job()
 	}
 
-	fn open_segment(&self, file: &Self::File) -> Result<File, Self::EffectError> {
+	fn open_segment(&self, file: &Self::File) -> Result<Self::Segment<'_>, Self::EffectError> {
 		self.0.open_first_segment_for_append(file)
 	}
 

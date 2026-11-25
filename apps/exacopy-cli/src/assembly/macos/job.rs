@@ -6,7 +6,7 @@ use exacopy_journal::{
 };
 use exacopy_platform::macos::ManagedRegularFile;
 use exacopy_platform::macos::staging::StageDirectory;
-use exacopy_platform::macos::staging::jobs::{JobDirectory, JobName, JournalDirectory};
+use exacopy_platform::macos::staging::jobs::{DarwinJournalSegment, JobDirectory, JobName};
 
 use exacopy_transfer::macos::job::ProfileError;
 use exacopy_transfer::macos::job::bootstrap::{
@@ -58,9 +58,7 @@ pub struct JobBootstrap<'held, 'profile> {
 /// The exact owner and synced preparation evidence with the two directory leases held.
 #[derive(Debug)]
 pub struct PreparedDarwinJob<'job> {
-	// The writer closes before the journal directory lease is released.
-	journal: DurableJournal,
-	_journal_directory: JournalDirectory<'job>,
+	journal: DurableJournal<DarwinJournalSegment<'job>>,
 	job: &'job JobDirectory<'job>,
 	owner: DarwinOwnerRecord,
 	preparation: DarwinJobPrepared,
@@ -172,7 +170,6 @@ fn with_created_job<T>(
 	let native_job = NativeJob(job);
 	let JobPreparation {
 		journal,
-		journal_directory,
 		owner,
 		preparation,
 		initial_frame,
@@ -181,7 +178,6 @@ fn with_created_job<T>(
 		.map_err(|source| JobBootstrapError::Retained { job: name, source })?;
 	let mut prepared = PreparedDarwinJob {
 		journal,
-		_journal_directory: journal_directory.0,
 		job,
 		owner,
 		preparation,

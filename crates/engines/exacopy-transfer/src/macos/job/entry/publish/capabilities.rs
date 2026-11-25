@@ -1,3 +1,4 @@
+use exacopy_endpoint::JournalSegment;
 use exacopy_journal::frame::{Frame, FrameKind};
 use exacopy_journal::{
 	DarwinFileIdentity, DarwinPublicationBarriers, DarwinRequiredMetadata, DurableJournal,
@@ -108,7 +109,7 @@ pub trait ReceiptStore {
 	fn persist(&self, bytes: &[u8]) -> Result<(), Self::Error>;
 }
 
-impl PublicationJournal for DurableJournal {
+impl<T: JournalSegment> PublicationJournal for DurableJournal<T> {
 	fn append(
 		&mut self,
 		kind: FrameKind,

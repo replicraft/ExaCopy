@@ -1,13 +1,15 @@
-use exacopy_journal::frame::Frame;
+use std::fmt;
+
+use exacopy_journal::frame::{Frame, FrameKind};
 use exacopy_journal::{
-	DarwinEntryPrepared, DarwinStageId, DurableJournal, RootCapabilityId, SyncedFrame,
+	DarwinEntryPrepared, DarwinStageId, DurableJournalError, RootCapabilityId, SyncedFrame,
 };
 use exacopy_platform::macos::ManagedRegularFile;
 use exacopy_platform::macos::staging::jobs::{JobDirectory, JobName};
 use exacopy_platform::macos::staging::{
 	StageBindingContext, StageDirectory, StageError, WriteStage,
 };
-use exacopy_transfer::macos::job::entry::publish::PublicationAttempt;
+use exacopy_transfer::macos::job::entry::publish::{PublicationAttempt, PublicationJournal};
 use exacopy_transfer::macos::job::entry::{
 	self, ObservedStage, PrivateStage, StageAdmissionFailure, StageRequest,
 };
@@ -26,7 +28,7 @@ pub use publish::{DarwinCopyError, DarwinCopyFailure, PublicationProgress};
 #[derive(Debug)]
 pub struct PreparedDarwinEntry<'entry> {
 	attempt: PublicationAttempt<publish::NativePreparedCopy<'entry>>,
-	journal: &'entry mut DurableJournal,
+	journal: HeldJournal<'entry>,
 	plan: DarwinCopyPlan<'entry>,
 	job: &'entry JobDirectory<'entry>,
 	preparation: DarwinEntryPrepared<'entry>,
@@ -121,7 +123,7 @@ impl PreparedDarwinJob<'_> {
 				self.source,
 				prepared.writer,
 			)),
-			journal: &mut self.journal,
+			journal: HeldJournal(&mut self.journal),
 			plan,
 			job: self.job,
 			preparation: prepared.preparation,
@@ -164,5 +166,25 @@ impl PrivateStage for HeldStageDirectory<'_> {
 			identity: native_identity(observed_file).map_err(StageAdmissionFailure::Observation)?,
 			writer,
 		})
+	}
+}
+
+struct HeldJournal<'entry>(&'entry mut dyn PublicationJournal);
+
+impl fmt::Debug for HeldJournal<'_> {
+	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+		formatter
+			.debug_struct("HeldJournal")
+			.finish_non_exhaustive()
+	}
+}
+
+impl PublicationJournal for HeldJournal<'_> {
+	fn append(
+		&mut self,
+		kind: FrameKind,
+		payload: Vec<u8>,
+	) -> Result<(Frame, SyncedFrame), DurableJournalError> {
+		self.0.append(kind, payload)
 	}
 }

@@ -1,4 +1,5 @@
 use exacopy_content::ContentDigest;
+use exacopy_endpoint::JournalSegment;
 use exacopy_endpoint::linux_copy::{CopySourceObservation, InodeTimestamp};
 use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{
@@ -82,7 +83,7 @@ impl<'name> EntryEvidence<'name> {
 
 	pub(super) fn record<R, S>(
 		&self,
-		journal: &mut DurableJournal,
+		journal: &mut DurableJournal<impl JournalSegment>,
 		stage: LinuxFileIdentity,
 	) -> Result<SourceMeasurementId, crate::linux_staging::StageFailure<R, S>> {
 		let entry = EntryPrepared::new(
@@ -162,7 +163,7 @@ pub(in crate::linux) struct SealEvidence {
 impl SealEvidence {
 	pub(in crate::linux) fn record(
 		&self,
-		journal: &mut DurableJournal,
+		journal: &mut DurableJournal<impl JournalSegment>,
 	) -> Result<SyncedFrame, SealError> {
 		let _ = append(journal, FrameKind::StageSealed, &self.sealed.encode())?;
 		let _ = append(
@@ -199,7 +200,7 @@ impl<R, S, P> From<SealError> for CopyError<R, S, P> {
 }
 
 fn append(
-	journal: &mut DurableJournal,
+	journal: &mut DurableJournal<impl JournalSegment>,
 	kind: FrameKind,
 	payload: &[u8],
 ) -> Result<SyncedFrame, SealError> {

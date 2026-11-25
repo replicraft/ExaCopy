@@ -1,4 +1,5 @@
 use exacopy_content::RangeMeasurement;
+use exacopy_endpoint::JournalSegment;
 use exacopy_endpoint::linux_copy::CheckpointPages;
 use exacopy_endpoint::linux_job::JobFileIdentity;
 use exacopy_journal::frame::FrameKind;
@@ -12,19 +13,19 @@ use super::planning::journal_identity;
 use super::records::EntryEvidence;
 use crate::linux::CopyCheckpoint;
 
-pub(in crate::linux) struct StageRecords<'job, 'name, Pages> {
+pub(in crate::linux) struct StageRecords<'job, 'name, Pages, Segment> {
 	entry: &'job EntryEvidence<'name>,
 	pages: &'job Pages,
-	journal: &'job mut DurableJournal,
+	journal: &'job mut DurableJournal<Segment>,
 	ordinal: u32,
 	checkpoint: fn(CopyCheckpoint),
 }
 
-impl<'job, 'name, Pages> StageRecords<'job, 'name, Pages> {
+impl<'job, 'name, Pages, Segment> StageRecords<'job, 'name, Pages, Segment> {
 	pub(super) const fn new(
 		entry: &'job EntryEvidence<'name>,
 		pages: &'job Pages,
-		journal: &'job mut DurableJournal,
+		journal: &'job mut DurableJournal<Segment>,
 		checkpoint: fn(CopyCheckpoint),
 	) -> Self {
 		Self {
@@ -37,11 +38,12 @@ impl<'job, 'name, Pages> StageRecords<'job, 'name, Pages> {
 	}
 }
 
-impl<Identity, ReadError, Pages> StageRecordSink<Identity, ReadError, Pages::Error>
-	for StageRecords<'_, '_, Pages>
+impl<Identity, ReadError, Pages, Segment> StageRecordSink<Identity, ReadError, Pages::Error>
+	for StageRecords<'_, '_, Pages, Segment>
 where
 	Identity: Into<JobFileIdentity>,
 	Pages: CheckpointPages,
+	Segment: JournalSegment,
 {
 	fn begin(
 		&mut self,

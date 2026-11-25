@@ -1,11 +1,10 @@
-use std::fs::File;
-
-use exacopy_endpoint::UnixComponent;
 use exacopy_endpoint::linux_recovery::{RecoveryInventoryView, RecoveryJobView};
+use exacopy_endpoint::{JournalSegment, UnixComponent};
 use exacopy_journal::frame::{ChainHead, FrameKind};
 use exacopy_journal::{DurableJournal, DurableJournalError, LinuxFileIdentity};
 
 use super::super::super::{JournalBoundary, LocalCopyPlan};
+use super::super::lease::RecoveryJournal;
 use super::super::{
 	InspectionError, LeaseInventory, LeaseReadError, RecoveryHistory, RecoveryInspection,
 	RecoveryLease, RecoveryProfile, RecoveryStep, record_identity,
@@ -14,15 +13,15 @@ use super::capabilities::{FinishEvidence, FinishJournal, FinishLease, ReceiptLea
 
 pub(super) struct HeldRecovery<'lease, L>(pub(super) &'lease L);
 
-impl<L: RecoveryLease> FinishLease for HeldRecovery<'_, L> {
+impl<'held, L: RecoveryLease> FinishLease for HeldRecovery<'held, L> {
 	type InspectError = InspectionError<LeaseReadError<L>, L::EffectError>;
 	type History = RecoveryHistory<L::File>;
 	type Inventory<'lease>
 		= LeaseInventory<'lease, L>
 	where
 		Self: 'lease;
-	type Segment = File;
-	type Journal = DurableJournal;
+	type Segment = L::Segment<'held>;
+	type Journal = RecoveryJournal<'held, L>;
 
 	fn load(
 		&self,
@@ -114,7 +113,7 @@ impl<L: RecoveryLease> ReceiptLease for HeldRecovery<'_, L> {
 	}
 }
 
-impl FinishJournal for DurableJournal {
+impl<S: JournalSegment> FinishJournal for DurableJournal<S> {
 	fn append(
 		&mut self,
 		kind: FrameKind,

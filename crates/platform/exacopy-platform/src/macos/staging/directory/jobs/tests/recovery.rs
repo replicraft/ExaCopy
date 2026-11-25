@@ -1,5 +1,5 @@
 use std::fs::{self, File};
-use std::io::{Read as _, Write as _};
+use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
 use std::os::unix::fs::{OpenOptionsExt as _, symlink};
 
 use super::super::RecoveryError;
@@ -161,12 +161,13 @@ fn rejects_record_bounds_before_reading() {
 	let journal_path = job_path(&fixture).join(JOURNAL).join(FIRST_SEGMENT);
 	{
 		let job = container.create_job_directory(job_name()).unwrap();
-		let oversized = job
+		let mut oversized = job
 			.create_journal_directory()
 			.unwrap()
 			.create_first_segment()
 			.unwrap();
-		oversized.set_len(64 * 1024 * 1024 + 1).unwrap();
+		oversized.seek(SeekFrom::Start(64 * 1024 * 1024)).unwrap();
+		oversized.write_all(&[0]).unwrap();
 	}
 	let empty = job_path(&fixture).join(OWNER);
 	File::options()

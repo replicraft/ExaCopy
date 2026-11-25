@@ -6,7 +6,9 @@ use exacopy_endpoint::linux_job::{
 	JobBootstrapRoot, JobFileIdentity, JobJournalDirectory, JobRecord, JobWorkspace,
 };
 
-use super::{DestinationRoot, FileIdentity, JobDirectory, JournalDirectory, StageError};
+use super::{
+	DestinationRoot, FileIdentity, JobDirectory, JournalDirectory, LinuxJournalSegment, StageError,
+};
 
 impl<'root> JobBootstrapRoot<'root> for DestinationRoot {
 	type Error = StageError;
@@ -31,7 +33,7 @@ impl<'root> JobBootstrapRoot<'root> for DestinationRoot {
 impl JobWorkspace for JobDirectory<'_> {
 	type Error = StageError;
 	type Record = NativeJobRecord;
-	type Segment = File;
+	type Segment = LinuxJournalSegment<'static>;
 	type Journal<'job>
 		= JournalDirectory<'job>
 	where
@@ -60,7 +62,7 @@ impl JobWorkspace for JobDirectory<'_> {
 
 impl JobJournalDirectory for JournalDirectory<'_> {
 	type Error = StageError;
-	type Segment = File;
+	type Segment = LinuxJournalSegment<'static>;
 
 	fn create_first_segment(&self) -> Result<Self::Segment, Self::Error> {
 		JournalDirectory::create_first_segment(self)

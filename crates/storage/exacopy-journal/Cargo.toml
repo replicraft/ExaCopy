@@ -14,9 +14,6 @@ exacopy-endpoint.workspace = true
 exacopy-model.workspace = true
 minicbor.workspace = true
 
-[target.'cfg(target_os = "macos")'.dependencies]
-rustix.workspace = true
-
 [dev-dependencies]
 exacopy-testkit.workspace = true
 

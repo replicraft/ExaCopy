@@ -1,6 +1,8 @@
 use std::cell::{Cell, RefCell};
 use std::fs::{self, File, OpenOptions};
-use std::io;
+use std::io::{self, Read, Seek, SeekFrom, Write};
+
+use exacopy_endpoint::{JournalFileBarrier, JournalSegment};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -89,9 +91,10 @@ impl Simulation<'_> {
 			uncertain_publication: Cell::new(false),
 			fail_journal,
 		};
-		let mut journal =
-			DurableJournal::from_new_file(File::create(state.path.join("journal")).unwrap())
-				.unwrap();
+		let mut journal = DurableJournal::from_new_segment(TestSegment(
+			File::create(state.path.join("journal")).unwrap(),
+		))
+		.unwrap();
 		let _ = journal.append(FrameKind::JobPrepared, b"fixture").unwrap();
 		let preparation = journal
 			.append(FrameKind::EntryPrepared, b"fixture")
@@ -203,8 +206,12 @@ impl Drop for State {
 
 impl Records for State {
 	type Error = io::Error;
+	type Segment = TestSegment;
 
-	fn resume_journal(&self, boundary: JournalBoundary) -> Result<DurableJournal, Self::Error> {
+	fn resume_journal(
+		&self,
+		boundary: JournalBoundary,
+	) -> Result<DurableJournal<Self::Segment>, Self::Error> {
 		if self.fail_journal {
 			return Err(io::Error::other("fixture refused the journal lease"));
 		}
@@ -212,7 +219,7 @@ impl Records for State {
 			.read(true)
 			.write(true)
 			.open(self.path.join("journal"))?;
-		DurableJournal::resume_first_segment(file, boundary.head, boundary.offset)
+		DurableJournal::resume_first_segment(TestSegment(file), boundary.head, boundary.offset)
 			.map_err(io::Error::other)
 	}
 
@@ -451,4 +458,40 @@ fn uuid(marker: u8) -> [u8; 16] {
 	bytes[6] = 0x70;
 	bytes[8] = 0x80;
 	bytes
+}
+
+pub(super) struct TestSegment(File);
+
+impl Read for TestSegment {
+	fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+		self.0.read(bytes)
+	}
+}
+
+impl Seek for TestSegment {
+	fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+		self.0.seek(position)
+	}
+}
+
+impl Write for TestSegment {
+	fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+		self.0.write(bytes)
+	}
+	fn flush(&mut self) -> io::Result<()> {
+		self.0.flush()
+	}
+}
+
+impl JournalSegment for TestSegment {
+	const BARRIER: JournalFileBarrier = JournalFileBarrier::SyncAll;
+
+	fn regular_length(&self) -> io::Result<Option<u64>> {
+		let metadata = self.0.metadata()?;
+		Ok(metadata.is_file().then_some(metadata.len()))
+	}
+
+	fn sync(&self) -> io::Result<()> {
+		self.0.sync_all()
+	}
 }

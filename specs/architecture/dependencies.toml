@@ -40,7 +40,7 @@ dev.external = ["windows-sys"]
 [groups.storage]
 members = { exacopy-content = "crates/storage/exacopy-content", exacopy-journal = "crates/storage/exacopy-journal" }
 normal.groups = ["contracts", "core"]
-normal.external = ["blake3", "crc32c", "ed25519-dalek", "minicbor", "rustix"]
+normal.external = ["blake3", "crc32c", "ed25519-dalek", "minicbor"]
 dev.groups = ["testkit"]
 
 [groups.operations]

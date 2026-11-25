@@ -1,8 +1,11 @@
 use std::fs;
-use std::io::Write as _;
-use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _, PermissionsExt as _, symlink};
+use std::io::{Read as _, Seek as _, Write as _};
+use std::os::unix::fs::{
+	DirBuilderExt as _, MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _, symlink,
+};
 use std::path::{Path, PathBuf};
 
+use exacopy_endpoint::{JournalFileBarrier, JournalSegment};
 use exacopy_model::{EntryId, RunEpoch};
 use rustix::io::Errno;
 
@@ -115,6 +118,17 @@ fn fixed_job_artifacts_are_private_and_stage_revalidates_under_the_job() {
 	segment
 		.write_all(b"opaque framed journal fixture")
 		.expect("journal writer owns file");
+	assert_eq!(
+		super::DarwinJournalSegment::BARRIER,
+		JournalFileBarrier::DarwinFullFsync
+	);
+	segment.sync().expect("actual Darwin full file barrier");
+	segment.rewind().expect("rewind the sole journal cursor");
+	let mut written = Vec::new();
+	segment
+		.read_to_end(&mut written)
+		.expect("read the same held segment");
+	assert_eq!(written, b"opaque framed journal fixture");
 	drop(segment);
 	assert_record(&segment_path, b"opaque framed journal fixture");
 
@@ -255,13 +269,15 @@ fn fixed_record_exclusive_creation_never_truncates_or_follows_incumbents() {
 	);
 
 	let journal = job.create_journal_directory().expect("create journal");
-	let mut original = journal
-		.create_first_segment()
-		.expect("create first segment");
-	original
-		.write_all(b"first journal bytes")
-		.expect("write journal fixture");
-	drop(original);
+	let incumbent_segment = job_path.join(JOURNAL).join(FIRST_SEGMENT);
+	let mut incumbent = fs::OpenOptions::new()
+		.write(true)
+		.create_new(true)
+		.mode(0o600)
+		.open(&incumbent_segment)
+		.expect("install a synthetic incumbent segment");
+	incumbent.write_all(b"first journal bytes").unwrap();
+	drop(incumbent);
 	assert!(matches!(
 		journal.create_first_segment(),
 		Err(JobError::Occupied {
@@ -286,6 +302,46 @@ fn fixed_record_exclusive_creation_never_truncates_or_follows_incumbents() {
 		})
 	));
 	assert_record(&job_path.join(RECEIPTS).join(RECEIPT), b"first receipt");
+}
+
+#[test]
+fn journal_barrier_refuses_changed_rights_or_replaced_segment_name() {
+	let fixture = Fixture::new();
+	let root = fixture.bind();
+	let container = open_staging(&root);
+	let job = container.create_job_directory(job_name()).unwrap();
+	let mut writer = job
+		.create_journal_directory()
+		.unwrap()
+		.create_first_segment()
+		.unwrap();
+	let directory = job_path(&fixture).join(JOURNAL);
+	let segment = directory.join(FIRST_SEGMENT);
+	writer.write_all(b"held bytes").unwrap();
+
+	fs::set_permissions(&segment, fs::Permissions::from_mode(0o644)).unwrap();
+	let wrong_mode = writer.sync().unwrap_err();
+	assert!(matches!(
+		wrong_mode
+			.get_ref()
+			.and_then(|source| source.downcast_ref::<JobError>()),
+		Some(JobError::IdentityChanged),
+	));
+	fs::set_permissions(&segment, fs::Permissions::from_mode(0o600)).unwrap();
+	writer.sync().expect("restored fixture rights");
+
+	let moved = directory.join("moved-segment");
+	fs::rename(&segment, &moved).unwrap();
+	fs::write(&segment, b"replacement").unwrap();
+	let wrong_identity = writer.sync().unwrap_err();
+	assert!(matches!(
+		wrong_identity
+			.get_ref()
+			.and_then(|source| source.downcast_ref::<JobError>()),
+		Some(JobError::IdentityChanged),
+	));
+	assert_eq!(fs::read(&segment).unwrap(), b"replacement");
+	assert_eq!(fs::read(&moved).unwrap(), b"held bytes");
 }
 
 #[test]

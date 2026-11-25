@@ -1,9 +1,8 @@
 use std::cell::RefCell;
-use std::fs::File;
 use std::num::NonZeroU64;
 
 use ed25519_dalek::SigningKey;
-use exacopy_endpoint::UnixComponent;
+use exacopy_endpoint::{JournalFileBarrier, UnixComponent};
 use exacopy_journal::{
 	DarwinFileIdentity, DarwinOwnerRecord, DarwinRootBinding, DarwinVolumeIdentity,
 	DurableJournalError, JournalEntryId, JournalEpoch, JournalJobId, ObservedTimestamp, OwnerError,
@@ -16,6 +15,7 @@ use super::engine::{self, BootstrapError};
 use crate::macos::job::admission::{
 	AdmissionFailure, ReadOnlySource, SourceIdentities, SourceMetadataObservation, Timestamp,
 };
+use crate::macos::journal_fixture::SimulatedSegment;
 use crate::macos::plan::{
 	DarwinCopyPlan, DestinationPlanBinding, PlanAttempt, SourceMetadata, SourcePlanBinding,
 };
@@ -34,7 +34,7 @@ fn preparation_stops_at_each_uncertain_artifact_and_preserves_its_phase() {
 	let signer = SigningKey::from_bytes(&[1; 32]);
 	let (plan, profile, destination) = fixture(&signer);
 	for (position, step) in ARTIFACTS.into_iter().enumerate() {
-		let job = TestJob::new(UID, Some(step));
+		let job = TestJob::<true>::new(UID, Some(step));
 		assert!(matches!(
 			engine::prepare(&plan, profile, &job, destination),
 			Err(BootstrapError::Artifact {
@@ -50,7 +50,7 @@ fn preparation_stops_at_each_uncertain_artifact_and_preserves_its_phase() {
 fn invalid_owner_stops_preparation_before_record_writes() {
 	let signer = SigningKey::from_bytes(&[1; 32]);
 	let (plan, profile, destination) = fixture(&signer);
-	let job = TestJob::new(0, None);
+	let job = TestJob::<true>::new(0, None);
 	assert!(matches!(
 		engine::prepare(&plan, profile, &job, destination),
 		Err(BootstrapError::Owner(OwnerError::InvalidOwnerUid))
@@ -62,7 +62,7 @@ fn invalid_owner_stops_preparation_before_record_writes() {
 fn invalid_segment_returns_no_preparation_and_preserves_signed_inputs() {
 	let signer = SigningKey::from_bytes(&[1; 32]);
 	let (plan, profile, destination) = fixture(&signer);
-	let job = TestJob::new(UID, None);
+	let job = TestJob::<true>::new(UID, None);
 	assert!(matches!(
 		engine::prepare(&plan, profile, &job, destination),
 		Err(BootstrapError::Journal(DurableJournalError::NotRegularFile))
@@ -79,9 +79,28 @@ fn invalid_segment_returns_no_preparation_and_preserves_signed_inputs() {
 	assert_eq!(owner.manifest().plan_digest, plan.digest());
 }
 
+#[test]
+fn weaker_segment_barrier_refuses_before_any_bootstrap_effect() {
+	let signer = SigningKey::from_bytes(&[1; 32]);
+	let (plan, profile, destination) = fixture(&signer);
+	let job = TestJob::<false>::new(UID, None);
+	assert!(matches!(
+		engine::prepare(&plan, profile, &job, destination),
+		Err(BootstrapError::Journal(
+			DurableJournalError::UnexpectedBarrier {
+				expected: JournalFileBarrier::DarwinFullFsync,
+				actual: JournalFileBarrier::SyncAll,
+			}
+		))
+	));
+	assert!(job.attempted.borrow().is_empty());
+	assert!(job.owner.borrow().is_empty());
+	assert!(job.plan.borrow().is_empty());
+}
+
 struct UncertainArtifact(JobPreparationStep);
 
-struct TestJob {
+struct TestJob<const DARWIN: bool = true> {
 	uid: u32,
 	fail_on: Option<JobPreparationStep>,
 	attempted: RefCell<Vec<JobPreparationStep>>,
@@ -89,7 +108,7 @@ struct TestJob {
 	plan: RefCell<Vec<u8>>,
 }
 
-impl TestJob {
+impl<const DARWIN: bool> TestJob<DARWIN> {
 	fn new(uid: u32, fail_on: Option<JobPreparationStep>) -> Self {
 		Self {
 			uid,
@@ -109,9 +128,9 @@ impl TestJob {
 	}
 }
 
-impl PrivateJob for TestJob {
+impl<const DARWIN: bool> PrivateJob for TestJob<DARWIN> {
 	type Error = UncertainArtifact;
-	type JournalDirectory<'job> = TestJournalDirectory<'job>;
+	type JournalDirectory<'job> = TestJournalDirectory<'job, DARWIN>;
 
 	fn owner_uid(&self) -> u32 {
 		self.uid
@@ -139,15 +158,17 @@ impl PrivateJob for TestJob {
 	}
 }
 
-struct TestJournalDirectory<'job>(&'job TestJob);
+struct TestJournalDirectory<'job, const DARWIN: bool>(&'job TestJob<DARWIN>);
 
-impl PrivateJournalDirectory for TestJournalDirectory<'_> {
+impl<const DARWIN: bool> PrivateJournalDirectory for TestJournalDirectory<'_, DARWIN> {
 	type Error = UncertainArtifact;
 
-	fn create_first_segment(&self) -> Result<File, UncertainArtifact> {
+	type Segment = SimulatedSegment<DARWIN>;
+
+	fn create_first_segment(self) -> Result<Self::Segment, UncertainArtifact> {
 		self.0.attempt(JobPreparationStep::FirstSegment)?;
-		// The engine must refuse a handle that is not a regular file before writing.
-		Ok(File::open("/dev/null").expect("open a read-only nonregular handle"))
+		// The engine must refuse a nonregular segment before writing.
+		Ok(SimulatedSegment::new(Vec::new(), false))
 	}
 }
 

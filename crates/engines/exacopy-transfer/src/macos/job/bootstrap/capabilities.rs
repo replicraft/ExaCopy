@@ -1,4 +1,4 @@
-use std::fs::File;
+use exacopy_endpoint::JournalSegment;
 
 use exacopy_journal::{DarwinFileIdentity, OwnerError};
 
@@ -29,6 +29,9 @@ pub trait PrivateJournalDirectory {
 	/// The adapter failure retained for diagnostics.
 	type Error;
 
-	/// Transfers the sole writer after exclusive creation and namespace synchronization.
-	fn create_first_segment(&self) -> Result<File, Self::Error>;
+	/// The sole writer that retains this namespace after creation.
+	type Segment: JournalSegment;
+
+	/// Consumes the lease and transfers the sole writer after creation and synchronization.
+	fn create_first_segment(self) -> Result<Self::Segment, Self::Error>;
 }

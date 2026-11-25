@@ -3,6 +3,7 @@ use exacopy_endpoint::linux_copy::{CopySource, CopySourceRoot};
 use exacopy_endpoint::linux_recovery::{RecoveryInventoryView, RecoveryJobView, RecoveryRecord};
 
 use super::super::CopyCheckpoint;
+use super::super::job::check_linux_barrier;
 use super::finish::{completion, finish_with_lease};
 use super::source::open_source;
 use super::{
@@ -52,6 +53,7 @@ where
 			Error = LeaseReadError<L>,
 		>,
 {
+	check_linux_barrier::<L::Segment<'_>>().map_err(FinishFailure::Resume)?;
 	let job = lease.job();
 	let history = RecoveryHistory::load(job, name, profile)?;
 	let plan = history.plan()?;

@@ -4,9 +4,9 @@ use std::io::Read;
 
 use exacopy_journal::frame::{ChainHead, Frame, FrameKind, FrameReadError, FrameReader};
 use exacopy_journal::{
-	DurabilityRecorded, DurableJournal, EntryPrepared, JobPrepared, JournalContext, JournalEntryId,
-	JournalEpoch, LinuxFileIdentity, LiveSourceView, MetadataRecorded, OwnerDigest, OwnerManifest,
-	OwnerRecord, OwnerStateDirectory, PublicApplyOwnerRecord, PublishIntentContext,
+	DurabilityRecorded, EntryPrepared, JobPrepared, JournalContext, JournalEntryId, JournalEpoch,
+	LinuxFileIdentity, LiveSourceView, MAX_FIRST_SEGMENT_BYTES, MetadataRecorded, OwnerDigest,
+	OwnerManifest, OwnerRecord, OwnerStateDirectory, PublicApplyOwnerRecord, PublishIntentContext,
 	PublishObserved, RangeCheckpoint, ReceiptCommitted, SourceInodeMetadata, SourceMeasurementId,
 	StageSealed, VerificationRecorded,
 };
@@ -27,7 +27,7 @@ mod tests;
 const PUBLICATION_EFFECT_SEQUENCE: u64 = 1;
 
 /// Maximum byte length of the local profile's single journal segment.
-pub const MAX_LOCAL_JOURNAL_BYTES: u64 = DurableJournal::MAX_FIRST_SEGMENT_BYTES;
+pub const MAX_LOCAL_JOURNAL_BYTES: u64 = MAX_FIRST_SEGMENT_BYTES;
 
 /// The byte and chain boundary after the last accepted record.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

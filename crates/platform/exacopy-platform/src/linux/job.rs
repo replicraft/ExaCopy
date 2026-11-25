@@ -7,6 +7,7 @@ use rustix::fs::{self, AtFlags, FlockOperation, OFlags};
 use rustix::io::Errno;
 
 use super::handle::FileIdentity;
+use super::journal_segment::LinuxJournalSegment;
 use super::stage::{
 	DestinationRoot, StageDirectory, StageError, check_private_child, component,
 	create_private_directory, create_private_file, sync_directory,
@@ -225,8 +226,16 @@ impl JournalDirectory<'_> {
 	///
 	/// Rejects a changed directory binding, a name collision or a syscall failure.
 	/// The segment writer owns file barriers and reconciliation.
-	pub fn create_first_segment(&self) -> Result<File, StageError> {
-		self.0.create_file(FIRST_SEGMENT)
+	pub fn create_first_segment(&self) -> Result<LinuxJournalSegment<'static>, StageError> {
+		let lock = self
+			.0
+			.job
+			.directory
+			.try_clone()
+			.map_err(StageError::System)?;
+		self.0
+			.create_file(FIRST_SEGMENT)
+			.map(|file| LinuxJournalSegment::fresh(file, lock))
 	}
 }
 

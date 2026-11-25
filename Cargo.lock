@@ -837,7 +837,6 @@ dependencies = [
  "exacopy-model",
  "exacopy-testkit",
  "minicbor",
- "rustix",
 ]
 
 [[package]]

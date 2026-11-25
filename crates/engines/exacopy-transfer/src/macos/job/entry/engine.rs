@@ -1,6 +1,6 @@
 use std::mem;
 
-use exacopy_endpoint::{NameError, UnixComponent};
+use exacopy_endpoint::{JournalFileBarrier, JournalSegment, NameError, UnixComponent};
 use exacopy_journal::frame::{Frame, FrameKind};
 use exacopy_journal::{
 	DarwinEntryPreparation, DarwinEntryPrepared, DarwinFileIdentity, DarwinJobPrepared,
@@ -187,12 +187,20 @@ fn begin<'name>(
 /// Creates the private stage and appends its entry preparation before returning its writer.
 /// # Errors
 /// Reports failed stage admission, mismatched observations, or a failed append or barrier.
-pub fn prepare<'stage, S: PrivateStage>(
+pub fn prepare<'stage, S: PrivateStage, J: JournalSegment>(
 	request: EntryRequest<'stage>,
 	job: &DarwinJobPrepared,
 	stage: &'stage S,
-	journal: &mut DurableJournal,
+	journal: &mut DurableJournal<J>,
 ) -> Result<PreparedStage<'stage, S::Writer<'stage>>, PreparationFailure<S::Error>> {
+	if J::BARRIER != JournalFileBarrier::DarwinFullFsync {
+		return Err(PreparationFailure::Journal(
+			DurableJournalError::UnexpectedBarrier {
+				expected: JournalFileBarrier::DarwinFullFsync,
+				actual: J::BARRIER,
+			},
+		));
+	}
 	let observed = stage.create(&request.stage).map_err(|error| match error {
 		StageAdmissionFailure::Adapter(error) => PreparationFailure::Stage(error),
 		StageAdmissionFailure::Observation(error) => PreparationFailure::Observation(error),

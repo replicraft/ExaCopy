@@ -1,17 +1,18 @@
+use std::cell::Cell;
 use std::fs::{self, File};
 use std::io::{self, Seek as _, SeekFrom, Write as _};
 
-use super::{DurableJournal, DurableJournalError, JournalFileBarrier};
+use super::{DurableJournal, DurableJournalError, JournalFileBarrier, MAX_FIRST_SEGMENT_BYTES};
 use crate::frame::{
 	ChainHead, FRAME_OVERHEAD_BYTES, FrameKind, FrameReadError, FrameReader, FrameWriteError,
 	FrameWriter, MAX_PAYLOAD_BYTES,
 };
 
-#[cfg(target_os = "macos")]
 mod darwin;
 mod fixture;
+mod memory;
 
-use self::fixture::ScratchFile;
+use self::fixture::{ScratchFile, TestSegment};
 
 const OWNER_PAYLOAD: &[u8] = b"fixture owner record";
 const INTENT_PAYLOAD: &[u8] = b"fixture intent record";
@@ -19,7 +20,8 @@ const INTENT_PAYLOAD: &[u8] = b"fixture intent record";
 #[test]
 fn synced_frames_are_visible_from_a_separate_read_handle() {
 	let (scratch, file) = ScratchFile::create();
-	let mut journal = DurableJournal::from_new_file(file).expect("admit exclusive empty file");
+	let mut journal = DurableJournal::from_new_segment(TestSegment::held(file))
+		.expect("admit exclusive empty file");
 	let first = journal
 		.append(FrameKind::JobPrepared, OWNER_PAYLOAD)
 		.expect("append and sync owner frame");
@@ -55,7 +57,7 @@ fn resuming_a_clean_segment_appends_to_the_verified_chain() {
 	let mut file = scratch.reopen();
 	file.seek(SeekFrom::Start(end + 1))
 		.expect("seed an unrelated descriptor cursor");
-	let mut journal = DurableJournal::resume_first_segment(file, head, end)
+	let mut journal = DurableJournal::resume_first_segment(TestSegment::held(file), head, end)
 		.expect("resume the exact verified journal prefix");
 	assert_eq!(scratch.bytes(), prefix);
 	let appended = journal
@@ -83,7 +85,8 @@ fn resuming_a_clean_segment_appends_to_the_verified_chain() {
 fn resumption_requires_the_digest_even_for_equal_length_and_sequence() {
 	let (scratch, expected_head, expected_end) = synced_owner();
 	let (foreign, file) = ScratchFile::create();
-	let mut foreign_journal = DurableJournal::from_new_file(file).expect("admit foreign file");
+	let mut foreign_journal =
+		DurableJournal::from_new_segment(TestSegment::held(file)).expect("admit foreign file");
 	let payload = vec![b'x'; OWNER_PAYLOAD.len()];
 	let head = foreign_journal
 		.append(FrameKind::JobPrepared, &payload)
@@ -95,9 +98,13 @@ fn resumption_requires_the_digest_even_for_equal_length_and_sequence() {
 	assert_eq!(head.sequence(), expected_head.sequence());
 	assert_ne!(head.digest(), expected_head.digest());
 	assert!(matches!(
-		DurableJournal::resume_with_barrier(foreign.reopen(), expected_head, expected_end, |_| {
-			panic!("a different digest reached the barrier")
-		}),
+		DurableJournal::resume_first_segment(
+			TestSegment::with_barrier(foreign.reopen(), |_| {
+				panic!("a different digest reached the barrier")
+			}),
+			expected_head,
+			expected_end
+		),
 		Err(DurableJournalError::UnexpectedHead)
 	));
 	assert_eq!(foreign.bytes(), prefix);
@@ -106,8 +113,9 @@ fn resumption_requires_the_digest_even_for_equal_length_and_sequence() {
 #[test]
 fn resumption_rereads_the_prefix_before_the_expected_head() {
 	let (scratch, first, end) = synced_owner();
-	let mut journal = DurableJournal::resume_first_segment(scratch.reopen(), first, end)
-		.expect("resume before adding the final frame");
+	let mut journal =
+		DurableJournal::resume_first_segment(TestSegment::held(scratch.reopen()), first, end)
+			.expect("resume before adding the final frame");
 	let last = journal
 		.append(FrameKind::PublishIntent, INTENT_PAYLOAD)
 		.expect("sync the final frame")
@@ -120,9 +128,13 @@ fn resumption_rereads_the_prefix_before_the_expected_head() {
 	let damaged = scratch.bytes();
 	assert!(damaged.ends_with(&last.digest()));
 	assert!(matches!(
-		DurableJournal::resume_with_barrier(file, last, length, |_| {
-			panic!("an earlier corrupt frame reached the barrier")
-		}),
+		DurableJournal::resume_first_segment(
+			TestSegment::with_barrier(file, |_| {
+				panic!("an earlier corrupt frame reached the barrier")
+			}),
+			last,
+			length
+		),
 		Err(DurableJournalError::ReadFrame(FrameReadError::Corrupt {
 			offset: 0,
 			..
@@ -143,13 +155,15 @@ fn resumption_preserves_a_torn_or_corrupt_suffix() {
 		let length = file.metadata().expect("inspect fixture length").len();
 		let original = scratch.bytes();
 		assert!(matches!(
-			DurableJournal::resume_first_segment(scratch.reopen(), head, end),
+			DurableJournal::resume_first_segment(TestSegment::held(scratch.reopen()), head, end),
 			Err(DurableJournalError::UnexpectedLength { expected, actual })
 				if expected == end && actual == length
 		));
-		let result = DurableJournal::resume_with_barrier(file, head, length, |_| {
-			panic!("an invalid suffix reached the barrier")
-		});
+		let result = DurableJournal::resume_first_segment(
+			TestSegment::with_barrier(file, |_| panic!("an invalid suffix reached the barrier")),
+			head,
+			length,
+		);
 		if torn {
 			assert!(
 				matches!(result, Err(DurableJournalError::ReadFrame(FrameReadError::TornTail { offset, .. })) if offset == end)
@@ -167,18 +181,18 @@ fn resumption_preserves_a_torn_or_corrupt_suffix() {
 fn resumption_requires_a_nonempty_prefix_within_the_segment_limit() {
 	let (scratch, file) = ScratchFile::create();
 	assert!(matches!(
-		DurableJournal::resume_first_segment(file, ChainHead::start(), 0),
+		DurableJournal::resume_first_segment(TestSegment::held(file), ChainHead::start(), 0),
 		Err(DurableJournalError::EmptyPrefix)
 	));
 	assert!(scratch.bytes().is_empty());
 	let (scratch, head, _) = synced_owner();
 	let file = scratch.reopen();
-	let length = DurableJournal::MAX_FIRST_SEGMENT_BYTES + 1;
+	let length = MAX_FIRST_SEGMENT_BYTES + 1;
 	file.set_len(length).expect("seed an oversized sparse file");
 	assert!(matches!(
-		DurableJournal::resume_first_segment(file, head, length),
+		DurableJournal::resume_first_segment(TestSegment::held(file), head, length),
 		Err(DurableJournalError::SegmentTooLarge { length: actual, limit })
-			if actual == length && limit == DurableJournal::MAX_FIRST_SEGMENT_BYTES
+			if actual == length && limit == MAX_FIRST_SEGMENT_BYTES
 	));
 	assert_eq!(
 		scratch.reopen().metadata().expect("inspect size").len(),
@@ -201,7 +215,7 @@ fn resumption_rejects_a_directory_handle() {
 	let (_scratch, head, end) = synced_owner();
 	let directory = File::open(std::env::temp_dir()).expect("open fixture directory handle");
 	assert!(matches!(
-		DurableJournal::resume_first_segment(directory, head, end),
+		DurableJournal::resume_first_segment(TestSegment::held(directory), head, end),
 		Err(DurableJournalError::NotRegularFile)
 	));
 }
@@ -215,9 +229,13 @@ fn resumption_requires_successful_reads_and_a_successful_barrier() {
 		.open(&scratch.0)
 		.expect("open write-only fixture");
 	assert!(matches!(
-		DurableJournal::resume_with_barrier(write_only, head, end, |_| {
-			panic!("a failed read reached the barrier")
-		}),
+		DurableJournal::resume_first_segment(
+			TestSegment::with_barrier(write_only, |_| {
+				panic!("a failed read reached the barrier")
+			}),
+			head,
+			end
+		),
 		Err(DurableJournalError::ReadFrame(FrameReadError::Io {
 			offset: 0,
 			..
@@ -225,11 +243,11 @@ fn resumption_requires_successful_reads_and_a_successful_barrier() {
 	));
 	assert_eq!(scratch.bytes(), prefix);
 	assert!(matches!(
-		DurableJournal::resume_with_barrier(scratch.reopen(), head, end, |file| {
+		DurableJournal::resume_first_segment(TestSegment::with_barrier(scratch.reopen(), |file| {
 			assert_eq!(file.metadata().expect("inspect file at barrier").len(), end);
 			assert_eq!(scratch.bytes(), prefix);
 			Err(io::Error::other("injected resume barrier failure"))
-		}),
+		}), head, end),
 		Err(DurableJournalError::Sync(source)) if source.kind() == io::ErrorKind::Other
 	));
 	assert_eq!(scratch.bytes(), prefix);
@@ -243,17 +261,20 @@ fn barrier_errors_permanently_retire_the_writer_and_keep_the_complete_frame() {
 	const ENOSPC: i32 = 28;
 	for errno in [EIO, ENOSPC] {
 		let (scratch, file) = ScratchFile::create();
-		let mut journal = DurableJournal::from_new_file(file).expect("admit exclusive empty file");
-		let owner = journal
-			.append(FrameKind::JobPrepared, OWNER_PAYLOAD)
-			.expect("sync preceding frame before fault");
-		let result = journal.append_with_barrier(FrameKind::PublishIntent, INTENT_PAYLOAD, |_| {
+		let barriers = Cell::new(0);
+		let owner_head = Cell::new(ChainHead::start());
+		let segment = TestSegment::with_barrier(file, |file| {
+			barriers.set(barriers.get() + 1);
+			if barriers.get() == 1 {
+				return file.sync_all();
+			}
+			assert_eq!(barriers.get(), 2, "retired writer entered the barrier");
 			let mut reader = scratch.reader();
 			let first = reader
 				.next_frame()
 				.expect("valid preceding frame at barrier entry")
 				.expect("preceding frame is present");
-			assert_eq!(first.head(), owner.head());
+			assert_eq!(first.head(), owner_head.get());
 			let second = reader
 				.next_frame()
 				.expect("frame must be complete before barrier")
@@ -263,15 +284,19 @@ fn barrier_errors_permanently_retire_the_writer_and_keep_the_complete_frame() {
 			assert_eq!(reader.next_frame().expect("clean boundary"), None);
 			Err(io::Error::from_raw_os_error(errno))
 		});
+		let mut journal = DurableJournal::from_new_segment(segment).expect("admit owned segment");
+		let owner = journal
+			.append(FrameKind::JobPrepared, OWNER_PAYLOAD)
+			.expect("sync preceding frame before fault");
+		owner_head.set(owner.head());
+		let result = journal.append(FrameKind::PublishIntent, INTENT_PAYLOAD);
 		assert!(matches!(
 			result,
 			Err(DurableJournalError::Sync(source)) if source.raw_os_error() == Some(errno)
 		));
 		let preserved = scratch.bytes();
 		assert!(matches!(
-			journal.append_with_barrier(FrameKind::PublishIntent, INTENT_PAYLOAD, |_| {
-				panic!("retired writer reached another barrier after error {errno}");
-			}),
+			journal.append(FrameKind::PublishIntent, INTENT_PAYLOAD),
 			Err(DurableJournalError::Retired)
 		));
 		assert_eq!(
@@ -287,11 +312,12 @@ fn a_write_error_retires_the_writer_before_the_barrier() {
 	let (scratch, file) = ScratchFile::create();
 	drop(file);
 	let readonly = File::open(&scratch.0).expect("open a read-only fixture handle");
-	let mut journal = DurableJournal::from_new_file(readonly).expect("inspect empty fixture");
+	let segment = TestSegment::with_barrier(readonly, |_| {
+		panic!("failed write must stop before the barrier");
+	});
+	let mut journal = DurableJournal::from_new_segment(segment).expect("inspect empty fixture");
 	assert!(matches!(
-		journal.append_with_barrier(FrameKind::JobPrepared, OWNER_PAYLOAD, |_| {
-			panic!("failed write must stop before the barrier");
-		}),
+		journal.append(FrameKind::JobPrepared, OWNER_PAYLOAD),
 		Err(DurableJournalError::Frame(FrameWriteError::Io(_)))
 	));
 	assert!(matches!(
@@ -307,43 +333,52 @@ fn a_write_error_retires_the_writer_before_the_barrier() {
 #[test]
 fn rejecting_an_oversized_payload_leaves_the_writer_at_its_boundary() {
 	let (scratch, file) = ScratchFile::create();
-	let mut journal = DurableJournal::from_new_file(file).expect("admit exclusive empty file");
+	let barriers = Cell::new(0);
+	let segment = TestSegment::with_barrier(file, |file| {
+		barriers.set(barriers.get() + 1);
+		file.sync_all()
+	});
+	let mut journal =
+		DurableJournal::from_new_segment(segment).expect("admit exclusive empty file");
 	let oversized = vec![0; MAX_PAYLOAD_BYTES + 1];
 	assert!(matches!(
-		journal.append_with_barrier(FrameKind::JobPrepared, &oversized, |_| {
-			panic!("invalid frame must stop before the barrier");
-		}),
+		journal.append(FrameKind::JobPrepared, &oversized),
 		Err(DurableJournalError::Frame(
 			FrameWriteError::PayloadTooLarge(_)
 		))
 	));
 	assert!(scratch.bytes().is_empty(), "invalid input reached the file");
+	assert_eq!(barriers.get(), 0);
 	let synced = journal
 		.append(FrameKind::JobPrepared, OWNER_PAYLOAD)
 		.expect("valid append after an input rejection");
 	assert_eq!(synced.head().sequence(), 1);
+	assert_eq!(barriers.get(), 1);
 }
 
 #[test]
 fn rejecting_a_frame_past_the_segment_limit_preserves_space_for_a_smaller_frame() {
 	let (scratch, mut file) = ScratchFile::create();
-	let limit = DurableJournal::MAX_FIRST_SEGMENT_BYTES;
+	let limit = MAX_FIRST_SEGMENT_BYTES;
 	let end = limit - u64::try_from(FRAME_OVERHEAD_BYTES).expect("frame overhead fits in u64");
 	file.set_len(end).expect("make a sparse prefix fixture");
 	file.seek(SeekFrom::Start(end))
 		.expect("seek to the prefix end");
+	let barriers = Cell::new(0);
+	let segment = TestSegment::with_barrier(file, |file| {
+		barriers.set(barriers.get() + 1);
+		file.sync_all()
+	});
 	let mut journal = DurableJournal {
-		writer: Some(FrameWriter::new(file, ChainHead::start())),
+		writer: Some(FrameWriter::new(segment, ChainHead::start())),
 		end,
-		barrier: JournalFileBarrier::SyncAll,
 	};
 	assert!(matches!(
-		journal.append_with_barrier(FrameKind::PublishIntent, b"x", |_| {
-			panic!("an oversized segment reached the barrier")
-		}),
+		journal.append(FrameKind::PublishIntent, b"x"),
 		Err(DurableJournalError::SegmentTooLarge { length, limit: maximum })
 			if length == limit + 1 && maximum == limit
 	));
+	assert_eq!(barriers.get(), 0);
 	let mut read = File::open(&scratch.0).expect("open an independent reader");
 	assert_eq!(
 		read.metadata().expect("inspect unaffected extent").len(),
@@ -353,6 +388,7 @@ fn rejecting_a_frame_past_the_segment_limit_preserves_space_for_a_smaller_frame(
 		.append(FrameKind::PublishIntent, b"")
 		.expect("a smaller frame fits exactly at the limit");
 	assert_eq!(read.metadata().expect("inspect full extent").len(), limit);
+	assert_eq!(barriers.get(), 1);
 	read.seek(SeekFrom::Start(end))
 		.expect("seek to the fixture frame");
 	let mut reader = FrameReader::new(read, ChainHead::start());
@@ -370,7 +406,7 @@ fn admission_rejects_nonempty_files_without_changing_them() {
 	file.write_all(b"existing").expect("seed incumbent bytes");
 	file.rewind().expect("return the cursor to the start");
 	assert!(matches!(
-		DurableJournal::from_new_file(file),
+		DurableJournal::from_new_segment(TestSegment::held(file)),
 		Err(DurableJournalError::UnexpectedLength {
 			expected: 0,
 			actual: 8
@@ -385,7 +421,7 @@ fn admission_rejects_a_cursor_past_the_empty_boundary() {
 	file.seek(SeekFrom::Start(1))
 		.expect("move fixture's cursor");
 	assert!(matches!(
-		DurableJournal::from_new_file(file),
+		DurableJournal::from_new_segment(TestSegment::held(file)),
 		Err(DurableJournalError::UnexpectedCursor {
 			expected: 0,
 			actual: 1
@@ -402,7 +438,7 @@ fn admission_rejects_a_cursor_past_the_empty_boundary() {
 fn admission_rejects_a_directory_handle() {
 	let file = File::open(std::env::temp_dir()).expect("open fixture directory handle");
 	assert!(matches!(
-		DurableJournal::from_new_file(file),
+		DurableJournal::from_new_segment(TestSegment::held(file)),
 		Err(DurableJournalError::NotRegularFile)
 	));
 }
@@ -413,7 +449,8 @@ fn changed_boundary_before_append_retires_the_writer() {
 	let alias = file
 		.try_clone()
 		.expect("create a fixture-only duplicate writer");
-	let mut journal = DurableJournal::from_new_file(file).expect("admit initially empty file");
+	let mut journal = DurableJournal::from_new_segment(TestSegment::held(file))
+		.expect("admit initially empty file");
 	let synced = journal
 		.append(FrameKind::JobPrepared, OWNER_PAYLOAD)
 		.expect("sync frame before out-of-band change");
@@ -446,7 +483,8 @@ fn changed_boundary_before_append_retires_the_writer() {
 
 fn synced_owner() -> (ScratchFile, ChainHead, u64) {
 	let (scratch, file) = ScratchFile::create();
-	let mut journal = DurableJournal::from_new_file(file).expect("admit exclusive empty file");
+	let mut journal = DurableJournal::from_new_segment(TestSegment::held(file))
+		.expect("admit exclusive empty file");
 	let head = journal
 		.append(FrameKind::JobPrepared, OWNER_PAYLOAD)
 		.expect("sync the fixture owner frame")

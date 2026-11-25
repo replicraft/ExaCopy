@@ -1,13 +1,11 @@
-use std::fs::File;
-
 use ed25519_dalek::SigningKey;
 use exacopy_content::validate_stream_input;
-use exacopy_endpoint::ReadView as _;
 use exacopy_endpoint::linux_copy::{
 	CopyDestinationView, CopySource, CopySourceRoot, CopyWorkspace, PublishableStageDirectory as _,
 };
 use exacopy_endpoint::linux_job::{JobBootstrapRoot, JobWorkspace};
 use exacopy_endpoint::linux_staging::StageReader as _;
+use exacopy_endpoint::{JournalSegment, ReadView as _};
 use exacopy_journal::{OwnerProfileId, OwnerTimestamp, OwnerToken};
 use exacopy_model::{CopyBinding, CopyEvent, EntryId, JobId, RunEpoch, StageId};
 
@@ -70,7 +68,8 @@ where
 	S: CopySourceRoot<Source: CopySource<Identity = J::Identity, Metadata = J::Metadata>>,
 	D: CopyDestinationView
 		+ JobBootstrapRoot<'root, Job = J, Error = <D as CopyDestinationView>::Error>,
-	J: CopyWorkspace + JobWorkspace<Segment = File, Error = <D as CopyDestinationView>::Error>,
+	J: CopyWorkspace + JobWorkspace<Error = <D as CopyDestinationView>::Error>,
+	J::Segment: JournalSegment,
 {
 	let file = preflight_source::<S, D, J>(&planning, plan, scratch.len())?;
 	let planned_source = plan.source();
@@ -177,7 +176,8 @@ where
 	S: CopySourceRoot<Source: CopySource<Identity = J::Identity, Metadata = J::Metadata>>,
 	D: CopyDestinationView
 		+ JobBootstrapRoot<'root, Job = J, Error = <D as CopyDestinationView>::Error>,
-	J: CopyWorkspace + JobWorkspace<Segment = File, Error = <D as CopyDestinationView>::Error>,
+	J: CopyWorkspace + JobWorkspace<Error = <D as CopyDestinationView>::Error>,
+	J::Segment: JournalSegment,
 {
 	let planned_source = plan.source();
 	let planned_destination = plan.destination().root;

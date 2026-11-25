@@ -1,13 +1,8 @@
-use std::fs::{self, OpenOptions};
-use std::io::Write as _;
-use std::path::PathBuf;
-
 use exacopy_journal::frame::FrameKind;
-use exacopy_journal::{
-	DarwinReceiptCommitted, DarwinReceiptDigest, DurableJournal, JournalFileBarrier,
-};
+use exacopy_journal::{DarwinReceiptCommitted, DarwinReceiptDigest, DurableJournal};
 
 use super::Fixture;
+use crate::macos::journal_fixture::SimulatedSegment;
 use crate::macos::receipt::{DarwinCopyReceipt, DarwinReceiptFrames};
 use crate::macos::replay::{DarwinReplayError, DarwinReplayStatus};
 
@@ -18,26 +13,11 @@ fn validates_canonical_receipt_and_independent_digest_against_the_accepted_chain
 	let frames = &history.frames;
 	let durability = &frames[7];
 	let synced = {
-		let path = std::env::temp_dir().join(format!(
-			"exacopy-apfs-replay-{}.journal",
-			std::process::id()
-		));
-		let mut file = OpenOptions::new()
-			.create_new(true)
-			.read(true)
-			.write(true)
-			.open(&path)
-			.unwrap();
-		let _owned_test_file = TestFile(path);
 		let prefix_end = history.ends[6];
-		file.write_all(&history.bytes[..prefix_end]).unwrap();
-		let mut journal = DurableJournal::resume_first_segment_with_barrier(
-			file,
-			frames[6].head(),
-			prefix_end as u64,
-			JournalFileBarrier::DarwinFullFsync,
-		)
-		.unwrap();
+		let segment = SimulatedSegment::<true>::new(history.bytes[..prefix_end].to_vec(), true);
+		let mut journal =
+			DurableJournal::resume_first_segment(segment, frames[6].head(), prefix_end as u64)
+				.unwrap();
 		journal
 			.append(durability.kind(), durability.payload())
 			.unwrap()
@@ -88,12 +68,4 @@ fn validates_canonical_receipt_and_independent_digest_against_the_accepted_chain
 		replay.validate_receipt(&fixture.plan, &bytes),
 		Err(DarwinReplayError::Phase(_))
 	));
-}
-
-struct TestFile(PathBuf);
-
-impl Drop for TestFile {
-	fn drop(&mut self) {
-		let _ = fs::remove_file(&self.0);
-	}
 }

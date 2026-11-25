@@ -1,5 +1,6 @@
 use std::num::NonZeroU32;
 
+use exacopy_endpoint::JournalSegment;
 use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{
 	DarwinJobPrepared, DarwinOwnerManifest, DarwinOwnerRecord, DarwinPreparedError,
@@ -13,12 +14,9 @@ use crate::macos::plan::DarwinCopyPlan;
 
 /// Signed owner, synchronized first frame, and held journal namespace.
 #[derive(Debug)]
-pub struct JobPreparation<D> {
-	// Drop the sole segment writer before releasing the journal directory lease.
-	/// The sole first-segment writer, closed before the journal directory lease is released.
-	pub journal: DurableJournal,
-	/// The private lease held for the entire journal writer lifetime.
-	pub journal_directory: D,
+pub struct JobPreparation<D: PrivateJournalDirectory> {
+	/// The sole first-segment writer holding its namespace lease.
+	pub journal: DurableJournal<D::Segment>,
 	/// The signed owner envelope persisted for this job.
 	pub owner: DarwinOwnerRecord,
 	/// The exact preparation matching the synchronized first frame.
@@ -70,6 +68,15 @@ pub fn prepare<'job, J: PrivateJob>(
 	job: &'job J,
 	destination: DarwinRootBinding,
 ) -> Result<JobPreparation<J::JournalDirectory<'job>>, BootstrapError<J::Error>> {
+	let barrier = <J::JournalDirectory<'job> as PrivateJournalDirectory>::Segment::BARRIER;
+	if barrier != JournalFileBarrier::DarwinFullFsync {
+		return Err(BootstrapError::Journal(
+			DurableJournalError::UnexpectedBarrier {
+				expected: JournalFileBarrier::DarwinFullFsync,
+				actual: barrier,
+			},
+		));
+	}
 	let context = plan.context();
 	let state_root_uid = NonZeroU32::new(job.owner_uid()).ok_or(OwnerError::InvalidOwnerUid)?;
 	let owner = DarwinOwnerRecord::sign(
@@ -99,15 +106,12 @@ pub fn prepare<'job, J: PrivateJob>(
 	let segment = journal_directory
 		.create_first_segment()
 		.map_err(BootstrapError::artifact(JobPreparationStep::FirstSegment))?;
-	let mut journal =
-		DurableJournal::from_new_file_with_barrier(segment, JournalFileBarrier::DarwinFullFsync)
-			.map_err(BootstrapError::Journal)?;
+	let mut journal = DurableJournal::from_new_segment(segment).map_err(BootstrapError::Journal)?;
 	let initial_frame = journal
 		.append(FrameKind::JobPrepared, &preparation.encode())
 		.map_err(BootstrapError::Journal)?;
 	Ok(JobPreparation {
 		journal,
-		journal_directory,
 		owner,
 		preparation,
 		initial_frame,

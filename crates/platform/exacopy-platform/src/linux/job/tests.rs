@@ -2,7 +2,7 @@ use std::fs;
 use std::io::Write as _;
 use std::os::unix::fs::{MetadataExt as _, symlink};
 
-use exacopy_endpoint::UnixComponent;
+use exacopy_endpoint::{JournalSegment, UnixComponent};
 use exacopy_model::{
 	CopyBinding, CopyEffect, CopyEvent, CopySession, EntryId, JobId, PublishNoClobber, RunEpoch,
 	StageId,
@@ -56,7 +56,7 @@ fn fixed_job_records_can_only_be_created_exclusively() {
 		.expect("write private receipt");
 	owner.sync_all().expect("owner record barrier");
 	plan.sync_all().expect("plan record barrier");
-	segment.sync_all().expect("segment barrier");
+	segment.sync().expect("segment barrier");
 	receipt.sync_all().expect("receipt barrier");
 	stage.sync_directory().expect("stage directory barrier");
 	journal.sync_directory().expect("journal directory barrier");
@@ -79,8 +79,13 @@ fn fixed_job_records_can_only_be_created_exclusively() {
 		assert_eq!(metadata.dev(), identity.device());
 		assert_eq!(metadata.ino(), identity.inode());
 	}
-	for file in [&owner, &plan, &segment, &receipt] {
-		let metadata = file.metadata().expect("private record metadata");
+	for path in [
+		job_path.join(OWNER),
+		job_path.join(PLAN),
+		journal_path.join(SEGMENT),
+		job_path.join(RECEIPTS).join(RECEIPT),
+	] {
+		let metadata = fs::metadata(path).expect("private record metadata");
 		assert_eq!(metadata.mode() & 0o7777, 0o600);
 		assert_eq!(metadata.nlink(), 1);
 	}

@@ -1,9 +1,6 @@
-use std::fs::{self, OpenOptions};
-use std::io::Write as _;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
+use crate::macos::journal_fixture::SimulatedSegment;
 use ed25519_dalek::SigningKey;
+
 use exacopy_journal::frame::{FrameReader, FrameWriter};
 use exacopy_journal::{
 	DarwinEntryPreparation, DarwinEntryPrepared, DarwinJobPrepared, DarwinNamespaceObservation,
@@ -156,36 +153,22 @@ impl Prefix {
 	}
 
 	fn synced(&self, barrier: JournalFileBarrier, kind: FrameKind, payload: &[u8]) -> SyncedFrame {
-		static TEST_FILE_SERIAL: AtomicUsize = AtomicUsize::new(0);
-		let serial = TEST_FILE_SERIAL.fetch_add(1, Ordering::Relaxed);
-		let path = std::env::temp_dir().join(format!(
-			"exacopy-apfs-receipt-{}-{serial}.journal",
-			std::process::id()
-		));
-		let mut file = OpenOptions::new()
-			.create_new(true)
-			.read(true)
-			.write(true)
-			.open(&path)
-			.unwrap();
-		let _owned_test_file = TestFile(path);
-		file.write_all(&self.bytes).unwrap();
-		let mut journal = DurableJournal::resume_first_segment_with_barrier(
-			file,
+		match barrier {
+			JournalFileBarrier::DarwinFullFsync => self.synced_with::<true>(kind, payload),
+			JournalFileBarrier::SyncAll => self.synced_with::<false>(kind, payload),
+			_ => panic!("unknown fixture barrier"),
+		}
+	}
+
+	fn synced_with<const DARWIN: bool>(&self, kind: FrameKind, payload: &[u8]) -> SyncedFrame {
+		let segment = SimulatedSegment::<DARWIN>::new(self.bytes.clone(), true);
+		let mut journal = DurableJournal::resume_first_segment(
+			segment,
 			self.observed.head(),
 			self.bytes.len() as u64,
-			barrier,
 		)
 		.unwrap();
 		journal.append(kind, payload).unwrap()
-	}
-}
-
-struct TestFile(PathBuf);
-
-impl Drop for TestFile {
-	fn drop(&mut self) {
-		let _ = fs::remove_file(&self.0);
 	}
 }
 

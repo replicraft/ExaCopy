@@ -1,10 +1,8 @@
-use std::fs::File;
-
-use exacopy_endpoint::ReadView as _;
 use exacopy_endpoint::linux_copy::{
 	CopyDestinationView, CopySource, CopySourceRoot, CopyWorkspace,
 };
 use exacopy_endpoint::linux_job::{JobBootstrapRoot, JobWorkspace};
+use exacopy_endpoint::{JournalSegment, ReadView as _};
 use exacopy_journal::{
 	ApplyRequestedDurability, LinuxFileIdentity, OwnerDigest, OwnerTimestamp, PublicApplyBinding,
 };
@@ -73,7 +71,8 @@ where
 	S: CopySourceRoot<Source: CopySource<Identity = J::Identity, Metadata = J::Metadata>>,
 	D: CopyDestinationView
 		+ JobBootstrapRoot<'root, Job = J, Error = <D as CopyDestinationView>::Error>,
-	J: CopyWorkspace + JobWorkspace<Segment = File, Error = <D as CopyDestinationView>::Error>,
+	J: CopyWorkspace + JobWorkspace<Error = <D as CopyDestinationView>::Error>,
+	J::Segment: JournalSegment,
 {
 	if !matches_admitted_binding(&request, scratch.len()) {
 		return Err(CopyError::StalePlan);

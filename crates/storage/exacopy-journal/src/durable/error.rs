@@ -1,6 +1,8 @@
 use std::fmt;
 use std::io;
 
+use exacopy_endpoint::JournalFileBarrier;
+
 use crate::frame::{FrameReadError, FrameWriteError};
 
 /// Admission or append failed for a journal file.
@@ -42,6 +44,13 @@ pub enum DurableJournalError {
 	OffsetOverflow,
 	/// The frame was refused or its write failed.
 	Frame(FrameWriteError),
+	/// The supplied segment does not perform the required file barrier.
+	UnexpectedBarrier {
+		/// Barrier required by the admitted workflow profile.
+		expected: JournalFileBarrier,
+		/// Barrier performed by the supplied segment.
+		actual: JournalFileBarrier,
+	},
 	/// The journal file barrier failed.
 	Sync(io::Error),
 	/// A previous uncertain outcome retired this writer.
@@ -80,6 +89,12 @@ impl fmt::Display for DurableJournalError {
 				formatter.write_str("journal frame would overflow the file offset")
 			}
 			Self::Frame(source) => source.fmt(formatter),
+			Self::UnexpectedBarrier { expected, actual } => {
+				write!(
+					formatter,
+					"journal barrier is {actual:?}, expected {expected:?}"
+				)
+			}
 			Self::Sync(source) => write!(formatter, "journal file barrier failed: {source}"),
 			Self::Retired => formatter.write_str("journal writer retired pending reconciliation"),
 		}

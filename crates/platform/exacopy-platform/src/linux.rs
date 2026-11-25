@@ -3,6 +3,7 @@
 mod copy_capabilities;
 mod handle;
 mod job;
+mod journal_segment;
 mod mount_observation;
 mod named_read;
 mod owner_seed;
@@ -19,6 +20,7 @@ pub use handle::FileIdentity;
 pub use job::{
 	CheckpointDirectory, JobDirectory, JournalDirectory, ReceiptDirectory, TargetStatus,
 };
+pub use journal_segment::LinuxJournalSegment;
 pub use named_read::NamedReadView;
 pub use owner_seed::{
 	HeldOwnerSeed, OWNER_SEED_BYTES, OwnerSeedError, initialize_owner_seed, kernel_random,

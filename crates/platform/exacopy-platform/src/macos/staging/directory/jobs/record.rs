@@ -9,15 +9,14 @@ use super::super::super::super::{FILE_MODE, PhysicalFsid, acl, file::same_observ
 use super::super::super::close::close_writer;
 use super::checked_component;
 use super::{Creation, DirectoryLease, JobArtifact, JobDirectory, JobError, JobStep};
-use super::{JOURNAL, JournalDirectory, ManagedObjectIdentity};
+use super::{DarwinJournalSegment, JOURNAL, JournalDirectory, ManagedObjectIdentity};
 
 pub(super) const OWNER: &[u8] = b"owner.cbor";
 pub(super) const PLAN: &[u8] = b"plan.cbor";
 pub(super) const FIRST_SEGMENT: &[u8] = b"00000000000000000001.exajnl";
 
 pub(super) const MAX_RECORD_BYTES: usize = 64 * 1024;
-const CREATE_RECORD: OFlags = OFlags::WRONLY
-	.union(OFlags::CREATE)
+const CREATE_FLAGS: OFlags = OFlags::CREATE
 	.union(OFlags::EXCL)
 	.union(OFlags::NOFOLLOW)
 	.union(OFlags::NONBLOCK)
@@ -59,34 +58,37 @@ impl JobDirectory<'_> {
 	}
 }
 
-impl JournalDirectory<'_> {
-	/// Exclusively creates the empty first journal segment and barriers its namespace.
+impl<'job> JournalDirectory<'job> {
+	/// Exclusively creates a first segment and transfers its held namespace to the writer.
 	///
-	/// The sole writable descriptor goes to the journal writer. The coordinator
-	/// must keep this leased job and journal namespace alive while the writer
-	/// owns it. The journal layer owns file barriers for its appended frames.
+	/// The typed segment owns the only write descriptor and keeps this directory
+	/// and its borrowing relationship with the held job alive through barriers.
 	///
 	/// # Errors
-	/// Rejects collisions and failed identity or namespace checks. An uncertain
-	/// segment is retained and no writable descriptor is returned.
-	pub fn create_first_segment(&self) -> Result<File, JobError> {
+	/// Rejects collisions and failed identity or namespace checks. Uncertain
+	/// segments remain in place for reconciliation.
+	pub fn create_first_segment(self) -> Result<DarwinJournalSegment<'job>, JobError> {
 		let name = checked_component(FIRST_SEGMENT)?;
 		let lease = &self.directory.lease;
-		let check_parent = || {
-			self.job.check_current()?;
-			self.directory
-				.check_current(&self.job.directory.lease, checked_component(JOURNAL)?)
-		};
-		Creation::new(self.job.name, JobArtifact::FirstSegment).run(|creation| {
-			check_parent()?;
-			let (file, identity) = create_empty(lease, name, creation)?;
-			creation.step = Some(JobStep::NamespaceBarrier);
-			fs::fsync(&lease.file)?;
-			creation.step = Some(JobStep::Revalidate);
-			check_parent()?;
-			check_record(lease, name, &file, 0, Some(identity))?;
-			Ok(file)
-		})
+		let (file, identity) =
+			Creation::new(self.job.name, JobArtifact::FirstSegment).run(|creation| {
+				self.check_current()?;
+				let (file, identity) =
+					create_empty_with_access(lease, name, creation, OFlags::RDWR)?;
+				creation.step = Some(JobStep::NamespaceBarrier);
+				fs::fsync(&lease.file)?;
+				creation.step = Some(JobStep::Revalidate);
+				self.check_current()?;
+				check_record(lease, name, &file, 0, Some(identity))?;
+				Ok((file, identity))
+			})?;
+		Ok(DarwinJournalSegment::new(file, identity, self))
+	}
+
+	pub(super) fn check_current(&self) -> Result<(), JobError> {
+		self.job.check_current()?;
+		self.directory
+			.check_current(&self.job.directory.lease, checked_component(JOURNAL)?)
 	}
 }
 
@@ -149,8 +151,23 @@ pub(super) fn create_empty(
 	name: UnixComponent<'_>,
 	creation: &mut Creation,
 ) -> Result<(File, ManagedObjectIdentity), JobError> {
-	let file =
-		creation.create(|| fs::openat(&lease.file, name.as_bytes(), CREATE_RECORD, FILE_MODE))?;
+	create_empty_with_access(lease, name, creation, OFlags::WRONLY)
+}
+
+fn create_empty_with_access(
+	lease: &DirectoryLease,
+	name: UnixComponent<'_>,
+	creation: &mut Creation,
+	access: OFlags,
+) -> Result<(File, ManagedObjectIdentity), JobError> {
+	let file = creation.create(|| {
+		fs::openat(
+			&lease.file,
+			name.as_bytes(),
+			CREATE_FLAGS | access,
+			FILE_MODE,
+		)
+	})?;
 	creation.step = Some(JobStep::Bind);
 	let file = File::from(file);
 	let identity = check_record(lease, name, &file, 0, None)?;

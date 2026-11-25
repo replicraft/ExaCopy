@@ -1,6 +1,7 @@
 use std::cell::RefCell;
-use std::fs::File;
-use std::io;
+use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
+
+use exacopy_endpoint::{JournalFileBarrier, JournalSegment};
 
 use exacopy_journal::frame::{Frame, FrameKind};
 use exacopy_journal::{
@@ -310,7 +311,7 @@ impl VerifiedCopy for ScriptedCopy<'_> {
 
 struct Journal<'test> {
 	script: &'test Script,
-	journal: &'test mut DurableJournal,
+	journal: &'test mut dyn PublicationJournal,
 	wrong_token: Option<SyncedFrame>,
 }
 
@@ -335,7 +336,7 @@ impl PublicationJournal for Journal<'_> {
 		{
 			substitute_metadata_digest(&mut payload);
 		}
-		let (frame, synced) = self.journal.append_frame(kind, payload)?;
+		let (frame, synced) = self.journal.append(kind, payload)?;
 		if kind == FrameKind::PublishObserved {
 			self.script
 				.observations
@@ -382,7 +383,7 @@ fn run(
 	scenario: Scenario,
 	check: impl FnOnce(Result<DarwinCopyReceipt<'_>, ScriptFailure>, PublicationProgress, &Script),
 ) {
-	with_publication_fixture(|entry, path| {
+	with_publication_fixture(|entry, _| {
 		let script = Script {
 			scenario,
 			steps: RefCell::new(Vec::new()),
@@ -391,18 +392,13 @@ fn run(
 		};
 		let mut journal = Journal {
 			script: &script,
-			journal: entry.journal,
+			journal: &mut entry.journal,
 			wrong_token: None,
 		};
 		if matches!(scenario, Scenario::WrongIntentToken) {
-			let file = File::options()
-				.read(true)
-				.write(true)
-				.create_new(true)
-				.open(path.join("alternate-journal"))
-				.unwrap();
 			let mut other =
-				DurableJournal::from_new_file_with_barrier(file, entry.synced.barrier()).unwrap();
+				DurableJournal::from_new_segment(SimulatedIntentSegment(Cursor::new(Vec::new())))
+					.unwrap();
 			journal.wrong_token = Some(
 				other
 					.append(FrameKind::PublishIntent, b"another intent")
@@ -452,4 +448,41 @@ fn run(
 		);
 		check(result, progress, &script);
 	});
+}
+
+// This alternate branch is a frame provenance control, with no native barrier claim.
+struct SimulatedIntentSegment(Cursor<Vec<u8>>);
+
+impl Read for SimulatedIntentSegment {
+	fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+		self.0.read(bytes)
+	}
+}
+
+impl Write for SimulatedIntentSegment {
+	fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+		self.0.write(bytes)
+	}
+
+	fn flush(&mut self) -> io::Result<()> {
+		self.0.flush()
+	}
+}
+
+impl Seek for SimulatedIntentSegment {
+	fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+		self.0.seek(position)
+	}
+}
+
+impl JournalSegment for SimulatedIntentSegment {
+	const BARRIER: JournalFileBarrier = JournalFileBarrier::DarwinFullFsync;
+
+	fn regular_length(&self) -> io::Result<Option<u64>> {
+		Ok(Some(self.0.get_ref().len() as u64))
+	}
+
+	fn sync(&self) -> io::Result<()> {
+		Ok(())
+	}
 }

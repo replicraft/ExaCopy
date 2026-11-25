@@ -27,7 +27,8 @@ pub use darwin_prepared::{
 	DarwinRootBinding, DarwinSourceMetadata, DarwinSourceTimes, DarwinSourceView, DarwinStageId,
 	DarwinStageObservation,
 };
-pub use durable::{DurableJournal, DurableJournalError, JournalFileBarrier, SyncedFrame};
+pub use durable::{DurableJournal, DurableJournalError, MAX_FIRST_SEGMENT_BYTES, SyncedFrame};
+pub use exacopy_endpoint::JournalFileBarrier;
 pub use intent::{
 	ApplyCrashProfile, ApplyIntentEvidence, ApplyProcessCrashEnvironment, ApplyQualification,
 	ApplyQualificationDigest, IntentError, JournalEntryId, JournalEpoch, JournalJobId,

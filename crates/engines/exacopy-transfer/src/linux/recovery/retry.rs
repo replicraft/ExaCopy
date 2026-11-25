@@ -4,9 +4,10 @@ use exacopy_endpoint::linux_recovery::{RecoveryJobView, RecoveryRecord};
 use exacopy_journal::RootCapabilityId;
 
 use super::super::CopyCheckpoint;
+use super::super::job::check_linux_barrier;
 use super::finish::finish_with_lease;
 use super::source::open_source;
-use super::{RecoveryDisposition, RecoveryHistory, RecoveryProfile, RecoveryStep};
+use super::{FinishFailure, RecoveryDisposition, RecoveryHistory, RecoveryProfile, RecoveryStep};
 
 mod engine;
 mod error;
@@ -46,6 +47,7 @@ where
 			Error = super::LeaseReadError<L>,
 		>,
 {
+	check_linux_barrier::<L::Segment<'_>>().map_err(FinishFailure::Resume)?;
 	let job = lease.job();
 	let history = RecoveryHistory::load(job, name, profile)?;
 	let plan = history.plan()?;

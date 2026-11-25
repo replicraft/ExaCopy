@@ -1,3 +1,4 @@
+use exacopy_endpoint::JournalSegment;
 use exacopy_endpoint::linux_recovery::{RecoveryInventoryView, RecoveryRecord};
 use exacopy_journal::frame::{ChainHead, FrameKind};
 use exacopy_journal::{DurableJournal, DurableJournalError, MetadataRecorded, StreamEvidence};
@@ -77,12 +78,12 @@ impl<L: RecoveryStageLease> RetainedStage for HeldStage<'_, '_, L> {
 	}
 }
 
-pub(super) fn open_journal<L: RecoveryStageLease>(
-	lease: &L,
+pub(super) fn open_journal<'lease, L: RecoveryStageLease>(
+	lease: &'lease L,
 	file: &L::File,
 	boundary: JournalBoundary,
 	checkpoint: fn(CopyCheckpoint),
-) -> Result<ObservedJournal, JournalOpenError<L::EffectError>> {
+) -> Result<ObservedJournal<L::Segment<'lease>>, JournalOpenError<L::EffectError>> {
 	let segment = lease
 		.open_segment(file)
 		.map_err(JournalOpenError::Namespace)?;
@@ -94,12 +95,12 @@ pub(super) fn open_journal<L: RecoveryStageLease>(
 		.map_err(JournalOpenError::Resume)
 }
 
-pub(super) struct ObservedJournal {
-	journal: DurableJournal,
+pub(super) struct ObservedJournal<S> {
+	journal: DurableJournal<S>,
 	checkpoint: fn(CopyCheckpoint),
 }
 
-impl RetryJournal for ObservedJournal {
+impl<S: JournalSegment> RetryJournal for ObservedJournal<S> {
 	fn append_synced(
 		&mut self,
 		kind: FrameKind,

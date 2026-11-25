@@ -1,10 +1,8 @@
-use std::fs::File;
-
-use exacopy_endpoint::ReadView;
 use exacopy_endpoint::linux_publication::ExclusivePublication;
 use exacopy_endpoint::linux_recovery::{RecoveryJobView, RecoveryRecord};
 use exacopy_endpoint::linux_staging::SourceMetadata;
-use exacopy_journal::ObservedTimestamp;
+use exacopy_endpoint::{JournalSegment, ReadView};
+use exacopy_journal::{DurableJournal, ObservedTimestamp};
 use exacopy_model::CopyBinding;
 
 pub use super::finish::{FinishReceiptDirectory, ReceiptLease};
@@ -17,10 +15,16 @@ pub type LeaseReadError<L> = <<L as RecoveryLease>::File as ReadView>::Error;
 pub type LeaseInventory<'lease, L> =
 	<<L as RecoveryLease>::Job<'lease> as RecoveryJobView>::Inventory<'lease>;
 
+pub(super) type RecoveryJournal<'lease, L> = DurableJournal<<L as RecoveryLease>::Segment<'lease>>;
+
 /// The exclusive job lease needed to complete a previously observed publication.
 pub trait RecoveryLease: ReceiptLease<ExistingReceipt = Self::File> {
 	/// The read-only recovery record and stream capability.
 	type File: RecoveryRecord;
+	/// The exclusive, append-only segment bound to the live recovery lease.
+	type Segment<'lease>: JournalSegment
+	where
+		Self: 'lease;
 	/// The held view of the same job directory under the exclusive lease.
 	type Job<'lease>: RecoveryJobView<
 			Record = Self::File,
@@ -36,7 +40,7 @@ pub trait RecoveryLease: ReceiptLease<ExistingReceipt = Self::File> {
 	/// Reopens the authorized journal for append at the same inode.
 	/// # Errors
 	/// Fails if the lease or retained segment can no longer be confirmed.
-	fn open_segment(&self, file: &Self::File) -> Result<File, Self::EffectError>;
+	fn open_segment(&self, file: &Self::File) -> Result<Self::Segment<'_>, Self::EffectError>;
 
 	/// Applies supported barriers after a completed publication.
 	/// # Errors

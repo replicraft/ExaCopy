@@ -1,18 +1,21 @@
 use std::cell::RefCell;
-use std::io::{self, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::rc::Rc;
 
-use exacopy_endpoint::UnixComponent;
 use exacopy_endpoint::linux_job::{
 	JobBootstrapRoot, JobFileIdentity, JobJournalDirectory, JobRecord, JobWorkspace,
 };
+use exacopy_endpoint::{JournalFileBarrier, JournalSegment, UnixComponent};
 use exacopy_journal::{
-	JobPrepared, JournalContext, JournalEpoch, JournalJobId, LinuxFileIdentity, OwnerError,
-	OwnerStateDirectory, PlanDigest,
+	DurableJournalError, JobPrepared, JournalContext, JournalEpoch, JournalJobId,
+	LinuxFileIdentity, OwnerError, OwnerStateDirectory, PlanDigest,
 };
 
 use super::protocol::{BootstrapFailure, InitialJournal, prepare};
-use super::{JobBootstrap, JobStep, OwnerProfileId, OwnerRecord, OwnerTimestamp, OwnerToken};
+use super::{
+	BootstrapError, JobBootstrap, JobStep, OwnerProfileId, OwnerRecord, OwnerTimestamp, OwnerToken,
+	PreparedJob,
+};
 use super::{RootCapabilityId, SigningKey};
 
 const DESTINATION: JobFileIdentity = JobFileIdentity {
@@ -401,4 +404,52 @@ fn public_stage_syncs_only_the_mandatory_public_owner_before_preparation() {
 		OwnerRecord::decode(&trace.owner, request.profile, &key),
 		Err(OwnerError::WrongDomain)
 	);
+}
+
+#[test]
+fn production_bootstrap_refuses_another_barrier_before_creating_the_job() {
+	let root = Root::new(None);
+	let signer = SigningKey::from_bytes(&[0x57; 32]);
+	assert!(matches!(
+		PreparedJob::create(&root, request(), &signer),
+		Err(BootstrapError::Journal(
+			DurableJournalError::UnexpectedBarrier {
+				expected: JournalFileBarrier::SyncAll,
+				actual: JournalFileBarrier::DarwinFullFsync,
+			}
+		))
+	));
+	assert!(root.trace.borrow().effects.is_empty());
+}
+
+impl Read for Root {
+	fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+		Err(io::Error::other("wrong barrier fixture"))
+	}
+}
+
+impl Write for Root {
+	fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+		Err(io::Error::other("wrong barrier fixture"))
+	}
+	fn flush(&mut self) -> io::Result<()> {
+		Err(io::Error::other("wrong barrier fixture"))
+	}
+}
+
+impl Seek for Root {
+	fn seek(&mut self, _: SeekFrom) -> io::Result<u64> {
+		Err(io::Error::other("wrong barrier fixture"))
+	}
+}
+
+impl JournalSegment for Root {
+	const BARRIER: JournalFileBarrier = JournalFileBarrier::DarwinFullFsync;
+
+	fn regular_length(&self) -> io::Result<Option<u64>> {
+		Err(io::Error::other("wrong barrier fixture"))
+	}
+	fn sync(&self) -> io::Result<()> {
+		Err(io::Error::other("wrong barrier fixture"))
+	}
 }

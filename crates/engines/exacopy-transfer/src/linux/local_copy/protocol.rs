@@ -1,5 +1,6 @@
 use std::io::{self, Write as _};
 
+use exacopy_endpoint::JournalSegment;
 use exacopy_endpoint::linux_publication::{
 	ExclusivePublication, PublicationFailure, ReceiptDirectory as _, ReceiptRecord as _,
 	ReceiptWorkspace,
@@ -54,7 +55,7 @@ impl Publication<'_, '_> {
 
 	pub(in crate::linux) fn complete_with<R, S, P: ExclusivePublication>(
 		&self,
-		journal: &mut DurableJournal,
+		journal: &mut DurableJournal<impl JournalSegment>,
 		session: &mut CopySession,
 		stage: P,
 		sealed: &SealEvidence,
@@ -68,7 +69,7 @@ impl Publication<'_, '_> {
 
 	pub(super) fn complete_using<R, S, P>(
 		&self,
-		journal: &mut DurableJournal,
+		journal: &mut DurableJournal<impl JournalSegment>,
 		session: &mut CopySession,
 		sealed: &SealEvidence,
 		metadata: &SyncedFrame,
@@ -154,7 +155,7 @@ impl Publication<'_, '_> {
 
 pub(super) fn persist_receipt<R, P, J: ReceiptWorkspace>(
 	job: &J,
-	journal: &mut DurableJournal,
+	journal: &mut DurableJournal<impl JournalSegment>,
 	context: PublishIntentContext,
 	receipt: &CopyReceipt<'_>,
 	durability: &SyncedFrame,
@@ -189,7 +190,7 @@ pub(super) fn persist_receipt<R, P, J: ReceiptWorkspace>(
 }
 
 fn append<R, S, P>(
-	journal: &mut DurableJournal,
+	journal: &mut DurableJournal<impl JournalSegment>,
 	kind: FrameKind,
 	payload: &[u8],
 ) -> Result<SyncedFrame, ProtocolError<R, S, P>> {

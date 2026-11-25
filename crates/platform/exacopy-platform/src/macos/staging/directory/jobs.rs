@@ -14,6 +14,7 @@ use super::{DirectoryIdentity, DirectoryLease, StageDirectory, StageError};
 
 mod error;
 mod identity;
+mod journal;
 mod receipt;
 mod record;
 mod recovery;
@@ -23,6 +24,7 @@ mod tests;
 
 pub use error::{JobArtifact, JobError, JobStep};
 pub use identity::JobName;
+pub use journal::DarwinJournalSegment;
 pub use recovery::{
 	RecoveryError, RecoveryFileObservation, RecoveryInventory, RecoveryJob, RecoveryName,
 	RecoveryRecord, RecoveryStageReader,

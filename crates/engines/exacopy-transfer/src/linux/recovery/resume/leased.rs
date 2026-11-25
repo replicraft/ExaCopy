@@ -1,4 +1,5 @@
 use super::super::finish::{completion, sync_leased_receipt};
+use super::super::lease::RecoveryJournal;
 use super::super::{
 	FinishFailure, InspectionError, LeaseReadError, RecoveryLease, RecoveryStageLease,
 	RecoveryStep, SourceRecoveryFailure,
@@ -15,14 +16,18 @@ pub(super) struct HeldRecords<'lease, L: RecoveryLease> {
 	pub(super) checkpoint: fn(CopyCheckpoint),
 }
 
-impl<L: RecoveryLease> Records for HeldRecords<'_, L> {
+impl<'lease, L: RecoveryLease> Records for HeldRecords<'lease, L> {
 	type Error = FinishFailure<LeaseReadError<L>, L::EffectError>;
+	type Segment = L::Segment<'lease>;
 
 	fn checkpoint(&self) -> fn(CopyCheckpoint) {
 		self.checkpoint
 	}
 
-	fn resume_journal(&self, boundary: JournalBoundary) -> Result<DurableJournal, Self::Error> {
+	fn resume_journal(
+		&self,
+		boundary: JournalBoundary,
+	) -> Result<RecoveryJournal<'lease, L>, Self::Error> {
 		let segment = self
 			.lease
 			.open_segment(self.journal)

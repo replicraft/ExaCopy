@@ -128,4 +128,20 @@ Historical evidence retains its recorded revision and paths. Current
 source links and reproduction entry points follow the corrected layout.
 When reproducing an older pinned revision, use that revision's package
 inventory. Remaining native qualification, dependency review and journal
-I/O capability findings from the initial audit are still open.
+I/O capability findings from the initial audit are reviewed separately.
+
+## Typed journal segment boundary
+
+Journal framing and durable append ordering now consume the endpoint's
+`JournalSegment` capability rather than a native file. The native adapter
+owns the descriptor, file barrier and namespace lease. Linux fresh segments
+retain the locked open file description; recovered segments borrow the
+exclusive recovery writer lease. Darwin segments retain the managed job
+directory and check its held identity around `F_FULLFSYNC`.
+
+The journal retires its writer after an uncertain inspection, write or
+barrier. A successful append reports the selected file barrier only;
+namespace persistence and power-loss qualification remain separate. The
+affected native macOS tests and strict host checks passed, and Linux
+consumers passed strict cross-compilation. This extraction does not supply
+new native Linux execution or power-loss evidence.

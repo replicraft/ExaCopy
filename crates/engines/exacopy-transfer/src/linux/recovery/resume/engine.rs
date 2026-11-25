@@ -2,9 +2,9 @@ use exacopy_content::{
 	CheckpointCandidate, ContentDigest, ResumeMeasureError, measure_at, resume_and_measure_at,
 	validate_stream_input,
 };
-use exacopy_endpoint::ReadView;
 use exacopy_endpoint::linux_publication::ExclusivePublication;
 use exacopy_endpoint::linux_staging::{SourceMetadata, StageReader, StageWriter, StagingSource};
+use exacopy_endpoint::{JournalSegment, ReadView};
 use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{
 	DurableJournal, DurableJournalError, JournalContext, JournalEpoch, LinuxFileIdentity,
@@ -67,8 +67,12 @@ pub trait StageDirectory<M, I> {
 // Reopens the exact durable prefix and writes only to the held job's receipt namespace.
 pub(super) trait Records {
 	type Error;
+	type Segment: JournalSegment;
 
-	fn resume_journal(&self, boundary: JournalBoundary) -> Result<DurableJournal, Self::Error>;
+	fn resume_journal(
+		&self,
+		boundary: JournalBoundary,
+	) -> Result<DurableJournal<Self::Segment>, Self::Error>;
 	fn sync_receipt(&self, receipt: &CopyReceipt<'_>) -> Result<(), Self::Error>;
 	fn checkpoint(&self) -> fn(CopyCheckpoint) {
 		|_| {}
@@ -334,7 +338,7 @@ where
 		context: JournalContext,
 		stage: LinuxFileIdentity,
 		stage_directory: LinuxFileIdentity,
-	) -> ResumeResult<DurableJournal, S::Error, E, P, J::Error> {
+	) -> ResumeResult<DurableJournal<J::Segment>, S::Error, E, P, J::Error> {
 		let replay = self.evidence.replay;
 		let boundary = replay.boundary;
 		if boundary.offset > MAX_LOCAL_JOURNAL_BYTES - RESUME_JOURNAL_RESERVE {
@@ -444,7 +448,7 @@ where
 }
 
 fn append<R, S, P, F>(
-	journal: &mut DurableJournal,
+	journal: &mut DurableJournal<impl JournalSegment>,
 	kind: FrameKind,
 	payload: &[u8],
 ) -> ResumeResult<exacopy_journal::SyncedFrame, R, S, P, F> {
