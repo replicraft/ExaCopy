@@ -83,7 +83,7 @@ impl<'name> CopyReceipt<'name> {
 		Self::from_evidence(evidence, frame.head())
 	}
 
-	fn from_evidence(
+	pub(super) fn from_evidence(
 		evidence: ReceiptEvidence<'name>,
 		durability_frame: ChainHead,
 	) -> Result<Self, ReceiptError> {

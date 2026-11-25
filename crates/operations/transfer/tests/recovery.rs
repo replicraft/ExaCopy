@@ -450,3 +450,6 @@ fn rejects_a_job_held_by_an_active_writer_and_reopens_after_release() {
 	drop(writer);
 	assert_eq!(fixture.disposition(), RecoveryDisposition::Complete);
 }
+
+#[path = "recovery/finish.rs"]
+mod finish;
