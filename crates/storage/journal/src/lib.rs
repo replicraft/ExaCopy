@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+mod darwin_prepared;
 mod durable;
 pub mod frame;
 mod intent;
@@ -11,6 +12,11 @@ mod publication_records;
 mod recovery_records;
 mod verification_records;
 
+pub use darwin_prepared::{
+	DarwinEntryPreparation, DarwinEntryPrepared, DarwinJobPrepared, DarwinPreparedError,
+	DarwinRootBinding, DarwinSourceMetadata, DarwinSourceTimes, DarwinSourceView, DarwinStageId,
+	DarwinStageObservation,
+};
 pub use durable::{DurableJournal, DurableJournalError, JournalFileBarrier, SyncedFrame};
 pub use intent::{
 	IntentError, JournalEntryId, JournalEpoch, JournalJobId, LinuxFileIdentity, PlanDigest,
