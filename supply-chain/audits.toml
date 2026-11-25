@@ -1,6 +1,21 @@
 
 # cargo-vet audits file
 
+[[audits.anstyle]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.0.14"
+notes = """
+2026-11-25. The locked registry archive SHA-256 is
+940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000.
+Packaged source matches upstream commit 0fe6f0ff6d52e9f91d4071199bd0b24bd46f3d35.
+Reviewed the core formatting and std writer paths. The one unsafe conversion
+views only the initialized prefix of a checked fixed-size buffer. The buffer
+contains fixed UTF-8 style fragments and ASCII decimal digits from u8 color
+components. Style output uses formatting or the supplied writer. Native ARM64
+checks covered every component value for foreground, background and underline.
+"""
+
 [[audits.arrayvec]]
 who = "OpenAI Codex (dependency source review)"
 criteria = "safe-to-deploy"
@@ -31,6 +46,28 @@ They do not execute probe outputs. The review assumes a trusted compiler, wrappe
 flags, probe input, and build directory. ExaCopy's num-traits build script uses
 fixed input. On Rust 1.100.0 the rustflags test passed with the test binary next
 to its rlib, as the test expects. Cargo's test layout placed them separately.
+"""
+
+[[audits.base64]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.23.1"
+notes = """
+2026-11-25. The locked registry archive SHA-256 is
+ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5.
+Packaged source matches upstream commit 069bf7067b949f5c0a92b6ceb82492920502f2c2.
+Reviewed scalar length and suffix handling, streaming over caller-owned I/O,
+and all unsafe SIMD pointer operations and feature dispatch. Vector reads and
+exact-width stores fit independently checked slice bounds. The SIMD decoder
+keeps terminal quads with the scalar validator, which also handles invalid
+prefix blocks. Safe AVX2 construction checks CPU support. Safe NEON exposure
+requires a NEON target. The explicit unsafe AVX2 constructors require callers
+to guarantee the instruction set. Native ARM64 differential checks covered
+both alphabets, strict padded and unpadded modes, invalid octets, exact decoded
+lengths and output canaries. Translated x86-64 passed the scalar fallback.
+AVX2 hardware and big-endian SIMD behavior were reviewed in source without
+native execution. Cryptographic timing is outside the scope. ExaCopy selects
+the scalar alloc-only path.
 """
 
 [[audits.cc]]
@@ -72,6 +109,60 @@ caller tokens unchanged. There is no unsafe code, runtime I/O, proc macro, or
 build script. Rust 1.100.0 unit, cross-crate, doctest, and eight-branch matrix
 checks passed. Cargo's optional rustc workspace dependency is outside the locked
 workspace's enabled feature graph and outside this crate's source review.
+"""
+
+[[audits.clap]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "4.6.10"
+notes = """
+2026-11-25. The locked registry archive SHA-256 is
+50066ca966813ca8957ee15361752f19424a8ff620dbe9c8993d9f99d99b04b3.
+Packaged source matches upstream commit 54fac10c7b2287eed9eff478105f86dc69aaf0a4.
+Reviewed the facade, feature forwarding, documentation examples and the
+shipped stdio fixture. Library code forbids unsafe and forwards builder APIs
+and optional derive macros. The derive implementation is in a separate crate.
+The stdio fixture implements an example CLI and uses documented parser exit
+behavior. A Rust 1.100.0 ARM64 test exercised the exact facade and builder
+with selected production features, help, an unknown flag and a non-UTF-8
+native argument value.
+"""
+
+[[audits.clap_builder]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "4.6.10"
+notes = """
+2026-11-25. The locked registry archive SHA-256 is
+a0ed97c96ef4efb3cc84e09fa388df4463e7cc3224ec38d7b1d9e45749333590.
+Packaged source matches the clap_builder subdirectory of upstream commit
+54fac10c7b2287eed9eff478105f86dc69aaf0a4. Reviewed the parser and value handling
+with caller-supplied grammar, output/exit paths and optional environment,
+terminal layout, color, suggestions and debug surfaces. Unsafe is forbidden.
+Ambient operations are documented parser inputs, optional terminal probes
+and diagnostics, and the explicit exiting API. Embedders use fallible APIs
+when they own process lifetime. Optional env bindings can show their values
+in help or diagnostics, so secret environment values belong outside those
+paths. Diagnostic output should be treated as application-controlled output
+when forwarding non-local arguments. Native ARM64 checks covered selected
+features and typed native values, help and an unknown argument.
+"""
+
+[[audits.clap_lex]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.1.2"
+notes = """
+2026-11-25. The locked registry archive SHA-256 is
+e0921b3876b3a1df8a1c9f912e7f94342458022c2e84288015893d83c4d62a79.
+Packaged source matches the clap_lex subdirectory of upstream commit
+db86ef6eccb2ed5ae16d3035982907692ecb10ef. Reviewed native argument collection,
+cursor/flag parsing and each unsafe OsStr conversion. Slices come from the
+same encoded OS string. Successful UTF-8 prefix/separator matches, char
+indices and the end of the valid UTF-8 prefix establish legal split points.
+The empty single-separator case makes only an endpoint split. Native ARM64
+checks covered non-UTF-8 values around a multibyte delimiter and after a
+short flag. Windows encoded strings were reviewed against the std contract.
 """
 
 [[audits.constant_time_eq]]

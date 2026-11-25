@@ -14,6 +14,15 @@ required criteria. An accepted package does not close an open dependency.
 | `cc 1.11.2` | Command construction, compiler discovery, output paths, jobserver and optional compiler paths under trusted toolchain/build inputs. Native compiler fixtures, 48 unit tests and 33 doctests passed. Linux and Windows target checks compiled; native Windows discovery remains unexecuted. |
 | `hax-lib 0.4.2` | Exact Rust/build-script source, placeholder and backend-cfg paths. The normal proof-extraction feature and focused stable/nightly fixtures compiled. Native proposition placeholders are not logical decision procedures; the native implication stub and upstream Lean model have different semantics. This record does not establish backend proof soundness. |
 | `hax-lib-macros-types 0.4.2` | Typed metadata, escaped token emission, fresh linkage labels and optional schemas. Focused serialization, token and pinned-nightly fixtures passed. Labels are not authentication. Backend quotation interpretation remains a separate boundary. |
+| `anstyle 1.0.14` | Fixed-buffer UTF-8 formatting and caller-owned output. Native checks covered every byte-sized color component; the upstream suite was blocked by an uncached test dependency. |
+| `clap 4.6.10`, `clap_builder 4.6.10`, `clap_lex 1.1.2` | Exact facade, parser, feature and native-string paths. Fallible parsing, help, unknown flags and non-UTF-8 arguments passed native ARM64 checks. Environment values and diagnostics remain application policy; optional derive code is a separate package. |
+| `base64 0.23.1` | Scalar, streaming, unsafe SIMD bounds and CPU dispatch reviewed. Native ARM64 scalar/NEON differential and output-canary checks passed. Translated x86-64 exercised scalar fallback; AVX2 was source-reviewed without native execution. ExaCopy selects scalar alloc-only operation. |
+
+The five CLI/codec records removed exactly five missing entries from the
+frozen Cargo Vet report at `98dacb7`, reducing 48 to 43. The remaining
+workspace gate still fails. Exact source comparisons, probes, original
+test-resolution failure and before/after reports are retained at
+`/private/tmp/exacopy-cli-codec-vet.OpfvI4/`.
 
 ## Records left open
 
