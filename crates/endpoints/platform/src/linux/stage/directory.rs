@@ -9,6 +9,7 @@ use rustix::fs::{self, FileType, Mode, OFlags, ResolveFlags};
 use rustix::process::geteuid;
 
 use super::super::handle::{FileIdentity, file_identity, mount_id};
+use super::super::job::JobDirectory;
 use super::file::create_private_file;
 use super::{StageError, WriteStage};
 
@@ -33,8 +34,8 @@ pub(super) const CHILD_RESOLVE: ResolveFlags = ResolveFlags::BENEATH
 /// out from under a newly created private stage. The contract assumes that Linux
 /// enforces the applicable ownership, ACL and sticky-bit rules.
 pub struct DestinationRoot {
-	pub(super) directory: File,
-	pub(super) mount: u64,
+	pub(in crate::linux) directory: File,
+	pub(in crate::linux) mount: u64,
 	identity: FileIdentity,
 }
 
@@ -93,29 +94,12 @@ impl DestinationRoot {
 		&self,
 		name: UnixComponent<'_>,
 	) -> Result<StageDirectory<'_>, StageError> {
-		check_managed_parent(&self.directory)?;
-		fs::mkdirat(&self.directory, component(name), DIRECTORY_MODE)
-			.map_err(StageError::on_create)?;
-		let directory = fs::openat2(
-			&self.directory,
-			component(name),
-			DIRECTORY_FLAGS,
-			Mode::empty(),
-			CHILD_RESOLVE,
-		)?
-		.into();
-		check_private_directory(&directory)?;
-		if mount_id(&directory)? != self.mount {
-			return Err(StageError::IdentityChanged);
-		}
-		let identity = file_identity(&directory)?;
+		self.check_current()?;
+		StageDirectory::create(self, None, component(name))
+	}
 
-		Ok(StageDirectory {
-			root: self,
-			directory,
-			name: StageName::from(name),
-			identity,
-		})
+	pub(in crate::linux) fn check_current(&self) -> Result<(), StageError> {
+		check_managed_parent(&self.directory)
 	}
 }
 
@@ -127,10 +111,27 @@ pub struct StageDirectory<'root> {
 	pub(super) root: &'root DestinationRoot,
 	pub(super) directory: File,
 	name: StageName,
+	job: Option<&'root JobDirectory<'root>>,
 	identity: FileIdentity,
 }
 
-impl StageDirectory<'_> {
+impl<'root> StageDirectory<'root> {
+	pub(in crate::linux) fn create(
+		root: &'root DestinationRoot,
+		job: Option<&'root JobDirectory<'root>>,
+		name: &OsStr,
+	) -> Result<Self, StageError> {
+		let parent = job.map_or(&root.directory, JobDirectory::directory);
+		let (directory, identity) = create_private_directory(parent, name, root.mount)?;
+		Ok(Self {
+			root,
+			directory,
+			name: StageName(name.into()),
+			job,
+			identity,
+		})
+	}
+
 	/// Returns the identity of the held private staging directory.
 	#[must_use]
 	pub fn identity(&self) -> FileIdentity {
@@ -160,7 +161,12 @@ impl StageDirectory<'_> {
 	/// If creation preceded a later error, the new entry remains in place.
 	pub fn create_record(&self, name: UnixComponent<'_>) -> Result<File, StageError> {
 		self.check_current()?;
-		let (file, _) = create_private_file(self, name, OFlags::RDWR)?;
+		let (file, _) = create_private_file(
+			&self.directory,
+			self.root.mount,
+			component(name),
+			OFlags::RDWR,
+		)?;
 		Ok(file)
 	}
 
@@ -183,23 +189,61 @@ impl StageDirectory<'_> {
 	}
 
 	pub(super) fn check_current(&self) -> Result<(), StageError> {
-		check_managed_parent(&self.root.directory)?;
-		check_private_directory(&self.directory)?;
-		let named = fs::openat2(
-			&self.root.directory,
+		let parent = if let Some(job) = self.job {
+			job.check_current()?;
+			job.directory()
+		} else {
+			self.root.check_current()?;
+			&self.root.directory
+		};
+		check_private_child(
+			parent,
+			&self.directory,
 			self.name.as_os_str(),
-			OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
-			Mode::empty(),
-			CHILD_RESOLVE,
-		)?;
-		if file_identity(&named)? != self.identity || mount_id(&named)? != self.root.mount {
-			return Err(StageError::IdentityChanged);
-		}
-		Ok(())
+			self.identity,
+			self.root.mount,
+		)
 	}
 }
 
-fn sync_directory(directory: &File) -> Result<(), StageError> {
+pub(in crate::linux) fn create_private_directory(
+	parent: &File,
+	name: &OsStr,
+	mount: u64,
+) -> Result<(File, FileIdentity), StageError> {
+	fs::mkdirat(parent, name, DIRECTORY_MODE).map_err(StageError::on_create)?;
+	let directory =
+		fs::openat2(parent, name, DIRECTORY_FLAGS, Mode::empty(), CHILD_RESOLVE)?.into();
+	check_private_directory(&directory)?;
+	if mount_id(&directory)? != mount {
+		return Err(StageError::IdentityChanged);
+	}
+	let identity = file_identity(&directory)?;
+	Ok((directory, identity))
+}
+
+pub(in crate::linux) fn check_private_child(
+	parent: &File,
+	directory: &File,
+	name: &OsStr,
+	identity: FileIdentity,
+	mount: u64,
+) -> Result<(), StageError> {
+	check_private_directory(directory)?;
+	let named = fs::openat2(
+		parent,
+		name,
+		OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+		Mode::empty(),
+		CHILD_RESOLVE,
+	)?;
+	if file_identity(&named)? != identity || mount_id(&named)? != mount {
+		return Err(StageError::IdentityChanged);
+	}
+	Ok(())
+}
+
+pub(in crate::linux) fn sync_directory(directory: &File) -> Result<(), StageError> {
 	fs::fsync(directory).map_err(|source| StageError::DirectoryBarrierFailed(source.into()))
 }
 
@@ -228,7 +272,7 @@ fn check_private_directory(directory: &File) -> Result<(), StageError> {
 	Ok(())
 }
 
-pub(super) fn component(name: UnixComponent<'_>) -> &OsStr {
+pub(in crate::linux) fn component(name: UnixComponent<'_>) -> &OsStr {
 	OsStr::from_bytes(name.as_bytes())
 }
 

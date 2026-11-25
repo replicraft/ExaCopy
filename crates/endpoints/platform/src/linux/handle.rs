@@ -15,6 +15,18 @@ pub struct FileIdentity {
 }
 
 impl FileIdentity {
+	/// Returns the raw Linux device identifier of the observed inode.
+	#[must_use]
+	pub const fn device(self) -> u64 {
+		self.device
+	}
+
+	/// Returns the inode number of the observed file or directory.
+	#[must_use]
+	pub const fn inode(self) -> u64 {
+		self.inode
+	}
+
 	pub(super) fn from_stat(stat: &Stat) -> Self {
 		Self {
 			device: stat.st_dev,

@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::fmt;
 use std::fs::File;
 use std::os::unix::fs::FileExt;
@@ -9,7 +10,7 @@ use rustix::io;
 use rustix::process::geteuid;
 
 use super::super::handle::{FileIdentity, mount_id};
-use super::super::source::reopen_regular_read_only;
+use super::super::source::{SourceObservation, reopen_regular_read_only};
 use super::directory::{CHILD_RESOLVE, StageName, component};
 use super::{StageDirectory, StageError};
 
@@ -38,7 +39,12 @@ impl<'stage> WriteStage<'stage> {
 		target: UnixComponent<'_>,
 		binding: CopyBinding,
 	) -> Result<Self, StageError> {
-		let (file, stat) = create_private_file(directory, name, OFlags::WRONLY)?;
+		let (file, stat) = create_private_file(
+			&directory.directory,
+			directory.root.mount,
+			component(name),
+			OFlags::WRONLY,
+		)?;
 		let identity = FileIdentity::from_stat(&stat);
 		let location = StageLocation {
 			directory,
@@ -59,6 +65,21 @@ impl<'stage> WriteStage<'stage> {
 	#[must_use]
 	pub fn identity(&self) -> FileIdentity {
 		self.location.identity
+	}
+
+	/// Checks whether this stage's existing owner and group can represent the source.
+	///
+	/// # Errors
+	///
+	/// Returns an error for a changed stage, an unusable writer, or mismatched
+	/// UID/GID. The adapter does not change ownership.
+	pub fn check_ownership(&self, source: SourceObservation) -> Result<(), StageError> {
+		self.barrier.require_usable()?;
+		let stat = self.location.check_named_file(FILE_MODE)?;
+		if stat.st_uid != source.owner() || stat.st_gid != source.group() {
+			return Err(StageError::DifferentOwnership);
+		}
+		Ok(())
 	}
 
 	/// Writes a complete buffer at the specified absolute byte position.
@@ -268,14 +289,15 @@ impl StageLocation<'_> {
 	}
 }
 
-pub(super) fn create_private_file(
-	directory: &StageDirectory<'_>,
-	name: UnixComponent<'_>,
+pub(in crate::linux) fn create_private_file(
+	directory: &File,
+	mount: u64,
+	name: &OsStr,
 	access: OFlags,
 ) -> Result<(File, Stat), StageError> {
 	let file = fs::openat2(
-		&directory.directory,
-		component(name),
+		directory,
+		name,
 		access | OFlags::CREATE | OFlags::EXCL | OFlags::CLOEXEC | OFlags::NOFOLLOW,
 		FILE_MODE,
 		CHILD_RESOLVE,
@@ -283,7 +305,7 @@ pub(super) fn create_private_file(
 	.map_err(StageError::on_create)?;
 	let stat = fs::fstat(&file)?;
 	check_stage_file(&stat, FILE_MODE)?;
-	if mount_id(&file)? != directory.root.mount {
+	if mount_id(&file)? != mount {
 		return Err(StageError::IdentityChanged);
 	}
 	Ok((file.into(), stat))
