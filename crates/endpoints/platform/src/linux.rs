@@ -2,6 +2,7 @@
 
 mod handle;
 mod job;
+mod publication_capabilities;
 mod recovery;
 mod source;
 mod stage;

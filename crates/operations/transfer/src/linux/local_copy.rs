@@ -1,18 +1,15 @@
-use std::io::Write as _;
-
 use ed25519_dalek::SigningKey;
 use exacopy_content::validate_stream_input;
 use exacopy_endpoint::UnixComponent;
 use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{
-	DestinationRootBinding, DurabilityRecorded, DurableJournal, JournalContext,
-	LinuxPublicationBarriers, NamespaceObservation, OwnerProfileId, OwnerTimestamp, OwnerToken,
-	PublicationOutcome, PublicationPrimitive, PublishIntent, PublishIntentContext,
-	PublishIntentTarget, PublishObserved, ReceiptCommitted, ReceiptDigest, RootCapabilityId,
-	SyncedFrame,
+	DestinationRootBinding, DurableJournal, OwnerProfileId, OwnerTimestamp, OwnerToken,
+	RootCapabilityId, SyncedFrame,
 };
-use exacopy_model::{CopyBinding, CopyEffect, CopyEvent, EntryId, JobId, RunEpoch, StageId};
-use exacopy_platform::linux::{DestinationRoot, PublishError, ReadRoot, SourceFile, TargetStatus};
+use exacopy_model::{CopyBinding, CopyEvent, EntryId, JobId, RunEpoch, StageId};
+use exacopy_platform::linux::{
+	DestinationRoot, PublishError, ReadError, ReadRoot, SourceFile, StageError, TargetStatus,
+};
 
 use super::job::native_identity;
 use super::{
@@ -22,6 +19,7 @@ use super::{
 
 pub(super) mod checkpoints;
 mod error;
+mod protocol;
 pub(super) mod records;
 
 #[cfg(test)]
@@ -29,6 +27,8 @@ pub(super) mod crash_tests;
 
 use checkpoints::StageRecords;
 pub use error::LocalCopyError;
+use protocol::ProtocolError;
+pub(super) use protocol::Publication;
 use records::{EntryEvidence, SealEvidence};
 
 /// The independently authorized Linux directories and their caller-assigned capability IDs.
@@ -194,8 +194,8 @@ pub fn copy_new_file<'name>(
 		&durability,
 	)
 	.map_err(LocalCopyError::Receipt)?;
-	persist_receipt(
-		&job,
+	protocol::persist_receipt(
+		job.directory(),
 		&mut journal,
 		publication.intent_context(),
 		&receipt,
@@ -242,24 +242,7 @@ fn capture_source<'name>(
 	})
 }
 
-pub(super) struct Publication<'plan, 'name> {
-	pub(super) context: JournalContext,
-	pub(super) plan: &'plan LocalCopyPlan<'name>,
-	pub(super) binding: CopyBinding,
-	pub(super) stage_directory: exacopy_journal::LinuxFileIdentity,
-}
-
 impl Publication<'_, '_> {
-	pub(super) fn intent_context(&self) -> PublishIntentContext {
-		PublishIntentContext {
-			job: self.context.job,
-			epoch: self.context.epoch,
-			entry: self.plan.attempt().entry,
-			effect_sequence: 1,
-			plan_digest: self.context.plan_digest,
-		}
-	}
-
 	pub(super) fn complete(
 		&self,
 		journal: &mut DurableJournal,
@@ -268,125 +251,24 @@ impl Publication<'_, '_> {
 		sealed: &SealEvidence,
 		metadata: &SyncedFrame,
 	) -> Result<SyncedFrame, LocalCopyError> {
-		let context = self.intent_context();
-		let destination = self.plan.destination();
-		let intent = PublishIntent {
-			context,
-			target: PublishIntentTarget {
-				stage: sealed.verification.stage().identity,
-				parent: destination.root.identity,
-				component: destination.component,
-				verification_digest: sealed.verification.record_digest(),
-				primitive: PublicationPrimitive::LinuxRenameNoReplace,
-			},
-		};
-		let synced = append(journal, FrameKind::PublishIntent, &intent.encode())?;
-		#[cfg(test)]
-		crash_tests::pause_at(if self.context.epoch == self.plan.context().epoch {
-			crash_tests::Checkpoint::IntentSynced
-		} else {
-			crash_tests::Checkpoint::RangeResumeIntentSynced
-		});
-		let authorization = match session
-			.apply(self.binding, CopyEvent::PublishIntentRecorded)
-			.map_err(super::StageFailure::Model)
-			.map_err(LocalCopyError::PublicationModel)?
-		{
-			Some(CopyEffect::PublishNoClobber(authorization)) => authorization,
-			_ => {
-				return Err(LocalCopyError::PublicationModel(
-					super::StageFailure::UnexpectedEffect,
-				));
-			}
-		};
-		if let Err(source) = stage.publish_no_clobber(authorization) {
-			let event = match source {
-				PublishError::Conflict => CopyEvent::Conflict,
-				_ => CopyEvent::OutcomeUncertain,
-			};
-			observe(session, self.binding, event).map_err(LocalCopyError::PublicationModel)?;
-			let observation = PublishObserved::new(
-				context,
-				synced.head(),
-				PublicationOutcome::Uncertain {
-					target: NamespaceObservation::Unobserved,
-					stage_name: NamespaceObservation::Unobserved,
-				},
-			)
-			.map_err(LocalCopyError::PublicationRecord)?;
-			let recording = journal
-				.append(FrameKind::PublishObserved, &observation.encode())
-				.err();
-			return Err(LocalCopyError::Publication { source, recording });
-		}
-		#[cfg(test)]
-		crash_tests::pause_at(crash_tests::Checkpoint::RenamedAndSynced);
-
-		let observation = PublishObserved::new(
-			context,
-			synced.head(),
-			PublicationOutcome::Published {
-				target: intent.target.stage,
-			},
-		)
-		.map_err(LocalCopyError::PublicationRecord)?;
-		let observed = append(journal, FrameKind::PublishObserved, &observation.encode())?;
-		observe(session, self.binding, CopyEvent::Published)
-			.map_err(LocalCopyError::PublicationModel)?;
-		let durability = DurabilityRecorded::new(
-			context,
-			observed.head(),
-			LinuxPublicationBarriers {
-				metadata: metadata.head(),
-				stage_directory: self.stage_directory,
-				destination_directory: destination.root.identity,
-			},
-		)
-		.map_err(LocalCopyError::PublicationRecord)?;
-		let durable = append(journal, FrameKind::DurabilityRecorded, &durability.encode())?;
-		observe(session, self.binding, CopyEvent::DirectoryFlushed)
-			.map_err(LocalCopyError::PublicationModel)?;
-		Ok(durable)
+		self.complete_with(journal, session, stage, sealed, metadata)
+			.map_err(LocalCopyError::from)
 	}
 }
 
-fn persist_receipt(
-	job: &PreparedJob<'_>,
-	journal: &mut DurableJournal,
-	context: PublishIntentContext,
-	receipt: &CopyReceipt<'_>,
-	durability: &SyncedFrame,
-) -> Result<(), LocalCopyError> {
-	let committed = ReceiptCommitted::new(
-		context,
-		ReceiptDigest::from_bytes(receipt.digest()),
-		durability.head(),
-	)
-	.map_err(LocalCopyError::PublicationRecord)?;
-	let receipts = job
-		.directory()
-		.create_receipt_directory()
-		.map_err(LocalCopyError::ReceiptNamespace)?;
-	let mut artifact = receipts
-		.create_receipt_record()
-		.map_err(LocalCopyError::ReceiptNamespace)?;
-	artifact
-		.write_all(&receipt.encode())
-		.map_err(LocalCopyError::ReceiptIo)?;
-	artifact.sync_all().map_err(LocalCopyError::ReceiptIo)?;
-	drop(artifact);
-	receipts
-		.sync_directory()
-		.map_err(LocalCopyError::ReceiptNamespace)?;
-	job.directory()
-		.sync_directory()
-		.map_err(LocalCopyError::ReceiptNamespace)?;
-	#[cfg(test)]
-	crash_tests::pause_at(crash_tests::Checkpoint::ReceiptSynced);
-	let _ = append(journal, FrameKind::ReceiptCommitted, &committed.encode())?;
-	#[cfg(test)]
-	crash_tests::pause_at(crash_tests::Checkpoint::ReceiptCommitted);
-	Ok(())
+impl From<ProtocolError<ReadError, StageError, PublishError>> for LocalCopyError {
+	fn from(error: ProtocolError<ReadError, StageError, PublishError>) -> Self {
+		match error {
+			ProtocolError::Journal { kind, source } => Self::Journal { kind, source },
+			ProtocolError::Model(error) => Self::PublicationModel(error),
+			ProtocolError::Record(error) => Self::PublicationRecord(error),
+			ProtocolError::Publication { source, recording } => {
+				Self::Publication { source, recording }
+			}
+			ProtocolError::ReceiptNamespace(error) => Self::ReceiptNamespace(error),
+			ProtocolError::ReceiptIo(error) => Self::ReceiptIo(error),
+		}
+	}
 }
 
 fn append(
