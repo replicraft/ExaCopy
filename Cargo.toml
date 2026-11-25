@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/clients/cli",
     "crates/core/model",
     "crates/endpoints/endpoint",
     "crates/endpoints/platform",
@@ -21,6 +22,7 @@ license = "Apache-2.0"
 [workspace.dependencies]
 # Internal crates
 exacopy-content = { path = "crates/storage/content", version = "=0.1.0" }
+exacopy-diff = { path = "crates/operations/diff", version = "=0.1.0" }
 exacopy-endpoint = { path = "crates/endpoints/endpoint", version = "=0.1.0" }
 exacopy-journal = { path = "crates/storage/journal", version = "=0.1.0" }
 exacopy-model = { path = "crates/core/model", version = "=0.1.0" }

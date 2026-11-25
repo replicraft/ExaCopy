@@ -1,0 +1,24 @@
+[package]
+name = "exacopy-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "exacopy"
+path = "src/main.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+exacopy-diff.workspace = true
+exacopy-endpoint.workspace = true
+exacopy-platform.workspace = true
+rustix.workspace = true
+
+[lints]
+workspace = true

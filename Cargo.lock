@@ -233,6 +233,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "exacopy-cli"
+version = "0.1.0"
+dependencies = [
+ "exacopy-diff",
+ "exacopy-endpoint",
+ "exacopy-platform",
+ "rustix",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "exacopy-content"
 version = "0.1.0"
 dependencies = [
