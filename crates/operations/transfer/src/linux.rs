@@ -165,15 +165,27 @@ fn prepare<'stage>(
 		.map_err(StageFailure::Copy)?
 	};
 	flush_written_stage(&mut writable, source.len(), session, request.binding)?;
-	verify_written_stage(
-		writable,
-		source,
-		source.observation().accessed_at(),
+	let stage = writable.close_writes().map_err(StageFailure::Stage)?;
+	verify_stage_readback(
+		&stage,
+		source.len(),
 		source_digest,
 		scratch,
 		session,
 		request.binding,
-	)
+	)?;
+	let stage = complete_stage_metadata(
+		stage,
+		source,
+		source.observation().accessed_at(),
+		session,
+		request.binding,
+	)?;
+	#[cfg(test)]
+	local_copy::crash_tests::pause_metadata_at(
+		local_copy::crash_tests::Checkpoint::CopyMetadataApplied,
+	);
+	Ok((stage, source_digest))
 }
 
 fn begin_stage_reads(session: &mut CopySession, binding: CopyBinding) -> Result<(), StageFailure> {
@@ -195,19 +207,17 @@ fn flush_written_stage(
 	observe(session, binding, CopyEvent::DataFlushed)
 }
 
-fn verify_written_stage<'stage>(
-	writable: WriteStage<'stage>,
-	source: &SourceFile,
-	accessed_at: SourceTimestamp,
+fn verify_stage_readback(
+	stage: &ClosedStage<'_>,
+	source_length: u64,
 	source_digest: ContentDigest,
 	scratch: &mut [u8],
 	session: &mut CopySession,
 	binding: CopyBinding,
-) -> Result<(ClosedStage<'stage>, ContentDigest), StageFailure> {
-	let stage = writable.close_writes().map_err(StageFailure::Stage)?;
-	if stage.length() != source.len() {
+) -> Result<(), StageFailure> {
+	if stage.length() != source_length {
 		return Err(StageFailure::LengthMismatch {
-			expected: source.len(),
+			expected: source_length,
 			actual: stage.length(),
 		});
 	}
@@ -218,8 +228,16 @@ fn verify_written_stage<'stage>(
 	if stage_digest != source_digest {
 		return Err(StageFailure::DigestMismatch);
 	}
-	observe(session, binding, CopyEvent::ReadbackVerified)?;
+	observe(session, binding, CopyEvent::ReadbackVerified)
+}
 
+fn complete_stage_metadata<'stage>(
+	stage: ClosedStage<'stage>,
+	source: &SourceFile,
+	accessed_at: SourceTimestamp,
+	session: &mut CopySession,
+	binding: CopyBinding,
+) -> Result<ClosedStage<'stage>, StageFailure> {
 	check_source(source)?;
 	let stage = stage
 		.apply_metadata_with_access_time(source.observation(), accessed_at)
@@ -228,7 +246,7 @@ fn verify_written_stage<'stage>(
 	check_source(source)?;
 	observe(session, binding, CopyEvent::MetadataReady)?;
 	observe(session, binding, CopyEvent::StageSealed)?;
-	Ok((stage, source_digest))
+	Ok(stage)
 }
 
 fn check_source(source: &SourceFile) -> Result<(), StageFailure> {

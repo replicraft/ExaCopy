@@ -23,6 +23,7 @@ use super::{
 };
 
 mod evidence;
+mod metadata_resume;
 mod ranges;
 mod resume;
 mod retry;
@@ -59,6 +60,8 @@ pub(in crate::linux) enum Checkpoint {
 	RangeResumeStartedSynced,
 	RangeResumeDataFlushed,
 	RangeResumeIntentSynced,
+	CopyMetadataApplied,
+	RangeResumeMetadataApplied,
 }
 
 impl Checkpoint {
@@ -85,6 +88,12 @@ impl Checkpoint {
 		Self::RangeResumeDataFlushed,
 		Self::RangeResumeIntentSynced,
 	];
+	const COPY_METADATA_ORDER: [Self; 2] = [Self::PlanSynced, Self::CopyMetadataApplied];
+	const RESUME_METADATA_ORDER: [Self; 3] = [
+		Self::RangeResumeStartedSynced,
+		Self::RangeResumeDataFlushed,
+		Self::RangeResumeMetadataApplied,
+	];
 
 	fn worker(self) -> (&'static str, &'static [Self]) {
 		match self {
@@ -97,6 +106,14 @@ impl Checkpoint {
 			Self::RangeResumeStartedSynced
 			| Self::RangeResumeDataFlushed
 			| Self::RangeResumeIntentSynced => ("resume::resume_worker", &Self::RESUME_ORDER),
+			Self::CopyMetadataApplied => (
+				"metadata_resume::copy_metadata_worker",
+				&Self::COPY_METADATA_ORDER,
+			),
+			Self::RangeResumeMetadataApplied => (
+				"metadata_resume::resume_metadata_worker",
+				&Self::RESUME_METADATA_ORDER,
+			),
 			_ => ("copy_worker", &Self::COPY_ORDER),
 		}
 	}
@@ -105,6 +122,13 @@ impl Checkpoint {
 thread_local! {
 	static CHECKPOINT_CHANNEL: RefCell<Option<UnixStream>> = const { RefCell::new(None) };
 	static RANGE_CHECKPOINTS: Cell<bool> = const { Cell::new(false) };
+	static METADATA_CHECKPOINTS: Cell<bool> = const { Cell::new(false) };
+}
+
+pub(in crate::linux) fn pause_metadata_at(checkpoint: Checkpoint) {
+	if METADATA_CHECKPOINTS.get() {
+		pause_at(checkpoint);
+	}
 }
 
 pub(super) fn pause_range_at(checkpoint: Checkpoint) {

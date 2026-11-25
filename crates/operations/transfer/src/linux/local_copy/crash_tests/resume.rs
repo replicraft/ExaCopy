@@ -23,12 +23,12 @@ use super::{
 	source_id, uuid_v4,
 };
 
-const CHECKPOINT_PREFIX: &[FrameKind] = &[
+pub(super) const CHECKPOINT_PREFIX: &[FrameKind] = &[
 	FrameKind::JobPrepared,
 	FrameKind::EntryPrepared,
 	FrameKind::RangeCheckpoint,
 ];
-const RESUMED_PREFIX: &[FrameKind] = &[FrameKind::RecoveryStarted];
+pub(super) const RESUMED_PREFIX: &[FrameKind] = &[FrameKind::RecoveryStarted];
 const SOURCE_LENGTH: u64 = MAX_CHECKPOINT_RANGE_BYTES + 1;
 const SOURCE_TAIL_BYTE: u8 = 0xfd;
 const READ_BUFFER_BYTES: usize = 64 * 1024;
@@ -201,11 +201,10 @@ fn resume_worker() {
 
 fn assert_pre_intent_restart(checkpoint: Checkpoint) {
 	let (fixture, source_before) = interrupted_copy();
-	let stage = identity(
-		&stage_path(&fixture)
-			.metadata()
-			.expect("observe retained inode"),
-	);
+	let before = stage_path(&fixture)
+		.metadata()
+		.expect("observe retained inode");
+	let stage = identity(&before);
 	let (mut worker, _stream) = fixture.pause_worker(checkpoint);
 	worker.kill_at(checkpoint);
 	let interrupted = read_frames(&fixture, &[CHECKPOINT_PREFIX, RESUMED_PREFIX].concat());
@@ -219,7 +218,7 @@ fn assert_pre_intent_restart(checkpoint: Checkpoint) {
 	let expected_len = if checkpoint == Checkpoint::RangeResumeDataFlushed {
 		SOURCE_LENGTH
 	} else {
-		MAX_CHECKPOINT_RANGE_BYTES
+		before.len()
 	};
 	assert_eq!(after.len(), expected_len, "stage length at {checkpoint:?}");
 	let inspected = inspect(&fixture);
@@ -239,7 +238,7 @@ fn assert_pre_intent_restart(checkpoint: Checkpoint) {
 	assert_successful_resume(&fixture, &source_before, stage, complete, 3, RESUMED_PREFIX);
 }
 
-fn assert_successful_resume(
+pub(super) fn assert_successful_resume(
 	fixture: &Fixture,
 	source: &Metadata,
 	stage: LinuxFileIdentity,
@@ -273,7 +272,7 @@ fn assert_successful_resume(
 	assert_receipt_bound(fixture, &frames);
 }
 
-fn interrupted_copy() -> (Fixture, Metadata) {
+pub(super) fn interrupted_copy() -> (Fixture, Metadata) {
 	let fixture = Fixture::new();
 	let source = File::options()
 		.write(true)
@@ -301,16 +300,15 @@ fn interrupted_copy() -> (Fixture, Metadata) {
 	let stage = stage_path(&fixture)
 		.metadata()
 		.expect("observe retained stage");
-	assert_eq!(
-		stage.len(),
-		MAX_CHECKPOINT_RANGE_BYTES,
-		"the worker must stop before writing the uncheckpointed tail"
+	assert!(
+		(1..=MAX_CHECKPOINT_RANGE_BYTES).contains(&stage.len()),
+		"the first checkpoint can be triggered by bytes or time"
 	);
 	assert_absent(&fixture.destination().join(TARGET));
 	(fixture, before)
 }
 
-fn assert_started(
+pub(super) fn assert_started(
 	fixture: &Fixture,
 	frames: &[Frame],
 	index: usize,
@@ -338,7 +336,7 @@ fn assert_started(
 	started
 }
 
-fn assert_intent(frame: &Frame, started: RangeResumeStarted) {
+pub(super) fn assert_intent(frame: &Frame, started: RangeResumeStarted) {
 	let intent = PublishIntent::from_frame(frame).expect("decode synchronized resume intent");
 	assert_eq!(intent.context.epoch, started.context().epoch);
 	assert_eq!(intent.target.stage, started.evidence().stage);
@@ -423,7 +421,7 @@ fn assert_streams_equal(source: &mut File, target: &mut File) -> blake3::Hash {
 	hash.finalize()
 }
 
-fn assert_receipt_bound(fixture: &Fixture, frames: &[Frame]) {
+pub(super) fn assert_receipt_bound(fixture: &Fixture, frames: &[Frame]) {
 	let [.., durability, committed] = frames else {
 		panic!("completed journal must end in a durability observation and receipt commitment");
 	};
@@ -435,7 +433,7 @@ fn assert_receipt_bound(fixture: &Fixture, frames: &[Frame]) {
 		.expect("bind the commitment to the exact on-disk receipt");
 }
 
-fn assert_stable_completion(fixture: &Fixture, complete: RecoveryInspection) {
+pub(super) fn assert_stable_completion(fixture: &Fixture, complete: RecoveryInspection) {
 	let segment = artifact(fixture, SEGMENT);
 	let receipt = artifact(fixture, LOCAL_RECEIPT_LOCATION);
 	assert_eq!(inspect(fixture), complete);
@@ -447,15 +445,15 @@ fn assert_stable_completion(fixture: &Fixture, complete: RecoveryInspection) {
 	assert_eq!(artifact(fixture, LOCAL_RECEIPT_LOCATION), receipt);
 }
 
-fn identity(stat: &Metadata) -> LinuxFileIdentity {
+pub(super) fn identity(stat: &Metadata) -> LinuxFileIdentity {
 	LinuxFileIdentity::new(stat.dev(), stat.ino())
 }
 
-fn stage_path(fixture: &Fixture) -> PathBuf {
+pub(super) fn stage_path(fixture: &Fixture) -> PathBuf {
 	fixture.job().join(STAGE_DIRECTORY).join(STAGE_FILE)
 }
 
-fn artifact(fixture: &Fixture, name: &str) -> Vec<u8> {
+pub(super) fn artifact(fixture: &Fixture, name: &str) -> Vec<u8> {
 	fs::read(fixture.job().join(name)).unwrap_or_else(|error| panic!("read {name}: {error}"))
 }
 
@@ -466,7 +464,7 @@ fn profile(verifying_key: &VerifyingKey) -> RecoveryProfile<'_> {
 	}
 }
 
-fn inspect(fixture: &Fixture) -> RecoveryInspection {
+pub(super) fn inspect(fixture: &Fixture) -> RecoveryInspection {
 	inspect_recovery(
 		&open_destination(&fixture.destination()),
 		component(JOB),
@@ -476,7 +474,10 @@ fn inspect(fixture: &Fixture) -> RecoveryInspection {
 	.expect("inspect the interrupted copy")
 }
 
-fn resume(root: &Path, id: RootCapabilityId) -> Result<RecoveryInspection, RecoveryRetryError> {
+pub(super) fn resume(
+	root: &Path,
+	id: RootCapabilityId,
+) -> Result<RecoveryInspection, RecoveryRetryError> {
 	resume_recovery(
 		&open_destination(&root.join(DESTINATION_DIRECTORY)),
 		component(JOB),

@@ -40,7 +40,7 @@ impl<R: Read> Scan<R> {
 		let mut expected = Next::Seal;
 		while let Some(frame) = next {
 			let kind = frame.kind();
-			if kind == FrameKind::RecoveryStarted && !self.summary.checkpoints.is_empty() {
+			if kind == FrameKind::RecoveryStarted {
 				self.start_range_resume(&frame, plan, owner, prepared)?;
 				expected = Next::Seal;
 			} else {

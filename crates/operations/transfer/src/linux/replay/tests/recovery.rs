@@ -229,15 +229,27 @@ fn recovery_preserves_an_existing_durability_head_when_resuming_a_receipt() {
 fn recovery_requires_original_intent_and_refuses_a_confirmed_no_effect_outcome() {
 	let fixture = Fixture::new();
 	let (mut bytes, boundaries) = fixture.records().bytes(5);
+	let context = fixture.plan.context();
+	let post_intent_start = RecoveryStarted::new(
+		JournalContext {
+			epoch: JournalEpoch::new(context.epoch.get() + 1),
+			..context
+		},
+		fixture.plan.attempt().entry,
+		context.epoch,
+		RecoveryStartEvidence {
+			intent: boundaries[4].head,
+			preceding: boundaries[5].head,
+			authorization: fixture.owner.digest(),
+		},
+	)
+	.unwrap();
 	FrameWriter::new(&mut bytes, boundaries[5].head)
-		.append(FrameKind::RecoveryStarted, &[])
+		.append(FrameKind::RecoveryStarted, &post_intent_start.encode())
 		.unwrap();
 	assert!(matches!(
 		fixture.replay(&bytes),
-		Err(JournalReplayError::UnexpectedRecord {
-			expected: Some(FrameKind::PublishIntent),
-			found: FrameKind::RecoveryStarted,
-		})
+		Err(JournalReplayError::Recovery(_))
 	));
 
 	let mut records = fixture.records();
