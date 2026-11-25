@@ -23,7 +23,10 @@ mod error;
 #[cfg(test)]
 mod tests;
 
-pub use entry::{EntryPreparationError, EntryPreparationFailure, PreparedDarwinEntry};
+pub use entry::{
+	DarwinCopyError, DarwinCopyFailure, EntryPreparationError, EntryPreparationFailure,
+	PreparedDarwinEntry, PublicationProgress,
+};
 pub use error::{JobAdmissionError, JobBootstrapError, JobPreparationError, JobPreparationStep};
 
 use self::admission::{admit_destination, check_source, native_identity};

@@ -22,6 +22,7 @@ pub use error::{StageTransferError, StageTransferFailure};
 pub struct VerifiedBasicStage<'stage> {
 	stage: MetadataReadyStage<'stage>,
 	digest: ContentDigest,
+	source_digest: ContentDigest,
 }
 
 impl VerifiedBasicStage<'_> {
@@ -69,6 +70,7 @@ pub fn copy_with_basic_metadata<'stage>(
 	Ok(VerifiedBasicStage {
 		stage,
 		digest: verified.digest,
+		source_digest: verified.source_digest,
 	})
 }
 
@@ -80,6 +82,7 @@ pub fn copy_with_basic_metadata<'stage>(
 pub struct VerifiedStage<'stage> {
 	stage: ClosedStage<'stage>,
 	digest: ContentDigest,
+	source_digest: ContentDigest,
 }
 
 impl VerifiedStage<'_> {
@@ -174,7 +177,11 @@ pub fn copy_verified_stage<'stage>(
 		.map_err(StageTransferFailure::RevalidateSource)
 		.map_err(failure)?;
 
-	Ok(VerifiedStage { stage, digest })
+	Ok(VerifiedStage {
+		stage,
+		digest,
+		source_digest,
+	})
 }
 
 fn verify_read_back(

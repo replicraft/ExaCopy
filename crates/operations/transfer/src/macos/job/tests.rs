@@ -17,6 +17,8 @@ use exacopy_platform::macos::{BasicMetadataError, ManagedReadError, ManagedReadG
 use super::*;
 use crate::macos::plan::{DestinationPlanBinding, PlanAttempt, SourceMetadata, SourcePlanBinding};
 
+mod publication;
+
 const SOURCE: &str = "source";
 const TARGET: &str = "target";
 const PRIVATE: &str = "private";

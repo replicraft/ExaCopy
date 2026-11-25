@@ -12,13 +12,15 @@ use exacopy_platform::macos::ManagedRegularFile;
 use exacopy_platform::macos::staging::jobs::{JobDirectory, JobName};
 use exacopy_platform::macos::staging::{StageBindingContext, WriteStage};
 
-use super::super::plan::SourcePlanBinding;
+use super::super::plan::{DarwinCopyPlan, SourcePlanBinding};
 use super::PreparedDarwinJob;
 use super::admission::{check_source, native_identity};
 
 mod error;
+mod publish;
 
 pub use error::{EntryPreparationError, EntryPreparationFailure};
+pub use publish::{DarwinCopyError, DarwinCopyFailure, PublicationProgress};
 
 const STAGE_PAYLOAD: &[u8] = b"payload";
 // This preserve profile has exactly one model entry. Its persisted entry UUID
@@ -28,9 +30,11 @@ const MODEL_ENTRY: EntryId = EntryId::new(1);
 /// The private unwritten stage and synchronized kind-2 evidence for one entry.
 #[derive(Debug)]
 pub struct PreparedDarwinEntry<'entry> {
-	_writer: Option<WriteStage<'entry>>,
-	_source: &'entry ManagedRegularFile<'entry>,
-	_journal: &'entry mut DurableJournal,
+	writer: Option<WriteStage<'entry>>,
+	source: &'entry ManagedRegularFile<'entry>,
+	journal: &'entry mut DurableJournal,
+	plan: DarwinCopyPlan<'entry>,
+	progress: PublicationProgress,
 	job: &'entry JobDirectory<'entry>,
 	preparation: DarwinEntryPrepared<'entry>,
 	frame: Frame,
@@ -144,9 +148,11 @@ impl PreparedDarwinJob<'_> {
 			.append_frame(FrameKind::EntryPrepared, preparation.encode())
 			.map_err(EntryPreparationFailure::Journal)?;
 		let mut entry = PreparedDarwinEntry {
-			_writer: Some(writer),
-			_source: self.source,
-			_journal: &mut self.journal,
+			writer: Some(writer),
+			source: self.source,
+			journal: &mut self.journal,
+			plan,
+			progress: PublicationProgress::Private,
 			job: self.job,
 			preparation,
 			frame,
