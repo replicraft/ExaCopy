@@ -1,6 +1,6 @@
 # ExaCopy
 
-ExaCopy is a Rust project for file transfers, comparison, and backup. The Linux CLI compares regular files byte for byte and copies one regular file into an absent name. It verifies the private stage by independent BLAKE3 read-back, synchronizes publication intent before an exclusive rename, and commits a receipt. Recovery can inspect a retained job, resume a checkpointed copy, retry publication of a verified stage, or complete the journal and receipt for an already-published copy.
+ExaCopy is a Rust project for file transfers, comparison, and backup. The Linux CLI compares regular files byte for byte and copies one regular file into an absent name. It verifies the private stage by independent BLAKE3 read-back, synchronizes publication intent before an exclusive rename, and commits a receipt. Recovery can inspect a retained job, resume an interrupted copy, retry publication of a verified stage, or complete the journal and receipt for an already-published copy.
 
 ```sh
 cargo run --locked -p exacopy-cli -- diff LEFT RIGHT --format json
@@ -13,6 +13,8 @@ cargo run --locked -p exacopy-cli -- recover retry JOB_DIRECTORY --source-root S
 ```
 
 The copy report identifies the job directory inside the target's parent. See the [CLI guide](crates/clients/cli/README.md) for supported inputs, recovery outcomes, and exit codes.
+
+On macOS, `diff LEFT RIGHT --managed-macos` enables exact comparison of regular files in explicitly provisioned owner-managed APFS directories. The flag attests that both input parents satisfy the [managed directory contract](crates/clients/cli/README.md#managed-apfs-comparison-on-macos).
 
 Use Rust 1.100.0 and cargo-nextest 0.9.151 for the developer checks.
 
