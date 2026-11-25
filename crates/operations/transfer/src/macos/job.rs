@@ -1,14 +1,11 @@
 //! Synchronized preparation of owner-private managed APFS jobs.
 
 use std::fmt;
-use std::num::NonZeroU32;
 
 use ed25519_dalek::SigningKey;
-use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{
-	DarwinJobPrepared, DarwinOwnerManifest, DarwinOwnerRecord, DarwinRootBinding, DurableJournal,
-	JournalFileBarrier, OwnerError, OwnerProfileId, OwnerTimestamp, OwnerToken, RootCapabilityId,
-	SyncedFrame,
+	DarwinJobPrepared, DarwinOwnerRecord, DarwinRootBinding, DurableJournal, OwnerError,
+	OwnerProfileId, OwnerTimestamp, OwnerToken, RootCapabilityId, SyncedFrame,
 };
 use exacopy_platform::macos::ManagedRegularFile;
 use exacopy_platform::macos::staging::StageDirectory;
@@ -17,6 +14,7 @@ use exacopy_platform::macos::staging::jobs::{JobDirectory, JobName, JournalDirec
 use super::plan::DarwinCopyPlan;
 
 mod admission;
+mod bootstrap;
 mod entry;
 mod error;
 
@@ -31,6 +29,10 @@ pub use error::{JobAdmissionError, JobBootstrapError, JobPreparationError, JobPr
 
 pub(super) use self::admission::native_identity;
 use self::admission::{admit_destination, check_source};
+use self::bootstrap::{JobPreparation, prepare_created_job};
+
+#[cfg(test)]
+use exacopy_journal::{JournalFileBarrier, frame::FrameKind};
 
 pub(super) const STAGE_PAYLOAD: &[u8] = b"payload";
 
@@ -158,61 +160,25 @@ fn with_admitted_job<T>(
 		.container
 		.create_job_directory(name)
 		.map_err(JobBootstrapError::Create)?;
-	let mut prepared = prepare_created_job(*plan, request, &job, destination)
-		.map_err(|source| JobBootstrapError::Retained { job: name, source })?;
-	Ok(operation(&mut prepared))
-}
-
-fn prepare_created_job<'job>(
-	plan: DarwinCopyPlan<'job>,
-	request: JobBootstrap<'job, '_>,
-	job: &'job JobDirectory<'job>,
-	destination: DarwinRootBinding,
-) -> Result<PreparedDarwinJob<'job>, JobPreparationError> {
-	let profile = request.profile;
-	let context = plan.context();
-	let state_root_uid = NonZeroU32::new(job.owner_uid()).ok_or(OwnerError::InvalidOwnerUid)?;
-	let owner = DarwinOwnerRecord::sign(
-		DarwinOwnerManifest {
-			token: profile.owner_token,
-			job: context.job,
-			profile: profile.id,
-			created: profile.created,
-			destination_volume: destination.identity.volume(),
-			state_root: native_identity(job.identity())?,
-			state_root_uid,
-			plan_digest: context.plan_digest,
-		},
-		profile.signer,
-	)?;
-	let preparation = DarwinJobPrepared::new(context, &owner, destination)
-		.map_err(JobPreparationError::Binding)?;
-	job.write_owner_record(owner.as_bytes())
-		.map_err(JobPreparationStep::OwnerRecord.error())?;
-	job.write_plan_record(&plan.encode())
-		.map_err(JobPreparationStep::PlanRecord.error())?;
-	let journal_directory = job
-		.create_journal_directory()
-		.map_err(JobPreparationStep::JournalDirectory.error())?;
-	let segment = journal_directory
-		.create_first_segment()
-		.map_err(JobPreparationStep::FirstSegment.error())?;
-	let mut journal =
-		DurableJournal::from_new_file_with_barrier(segment, JournalFileBarrier::DarwinFullFsync)
-			.map_err(JobPreparationError::Journal)?;
-	let initial_frame = journal
-		.append(FrameKind::JobPrepared, &preparation.encode())
-		.map_err(JobPreparationError::Journal)?;
-	Ok(PreparedDarwinJob {
+	let JobPreparation {
 		journal,
-		_journal_directory: journal_directory,
-		job,
+		journal_directory,
 		owner,
 		preparation,
 		initial_frame,
-		plan,
+	} = prepare_created_job(plan, request.profile, &job, destination)
+		.map_err(|source| JobBootstrapError::Retained { job: name, source })?;
+	let mut prepared = PreparedDarwinJob {
+		journal,
+		_journal_directory: journal_directory,
+		job: &job,
+		owner,
+		preparation,
+		initial_frame,
+		plan: *plan,
 		source: request.source,
 		source_root_id: request.source_root_id,
 		entry_attempted: false,
-	})
+	};
+	Ok(operation(&mut prepared))
 }
