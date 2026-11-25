@@ -2,7 +2,7 @@
 
 `journal_frame` checks that the decoder limits each input buffer and returned payload to 1 MiB, advances only by exact frame sizes, and stops after the first error. It re-encodes every accepted frame and compares the complete bytes with the original input. The input-size budget caps this campaign at 512 bytes per input. The frame integration tests separately exercise a payload at the full 1 MiB format limit.
 
-The seed corpus contains independently generated, valid checksummed frames from the framing tests, including a valid sequence gap. It also covers an oversized length, an unsupported kind, interrupted integrity trailers, and a broken chain followed by later magic bytes. Payloads in these fixtures exercise the envelope. The target leaves owner authority and typed payload admission to their respective decoders.
+The seed corpus contains independently generated, valid checksummed frames from the framing tests, including a valid sequence gap. It also covers an oversized length, an unsupported kind, interrupted integrity trailers, and a broken chain followed by later magic bytes. Raw canonical recovery-decision seeds exercise both kind-20 payload variants. The target verifies exact re-encoding and disjoint admission for those variants, including when a decoded frame carries a kind-20 payload. Replay, ownership, and effect authority have separate checks.
 
 From the repository root, use cargo-fuzz 0.13.2, the isolated tool lockfile, and Rust nightly-2026-11-04 on a target with AddressSanitizer support.
 

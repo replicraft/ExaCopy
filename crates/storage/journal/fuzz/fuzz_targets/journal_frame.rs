@@ -6,7 +6,8 @@ use std::io::{self, Read};
 
 use libfuzzer_sys::fuzz_target;
 
-use exacopy_journal::frame::{ChainHead, FrameReadError, FrameReader, FrameWriter};
+use exacopy_journal::frame::{ChainHead, FrameKind, FrameReadError, FrameReader, FrameWriter};
+use exacopy_journal::{RecoveryDecision, RetainedPublicationDecision};
 
 const WIRE_PAYLOAD_LIMIT: usize = 1_048_576;
 const WIRE_HEADER_BYTES: usize = 56;
@@ -26,6 +27,7 @@ impl Read for BoundedRead<'_> {
 }
 
 fuzz_target!(|input: &[u8]| {
+	check_recovery_payload(input);
 	let mut reader = FrameReader::new(BoundedRead(input), ChainHead::start());
 	let mut consumed = 0;
 	let mut previous = ChainHead::start();
@@ -62,6 +64,9 @@ fuzz_target!(|input: &[u8]| {
 					frame.head()
 				);
 				assert_eq!(writer.into_inner().as_slice(), &input[consumed..end]);
+				if frame.kind() == FrameKind::RecoveryDecision {
+					check_recovery_payload(frame.payload());
+				}
 				consumed = end;
 				previous = frame.head();
 				assert_eq!(reader.head(), previous);
@@ -96,3 +101,14 @@ fuzz_target!(|input: &[u8]| {
 		}
 	}
 });
+
+fn check_recovery_payload(input: &[u8]) {
+	if let Ok(retained) = RetainedPublicationDecision::decode(input) {
+		assert_eq!(retained.encode(), input);
+		assert!(RecoveryDecision::decode(input).is_err());
+	}
+	if let Ok(published) = RecoveryDecision::decode(input) {
+		assert_eq!(published.encode(), input);
+		assert!(RetainedPublicationDecision::decode(input).is_err());
+	}
+}
