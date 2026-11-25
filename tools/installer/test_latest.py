@@ -105,6 +105,50 @@ def change_artifact_member(member, mutation):
     return member
 
 
+def exercise_tar_padding(base):
+    work = base / "tar-padding"
+    bundle = work / "bundle"
+    bundle.mkdir(parents=True)
+    (bundle / "release.manifest").write_bytes(b"descriptor")
+    (bundle / "release.sig").write_bytes(b"signature")
+    archive = work / ARCHIVE
+    unpacker = REPO / "tools" / "installer" / "unpack_release.pl"
+    block = tarfile.BLOCKSIZE
+    seen_padding = set()
+
+    def unpack(data, label, refusal=False):
+        archive.write_bytes(gzip.compress(data, mtime=0))
+        with TemporaryDirectory(dir=work) as directory:
+            result = subprocess.run(["/usr/bin/perl", unpacker, archive, directory],
+                                    capture_output=True, text=True, timeout=10)
+            if refusal:
+                assert result.returncode != 0 and "unexpected data after tar terminator" in result.stderr, (
+                    label, result,
+                )
+            else:
+                assert result.returncode == 0, (label, result)
+                assert (Path(directory) / "exacopy").read_bytes() == (bundle / "exacopy").read_bytes()
+
+    for executable_blocks in range(1, 21):
+        (bundle / "exacopy").write_bytes(b"payload!" * (executable_blocks * block // 8))
+        produced = gzip.decompress(make_tar(bundle))
+        # Three headers, two short metadata members, and two mandatory end blocks.
+        end = (executable_blocks + 7) * block
+        padding = (len(produced) - end) // block
+        assert len(produced) - end == padding * block
+        seen_padding.add(padding)
+        unpack(produced, f"{padding} canonical padding blocks")
+        if padding == 19:
+            unpadded = produced[:end]
+            unpack(unpadded, "no optional padding")
+            unpack(unpadded + bytes(20 * block), "20 zero padding blocks", refusal=True)
+            unpack(unpadded + bytes(18 * block), "short zero-filled record", refusal=True)
+            unpack(unpadded + bytes(19 * block - 1), "unaligned zero tail", refusal=True)
+            unpack(produced[:-1] + b"x", "nonzero padding byte", refusal=True)
+    assert seen_padding == set(range(20))
+    print("pass all 20 USTAR padding residues, minimal end marker and bounded padding refusals", flush=True)
+
+
 def mock_source(base):
     source = base / "source"
     helpers = source / "tools" / "installer"
@@ -350,7 +394,9 @@ if __name__ == "__main__":
         parser.error("run as an unprivileged user")
     temporary_root = "/private/tmp" if platform.system() == "Darwin" else "/tmp"
     with TemporaryDirectory(prefix="exacopy-latest-test-", dir=temporary_root) as temp:
+        base = Path(temp)
+        exercise_tar_padding(base)
         if all(supplied):
-            exercise_release(Path(temp), release)
+            exercise_release(base, release)
         else:
-            exercise(Path(temp))
+            exercise(base)

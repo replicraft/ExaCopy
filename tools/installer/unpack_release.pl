@@ -10,6 +10,8 @@ my %limits = ('exacopy' => 268435456, 'release.manifest' => 4096, 'release.sig' 
 my %seen;
 my $block = 512;
 my $zero_block = "\0" x $block;
+my $record_size = 20 * $block;
+my $tar_offset = 0;
 
 sub refuse {
 	die "invalid ExaCopy release archive: $_[0]\n";
@@ -71,19 +73,29 @@ for (1 .. keys %limits) {
 	close($output) or refuse('cannot close bundle file');
 	my $padding = ($block - $size % $block) % $block;
 	exact_read($padding) eq "\0" x $padding or refuse('nonzero tar member padding');
+	$tar_offset += $block + $size + $padding;
 }
 
 exact_read($block * 2) eq $zero_block x 2 or refuse('unexpected member or missing tar terminator');
-# USTAR writers can pad the terminator to a standard 20-block tar record.
-for my $trailing_block (1 .. 19) {
-	my $count = $gzip->read(my $data, $block);
+# The two end blocks can straddle records. From the offset after both
+# blocks, a writer can omit padding or zero-fill to the next record boundary.
+$tar_offset += 2 * $block;
+my $record_padding = ($record_size - $tar_offset % $record_size) % $record_size;
+my $trailing_bytes = 0;
+while (1) {
+	# Read at most the remaining padding budget plus one byte to detect
+	# excess output without expanding the rest of a malicious zero tail.
+	my $limit = $record_padding - $trailing_bytes + 1;
+	my $count = $gzip->read(my $data, $limit);
 	defined($count) && $count >= 0 or refuse('corrupt gzip trailer');
-	if ($count == 0) {
-		my $tail_bytes = read($input, my $trailing, 1);
-		length($gzip->trailingData()) == 0 && defined($tail_bytes) && $tail_bytes == 0
-			or refuse('trailing data after gzip stream');
-		exit 0;
-	}
-	$count == $block && $data eq $zero_block && $trailing_block <= 18
+	last if $count == 0;
+	$trailing_bytes += $count;
+	$trailing_bytes <= $record_padding && $data eq "\0" x $count
 		or refuse('unexpected data after tar terminator');
 }
+($trailing_bytes == 0 || $trailing_bytes == $record_padding)
+	or refuse('unexpected data after tar terminator');
+
+my $tail_bytes = read($input, my $trailing, 1);
+length($gzip->trailingData()) == 0 && defined($tail_bytes) && $tail_bytes == 0
+	or refuse('trailing data after gzip stream');
