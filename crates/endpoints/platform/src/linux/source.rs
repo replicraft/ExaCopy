@@ -288,6 +288,14 @@ pub(super) fn check_logical_eof(file: &File, length: u64) -> Result<(), ReadErro
 }
 
 pub(super) fn reopen_regular_read_only(pinned: &impl AsFd) -> Result<(File, Stat), ReadError> {
+	reopen_regular(pinned, OFlags::empty())
+}
+
+pub(super) fn reopen_regular_without_atime(pinned: &impl AsFd) -> Result<(File, Stat), ReadError> {
+	reopen_regular(pinned, OFlags::NOATIME)
+}
+
+fn reopen_regular(pinned: &impl AsFd, flags: OFlags) -> Result<(File, Stat), ReadError> {
 	let pinned_stat = fs::fstat(pinned)?;
 	if FileType::from_raw_mode(pinned_stat.st_mode) != FileType::RegularFile {
 		return Err(ReadError::NotRegularFile);
@@ -335,7 +343,7 @@ pub(super) fn reopen_regular_read_only(pinned: &impl AsFd) -> Result<(File, Stat
 	let file = fs::openat(
 		&descriptors,
 		descriptor_name.as_c_str(),
-		OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NONBLOCK | OFlags::NOCTTY,
+		OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NONBLOCK | OFlags::NOCTTY | flags,
 		Mode::empty(),
 	)?;
 	let stat = fs::fstat(&file)?;

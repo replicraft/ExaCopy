@@ -1,10 +1,11 @@
-use std::fs::{self, DirBuilder, File, OpenOptions, Permissions};
+use std::fs::{self, DirBuilder, File, FileTimes, OpenOptions, Permissions};
 use std::io::{Read as _, Write as _};
 use std::os::unix::ffi::OsStrExt as _;
 use std::os::unix::fs::{
 	DirBuilderExt as _, MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _, symlink,
 };
 use std::path::Path;
+use std::time::{Duration, SystemTime};
 
 use exacopy_endpoint::UnixComponent;
 use rustix::fs::{self as linux_fs, Mode, OFlags};
@@ -98,6 +99,31 @@ fn fixed_records_reopen_with_read_only_rights_and_distinct_identifiers() {
 		));
 	}
 	fixture.assert_debug_redacts(&job, &[JOB]);
+}
+
+#[test]
+fn reading_the_owned_stage_does_not_advance_its_captured_access_time() {
+	let (fixture, root) = fixture();
+	let directory = fixture.path(JOB).join(STAGE);
+	private_directory(&directory);
+	let path = directory.join(std::ffi::OsStr::from_bytes(RAW_STAGE));
+	private_file(&path, PAYLOAD);
+	let old_time = SystemTime::UNIX_EPOCH + Duration::from_secs(1_600_000_000);
+	File::open(&path)
+		.unwrap()
+		.set_times(FileTimes::new().set_accessed(old_time))
+		.expect("set old atime");
+	let job = root.open_recovery_job(name(JOB)).expect("reopen job");
+	let inventory = job
+		.inventory(UnixComponent::new(RAW_STAGE).unwrap(), name(TARGET))
+		.expect("inventory stage");
+	let stage = inventory.stage().expect("held private stage");
+	let mut observed = [0; PAYLOAD.len()];
+	stage
+		.read_exact_at(0, &mut observed)
+		.expect("measure private stage");
+	assert_eq!(observed, PAYLOAD);
+	assert_eq!(fs::metadata(&path).unwrap().accessed().unwrap(), old_time);
 }
 
 #[test]

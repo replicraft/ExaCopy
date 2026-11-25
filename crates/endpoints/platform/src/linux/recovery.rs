@@ -13,7 +13,7 @@ use super::handle::{FileIdentity, file_identity, mount_id};
 use super::job::{FIRST_SEGMENT, JOURNAL, OWNER, PLAN, RECEIPT, RECEIPTS, STAGE};
 use super::source::{
 	ExtendedAttributes, ReadError, SourceObservation, check_logical_eof, reopen_regular_read_only,
-	xattrs,
+	reopen_regular_without_atime, xattrs,
 };
 use super::stage::{CHILD_RESOLVE, DestinationRoot, StageError, check_private_child, component};
 
@@ -258,8 +258,8 @@ impl fmt::Debug for RecoveryInventory<'_> {
 
 /// A held regular file with read-only rights and a captured Linux observation.
 ///
-/// Ordinary reads can update access time. The caller bounds record decoding and
-/// decides how to interpret the observations.
+/// Owned inodes request Linux no-atime reads. Reading an unowned target can update
+/// its access time. The caller bounds decoding and interprets the observations.
 pub struct RecoveryFile {
 	file: File,
 	observation: SourceObservation,
@@ -438,7 +438,12 @@ fn open_regular(
 	};
 	let before = fs::fstat(&pinned)?;
 	policy.check(&before)?;
-	let (file, stat) = reopen_regular_read_only(&pinned).map_err(StageError::ReadBack)?;
+	let (file, stat) = if before.st_uid == geteuid().as_raw() {
+		reopen_regular_without_atime(&pinned)
+	} else {
+		reopen_regular_read_only(&pinned)
+	}
+	.map_err(StageError::ReadBack)?;
 	policy.check(&stat)?;
 	if mount_id(&pinned)? != mount || mount_id(&file)? != mount {
 		return Err(StageError::IdentityChanged);
