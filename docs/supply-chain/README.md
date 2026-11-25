@@ -44,6 +44,11 @@ the macOS library is disabled.
 
 ## Dependency suitability
 
+The [locked dependency inventory](../specs/dependencies/README.md) records the
+production graph for the three supported targets and the review status of
+selected direct dependencies. Verify the current graph with
+`python3 -B tools/dependency_review/check.py --offline`.
+
 For a dependency addition or upgrade, record the exact lockfile change,
 upstream source and maintenance or release evidence, RustSec findings, license
 and notice obligations, target and architecture support, transitive footprint,

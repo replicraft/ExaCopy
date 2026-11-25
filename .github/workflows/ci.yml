@@ -113,6 +113,9 @@ jobs:
         run: |
           bash .github/ci/capture.sh build-policy-controls python3 -B -m unittest discover \
             -s tools -p '*_test.py'
+      - name: Check locked production dependency inventory
+        if: ${{ !cancelled() }}
+        run: bash .github/ci/capture.sh dependency-inventory python3 -B tools/dependency_review/check.py
       - name: Check independent reference and performance evidence
         if: ${{ !cancelled() }}
         run: bash .github/ci/capture.sh reference-evidence python3 -B tools/reference/check.py
