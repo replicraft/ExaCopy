@@ -140,6 +140,16 @@ pub(super) const BINDINGS: &[Binding] = &[
 		Marker::Array { width: 3 },
 	),
 	Binding::new(
+		"linux-remote-download-finalization",
+		"crates/storage/exacopy-journal/src/remote_download/finalization/wire.rs",
+		Marker::Array { width: 3 },
+	),
+	Binding::new(
+		"linux-remote-download-receipt",
+		"crates/storage/exacopy-journal/src/remote_download/finalization/wire.rs",
+		Marker::Array { width: 3 },
+	),
+	Binding::new(
 		"linux-remote-stage-directory-bootstrap",
 		"crates/storage/exacopy-journal/src/remote_download/bootstrap.rs",
 		Marker::Scalar {

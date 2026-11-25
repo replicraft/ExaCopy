@@ -185,6 +185,24 @@ owner = "crates/storage/exacopy-journal/src/remote_download/bootstrap.rs"
 notes = "Private frame kind 38 authenticates the fixed stage directory under a separate signing domain, the selected owner profile and the exact first JobPrepared head. Required before allocations in the explicitly selected strict profile. Historical replay refuses this new kind."
 
 [[contract]]
+id = "linux-remote-download-finalization"
+kind = "transfer_journal"
+status = "implemented_private"
+version = "1.0"
+required_features = 3
+owner = "crates/storage/exacopy-journal/src/remote_download/finalization/wire.rs"
+notes = "Remote-only kinds 4–9 and 18 for the explicit SFTP unnamed-stream policy. Structural declarations require separate authoritative replay and native qualification."
+
+[[contract]]
+id = "linux-remote-download-receipt"
+kind = "transfer_journal"
+status = "implemented_private"
+version = "1.0"
+required_features = 3
+owner = "crates/storage/exacopy-journal/src/remote_download/finalization/wire.rs"
+notes = "Canonical PublishedWithOmissions artifact sharing the remote finalization profile marker. It has its own receipt commitment digest domain and requires the validated selected journal."
+
+[[contract]]
 id = "darwin-managed-apfs-owner"
 kind = "transfer_journal"
 status = "implemented_private"

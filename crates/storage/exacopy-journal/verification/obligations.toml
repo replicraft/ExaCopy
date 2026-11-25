@@ -60,3 +60,15 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/remote_download_bootstrap.rs", test = "strict_transcript_keeps_only_complete_authenticated_boundaries_at_every_cut", oracle = "Every byte cut retains exactly the complete admitted prefix. No allocation appears before the signed stage-directory record and incomplete bootstrap remains reconciliation." }
+
+[[obligation]]
+id = "P-046"
+requirement_ids = ["R-013", "R-015", "R-017", "R-140"]
+source = "src/remote_download/finalization/receipt.rs"
+symbols = ["RemoteDownloadReceipt::decode", "RemoteDownloadReceipt::validate_evidence"]
+assumptions = [
+    "Canonical CBOR, independently selected local profile and key, and BLAKE3 follow their documented profiles.",
+    "All original frames must come from one independently validated selected held journal, including bootstrap and intervening checkpoint history. The fixture does not authorize effects, qualify native barriers or prove complete replay.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_finalization.rs", test = "independent_finalization_vectors_round_trip_and_bind_receipt", oracle = "Independently generated canonical framed bodies and exact remote receipt decode and re-encode byte-for-byte. The signed policy, exact prepared run and held stage declarations, independent verification digest and publication frames bind to the selected owner and committed receipt digest." }

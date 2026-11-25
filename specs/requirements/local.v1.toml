@@ -1293,6 +1293,30 @@ target = "oversized_strict_bootstrap_stops_before_consuming_any_payload_bytes"
 
 
 [[coverage]]
+id = "remote-download-finalization-format"
+status = "implemented"
+requirement_ids = ["R-013", "R-015", "R-017", "R-140"]
+acceptance_ids = ["A-013", "A-015", "A-017", "A-140"]
+invariant_ids = ["INV-003", "INV-013", "INV-019", "INV-024"]
+scope = "Explicit SFTP unnamed-stream scope and canonical bounded finalization records and receipt with exact frame, owner, selected metadata and published inode associations."
+limits = "Structural declarations only. The selected full validated journal, observable local effects, independent verification, native qualification and reconciliation remain separate."
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "obligation"
+state = "defined"
+path = "crates/storage/exacopy-journal/verification/obligations.toml"
+target = "P-046"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "test"
+state = "defined"
+path = "crates/engines/exacopy-transfer/src/remote_metadata.rs"
+target = "only_explicit_data_only_selection_admits_scope_binding"
+
+
+[[coverage]]
 id = "public-apply-intent-receipt"
 status = "implemented"
 requirement_ids = ["R-015", "R-155"]
