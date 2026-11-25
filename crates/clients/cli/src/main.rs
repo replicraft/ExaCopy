@@ -12,6 +12,9 @@ mod linux;
 mod linux_path;
 #[cfg(target_os = "linux")]
 mod profile;
+#[cfg(target_os = "linux")]
+mod recovery;
+mod recovery_report;
 mod report;
 
 fn main() -> std::process::ExitCode {

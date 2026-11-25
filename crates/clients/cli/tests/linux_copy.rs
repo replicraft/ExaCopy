@@ -439,3 +439,6 @@ impl Drop for Fixture {
 		let _ = fs::remove_dir_all(&self.0);
 	}
 }
+
+#[path = "linux_copy/recovery.rs"]
+mod recovery;

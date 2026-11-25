@@ -62,7 +62,7 @@ pub(crate) enum ErrorKind {
 }
 
 impl ErrorKind {
-	const fn exit_code(self) -> u8 {
+	pub(crate) const fn exit_code(self) -> u8 {
 		match self {
 			Self::Unsupported => 6,
 			#[cfg(target_os = "linux")]

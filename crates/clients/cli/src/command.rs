@@ -3,8 +3,9 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
-use crate::args::{self, Command, CopyCommand, DiffCommand, Format, USAGE};
+use crate::args::{self, Command, CopyCommand, DiffCommand, Format, RecoveryCommand, USAGE};
 use crate::copy_report::CopyOutcome;
+use crate::recovery_report::RecoveryOutcome;
 use crate::report::{INCONCLUSIVE, Outcome, Report};
 
 pub(crate) fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
@@ -32,7 +33,34 @@ pub(crate) fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
 			ExitCode::from(code)
 		}
 		Command::InitProfile(path) => ExitCode::from(init_profile(&path, &mut stderr)),
+		Command::InspectRecovery(inspect) => {
+			let outcome = inspect_recovery(&inspect);
+			match outcome.write(inspect.format, &mut stdout, &mut stderr) {
+				Ok(()) => ExitCode::from(outcome.exit_code()),
+				Err(error) => {
+					let _ = writeln!(
+						stderr,
+						"exacopy: could not write recovery inspection ({error})"
+					);
+					ExitCode::from(4)
+				}
+			}
+		}
 	}
+}
+
+#[cfg(target_os = "linux")]
+fn inspect_recovery(command: &RecoveryCommand) -> RecoveryOutcome {
+	crate::recovery::inspect(command)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn inspect_recovery(command: &RecoveryCommand) -> RecoveryOutcome {
+	let _ = (&command.job, &command.profile);
+	RecoveryOutcome::failure(
+		crate::copy_report::ErrorKind::Unsupported,
+		"local recovery requires Linux",
+	)
 }
 
 fn run_diff(diff: DiffCommand, stdout: &mut impl Write, stderr: &mut impl Write) -> ExitCode {

@@ -1,12 +1,13 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
-pub(crate) const USAGE: &str = "Usage:\n  exacopy diff [--] LEFT RIGHT [--compare bytes] [--format human|json]\n  exacopy copy [--] SOURCE TARGET --profile DIR [--format human|json]\n  exacopy profile init [--] DIR";
+pub(crate) const USAGE: &str = "Usage:\n  exacopy diff [--] LEFT RIGHT [--compare bytes] [--format human|json]\n  exacopy copy [--] SOURCE TARGET --profile DIR [--format human|json]\n  exacopy recover inspect [--] JOB --profile DIR [--format human|json]\n  exacopy profile init [--] DIR";
 
 pub(crate) enum Command {
 	Help,
 	Diff(DiffCommand),
 	Copy(CopyCommand),
+	InspectRecovery(RecoveryCommand),
 	InitProfile(PathBuf),
 }
 
@@ -23,6 +24,12 @@ pub(crate) struct CopyCommand {
 	pub(crate) format: Format,
 }
 
+pub(crate) struct RecoveryCommand {
+	pub(crate) job: PathBuf,
+	pub(crate) profile: PathBuf,
+	pub(crate) format: Format,
+}
+
 #[derive(Clone, Copy)]
 pub(crate) enum Format {
 	Human,
@@ -34,9 +41,46 @@ pub(crate) fn parse(mut args: impl Iterator<Item = OsString>) -> Result<Command,
 		Some("--help" | "-h") if args.next().is_none() => Ok(Command::Help),
 		Some("diff") => parse_diff(args),
 		Some("copy") => parse_copy(args),
+		Some("recover") => parse_recover(args),
 		Some("profile") => parse_profile(args),
 		_ => Err("expected a command"),
 	}
+}
+
+fn parse_recover(mut args: impl Iterator<Item = OsString>) -> Result<Command, &'static str> {
+	match args.next().as_deref().and_then(OsStr::to_str) {
+		Some("--help" | "-h") if args.next().is_none() => return Ok(Command::Help),
+		Some("inspect") => {}
+		_ => return Err("expected recover inspect JOB"),
+	}
+	let first = args.next().ok_or("recover inspect requires a job path")?;
+	let job = match first.to_str() {
+		Some("--help" | "-h") if args.next().is_none() => return Ok(Command::Help),
+		Some("--") => args.next().ok_or("recover inspect requires a job path")?,
+		_ if first.as_encoded_bytes().starts_with(b"-") => {
+			return Err("use -- before a path that starts with a dash");
+		}
+		_ => first,
+	};
+	let mut profile = None;
+	let mut format = None;
+	while let Some(flag) = args.next() {
+		match flag.to_str() {
+			Some("--profile") if profile.is_none() => {
+				profile = Some(args.next().ok_or("--profile requires a directory")?);
+			}
+			Some("--format") if format.is_none() => format = Some(parse_format(args.next())?),
+			Some("--profile" | "--format") => return Err("repeated recovery option"),
+			_ => return Err("unknown recovery option"),
+		}
+	}
+	Ok(Command::InspectRecovery(RecoveryCommand {
+		job: job.into(),
+		profile: profile
+			.ok_or("recovery requires an explicit --profile DIR")?
+			.into(),
+		format: format.unwrap_or(Format::Human),
+	}))
 }
 
 fn parse_diff(mut args: impl Iterator<Item = OsString>) -> Result<Command, &'static str> {
