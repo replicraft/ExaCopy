@@ -18,7 +18,7 @@ checksums. The [license and source policy](../../deny.toml) and
 The minimal, default, and all-stable profiles currently select the same product
 capabilities. CI checks those profiles, each applicable opt-in feature, and the
 combination of all features applicable to the target. The experimental APFS
-runtime requires `exacopy-engine/experimental-apfs-copy` and has a separate macOS test run.
+runtime requires `exacopy-cli/experimental-apfs-copy` and has a separate macOS test run.
 The macOS CLI comparison opt-in is a runtime filesystem contract. The CLI
 rejects unavailable operations with explicit unsupported outcomes. See the
 [CLI guide](../../crates/clients/cli/README.md) for the operation contracts.

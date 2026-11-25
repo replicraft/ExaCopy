@@ -8,7 +8,8 @@ use crate::copy_report::CopyOutcome;
 use crate::recovery_report::RecoveryOutcome;
 use crate::report::{INCONCLUSIVE, Outcome, Report};
 
-pub(crate) fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
+/// Dispatches CLI arguments and renders the resulting exit status.
+pub fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
 	let mut stdout = io::stdout().lock();
 	let mut stderr = io::stderr().lock();
 	let command = match args::parse(args) {

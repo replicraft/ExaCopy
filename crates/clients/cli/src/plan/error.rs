@@ -2,7 +2,7 @@ use std::error::Error;
 use std::fmt;
 use std::io;
 
-use exacopy_engine::linux::NativePlanningError;
+use crate::assembly::linux::NativePlanningError;
 use exacopy_platform::linux::ReadError;
 use exacopy_transfer::copy_planning::PlanningError;
 use rustix::io::Errno;

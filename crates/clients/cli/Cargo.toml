@@ -7,6 +7,7 @@ license.workspace = true
 publish = false
 
 [features]
+experimental-apfs-copy = ["dep:exacopy-content", "dep:exacopy-journal", "dep:exacopy-model", "dep:exacopy-transfer", "exacopy-transfer/experimental-apfs-copy"]
 experimental-windows-diff = ["dep:exacopy-diff", "dep:exacopy-endpoint", "dep:exacopy-platform", "exacopy-platform/experimental-windows-read"]
 
 [[bin]]
@@ -28,7 +29,7 @@ exacopy-codec.workspace = true
 blake3.workspace = true
 ed25519-dalek.workspace = true
 exacopy-content.workspace = true
-exacopy-engine.workspace = true
+exacopy-model.workspace = true
 exacopy-journal.workspace = true
 exacopy-transfer.workspace = true
 rustix = { workspace = true, features = ["rand"] }
@@ -42,3 +43,13 @@ exacopy-platform = { workspace = true, optional = true }
 
 [lints]
 workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+exacopy-content = { workspace = true, optional = true }
+exacopy-journal = { workspace = true, optional = true }
+exacopy-model = { workspace = true, optional = true }
+exacopy-transfer = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+blake3.workspace = true
+ed25519-dalek.workspace = true

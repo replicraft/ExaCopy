@@ -90,7 +90,7 @@ class FeatureMatrixTests(unittest.TestCase):
 
     def test_experimental_apfs_feature_is_target_scoped_and_default_off(self):
         profiles = POLICY["profiles"]
-        for package in ("exacopy-transfer", "exacopy-engine"):
+        for package in ("exacopy-transfer", "exacopy-cli"):
             feature = f"{package}/experimental-apfs-copy"
             for profile in ("default", "minimal", "all-stable"):
                 self.assertNotIn(feature, ",".join(profile_flags(POLICY, profiles[profile], MACOS)))
@@ -141,7 +141,7 @@ class FeatureMatrixTests(unittest.TestCase):
         policy = deepcopy(POLICY)
         for name, target, selectors in (
             ("experimental-apfs-copy", MACOS, [
-                "exacopy-engine/experimental-apfs-copy", "exacopy-transfer/experimental-apfs-copy",
+                "exacopy-cli/experimental-apfs-copy", "exacopy-transfer/experimental-apfs-copy",
             ]),
             ("experimental-windows-copy", WINDOWS, [
                 "exacopy-platform/experimental-windows-copy", "exacopy-platform/windows-read-fixture",
@@ -191,7 +191,7 @@ class FeatureMatrixTests(unittest.TestCase):
             check_isolated_features(policy, WINDOWS, "network", profile, normal)
             for package, accidental in (
                 (owner, "future-experiment"),
-                ("exacopy-engine", "experimental-apfs-copy"),
+                ("exacopy-cli", "experimental-apfs-copy"),
                 ("exacopy-platform", "experimental-windows-copy"),
                 ("exacopy-platform", "windows-read-fixture"),
                 ("exacopy-model", "proof-extraction"),

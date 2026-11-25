@@ -1,11 +1,11 @@
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use exacopy_content::MAX_SCRATCH_BYTES;
-use exacopy_endpoint::UnixComponent;
-use exacopy_engine::linux::{
+use crate::assembly::linux::{
 	CopyRoots, LocalCopyError, StageFailure, copy_new_file, plan_new_file,
 };
+use exacopy_content::MAX_SCRATCH_BYTES;
+use exacopy_endpoint::UnixComponent;
 use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{JournalEntryId, JournalEpoch, JournalJobId, OwnerTimestamp, OwnerToken};
 use exacopy_platform::linux::{PublishError, ReadError, ReadRoot, StageError};
@@ -220,8 +220,8 @@ fn stage_kind(error: &StageError) -> ErrorKind {
 
 #[cfg(test)]
 mod tests {
-	use exacopy_engine::linux::LocalCopyError;
-	use exacopy_engine::linux::StageFailure;
+	use crate::assembly::linux::LocalCopyError;
+	use crate::assembly::linux::StageFailure;
 	use exacopy_journal::frame::FrameKind;
 	use exacopy_journal::{DurableJournalError, VerificationRecordError};
 	use exacopy_platform::linux::StageError;

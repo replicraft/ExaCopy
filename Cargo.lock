@@ -783,8 +783,8 @@ dependencies = [
  "exacopy-content",
  "exacopy-diff",
  "exacopy-endpoint",
- "exacopy-engine",
  "exacopy-journal",
+ "exacopy-model",
  "exacopy-platform",
  "exacopy-transfer",
  "rustix",
@@ -828,22 +828,6 @@ name = "exacopy-endpoint"
 version = "0.1.0"
 dependencies = [
  "exacopy-model",
-]
-
-[[package]]
-name = "exacopy-engine"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "ed25519-dalek 2.2.0",
- "exacopy-codec",
- "exacopy-content",
- "exacopy-endpoint",
- "exacopy-journal",
- "exacopy-model",
- "exacopy-platform",
- "exacopy-transfer",
- "rustix",
 ]
 
 [[package]]

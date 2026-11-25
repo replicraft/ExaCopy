@@ -42,7 +42,7 @@ Darwin publication observation, barrier evidence and receipt commitment use kind
 
 The managed APFS receipt uses a separate canonical profile. It binds the verified published inode and stream, required metadata, both directory identities, and the exact kind-9 envelope synchronized with `F_FULLFSYNC`. Its digest is available for the kind-18 commitment. The receipt describes a live source and independent buffered BLAKE3 read-back. Achieved durability remains unconfirmed.
 
-The managed APFS entry points are in `exacopy_engine::macos`, enabled by the default-off `exacopy-engine/experimental-apfs-copy` feature. The engine composes held platform capabilities with the transfer crate's preparation, copy, and recovery policy. It holds the scoped prepared job and stage, rechecks the source before reading, appends the verified phases, and requests the one-use model authorization only after the intent passes `F_FULLFSYNC`. Success requires the exclusive native rename, checked names, both directory barriers, the persisted receipt, and its synchronized commitment. Failures preserve private evidence and carry the last established publication boundary. The strict native success fixture still requires eligible local APFS files.
+The managed APFS entry points are in `exacopy_cli::assembly::macos`, enabled by the default-off `exacopy-cli/experimental-apfs-copy` feature. The engine composes held platform capabilities with the transfer crate's preparation, copy, and recovery policy. It holds the scoped prepared job and stage, rechecks the source before reading, appends the verified phases, and requests the one-use model authorization only after the intent passes `F_FULLFSYNC`. Success requires the exclusive native rename, checked names, both directory barriers, the persisted receipt, and its synchronized commitment. Failures preserve private evidence and carry the last established publication boundary. The strict native success fixture still requires eligible local APFS files.
 
 Read-only managed APFS replay authenticates the signed owner using the independently selected profile, verification key and observed private job root. It checks the original copy history and accepts one kind-19 recovery start after an eligible publication attempt, followed by an optional kind-20 decision. It retains the accepted frame boundary if the segment has a torn tail. The reported publication status describes the original attempt. Receipt validation compares a committed receipt against its canonical artifact. Applying recovery decisions to live names and content still requires a mutation executor. Darwin process-kill and power-loss qualification remain open.
 
@@ -92,7 +92,7 @@ The process-kill tests cover synchronized preparation through receipt commitment
 
 ```sh
 cargo nextest run --locked -p exacopy-content -p exacopy-journal
-cargo test --locked -p exacopy-platform -p exacopy-transfer -p exacopy-engine
+cargo test --locked -p exacopy-platform -p exacopy-transfer -p exacopy-cli
 ```
 
 The native tests use private Linux fixtures. The [journal frame fuzz target](../crates/storage/journal/fuzz/README.md) independently checks framing boundaries under AddressSanitizer.

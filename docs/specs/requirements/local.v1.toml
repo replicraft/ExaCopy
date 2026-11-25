@@ -278,24 +278,24 @@ path = "crates/storage/content/tests/streams.rs"
 target = "copies_logical_zero_bytes_and_detects_same_length_readback_changes"
 
 [[coverage.evidence]]
-owner = "exacopy-engine"
+owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/runtime/engine/tests/verified_staging.rs"
+path = "crates/clients/cli/tests/verified_staging.rs"
 target = "stages_a_known_dense_stream_across_scratch_boundaries_and_preserves_metadata"
 
 [[coverage.evidence]]
-owner = "exacopy-engine"
+owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/runtime/engine/tests/verified_staging.rs"
+path = "crates/clients/cli/tests/verified_staging.rs"
 target = "rejects_a_changed_observed_source_before_allocating_a_stage"
 
 [[coverage.evidence]]
-owner = "exacopy-engine"
+owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/runtime/engine/tests/verified_staging.rs"
+path = "crates/clients/cli/tests/verified_staging.rs"
 target = "rejects_visible_source_attributes_before_allocating_a_stage"
 
 [[coverage]]
@@ -322,10 +322,10 @@ path = "crates/endpoints/platform/src/linux/stage/publish/tests.rs"
 target = "a_real_exclusive_rename_precedes_both_directory_barriers_even_on_failure"
 
 [[coverage.evidence]]
-owner = "exacopy-engine"
+owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/runtime/engine/tests/job_bootstrap/copy.rs"
+path = "crates/clients/cli/tests/job_bootstrap/copy.rs"
 target = "journaled_copy_persists_a_receipt_bound_to_verified_bytes_and_observed_publication"
 
 [[coverage.evidence]]
@@ -392,31 +392,31 @@ state = "defined"
 path = "crates/storage/journal/fuzz/corpus/journal_frame/broken-chain-with-later-magic"
 
 [[coverage.evidence]]
-owner = "exacopy-engine"
+owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/runtime/engine/tests/job_bootstrap.rs"
+path = "crates/clients/cli/tests/job_bootstrap.rs"
 target = "a_private_looking_incumbent_job_is_never_adopted"
 
 [[coverage.evidence]]
-owner = "exacopy-engine"
+owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/runtime/engine/tests/recovery.rs"
+path = "crates/clients/cli/tests/recovery.rs"
 target = "compares_the_actual_stream_and_current_metadata_even_after_committed_receipt"
 
 [[coverage.evidence]]
-owner = "exacopy-engine"
+owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/runtime/engine/tests/recovery/finish.rs"
+path = "crates/clients/cli/tests/recovery/finish.rs"
 target = "finishes_an_observed_rename_then_repeats_without_changing_evidence"
 
 [[coverage.evidence]]
-owner = "exacopy-engine"
+owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/runtime/engine/tests/recovery/finish.rs"
+path = "crates/clients/cli/tests/recovery/finish.rs"
 target = "retains_stage_only_and_torn_prefixes_without_writing_records"
 
 [[coverage]]
@@ -443,52 +443,52 @@ path = "crates/storage/content/tests/resume_reference.rs"
 target = "resume_matches_the_byte_exact_reference"
 
 [[coverage.evidence]]
-owner = "exacopy-engine"
+owner = "exacopy-cli"
 level = "process-kill"
 state = "defined"
-path = "crates/runtime/engine/src/linux/crash_tests.rs"
+path = "crates/clients/cli/src/assembly/linux/crash_tests.rs"
 target = "kill_after_rename_before_observation_frame"
 
 [[coverage.evidence]]
-owner = "exacopy-engine"
+owner = "exacopy-cli"
 level = "process-kill"
 state = "defined"
-path = "crates/runtime/engine/src/linux/crash_tests.rs"
+path = "crates/clients/cli/src/assembly/linux/crash_tests.rs"
 target = "kill_after_receipt_sync_before_commit"
 
 [[coverage.evidence]]
-owner = "exacopy-engine"
+owner = "exacopy-cli"
 level = "process-kill"
 state = "defined"
-path = "crates/runtime/engine/src/linux/crash_tests/ranges.rs"
+path = "crates/clients/cli/src/assembly/linux/crash_tests/ranges.rs"
 target = "kill_after_range_page_sync_before_frame"
 
 [[coverage.evidence]]
-owner = "exacopy-engine"
+owner = "exacopy-cli"
 level = "process-kill"
 state = "defined"
-path = "crates/runtime/engine/src/linux/crash_tests/ranges.rs"
+path = "crates/clients/cli/src/assembly/linux/crash_tests/ranges.rs"
 target = "kill_after_range_frame_sync"
 
 [[coverage.evidence]]
-owner = "exacopy-engine"
+owner = "exacopy-cli"
 level = "process-kill"
 state = "defined"
-path = "crates/runtime/engine/src/linux/crash_tests/resume.rs"
+path = "crates/clients/cli/src/assembly/linux/crash_tests/resume.rs"
 target = "changed_live_source_with_the_old_mtime_leaves_the_partial_stage_private"
 
 [[coverage.evidence]]
-owner = "exacopy-engine"
+owner = "exacopy-cli"
 level = "process-kill"
 state = "defined"
-path = "crates/runtime/engine/src/linux/crash_tests/resume.rs"
+path = "crates/clients/cli/src/assembly/linux/crash_tests/resume.rs"
 target = "rewrites_corrupt_checkpointed_bytes_before_publishing"
 
 [[coverage.evidence]]
-owner = "exacopy-engine"
+owner = "exacopy-cli"
 level = "process-kill"
 state = "defined"
-path = "crates/runtime/engine/src/linux/crash_tests/retry.rs"
+path = "crates/clients/cli/src/assembly/linux/crash_tests/retry.rs"
 target = "kill_after_retry_rename_before_observation"
 
 [[coverage.evidence]]
@@ -700,25 +700,25 @@ path = "crates/endpoints/platform/src/macos/publication/tests/adapter.rs"
 target = "even_when_a_barrier_fails_both_are_attempted_and_rename_is_retained"
 
 [[coverage.evidence]]
-owner = "exacopy-engine"
+owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/runtime/engine/src/macos/job/tests/publication.rs"
+path = "crates/clients/cli/src/assembly/macos/job/tests/publication.rs"
 target = "prepared_copy_refuses_visible_source_metadata_before_any_content_or_intent"
 
 [[coverage.evidence]]
-owner = "exacopy-engine"
+owner = "exacopy-cli"
 level = "native"
 state = "blocked"
-path = "crates/runtime/engine/src/macos/job/tests/publication.rs"
+path = "crates/clients/cli/src/assembly/macos/job/tests/publication.rs"
 target = "strict_native_copy_publishes_the_stage_and_commits_its_receipt"
 detail = "Ignored unless the fixture satisfies strict managed APFS source metadata admission."
 
 [[coverage.evidence]]
-owner = "exacopy-engine"
+owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/runtime/engine/src/macos/job/tests/inspection.rs"
+path = "crates/clients/cli/src/assembly/macos/job/tests/inspection.rs"
 target = "reopened_job_binds_trusted_destination_and_keeps_live_names_separate_from_history"
 
 [[coverage.evidence]]
@@ -728,7 +728,7 @@ state = "defined"
 path = "crates/operations/transfer/src/macos/receipt/tests/receipt.hex"
 
 [[coverage.evidence]]
-owner = "exacopy-engine"
+owner = "exacopy-cli"
 level = "fixture"
 state = "defined"
 path = "fixtures/macos/empty_acl.c"
@@ -748,17 +748,17 @@ path = "crates/operations/transfer/src/macos/replay/tests/recovery.rs"
 target = "requires_the_exact_original_attempt_and_recovery_start"
 
 [[coverage.evidence]]
-owner = "exacopy-engine"
+owner = "exacopy-cli"
 level = "test"
 state = "defined"
-path = "crates/runtime/engine/src/macos/job/entry/publish/tests.rs"
+path = "crates/clients/cli/src/assembly/macos/job/entry/publish/tests.rs"
 target = "coordinator_commits_only_after_receipt_persistence"
 
 [[coverage.evidence]]
-owner = "exacopy-engine"
+owner = "exacopy-cli"
 level = "test"
 state = "defined"
-path = "crates/runtime/engine/src/macos/job/tests/inspection.rs"
+path = "crates/clients/cli/src/assembly/macos/job/tests/inspection.rs"
 target = "retained_stage_read_back_refuses_a_visible_attribute_before_payload_io"
 
 [[coverage]]
