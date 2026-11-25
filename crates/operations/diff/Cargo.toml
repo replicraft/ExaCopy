@@ -1,0 +1,17 @@
+[package]
+name = "exacopy-diff"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[target.'cfg(target_os = "linux")'.dependencies]
+exacopy-endpoint.workspace = true
+exacopy-platform.workspace = true
+
+[dev-dependencies]
+exacopy-endpoint.workspace = true
+
+[lints]
+workspace = true

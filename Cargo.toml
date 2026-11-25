@@ -3,6 +3,7 @@ members = [
     "crates/core/model",
     "crates/endpoints/endpoint",
     "crates/endpoints/platform",
+    "crates/operations/diff",
     "crates/operations/transfer",
     "crates/storage/content",
     "crates/storage/journal",
