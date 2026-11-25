@@ -1,4 +1,81 @@
 
 # cargo-vet audits file
 
-[audits]
+[[audits.arrayvec]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.7.8"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56.
+Packaged sources match the upstream tag. Reviewed initialized-prefix and UTF-8
+invariants, capacity, unwind and zero-sized element ownership, Drain Send/Sync,
+and optional std, serde, borsh and zeroize paths. The 16-bit representation was
+reviewed by source. The unused no_std plus borsh combination fails to compile.
+The optional codecs have narrow-target length and diagnostic portability limits.
+There is no build script or ambient I/O. Pinned native and Miri tests passed.
+BLAKE3 1.8.7 is ExaCopy's sole dependent and enables no arrayvec features.
+"""
+
+[[audits.autocfg]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.5.1"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53.
+The archive identifies the release commit referenced by the verified upstream tag.
+Compiler probes invoke the configured compiler and wrappers directly, pass probe
+source over stdin, and request compiler output in Cargo's private output directory.
+They do not execute probe outputs. The review assumes a trusted compiler, wrapper,
+flags, probe input, and build directory. ExaCopy's num-traits build script uses
+fixed input. On Rust 1.100.0 the rustflags test passed with the test binary next
+to its rlib, as the test expects. Cargo's test layout placed them separately.
+"""
+
+[[audits.cfg-if]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.0.5"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600.
+The release tag links to the archive's recorded commit. The no_std library emits
+the first matching cfg branch through a declarative macro and forwards the chosen
+caller tokens unchanged. There is no unsafe code, runtime I/O, proc macro, or
+build script. Rust 1.100.0 unit, cross-crate, doctest, and eight-branch matrix
+checks passed. Cargo's optional rustc workspace dependency is outside the locked
+workspace's enabled feature graph and outside this crate's source review.
+"""
+
+[[audits.constant_time_eq]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.4.2"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b.
+Reviewed checked loads, target feature selection, inline assembly, and thread
+DIT restoration in all shipped implementation modules. The unsafe DIT override
+requires truthful CPU feature promises. Benchmark-only classic code and generic
+black_box are best-effort timing barriers. no_std ARM depends on target features
+or the documented unsafe override. The forced-DIT-off no_std unit expectation
+fails because the test detects runtime hardware independently of the no_std path.
+Native ARM64 and translated x86-64 equality checks passed on Rust 1.100.0.
+ExaCopy reaches this version through BLAKE3 digest equality. This audit does not
+qualify side-channel behavior for secret inputs across compilers and hardware.
+"""
+
+[[audits.equivalent]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.0.3"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+00d174d5400e5e8fd687ad1049e2f578285fa914201b1af7e8b112a4546bd826.
+The no_std library exports comparison traits and blanket implementations that
+delegate to Borrow, PartialEq, and Ord. It has no dependencies, features, unsafe
+code, build script, or ambient privileges. Callers own the documented hashing
+and comparison contracts. Rust 1.100.0 doctest and all-target checks passed.
+This audit identifies the crates.io archive. Upstream Git provenance is unverified.
+"""
