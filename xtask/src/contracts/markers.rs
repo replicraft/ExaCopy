@@ -140,6 +140,14 @@ pub(super) const BINDINGS: &[Binding] = &[
 		Marker::Array { width: 3 },
 	),
 	Binding::new(
+		"linux-remote-stage-directory-bootstrap",
+		"crates/storage/exacopy-journal/src/remote_download/bootstrap.rs",
+		Marker::Scalar {
+			version: "VERSION",
+			magic: None,
+		},
+	),
+	Binding::new(
 		"darwin-managed-apfs-owner",
 		"crates/storage/exacopy-journal/src/owner/darwin_codec.rs",
 		Marker::pair("FORMAT_MAJOR", "FORMAT_MINOR", "MANAGED_APFS_REQUIRED"),

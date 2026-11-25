@@ -6,7 +6,8 @@ use crate::frame::{ChainHead, FrameKind, FrameReadError};
 use crate::{LinuxFileIdentity, MAX_FIRST_SEGMENT_BYTES};
 
 use super::{
-	RemoteDownloadError, RemoteDownloadOwnerRecord, RemoteEpochs, RemoteUncertainBoundary,
+	RemoteBootstrapTrust, RemoteDownloadError, RemoteDownloadOwnerRecord, RemoteEpochs,
+	RemoteStageDirectoryPrepared, RemoteUncertainBoundary,
 };
 
 mod attempts;
@@ -68,6 +69,8 @@ pub enum RemoteReplayMismatch {
 	Scope,
 	/// The record appeared before its prerequisite or after an incompatible phase.
 	Order,
+	/// The required signed stage directory has not yet been accepted.
+	BootstrapRequired,
 	/// An allocation changed previous epochs, reused a name or nonce, or exceeded scope.
 	Allocation,
 	/// Stage binding named a different allocation, phase, nonce, or local identity.
@@ -84,6 +87,8 @@ pub enum RemoteReplayMismatch {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum RemoteReplayIssue {
+	/// The required-bootstrap reader reached EOF before the signed stage-directory record.
+	StageBootstrapMissing,
 	/// The first-segment limit was exceeded.
 	SegmentLimit,
 	/// No further allocation can be retained in this bounded profile.
@@ -111,6 +116,8 @@ pub enum RemoteReplayState<'scan> {
 	Empty,
 	/// Only job preparation was accepted.
 	JobPrepared,
+	/// The signed stage-directory binding was accepted and no allocation followed.
+	StageDirectoryPrepared,
 	/// Latest fresh allocation has no accepted physical binding.
 	AllocationUnbound,
 	/// Latest allocation has an accepted local stage declaration.
@@ -124,6 +131,7 @@ pub enum RemoteReplayState<'scan> {
 pub struct RemoteDownloadReplay {
 	boundary: RemoteReplayBoundary,
 	job_prepared: Option<ChainHead>,
+	stage_directory_prepared: Option<RemoteStageDirectoryPrepared>,
 	attempts: Vec<RemoteReplayAttempt>,
 	uncertainty: Option<RemoteRecordedUncertainty>,
 	issue: Option<RemoteReplayIssue>,
@@ -140,6 +148,12 @@ impl RemoteDownloadReplay {
 	#[must_use]
 	pub const fn job_prepared(&self) -> Option<ChainHead> {
 		self.job_prepared
+	}
+
+	/// Returns the accepted signed stage-directory evidence, if the selected profile required it.
+	#[must_use]
+	pub const fn stage_directory_prepared(&self) -> Option<RemoteStageDirectoryPrepared> {
+		self.stage_directory_prepared
 	}
 
 	/// Returns all accepted allocations in order, including superseded ones.
@@ -163,13 +177,16 @@ impl RemoteDownloadReplay {
 		match self.attempts.last() {
 			Some(attempt) if attempt.prepared().is_some() => RemoteReplayState::StageBound,
 			Some(_) => RemoteReplayState::AllocationUnbound,
+			None if self.stage_directory_prepared.is_some() => {
+				RemoteReplayState::StageDirectoryPrepared
+			}
 			None if self.job_prepared.is_some() => RemoteReplayState::JobPrepared,
 			None => RemoteReplayState::Empty,
 		}
 	}
 }
 
-/// Reads the selected first segment against a separately authenticated remote owner.
+/// Inspects a historical first segment in the profile without a bootstrap frame.
 ///
 /// Supply the exact selected input at byte zero. The result reports historical
 /// evidence, while current names, inode provenance, bytes, leases, and authority
@@ -187,6 +204,27 @@ pub fn replay_remote_download(
 	reader::replay(
 		input,
 		owner,
+		MAX_REMOTE_REPLAY_SEGMENT_BYTES,
+		MAX_REMOTE_REPLAY_ATTEMPTS,
+	)
+}
+
+/// Inspects the required-bootstrap profile under the independently selected owner trust.
+///
+/// The only admitted data-bearing prefix has JobPrepared followed immediately
+/// by an authenticated StageDirectoryPrepared. An incomplete bootstrap needs
+/// reconciliation. The selected current local objects and their barriers must
+/// be established separately before the application can act on the result.
+///
+/// # Errors
+/// Fails if the immutable canonical scope digest cannot be computed.
+pub fn replay_remote_download_with_bootstrap(
+	input: impl Read,
+	trust: &RemoteBootstrapTrust<'_>,
+) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
+	reader::replay_with_bootstrap(
+		input,
+		trust,
 		MAX_REMOTE_REPLAY_SEGMENT_BYTES,
 		MAX_REMOTE_REPLAY_ATTEMPTS,
 	)

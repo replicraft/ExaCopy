@@ -190,12 +190,19 @@ impl<R: Read> FrameReader<R> {
 	/// An incomplete tail, incompatible or damaged frame, or read error stops the scan. A later
 	/// call returns `FrameReadError::Stopped` without consuming additional bytes.
 	pub fn next_frame(&mut self) -> Result<Option<Frame>, FrameReadError> {
+		self.next_frame_with_payload_limit(|_| MAX_PAYLOAD_BYTES)
+	}
+
+	pub(crate) fn next_frame_with_payload_limit(
+		&mut self,
+		limit: impl FnOnce(FrameKind) -> usize,
+	) -> Result<Option<Frame>, FrameReadError> {
 		match self.status {
 			ReadStatus::End => return Ok(None),
 			ReadStatus::Failed => return Err(FrameReadError::Stopped),
 			ReadStatus::Open => {}
 		}
-		let result = self.read_frame();
+		let result = self.read_frame(limit);
 		self.status = match &result {
 			Ok(Some(_)) => ReadStatus::Open,
 			Ok(None) => ReadStatus::End,
@@ -204,7 +211,10 @@ impl<R: Read> FrameReader<R> {
 		result
 	}
 
-	fn read_frame(&mut self) -> Result<Option<Frame>, FrameReadError> {
+	fn read_frame(
+		&mut self,
+		limit: impl FnOnce(FrameKind) -> usize,
+	) -> Result<Option<Frame>, FrameReadError> {
 		let mut header = [0_u8; HEADER_BYTES];
 		let read = self.fill(&mut header)?;
 		if read == 0 {
@@ -229,9 +239,10 @@ impl<R: Read> FrameReader<R> {
 			return Err(self.torn(read));
 		}
 		let length = u32::from_le_bytes(bytes_at(&header, LENGTH_OFFSET));
+		let maximum = MAX_PAYLOAD_BYTES.min(limit(kind));
 		let length = usize::try_from(length)
 			.ok()
-			.filter(|&length| length <= MAX_PAYLOAD_BYTES)
+			.filter(|&length| length <= maximum)
 			.ok_or_else(|| self.corrupt(FrameProblem::PayloadTooLarge(length)))?;
 
 		if read < PREVIOUS_DIGEST_OFFSET {

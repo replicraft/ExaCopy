@@ -7,7 +7,7 @@ use crate::{
 	JournalEntryId, JournalJobId, LinuxFileIdentity, OwnerDigest, StreamDigest, StreamLength,
 };
 
-use super::{RemoteDownloadError as Error, RemoteScopeDigest};
+use super::{RemoteDownloadError as Error, RemoteDownloadOwnerRecord, RemoteScopeDigest};
 
 mod wire;
 
@@ -31,6 +31,17 @@ pub struct RemoteDownloadContext {
 	pub job: JournalJobId,
 	/// Private entry UUID.
 	pub entry: JournalEntryId,
+}
+
+impl RemoteDownloadContext {
+	pub(super) fn for_owner(owner: &RemoteDownloadOwnerRecord) -> Self {
+		let manifest = owner.manifest();
+		Self {
+			owner: owner.digest(),
+			job: manifest.job,
+			entry: manifest.scope.entry,
+		}
+	}
 }
 
 /// Distinct nonzero job run and held live source-pass labels.

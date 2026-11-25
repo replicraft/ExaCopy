@@ -28,13 +28,17 @@ pub(crate) enum OwnerDomain {
 }
 
 impl OwnerDomain {
-	fn wire(self) -> (u64, &'static [u8]) {
+	const fn wire(self) -> (u64, &'static [u8]) {
 		match self {
 			Self::LinuxV1 => (1, b"ExaCopy/owner/v1\0"),
 			Self::DarwinManagedApfs => (2, b"ExaCopy/owner/darwin-managed-apfs/v1\0"),
 			Self::LinuxPublicApply => (3, b"ExaCopy/owner/linux-public-apply/v1\0"),
 			Self::LinuxRemoteDownload => (4, b"ExaCopy/owner/linux-remote-download/v1\0"),
 		}
+	}
+
+	pub(crate) const fn code(self) -> u64 {
+		self.wire().0
 	}
 
 	pub(crate) fn signature_input(self, body: &[u8]) -> Vec<u8> {

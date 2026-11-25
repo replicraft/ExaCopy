@@ -247,6 +247,9 @@ impl RemoteDownloadReplay {
 		directory.device() == destination.device()
 			&& file.device() == destination.device()
 			&& directory != file
+			&& self
+				.stage_directory_prepared
+				.is_none_or(|bootstrap| bootstrap.directory() == directory)
 			&& ![destination, job].contains(&directory)
 			&& ![destination, job].contains(&file)
 			&& self

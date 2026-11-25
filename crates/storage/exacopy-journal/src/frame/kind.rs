@@ -76,6 +76,8 @@ pub enum FrameKind {
 	CredentialBlocked = 36,
 	/// Private filename allocation for a fresh remote capture attempt.
 	RemoteStageAllocated = 37,
+	/// Authenticated physical identity of the fixed remote stage directory.
+	StageDirectoryPrepared = 38,
 }
 
 impl FrameKind {
@@ -126,6 +128,7 @@ impl FrameKind {
 			code if code == Self::InstallCommitted.code() => Self::InstallCommitted,
 			code if code == Self::CredentialBlocked.code() => Self::CredentialBlocked,
 			code if code == Self::RemoteStageAllocated.code() => Self::RemoteStageAllocated,
+			code if code == Self::StageDirectoryPrepared.code() => Self::StageDirectoryPrepared,
 			_ => return None,
 		})
 	}

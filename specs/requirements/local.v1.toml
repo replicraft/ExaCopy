@@ -1261,6 +1261,36 @@ state = "defined"
 path = "crates/storage/exacopy-journal/tests/remote_download_replay.rs"
 target = "all_byte_cuts_retain_only_complete_semantic_boundaries"
 
+[[coverage]]
+id = "remote-download-stage-directory-bootstrap"
+status = "implemented"
+requirement_ids = ["R-013", "R-017", "R-140"]
+acceptance_ids = ["A-013", "A-017", "A-140"]
+invariant_ids = ["INV-009", "INV-013", "INV-019", "INV-024"]
+scope = "The selected private remote replay profile authenticates the fixed stage-directory role and native identity against the exact first JobPrepared before admitting an allocation. Payload bounds apply before reading a bootstrap body."
+limits = "Historical evidence scoped to the selected reader. Current artifact provenance, synchronized application append, native crash behavior and effect authority remain separate."
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "obligation"
+state = "defined"
+path = "crates/storage/exacopy-journal/verification/obligations.toml"
+target = "P-045"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/remote_download_bootstrap.rs"
+target = "independently_signed_substitutions_never_become_bootstrap_authority"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/remote_download_bootstrap.rs"
+target = "oversized_strict_bootstrap_stops_before_consuming_any_payload_bytes"
+
 
 [[coverage]]
 id = "public-apply-intent-receipt"

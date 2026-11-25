@@ -48,3 +48,15 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/remote_download_replay.rs", test = "framed_replay_burns_allocations_and_keeps_only_exact_active_progress", oracle = "The scanner retains every admitted allocation and only advances contiguous checkpoint evidence for its exact prepared stage and source pass. Superseded or unbound attempts cannot contribute progress to the latest capture." }
+
+[[obligation]]
+id = "P-045"
+requirement_ids = ["R-013", "R-017", "R-140"]
+source = "src/remote_download/replay.rs"
+symbols = ["replay_remote_download_with_bootstrap"]
+assumptions = [
+    "The caller independently chooses the required profile and selects the trusted owner key and the first private journal segment.",
+    "Directory identity and complete frames are historical claims. The application must establish the current held objects, namespace and append barriers separately.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_download_bootstrap.rs", test = "strict_transcript_keeps_only_complete_authenticated_boundaries_at_every_cut", oracle = "Every byte cut retains exactly the complete admitted prefix. No allocation appears before the signed stage-directory record and incomplete bootstrap remains reconciliation." }

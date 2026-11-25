@@ -3,10 +3,12 @@ use std::io::{self, Read};
 
 use exacopy_endpoint::MAX_INTERRUPTED_RETRIES;
 
-use crate::frame::{ChainHead, FrameKind, FrameReader};
+use crate::frame::{ChainHead, Frame, FrameKind, FrameReader, MAX_PAYLOAD_BYTES};
 
 use super::super::{
-	RemoteDownloadContext, RemoteDownloadError, RemoteDownloadOwnerRecord, RemoteDownloadRecord,
+	MAX_REMOTE_BOOTSTRAP_PAYLOAD_BYTES, RemoteBootstrapTrust, RemoteDownloadContext,
+	RemoteDownloadError, RemoteDownloadOwner, RemoteDownloadOwnerRecord, RemoteDownloadRecord,
+	RemoteScopeDigest,
 };
 use super::{RemoteDownloadReplay, RemoteReplayBoundary, RemoteReplayIssue, RemoteReplayMismatch};
 
@@ -16,12 +18,32 @@ pub(super) fn replay(
 	max_bytes: u64,
 	max_attempts: usize,
 ) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
+	scan(input, owner, None, max_bytes, max_attempts)
+}
+
+pub(super) fn replay_with_bootstrap(
+	input: impl Read,
+	trust: &RemoteBootstrapTrust<'_>,
+	max_bytes: u64,
+	max_attempts: usize,
+) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
+	scan(input, trust.owner(), Some(trust), max_bytes, max_attempts)
+}
+
+fn scan(
+	input: impl Read,
+	owner: &RemoteDownloadOwnerRecord,
+	bootstrap: Option<&RemoteBootstrapTrust<'_>>,
+	max_bytes: u64,
+	max_attempts: usize,
+) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
 	let manifest = owner.manifest();
-	let expected_scope = manifest.scope.digest()?;
-	let expected_context = RemoteDownloadContext {
-		owner: owner.digest(),
-		job: manifest.job,
-		entry: manifest.scope.entry,
+	let validation = ReplayValidation {
+		manifest,
+		scope: manifest.scope.digest()?,
+		context: RemoteDownloadContext::for_owner(owner),
+		bootstrap,
+		max_attempts,
 	};
 	let consumed = Cell::new(0);
 	let limited = BudgetRead {
@@ -36,13 +58,20 @@ pub(super) fn replay(
 			offset: 0,
 		},
 		job_prepared: None,
+		stage_directory_prepared: None,
 		attempts: Vec::new(),
 		uncertainty: None,
 		issue: None,
 	};
 
 	loop {
-		let read = reader.next_frame();
+		let read = reader.next_frame_with_payload_limit(|kind| {
+			if bootstrap.is_some() && kind == FrameKind::StageDirectoryPrepared {
+				MAX_REMOTE_BOOTSTRAP_PAYLOAD_BYTES
+			} else {
+				MAX_PAYLOAD_BYTES
+			}
+		});
 		if consumed.get() > max_bytes {
 			replay.issue = Some(RemoteReplayIssue::SegmentLimit);
 			break;
@@ -52,6 +81,8 @@ pub(super) fn replay(
 			Ok(None) => {
 				if replay.uncertainty.is_some() {
 					replay.issue = Some(RemoteReplayIssue::RecordedUncertainty);
+				} else if bootstrap.is_some() && replay.stage_directory_prepared.is_none() {
+					replay.issue = Some(RemoteReplayIssue::StageBootstrapMissing);
 				}
 				break;
 			}
@@ -60,48 +91,7 @@ pub(super) fn replay(
 				break;
 			}
 		};
-		let mismatch = |problem| RemoteReplayIssue::Record {
-			offset: replay.boundary.offset,
-			kind: frame.kind(),
-			problem,
-		};
-		if replay.uncertainty.is_some() {
-			replay.issue = Some(mismatch(RemoteReplayMismatch::AfterUncertainty));
-			break;
-		}
-		if !matches!(
-			frame.kind(),
-			FrameKind::JobPrepared
-				| FrameKind::RemoteStageAllocated
-				| FrameKind::EntryPrepared
-				| FrameKind::RangeCheckpoint
-				| FrameKind::FailureRecorded
-		) {
-			replay.issue = Some(mismatch(RemoteReplayMismatch::UnsupportedKind));
-			break;
-		}
-		let record = match RemoteDownloadRecord::from_frame(&frame) {
-			Ok(record) => record,
-			Err(cause) => {
-				replay.issue = Some(mismatch(RemoteReplayMismatch::Payload(cause)));
-				break;
-			}
-		};
-		if record.context() != expected_context {
-			replay.issue = Some(mismatch(RemoteReplayMismatch::Context));
-			break;
-		}
-		if record.predecessor().unwrap_or_else(ChainHead::start) != replay.boundary.head {
-			replay.issue = Some(mismatch(RemoteReplayMismatch::Predecessor));
-			break;
-		}
-		if let Err(issue) = replay.accept(
-			&record,
-			frame.head(),
-			manifest,
-			expected_scope,
-			max_attempts,
-		) {
+		if let Err(issue) = validation.accept(&mut replay, &frame) {
 			replay.issue = Some(issue);
 			break;
 		}
@@ -111,6 +101,77 @@ pub(super) fn replay(
 		};
 	}
 	Ok(replay)
+}
+
+struct ReplayValidation<'a> {
+	manifest: &'a RemoteDownloadOwner,
+	scope: RemoteScopeDigest,
+	context: RemoteDownloadContext,
+	bootstrap: Option<&'a RemoteBootstrapTrust<'a>>,
+	max_attempts: usize,
+}
+
+impl ReplayValidation<'_> {
+	fn accept(
+		&self,
+		replay: &mut RemoteDownloadReplay,
+		frame: &Frame,
+	) -> Result<(), RemoteReplayIssue> {
+		use RemoteReplayMismatch as Mismatch;
+
+		let mismatch = |problem| RemoteReplayIssue::Record {
+			offset: replay.boundary.offset,
+			kind: frame.kind(),
+			problem,
+		};
+		if replay.uncertainty.is_some() {
+			return Err(mismatch(Mismatch::AfterUncertainty));
+		}
+		if let Some(trust) = self.bootstrap {
+			if frame.kind() == FrameKind::StageDirectoryPrepared {
+				let job = replay
+					.job_prepared
+					.filter(|head| *head == replay.boundary.head)
+					.ok_or_else(|| mismatch(Mismatch::Order))?;
+				let directory = trust
+					.admit_after_job(frame, job)
+					.map_err(|cause| mismatch(Mismatch::Payload(cause)))?;
+				replay.stage_directory_prepared = Some(directory);
+				return Ok(());
+			}
+			if replay.job_prepared.is_some()
+				&& replay.stage_directory_prepared.is_none()
+				&& frame.kind() != FrameKind::JobPrepared
+			{
+				return Err(mismatch(Mismatch::BootstrapRequired));
+			}
+		}
+		if !matches!(
+			frame.kind(),
+			FrameKind::JobPrepared
+				| FrameKind::RemoteStageAllocated
+				| FrameKind::EntryPrepared
+				| FrameKind::RangeCheckpoint
+				| FrameKind::FailureRecorded
+		) {
+			return Err(mismatch(Mismatch::UnsupportedKind));
+		}
+		let record = RemoteDownloadRecord::from_frame(frame)
+			.map_err(|cause| mismatch(Mismatch::Payload(cause)))?;
+		if record.context() != self.context {
+			return Err(mismatch(Mismatch::Context));
+		}
+		if record.predecessor().unwrap_or_else(ChainHead::start) != replay.boundary.head {
+			return Err(mismatch(Mismatch::Predecessor));
+		}
+		replay.accept(
+			&record,
+			frame.head(),
+			self.manifest,
+			self.scope,
+			self.max_attempts,
+		)
+	}
 }
 
 struct BudgetRead<'budget, R> {
