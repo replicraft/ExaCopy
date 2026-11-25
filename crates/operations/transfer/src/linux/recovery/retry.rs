@@ -1,30 +1,22 @@
-use exacopy_content::{measure_at, validate_stream_input};
+use exacopy_content::validate_stream_input;
 use exacopy_endpoint::UnixComponent;
-use exacopy_journal::frame::FrameKind;
-use exacopy_journal::{
-	DurableJournal, JournalContext, JournalEpoch, PublicationOutcome, PublicationPrimitive,
-	PublishIntent, PublishIntentContext, PublishIntentTarget, PublishObserved, RecoveryDirectories,
-	RecoveryStartEvidence, RecoveryStarted, RetainedPublicationDecision,
-	RetainedPublicationEvidence, RootCapabilityId, VerificationRecorded,
-};
-use exacopy_model::{
-	CopyBinding, CopyEffect, CopyEvent, CopySession, EntryId, JobId, RunEpoch, StageId,
-};
-use exacopy_platform::linux::{DestinationRoot, ReadRoot, RecoveryInventory, RecoveryWriteLease};
+use exacopy_journal::RootCapabilityId;
+use exacopy_platform::linux::{DestinationRoot, ReadRoot};
 
-#[cfg(test)]
-use super::super::local_copy::crash_tests::{Checkpoint, pause_at};
-use super::super::{LocalCopyPlan, StageFailure, check_source, observe};
-use super::finish::{acquire_lease, append, completion, finish_leased, required};
-use super::native::verify;
+use super::finish::{acquire_lease, finish_leased};
 use super::source::open_source;
 use super::{
 	RecoveryDisposition, RecoveryFinishError, RecoveryHistory, RecoveryInspectError,
-	RecoveryInspection, RecoveryIssue, RecoveryProfile, RecoveryStep, native_identity,
+	RecoveryInspection, RecoveryProfile, RecoveryStep,
 };
 
+mod engine;
 mod error;
+mod native;
+
+use engine::RetryHistory;
 pub use error::RecoveryRetryError;
+use native::{NativeRetainedStage, NativeRetryJournal};
 
 /// The current source-directory grant for this retained copy.
 #[derive(Clone, Copy)]
@@ -63,12 +55,20 @@ pub fn retry_recovery(
 	let current = history.inspect(job, &names, scratch)?;
 	match current.disposition {
 		RecoveryDisposition::PossibleRetry => {
-			Retry {
-				history: &history,
-				plan,
-				names: &names,
-			}
-			.publish(&lease, source, scratch)?;
+			let stage = NativeRetainedStage::new(&lease, &names)?;
+			let source = open_source(&plan, &history.journal, source)?;
+			engine::publish(
+				RetryHistory {
+					plan: &plan,
+					journal: &history.journal,
+					owner: history.owner.digest(),
+				},
+				&source,
+				&stage,
+				|boundary| NativeRetryJournal::open(&lease, &history.journal_file, boundary),
+				scratch,
+			)
+			.map_err(native::retry_error)?;
 		}
 		RecoveryDisposition::PublishedNeedsBarriers
 		| RecoveryDisposition::PublishedNeedsReceipt { .. } => {}
@@ -81,197 +81,4 @@ pub fn retry_recovery(
 			error => error,
 		})
 		.map_err(RecoveryRetryError::Recovery)
-}
-
-struct Retry<'history, 'job> {
-	history: &'history RecoveryHistory,
-	plan: LocalCopyPlan<'history>,
-	names: &'history RecoveryInventory<'job>,
-}
-
-impl Retry<'_, '_> {
-	fn publish(
-		&self,
-		lease: &RecoveryWriteLease<'_>,
-		source: RecoverySource<'_>,
-		scratch: &mut [u8],
-	) -> Result<(), RecoveryRetryError> {
-		let journal = &self.history.journal;
-		let stage_file = self
-			.names
-			.stage()
-			.ok_or(RecoveryFinishError::IncompleteEvidence)?;
-		let stage_directory = self
-			.names
-			.stage_directory_identity()
-			.map(native_identity)
-			.ok_or(RecoveryFinishError::IncompleteEvidence)?;
-		let stage = native_identity(stage_file.identity());
-		let source = open_source(&self.plan, journal, source)?;
-		let prior_intent = required(journal.intent_head)?;
-		let prior_measurements = required(journal.verification)?;
-		let mut metadata = required(journal.metadata)?;
-		let epoch = JournalEpoch::new(
-			journal
-				.latest_epoch
-				.get()
-				.checked_add(1)
-				.ok_or(RecoveryFinishError::EpochExhausted)?,
-		);
-		let effect_sequence = journal
-			.last_effect_sequence
-			.checked_add(1)
-			.ok_or(RecoveryRetryError::EffectSequenceExhausted)?;
-		let context = JournalContext {
-			epoch,
-			..self.plan.context()
-		};
-		let entry = self.plan.attempt().entry;
-		let binding = CopyBinding::new(
-			JobId::try_from_bytes(*context.job.as_bytes())
-				.map_err(|_| RecoveryFinishError::IncompleteEvidence)?,
-			EntryId::new(1),
-			RunEpoch::new(epoch.get()),
-			StageId::from_bytes(*entry.as_bytes()),
-		);
-		let mut session = CopySession::new(binding);
-		observe(&mut session, binding, CopyEvent::RetainedStageReopened)
-			.map_err(RecoveryRetryError::Model)?;
-		observe(&mut session, binding, CopyEvent::WritersJoined)
-			.map_err(RecoveryRetryError::Model)?;
-		let capability = lease
-			.prepare_retained_stage(self.names, binding)
-			.map_err(completion(RecoveryStep::Namespace))?;
-		observe(&mut session, binding, CopyEvent::DataFlushed)
-			.map_err(RecoveryRetryError::Model)?;
-
-		let digest = measure_at(source.len(), scratch, |offset, buffer| {
-			source.read_exact_at(offset, buffer)
-		})
-		.map_err(RecoveryRetryError::MeasureSource)?;
-		if digest.as_bytes() != prior_measurements.source().digest.as_bytes() {
-			return Err(RecoveryRetryError::SourceMismatch);
-		}
-		if let Some(issue) = verify(
-			stage_file,
-			prior_measurements.stage(),
-			Some(metadata),
-			scratch,
-		)? {
-			return Err(RecoveryRetryError::Stage(issue));
-		}
-		let atime = stage_file.observation().accessed_at();
-		if atime.seconds() != metadata.metadata.accessed_at.seconds()
-			|| atime.nanoseconds() != metadata.metadata.accessed_at.nanoseconds()
-		{
-			return Err(RecoveryRetryError::Stage(RecoveryIssue::MetadataMismatch));
-		}
-		observe(&mut session, binding, CopyEvent::ReadbackVerified)
-			.map_err(RecoveryRetryError::Model)?;
-		observe(&mut session, binding, CopyEvent::MetadataReady)
-			.map_err(RecoveryRetryError::Model)?;
-		observe(&mut session, binding, CopyEvent::StageSealed)
-			.map_err(RecoveryRetryError::Model)?;
-		check_source(&source).map_err(RecoveryRetryError::SourcePolicy)?;
-		self.names
-			.recheck()
-			.map_err(completion(RecoveryStep::Namespace))?;
-
-		let fresh = VerificationRecorded::new(
-			context,
-			entry,
-			prior_measurements.source(),
-			prior_measurements.stage(),
-		)
-		.map_err(RecoveryRetryError::Verification)?;
-		metadata.context = context;
-		let segment = lease
-			.open_first_segment_for_append(&self.history.journal_file)
-			.map_err(completion(RecoveryStep::Journal))?;
-		let mut writer = DurableJournal::resume_first_segment(
-			segment,
-			journal.boundary.head,
-			journal.boundary.offset,
-		)
-		.map_err(RecoveryFinishError::Resume)?;
-		let started = RecoveryStarted::new(
-			context,
-			entry,
-			journal.latest_epoch,
-			RecoveryStartEvidence {
-				intent: prior_intent,
-				preceding: journal.boundary.head,
-				authorization: self.history.owner.digest(),
-			},
-		)
-		.map_err(RecoveryFinishError::Decision)?;
-		let start = append(&mut writer, FrameKind::RecoveryStarted, &started.encode())?;
-		let verification = append(
-			&mut writer,
-			FrameKind::VerificationRecorded,
-			&fresh.encode(),
-		)?;
-		let metadata = append(&mut writer, FrameKind::MetadataRecorded, &metadata.encode())?;
-		let destination = self.plan.destination();
-		let decision = RetainedPublicationDecision::new(
-			context,
-			entry,
-			start.head(),
-			RetainedPublicationEvidence {
-				stage,
-				directories: RecoveryDirectories {
-					stage: stage_directory,
-					destination: destination.root.identity,
-				},
-				verification: verification.head(),
-				metadata: metadata.head(),
-			},
-			effect_sequence,
-		)
-		.map_err(RecoveryFinishError::Decision)?;
-		let _ = append(&mut writer, FrameKind::RecoveryDecision, &decision.encode())?;
-		#[cfg(test)]
-		pause_at(Checkpoint::RetryDecisionSynced);
-		let effect = PublishIntentContext {
-			job: context.job,
-			epoch,
-			entry,
-			effect_sequence,
-			plan_digest: context.plan_digest,
-		};
-		let intent = PublishIntent {
-			context: effect,
-			target: PublishIntentTarget {
-				stage,
-				parent: destination.root.identity,
-				component: destination.component,
-				verification_digest: fresh.record_digest(),
-				primitive: PublicationPrimitive::LinuxRenameNoReplace,
-			},
-		};
-		let intent = append(&mut writer, FrameKind::PublishIntent, &intent.encode())?;
-		#[cfg(test)]
-		pause_at(Checkpoint::RetryIntentSynced);
-		check_source(&source).map_err(RecoveryRetryError::SourcePolicy)?;
-		let Some(CopyEffect::PublishNoClobber(authorization)) = session
-			.apply(binding, CopyEvent::PublishIntentRecorded)
-			.map_err(StageFailure::from)
-			.map_err(RecoveryRetryError::Model)?
-		else {
-			return Err(RecoveryRetryError::Model(StageFailure::UnexpectedEffect));
-		};
-		capability
-			.publish_no_clobber(authorization)
-			.map_err(RecoveryRetryError::Publish)?;
-		#[cfg(test)]
-		pause_at(Checkpoint::RetryRenamedAndSynced);
-		let observed = PublishObserved::new(
-			effect,
-			intent.head(),
-			PublicationOutcome::Published { target: stage },
-		)
-		.map_err(RecoveryFinishError::Publication)?;
-		let _ = append(&mut writer, FrameKind::PublishObserved, &observed.encode())?;
-		Ok(())
-	}
 }
