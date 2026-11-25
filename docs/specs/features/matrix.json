@@ -3,7 +3,8 @@
   "product_package": "exacopy-cli",
   "production_packages": [
     "exacopy-cli",
-    "exacopy-codec",
+    "exacopy-manifest",
+    "exacopy-plan",
     "exacopy-content",
     "exacopy-core",
     "exacopy-diff",
@@ -389,7 +390,7 @@
     "serde_json": {
       "default_features": true,
       "features": [],
-      "feature_additions": {"exacopy-codec": ["raw_value"]},
+      "feature_additions": {"exacopy-plan": ["raw_value"]},
       "purpose": "Serialize the versioned CLI report on all command targets."
     },
     "uuid": {
@@ -434,7 +435,7 @@
       "minicbor@2.3.1", "rustc_version@0.4.1", "semver@1.0.28", "sha2@0.10.9", "shlex@2.0.1", "signature@2.2.0", "syn@2.0.119", "subtle@2.6.1",
       "typenum@1.20.1", "version_check@0.9.5", "zeroize@1.9.2"
     ],
-    "linux_manifests": ["autocfg@1.5.1", "base64@0.23.1", "chrono@0.4.45", "exacopy-codec@0.1.0", "num-traits@0.2.19"],
+    "linux_manifests": ["autocfg@1.5.1", "base64@0.23.1", "chrono@0.4.45", "exacopy-manifest@0.1.0", "exacopy-plan@0.1.0", "num-traits@0.2.19"],
     "macos_io": ["apfs-mounted@0.1.0", "cfg-if@1.0.5", "errno@0.3.15", "getrandom@0.4.3", "libc@0.2.191"]
   },
   "targets": {

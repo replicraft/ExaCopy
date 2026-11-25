@@ -31,7 +31,7 @@ re-encoding. Indefinite containers, trailing bytes, unknown fields and
 unsupported profiles fail. Parsing borrows input bytes and has no
 input-dependent recursion or child-page retrieval.
 
-The [independent vectors and recipe](../../crates/core/codec/verification/plan_entries/README.md)
+The [independent vectors and recipe](../../crates/formats/exacopy-plan/verification/plan_entries/README.md)
 cover an empty file with a real entry and an opaque Linux identity.
 An independent Python encoder and the portable official C BLAKE3
 implementation establish exact CBOR and digest bytes. Tests additionally
@@ -41,7 +41,7 @@ coverage measured 779/816 lines and 130/138 branch outcomes; the new
 modules alone measured 409/440 lines and 57/64 branch outcomes. These
 denominators differ and the latter remain below the crate targets.
 
-The [crate-local ASan runner](../../crates/core/codec/verification/plan_entries/check-fuzz.sh)
+The [crate-local ASan runner](../../crates/formats/exacopy-plan/verification/plan_entries/check-fuzz.sh)
 completed 250,000 inputs on ARM64 macOS with nightly-2026-11-04 and
 cargo-fuzz 0.13.2. It used seed 441037, a 262,145-byte input cap,
 90-second campaign cap, two-second input timeout and 768 MiB RSS cap.

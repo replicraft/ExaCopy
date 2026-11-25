@@ -1,6 +1,6 @@
 # Canonical public Plan body
 
-Decision PLN-002, 2026-11-25. `exacopy-codec` implements the registered
+Decision PLN-002, 2026-11-25. `exacopy-plan` implements the registered
 18-field Plan v1 canonical body and public Plan digest. This is a scoped
 part of R-155/A-155 under INV-013, INV-018 and INV-019. P-038 exercises
 digest binding; it does not establish approval or filesystem authority.
@@ -37,7 +37,7 @@ then enforces the encoded-size cap. Its transient encoding allocation can
 exceed 1 MiB within the fixed field limits; 1 MiB is not a peak-memory claim.
 Errors and Debug output do not echo extension or grant contents.
 
-The [independent vectors and recipe](../../crates/core/codec/verification/plan_body/README.md)
+The [independent vectors and recipe](../../crates/formats/exacopy-plan/verification/plan_body/README.md)
 include complete and incomplete bodies. The complete fixture references
 two distinct entries with matching root and source-view IDs, counts and
 working-byte estimates. All prior page/reference vectors are unchanged.

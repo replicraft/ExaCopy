@@ -2,7 +2,7 @@ use std::convert::Infallible;
 use std::error::Error;
 use std::fmt;
 
-use exacopy_codec::{DocumentError, PlanError};
+use exacopy_plan::{DocumentError, PlanError};
 
 use crate::{linux_staging::StageFailure, manifest};
 

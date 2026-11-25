@@ -779,12 +779,13 @@ dependencies = [
  "blake3",
  "clap",
  "ed25519-dalek 2.2.0",
- "exacopy-codec",
  "exacopy-content",
  "exacopy-diff",
  "exacopy-endpoint",
  "exacopy-journal",
+ "exacopy-manifest",
  "exacopy-model",
+ "exacopy-plan",
  "exacopy-platform",
  "exacopy-transfer",
  "rustix",
@@ -792,20 +793,6 @@ dependencies = [
  "serde_json",
  "uuid",
  "zeroize",
-]
-
-[[package]]
-name = "exacopy-codec"
-version = "0.1.0"
-dependencies = [
- "base64 0.23.1",
- "blake3",
- "chrono",
- "exacopy-core",
- "minicbor",
- "serde",
- "serde_json",
- "uuid",
 ]
 
 [[package]]
@@ -851,11 +838,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "exacopy-manifest"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "blake3",
+ "exacopy-core",
+ "minicbor",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "exacopy-model"
 version = "0.1.0"
 dependencies = [
  "hax-lib",
  "proptest",
+ "uuid",
+]
+
+[[package]]
+name = "exacopy-plan"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "blake3",
+ "chrono",
+ "exacopy-core",
+ "minicbor",
+ "serde",
+ "serde_json",
  "uuid",
 ]
 
@@ -902,11 +916,12 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "ed25519-dalek 2.2.0",
- "exacopy-codec",
  "exacopy-content",
  "exacopy-endpoint",
  "exacopy-journal",
+ "exacopy-manifest",
  "exacopy-model",
+ "exacopy-plan",
  "minicbor",
  "uuid",
 ]

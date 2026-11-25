@@ -3,18 +3,18 @@
 use std::convert::Infallible;
 use std::fmt;
 
-use exacopy_codec::{
+use exacopy_content::MAX_SCRATCH_BYTES;
+use exacopy_endpoint::UnixComponent;
+use exacopy_endpoint::linux_copy::{CopyDestinationView, TargetObservation};
+use exacopy_endpoint::linux_job::JobFileIdentity;
+use exacopy_endpoint::linux_staging::StagingSource;
+use exacopy_plan::{
 	DocumentRef, PlanBody, PlanBodyFields, PlanConflict, PlanConsistency, PlanDurability,
 	PlanEntriesPage, PlanEntry, PlanExtensions, PlanFidelity, PlanIdentityPlatform, PlanOperation,
 	PlanPath, PlanPolicy, PlanPreservation, PlanPublication, PlanResourceLimits,
 	PlanSourceIdentity, PlanSourceRetirement, PlanSourceView, PlanStorage, PlanVerification,
 	PlanViewConsistency, UnixTimestamp,
 };
-use exacopy_content::MAX_SCRATCH_BYTES;
-use exacopy_endpoint::UnixComponent;
-use exacopy_endpoint::linux_copy::{CopyDestinationView, TargetObservation};
-use exacopy_endpoint::linux_job::JobFileIdentity;
-use exacopy_endpoint::linux_staging::StagingSource;
 use uuid::{Uuid, Variant};
 
 use crate::{linux_staging::check_source, manifest};

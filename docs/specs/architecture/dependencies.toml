@@ -14,7 +14,7 @@ members = { exacopy-core = "crates/foundation/exacopy-core" }
 
 [groups.codecs]
 normal.groups = ["foundation"]
-members = { exacopy-codec = "crates/core/codec" }
+members = { exacopy-manifest = "crates/formats/exacopy-manifest", exacopy-plan = "crates/formats/exacopy-plan" }
 normal.external = ["base64", "blake3", "chrono", "minicbor", "serde", "serde_json", "uuid"]
 
 [groups.contracts]

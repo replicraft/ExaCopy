@@ -10,7 +10,7 @@ through Cargo.
 | --- | --- |
 | Unit and integration | Keep unit tests with the owning module and integration tests in the owning crate's `tests/`. Cover supported behavior, explicit refusal, interruption and retained evidence. |
 | Reference and fault injection | Keep reusable test support in the [engineering testkit](../crates/engineering/exacopy-testkit/). Use an independent expected result or model, exercise deliberate faults, and replay minimized failures deterministically. Run native failure tests on disposable synthetic files and record the actual filesystem profile. |
-| Fuzzing | Follow the [Unix component corpus](../crates/foundation/exacopy-core/fuzz/README.md), [journal corpus](../crates/storage/journal/fuzz/README.md), and [public manifest verification guide](../crates/core/codec/verification/manifest/README.md). Keep targets and corpora crate-local. Include seeded accepted cases and malformed or adversarial inputs. |
+| Fuzzing | Follow the [Unix component corpus](../crates/foundation/exacopy-core/fuzz/README.md), [journal corpus](../crates/storage/journal/fuzz/README.md), and [public manifest verification guide](../crates/formats/exacopy-manifest/verification/manifest/README.md). Keep targets and corpora crate-local. Include seeded accepted cases and malformed or adversarial inputs. |
 | Benchmarks | Keep benchmarks with their crate. Measure verified operations under the same integrity and durability policies. |
 | Formal checks | Follow the [verification guide](verification.md) and the owning crate's gate. |
 

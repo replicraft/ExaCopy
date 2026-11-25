@@ -29,13 +29,13 @@ required_features = 1
 owner = "crates/operations/transfer/src/macos/plan/wire.rs"
 "#;
 
-const MANIFEST_OWNER: &str = "crates/core/codec/src/manifest/json.rs";
+const MANIFEST_OWNER: &str = "crates/formats/exacopy-manifest/src/manifest/json.rs";
 const MANIFEST: &str = r#"
 id = "portable-manifests"
 kind = "manifest"
 status = "implemented"
 version = "1.0"
-owner = "crates/core/codec/src/manifest/json.rs"
+owner = "crates/formats/exacopy-manifest/src/manifest/json.rs"
 "#;
 const MANIFEST_SOURCE: &str = r#"const SCHEMA_VERSION: &str = "1.0";"#;
 
@@ -48,7 +48,7 @@ fn root() -> &'static Path {
 #[test]
 fn public_plan_json_version_cannot_drift_from_the_inventory() {
 	let fixture = Fixture::new();
-	let owner = "crates/core/codec/src/plan/json.rs";
+	let owner = "crates/formats/exacopy-plan/src/plan/json.rs";
 	let text = format!(
 		r#"id = "public-plan-json"
 kind = "plan"
@@ -73,7 +73,7 @@ owner = "{owner}"
 #[test]
 fn canonical_plan_body_has_its_own_version_and_kind_binding() {
 	let fixture = Fixture::new();
-	let owner = "crates/core/codec/src/plan/wire.rs";
+	let owner = "crates/formats/exacopy-plan/src/plan/wire.rs";
 	let text = format!(
 		r#"id = "public-plan-body"
 kind = "plan"
@@ -96,7 +96,7 @@ owner = "{owner}"
 #[test]
 fn public_page_version_is_bound_to_its_canonical_wire_marker() {
 	let fixture = Fixture::new();
-	let owner = "crates/core/codec/src/plan_entries/wire.rs";
+	let owner = "crates/formats/exacopy-plan/src/plan_entries/wire.rs";
 	let text = format!(
 		r#"id = "public-plan-entries-page"
 kind = "document_page"

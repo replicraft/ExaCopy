@@ -55,22 +55,22 @@ pub(super) const BINDINGS: &[Binding] = &[
 	),
 	Binding::new(
 		"portable-manifests",
-		"crates/core/codec/src/manifest/json.rs",
+		"crates/formats/exacopy-manifest/src/manifest/json.rs",
 		Marker::Manifest,
 	),
 	Binding::new(
 		"public-plan-entries-page",
-		"crates/core/codec/src/plan_entries/wire.rs",
+		"crates/formats/exacopy-plan/src/plan_entries/wire.rs",
 		Marker::DocumentPage,
 	),
 	Binding::new(
 		"public-plan-body",
-		"crates/core/codec/src/plan/wire.rs",
+		"crates/formats/exacopy-plan/src/plan/wire.rs",
 		Marker::PlanBody,
 	),
 	Binding::new(
 		"public-plan-json",
-		"crates/core/codec/src/plan/json.rs",
+		"crates/formats/exacopy-plan/src/plan/json.rs",
 		Marker::PlanJson,
 	),
 	Binding::new(

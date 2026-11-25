@@ -1,0 +1,20 @@
+[package]
+name = "exacopy-plan"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+base64.workspace = true
+blake3.workspace = true
+chrono.workspace = true
+exacopy-core.workspace = true
+minicbor.workspace = true
+serde.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
+uuid.workspace = true
+
+[lints]
+workspace = true

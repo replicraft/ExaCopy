@@ -13,12 +13,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime};
 
 use exacopy_cli::assembly::linux::plan_public_new_file;
-use exacopy_codec::{
-	PlanBody, PlanEntriesPage, PlanIdentityPlatform, PlanViewConsistency, UnixTimestamp,
-};
 use exacopy_endpoint::UnixComponent;
 use exacopy_endpoint::linux_copy::{CopyDestinationView, TargetObservation};
 use exacopy_endpoint::linux_job::JobFileIdentity;
+use exacopy_plan::{
+	PlanBody, PlanEntriesPage, PlanIdentityPlatform, PlanViewConsistency, UnixTimestamp,
+};
 use exacopy_platform::linux::{DestinationRoot, ReadError, ReadRoot, StageError};
 use exacopy_transfer::copy_planning::{CreateNewRequest, PlanSelection, PlanningError};
 use exacopy_transfer::linux_staging::StageFailure;

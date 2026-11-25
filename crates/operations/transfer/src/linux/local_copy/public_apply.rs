@@ -1,6 +1,5 @@
 use std::fs::File;
 
-use exacopy_codec::{PlanDurability, PlanIdentityPlatform, PlanSourceIdentity};
 use exacopy_endpoint::ReadView as _;
 use exacopy_endpoint::linux_copy::{
 	CopyDestinationView, CopySource, CopySourceRoot, CopyWorkspace,
@@ -10,6 +9,7 @@ use exacopy_journal::{
 	ApplyRequestedDurability, LinuxFileIdentity, OwnerDigest, OwnerTimestamp, PublicApplyBinding,
 };
 use exacopy_model::{CopyBinding, EntryId, JobId, RunEpoch, StageId};
+use exacopy_plan::{PlanDurability, PlanIdentityPlatform, PlanSourceIdentity};
 
 use crate::copy_planning::linux_baseline_metadata_policy_digest;
 use crate::linux::job::prepare_public_stage;

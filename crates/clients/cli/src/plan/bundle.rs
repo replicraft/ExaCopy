@@ -2,8 +2,8 @@ use std::ffi::OsStr;
 use std::fs::File;
 use std::path::{Component, Path};
 
-use exacopy_codec::{DocumentRef, MAX_DOCUMENT_PAGE_BYTES, MAX_PLAN_JSON_BYTES, PlanEntriesPage};
 use exacopy_endpoint::UnixComponent;
+use exacopy_plan::{DocumentRef, MAX_DOCUMENT_PAGE_BYTES, MAX_PLAN_JSON_BYTES, PlanEntriesPage};
 use exacopy_platform::linux::MountObservations;
 use rustix::fs::{self, AtFlags, Mode, OFlags, ResolveFlags};
 use rustix::io::Errno;

@@ -9,7 +9,7 @@ INV-032. The codec owns representation, not filesystem authority.
 
 ## Supported representation
 
-`exacopy-codec` implements an unsigned public manifest `1.0` with exactly
+`exacopy-manifest` implements an unsigned public manifest `1.0` with exactly
 one regular-file entry, one Unix basename component and one unnamed
 BLAKE3-256 stream. Consistency is `live_observed`, `complete` is true for
 that selected content scope, `metadata_ref` is null, and continuation pages,
@@ -84,7 +84,7 @@ artifacts and are not reinterpreted as portable manifests.
 
 ## Evidence and remaining assurance
 
-The [crate-local vectors](../../crates/core/codec/verification/manifest/README.md)
+The [crate-local vectors](../../crates/formats/exacopy-manifest/verification/manifest/README.md)
 come from an independent Python projection and encoder plus the pinned
 portable C BLAKE3 implementation. They cover empty content, non-UTF-8 raw
 names and the signed-length boundary. The maximum-length stream digest is
@@ -110,7 +110,7 @@ commit, including both workspace and fuzz lockfiles, and the before/after
 ledgers matched. Its raw results and initial cache failure are retained at
 `/private/tmp/exacopy-manifest-nightly.CByKWK/evidence/`.
 The root verification ledger records its actual Rust gate; the separate
-[fuzz runner](../../crates/core/codec/verification/manifest/check-fuzz.sh)
+[fuzz runner](../../crates/formats/exacopy-manifest/verification/manifest/check-fuzz.sh)
 records source, lock, sanitizer, seed and budget information for each run.
 
 The native CLI integration probe is retained at

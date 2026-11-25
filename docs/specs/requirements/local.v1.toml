@@ -636,44 +636,44 @@ path = "crates/operations/transfer/src/manifest/tests.rs"
 target = "compares_length_then_digest_only_after_final_observation"
 
 [[coverage.evidence]]
-owner = "exacopy-codec"
+owner = "exacopy-manifest"
 level = "obligation"
 state = "defined"
-path = "crates/core/codec/verification/obligations.toml"
+path = "crates/formats/exacopy-manifest/verification/obligations.toml"
 target = "P-010"
 
 [[coverage.evidence]]
-owner = "exacopy-codec"
+owner = "exacopy-manifest"
 level = "test"
 state = "defined"
-path = "crates/core/codec/tests/manifest_vectors.rs"
+path = "crates/formats/exacopy-manifest/tests/manifest_vectors.rs"
 target = "independent_vectors_match_canonical_body_and_envelope_digest"
 
 [[coverage.evidence]]
-owner = "exacopy-codec"
+owner = "exacopy-manifest"
 level = "test"
 state = "defined"
-path = "crates/core/codec/tests/manifest_vectors.rs"
+path = "crates/formats/exacopy-manifest/tests/manifest_vectors.rs"
 target = "independent_display_annotation_changes_no_canonical_byte"
 
 [[coverage.evidence]]
-owner = "exacopy-codec"
+owner = "exacopy-manifest"
 level = "test"
 state = "defined"
-path = "crates/core/codec/tests/manifest_depth.rs"
+path = "crates/formats/exacopy-manifest/tests/manifest_depth.rs"
 target = "caps_nesting_even_inside_unsupported_values"
 
 [[coverage.evidence]]
-owner = "exacopy-codec"
+owner = "exacopy-manifest"
 level = "fuzz"
 state = "defined"
-path = "crates/core/codec/fuzz/fuzz_targets/manifest_json.rs"
+path = "crates/formats/exacopy-manifest/fuzz/fuzz_targets/manifest_json.rs"
 
 [[coverage.evidence]]
-owner = "exacopy-codec"
+owner = "exacopy-manifest"
 level = "fixture"
 state = "defined"
-path = "crates/core/codec/verification/manifest/check-fuzz.sh"
+path = "crates/formats/exacopy-manifest/verification/manifest/check-fuzz.sh"
 detail = "Pinned parser fuzz gate and retained seed replay. Scope is limited to exercised manifest JSON input."
 
 [[coverage]]
@@ -932,21 +932,21 @@ scope = "Bounded canonical DocumentRef and one regular create-new PlanEntries le
 limits = "Partial public-page scope: Plan envelope, child traversal, root/source-view authority binding and apply are not implemented. Native identities are opaque past observations. P-037 is a scoped Rust admission gate, not universal parser refinement."
 
 [[coverage.evidence]]
-owner = "exacopy-codec"
+owner = "exacopy-plan"
 level = "obligation"
 state = "defined"
-path = "crates/core/codec/verification/obligations.toml"
+path = "crates/formats/exacopy-plan/verification/obligations.toml"
 target = "P-037"
 
 [[coverage.evidence]]
-owner = "exacopy-codec"
+owner = "exacopy-plan"
 level = "test"
 state = "defined"
-path = "crates/core/codec/tests/plan_entries.rs"
+path = "crates/formats/exacopy-plan/tests/plan_entries.rs"
 target = "independent_canonical_vectors_bind_zero_length_entry_and_opaque_identity"
 
 [[coverage.evidence]]
-owner = "exacopy-codec"
+owner = "exacopy-plan"
 level = "documentation"
 state = "reported"
 path = "docs/architecture/public-plan-pages.md"
@@ -983,21 +983,21 @@ scope = "Complete registered canonical Plan v1 body with typed policy/evidence f
 limits = "Scoped canonical codec only: approval signatures, true descendant reconciliation and filesystem authority remain outside this result. Construction's transient encoding can exceed the 1MiB admitted-body limit."
 
 [[coverage.evidence]]
-owner = "exacopy-codec"
+owner = "exacopy-plan"
 level = "obligation"
 state = "defined"
-path = "crates/core/codec/verification/obligations.toml"
+path = "crates/formats/exacopy-plan/verification/obligations.toml"
 target = "P-038"
 
 [[coverage.evidence]]
-owner = "exacopy-codec"
+owner = "exacopy-plan"
 level = "test"
 state = "defined"
-path = "crates/core/codec/tests/plan_body.rs"
+path = "crates/formats/exacopy-plan/tests/plan_body.rs"
 target = "canonical_policy_and_resource_intent_are_bound_to_the_expected_digest"
 
 [[coverage.evidence]]
-owner = "exacopy-codec"
+owner = "exacopy-plan"
 level = "documentation"
 state = "reported"
 path = "docs/architecture/public-plan-body.md"
@@ -1013,21 +1013,21 @@ scope = "Bounded unsigned public Plan JSON with strict object fields, exact exte
 limits = "No attached approval, bundle traversal, execution authority or native effects. Wire caps are not peak-memory bounds. P-039 is a scoped Rust parser admission check."
 
 [[coverage.evidence]]
-owner = "exacopy-codec"
+owner = "exacopy-plan"
 level = "obligation"
 state = "defined"
-path = "crates/core/codec/verification/obligations.toml"
+path = "crates/formats/exacopy-plan/verification/obligations.toml"
 target = "P-039"
 
 [[coverage.evidence]]
-owner = "exacopy-codec"
+owner = "exacopy-plan"
 level = "test"
 state = "defined"
-path = "crates/core/codec/tests/plan_json.rs"
+path = "crates/formats/exacopy-plan/tests/plan_json.rs"
 target = "all_structs_are_map_only_and_reject_missing_duplicate_and_unknown_fields"
 
 [[coverage.evidence]]
-owner = "exacopy-codec"
+owner = "exacopy-plan"
 level = "documentation"
 state = "reported"
 path = "docs/architecture/public-plan-json.md"

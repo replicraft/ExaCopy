@@ -3,8 +3,8 @@ use std::fs::File;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::assembly::linux::plan_public_new_file;
-use exacopy_codec::{PlanBody, PublicPlan, UnixTimestamp};
 use exacopy_journal::LinuxFileIdentity;
+use exacopy_plan::{PlanBody, PublicPlan, UnixTimestamp};
 use exacopy_platform::linux::{DestinationRoot, ReadRoot};
 use exacopy_transfer::copy_planning::{CreateNewRequest, PlanSelection};
 use rustix::fs::{self, AtFlags, FileType, Mode, Stat};

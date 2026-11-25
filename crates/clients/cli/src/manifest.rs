@@ -67,9 +67,9 @@ mod linux {
 	use std::fmt;
 	use std::path::Path;
 
-	use exacopy_codec::{MAX_MANIFEST_JSON_BYTES, ManifestError, SingleFileManifest};
 	use exacopy_content::{MeasureError, StreamInputError};
 	use exacopy_endpoint::{IoError, ReadView, UnixComponent};
+	use exacopy_manifest::{MAX_MANIFEST_JSON_BYTES, ManifestError, SingleFileManifest};
 	use exacopy_platform::linux::{NamedReadView, ReadError, ReadRoot};
 	use exacopy_transfer::manifest::{self, VerifyDecision};
 	use rustix::io::Errno;

@@ -1,16 +1,16 @@
 use std::convert::Infallible;
 
 use ed25519_dalek::SigningKey;
-use exacopy_codec::{
-	PlanBody, PlanBodyFields, PlanEntriesPage, PlanEntry, PlanExtensions, PlanOperation, PlanPath,
-	PlanResourceLimits, PlanSourceView, PlanViewConsistency, UnixTimestamp,
-};
 use exacopy_content::{ContentDigest, measure_at};
 use exacopy_endpoint::UnixComponent;
 use exacopy_journal::{
 	ApplyMetadataPolicyDigest, ApprovedPublicPlanDigest, ApprovedStreamDigest,
 	DestinationRootBinding, JournalEntryId, JournalEpoch, JournalJobId, ObservedTimestamp,
 	OwnerProfileId, OwnerToken, PublicPlanEntryId, RootCapabilityId, StreamLength,
+};
+use exacopy_plan::{
+	PlanBody, PlanBodyFields, PlanEntriesPage, PlanEntry, PlanExtensions, PlanOperation, PlanPath,
+	PlanResourceLimits, PlanSourceView, PlanViewConsistency, UnixTimestamp,
 };
 
 use crate::copy_planning::{COPY_POLICY, CREATE_NEW, READ_CONTENT};

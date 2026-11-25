@@ -1,6 +1,6 @@
 # Unsigned public Plan JSON
 
-The `exacopy-codec::PublicPlan` JSON envelope presents the canonical
+The `exacopy-plan::PublicPlan` JSON envelope presents the canonical
 [public Plan body](public-plan-body.md). Parsing recomputes the canonical
 body digest and compares it with the declared digest. Serialization emits
 the same semantic body with normalized UTC timestamps. This is a codec,
@@ -32,7 +32,7 @@ whole-version supply-chain gate: independent review retained unresolved
 mobile timezone parsing and optional archived-value invariant questions.
 Those features are disabled; no whole-version audit was awarded.
 
-[Independent vectors](../../crates/core/codec/verification/plan_json/README.md)
+[Independent vectors](../../crates/formats/exacopy-plan/verification/plan_json/README.md)
 use Python mappings and the pinned portable C BLAKE3 implementation. Tests
 cover malformed structures, exact integer boundaries, timestamps and digest
 binding. Fifty native codec tests passed for the final parser candidate;

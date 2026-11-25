@@ -2,7 +2,7 @@
 
 use core::fmt;
 
-use exacopy_codec::{
+use exacopy_plan::{
 	DocumentError, PlanBody, PlanEntriesPage, PlanEntry, PlanError, PlanExtensions,
 	PlanIdentityPlatform, PlanOperation, PlanPath, PlanViewConsistency, UnixTimestamp,
 };

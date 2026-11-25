@@ -25,7 +25,8 @@ exacopy-endpoint.workspace = true
 exacopy-platform.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
-exacopy-codec.workspace = true
+exacopy-manifest.workspace = true
+exacopy-plan.workspace = true
 blake3.workspace = true
 ed25519-dalek.workspace = true
 exacopy-content.workspace = true

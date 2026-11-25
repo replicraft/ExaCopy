@@ -3,9 +3,9 @@
 use std::error::Error as StdError;
 use std::fmt;
 
-use exacopy_codec::SingleFileManifest;
 use exacopy_content::{MeasureError, measure_at, validate_stream_input};
 use exacopy_endpoint::ReadView;
+use exacopy_manifest::SingleFileManifest;
 
 #[cfg(test)]
 mod tests;

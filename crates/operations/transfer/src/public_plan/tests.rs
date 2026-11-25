@@ -1,4 +1,4 @@
-use exacopy_codec::{
+use exacopy_plan::{
 	DocumentPageKind, DocumentRef, PlanBodyFields, PlanConflict, PlanDurability,
 	PlanResourceLimits, PlanSourceIdentity, PlanSourceView,
 };
