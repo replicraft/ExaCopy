@@ -9,13 +9,17 @@ normal.optional_external = ["hax-lib"] # Extraction annotations, only with proof
 dev.groups = ["testkit"]
 dev.external = ["proptest"]
 
+[groups.foundation]
+members = { exacopy-core = "crates/foundation/exacopy-core" }
+
 [groups.codecs]
+normal.groups = ["foundation"]
 members = { exacopy-codec = "crates/core/codec" }
 normal.external = ["base64", "blake3", "chrono", "minicbor", "serde", "serde_json", "uuid"]
 
 [groups.contracts]
 members = { exacopy-endpoint = "crates/endpoints/endpoint" }
-normal.groups = ["core"]
+normal.groups = ["core", "foundation"]
 dev.groups = ["testkit"]
 
 [groups.platform]

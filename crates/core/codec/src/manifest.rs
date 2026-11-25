@@ -1,8 +1,9 @@
 use core::fmt;
 
+use exacopy_core::UnixComponent;
 use uuid::Uuid;
 
-use crate::portable::{MAX_LOGICAL_LENGTH, valid_unix_basename};
+use crate::portable::MAX_LOGICAL_LENGTH;
 
 mod canonical;
 mod error;
@@ -42,7 +43,7 @@ impl SingleFileManifest {
 		if manifest_id.is_nil() || root_id.is_nil() {
 			return Err(ManifestInvalid::Identifier.into());
 		}
-		if !valid_unix_basename(basename) {
+		if UnixComponent::new(basename).is_err() {
 			return Err(ManifestInvalid::Basename.into());
 		}
 		if length > MAX_LOGICAL_LENGTH {

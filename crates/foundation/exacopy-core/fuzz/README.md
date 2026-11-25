@@ -5,7 +5,7 @@
 Use `cargo-fuzz` 0.13.2, the dependencies pinned in `Cargo.lock`, and Rust `nightly-2026-11-04` on a Unix target with AddressSanitizer support. Run the following commands from the repository root.
 
 ```sh
-fuzz_dir="$PWD/crates/endpoints/endpoint/fuzz"
+fuzz_dir="$PWD/crates/foundation/exacopy-core/fuzz"
 run_dir="$(mktemp -d)"
 nightly_rustc="$(rustup which --toolchain nightly-2026-11-04 rustc)"
 export PATH="$(dirname "$nightly_rustc"):$PATH"

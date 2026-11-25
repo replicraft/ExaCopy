@@ -3,6 +3,7 @@ members = [
     "crates/clients/cli",
     "crates/core/codec",
     "crates/core/model",
+    "crates/foundation/exacopy-core",
     "crates/endpoints/endpoint",
     "crates/endpoints/platform",
     "crates/network/ssh",
@@ -24,6 +25,7 @@ license = "Apache-2.0"
 
 [workspace.dependencies]
 # Internal crates
+exacopy-core = { path = "crates/foundation/exacopy-core", version = "=0.1.0" }
 exacopy-codec = { path = "crates/core/codec", version = "=0.1.0" }
 exacopy-content = { path = "crates/storage/content", version = "=0.1.0" }
 exacopy-diff = { path = "crates/operations/diff", version = "=0.1.0" }

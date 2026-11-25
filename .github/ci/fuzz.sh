@@ -6,7 +6,7 @@ source "$(dirname "$0")/common.sh"
 target=${1:-unix_component}
 case "$target" in
 	unix_component)
-		fuzz_dir="$PWD/crates/endpoints/endpoint/fuzz"
+		fuzz_dir="$PWD/crates/foundation/exacopy-core/fuzz"
 		campaign_limits=(-max_total_time=15)
 		;;
 	journal_frame)

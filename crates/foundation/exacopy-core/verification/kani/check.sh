@@ -43,11 +43,11 @@ CARGO_NET_OFFLINE=true "${cargo[@]}" metadata --locked --format-version 1 \
 
 primary=kani_checks::component::checked_unix_component_matches_byte_specification
 oversize=kani_checks::component::oversized_unix_component_at_first_invalid_length
-kani_log=$(mktemp "${TMPDIR:-/tmp}/exacopy-endpoint-kani.XXXXXX")
+kani_log=$(mktemp "${TMPDIR:-/tmp}/exacopy-core-kani.XXXXXX")
 trap 'rm -f "$kani_log"' EXIT
 kani_status=0
 # Kani keeps assertion reachability and CBMC's unwinding assertions enabled by default.
-CARGO_NET_OFFLINE=true "${cargo[@]}" kani --package exacopy-endpoint --lib --exact \
+CARGO_NET_OFFLINE=true "${cargo[@]}" kani --package exacopy-core --lib --exact \
 	--harness "$primary" --harness "$oversize" --output-format regular \
 	-Z unstable-options --harness-timeout 300s 2>&1 | tee "$kani_log" || kani_status=$?
 

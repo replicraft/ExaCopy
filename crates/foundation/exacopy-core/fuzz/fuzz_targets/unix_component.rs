@@ -8,7 +8,7 @@ use std::path::{Component, Path};
 
 use libfuzzer_sys::fuzz_target;
 
-use exacopy_endpoint::UnixComponent;
+use exacopy_core::UnixComponent;
 
 const BASELINE_NAME_LIMIT: usize = 255;
 const NUL: u8 = 0;

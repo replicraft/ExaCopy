@@ -27,25 +27,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
-name = "exacopy-endpoint"
+name = "exacopy-core"
 version = "0.1.0"
-dependencies = [
- "exacopy-model",
-]
 
 [[package]]
-name = "exacopy-endpoint-fuzz"
+name = "exacopy-core-fuzz"
 version = "0.0.0"
 dependencies = [
- "exacopy-endpoint",
+ "exacopy-core",
  "libfuzzer-sys",
-]
-
-[[package]]
-name = "exacopy-model"
-version = "0.1.0"
-dependencies = [
- "uuid",
 ]
 
 [[package]]
@@ -102,9 +92,3 @@ name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
-
-[[package]]
-name = "uuid"
-version = "1.29.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c14b15dffa2f4bd712103e857140aa04a4f2ff6e955c77d7eb8e53ee02a3b64"

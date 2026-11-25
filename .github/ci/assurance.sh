@@ -23,16 +23,18 @@ case "$1" in
 		report="$evidence/endpoint-coverage.json"
 		summary="$evidence/endpoint-coverage-summary.json"
 		minimum_line_coverage=85
-		cargo +1.100.0 llvm-cov nextest --locked -p exacopy-endpoint -p exacopy-platform \
+		cargo +1.100.0 llvm-cov nextest --locked -p exacopy-core -p exacopy-endpoint -p exacopy-platform \
 			--json --show-missing-lines --output-path "$report" --no-tests fail
 		jq '
 			def source_lines($crate):
 				[.data[0].files[] |
-					select(.filename | test("(^|/)crates/endpoints/" + $crate + "/src/")) |
+					select(.filename | test("(^|/)crates/" + $crate + "/src/")) |
 					.summary.lines] |
 				{count: (map(.count) | add // 0), covered: (map(.covered) | add // 0)};
 			if (.data | length) != 1 then error("expected one coverage data set") else
-				{"exacopy-endpoint": source_lines("endpoint"), "exacopy-platform": source_lines("platform")}
+				{"exacopy-core": source_lines("foundation/exacopy-core"),
+				 "exacopy-endpoint": source_lines("endpoints/endpoint"),
+				 "exacopy-platform": source_lines("endpoints/platform")}
 			end
 		' "$report" > "$summary"
 		cat "$summary"

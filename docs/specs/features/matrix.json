@@ -5,6 +5,7 @@
     "exacopy-cli",
     "exacopy-codec",
     "exacopy-content",
+    "exacopy-core",
     "exacopy-diff",
     "exacopy-endpoint",
     "exacopy-journal",
@@ -422,7 +423,7 @@
       "serde@1.0.229", "serde_core@1.0.229", "serde_derive@1.0.229", "serde_json@1.0.154", "syn@3.0.10", "unicode-ident@1.0.27", "zmij@1.0.23"
     ],
     "local_comparison": [
-      "bitflags@2.13.2", "exacopy-diff@0.1.0", "exacopy-endpoint@0.1.0", "exacopy-model@0.1.0",
+      "bitflags@2.13.2", "exacopy-core@0.1.0", "exacopy-diff@0.1.0", "exacopy-endpoint@0.1.0", "exacopy-model@0.1.0",
       "exacopy-platform@0.1.0", "rustix@1.1.6", "uuid@1.29.3"
     ],
     "linux_verified_transfer": [

@@ -8,7 +8,7 @@ assumptions and owners before enabling new safety-relevant behavior.
 | Implemented owner | Obligations and reproduction |
 | --- | --- |
 | Core model | [Manifest](../crates/core/model/verification/obligations.toml), [dispatcher](../crates/core/model/verification/check.sh), [foundation evidence](foundation.md) |
-| Endpoint | [Manifest](../crates/endpoints/endpoint/verification/obligations.toml), [dispatcher](../crates/endpoints/endpoint/verification/check.sh) |
+| Core | [Manifest](../crates/foundation/exacopy-core/verification/obligations.toml), [dispatcher](../crates/foundation/exacopy-core/verification/check.sh) |
 | Diff | [Manifest](../crates/operations/diff/verification/obligations.toml), [dispatcher](../crates/operations/diff/verification/check.sh) |
 
 Keep proofs, extraction, models, harnesses and obligation ownership in

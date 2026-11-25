@@ -1,11 +1,10 @@
 use core::{fmt, marker::PhantomData};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use exacopy_core::MAX_UNIX_COMPONENT_BYTES;
 use serde::de::{self, Deserializer, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-
-use crate::portable::MAX_BASENAME_BYTES;
 
 use super::{
 	MAX_MANIFEST_JSON_BYTES, ManifestError, ManifestInvalid, ManifestUnsupported,
@@ -17,7 +16,7 @@ const BLAKE3: &str = "blake3-256";
 const LIVE_OBSERVED: &str = "live_observed";
 const REGULAR: &str = "regular";
 const UNIX_BYTES: &str = "unix_bytes";
-const MAX_ENCODED_BASENAME_BYTES: usize = MAX_BASENAME_BYTES.div_ceil(3) * 4;
+const MAX_ENCODED_BASENAME_BYTES: usize = MAX_UNIX_COMPONENT_BYTES.div_ceil(3) * 4;
 
 mod limits;
 

@@ -1,5 +1,5 @@
 [package]
-name = "exacopy-endpoint-fuzz"
+name = "exacopy-core-fuzz"
 version = "0.0.0"
 edition = "2024"
 rust-version = "1.100.0"
@@ -10,7 +10,7 @@ publish = false
 cargo-fuzz = true
 
 [dependencies]
-exacopy-endpoint = { path = ".." }
+exacopy-core = { path = ".." }
 libfuzzer-sys = "=0.4.13"
 
 [[bin]]

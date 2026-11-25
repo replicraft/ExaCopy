@@ -150,23 +150,23 @@ scope = "Unix components preserve raw bytes and refuse separator, traversal, NUL
 limits = "P-013 covers the Unix lexical contract at lengths 0–255 and the oversized boundary at 256. Windows handle-level containment and broader untrusted input surfaces remain open."
 
 [[coverage.evidence]]
-owner = "exacopy-endpoint"
+owner = "exacopy-core"
 level = "obligation"
 state = "defined"
-path = "crates/endpoints/endpoint/verification/obligations.toml"
+path = "crates/foundation/exacopy-core/verification/obligations.toml"
 target = "P-013"
 
 [[coverage.evidence]]
-owner = "exacopy-endpoint"
+owner = "exacopy-core"
 level = "fuzz"
 state = "defined"
-path = "crates/endpoints/endpoint/fuzz/fuzz_targets/unix_component.rs"
+path = "crates/foundation/exacopy-core/fuzz/fuzz_targets/unix_component.rs"
 
 [[coverage.evidence]]
-owner = "exacopy-endpoint"
+owner = "exacopy-core"
 level = "fixture"
 state = "defined"
-path = "crates/endpoints/endpoint/fuzz/corpus/unix_component/non-utf8"
+path = "crates/foundation/exacopy-core/fuzz/corpus/unix_component/non-utf8"
 
 [[coverage.evidence]]
 owner = "exacopy-platform"

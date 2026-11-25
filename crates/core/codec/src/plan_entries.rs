@@ -2,11 +2,12 @@
 
 use core::fmt;
 
+use exacopy_core::UnixComponent;
 use uuid::Uuid;
 
 use crate::document::{DocumentError, DocumentPageKind, DocumentRef, document_page_id};
 use crate::plan_identity::PlanSourceIdentity;
-use crate::portable::{MAX_LOGICAL_LENGTH, valid_unix_basename};
+use crate::portable::MAX_LOGICAL_LENGTH;
 
 mod wire;
 
@@ -61,7 +62,7 @@ impl<'page> PlanEntriesPage<'page> {
 			return Err(DocumentError::InvalidEntry);
 		}
 		for path in [entry.source, entry.destination] {
-			if path.root_id.is_nil() || !valid_unix_basename(path.basename) {
+			if path.root_id.is_nil() || UnixComponent::new(path.basename).is_err() {
 				return Err(DocumentError::InvalidEntry);
 			}
 		}
