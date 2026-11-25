@@ -29,12 +29,14 @@ The [CI](../.github/workflows/ci.yml) and
 executed automation. Preserve raw outcomes and surface required jobs
 that failed, timed out, were blocked or did not run.
 
-The nightly public manifest lane fetches the locked parser inputs and runs
-the codec's ASan campaign with 250,000 inputs and a 16,385-byte limit.
+The nightly public codec matrix fetches locked inputs and runs each parser's
+ASan campaign with 250,000 inputs. The manifest JSON limit is 16,385 bytes;
+the plan-entry page campaign uses 262,145 bytes, including an oversized seed.
 It retains the revision and toolchain, lock and input digests, runner
 metadata, raw output, corpus additions and any crash artifacts. A failed
-or incomplete campaign fails the lane. The lane exercises manifest JSON
-admission and leaves native file verification to the Linux integration tests.
+or incomplete campaign fails the lane. These lanes exercise manifest JSON,
+public document references and plan-entry page admission, leaving native
+file verification to the Linux integration tests.
 
 ## Windows held-directory read qualification
 

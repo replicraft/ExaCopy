@@ -1,4 +1,6 @@
-# Portable manifest parser fuzzing
+# Codec parser fuzzing
+
+## Portable manifest JSON
 
 The `manifest_json` target sends arbitrary bytes to
 `SingleFileManifest::from_json`. It checks that the byte limit applies
@@ -28,3 +30,27 @@ lockfile hashes, the resolved fuzz graph, the fuzzer log and exit status.
 The committed seed files stay read-only. Any added corpus entries and
 failure artifacts go into the evidence directory. An incomplete campaign
 does not count as completed evidence.
+
+## Public PlanEntries pages and document references
+
+The `plan_entries_page` target passes the original bytes to the standalone
+`DocumentRef` reader. It also creates an expected address for those same
+bytes using the registered page digest framing. This exercises the page CBOR
+decoder beyond its length and digest gates, including well-addressed malformed
+pages. Accepted pages and references must reproduce their exact canonical bytes.
+The target checks accepted entry bounds and rejects a modified page digest.
+
+The deterministic corpus includes independent page and reference fixtures,
+unsupported kind and array forms, trailing data, truncation, and a non-preferred
+integer. The runner generates an additional input one byte over the 256 KiB
+page limit in the evidence directory.
+
+```sh
+bash crates/core/codec/verification/plan_entries/check-fuzz.sh
+```
+
+This run uses AddressSanitizer, 250,000 inputs, seed 441037, at most 262,145
+input bytes, a two-second input timeout, a 90-second campaign cap and a
+768 MiB RSS limit. It checks the budget actually completed and records
+sanitizer symbols, exact input and lockfile hashes, the resolved dependency
+graph, engine output, and any failure artifacts.

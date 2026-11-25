@@ -10,12 +10,20 @@ publish = false
 cargo-fuzz = true
 
 [dependencies]
+blake3 = { version = "=1.8.7", default-features = false }
 exacopy-codec = { path = ".." }
 libfuzzer-sys = "=0.4.13"
 
 [[bin]]
 name = "manifest_json"
 path = "fuzz_targets/manifest_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "plan_entries_page"
+path = "fuzz_targets/plan_entries_page.rs"
 test = false
 doc = false
 bench = false

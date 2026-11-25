@@ -119,10 +119,18 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-  manifest-fuzz:
-    name: Public manifest JSON ASan fuzzing (Linux x86_64)
+  codec-fuzz:
+    name: Public ${{ matrix.parser }} ASan fuzzing (Linux x86_64)
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - parser: manifest-json
+            runner: crates/core/codec/verification/manifest/check-fuzz.sh
+          - parser: plan-entries
+            runner: crates/core/codec/verification/plan_entries/check-fuzz.sh
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -133,7 +141,7 @@ jobs:
         run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
       - name: Install pinned cargo-fuzz and nightly
         run: bash .github/ci/capture.sh manifest-fuzz-setup bash .github/ci/install.sh fuzz
-      - name: Fetch locked manifest fuzz inputs
+      - name: Fetch locked codec fuzz inputs
         run: |
           bash .github/ci/capture.sh manifest-fuzz-fetch cargo +nightly-2026-11-04 fetch \
             --locked --manifest-path crates/core/codec/fuzz/Cargo.toml
@@ -141,13 +149,13 @@ jobs:
         timeout-minutes: 10
         run: |
           bash .github/ci/capture.sh manifest-fuzz \
-            bash crates/core/codec/verification/manifest/check-fuzz.sh \
+            bash "${{ matrix.runner }}" \
             "$RUNNER_TEMP/exacopy-evidence/manifest-artifacts"
       - name: Retain fuzz inputs, log, corpus and crash artifacts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: manifest-fuzz-linux-x86_64-${{ github.run_attempt }}
+          name: codec-fuzz-${{ matrix.parser }}-linux-x86_64-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/exacopy-evidence/
             !${{ runner.temp }}/exacopy-evidence/manifest-artifacts/target/**

@@ -41,6 +41,18 @@ coverage measured 779/816 lines and 130/138 branch outcomes; the new
 modules alone measured 409/440 lines and 57/64 branch outcomes. These
 denominators differ and the latter remain below the crate targets.
 
+The [crate-local ASan runner](../../crates/core/codec/verification/plan_entries/check-fuzz.sh)
+completed 250,000 inputs on ARM64 macOS with nightly-2026-11-04 and
+cargo-fuzz 0.13.2. It used seed 441037, a 262,145-byte input cap,
+90-second campaign cap, two-second input timeout and 768 MiB RSS cap.
+There were no failure artifacts. Raw references are decoded independently;
+arbitrary page bytes receive a freshly calculated matching reference so
+fuzzing reaches the CBOR parser beyond the digest check. Exact source and
+lockfile digests, budget, sanitizer evidence and raw logs are retained at
+`/private/tmp/exacopy-public-plan.Bp3u9v/evidence/plan-fuzz`.
+Mutation coverage remains unmeasured. Hosted Linux fuzz execution remains
+pending; adding its nightly lane is configuration, not a passing result.
+
 The complete public Plan envelope, multi-level page-tree traversal,
 approval, bundle lookup, root/source-view binding and public apply remain
 unimplemented. Expected absence is planning evidence; a future executor

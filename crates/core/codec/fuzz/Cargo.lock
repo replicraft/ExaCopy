@@ -82,6 +82,7 @@ dependencies = [
 name = "exacopy-codec-fuzz"
 version = "0.0.0"
 dependencies = [
+ "blake3",
  "exacopy-codec",
  "libfuzzer-sys",
 ]
