@@ -162,7 +162,7 @@ fn allocate_directory() -> PathBuf {
 
 fn compile_acl_helper(helper: &Path) {
 	let source = Path::new(env!("CARGO_MANIFEST_DIR"))
-		.join("../../clients/cli/tests/fixtures/macos_empty_acl.c");
+		.join("../../../fixtures/macos/empty_acl.c");
 	let output = Command::new("/usr/bin/cc")
 		.args(["-Wall", "-Wextra", "-Werror"])
 		.arg(source)

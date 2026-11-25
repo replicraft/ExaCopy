@@ -318,7 +318,7 @@ impl Fixture {
 		let fixture = Self(path);
 		let helper = fixture.0.join("empty-acl");
 		let source = Path::new(env!("CARGO_MANIFEST_DIR"))
-			.join("../../clients/cli/tests/fixtures/macos_empty_acl.c");
+			.join("../../../fixtures/macos/empty_acl.c");
 		assert!(
 			Command::new("/usr/bin/cc")
 				.args(["-Wall", "-Wextra", "-Werror"])
