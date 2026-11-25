@@ -10,6 +10,8 @@ use super::{
 	RemoteStageDirectoryPrepared, RemoteUncertainBoundary,
 };
 
+use super::finalization_replay::FinalizationHistory;
+
 mod attempts;
 mod reader;
 
@@ -168,6 +170,12 @@ impl RemoteDownloadReplay {
 		self.uncertainty
 	}
 
+	/// Returns a refused condition without losing the accepted prefix.
+	#[must_use]
+	pub(super) const fn issue(&self) -> Option<&RemoteReplayIssue> {
+		self.issue.as_ref()
+	}
+
 	/// Returns the history classification and any reconciliation reason.
 	#[must_use]
 	pub fn state(&self) -> RemoteReplayState<'_> {
@@ -225,6 +233,20 @@ pub fn replay_remote_download_with_bootstrap(
 	reader::replay_with_bootstrap(
 		input,
 		trust,
+		MAX_REMOTE_REPLAY_SEGMENT_BYTES,
+		MAX_REMOTE_REPLAY_ATTEMPTS,
+	)
+}
+
+pub(super) fn scan_finalization(
+	input: impl Read,
+	trust: &RemoteBootstrapTrust<'_>,
+	history: &mut FinalizationHistory,
+) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
+	reader::scan_finalization(
+		input,
+		trust,
+		history,
 		MAX_REMOTE_REPLAY_SEGMENT_BYTES,
 		MAX_REMOTE_REPLAY_ATTEMPTS,
 	)

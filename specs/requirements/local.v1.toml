@@ -1317,6 +1317,37 @@ target = "only_explicit_data_only_selection_admits_scope_binding"
 
 
 [[coverage]]
+id = "remote-download-finalization-replay"
+status = "implemented"
+requirement_ids = ["R-013", "R-015", "R-017", "R-140"]
+acceptance_ids = ["A-013", "A-015", "A-017", "A-140"]
+invariant_ids = ["INV-003", "INV-013", "INV-019", "INV-024"]
+scope = "Read-only inspection of one bounded bootstrap-authenticated private journal prefix through finalization, with exact stage, scope, qualification, capture checkpoint, terminal commitment and receipt artifact association."
+limits = "Historical local declarations only. Live authority, platform observations, post-intent reconciliation, native durability qualification and sealed restart use separate evidence."
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "obligation"
+state = "defined"
+path = "crates/storage/exacopy-journal/verification/obligations.toml"
+target = "P-050"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/remote_finalization_replay.rs"
+target = "oversized_finalization_payload_is_refused_before_its_first_byte"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/src/remote_download/replay/reader/tests.rs"
+target = "extended_segment_budget_refuses_payload_after_only_its_header"
+
+
+[[coverage]]
 id = "public-apply-intent-receipt"
 status = "implemented"
 requirement_ids = ["R-015", "R-155"]

@@ -4,6 +4,7 @@ mod bootstrap;
 mod error;
 pub mod finalization;
 pub mod finalization_policy;
+pub mod finalization_replay;
 mod owner;
 mod records;
 pub mod replay;

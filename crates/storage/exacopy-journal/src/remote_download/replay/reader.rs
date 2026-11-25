@@ -3,12 +3,17 @@ use std::io::{self, Read};
 
 use exacopy_endpoint::MAX_INTERRUPTED_RETRIES;
 
-use crate::frame::{ChainHead, Frame, FrameKind, FrameReader, MAX_PAYLOAD_BYTES};
+use crate::frame::{
+	ChainHead, FRAME_OVERHEAD_BYTES, Frame, FrameKind, FrameProblem, FrameReadError, FrameReader,
+	MAX_PAYLOAD_BYTES,
+};
 
+use super::super::finalization::MAX_REMOTE_FINALIZATION_BYTES;
+use super::super::finalization_replay::{FinalizationHistory, RemoteFinalizationPhase};
 use super::super::{
-	MAX_REMOTE_BOOTSTRAP_PAYLOAD_BYTES, RemoteBootstrapTrust, RemoteDownloadContext,
-	RemoteDownloadError, RemoteDownloadOwner, RemoteDownloadOwnerRecord, RemoteDownloadRecord,
-	RemoteScopeDigest,
+	MAX_REMOTE_BOOTSTRAP_PAYLOAD_BYTES, MAX_REMOTE_DOWNLOAD_PAYLOAD_BYTES, RemoteBootstrapTrust,
+	RemoteDownloadContext, RemoteDownloadError, RemoteDownloadOwner, RemoteDownloadOwnerRecord,
+	RemoteDownloadRecord, RemoteScopeDigest,
 };
 use super::{RemoteDownloadReplay, RemoteReplayBoundary, RemoteReplayIssue, RemoteReplayMismatch};
 
@@ -18,7 +23,7 @@ pub(super) fn replay(
 	max_bytes: u64,
 	max_attempts: usize,
 ) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
-	scan(input, owner, None, max_bytes, max_attempts)
+	scan(input, owner, None, None, max_bytes, max_attempts)
 }
 
 pub(super) fn replay_with_bootstrap(
@@ -27,13 +32,38 @@ pub(super) fn replay_with_bootstrap(
 	max_bytes: u64,
 	max_attempts: usize,
 ) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
-	scan(input, trust.owner(), Some(trust), max_bytes, max_attempts)
+	scan(
+		input,
+		trust.owner(),
+		Some(trust),
+		None,
+		max_bytes,
+		max_attempts,
+	)
+}
+
+pub(super) fn scan_finalization(
+	input: impl Read,
+	trust: &RemoteBootstrapTrust<'_>,
+	history: &mut FinalizationHistory,
+	max_bytes: u64,
+	max_attempts: usize,
+) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
+	scan(
+		input,
+		trust.owner(),
+		Some(trust),
+		Some(history),
+		max_bytes,
+		max_attempts,
+	)
 }
 
 fn scan(
 	input: impl Read,
 	owner: &RemoteDownloadOwnerRecord,
 	bootstrap: Option<&RemoteBootstrapTrust<'_>>,
+	mut finalization: Option<&mut FinalizationHistory>,
 	max_bytes: u64,
 	max_attempts: usize,
 ) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
@@ -65,21 +95,51 @@ fn scan(
 	};
 
 	loop {
+		let mut budget_payload = None;
 		let read = reader.next_frame_with_payload_limit(|kind| {
-			if bootstrap.is_some() && kind == FrameKind::StageDirectoryPrepared {
+			let profile_limit = if bootstrap.is_some() && kind == FrameKind::StageDirectoryPrepared
+			{
 				MAX_REMOTE_BOOTSTRAP_PAYLOAD_BYTES
+			} else if finalization.is_some() && is_finalization_kind(kind) {
+				MAX_REMOTE_FINALIZATION_BYTES
+			} else if finalization.is_some() {
+				MAX_REMOTE_DOWNLOAD_PAYLOAD_BYTES
 			} else {
 				MAX_PAYLOAD_BYTES
+			};
+			if finalization.is_none() {
+				return profile_limit;
 			}
+
+			// At this point the header has been read. Reserve its CRC and digest
+			// before permitting any payload allocation or read.
+			let available = max_bytes
+				.saturating_sub(replay.boundary.offset)
+				.saturating_sub(FRAME_OVERHEAD_BYTES as u64);
+			budget_payload = Some(available);
+			profile_limit.min(usize::try_from(available).unwrap_or(usize::MAX))
 		});
-		if consumed.get() > max_bytes {
+		let over_budget = match (&read, budget_payload) {
+			(
+				Err(FrameReadError::Corrupt {
+					problem: FrameProblem::PayloadTooLarge(length),
+					..
+				}),
+				Some(available),
+			) => u64::from(*length) > available,
+			_ => false,
+		};
+		if consumed.get() > max_bytes || over_budget {
 			replay.issue = Some(RemoteReplayIssue::SegmentLimit);
 			break;
 		}
 		let frame = match read {
 			Ok(Some(frame)) => frame,
 			Ok(None) => {
-				if replay.uncertainty.is_some() {
+				if replay.uncertainty.is_some()
+					|| finalization.as_ref().is_some_and(|history| {
+						history.phase() == RemoteFinalizationPhase::Uncertain
+					}) {
 					replay.issue = Some(RemoteReplayIssue::RecordedUncertainty);
 				} else if bootstrap.is_some() && replay.stage_directory_prepared.is_none() {
 					replay.issue = Some(RemoteReplayIssue::StageBootstrapMissing);
@@ -91,16 +151,60 @@ fn scan(
 				break;
 			}
 		};
-		if let Err(issue) = validation.accept(&mut replay, &frame) {
+		let head = frame.head();
+		let accepted = if let Some(history) = finalization.as_deref_mut() {
+			accept_extended(&validation, &mut replay, history, owner, frame)
+		} else {
+			validation.accept(&mut replay, &frame)
+		};
+		if let Err(issue) = accepted {
 			replay.issue = Some(issue);
 			break;
 		}
 		replay.boundary = RemoteReplayBoundary {
-			head: frame.head(),
+			head,
 			offset: reader.offset(),
 		};
 	}
 	Ok(replay)
+}
+
+fn is_finalization_kind(kind: FrameKind) -> bool {
+	matches!(
+		kind,
+		FrameKind::StageSealed
+			| FrameKind::VerificationRecorded
+			| FrameKind::MetadataRecorded
+			| FrameKind::PublishIntent
+			| FrameKind::PublishObserved
+			| FrameKind::DurabilityRecorded
+			| FrameKind::ReceiptCommitted
+	)
+}
+
+fn accept_extended(
+	validation: &ReplayValidation<'_>,
+	replay: &mut RemoteDownloadReplay,
+	history: &mut FinalizationHistory,
+	owner: &RemoteDownloadOwnerRecord,
+	frame: Frame,
+) -> Result<(), RemoteReplayIssue> {
+	let kind = frame.kind();
+	let offset = replay.boundary.offset;
+	let mismatch = |problem| RemoteReplayIssue::Record {
+		offset,
+		kind,
+		problem,
+	};
+	if is_finalization_kind(kind) {
+		return history.accept(replay, owner, frame).map_err(mismatch);
+	}
+	if history.phase() != RemoteFinalizationPhase::Capture {
+		return Err(mismatch(RemoteReplayMismatch::Order));
+	}
+	validation.accept(replay, &frame)?;
+	history.retain_capture(frame);
+	Ok(())
 }
 
 struct ReplayValidation<'a> {

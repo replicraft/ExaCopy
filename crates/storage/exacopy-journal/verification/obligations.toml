@@ -72,3 +72,15 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/remote_finalization.rs", test = "independent_finalization_vectors_round_trip_and_bind_receipt", oracle = "Independently generated canonical framed bodies and exact remote receipt decode and re-encode byte-for-byte. The signed policy, exact prepared run and held stage declarations, independent verification digest and publication frames bind to the selected owner and committed receipt digest." }
+
+[[obligation]]
+id = "P-050"
+requirement_ids = ["R-013", "R-015", "R-017", "R-140"]
+source = "src/remote_download/finalization_replay.rs"
+symbols = ["replay_remote_finalization", "RemoteFinalizationReplay::validated_receipt"]
+assumptions = [
+    "The caller selects one held first segment and authenticates the owner key and directory bootstrap independently. The expected qualification digest and optional receipt artifact come from separately selected inputs.",
+    "Replay checks historical declarations and exact framing. It does not establish native object provenance, file or namespace durability, selected route qualification, current grant or writable authority.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_finalization_replay.rs", test = "only_clear_exact_commit_associates_receipt_after_accepted_checkpoint", oracle = "A receipt associates only with the exact terminal commitment following an authenticated bootstrap and checked current checkpoint prefix. Foreign commitment, missing or malformed artifact and a torn suffix prevent association and retain the preceding accepted boundary." }
