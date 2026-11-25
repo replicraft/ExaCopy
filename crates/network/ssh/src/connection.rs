@@ -8,7 +8,7 @@ use exacopy_endpoint::ssh_sftp::{
 };
 use russh::client::{self, ChannelOpenHandle, Handler, Msg};
 use russh::keys::{Algorithm, HashAlg, PublicKey, PublicKeyOrCertificate};
-use russh::{Channel, ChannelMsg, Names, Preferred, cipher, compression, kex, mac};
+use russh::{Channel, Names, Preferred, cipher, compression, kex, mac};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::oneshot;
 use tokio::time::timeout;
@@ -19,6 +19,8 @@ use crate::error::Error;
 use crate::fence::FencedStream;
 use crate::known_hosts::KnownHostTrust;
 use crate::wire::Wire;
+
+mod subsystem;
 
 const MAX_PASSWORD_BYTES: usize = 4096;
 const CONNECT_DEADLINE: Duration = Duration::from_secs(20);
@@ -236,9 +238,7 @@ where
 
 		let mut channel = connection.channel_open_session().await?;
 		channel.request_subsystem(true, "sftp").await?;
-		if !matches!(channel.wait().await, Some(ChannelMsg::Success)) {
-			return Err(Error::Subsystem);
-		}
+		subsystem::confirm(async || channel.wait().await).await?;
 		let wire = Wire::init(channel.into_stream()).await?;
 		Ok(ReadOnlySftp::new(wire, Box::pin(connection), guard))
 	})

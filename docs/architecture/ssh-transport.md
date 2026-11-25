@@ -12,7 +12,10 @@ SHA-256 fingerprint and an authority-bound strict trust snapshot are checked bef
 the broker for one supplied password. Changed/revoked/unavailable trust,
 certificates and unattended prompts are refused. The broker request binds
 host, port, account and verified key. Only a confirmed SFTP subsystem is
-opened. All known peer-initiated channels are refused. Rekey currently
+opened. Setup tolerates at most eight channel-window adjustments before the
+explicit subsystem Success reply, within the same connection deadline. Data,
+failure, EOF, closure and excess controls refuse setup. This fixes the ordering
+observed with Apple OpenSSH 9.7p1. All known peer-initiated channels are refused. Rekey currently
 fences the connection and requires a new verified handshake.
 
 Password ownership uses zeroizing buffers and the upstream password method.
@@ -52,7 +55,7 @@ remote inode or universal symlink/root confinement. Required metadata fidelity,
 remote staging, writes, exclusive publication and recovery are unimplemented.
 SFTP extension advertisements confer no such authority.
 
-Twenty-two native macOS tests passed, including exchanges with an in-memory
+Twenty-four native macOS tests passed, including exchanges with an in-memory
 SSH/SFTP peer. They cover raw names, short reads, EOF refusal, host and
 credential scope, missing subsystem, frame admission and unsolicited channels.
 Linux x86-64 checking also compiled Ring's C/assembly using Zig. Windows
