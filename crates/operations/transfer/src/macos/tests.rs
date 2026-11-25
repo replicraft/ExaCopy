@@ -1,14 +1,46 @@
 use std::fs;
+use std::process::Command;
 
 use exacopy_content::{CopyMeasureError, StreamInputError, measure_at};
-use exacopy_platform::macos::ManagedReadError;
 use exacopy_platform::macos::staging::{MAX_STAGE_IO_BYTES, StageError};
+use exacopy_platform::macos::{BasicMetadataError, ManagedReadError};
 
-use super::{StageTransferFailure, copy_verified_stage, verify_read_back};
+use super::{
+	StageTransferFailure, copy_verified_stage, copy_with_basic_metadata, verify_read_back,
+};
 
 mod fixture;
 
 use fixture::{Fixture, ORIGINAL, PAYLOAD, SOURCE, TARGET, write_file};
+
+#[test]
+fn strict_copy_refuses_visible_attributes_before_writing_the_stage() {
+	let fixture = Fixture::new();
+	let source = fixture.destination.join(SOURCE);
+	write_file(&source, PAYLOAD);
+	let status = Command::new("/usr/bin/xattr")
+		.args(["-w", "com.example.exacopy-test", "fixture"])
+		.arg(&source)
+		.status()
+		.expect("set a synthetic visible attribute");
+	assert!(status.success());
+	let root = fixture.stage_root();
+	let source = fixture.same_parent_source(&root);
+	let directory = fixture.stage_directory(&root);
+	let writer = fixture.writer(&directory, source.length());
+	let identity = writer.identity();
+	let error = copy_with_basic_metadata(&source, writer, &mut [0; 8])
+		.expect_err("refuse a source with visible attributes");
+	assert_eq!(error.identity(), identity);
+	assert!(matches!(
+		error.failure(),
+		StageTransferFailure::AdmitMetadata(ManagedReadError::BasicMetadata(
+			BasicMetadataError::ExtendedAttributes
+		))
+	));
+	assert!(fs::read(&fixture.stage).unwrap().is_empty());
+	fixture.assert_target_absent();
+}
 
 #[test]
 fn verifies_multiple_chunks_from_the_same_parent_lease() {

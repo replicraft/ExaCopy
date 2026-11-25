@@ -67,6 +67,10 @@ pub enum StageTransferFailure {
 	InvalidInput(StreamInputError),
 	/// The source could not be revalidated before or after the transfer.
 	RevalidateSource(ManagedReadError),
+	/// The source did not satisfy the strict metadata profile before transfer.
+	AdmitMetadata(ManagedReadError),
+	/// The verified stage could not install and synchronize the required metadata.
+	ApplyMetadata(StageError),
 	/// A source read or private write could not complete.
 	Copy(CopyMeasureError<ManagedReadError, StageError>),
 	/// The stage could not complete the barrier and confirmed writer closure.
@@ -105,6 +109,8 @@ impl fmt::Display for StageTransferFailure {
 			Self::RevalidateSource(error) => {
 				write!(formatter, "source revalidation failed ({error})")
 			}
+			Self::AdmitMetadata(error) => write!(formatter, "source metadata refused ({error})"),
+			Self::ApplyMetadata(error) => write!(formatter, "stage metadata failed ({error})"),
 			Self::Copy(error) => error.fmt(formatter),
 			Self::CloseStage(error) => {
 				write!(formatter, "stage barrier or closure failed ({error})")
@@ -125,11 +131,12 @@ impl Error for StageTransferFailure {
 	fn source(&self) -> Option<&(dyn Error + 'static)> {
 		match self {
 			Self::InitialStage(error)
+			| Self::ApplyMetadata(error)
 			| Self::CloseStage(error)
 			| Self::OpenReadBack(error)
 			| Self::RevalidateReadBack(error) => Some(error),
 			Self::InvalidInput(error) => Some(error),
-			Self::RevalidateSource(error) => Some(error),
+			Self::RevalidateSource(error) | Self::AdmitMetadata(error) => Some(error),
 			Self::Copy(error) => Some(error),
 			Self::ReadBack(error) => Some(error),
 			Self::ExtentMismatch { .. }

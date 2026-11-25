@@ -2,10 +2,10 @@
 
 use exacopy_content::{ContentDigest, copy_and_measure_at, measure_at, validate_stream_input};
 use exacopy_model::CopyBinding;
-use exacopy_platform::macos::ManagedRegularFile;
 use exacopy_platform::macos::staging::{
-	ClosedStage, MAX_STAGE_IO_BYTES, StageIdentity, WriteStage,
+	ClosedStage, MAX_STAGE_IO_BYTES, MetadataReadyStage, StageIdentity, WriteStage,
 };
+use exacopy_platform::macos::{BasicMetadata, ManagedRegularFile};
 
 mod error;
 pub mod plan;
@@ -14,6 +14,61 @@ pub mod plan;
 mod tests;
 
 pub use error::{StageTransferError, StageTransferFailure};
+
+/// Owns verified data and synchronized basic metadata for the same private stage.
+#[derive(Debug)]
+pub struct VerifiedBasicStage<'stage> {
+	stage: MetadataReadyStage<'stage>,
+	digest: ContentDigest,
+}
+
+impl VerifiedBasicStage<'_> {
+	/// Returns the binding of the stage that was independently verified.
+	#[must_use]
+	pub fn binding(&self) -> CopyBinding {
+		self.stage.binding()
+	}
+
+	/// Returns the selected metadata read back after the file barrier.
+	#[must_use]
+	pub fn metadata(&self) -> BasicMetadata {
+		self.stage.metadata()
+	}
+
+	/// Returns the BLAKE3-256 digest measured independently from the private stage.
+	#[must_use]
+	pub fn digest(&self) -> ContentDigest {
+		self.digest
+	}
+}
+
+/// Verifies a private copy and applies the strict basic metadata of that same source.
+/// Metadata admission precedes payload reads. Metadata application follows independent
+/// stage read-back and writer closure. The verified stage remains private.
+/// # Errors
+/// Refuses unsupported metadata, failed verification or incomplete persistence.
+/// The error identifies the private stage retained for reconciliation.
+pub fn copy_with_basic_metadata<'stage>(
+	source: &ManagedRegularFile<'_>,
+	writer: WriteStage<'stage>,
+	scratch: &mut [u8],
+) -> Result<VerifiedBasicStage<'stage>, StageTransferError> {
+	let identity = writer.identity();
+	source.check_basic_metadata().map_err(|error| {
+		StageTransferError::new(identity, StageTransferFailure::AdmitMetadata(error))
+	})?;
+	let verified = copy_verified_stage(source, writer, scratch)?;
+	let stage = verified
+		.stage
+		.apply_basic_metadata(source)
+		.map_err(|error| {
+			StageTransferError::new(identity, StageTransferFailure::ApplyMetadata(error))
+		})?;
+	Ok(VerifiedBasicStage {
+		stage,
+		digest: verified.digest,
+	})
+}
 
 /// Owns the closed private stage and the digest independently read from it.
 ///
