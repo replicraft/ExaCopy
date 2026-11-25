@@ -165,9 +165,14 @@ function New-ExaCopyPrivateStage {
         $Owner, [Security.AccessControl.FileSystemRights]::FullControl, $inheritance,
         [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow)
     $acl.AddAccessRule($rule)
-    [IO.FileSystemAclExtensions]::Create([IO.DirectoryInfo]::new($path), $acl)
-    Confirm-ExaCopyOwnerAcl $path $Owner -Root
-    Assert-ExaCopyExactEntries $path @()
+    try {
+        [IO.FileSystemAclExtensions]::Create([IO.DirectoryInfo]::new($path), $acl)
+        Confirm-ExaCopyOwnerAcl $path $Owner -Root
+        Assert-ExaCopyExactEntries $path @()
+    }
+    catch {
+        throw "Private stage creation could not be confirmed. Inspect '$path'. $($_.Exception.Message)"
+    }
     return $path
 }
 

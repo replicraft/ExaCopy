@@ -21,6 +21,11 @@ function Assert-ExaCopyTrustArguments {
     if ($Version -cnotmatch $ExaCopyVersionPattern) {
         throw 'Supply an exact release version in canonical N.N.N form.'
     }
+    Assert-ExaCopyPublisherArguments $PublisherCert $PublisherSha256
+}
+
+function Assert-ExaCopyPublisherArguments {
+    param([string] $PublisherCert, [string] $PublisherSha256)
     if ([string]::IsNullOrWhiteSpace($PublisherCert) -or
         $PublisherSha256 -cnotmatch $ExaCopyDigestPattern) {
         throw 'Supply an independently trusted DER publisher certificate and its exact SHA-256 pin.'

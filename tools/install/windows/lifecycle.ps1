@@ -7,11 +7,16 @@ $ExaCopyVersionFiles = @($ExaCopyOwnerFile, 'exacopy.exe')
 function Get-ExaCopyContext {
     param(
         [string] $Version, [string] $PublisherCert, [string] $PublisherSha256,
-        [string] $Scope
+        [string] $Scope, [switch] $ResolveLatest
     )
     if (!$IsWindows) { throw 'These PowerShell entry points require Windows.' }
     if ($Scope -cne 'User') { throw 'Only explicitly non-elevated user scope is supported.' }
-    Assert-ExaCopyTrustArguments $Version $PublisherCert $PublisherSha256
+    if (!$ResolveLatest -or $Version) {
+        Assert-ExaCopyTrustArguments $Version $PublisherCert $PublisherSha256
+    }
+    else {
+        Assert-ExaCopyPublisherArguments $PublisherCert $PublisherSha256
+    }
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     try {
         $owner = $identity.User

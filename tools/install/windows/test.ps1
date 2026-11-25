@@ -7,6 +7,8 @@ $ErrorActionPreference = 'Stop'
 $root = [IO.DirectoryInfo]::new($PSScriptRoot).Parent.Parent.Parent.FullName
 $production = @('install.ps1', 'uninstall.ps1', 'tools/install/windows/paths.ps1',
     'tools/install/windows/release.ps1', 'tools/install/windows/lifecycle.ps1',
+    'tools/install/windows/download.ps1', 'tools/install/windows/archive.ps1',
+    'tools/install/windows/online.ps1', 'tools/install/windows/online-fixtures.ps1',
     'tools/install/windows/fixture-tools.ps1', 'tools/install/windows/Lifecycle.Tests.ps1')
 foreach ($relative in $production) {
     $tokens = $null
@@ -157,4 +159,5 @@ if (!$IsWindows) {
     }
 }
 
-Write-Output 'PowerShell syntax, signed release, PE header, path, and refusal fixtures passed.'
+. (Join-Path $PSScriptRoot 'online-fixtures.ps1')
+Write-Output 'PowerShell syntax, signed release, PE header, path, and online archive fixtures passed.'

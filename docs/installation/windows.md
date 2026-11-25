@@ -14,8 +14,25 @@ Obtain the scripts and their support files together from an independently
 trusted source. Obtain the publisher's raw DER certificate and its
 lowercase SHA-256 fingerprint through that trusted channel. The certificate
 and fingerprint must be supplied separately from the offline bundle. No
-official publisher key, download URL, or Authenticode release qualification
-is supplied by these scripts.
+official publisher key or Authenticode release qualification is supplied by
+these scripts.
+
+## Latest stable release
+
+```powershell
+./install.ps1 -Latest -PublisherCert $Cert -PublisherSha256 $Pin
+```
+
+Latest mode is the default when `-OfflineBundle` is absent. Optional `-Version`
+requires the selected latest version to match. The installer freezes GitHub's
+`releases/latest` redirect to one tag, downloads the native platform's
+`exacopy-cli-<target>.zip` and `SHA256SUMS.txt`, verifies the archive checksum,
+and extracts the three permitted files into private staging. The original
+publisher, executable and owned-path checks still precede installation.
+The [online release contract](../supply-chain/online-cli-release-profile.md)
+defines the strict download and archive profile. An existing store bound to a
+different release identity still refuses replacement. Synthetic PowerShell
+tests on macOS do not qualify native Windows installation or live delivery.
 
 The offline bundle is a directory containing exactly `release.manifest`,
 `release.sig`, and `exacopy.exe`. The raw signature authenticates the exact
