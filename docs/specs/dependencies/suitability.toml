@@ -580,8 +580,8 @@ replacement = "Preserve shortest round-trip finite decimal output, signed-zero b
 review_gaps = ["Review float boundary arithmetic and SIMD and scalar output bounds", "Independent exact-version suitability and target-path evidence"]
 
 [assessment."apfs-mounted@0.1.0"]
-archive_sha256 = "02a91e3373c222f6a374456fd9c008b327f904f8d652bc7dfe68e78be356382a"
-release_observation = "Local Pomologie source commit 618768ae353febd9f87ee285e24984a9302ccb13. The ExaCopy source pin binds the complete sibling Git tree and archive."
+archive_sha256 = "5b817b4579e1638b8dd4d12ab702cba632252bb643c5fd959f884c1e663a3c83"
+release_observation = "Local Pomologie source commit d935f08c2d9561dd7845f7acdc4e8d4897863483. The ExaCopy source pin binds the complete sibling Git tree and archive."
 security_history = "Local sibling source is outside crates.io archive and advisory matching. The archive pin is provenance evidence."
 unsafe_exposure = "The selected macOS library binds Darwin metadata, descriptor, data barrier and namespace operations with documented unsafe calls. Native results and descriptor lifetimes remain part of the adapter's trust boundary."
 resource_limits = "The API borrows or owns caller-authorized descriptors and accepts bounded names, buffers and read ranges. The ExaCopy coordinator owns overall reservations, input limits and effect ordering."
