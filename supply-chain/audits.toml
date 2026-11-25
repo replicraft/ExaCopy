@@ -122,6 +122,28 @@ on Apple ARM64, with and without std. ExaCopy selects the default core-api
 path without alloc or std for production. Upstream Git equivalence is unverified.
 """
 
+[[audits.ed25519]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "2.2.3"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+115531babc129696a58c64a4fef0a8bf9e9698629fb97e9e40767d235cfbcd53.
+Packaged repository files match upstream 07b095c32a3527ee47da5c4878bf203557b36e5e.
+The crate forbids unsafe code and has no build script. Reviewed fixed-size
+R and S encoding, hex and Serde decoding, and optional PKCS#8, SPKI, PEM,
+and zeroize behavior. The optional key-container decoders enforce the
+algorithm OID, parameter absence, bit-string alignment, and fixed field
+sizes. Point and keypair validation belongs to the provider. Applications
+own file selection and exported secret material. The zeroize feature clears
+the owned keypair field on drop and the successful encoder's temporary
+buffer. It does not cover every temporary parse or encoding error path.
+Native Rust 1.100.0 tests passed for the feature-minimal signature and
+hex paths and for optional PKCS#8 and Serde. The serde_bytes visitor was
+reviewed by source. ExaCopy uses the feature-minimal signature representation
+and verifies through Ed25519 Dalek.
+"""
+
 [[audits.equivalent]]
 who = "OpenAI Codex (dependency source review)"
 criteria = "safe-to-deploy"
@@ -172,6 +194,43 @@ lacks macrotest and trybuild. ExaCopy's locked UUID WebAssembly chain
 includes this crate without activating it in the workspace feature graph.
 """
 
+[[audits.proc-macro2]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.0.107"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9.
+The archive names commit ed8a5497669cd63db33bf24646f261b012bbbc4a,
+corroborated by the signed upstream 1.0.107 release.
+
+Reviewed the fallback and compiler-backed lexer, token stream, literal
+and span paths. The fallback ownership read consumes the RcVec once
+because the source is wrapped in ManuallyDrop. Public unchecked literal
+construction requires valid Rust literal syntax. Safe lexical APIs
+validate tokens, and compiler bridge conversions use checked parsing
+or internally rendered Rust tokens and escaped literals. Fallback
+group scanning and destruction use explicit stacks. Recursive rendering
+and optional thread-local source maps consume resources according to
+input depth and retained source. Long-running consumers of fallback
+span locations can explicitly invalidate the thread's spans between
+independent jobs. Compiler spans expose source text and path data
+provided by the compiler.
+
+The build script calls trusted RUSTC and optionally configured wrappers
+with Cargo-supplied flags and packaged compile probes. It emits metadata
+and removes its probe subdirectory under Cargo's OUT_DIR. No probe
+binary is executed. The compiler, wrappers and build-directory
+configuration are trusted build inputs.
+
+On Rust 1.100.0 aarch64 macOS, a standalone harness passed 41 packaged
+token tests at default features and 50 packaged token, comment and
+span tests with span-locations enabled. Compiling the exact Serde derive
+against this archive exercised compiler-backed expansion. The full
+upstream runner was blocked by offline dependency resolution. Unstable
+compiler paths were reviewed in source.
+"""
+
 [[audits.rustversion]]
 who = "OpenAI Codex (dependency source review)"
 criteria = "safe-to-deploy"
@@ -192,6 +251,104 @@ checks passed. The upstream trybuild UI suite was blocked by an uncached
 dependency. The lockfile includes this crate through wasm-bindgen.
 """
 
+[[audits.serde]]
+who = "OpenAI Codex (automated dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.0.229"
+notes = """
+2026-11-25. Reviewed registry archive SHA-256
+4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba.
+All packaged source files, including the docs.rs copy of serde_core, match
+upstream commit 7fc3b4c30c94f73a96ebd1553f2b090d928fc3a8, identified by the
+upstream v1.0.229 release whose signature GitHub marks verified.
+
+The usual build re-exports serde_core and optionally serde_derive. The two
+unchecked UTF-8 conversions in the packaged docs.rs copy are identical to the
+reviewed core conversions. The build script probes Cargo's selected rustc with
+--version, emits cfgs, and writes a fixed module template containing the Cargo
+package patch number to private.rs under OUT_DIR. The inputs belong to the
+trusted build environment. Reviewed runtime private visitors and serializers
+used by derives, including the map key/value contract and buffering for
+flattened, tagged, and untagged forms. Allocation and retries depend on values,
+formats, and application schemas. Caller-supplied codecs and hooks supply their
+own resource and side-effect behavior. Optional alloc, rc, and unstable paths
+forward to core. The CLI uses typed JSON report serialization with flattening,
+tags, explicit field names, and omitted fields. The engineering xtask also
+uses deserialization to validate evidence and TOML contracts.
+
+The exact-source upstream suite passed 404 tests on macOS ARM64 with Rust
+1.100.0. Stable checks passed for no-default, alloc+derive, alloc+rc+derive
+without std, and default+rc+derive. At ExaCopy 0d402ce, 12 CLI tests and 37
+xtask tests passed on the same host. Native Linux and Windows execution was
+outside this review.
+"""
+
+[[audits.serde_core]]
+who = "OpenAI Codex (automated dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.0.229"
+notes = """
+2026-11-25. Reviewed registry archive SHA-256
+67dca2c9c51e58a4791a4b1ed58308b39c64224d349a935ab5039aa360942a48.
+All packaged source files match upstream commit
+7fc3b4c30c94f73a96ebd1553f2b090d928fc3a8 from the v1.0.229 release.
+
+Reviewed both unsafe sites. The formatter's private Buf exposes only the
+initialized prefix copied from complete &str fragments, with capacity checks.
+Its callers format bounded standard integer errors or network address values.
+The IPv4 fast path writes ASCII digits and separators into a 15-byte buffer
+and converts only the populated prefix. Its octet formatter has an exhaustive
+upstream byte test. Reviewed the std value and synchronization integrations.
+Paths, C strings, IP/port values and times use value conversions, not ambient
+filesystem or network operations. Locking uses the caller's Mutex or RwLock
+and reports poison as an error. The rc feature serializes pointed-to values
+and does not preserve sharing or break cycles. The optional unstable feature
+adds never-type handling. The result feature adds the Result implementations.
+Collection readers cap size-hint preallocation at 1 MiB, then consume actual
+values. In-place readers may update destinations before a later error, as
+allowed by their contract. The build script probes trusted Cargo RUSTC and
+writes the generated versioned shim under OUT_DIR.
+
+ExaCopy selects std+result through serde and serde_json. Exact-source tests
+covered Serde's annotations, standard type conversions and error handling in
+the macOS ARM64 Rust 1.100.0 upstream suite. The no-default and alloc/rc
+combinations also compiled. This evidence is host-scoped.
+"""
+
+[[audits.serde_derive]]
+who = "OpenAI Codex (automated dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.0.229"
+notes = """
+2026-11-25. Reviewed registry archive SHA-256
+e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348.
+All packaged source files match upstream commit
+7fc3b4c30c94f73a96ebd1553f2b090d928fc3a8 from the v1.0.229 release.
+
+This source-only proc macro has no build script, precompiled executable,
+unsafe blocks, or ambient I/O. It parses trusted derive inputs with Syn and
+uses thread::panicking only to avoid an error-context destructor panic while
+unwinding. Reviewed the Syn 3 source delta and emission paths for structs,
+tagged and untagged enum forms, versioned private helper calls, default and
+custom hooks, generics, and optional deserialize_in_place. Emitted code uses
+safe trait calls. Generated visitors implement field and variant dispatch and
+apply source attributes for duplicate and unknown keys, borrowing, and hooks.
+The optional in-place generator takes a mutable reference and may update
+fields before returning an error. Untagged variants can retry against a
+buffered value. Schema authors choose recursion, tags, defaults, and custom
+callbacks. Build-only diagnostics and resource use depend on trusted source
+shape. The ExaCopy CLI uses serialization derives for reports. Its xtask also
+uses deserialization derives for evidence and contracts.
+
+macOS ARM64 upstream tests used the locked proc-macro2 1.0.107, quote 1.0.47,
+and syn 3.0.10 versions. The Rust 1.100.0 upstream suite passed 404 tests with
+its deserialize_in_place feature. On nightly 2026-11-04, 116 UI cases matched
+and two required-trait cases differed in diagnostic text while still failing
+to compile with E0277. These are recorded snapshot failures. The separate
+nightly runtime lane with unstable enabled passed 408 tests. No other
+target's macro host or runtime was executed in this review.
+"""
+
 [[audits.serde_spanned]]
 who = "OpenAI Codex (dependency source review)"
 criteria = "safe-to-deploy"
@@ -209,6 +366,42 @@ ExaCopy selects alloc, serde and std via TOML in xtask. The native TOML
 span and serialization fixture passed on Rust 1.100.0. The exact published
 test lock was blocked by an uncached syn version. There is no unsafe code,
 build script, or ambient I/O.
+"""
+
+[[audits.syn]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "3.0.10"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+4ae9ccbea3a7b0b09443036490c8f34a8b1b760fd345e5c0dae0aac718faea79.
+The archive names commit 97ec37dda8a893a460066da694fd1eb7cb30538a,
+corroborated by the signed upstream 3.0.10 release.
+
+Reviewed token buffer offsets and scope sentinels, cursor lifetime
+erasure, speculative parsing, single-span token layout conversions,
+and thread-bound diagnostic spans. Cursors borrow immutable boxed
+storage with internally constructed offsets and end sentinels.
+ParseStream::step brands its cursor through an invariant higher-ranked
+closure parameter, and Speculative::advance_to checks the scope
+before storing a fork cursor. The static Sync entry is an empty
+sentinel. ThreadBound only exposes its payload on the creating thread
+and permits cross-thread copies for Copy payloads. Single-span
+punctuation and WithSpan use transparent layouts over the same span.
+
+There is no build script. Parsing and optional printing and traversal
+operate on caller-supplied Rust tokens, with syntax or trailing tokens
+reported as errors. Recursion depth and resource limits for processing
+untrusted source are caller responsibilities. The release includes
+upstream PR 2090, which avoids repeated scanning of the same operands
+during full expression printing.
+
+With Rust 1.100.0 aarch64 macOS, an isolated harness passed 28 packaged
+parse-buffer, parse-stream, punctuation, and identifier tests with full,
+extra-traits, fold, visit, and visit-mut enabled. Focused tests covered
+valid and malformed derive input and Serde's compiler-backed expansion
+at the selected product feature union. The full upstream runner
+requires offline dev inputs that were unavailable.
 """
 
 [[audits.thiserror]]
@@ -270,6 +463,25 @@ access protocol. ExaCopy selects alloc, serde and std via TOML in xtask.
 Native roundtrip and calendar boundary checks passed on Rust 1.100.0. The
 published package check compiled and had zero tests after retrying with its
 dev dependencies available. There is no unsafe code, build script, or ambient I/O.
+"""
+
+[[audits.toml_writer]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.2.0+spec-1.1.0"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+009dbb7700f11c55ef83aebbe4c0e9cf1f1ac0844bd8d6f00dc38f302026e13a.
+The packaged sources and original manifest match upstream TOML commit
+8ffe3c590d69fab440fedb2ebb396ae1596c3e34. Reviewed key and string
+delimiter choice, control escapes, UTF-8 slice boundaries, numeric
+formatting, caller writer errors and optional allocating collection paths.
+Callers own document composition and the compatibility range for wide
+integers. Custom formatting and sinks run caller code. There is no unsafe
+code, build script, runtime dependency, or ambient I/O. Rust 1.100.0
+roundtrip and sink error checks passed with features disabled, alloc only,
+and std. Optional collection roundtrips passed. ExaCopy uses alloc and std
+through TOML in xtask.
 """
 
 [[audits.unicode-ident]]
