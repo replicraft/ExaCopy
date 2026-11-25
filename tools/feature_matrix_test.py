@@ -102,21 +102,30 @@ class FeatureMatrixTests(unittest.TestCase):
         profiles = POLICY["profiles"]
         feature = "exacopy-wireguard/experimental-protocol"
         standalone = "experimental-wireguard-protocol"
+        udp = "exacopy-wireguard/experimental-udp"
+        udp_profile = "experimental-wireguard-udp"
         for target in POLICY["targets"]:
             with self.subTest(target=target):
                 for profile, config in profiles.items():
                     flags = profile_flags(POLICY, config, target)
-                    if profile not in {standalone, "development-all"}:
-                        self.assertNotIn(feature, ",".join(flags).split(","))
+                    selectors = ",".join(flags).split(",")
+                    if profile not in {standalone, udp_profile, "development-all"}:
+                        self.assertNotIn(feature, selectors)
+                    if profile not in {udp_profile, "development-all"}:
+                        self.assertNotIn(udp, selectors)
                 self.assertEqual(
                     profile_flags(POLICY, profiles[standalone], target),
                     ["--no-default-features", "--features", feature],
                 )
-                self.assertIn(
-                    feature,
-                    ",".join(profile_flags(POLICY, profiles["development-all"], target)).split(","),
+                self.assertEqual(
+                    profile_flags(POLICY, profiles[udp_profile], target),
+                    ["--no-default-features", "--features", f"{feature},{udp}"],
                 )
-
+                development = ",".join(
+                    profile_flags(POLICY, profiles["development-all"], target)
+                ).split(",")
+                self.assertIn(feature, development)
+                self.assertIn(udp, development)
 
     def test_optional_dependency_is_scoped_to_its_named_consumer(self):
         rule = {"default_features": False, "features": [], "optional_consumers": ["ssh"]}
@@ -147,6 +156,9 @@ class FeatureMatrixTests(unittest.TestCase):
                 "exacopy-platform/experimental-windows-copy", "exacopy-platform/windows-read-fixture",
             ]),
             ("experimental-wireguard-protocol", LINUX, ["exacopy-wireguard/experimental-protocol"]),
+            ("experimental-wireguard-udp", LINUX, [
+                "exacopy-wireguard/experimental-protocol", "exacopy-wireguard/experimental-udp",
+            ]),
             ("experimental-ssh", LINUX, ["exacopy-ssh/experimental-ssh"]),
         ):
             with self.subTest(profile=name):

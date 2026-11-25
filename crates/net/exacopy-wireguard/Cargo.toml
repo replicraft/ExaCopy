@@ -8,9 +8,12 @@ publish = false
 
 [features]
 experimental-protocol = ["dep:boringtun", "dep:rustix"]
+experimental-udp = ["experimental-protocol", "dep:exacopy-endpoint", "dep:tokio"]
 
 [dependencies]
 boringtun = { workspace = true, optional = true }
+exacopy-endpoint = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["net", "rt", "time"], optional = true }
 
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 rustix = { workspace = true, features = ["time"], optional = true }

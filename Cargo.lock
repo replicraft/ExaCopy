@@ -934,7 +934,9 @@ name = "exacopy-wireguard"
 version = "0.1.0"
 dependencies = [
  "boringtun",
+ "exacopy-endpoint",
  "rustix",
+ "tokio",
 ]
 
 [[package]]

@@ -3,8 +3,9 @@
 `exacopy-wireguard` uses exact BoringTun 0.7.1 for WireGuard handshakes,
 authentication, encryption and replay handling. Its default feature set is
 empty. `experimental-protocol` enables the backend; the ordinary CLI and
-stable profiles do not depend on it. This is a packet library without a
-socket, DNS resolver, interface or system route API.
+stable profiles do not depend on it. The protocol module handles packets
+in memory. The separate `experimental-udp` feature adds the connected-socket
+actor.
 
 A peer owns one approved outer address/port and one local/remote inner IP
 pair. Caller-owned buffers bound inner packets to 1,420 bytes and encrypted
@@ -26,8 +27,7 @@ and Windows std Instant. Unix observations use the existing safe Rustix
 API and checked conversions. Backward or unavailable observations refuse
 operation. Clock and expiry checks run before library calls and before
 exposing output. This closes the wrapper's earlier suspend-clock mismatch;
-no actual suspend/resume scenario was executed. The eventual actor must
-recheck current generation and route authority before egress or delivery.
+no actual suspend/resume scenario was executed.
 
 Session availability is a protocol observation, never proof of embedded
 route confinement. Inner checks cover IP addresses and packet lengths;
@@ -55,3 +55,31 @@ egress qualification remain open. No production support or tunnel availability i
 claimed. Exact input hashes, raw failures and final results remain under
 `/private/tmp/exacopy-boringtun-backend.qJjVePen` and the independent review
 under `/private/tmp/exacopy-boringtun-review.Auk7zq0S`.
+
+## Connected UDP actor
+
+The actor takes exclusive ownership of one UDP socket already connected
+to its approved literal peer. The caller supplies that socket and a
+trusted route owner that serializes each observation with revocation
+and replacement. Each generation can be claimed once. The actor checks
+authority and its monotonic clock before processing, immediately before
+nonblocking egress and before returning an authenticated inner packet.
+The send boundary also compares the socket's connected peer with the
+protocol output's destination. Backpressure drops that output. A single
+receive waits up to one second and consumes at most one bounded datagram.
+
+The first observed route loss, expiry, clock failure, exhausted operation
+budget or socket failure retires the generation and closes its socket.
+There is no DNS, system route management, inner socket or fallback path.
+The endpoint dispatch handoff rechecks an opaque stream command against the
+same generation and the peer's fixed inner address. The resulting target is
+for future stack integration. An actual dial still needs authorization
+at the initiating effect.
+
+The native tests use localhost and a synthetic route owner. They exercise
+encrypted two-way traffic, peer and datagram bounds, revocation at egress
+and during a receive wait, expiry, generation reuse, and dial admission.
+They provide scoped evidence for R-239, R-240 and R-249 and invariants
+INV-013 and INV-021–023. Kernel WireGuard interoperability, route-owner
+integration, downstream packet admission and Windows native behavior
+remain unqualified.

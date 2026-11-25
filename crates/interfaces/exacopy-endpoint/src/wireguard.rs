@@ -8,8 +8,11 @@ use std::fmt;
 use std::net::{IpAddr, SocketAddr};
 use std::num::{NonZeroU64, NonZeroU128};
 
+mod dispatch;
 #[cfg(test)]
 mod tests;
+
+pub use dispatch::{EmbeddedDialCommand, EmbeddedDialConnector, EmbeddedDispatchError};
 
 /// Upper bound for exact inner service and resolver targets in one approved scope.
 pub const MAX_WIREGUARD_DIAL_TARGETS: usize = 256;
@@ -224,16 +227,27 @@ impl<'scope> WireGuardDialSession<'scope> {
 		generation: NonZeroU64,
 		observation: RouteObservation,
 	) -> Result<(), WireGuardDialError> {
-		match observation {
+		observation.require_embedded(self.instance, self.policy.revision, generation)
+	}
+}
+
+impl RouteObservation {
+	fn require_embedded(
+		self,
+		expected_instance: NonZeroU128,
+		expected_revision: ProfileRevision,
+		generation: NonZeroU64,
+	) -> Result<(), WireGuardDialError> {
+		match self {
 			RouteObservation::EmbeddedWireGuard {
 				instance,
 				revision,
 				generation: current,
 			} => {
-				if self.policy.revision != revision {
+				if expected_revision != revision {
 					return Err(WireGuardDialError::RevisionChanged);
 				}
-				if self.instance != instance {
+				if expected_instance != instance {
 					return Err(WireGuardDialError::ActorChanged);
 				}
 				if generation != current {

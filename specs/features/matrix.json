@@ -78,6 +78,16 @@
       "exact_features": ["exacopy-wireguard/experimental-protocol"],
       "purpose": "Check the in-memory WireGuard packet adapter in a separate workspace profile on each CI target."
     },
+    "experimental-wireguard-udp": {
+      "defaults": false,
+      "check_cli": false,
+      "feature_statuses": [],
+      "exact_features": [
+        "exacopy-wireguard/experimental-protocol",
+        "exacopy-wireguard/experimental-udp"
+      ],
+      "purpose": "Check the connected WireGuard UDP actor and loopback fixtures in isolation."
+    },
     "experimental-ssh": {
       "defaults": false,
       "check_cli": false,
@@ -167,6 +177,12 @@
         "enables": ["dep:boringtun", "dep:rustix"],
         "resolution_probe": ["boringtun"],
         "purpose": "Enable only the exact BoringTun protocol backend for the default-off in-memory packet adapter."
+      },
+      "experimental-udp": {
+        "status": "experimental",
+        "enables": ["experimental-protocol", "dep:exacopy-endpoint", "dep:tokio"],
+        "resolution_probe": ["boringtun", "exacopy-endpoint", "mio", "socket2", "tokio"],
+        "purpose": "Enable bounded I/O through an approved connected UDP socket."
       }
     },
     "exacopy-model": {
@@ -284,7 +300,7 @@
       "default_features": false,
       "features": [],
       "optional": true,
-      "purpose": "Supply async SSH stream I/O, bounded timeouts and synchronization with a synthetic in-process peer.",
+      "purpose": "Supply bounded async I/O and timers for caller-owned SSH streams and connected WireGuard UDP sockets.",
       "feature_additions": {
         "exacopy-ssh": [
           "io-util",
@@ -292,7 +308,8 @@
           "rt",
           "sync",
           "time"
-        ]
+        ],
+        "exacopy-wireguard": ["net", "rt", "time"]
       }
     },
     "tokio-util": {

@@ -143,6 +143,37 @@ impl ProtocolPeer {
 		})
 	}
 
+	#[cfg(feature = "experimental-udp")]
+	pub(super) const fn binding(&self) -> PeerBinding {
+		self.binding
+	}
+
+	#[cfg(feature = "experimental-udp")]
+	pub(super) const fn outer_endpoint(&self) -> SocketAddr {
+		self.endpoints.outer
+	}
+
+	#[cfg(feature = "experimental-udp")]
+	pub(super) const fn inner_remote(&self) -> IpAddr {
+		self.endpoints.remote
+	}
+
+	#[cfg(feature = "experimental-udp")]
+	pub(super) fn check_generation(&mut self) -> Result<(), ProtocolError> {
+		self.require_available()?;
+		self.clock.advance()
+	}
+
+	#[cfg(feature = "experimental-udp")]
+	pub(super) fn has_session(&self) -> bool {
+		self.tunnel.time_since_last_handshake().is_some()
+	}
+
+	#[cfg(all(test, feature = "experimental-udp"))]
+	pub(super) fn expire_for_test(&mut self) {
+		self.clock.expire_for_test();
+	}
+
 	/// Returns the current key-slot observation for this actor and generation.
 	#[must_use]
 	pub fn observation(&self) -> SessionObservation {
