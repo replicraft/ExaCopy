@@ -4,10 +4,11 @@ This integration contract records the capabilities needed to replace ExaCopy's
 mounted APFS implementation. The original accounting used ExaCopy
 `6e24897d3a185bc5b4a3a99b6931233f24501503`. Native composition was moved to
 the runtime at `885b74e`; `39af383` introduced the pinned local companion
-and its dataless and stored-name consumers. The inspected Pomologie revision is
-`8f19cd36c1d1ddf7a16a45adb849d389797dee89`, whose clean checkout now contains
-`crates/platform/apfs-mounted`. Available library APIs, consumer integration
-and native qualification are separate statuses.
+and its dataless and stored-name consumers. The source pin selects Pomologie
+`618768ae353febd9f87ee285e24984a9302ccb13`, which contains
+`crates/platform/apfs-mounted`. The diff from the preceding pin `8f19cd3`
+changes comments and dependency ordering in four Cargo manifests. Their
+parsed contents and the mounted implementation are identical.
 
 **Ownership**
 
@@ -82,6 +83,10 @@ of Pomologie `8f19cd3` on native ARM64 macOS with Rust 1.100.0 passed its 50
 unit tests and one private-publication integration test. That integration
 test does not impose ExaCopy's strict xattr admission, journal intent or crash
 protocol; it is library evidence rather than an ExaCopy copy qualification.
+
+ExaCopy `dc0c79a` with Pomologie `618768a` passed 497 tests with 16 skipped in
+the native ARM64 macOS all-features nextest run. That evidence covers the
+executed tests and their declared fixture conditions.
 
 The inspected companion exports scoped directories and byte-preserving names,
 held/named identities, volume observations, owned advisory leases, dataless
@@ -431,9 +436,9 @@ verifies and extracts both repositories into independent sibling layouts.
 The current macOS local-path pair differs in executable digest and retains
 a failed reproducibility result. On 2026-11-25, the public repository's HEAD
 and main still resolved to `b5f0d82eaae6795e8a80108b5fdcda78f8a742c9`.
-A disposable fetch of the pinned `8f19cd3` failed with `not our ref`.
-Remote provisioning is blocked until that exact source is published;
-the local checkout remains usable and no publication was performed.
+A disposable fetch of the previous pin `8f19cd3` failed with
+`not our ref`. That result records remote provisioning for the previous
+source identity. A verified local checkout can supply the current pin.
 The raw checks are retained at
 `/var/folders/k_/xqf_xh_1491ffqbnfjtfkbr40000gn/T/exacopy-apfs-remote-status-m0g0f3mo`.
 See the [build evidence scope](../supply-chain/README.md#unsigned-cli-rebuild-evidence).
