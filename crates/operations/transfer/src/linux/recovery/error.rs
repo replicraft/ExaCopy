@@ -2,7 +2,7 @@ use std::error::Error;
 use std::fmt;
 
 use exacopy_content::{MeasureError, StreamInputError};
-use exacopy_journal::OwnerError;
+use exacopy_journal::{OwnerError, VerificationRecordError};
 use exacopy_platform::linux::{ReadError, StageError};
 
 use super::super::{JournalReplayError, LocalCopyPlanError, ReceiptError};
@@ -20,6 +20,8 @@ pub enum RecoveryStep {
 	Plan,
 	/// The first and only journal segment.
 	Journal,
+	/// An immutable range page referenced by the journal.
+	Checkpoint,
 	/// The local receipt artifact.
 	Receipt,
 	/// The current private stage and public target names.
@@ -70,6 +72,10 @@ pub enum RecoveryInspectError {
 	PlanBinding,
 	/// The journal cannot be replayed under the bound owner and plan.
 	Journal(JournalReplayError),
+	/// A referenced immutable range page has an invalid encoding.
+	Checkpoint(VerificationRecordError),
+	/// A range page disagrees with its journal reference or the prepared source extent.
+	CheckpointBinding,
 	/// The receipt does not have a supported representation.
 	Receipt(ReceiptError),
 	/// The receipt disagrees with the bound plan, observed stream, or durability record.
@@ -109,6 +115,11 @@ impl fmt::Display for RecoveryInspectError {
 			Self::Journal(error) => {
 				write!(formatter, "could not replay recovery journal ({error})")
 			}
+			Self::Checkpoint(error) => {
+				write!(formatter, "could not decode recovery range page ({error})")
+			}
+			Self::CheckpointBinding => formatter
+				.write_str("recovery range page disagrees with the journal or source extent"),
 			Self::Receipt(error) => {
 				write!(formatter, "could not decode recovery receipt ({error})")
 			}
@@ -132,6 +143,7 @@ impl Error for RecoveryInspectError {
 			Self::Owner(error) => Some(error),
 			Self::Plan(error) => Some(error),
 			Self::Journal(error) => Some(error),
+			Self::Checkpoint(error) => Some(error),
 			Self::Receipt(error) => Some(error),
 			Self::Input(error) => Some(error),
 			Self::ReadBack(error) => Some(error),
@@ -139,6 +151,7 @@ impl Error for RecoveryInspectError {
 			| Self::RecordChanged(_)
 			| Self::OwnerBinding
 			| Self::PlanBinding
+			| Self::CheckpointBinding
 			| Self::ReceiptBinding => None,
 		}
 	}

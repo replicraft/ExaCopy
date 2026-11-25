@@ -96,6 +96,7 @@ impl<'root> PreparedJob<'root> {
 			.map_err(JobStep::CreateJob.error())?;
 		let directories = if plan.is_some() {
 			vec![
+				OwnerStateDirectory::Checkpoints,
 				OwnerStateDirectory::Journal,
 				OwnerStateDirectory::Receipts,
 				OwnerStateDirectory::Stage,

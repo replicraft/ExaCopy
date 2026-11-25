@@ -3,7 +3,7 @@ use std::fmt;
 
 use exacopy_content::{CopyMeasureError, MeasureError, StreamInputError};
 use exacopy_endpoint::IoError;
-use exacopy_journal::{DurableJournalError, PreparedError};
+use exacopy_journal::{DurableJournalError, PreparedError, VerificationRecordError};
 use exacopy_model::{CopyPhase, TransitionError};
 use exacopy_platform::linux::{ExtendedAttributes, ReadError, StageError};
 
@@ -65,6 +65,12 @@ pub enum StageFailure {
 	EntryPreparation(PreparedError),
 	/// The initial journal record could not be synchronized before the copy.
 	EntryJournal(DurableJournalError),
+	/// The immutable checkpoint range could not be encoded.
+	CheckpointEvidence(VerificationRecordError),
+	/// Creating or synchronizing the immutable checkpoint page failed.
+	CheckpointPage(StageError),
+	/// The checkpoint could not be synchronized in the journal.
+	CheckpointJournal(DurableJournalError),
 	/// The stage aliases the held source identity.
 	Alias,
 	/// A bounded source read or stage write failed while copying.
@@ -110,6 +116,15 @@ impl fmt::Display for StageFailure {
 			Self::EntryJournal(error) => {
 				write!(formatter, "entry preparation journal failed ({error})")
 			}
+			Self::CheckpointEvidence(error) => {
+				write!(formatter, "invalid range checkpoint evidence ({error})")
+			}
+			Self::CheckpointPage(error) => {
+				write!(formatter, "private range page failed ({error})")
+			}
+			Self::CheckpointJournal(error) => {
+				write!(formatter, "range checkpoint journal failed ({error})")
+			}
 			Self::Alias => formatter.write_str("source and private stage alias the same inode"),
 			Self::Copy(error) => write!(formatter, "source-to-stage transfer failed ({error})"),
 			Self::Readback(error) => {
@@ -135,9 +150,10 @@ impl Error for StageFailure {
 		match self {
 			Self::Input(error) => Some(error),
 			Self::Source(error) => Some(error),
-			Self::Stage(error) => Some(error),
+			Self::Stage(error) | Self::CheckpointPage(error) => Some(error),
 			Self::EntryPreparation(error) => Some(error),
-			Self::EntryJournal(error) => Some(error),
+			Self::CheckpointEvidence(error) => Some(error),
+			Self::EntryJournal(error) | Self::CheckpointJournal(error) => Some(error),
 			Self::Copy(error) => Some(error),
 			Self::Readback(error) => Some(error),
 			Self::Model(error) => Some(error),

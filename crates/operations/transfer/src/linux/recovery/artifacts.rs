@@ -1,6 +1,6 @@
 use std::io;
 
-use exacopy_journal::JournalContext;
+use exacopy_journal::{JournalContext, MAX_RANGE_PAGE_BYTES, RangePage};
 use exacopy_platform::linux::{RecoveryFile, RecoveryJob, StageError};
 
 use super::super::{
@@ -21,6 +21,33 @@ pub(super) fn read_artifact(
 	file.read_exact_at(0, &mut bytes).map_err(step.read())?;
 	file.recheck_observation().map_err(step.read())?;
 	Ok(bytes)
+}
+
+pub(super) fn check_range_pages(
+	job: &RecoveryJob<'_>,
+	journal: &JournalReplay,
+	length: u64,
+) -> Result<(), RecoveryInspectError> {
+	let step = RecoveryStep::Checkpoint;
+	let mut covered = 0_u64;
+	for checkpoint in &journal.checkpoints {
+		let file = job
+			.open_checkpoint_page(checkpoint.page.ordinal())
+			.map_err(step.platform())?;
+		let bytes = read_artifact(&file, step, MAX_RANGE_PAGE_BYTES)?;
+		let page = RangePage::decode(&bytes).map_err(RecoveryInspectError::Checkpoint)?;
+		if page.reference() != checkpoint.page
+			|| page.source() != checkpoint.source
+			|| page.offset() != covered
+		{
+			return Err(RecoveryInspectError::CheckpointBinding);
+		}
+		covered = covered
+			.checked_add(page.length())
+			.filter(|end| *end <= length)
+			.ok_or(RecoveryInspectError::CheckpointBinding)?;
+	}
+	Ok(())
 }
 
 pub(super) fn open_receipt(

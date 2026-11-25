@@ -7,12 +7,14 @@ use exacopy_journal::{
 	DurabilityRecorded, DurableJournal, EntryPrepared, JobPrepared, JournalContext, JournalEntryId,
 	JournalEpoch, LinuxFileIdentity, LiveSourceView, MetadataRecorded, ObservedTimestamp,
 	OwnerRecord, OwnerStateDirectory, OwnerTimestamp, PublishIntent, PublishIntentContext,
-	PublishObserved, ReceiptCommitted, StageSealed, VerificationRecorded,
+	PublishObserved, RangeCheckpoint, ReceiptCommitted, SourceMeasurementId, StageSealed,
+	VerificationRecorded,
 };
 
 use super::LocalCopyPlan;
 
 mod error;
+mod ranges;
 mod suffix;
 
 pub use error::JournalReplayError;
@@ -63,6 +65,9 @@ pub struct JournalReplay {
 	pub source_link_count: Option<u64>,
 	/// Stage identity from entry preparation.
 	pub stage: Option<LinuxFileIdentity>,
+	/// Ordered references to data barriers and immutable range pages from the original run.
+	/// Resolve and validate each page separately before using any range evidence.
+	pub checkpoints: Vec<RangeCheckpoint>,
 	/// Stage seal observation, including the recorded logical stream length.
 	pub sealed: Option<StageSealed>,
 	/// Stream measurements from the recorded verification.
@@ -141,6 +146,7 @@ pub fn replay_journal(
 			source: None,
 			source_link_count: None,
 			stage: None,
+			checkpoints: Vec::new(),
 			sealed: None,
 			verification: None,
 			verification_head: None,
@@ -259,7 +265,13 @@ impl<R: Read> Scan<R> {
 		self.summary.source_link_count = Some(prepared.source_metadata.link_count());
 		self.summary.stage = Some(stage);
 
-		let Some(frame) = self.next(Some(FrameKind::StageSealed))? else {
+		let Some(frame) = self.read_ranges(
+			context,
+			entry_id,
+			SourceMeasurementId::from_prepared_payload(frame.payload()),
+			owner,
+		)?
+		else {
 			return Ok(());
 		};
 		let sealed = StageSealed::from_frame(&frame)?;

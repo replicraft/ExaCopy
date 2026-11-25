@@ -2,8 +2,9 @@ use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{
 	BasicMetadata, DurableJournal, EntryPreparation, EntryPrepared, JournalContext, JournalEntryId,
 	LinuxFileIdentity, LiveSourceView, MetadataRecorded, ObservedTimestamp, OwnerTimestamp,
-	PreparedError, PreparedTarget, SourceInodeMetadata, SourceTimes, StageSealed, StreamDigest,
-	StreamEvidence, StreamLength, SyncedFrame, TargetObservation, VerificationRecorded,
+	PreparedError, PreparedTarget, SourceInodeMetadata, SourceMeasurementId, SourceTimes,
+	StageSealed, StreamDigest, StreamEvidence, StreamLength, SyncedFrame, TargetObservation,
+	VerificationRecorded,
 };
 use exacopy_platform::linux::{SourceObservation, SourceTimestamp};
 
@@ -16,8 +17,8 @@ pub(super) fn timestamp(value: SourceTimestamp) -> Result<ObservedTimestamp, Pre
 }
 
 pub(super) struct EntryEvidence<'name> {
-	context: JournalContext,
-	entry: JournalEntryId,
+	pub(super) context: JournalContext,
+	pub(super) entry: JournalEntryId,
 	source: LiveSourceView,
 	metadata: SourceInodeMetadata,
 	target: PreparedTarget<'name>,
@@ -65,7 +66,7 @@ impl<'name> EntryEvidence<'name> {
 		&self,
 		journal: &mut DurableJournal,
 		stage: LinuxFileIdentity,
-	) -> Result<(), StageFailure> {
+	) -> Result<SourceMeasurementId, StageFailure> {
 		let entry = EntryPrepared::new(
 			self.context,
 			self.entry,
@@ -77,10 +78,11 @@ impl<'name> EntryEvidence<'name> {
 			},
 		)
 		.map_err(StageFailure::EntryPreparation)?;
+		let payload = entry.encode();
 		let _ = journal
-			.append(FrameKind::EntryPrepared, &entry.encode())
+			.append(FrameKind::EntryPrepared, &payload)
 			.map_err(StageFailure::EntryJournal)?;
-		Ok(())
+		Ok(SourceMeasurementId::from_prepared_payload(&payload))
 	}
 
 	pub(super) fn seal(&self, stage: &VerifiedStage<'_>) -> Result<SealEvidence, LocalCopyError> {

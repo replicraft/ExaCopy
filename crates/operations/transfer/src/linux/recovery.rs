@@ -18,7 +18,7 @@ mod error;
 mod finish;
 mod retry;
 
-use artifacts::{open_receipt, read_artifact, recheck_receipt, recheck_record};
+use artifacts::{check_range_pages, open_receipt, read_artifact, recheck_receipt, recheck_record};
 use classify::classify;
 pub use error::{RecoveryInspectError, RecoveryStep};
 pub use finish::{RecoveryFinishError, finish_recovery};
@@ -152,14 +152,22 @@ impl RecoveryHistory {
 		)
 		.map_err(RecoveryInspectError::Owner)?;
 		let manifest = owner.manifest();
+		let original_directories = [
+			OwnerStateDirectory::Journal,
+			OwnerStateDirectory::Receipts,
+			OwnerStateDirectory::Stage,
+		];
+		let checkpoint_directories = [
+			OwnerStateDirectory::Checkpoints,
+			OwnerStateDirectory::Journal,
+			OwnerStateDirectory::Receipts,
+			OwnerStateDirectory::Stage,
+		];
 		if manifest.state_root != native_identity(job.identity())
 			|| manifest.destination_device != job.destination_identity().device()
-			|| manifest.directories
-				!= [
-					OwnerStateDirectory::Journal,
-					OwnerStateDirectory::Receipts,
-					OwnerStateDirectory::Stage,
-				] {
+			|| (manifest.directories != original_directories
+				&& manifest.directories != checkpoint_directories)
+		{
 			return Err(RecoveryInspectError::OwnerBinding);
 		}
 
@@ -179,6 +187,7 @@ impl RecoveryHistory {
 			.map_err(RecoveryStep::Journal.platform())?;
 		let journal = replay_journal(&mut journal_file, &plan, &owner)
 			.map_err(RecoveryInspectError::Journal)?;
+		check_range_pages(job, &journal, plan.source().length)?;
 		let receipt = open_receipt(job)?;
 		if let Some(file) = &receipt {
 			artifacts::check_receipt(file, &plan, &journal)?;

@@ -20,12 +20,14 @@ use super::{
 	SourcePlanBinding, StageRequest, check_source, observe, stage_with_preparation,
 };
 
+pub(super) mod checkpoints;
 mod error;
 mod records;
 
 #[cfg(test)]
 pub(super) mod crash_tests;
 
+use checkpoints::StageRecords;
 pub use error::LocalCopyError;
 use records::{EntryEvidence, SealEvidence};
 
@@ -141,17 +143,25 @@ pub fn copy_new_file<'name>(
 	let directory = job
 		.create_stage_directory()
 		.map_err(LocalCopyError::CreateStage)?;
+	let pages = job
+		.directory()
+		.create_checkpoint_directory()
+		.map_err(LocalCopyError::CreateCheckpoints)?;
+	job.directory()
+		.sync_directory()
+		.map_err(LocalCopyError::CreateCheckpoints)?;
 	let request = StageRequest {
 		stage_name: attempt.stage_name,
 		target,
 		binding,
 	};
-	let mut verified = stage_with_preparation(&file, &directory, request, scratch, |identity| {
-		directory
-			.sync_directory()
-			.map_err(super::StageFailure::Stage)?;
-		evidence.record(&mut journal, native_identity(identity))
-	})
+	let mut verified = stage_with_preparation(
+		&file,
+		&directory,
+		request,
+		scratch,
+		Some(StageRecords::new(&evidence, &pages, &mut journal)),
+	)
 	.map_err(LocalCopyError::Stage)?;
 
 	let sealed = evidence.seal(&verified)?;

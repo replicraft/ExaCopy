@@ -1,6 +1,6 @@
 //! Native process-crash tests using only fresh private fixtures and the spawned test child.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::env;
 use std::fs::{self, DirBuilder, File};
 use std::io::{ErrorKind, Read as _, Write as _};
@@ -23,6 +23,7 @@ use super::{
 };
 
 mod evidence;
+mod ranges;
 mod retry;
 
 use evidence::{STAGE_DIRECTORY, Snapshot, assert_conflict, assert_crash};
@@ -52,6 +53,8 @@ pub(in crate::linux) enum Checkpoint {
 	RetryDecisionSynced,
 	RetryIntentSynced,
 	RetryRenamedAndSynced,
+	RangePageSynced,
+	RangeFrameSynced,
 }
 
 impl Checkpoint {
@@ -68,11 +71,19 @@ impl Checkpoint {
 		Self::RetryIntentSynced,
 		Self::RetryRenamedAndSynced,
 	];
+	const RANGE_ORDER: [Self; 3] = [
+		Self::PlanSynced,
+		Self::RangePageSynced,
+		Self::RangeFrameSynced,
+	];
 
 	fn worker(self) -> (&'static str, &'static [Self]) {
 		match self {
 			Self::RetryDecisionSynced | Self::RetryIntentSynced | Self::RetryRenamedAndSynced => {
 				("retry::retry_worker", &Self::RETRY_ORDER)
+			}
+			Self::RangePageSynced | Self::RangeFrameSynced => {
+				("ranges::range_worker", &Self::RANGE_ORDER)
 			}
 			_ => ("copy_worker", &Self::COPY_ORDER),
 		}
@@ -81,6 +92,13 @@ impl Checkpoint {
 
 thread_local! {
 	static CHECKPOINT_CHANNEL: RefCell<Option<UnixStream>> = const { RefCell::new(None) };
+	static RANGE_CHECKPOINTS: Cell<bool> = const { Cell::new(false) };
+}
+
+pub(super) fn pause_range_at(checkpoint: Checkpoint) {
+	if RANGE_CHECKPOINTS.get() {
+		pause_at(checkpoint);
+	}
 }
 
 pub(in crate::linux) fn pause_at(checkpoint: Checkpoint) {
@@ -165,6 +183,20 @@ fn kill_at(checkpoint: Checkpoint) {
 #[test]
 #[ignore = "subprocess entrypoint for the native copy crash tests"]
 fn copy_worker() {
+	let result = run_copy_worker(&mut [0; 11]);
+	assert!(
+		matches!(
+			result,
+			Err(LocalCopyError::Publication {
+				source: PublishError::Conflict,
+				recording: None,
+			})
+		),
+		"a worker surviving the checkpoints must see the late incumbent, got {result:?}"
+	);
+}
+
+fn run_copy_worker(scratch: &mut [u8]) -> Result<super::CopyReceipt<'static>, LocalCopyError> {
 	let root = connect_checkpoint();
 	let source = open_source(&root);
 	let destination = open_destination(&root.join(DESTINATION_DIRECTORY));
@@ -192,17 +224,7 @@ fn copy_worker() {
 		created: OwnerTimestamp::new(1_700_000_000, 0).expect("fixture timestamp"),
 		owner_token: OwnerToken::from_bytes([6; 16]).expect("fixture owner token"),
 	};
-	let result = copy_new_file(roots, &plan, profile, &mut [0; 11]);
-	assert!(
-		matches!(
-			result,
-			Err(LocalCopyError::Publication {
-				source: PublishError::Conflict,
-				recording: None,
-			})
-		),
-		"a worker surviving the checkpoints must see the late incumbent, got {result:?}"
-	);
+	copy_new_file(roots, &plan, profile, scratch)
 }
 
 fn connect_checkpoint() -> PathBuf {

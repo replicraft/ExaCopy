@@ -32,6 +32,8 @@ pub enum LocalCopyError {
 	Bootstrap(JobBootstrapError),
 	/// The stage directory could not be created and synchronized.
 	CreateStage(StageError),
+	/// The immutable checkpoint directory could not be created and synchronized.
+	CreateCheckpoints(StageError),
 	/// The copy or read-back of the private stage failed.
 	Stage(StageCopyError),
 	/// Verified-stage evidence could not be encoded.
@@ -86,6 +88,10 @@ impl fmt::Display for LocalCopyError {
 				formatter,
 				"could not prepare the private stage directory ({error})"
 			),
+			Self::CreateCheckpoints(error) => write!(
+				formatter,
+				"could not prepare the private checkpoint directory ({error})"
+			),
 			Self::Stage(error) => write!(formatter, "private stage failed ({error})"),
 			Self::Verification(error) => {
 				write!(formatter, "stage verification evidence failed ({error})")
@@ -135,6 +141,7 @@ impl Error for LocalCopyError {
 			Self::Conflict | Self::StalePlan => None,
 			Self::InspectTarget(error)
 			| Self::CreateStage(error)
+			| Self::CreateCheckpoints(error)
 			| Self::ReceiptNamespace(error) => Some(error),
 			Self::Source(error) => Some(error),
 			Self::SourcePolicy(error) | Self::PublicationModel(error) => Some(error),
