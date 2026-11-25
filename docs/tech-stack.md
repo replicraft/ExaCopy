@@ -1,9 +1,9 @@
 # Technical stack
 
-The [workspace manifest](Cargo.toml) owns dependency selections and
-[Cargo.lock](Cargo.lock) records exact locked versions. The Rust toolchain
-is pinned in [rust-toolchain.toml](rust-toolchain.toml). Native paths follow
-the platform contracts linked in [ARCHITECTURE.md](ARCHITECTURE.md).
+The [workspace manifest](../Cargo.toml) owns dependency selections and
+[Cargo.lock](../Cargo.lock) records exact locked versions. The Rust toolchain
+is pinned in [rust-toolchain.toml](../rust-toolchain.toml). Native paths follow
+the platform contracts linked in the [architecture guide](architecture.md).
 
 | Adopted production dependency | Locked version | Purpose and selection considerations |
 | --- | --- | --- |
@@ -15,18 +15,18 @@ the platform contracts linked in [ARCHITECTURE.md](ARCHITECTURE.md).
 | `uuid` | 1.29.3 | Typed identifiers with explicit validation and stable byte representation. Callers bind identifiers to the actual capability and attempt. |
 | `rustix`, `libc` | 1.1.6, 0.2.191 | Prefer typed OS wrappers where they cover required effects. Keep unsupported native primitives behind reviewed platform-specific bindings. |
 
-The [supply-chain policy](supply-chain/README.md) describes license, advisory
+The [supply-chain policy](../supply-chain/README.md) describes license, advisory
 and audit checks. A production dependency review covers purpose, license,
 maintenance and releases, security history, transitive footprint, qualified
 OS/architecture, unsafe code, resource behavior, malformed-input handling,
 available evidence and replacement options. Assess the standard library,
 existing workspace dependencies and established alternatives first.
-First-party code uses [Apache-2.0](LICENSE). Preserve third-party licensing
+First-party code uses [Apache-2.0](../LICENSE). Preserve third-party licensing
 and notices under the supply-chain policy.
 
 Keep releases locked and use a portable compiler baseline, with reviewed
 runtime detection for optional CPU features. The [feature matrix](specs/features/matrix.json) records enabled dependencies,
-profiles and target restrictions. The adopted and outstanding release evidence is governed by [Engineering standards](docs/engineering/standards.md).
+profiles and target restrictions. The adopted and outstanding release evidence is governed by [Engineering standards](engineering/standards.md).
 
 ## Evaluated APFS reader
 

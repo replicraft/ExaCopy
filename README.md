@@ -26,7 +26,8 @@ cargo test --locked --workspace --all-features --doc
 cargo run --locked -p xtask -- check
 ```
 
-Start with the [architecture](ARCHITECTURE.md) and [roadmap](ROADMAP.md). The
-[testing guide](TESTING.md) covers local checks and the feature matrix. The
-[verification guide](VERIFICATION.md) identifies the current formal gates and
-their evidence. The original code is available under [Apache-2.0](LICENSE).
+Start with the [architecture](docs/architecture.md) and
+[roadmap](docs/roadmap.md). The [testing guide](docs/testing.md) covers local
+checks and the feature matrix. The [verification guide](docs/verification.md)
+identifies the current formal gates and their evidence. The original code is
+available under [Apache-2.0](LICENSE).

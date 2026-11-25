@@ -38,7 +38,7 @@ objects can be reproduced with `git -C <checkout> show <commit>:<path>`.
 ## Applicability and ExaCopy decisions
 
 - Use [AGENTS.md](../../AGENTS.md) for repository execution rules and
-  [ARCHITECTURE.md](../../ARCHITECTURE.md) for effect ownership. EES-1 calls
+  [architecture guide](../architecture.md) for effect ownership. EES-1 calls
   for typed errors, identifiers and units, checked limits, bounded
   concurrency with owned cancellation, explicit durability and authority,
   and narrow reviewed unsafe boundaries. Preserve context while redacting
@@ -62,7 +62,7 @@ objects can be reproduced with `git -C <checkout> show <commit>:<path>`.
   ExaCopy contributions use Apache-2.0.
 - Use [contract versioning](../architecture/contract-versioning.md) for
   format admission, migrations and recovery. Use the
-  [behavioral inventory](../../specs/compatibility/) for reference fixtures,
+  [behavioral inventory](../specs/compatibility/) for reference fixtures,
   intentionally preserved safety differences and independent oracles.
 - Review shared contract, lockfile, unsafe and authority changes serially.
   Use disjoint ownership for concurrent work. Integrate small atomic
@@ -102,8 +102,8 @@ non-equivalent mutants killed in pure safety crates with zero surviving
 known safety-invariant mutants. Record denominators and dispositions.
 These are the ExaCopy pack's quantitative scope and targets.
 
-Use [VERIFICATION.md](../../VERIFICATION.md) for implemented crate gates
-and [TESTING.md](../../TESTING.md) for executed CI entry points. Required
+Use the [verification guide](../verification.md) for implemented crate gates
+and the [testing guide](../testing.md) for executed CI entry points. Required
 release lanes include all applicable tests, proofs, reference and native
 qualification, dependency reviews, performance, security and independent
 review evidence. The underlying tools' availability, stage and evidence

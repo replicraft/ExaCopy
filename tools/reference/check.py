@@ -31,7 +31,7 @@ def check_evidence(path):
 
 
 def check_compatibility():
-    directory = ROOT / "specs/compatibility"
+    directory = ROOT / "docs/specs/compatibility"
     inventory = read_json(directory / "inventory.v1.json")
     require(inventory["schema_version"] == 1, "unknown compatibility inventory schema")
     targets = inventory["targets"]
@@ -69,7 +69,7 @@ def check_samples(samples, summary, count):
 
 
 def check_performance():
-    directory = ROOT / "specs/performance"
+    directory = ROOT / "docs/specs/performance"
     workloads = read_json(directory / "workloads.v1.json")
     require(workloads["schema_version"] == 1, "unknown performance inventory schema")
     require(all(item["status"] == "not_executed" and "evidence" not in item for item in workloads["future"]),

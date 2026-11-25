@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import subprocess
 
-MATRIX = Path("specs/features/matrix.json")
+MATRIX = Path("docs/specs/features/matrix.json")
 
 
 def check_manifests(policy, packages):

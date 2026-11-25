@@ -1,6 +1,6 @@
 # Roadmap
 
-Milestones describe dependency order. The [CLI guide](crates/clients/cli/README.md)
+Milestones describe dependency order. The [CLI guide](../crates/clients/cli/README.md)
 and the platform work packages describe current behavior and evidence.
 
 | Order | Milestone | Acceptance dependency |
@@ -14,5 +14,5 @@ and the platform work packages describe current behavior and evidence.
 | 7 | Distribution and performance qualification | Reproduce portable locked builds, signed release and install/update behavior, and complete verified-operation measurements on the declared profiles. Complete release evidence with each advertised capability. |
 
 Engineering, compatibility and verification run with each slice. The
-[verification policy](VERIFICATION.md) governs promotion to a supported
+[verification policy](verification.md) governs promotion to a supported
 profile.

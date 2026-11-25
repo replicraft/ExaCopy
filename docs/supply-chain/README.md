@@ -1,6 +1,6 @@
 # Dependency and build evidence
 
-The [Cargo feature matrix](../../specs/features/matrix.json) records the supported
+The [Cargo feature matrix](../specs/features/matrix.json) records the supported
 build profiles and target triples, the CLI dependency footprint on each target,
 and the purpose and feature selection for each direct third-party dependency.
 [Cargo.lock](../../Cargo.lock) pins resolved versions and registry source

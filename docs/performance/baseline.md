@@ -1,6 +1,6 @@
 # Verified local performance baseline
 
-The [workload specification](../../specs/performance/workloads.v1.json) defines the measurement boundary, budgets and future matrix. The first measurements use the locked optimized CLI at `a61ab02127a4bf9c3086ce47ceb310047888f831`. Each subject ran one excluded warm-up and nine measured trials with generated fixtures. Both measured cache profiles are warm. The evidence records each sample, host configuration, compiler, dependency lock, and benchmark runner digest.
+The [workload specification](../specs/performance/workloads.v1.json) defines the measurement boundary, budgets and future matrix. The first measurements use the locked optimized CLI at `d82ce08b78f770e500de9b2c7965f24d625b757a`. Each subject ran one excluded warm-up and nine measured trials with generated fixtures. Both measured cache profiles are warm. The evidence records each sample, host configuration, compiler, dependency lock, and benchmark runner digest.
 
 | Workload | ExaCopy median wall time | Independent comparison median |
 | --- | ---: | ---: |
@@ -11,11 +11,11 @@ The [workload specification](../../specs/performance/workloads.v1.json) defines 
 | 4 KiB verified copy, ext4 guest | 17.51 ms | — |
 | 64 MiB verified copy, ext4 guest | 372.02 ms (172.03 MiB/s) | — |
 
-Comparison measurements cover process launch, the full relation decision and its report. The macOS exact-comparison process peaked at 9.59 MiB RSS across the measured profiles. The large ext4 copy’s median was 236.88 ms process CPU, with 20.75 MiB peak RSS and a 259.02–482.15 ms wall-time range. Small copy was 3.39 ms process CPU and 18.88 MiB peak RSS. See [managed APFS data](../../specs/performance/evidence/macos-apfs-comparison.json) and [ext4 guest data](../../specs/performance/evidence/linux-ext4-copy.json).
+Comparison measurements cover process launch, the full relation decision and its report. The macOS exact-comparison process peaked at 9.59 MiB RSS across the measured profiles. The large ext4 copy’s median was 236.88 ms process CPU, with 20.75 MiB peak RSS and a 259.02–482.15 ms wall-time range. Small copy was 3.39 ms process CPU and 18.88 MiB peak RSS. See [managed APFS data](../specs/performance/evidence/macos-apfs-comparison.json) and [ext4 guest data](../specs/performance/evidence/linux-ext4-copy.json).
 
 The timed copy includes the CLI’s source read, staged write, readback, required metadata and persistence barriers, exclusive publication, receipt commitment and report. Profile creation and fixture generation are outside the clock. The validation pass independently compares bytes, checks the source identity and contents, checks the target mode and mtime, and inspects the authenticated committed job. The timing excludes the validation pass. The copy report marks durability `unconfirmed`. Do not sum multiworker CPU as wall time. Early mismatches have a useful latency but cannot be assigned full-extent throughput. Rsync runs in the guest as a compatibility control with different assurance, so the copy table has no relative rsync figure.
 
-The APFS measurements describe an Apple M1 Pro host reading warm files. The ext4 measurements describe a 4-vCPU aarch64 VM and a virtio-backed guest volume. Physical-media bandwidth, cold-cache comparisons and power-loss qualification remain outside the run. Verification phase timing, random I/O, million-entry trees, physical HDD/SATA/NVMe and network drives, lossy SFTP and embedded WireGuard, Android USB/wireless, recovery costs, GUI latency and repository growth have explicit workloads in the [future matrix](../../specs/performance/workloads.v1.json).
+The APFS measurements describe an Apple M1 Pro host reading warm files. The ext4 measurements describe a 4-vCPU aarch64 VM and a virtio-backed guest volume. Physical-media bandwidth, cold-cache comparisons and power-loss qualification remain outside the run. Verification phase timing, random I/O, million-entry trees, physical HDD/SATA/NVMe and network drives, lossy SFTP and embedded WireGuard, Android USB/wireless, recovery costs, GUI latency and repository growth have explicit workloads in the [future matrix](../specs/performance/workloads.v1.json).
 
 ## Reproduce
 

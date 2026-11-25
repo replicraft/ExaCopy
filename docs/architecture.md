@@ -4,9 +4,9 @@ ExaCopy admits a file operation through typed capabilities. Its preserve-mode
 decision model authorizes exclusive publication only after identities match,
 writers are quiescent, read-back and required metadata checks pass, and
 publication intent is durable. An uncertain result enters reconciliation.
-The [foundation work package](docs/foundation.md) defines the model and its
-assurance boundary. The [local adapter](docs/local-adapter.md) and
-[verified staging](docs/verified-staging.md) record implemented platform
+The [foundation work package](foundation.md) defines the model and its
+assurance boundary. The [local adapter](local-adapter.md) and
+[verified staging](verified-staging.md) record implemented platform
 behavior, recovery paths and their evidence.
 
 | Owner | Boundary |
@@ -21,7 +21,7 @@ behavior, recovery paths and their evidence.
 
 The [dependency matrix](specs/architecture/dependencies.toml) is the
 enforced package-level authority, including transitional exceptions.
-Run the [engineering policy check](TESTING.md). Source review also follows
+Run the [engineering policy check](testing.md). Source review also follows
 the actual call graph because a permitted package edge does not establish
 how authority moves through a function.
 
@@ -30,7 +30,7 @@ When transports are introduced, one capability policy owns admission and
 credential acquisition. Transports receive scoped authorization and
 translate their native observations into the shared contracts.
 
-[Contract versioning](docs/architecture/contract-versioning.md) defines
-independent public and persistent boundaries. [Technical stack](TECH_STACK.md)
-tracks adopted dependencies. [Roadmap](ROADMAP.md) gives the order for
+[Contract versioning](architecture/contract-versioning.md) defines
+independent public and persistent boundaries. [Technical stack](tech-stack.md)
+tracks adopted dependencies. [Roadmap](roadmap.md) gives the order for
 extending the system.

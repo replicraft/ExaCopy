@@ -9,7 +9,7 @@ use crate::finding::Findings;
 
 mod graph;
 
-const MATRIX_PATH: &str = "specs/architecture/dependencies.toml";
+const MATRIX_PATH: &str = "docs/specs/architecture/dependencies.toml";
 const SCHEMA_VERSION: u32 = 1;
 
 #[derive(Deserialize)]
