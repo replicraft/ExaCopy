@@ -61,8 +61,9 @@ if ! run_tlc CopyRecovery >"$positive" 2>&1 ||
 fi
 
 for action in DiscardLateWrite ExternalArrival ApplyNoClobber LoseReplyBeforeEffect \
-    LoseReplyAfterEffect ReconcilePublished RetryAfterObservation ObserveConflict \
-    CommitReceipt CrashKeepingRename CrashLosingRename Restart; do
+    LoseReplyAfterEffect ReconcilePublished RetryAfterObservation RetryAfterCrash \
+    QuiesceRetainedStage ApplyRetainedStageNoClobber ObserveRetainedStageConflict \
+    ObserveConflict CommitReceipt CrashKeepingRename CrashLosingRename Restart; do
     # TLC reports counts as distinct successors attributed to this action, then all successors.
     if ! grep -Eq "^<$action line .*>: [0-9]+:[1-9][0-9]*$" "$positive"; then
         cat "$positive" >&2
@@ -85,3 +86,19 @@ printf '%s\n' 'CopyRecovery safety check passed'
 grep -E 'states generated,|depth of the complete state graph' "$positive"
 printf '%s\n' 'CopyRecovery mutant violated PriorPublicationEvidence as expected'
 grep -E '^State [0-9]+:|states generated,' "$negative"
+
+retry_negative="$logs/CopyRecoveryUnverifiedRetry.log"
+mutant_exit=0
+run_tlc CopyRecoveryUnverifiedRetry >"$retry_negative" 2>&1 || mutant_exit=$?
+if [ "$mutant_exit" -ne 12 ] ||
+    ! grep -Fqx 'Error: Invariant PriorPublicationEvidence is violated.' "$retry_negative" ||
+    ! grep -Eq '^State [0-9]+: <RetryAfter(Observation|Crash) line ' "$retry_negative" ||
+    ! grep -Eq '^State [0-9]+: <ApplyRetainedStageNoClobber line ' "$retry_negative"; then
+    cat "$retry_negative" >&2
+    fail "Expected a PriorPublicationEvidence counterexample during retained-stage retry (TLC exit $mutant_exit)"
+fi
+
+printf '%s\n' 'CopyRecovery unverified retry mutant violated PriorPublicationEvidence as expected'
+# The evidence recorder keeps the original negative control separately.
+sed -n '/^Error: Invariant /,/^The coverage statistics/{ /^The coverage statistics/!p; }' "$retry_negative"
+grep -E 'states generated,' "$retry_negative"

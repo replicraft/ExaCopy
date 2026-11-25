@@ -134,6 +134,12 @@ const SUCCESS_PATH: [Milestone; 10] = [
 	},
 ];
 
+const RETAINED_STAGE_REOPENED: Milestone = Milestone {
+	event: CopyEvent::RetainedStageReopened,
+	phase: CopyPhase::Prepared,
+	effect: None,
+};
+
 const STOP_EVENTS: [CopyEvent; 6] = [
 	CopyEvent::Conflict,
 	CopyEvent::OutcomeUncertain,
@@ -159,8 +165,8 @@ struct AcceptedHistory {
 impl AcceptedHistory {
 	fn phase(&self) -> CopyPhase {
 		self.events.last().map_or(CopyPhase::Planned, |event| {
-			SUCCESS_PATH
-				.iter()
+			core::iter::once(&RETAINED_STAGE_REOPENED)
+				.chain(&SUCCESS_PATH)
 				.find(|milestone| milestone.event == *event)
 				.map_or_else(|| stop_phase(*event), |milestone| milestone.phase)
 		})
@@ -187,6 +193,10 @@ impl AcceptedHistory {
 				event,
 			};
 		};
+		if self.events.is_empty() && event == RETAINED_STAGE_REOPENED.event {
+			self.events.push(event);
+			return Decision::Accept(RETAINED_STAGE_REOPENED.effect);
+		}
 		if milestone.event == event {
 			self.events.push(event);
 			return Decision::Accept(milestone.effect);
@@ -297,6 +307,7 @@ fn all_events() -> impl Iterator<Item = CopyEvent> + Clone {
 	SUCCESS_PATH
 		.iter()
 		.map(|milestone| milestone.event)
+		.chain([RETAINED_STAGE_REOPENED.event])
 		.chain(STOP_EVENTS)
 }
 
@@ -401,4 +412,52 @@ fn tlc_early_publication_counterexample_stops_before_namespace_effect() {
 		}),
 	);
 	assert_eq!(session.phase(), CopyPhase::Prepared);
+}
+
+#[test]
+fn retained_stage_retry_rejects_old_evidence_and_authorizes_one_fresh_effect() {
+	let old_binding = Sender::OldEpoch.binding();
+	let binding = Sender::Bound.binding();
+	let mut session = CopySession::new(binding);
+	assert_eq!(
+		session.apply(binding, CopyEvent::RetainedStageReopened),
+		Ok(None)
+	);
+
+	for milestone in SUCCESS_PATH[1..]
+		.iter()
+		.take_while(|milestone| milestone.event != CopyEvent::PublishIntentRecorded)
+	{
+		let phase = session.phase();
+		assert_eq!(
+			session.apply(binding, CopyEvent::PublishIntentRecorded),
+			Err(TransitionError::InvalidEvent {
+				phase,
+				event: CopyEvent::PublishIntentRecorded,
+			})
+		);
+		assert_eq!(
+			session.apply(old_binding, milestone.event),
+			Err(TransitionError::MismatchedBinding)
+		);
+		assert_eq!(session.apply(binding, milestone.event), Ok(None));
+		assert_eq!(session.phase(), milestone.phase);
+	}
+
+	let event = CopyEvent::PublishIntentRecorded;
+	assert_eq!(
+		session.apply(old_binding, event),
+		Err(TransitionError::MismatchedBinding)
+	);
+	assert!(matches!(
+		session.apply(binding, event),
+		Ok(Some(CopyEffect::PublishNoClobber(permit))) if permit.binding() == binding
+	));
+	assert_eq!(
+		session.apply(binding, event),
+		Err(TransitionError::InvalidEvent {
+			phase: CopyPhase::PublishIntent,
+			event,
+		})
+	);
 }

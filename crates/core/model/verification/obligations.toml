@@ -17,7 +17,7 @@ symbols = ["CopyEffect", "PublishNoClobber"]
 assumptions = ["The model's exclusive publication primitive preserves an incumbent atomically.", "The abstract destination is a single protected namespace entry."]
 gates = ["rust", "tlc"]
 rust = { test = "repeated_prepare_and_publish_intent_cannot_authorize_a_second_effect", file = "tests/transaction.rs", oracle = "The publication event authorizes a single exclusive request for the bound stage." }
-tlc = { spec = "verification/tla/CopyRecovery.tla", config = "verification/tla/CopyRecovery.cfg", negative_control = "verification/tla/CopyRecoveryEarlyPublication.cfg", model_bounds = ["One entry and target name, two epochs, one crash."], seeds = ["TLC seed and fingerprint index 0."], oracle = "TLC exhausts the safety configuration including incumbent preservation and detects the deliberate early-publication mutation." }
+tlc = { spec = "verification/tla/CopyRecovery.tla", config = "verification/tla/CopyRecovery.cfg", negative_control = "verification/tla/CopyRecoveryEarlyPublication.cfg", model_bounds = ["One entry and target name, two source views, one crash and one retained-stage recovery epoch."], seeds = ["TLC seed and fingerprint index 0."], oracle = "TLC exhausts the safety configuration including incumbent preservation during retained-stage retry and detects the publication mutations." }
 
 [[obligation]]
 id = "P-003"
@@ -27,7 +27,7 @@ symbols = ["CopySession::apply", "CopyPhase"]
 assumptions = ["The caller reports only established identity, quiescence, data and journal barriers, verification, metadata and sealing observations.", "The coordinator gives each new attempt a unique binding."]
 gates = ["rust", "tlc"]
 rust = { test = "tlc_early_publication_counterexample_stops_before_namespace_effect", file = "tests/transaction.rs", oracle = "The Rust trace rejects publication intent before the reported stage is verified and sealed." }
-tlc = { spec = "verification/tla/CopyRecovery.tla", config = "verification/tla/CopyRecovery.cfg", negative_control = "verification/tla/CopyRecoveryEarlyPublication.cfg", model_bounds = ["One entry and target name, two epochs, one crash."], seeds = ["TLC seed and fingerprint index 0."], oracle = "TLC exhausts the safety configuration and rejects the early-publication mutant specifically through PriorPublicationEvidence." }
+tlc = { spec = "verification/tla/CopyRecovery.tla", config = "verification/tla/CopyRecovery.cfg", negative_control = "verification/tla/CopyRecoveryEarlyPublication.cfg", model_bounds = ["One entry and target name, two source views, one crash and one retained-stage recovery epoch."], seeds = ["TLC seed and fingerprint index 0."], oracle = "TLC exhausts the safety configuration and rejects both early publication and an unverified retained-stage retry through PriorPublicationEvidence." }
 
 [[obligation]]
 id = "P-004"

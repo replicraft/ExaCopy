@@ -7,7 +7,7 @@ use crate::identity::CopyBinding;
 pub enum CopyPhase {
 	/// The copy has yet to prepare a private stage.
 	Planned,
-	/// The private stage is available for the source transfer.
+	/// The private stage is available for transfer or fresh recovery checks.
 	Prepared,
 	/// All data writers have joined and their permits have been revoked.
 	Quiesced,
@@ -63,6 +63,9 @@ impl CopyPhase {
 pub enum CopyEvent {
 	/// A private stage was prepared for the attempt.
 	StagePrepared,
+	/// Reconciliation reopened the owned stage with the destination observed absent.
+	/// A new attempt must establish the evidence required for its own publication intent.
+	RetainedStageReopened,
 	/// All writers joined and their write permits were revoked.
 	WritersJoined,
 	/// The stage data barrier succeeded.
@@ -210,7 +213,9 @@ impl CopySession {
 		}
 
 		let next = match (self.phase, event) {
-			(CopyPhase::Planned, CopyEvent::StagePrepared) => CopyPhase::Prepared,
+			(CopyPhase::Planned, CopyEvent::StagePrepared | CopyEvent::RetainedStageReopened) => {
+				CopyPhase::Prepared
+			}
 			(CopyPhase::Prepared, CopyEvent::WritersJoined) => CopyPhase::Quiesced,
 			(CopyPhase::Quiesced, CopyEvent::DataFlushed) => CopyPhase::DataFlushed,
 			(CopyPhase::DataFlushed, CopyEvent::ReadbackVerified) => CopyPhase::Verified,
@@ -240,9 +245,9 @@ impl CopySession {
 			(phase, event) => return Err(TransitionError::InvalidEvent { phase, event }),
 		};
 		self.phase = next;
-		Ok(match next {
-			CopyPhase::Prepared => Some(CopyEffect::ReadSource(ReadSource { binding })),
-			CopyPhase::PublishIntent => {
+		Ok(match event {
+			CopyEvent::StagePrepared => Some(CopyEffect::ReadSource(ReadSource { binding })),
+			CopyEvent::PublishIntentRecorded => {
 				Some(CopyEffect::PublishNoClobber(PublishNoClobber { binding }))
 			}
 			_ => None,
