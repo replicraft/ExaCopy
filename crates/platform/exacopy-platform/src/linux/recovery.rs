@@ -23,7 +23,8 @@ mod writer;
 
 pub use lease::RecoveryReadLease;
 pub use writer::{
-	RecoveryReceiptDirectory, RecoveryStageDirectory, RecoveryWriteLease, RetainedStage,
+	FreshRecoveryStage, RecoveryReceiptDirectory, RecoveryStageDirectory, RecoveryWriteLease,
+	RetainedStage,
 };
 
 #[cfg(test)]

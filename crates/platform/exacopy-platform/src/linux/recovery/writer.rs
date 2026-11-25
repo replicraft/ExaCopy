@@ -17,9 +17,11 @@ use super::{
 	mount_id, open_checked_record, open_path, recheck_regular,
 };
 
+mod fresh;
 mod resume;
 mod retained;
 
+pub use fresh::FreshRecoveryStage;
 pub use resume::RecoveryStageDirectory;
 pub use retained::RetainedStage;
 

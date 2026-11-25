@@ -35,8 +35,8 @@ pub use process_crash::{
 	ProcessCrashProfileId, observe_process_crash_environment,
 };
 pub use recovery::{
-	RecoveryFile, RecoveryInventory, RecoveryJob, RecoveryReadLease, RecoveryReceiptDirectory,
-	RecoveryStageDirectory, RecoveryWriteLease, RetainedStage,
+	FreshRecoveryStage, RecoveryFile, RecoveryInventory, RecoveryJob, RecoveryReadLease,
+	RecoveryReceiptDirectory, RecoveryStageDirectory, RecoveryWriteLease, RetainedStage,
 };
 pub use source::{
 	ExtendedAttributes, ReadError, ReadRoot, SourceFile, SourceObservation, SourceTimestamp,
