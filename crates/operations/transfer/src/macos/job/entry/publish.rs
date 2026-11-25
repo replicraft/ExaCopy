@@ -103,10 +103,7 @@ impl<'entry> PreparedDarwinEntry<'entry> {
 							self.journal,
 							&intent_frame,
 							outcome,
-							DarwinPublicationNames {
-								target: DarwinNamespaceObservation::Unobserved,
-								stage: DarwinNamespaceObservation::Unobserved,
-							},
+							incomplete_names(&error)?,
 						)
 						.map(|_| ())
 					})
@@ -283,6 +280,25 @@ fn classify(
 		_ => DarwinPublicationOutcome::UncertainRename,
 	};
 	(outcome, CopyEvent::OutcomeUncertain)
+}
+
+fn incomplete_names(error: &PublishError) -> Result<DarwinPublicationNames, DarwinCopyFailure> {
+	if let PublishError::Renamed {
+		observed_target: Some(target),
+		..
+	} = error
+	{
+		return Ok(DarwinPublicationNames {
+			target: DarwinNamespaceObservation::Present(
+				native_identity(*target).map_err(DarwinCopyFailure::Observation)?,
+			),
+			stage: DarwinNamespaceObservation::Absent,
+		});
+	}
+	Ok(DarwinPublicationNames {
+		target: DarwinNamespaceObservation::Unobserved,
+		stage: DarwinNamespaceObservation::Unobserved,
+	})
 }
 
 fn record_observation(

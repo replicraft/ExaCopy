@@ -423,12 +423,14 @@ fn even_when_a_barrier_fails_both_are_attempted_and_rename_is_retained() {
 		let Err(PublishError::Renamed {
 			barriers: Some(barriers),
 			observation: None,
+			observed_target: Some(observed_target),
 			policy_error: None,
 		}) = result
 		else {
 			panic!("rename evidence lost after directory failure: {result:?}");
 		};
 		assert_eq!(syncs, [stage_directory, destination_directory]);
+		assert_eq!(observed_target.inode().get(), before.1);
 		assert_eq!(barriers.stage().is_some(), fail_stage);
 		assert_eq!(barriers.destination().is_some(), !fail_stage);
 		assert_eq!(identity(&target_path), before);
@@ -467,6 +469,7 @@ fn post_rename_rebinding_reports_observation_failure_after_both_barriers() {
 		Err(PublishError::Renamed {
 			barriers: None,
 			observation: Some(PublishedObservationError::NamesChanged),
+			observed_target: None,
 			policy_error: None,
 		})
 	));

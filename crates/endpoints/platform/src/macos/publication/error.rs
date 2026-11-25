@@ -5,8 +5,8 @@ use std::io;
 
 use rustix::io::Errno;
 
-use super::super::ManagedReadError;
 use super::super::staging::StageError;
+use super::super::{ManagedObjectIdentity, ManagedReadError};
 
 /// An attempted exclusive publication did not produce complete success evidence.
 #[derive(Debug)]
@@ -37,6 +37,8 @@ pub enum PublishError {
 		barriers: Option<DirectoryBarrierFailures>,
 		/// Failure to independently observe the rename, if any.
 		observation: Option<PublishedObservationError>,
+		/// Checked target identity when the former stage name was observed absent.
+		observed_target: Option<ManagedObjectIdentity>,
 		/// Failure to restore the scoped thread policy, if any.
 		policy_error: Option<ManagedReadError>,
 	},

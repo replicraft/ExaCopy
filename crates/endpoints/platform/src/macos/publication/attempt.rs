@@ -172,10 +172,17 @@ pub(super) fn finish_attempt(
 		Some(Ok(RenameOutcome::Renamed {
 			barriers,
 			observation,
-		})) => Err(PublishError::Renamed {
-			barriers,
-			observation: observation.err(),
-			policy_error,
-		}),
+		})) => {
+			let (observed_target, observation) = match observation {
+				Ok(names) => (Some(names.target), None),
+				Err(error) => (None, Some(error)),
+			};
+			Err(PublishError::Renamed {
+				barriers,
+				observation,
+				observed_target,
+				policy_error,
+			})
+		}
 	}
 }

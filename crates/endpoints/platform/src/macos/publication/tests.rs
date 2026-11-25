@@ -53,8 +53,9 @@ fn complete_publication_returns_only_the_supplied_identities() {
 		Err(PublishError::Renamed {
 			barriers: None,
 			observation: None,
+			observed_target: Some(observed_target),
 			policy_error: Some(_),
-		})
+		}) if observed_target == target
 	));
 }
 
@@ -82,11 +83,13 @@ fn a_multiple_failure_report_keeps_each_directory_error_and_known_rename() {
 	let Err(PublishError::Renamed {
 		barriers: Some(barriers),
 		observation: None,
+		observed_target: Some(observed_target),
 		policy_error: Some(_),
 	}) = result
 	else {
 		panic!("expected both barrier failures and policy failure after known rename: {result:?}");
 	};
+	assert_eq!(observed_target, identity);
 	assert_eq!(
 		barriers.stage().and_then(io::Error::raw_os_error),
 		Some(libc::EIO)
