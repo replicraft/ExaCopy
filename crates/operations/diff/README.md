@@ -14,3 +14,17 @@ This slice covers the local single-file portions of R-007, R-093, R-097 and R-10
 cargo nextest run --locked -p exacopy-diff
 cargo test --locked -p exacopy-diff --doc
 ```
+
+## Bounded parallel comparison
+
+The opt-in `exacopy_diff::linux::compare_parallel` entry point uses the same held read-only views, observation checks, and byte comparison. The caller chooses a worker ceiling from 1 through 16. The active count also depends on the stream extent and scratch available. The same 8 MiB cap applies to the entire comparison, split among disjoint worker buffers. Each worker reads a contiguous logical range in order. The comparison has no work queue and uses at most two held file capabilities.
+
+The coordinator joins the workers and reduces their outcomes in byte order. A mismatch can only be returned if every earlier window read successfully and compared equal. An outstanding speculative read in a later range joins before any result is returned. Thread start and worker panic failures are inconclusive. The final observation check follows the joins. Files remain live-observed, and results use only the bytes actually read.
+
+The portable tests and the [three-range scheduling model](verification/tla/ParallelCompare.tla) exercise P-036. Linux adapter tests exercise the public API with sparse files, ordered mismatches, stale observations and content preservation. These checks cover a per-call worker and scratch budget, contributing to R-082 and A-097. Applications that run simultaneous comparisons account for their aggregate budgets. The CLI uses the serial comparison. This work package covers the per-comparison budget and held Linux file views.
+
+Run the local gate using the TLC and Temurin versions pinned in the [TLC toolchain lock](verification/tla/toolchain.lock.json). Set `TLC_LOG_DIR` to retain the model and negative-control logs.
+
+```sh
+crates/operations/diff/verification/check.sh
+```

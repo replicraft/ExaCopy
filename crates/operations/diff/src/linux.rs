@@ -1,10 +1,14 @@
 //! Exact comparison for regular storage files opened through Linux read capabilities.
 
+use std::num::NonZeroUsize;
+
 use exacopy_platform::linux::{ReadError, SourceFile};
 
+use crate::compare::parallel::compare_views_parallel;
 use crate::compare::{ReadView, compare_views};
 
 pub use crate::compare::error::{CompareError, Side};
+pub use crate::compare::parallel::MAX_WORKERS;
 pub use crate::compare::{Difference, LiveComparison, MAX_SCRATCH_BYTES};
 
 /// Compare live bytes from two held regular storage files.
@@ -31,6 +35,27 @@ pub fn compare(
 	scratch: &mut [u8],
 ) -> Result<LiveComparison, CompareError<ReadError>> {
 	compare_views(left, right, scratch)
+}
+
+/// Compare held live file views using bounded, concurrent positioned reads.
+///
+/// The caller supplies at most [`MAX_SCRATCH_BYTES`] of scratch for the entire
+/// comparison and a worker ceiling of at most [`MAX_WORKERS`]. Each worker uses
+/// one disjoint logical range and at least two of the supplied scratch bytes.
+/// A one-worker comparison runs on the calling thread. All started workers
+/// join before the comparison returns. Observation checks and result semantics
+/// match [`compare`]; reads past the first difference can occur concurrently.
+///
+/// # Errors
+/// Invalid input, an observation failure, a worker start failure or panic,
+/// or a read failure before a first difference makes the result inconclusive.
+pub fn compare_parallel(
+	left: &SourceFile,
+	right: &SourceFile,
+	scratch: &mut [u8],
+	workers: NonZeroUsize,
+) -> Result<LiveComparison, CompareError<ReadError>> {
+	compare_views_parallel(left, right, scratch, workers)
 }
 
 impl ReadView for SourceFile {

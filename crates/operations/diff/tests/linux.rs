@@ -3,11 +3,14 @@
 
 use std::fs::{self, DirBuilder, File};
 use std::io::ErrorKind;
+use std::num::NonZeroUsize;
 use std::os::unix::fs::{DirBuilderExt as _, FileExt as _, MetadataExt as _};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use exacopy_diff::linux::{CompareError, Difference, LiveComparison, Side, compare};
+use exacopy_diff::linux::{
+	CompareError, Difference, LiveComparison, Side, compare, compare_parallel,
+};
 use exacopy_endpoint::UnixComponent;
 use exacopy_platform::linux::{ReadError, ReadRoot, SourceFile};
 
@@ -90,6 +93,62 @@ fn sparse_holes_compare_as_logical_zeros_and_can_contain_a_mismatch() {
 			offset: CHANGED_OFFSET,
 		})
 	);
+}
+
+#[test]
+fn compares_sparse_held_views_with_multiple_concurrent_ranges() {
+	let fixture = Fixture::new();
+	let length = 24_577;
+	let earliest = 9_213;
+	let later = 18_321;
+	let left_path = fixture.0.join(LEFT);
+	let left_file = File::create(&left_path).expect("create sparse fixture");
+	left_file
+		.set_len(length)
+		.expect("extend left with sparse zeros");
+	let right_path = fixture.0.join(RIGHT);
+	let right_file = File::create(&right_path).expect("create second sparse fixture");
+	right_file
+		.set_len(length)
+		.expect("extend right with sparse zeros");
+	let left = fixture.open(LEFT);
+	let right = fixture.open(RIGHT);
+	let workers = NonZeroUsize::new(4).expect("nonzero ceiling");
+	let mut scratch = [0; 4097];
+
+	assert_eq!(
+		compare_parallel(&left, &right, &mut scratch, workers).expect("compare sparse bytes"),
+		LiveComparison::Equal { length }
+	);
+	right_file
+		.set_len(length - 1)
+		.expect("truncate recorded extent");
+	right_file
+		.write_all_at(b"x", later)
+		.expect("write later difference");
+	right_file
+		.write_all_at(b"y", earliest)
+		.expect("write earlier difference");
+	assert!(matches!(
+		compare_parallel(&left, &right, &mut scratch, workers),
+		Err(CompareError::Observation {
+			side: Side::Right,
+			..
+		})
+	));
+	right_file.set_len(length).expect("restore logical extent");
+	let right = fixture.open(RIGHT);
+	assert_eq!(
+		compare_parallel(&left, &right, &mut scratch, workers).expect("compare changed fixture"),
+		LiveComparison::Different(Difference::FirstByte { offset: earliest })
+	);
+	let expected_left = vec![0; usize::try_from(length).expect("fixture length fits")];
+	let mut expected_right = expected_left.clone();
+	expected_right[usize::try_from(earliest).expect("fixture offset fits")] = b'y';
+	expected_right[usize::try_from(later).expect("fixture offset fits")] = b'x';
+	assert_eq!(fs::read(left_path).expect("read left"), expected_left);
+	assert_eq!(fs::read(right_path).expect("read right"), expected_right);
+	assert_eq!(fs::read_dir(&fixture.0).expect("list directory").count(), 2);
 }
 
 #[test]

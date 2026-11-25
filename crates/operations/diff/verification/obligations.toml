@@ -1,0 +1,16 @@
+schema_version = 1
+
+[[obligation]]
+id = "P-036"
+requirement_ids = ["R-082", "R-093", "R-097", "R-100"]
+source = "src/compare/parallel.rs"
+symbols = ["compare_views_parallel", "compare_parallel", "partition"]
+assumptions = [
+    "An exact positioned read fills its supplied bytes synchronously or returns an error.",
+    "The serial oracle and model use one fixed set of per-range observations. Actual live inputs may change.",
+    "The stop marker can be observed late. A worker skips only after a lower range has a decisive outcome or a worker-control failure has occurred.",
+    "The model uses each worker's earliest decisive window outcome and checks result selection and joining. It abstracts individual I/O, byte offsets, atomic representation, and lexicographic ordering within a range.",
+]
+gates = ["rust", "tlc"]
+rust = { file = "src/compare/parallel/tests.rs", test = "compare::parallel::tests::returns_first_mismatch_for_every_pair_of_positions_and_odd_buffer_sizes", oracle = "The earliest deliberately changed byte is the reported offset, across multiple worker ceilings and scratch splits." }
+tlc = { spec = "verification/tla/ParallelCompare.tla", config = "verification/tla/ParallelCompare.cfg", negative_control = "verification/tla/ParallelCompareEarlyReturn.cfg", model_bounds = ["Three ordered read ranges, all 27 equal/mismatch/read-error assignments, arbitrary worker completion, optional worker start failure and panic."], seeds = ["TLC seed and fingerprint index 0."], oracle = "The abstract comparison cannot return early and preserves the serial decision over a fixed observation. Removing the join guard violates AllJoinedAtReturn." }

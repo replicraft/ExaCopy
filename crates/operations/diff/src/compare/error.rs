@@ -1,4 +1,6 @@
-use std::{error, fmt};
+use std::{error, fmt, io};
+
+use super::parallel::MAX_WORKERS;
 
 /// Operand of a byte comparison.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,6 +38,23 @@ pub enum CompareError<E> {
 	},
 	/// Comparing two nonempty streams of equal length requires at least two bytes of scratch.
 	InsufficientScratch,
+	/// More workers requested than a single comparison can admit.
+	TooManyWorkers {
+		/// Supplied worker ceiling.
+		workers: usize,
+	},
+	/// The operating system could not start a read worker.
+	WorkerStart {
+		/// Start of the worker's assigned range in bytes.
+		offset: u64,
+		/// Original thread start error.
+		source: io::Error,
+	},
+	/// A worker did not complete normally.
+	WorkerPanicked {
+		/// Start of the worker's assigned range in bytes.
+		offset: u64,
+	},
 	/// An intermediate byte range could not be represented.
 	InvalidRange,
 	/// The recorded observation could not be confirmed around the comparison.
@@ -74,6 +93,21 @@ impl<E: fmt::Display> fmt::Display for CompareError<E> {
 			Self::InsufficientScratch => {
 				formatter.write_str("comparison requires two scratch bytes")
 			}
+			Self::TooManyWorkers { workers } => {
+				write!(
+					formatter,
+					"comparison requested {workers} workers, limit is {MAX_WORKERS}"
+				)
+			}
+			Self::WorkerStart { offset, source } => {
+				write!(
+					formatter,
+					"comparison worker for byte {offset} could not start ({source})"
+				)
+			}
+			Self::WorkerPanicked { offset } => {
+				write!(formatter, "comparison worker for byte {offset} panicked")
+			}
 			Self::InvalidRange => {
 				formatter.write_str("comparison byte range cannot be represented")
 			}
@@ -98,6 +132,7 @@ impl<E: error::Error + 'static> error::Error for CompareError<E> {
 	fn source(&self) -> Option<&(dyn error::Error + 'static)> {
 		match self {
 			Self::Observation { source, .. } | Self::Read { source, .. } => Some(source),
+			Self::WorkerStart { source, .. } => Some(source),
 			_ => None,
 		}
 	}
