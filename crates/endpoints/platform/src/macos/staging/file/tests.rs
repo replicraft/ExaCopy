@@ -1,6 +1,7 @@
 use std::cell::Cell;
 use std::fs;
 use std::io;
+use std::os::unix::fs::{FileExt as _, MetadataExt as _};
 
 use exacopy_endpoint::{IoError, MAX_FILE_LENGTH, MAX_INTERRUPTED_RETRIES};
 use rustix::io::Errno;
@@ -48,7 +49,6 @@ fn successful_short_write_retries_only_the_remaining_suffix_at_its_position() {
 			calls += 1;
 			assert_eq!(offset, u64::try_from(calls - 1).unwrap());
 			assert_eq!(bytes, &b"abcdef"[calls - 1..]);
-			use std::os::unix::fs::FileExt as _;
 			file.write_at(&bytes[..1], offset)
 		})
 		.unwrap();
@@ -98,16 +98,13 @@ fn a_failed_suffix_retains_a_written_prefix_and_retires_the_writer() {
 	let root = fixture.bind();
 	let directory = open_staging(&root);
 	let mut writer = make_stage(&directory, 6).unwrap();
-	let failure = writer.write_next_with(b"abcdef", |file, offset, bytes| {
-		use std::os::unix::fs::FileExt as _;
-		match offset {
-			0 => file.write_at(&bytes[..2], offset),
-			2 => {
-				assert_eq!(bytes, b"cdef");
-				Err(io::Error::from_raw_os_error(libc::EIO))
-			}
-			_ => panic!("unexpected offset {offset}"),
+	let failure = writer.write_next_with(b"abcdef", |file, offset, bytes| match offset {
+		0 => file.write_at(&bytes[..2], offset),
+		2 => {
+			assert_eq!(bytes, b"cdef");
+			Err(io::Error::from_raw_os_error(libc::EIO))
 		}
+		_ => panic!("unexpected offset {offset}"),
 	});
 	assert!(matches!(
 		failure,
@@ -224,4 +221,36 @@ fn hard_link_added_to_private_file_before_write_retires_without_touching_either_
 	));
 	assert_eq!(fs::metadata(alias).unwrap().len(), 0);
 	assert_eq!(fs::metadata(fixture.stage_path()).unwrap().len(), 0);
+}
+
+#[test]
+fn wrong_length_after_reported_write_retires_writer_and_retains_stage() {
+	let fixture = Fixture::new();
+	let root = fixture.bind();
+	let directory = open_staging(&root);
+	let mut writer = make_stage(&directory, 1).expect("create a one-byte stage");
+	let original = writer.observe_identity().expect("hold the private inode");
+
+	let error = writer
+		.write_next_with(b"x", |file, offset, bytes| {
+			assert_eq!(offset, 0);
+			// Simulate a write implementation reporting success without writing.
+			assert_eq!(file.metadata()?.len(), 0);
+			Ok(bytes.len())
+		})
+		.expect_err("a transfer count cannot stand in for the actual inode extent");
+
+	assert!(matches!(error, StageError::StageChanged));
+	assert!(matches!(
+		writer.unwritten_length(),
+		Err(StageError::WriterRetired)
+	));
+	assert!(matches!(
+		writer.flush_and_close(),
+		Err(StageError::WriterRetired)
+	));
+	let retained = fs::metadata(fixture.stage_path()).expect("retain the original inode");
+	assert_eq!(retained.ino(), original.inode().get());
+	assert_eq!(retained.len(), 0);
+	assert!(!fixture.path("target").exists());
 }

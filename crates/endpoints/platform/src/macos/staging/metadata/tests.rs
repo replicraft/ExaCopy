@@ -1,7 +1,9 @@
+use std::error::Error as _;
 use std::fs::{self, File};
 use std::io::{self, Write as _};
 use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _};
 
+use exacopy_endpoint::{ClosedStage, FreshStage, MetadataSource, ReadView, RequiredMetadataStage};
 use rustix::fs::{Timespec, Timestamps, XattrFlags};
 
 use super::super::super::{
@@ -36,18 +38,34 @@ fn visible_source_attribute_refuses_metadata_application_and_preserves_private_s
 			ManagedReadGrant::trusted_owner_authorizes_provisioned_root(),
 		)
 		.expect("obtain the read-only source before strict metadata admission");
+	let metadata_error = MetadataSource::admit_metadata(&source)
+		.expect_err("metadata preflight rejects a visible source xattr");
+	assert!(matches!(
+		metadata_error,
+		ManagedReadError::BasicMetadata(BasicMetadataError::ExtendedAttributes)
+	));
+
 	let staging = open_staging(&root);
 	let mut writer = make_stage(&staging, source.length()).unwrap();
+	assert_eq!(
+		FreshStage::unwritten_length(&writer).unwrap(),
+		source.length()
+	);
 	let mut bytes = [0; BODY.len()];
 	source.read_exact_at(0, &mut bytes).unwrap();
 	source.revalidate().unwrap();
-	writer.write_next(&bytes).unwrap();
-	let stage = writer.flush_and_close().unwrap();
+	FreshStage::write_next(&mut writer, &bytes).unwrap();
+	assert!(matches!(
+		FreshStage::unwritten_length(&writer),
+		Err(StageError::AlreadyWritten)
+	));
+	let stage = FreshStage::sync_and_close(writer).unwrap();
 	{
-		let reader = stage.open_read_back().unwrap();
+		let reader = ClosedStage::open_read_back(&stage).unwrap();
+		assert_eq!(ReadView::length(&reader), source.length());
 		let mut readback = [0; BODY.len()];
-		reader.read_exact_at(0, &mut readback).unwrap();
-		reader.revalidate().unwrap();
+		ReadView::read_exact_at(&reader, 0, &mut readback).unwrap();
+		ReadView::recheck_observation(&reader).unwrap();
 		assert_eq!(
 			&readback, BODY,
 			"verify stage bytes before metadata application"
@@ -56,9 +74,19 @@ fn visible_source_attribute_refuses_metadata_application_and_preserves_private_s
 
 	let stage_path = fixture.stage_path();
 	let before = fs::symlink_metadata(&stage_path).unwrap();
-	let error = stage
-		.apply_basic_metadata(&source)
+	let error = RequiredMetadataStage::apply_metadata(stage, &source)
 		.expect_err("strict metadata application must refuse a visible source xattr");
+	let source_error = error
+		.source()
+		.and_then(|cause| cause.downcast_ref::<ManagedReadError>())
+		.expect("the stage error exposes its typed source admission failure");
+	assert!(matches!(
+		source_error
+			.source()
+			.and_then(|cause| cause.downcast_ref::<BasicMetadataError>()),
+		Some(BasicMetadataError::ExtendedAttributes)
+	));
+	assert!(error.to_string().contains("metadata"));
 	assert!(
 		matches!(
 			error,

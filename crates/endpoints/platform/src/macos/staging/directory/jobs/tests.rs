@@ -367,3 +367,62 @@ fn failed_file_barrier_reports_reconciliation_and_preserves_artifact() {
 		})
 	));
 }
+
+#[test]
+fn job_destination_observation_requires_the_container_and_an_absent_target() {
+	let fixture = Fixture::new();
+	let root = fixture.bind();
+	let container = open_staging(&root);
+	let target = name(TARGET.as_bytes());
+	let expected = root
+		.observe_identity()
+		.expect("observe the destination root");
+	assert_eq!(
+		container
+			.observe_empty_job_destination(target)
+			.expect("observe an absent public target"),
+		expected
+	);
+	assert!(
+		!job_path(&fixture).exists(),
+		"observation creates no private job"
+	);
+	let job = container
+		.create_job_directory(job_name())
+		.expect("create a private job");
+	let nested = job
+		.create_stage_directory()
+		.expect("create a nested stage directory");
+	assert!(matches!(
+		nested.observe_empty_job_destination(target),
+		Err(JobError::NestedJob)
+	));
+
+	let incumbent = fixture.path(TARGET);
+	let missing = Path::new("missing-symlink-referent");
+	symlink(missing, &incumbent).expect("reserve the public name with a dangling symlink");
+	let inode = fs::symlink_metadata(&incumbent)
+		.expect("observe the incumbent")
+		.ino();
+	assert!(matches!(
+		container.observe_empty_job_destination(target),
+		Err(JobError::Managed(super::StageError::NameCollision))
+	));
+	assert_eq!(
+		fs::read_link(&incumbent).expect("retain the dangling symlink"),
+		missing
+	);
+	assert_eq!(
+		fs::symlink_metadata(incumbent)
+			.expect("retain the incumbent identity")
+			.ino(),
+		inode
+	);
+	assert!(!fixture.path("missing-symlink-referent").exists());
+	assert_eq!(
+		fs::read_dir(job_path(&fixture))
+			.expect("inspect the job layout")
+			.count(),
+		1
+	);
+}

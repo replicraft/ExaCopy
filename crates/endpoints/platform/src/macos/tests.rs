@@ -1,5 +1,7 @@
+use std::error::Error as _;
 use std::fs::{self, File};
-use std::os::unix::fs::symlink;
+use std::io;
+use std::os::unix::fs::{PermissionsExt as _, symlink};
 use std::process::Command;
 
 use exacopy_endpoint::UnixComponent;
@@ -96,4 +98,43 @@ fn an_earlier_regular_observation_does_not_follow_a_replacement_link() {
 	fs::rename(&child, fixture.path("moved")).expect("move original child");
 	symlink("moved", child).expect("install replacement symlink");
 	assert_eq!(probe(&root, b"child"), RegularFileProbe::SymbolicLink);
+}
+
+#[test]
+fn an_inaccessible_lookup_is_a_system_failure_instead_of_a_missing_child() {
+	let fixture = Scratch::new();
+	let directory = fixture.path("restricted");
+	fs::create_dir(&directory).expect("create a privately controlled probe directory");
+	let child = directory.join("child");
+	fs::write(&child, b"retain these bytes").expect("write the existing child");
+	let root = ReadRoot::from_directory(File::open(&directory).expect("open directory first"))
+		.expect("bind a held directory for relative probes");
+	let permissions = fs::metadata(&directory)
+		.expect("capture fixture permissions")
+		.permissions();
+	fs::set_permissions(&directory, fs::Permissions::from_mode(0o600))
+		.expect("deny child lookup by removing search access");
+	let component = UnixComponent::new(b"child").expect("represent a valid child");
+	let result = root.probe_regular_file(component);
+	fs::set_permissions(&directory, permissions)
+		.expect("restore synthetic directory search access");
+
+	let failure = result.expect_err("an inconclusive lookup must not report absence");
+	assert!(
+		matches!(&failure, ProbeError::System(error) if error.kind() == io::ErrorKind::PermissionDenied)
+	);
+	let cause = failure
+		.source()
+		.and_then(|cause| cause.downcast_ref::<io::Error>())
+		.expect("retain the typed native lookup failure");
+	assert_eq!(cause.raw_os_error(), Some(libc::EACCES));
+	assert!(failure.to_string().contains("metadata probe failed"));
+	assert_eq!(
+		probe(&root, b"child"),
+		RegularFileProbe::PinnedReadOpenUnavailable
+	);
+	assert_eq!(
+		fs::read(&child).expect("inspect existing child"),
+		b"retain these bytes"
+	);
 }

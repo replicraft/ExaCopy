@@ -131,7 +131,7 @@ impl std::error::Error for JobError {
 		match self {
 			Self::Managed(error) => Some(error),
 			Self::System(error) => Some(error),
-			Self::Uncertain { source, .. } => Some(source),
+			Self::Uncertain { source, .. } => Some(source.as_ref()),
 			_ => None,
 		}
 	}

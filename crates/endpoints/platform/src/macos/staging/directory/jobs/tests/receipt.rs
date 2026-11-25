@@ -271,3 +271,83 @@ fn pending_rebinding_at_the_file_barrier_preserves_both_objects() {
 	assert_eq!(fs::read(&displaced).unwrap(), PAYLOAD);
 	assert!(!directory.join(RECEIPT).exists());
 }
+
+#[test]
+fn pending_name_repopulated_after_rename_keeps_both_inodes_and_requires_reconciliation() {
+	use std::error::Error as _;
+	use std::fs::File;
+
+	const INCUMBENT: &[u8] = b"late pending bytes";
+	let fixture = Fixture::new();
+	let root = fixture.bind();
+	let container = open_staging(&root);
+	let job = container
+		.create_job_directory(job_name())
+		.expect("create the private job");
+	let receipts = job
+		.create_receipt_directory()
+		.expect("create the receipt directory");
+	let directory = job_path(&fixture).join(RECEIPTS);
+	let pending = directory.join(PENDING);
+	let final_name = directory.join(RECEIPT);
+	let mut original_inode = None;
+	let mut incumbent_inode = None;
+	let outcome = receipts
+		.write_receipt_with(
+			PAYLOAD,
+			|file, offset, bytes| file.write_at(bytes, offset),
+			|file| {
+				original_inode = Some(file.metadata().expect("observe the pending inode").ino());
+				native_fs::fcntl_fullfsync(file)
+			},
+			|directory| {
+				let replacement = File::options()
+					.create_new(true)
+					.mode(0o600)
+					.write(true)
+					.open(&pending)
+					.expect("simulate a late incumbent at the vacated pending name");
+				replacement
+					.write_all_at(INCUMBENT, 0)
+					.expect("write replacement fixture bytes");
+				incumbent_inode = Some(
+					replacement
+						.metadata()
+						.expect("observe replacement inode")
+						.ino(),
+				);
+				native_fs::fsync(directory)
+			},
+		)
+		.expect_err("both names populated cannot establish a complete receipt");
+
+	assert!(matches!(&outcome, JobError::Uncertain {
+		job: reported,
+		artifact: JobArtifact::Receipt,
+		step: JobStep::Revalidate,
+		source,
+	} if *reported == job_name() && matches!(**source, JobError::IdentityChanged)));
+	assert!(matches!(
+		outcome
+			.source()
+			.and_then(|error| error.downcast_ref::<JobError>()),
+		Some(JobError::IdentityChanged)
+	));
+	assert!(outcome.to_string().contains("requires reconciliation"));
+	assert!(matches!(
+		receipts.write_receipt(PAYLOAD),
+		Err(JobError::Occupied {
+			artifact: JobArtifact::Receipt,
+			..
+		})
+	));
+	assert_eq!(
+		Some(assert_record(&final_name, PAYLOAD).ino()),
+		original_inode
+	);
+	assert_eq!(
+		Some(assert_record(&pending, INCUMBENT).ino()),
+		incumbent_inode
+	);
+	assert_ne!(original_inode, incumbent_inode);
+}
