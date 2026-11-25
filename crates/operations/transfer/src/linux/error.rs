@@ -3,6 +3,7 @@ use std::fmt;
 
 use exacopy_content::{CopyMeasureError, MeasureError, StreamInputError};
 use exacopy_endpoint::IoError;
+use exacopy_journal::{DurableJournalError, PreparedError};
 use exacopy_model::{CopyPhase, TransitionError};
 use exacopy_platform::linux::{ExtendedAttributes, ReadError, StageError};
 
@@ -60,6 +61,10 @@ pub enum StageFailure {
 	},
 	/// Creating, flushing, closing, or applying metadata to the stage failed.
 	Stage(StageError),
+	/// The initial journal record could not describe this stage.
+	EntryPreparation(PreparedError),
+	/// The initial journal record could not be synchronized before the copy.
+	EntryJournal(DurableJournalError),
 	/// The stage aliases the held source identity.
 	Alias,
 	/// A bounded source read or stage write failed while copying.
@@ -99,6 +104,12 @@ impl fmt::Display for StageFailure {
 				write!(formatter, "unsupported source permission mode {mode:#o}")
 			}
 			Self::Stage(error) => write!(formatter, "private stage operation failed ({error})"),
+			Self::EntryPreparation(error) => {
+				write!(formatter, "invalid entry preparation evidence ({error})")
+			}
+			Self::EntryJournal(error) => {
+				write!(formatter, "entry preparation journal failed ({error})")
+			}
 			Self::Alias => formatter.write_str("source and private stage alias the same inode"),
 			Self::Copy(error) => write!(formatter, "source-to-stage transfer failed ({error})"),
 			Self::Readback(error) => {
@@ -125,6 +136,8 @@ impl Error for StageFailure {
 			Self::Input(error) => Some(error),
 			Self::Source(error) => Some(error),
 			Self::Stage(error) => Some(error),
+			Self::EntryPreparation(error) => Some(error),
+			Self::EntryJournal(error) => Some(error),
 			Self::Copy(error) => Some(error),
 			Self::Readback(error) => Some(error),
 			Self::Model(error) => Some(error),

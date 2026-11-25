@@ -9,14 +9,18 @@ use exacopy_platform::linux::{
 
 mod error;
 mod job;
+mod local_copy;
 mod plan;
+mod receipt;
 
 pub use error::{StageCopyError, StageFailure};
 pub use job::{JobBootstrap, JobBootstrapError, JobStep, PreparedJob};
+pub use local_copy::{CopyProfile, CopyRoots, LocalCopyError, copy_new_file, plan_new_file};
 pub use plan::{
 	DestinationPlanBinding, LocalCopyPlan, LocalCopyPlanError, MAX_LOCAL_COPY_PLAN_BYTES,
 	PlanAttempt, SourcePlanBinding,
 };
+pub use receipt::{CopyReceipt, MAX_COPY_RECEIPT_BYTES, ReceiptError, ReceiptEvidence};
 
 const SPECIAL_MODE_BITS: u32 = 0o7000;
 
@@ -84,8 +88,18 @@ pub fn stage_verified<'stage>(
 	request: StageRequest<'_>,
 	scratch: &mut [u8],
 ) -> Result<VerifiedStage<'stage>, StageCopyError> {
+	stage_with_preparation(source, directory, request, scratch, |_| Ok(()))
+}
+
+fn stage_with_preparation<'stage>(
+	source: &SourceFile,
+	directory: &'stage StageDirectory<'_>,
+	request: StageRequest<'_>,
+	scratch: &mut [u8],
+	record: impl FnOnce(FileIdentity) -> Result<(), StageFailure>,
+) -> Result<VerifiedStage<'stage>, StageCopyError> {
 	let mut session = CopySession::new(request.binding);
-	let result = prepare(source, directory, request, scratch, &mut session);
+	let result = prepare(source, directory, request, scratch, &mut session, record);
 	match result {
 		Ok((stage, digest)) => Ok(VerifiedStage {
 			stage,
@@ -105,6 +119,7 @@ fn prepare<'stage>(
 	request: StageRequest<'_>,
 	scratch: &mut [u8],
 	session: &mut CopySession,
+	record: impl FnOnce(FileIdentity) -> Result<(), StageFailure>,
 ) -> Result<(ClosedStage<'stage>, ContentDigest), StageFailure> {
 	validate_stream_input(source.len(), scratch.len()).map_err(StageFailure::Input)?;
 	check_source(source)?;
@@ -117,6 +132,7 @@ fn prepare<'stage>(
 	writable
 		.check_ownership(source.observation())
 		.map_err(StageFailure::Stage)?;
+	record(writable.identity())?;
 	if !matches!(
 		session.apply(request.binding, CopyEvent::StagePrepared)?,
 		Some(CopyEffect::ReadSource(read)) if read.binding() == request.binding

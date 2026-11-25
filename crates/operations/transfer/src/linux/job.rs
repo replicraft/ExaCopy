@@ -14,6 +14,8 @@ use exacopy_platform::linux::{
 	DestinationRoot, FileIdentity, JobDirectory, StageDirectory, StageError,
 };
 
+use super::LocalCopyPlan;
+
 /// Inputs supplied by the caller from its authorized destination and trusted local profile.
 #[derive(Debug, Clone, Copy)]
 pub struct JobBootstrap<'name> {
@@ -57,6 +59,32 @@ impl<'root> PreparedJob<'root> {
 		request: JobBootstrap<'_>,
 		signer: &SigningKey,
 	) -> Result<Self, JobBootstrapError> {
+		let (job, _) = Self::prepare(destination, request, signer, None)?;
+		Ok(job)
+	}
+
+	pub(super) fn with_plan(
+		destination: &'root DestinationRoot,
+		plan: &LocalCopyPlan<'_>,
+		profile: super::CopyProfile<'_>,
+	) -> Result<(Self, DurableJournal), JobBootstrapError> {
+		let request = JobBootstrap {
+			name: plan.attempt().job_name,
+			context: plan.context(),
+			destination_id: plan.destination().root.id,
+			profile: profile.id,
+			created: profile.created,
+			owner_token: profile.owner_token,
+		};
+		Self::prepare(destination, request, profile.signer, Some(&plan.encode()))
+	}
+
+	fn prepare(
+		destination: &'root DestinationRoot,
+		request: JobBootstrap<'_>,
+		signer: &SigningKey,
+		plan: Option<&[u8]>,
+	) -> Result<(Self, DurableJournal), JobBootstrapError> {
 		if request.owner_token.as_bytes() == request.context.job.as_bytes()
 			|| request.owner_token.as_bytes() == request.profile.as_bytes()
 		{
@@ -66,6 +94,15 @@ impl<'root> PreparedJob<'root> {
 		let directory = destination
 			.create_job_directory(request.name)
 			.map_err(JobStep::CreateJob.error())?;
+		let directories = if plan.is_some() {
+			vec![
+				OwnerStateDirectory::Journal,
+				OwnerStateDirectory::Receipts,
+				OwnerStateDirectory::Stage,
+			]
+		} else {
+			vec![OwnerStateDirectory::Journal, OwnerStateDirectory::Stage]
+		};
 		let owner = OwnerRecord::sign(
 			OwnerManifest {
 				token: request.owner_token,
@@ -75,7 +112,7 @@ impl<'root> PreparedJob<'root> {
 				destination_device: destination_identity.device(),
 				state_root: native_identity(directory.identity()),
 				plan_digest: request.context.plan_digest,
-				directories: vec![OwnerStateDirectory::Journal, OwnerStateDirectory::Stage],
+				directories,
 			},
 			signer,
 		)
@@ -88,6 +125,15 @@ impl<'root> PreparedJob<'root> {
 			.map_err(JobBootstrapError::WriteOwner)?;
 		record.sync_all().map_err(JobBootstrapError::SyncOwner)?;
 		drop(record);
+		if let Some(bytes) = plan {
+			let mut artifact = directory
+				.create_plan_record()
+				.map_err(JobStep::CreatePlan.error())?;
+			artifact
+				.write_all(bytes)
+				.map_err(JobBootstrapError::WritePlan)?;
+			artifact.sync_all().map_err(JobBootstrapError::SyncPlan)?;
+		}
 
 		let journal_directory = directory
 			.create_journal_directory()
@@ -118,11 +164,16 @@ impl<'root> PreparedJob<'root> {
 		let initial_frame = journal
 			.append(FrameKind::JobPrepared, &initial.encode())
 			.map_err(JobBootstrapError::Journal)?;
-		Ok(Self {
+		let job = Self {
 			directory,
 			owner,
 			initial_frame,
-		})
+		};
+		Ok((job, journal))
+	}
+
+	pub(super) const fn directory(&self) -> &JobDirectory<'root> {
+		&self.directory
 	}
 
 	/// Returns the exact signed owner record written to this job's private root.
@@ -148,7 +199,7 @@ impl<'root> PreparedJob<'root> {
 	}
 }
 
-fn native_identity(identity: FileIdentity) -> LinuxFileIdentity {
+pub(super) fn native_identity(identity: FileIdentity) -> LinuxFileIdentity {
 	LinuxFileIdentity::new(identity.device(), identity.inode())
 }
 
@@ -159,6 +210,8 @@ pub enum JobStep {
 	CreateJob,
 	/// Exclusive signed owner file creation.
 	CreateOwner,
+	/// Exclusive canonical copy plan creation.
+	CreatePlan,
 	/// Exclusive journal directory creation.
 	CreateJournal,
 	/// Exclusive first segment creation.
@@ -194,6 +247,10 @@ pub enum JobBootstrapError {
 	WriteOwner(std::io::Error),
 	/// The owner file barrier failed.
 	SyncOwner(std::io::Error),
+	/// Writing the canonical copy plan failed.
+	WritePlan(std::io::Error),
+	/// The canonical copy plan barrier failed.
+	SyncPlan(std::io::Error),
 	/// Preparing or synchronizing the first journal frame failed.
 	Journal(DurableJournalError),
 }
@@ -214,6 +271,13 @@ impl fmt::Display for JobBootstrapError {
 				formatter,
 				"synchronizing the private owner record failed ({error})"
 			),
+			Self::WritePlan(error) => {
+				write!(formatter, "writing the private copy plan failed ({error})")
+			}
+			Self::SyncPlan(error) => write!(
+				formatter,
+				"synchronizing the private copy plan failed ({error})"
+			),
 			Self::Journal(error) => write!(formatter, "initial job journal failed ({error})"),
 		}
 	}
@@ -224,7 +288,10 @@ impl Error for JobBootstrapError {
 		match self {
 			Self::Platform { source, .. } => Some(source),
 			Self::Owner(error) => Some(error),
-			Self::WriteOwner(error) | Self::SyncOwner(error) => Some(error),
+			Self::WriteOwner(error)
+			| Self::SyncOwner(error)
+			| Self::WritePlan(error)
+			| Self::SyncPlan(error) => Some(error),
 			Self::Journal(error) => Some(error),
 		}
 	}
