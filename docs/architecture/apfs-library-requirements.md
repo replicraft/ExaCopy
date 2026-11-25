@@ -294,3 +294,33 @@ needs its changed-source evidence. CI must supply the sibling checkout in
 the same relative layout, or use a separately reviewed commit-pinned source.
 Cargo dependency resolution may need the sibling manifest even when the
 current build target excludes macOS code.
+
+**Commit-pinned Git integration**
+
+Once the companion package is available in its repository, replace the path
+entry with the Git source and a reviewed full commit hash. The example uses
+the repository URL declared by the inspected Pomologie workspace.
+
+```toml
+[workspace.dependencies]
+apfs-mounted = { git = "https://github.com/pomologie/apfs", rev = "<full-commit-sha>", default-features = false }
+```
+
+The consuming package continues to inherit `apfs-mounted.workspace = true`
+in its macOS dependency table. Cargo locates the named package in the Git
+repository. Update and commit the ExaCopy lockfile and provenance inventories
+with the resolved revision and run the affected native integration tests.
+The Git entry is an integration plan until the package and revision exist.
+
+During local development, a workspace-root override can select the sibling
+source while the normal dependency declaration remains commit-pinned.
+
+```toml
+[patch."https://github.com/pomologie/apfs"]
+apfs-mounted = { path = "../pomologie/apfs/crates/platform/apfs-mounted" }
+```
+
+The local package version must satisfy the consumer's dependency requirements.
+The resulting lockfile and native evidence identify that local-source run.
+[Cargo Git dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#specifying-dependencies-from-git-repositories)
+[Cargo dependency overrides](https://doc.rust-lang.org/cargo/reference/overriding-dependencies.html#the-patch-section)
