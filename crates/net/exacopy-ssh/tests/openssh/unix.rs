@@ -108,6 +108,10 @@ async fn check_contents(
 	})
 	.await?;
 
+	let authenticated = sftp.authenticated_peer();
+	assert_eq!(authenticated.authority(), &target);
+	assert_eq!(authenticated.fingerprint(), pin);
+
 	if matches!(reference, Reference::Positioned) {
 		return positioned::check(&mut sftp).await;
 	}

@@ -10,6 +10,7 @@ use russh_sftp::protocol::{
 use tokio::time::{Instant, timeout_at};
 use tokio_util::sync::DropGuard;
 
+use crate::connection::SshAuthenticatedPeer;
 use crate::error::Error;
 use crate::wire::Wire;
 
@@ -47,6 +48,7 @@ pub struct FileObservation {
 pub struct ReadOnlySftp {
 	session: Option<Session>,
 	capabilities: SftpCapabilities,
+	peer: SshAuthenticatedPeer,
 }
 
 type SshConnection = Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>;
@@ -58,15 +60,27 @@ struct Session {
 }
 
 impl ReadOnlySftp {
-	pub(crate) fn new(wire: Wire, connection: SshConnection, guard: DropGuard) -> Self {
+	pub(crate) fn new(
+		wire: Wire,
+		connection: SshConnection,
+		guard: DropGuard,
+		peer: SshAuthenticatedPeer,
+	) -> Self {
 		Self {
 			capabilities: wire.capabilities,
+			peer,
 			session: Some(Session {
 				wire,
 				connection,
 				_guard: guard,
 			}),
 		}
+	}
+
+	/// Returns the host key and authority verified for this session's login.
+	#[must_use]
+	pub const fn authenticated_peer(&self) -> &SshAuthenticatedPeer {
+		&self.peer
 	}
 
 	/// Returns protocol support and extension advertisements.

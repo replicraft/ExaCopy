@@ -42,6 +42,9 @@ async fn raw_listing_and_short_reads_use_a_pinned_authenticated_connection() {
 	.await
 	.unwrap();
 
+	let authenticated = session.authenticated_peer();
+	assert_eq!(authenticated.authority(), &target);
+	assert_eq!(authenticated.fingerprint(), pin);
 	assert_eq!(session.list(&[]).await.unwrap(), vec![NAME.to_vec()]);
 	let path = [UnixComponent::new(NAME).unwrap()];
 	let before = session.stat(&path).await.unwrap();
@@ -128,6 +131,24 @@ async fn a_credential_for_another_account_cannot_be_acquired_or_sent() {
 		Err(Error::Credential(CredentialRefusal::AuthorityMismatch))
 	));
 	assert_eq!(calls.auth.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
+async fn a_rejected_password_cannot_create_an_authenticated_session() {
+	let (stream, pin, calls) = peer(true, false);
+	let target = authority("transfer");
+	let result = connect(
+		stream,
+		&target,
+		pin,
+		fixture_trust(&target, ""),
+		&target,
+		|_| Password::new("wrong test password".to_owned()),
+	)
+	.await;
+	assert!(matches!(result, Err(Error::Authentication)));
+	assert_eq!(calls.auth.load(Ordering::Relaxed), 1);
+	assert_eq!(calls.subsystem.load(Ordering::Relaxed), 0);
 }
 
 #[tokio::test]

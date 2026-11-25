@@ -54,6 +54,9 @@ async fn supplied_key_authenticates_once_with_a_verified_authority() {
 	.await
 	.unwrap();
 
+	let authenticated = sftp.authenticated_peer();
+	assert_eq!(authenticated.authority(), &target);
+	assert_eq!(authenticated.fingerprint(), pin);
 	assert_eq!(sftp.list(&[]).await.unwrap(), vec![NAME.to_vec()]);
 	assert_eq!(calls.key_auth.load(Ordering::Relaxed), 1);
 	assert_eq!(calls.auth.load(Ordering::Relaxed), 0);

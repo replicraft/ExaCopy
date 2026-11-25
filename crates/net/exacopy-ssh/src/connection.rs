@@ -28,6 +28,29 @@ mod subsystem;
 const MAX_PASSWORD_BYTES: usize = 4096;
 const CONNECT_DEADLINE: Duration = Duration::from_secs(20);
 
+/// The host and login identity verified for one authenticated SFTP session.
+///
+/// This value records the initial authenticated peer. Session I/O reports
+/// subsequent connection closure.
+pub struct SshAuthenticatedPeer {
+	authority: SshAuthority,
+	fingerprint: HostKeyFingerprint,
+}
+
+impl SshAuthenticatedPeer {
+	/// The authority and account used by the verified authentication.
+	#[must_use]
+	pub const fn authority(&self) -> &SshAuthority {
+		&self.authority
+	}
+
+	/// The fingerprint observed from the verified SSH host key.
+	#[must_use]
+	pub const fn fingerprint(&self) -> HostKeyFingerprint {
+		self.fingerprint
+	}
+}
+
 /// A live password accepted by the prototype's supplied-password profile.
 ///
 /// The owned buffer is wiped on drop or transferred once to russh's password
@@ -329,6 +352,8 @@ where
 				InteractionPolicy::Forbidden,
 			)
 			.map_err(Error::Credential)?;
+		let authority = request.authority().clone();
+		let fingerprint = request.fingerprint();
 		let credential = broker(request)?;
 		if !credential
 			.authenticate(&mut connection, authority.account())
@@ -342,7 +367,11 @@ where
 		channel.request_subsystem(true, "sftp").await?;
 		subsystem::confirm(async || channel.wait().await).await?;
 		let wire = Wire::init(channel.into_stream()).await?;
-		Ok(ReadOnlySftp::new(wire, Box::pin(connection), guard))
+		let peer = SshAuthenticatedPeer {
+			authority,
+			fingerprint,
+		};
+		Ok(ReadOnlySftp::new(wire, Box::pin(connection), guard, peer))
 	})
 	.await
 	.map_err(|_| Error::Timeout)?
