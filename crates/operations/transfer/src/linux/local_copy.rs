@@ -21,6 +21,7 @@ pub(super) mod checkpoints;
 mod error;
 mod planning;
 mod protocol;
+mod public_apply;
 pub(super) mod records;
 
 use checkpoints::StageRecords;
@@ -31,6 +32,7 @@ use planning::{
 };
 pub(super) use protocol::ProtocolError;
 pub(super) use protocol::Publication;
+pub use public_apply::{PublicApplyStage, PublicApplyStageRequest, stage_public_apply};
 use records::EntryEvidence;
 
 /// The caller's trusted signing profile and fresh per-job ownership evidence.
@@ -46,10 +48,9 @@ pub struct CopyProfile<'profile> {
 	pub owner_token: OwnerToken,
 }
 
-type CopyResult<'name, R, D, J> = Result<
-	CopyReceipt<'name>,
-	CopyError<R, <D as CopyDestinationView>::Error, <J as CopyWorkspace>::PublishError>,
->;
+type CopyFailure<R, D, J> =
+	CopyError<R, <D as CopyDestinationView>::Error, <J as CopyWorkspace>::PublishError>;
+type CopyResult<'name, R, D, J> = Result<CopyReceipt<'name>, CopyFailure<R, D, J>>;
 
 /// Executes the planned preserve-mode copy through independently authorized capabilities.
 ///
@@ -71,29 +72,9 @@ where
 		+ JobBootstrapRoot<'root, Job = J, Error = <D as CopyDestinationView>::Error>,
 	J: CopyWorkspace + JobWorkspace<Segment = File, Error = <D as CopyDestinationView>::Error>,
 {
+	let file = preflight_source::<S, D, J>(&planning, plan, scratch.len())?;
 	let planned_source = plan.source();
-	let planned_destination = plan.destination().root;
-	if destination_binding(&planning) != planned_destination
-		|| journal_identity(JobBootstrapRoot::identity(planning.destination))
-			!= planned_destination.identity
-		|| planning.source_id != planned_source.root_id
-		|| source_root_identity(planning.source) != planned_source.root_identity
-	{
-		return Err(CopyError::StalePlan);
-	}
 	let target = plan.destination().component;
-	check_absent(planning.destination, target)?;
-	let file = planning
-		.source
-		.open_regular(planned_source.component)
-		.map_err(CopyError::Source)?;
-	if capture_source(&planning, &file, planned_source.component)? != planned_source {
-		return Err(CopyError::StalePlan);
-	}
-	validate_stream_input(file.length(), scratch.len()).map_err(|error| {
-		CopyError::SourcePolicy(crate::linux_staging::StageFailure::Input(error))
-	})?;
-	check_source(&file).map_err(CopyError::SourcePolicy)?;
 
 	let context = plan.context();
 	let attempt = plan.attempt();
@@ -185,6 +166,44 @@ where
 	observe(&mut session, binding, CopyEvent::ReceiptRecorded)
 		.map_err(CopyError::PublicationModel)?;
 	Ok(receipt)
+}
+
+fn preflight_source<'root, S, D, J>(
+	planning: &PlanningRoots<'root, S, D>,
+	plan: &LocalCopyPlan<'_>,
+	scratch_len: usize,
+) -> Result<S::Source, CopyFailure<S::Error, D, J>>
+where
+	S: CopySourceRoot<Source: CopySource<Identity = J::Identity, Metadata = J::Metadata>>,
+	D: CopyDestinationView
+		+ JobBootstrapRoot<'root, Job = J, Error = <D as CopyDestinationView>::Error>,
+	J: CopyWorkspace + JobWorkspace<Segment = File, Error = <D as CopyDestinationView>::Error>,
+{
+	let planned_source = plan.source();
+	let planned_destination = plan.destination().root;
+	if destination_binding(planning) != planned_destination
+		|| journal_identity(JobBootstrapRoot::identity(planning.destination))
+			!= planned_destination.identity
+		|| planning.source_id != planned_source.root_id
+		|| source_root_identity(planning.source) != planned_source.root_identity
+	{
+		return Err(CopyError::StalePlan);
+	}
+	let target = plan.destination().component;
+	check_absent(planning.destination, target)?;
+	let file = planning
+		.source
+		.open_regular(planned_source.component)
+		.map_err(CopyError::Source)?;
+	if capture_source(planning, &file, planned_source.component)? != planned_source {
+		return Err(CopyError::StalePlan);
+	}
+	validate_stream_input(file.length(), scratch_len).map_err(|error| {
+		CopyError::SourcePolicy(crate::linux_staging::StageFailure::Input(error))
+	})?;
+	check_source(&file).map_err(CopyError::SourcePolicy)?;
+
+	Ok(file)
 }
 
 impl<R, S, P> From<ProtocolError<R, S, P>> for CopyError<R, S, P> {

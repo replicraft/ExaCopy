@@ -351,6 +351,37 @@ fn records_checkpoint_after_data_barrier_and_releases_writer_before_readback() {
 }
 
 #[test]
+fn staging_carries_both_actual_digest_and_length_observations() {
+	let trace = Trace::default();
+	let source = Source {
+		trace: &trace,
+		length: 17,
+	};
+	let directory = Directory {
+		trace: &trace,
+		readback: 7,
+	};
+	let stage = stage_verified(&source, &directory, request(), &mut [0; 5], None).unwrap();
+	let streams = stage.observed_streams();
+	assert_eq!(streams.source_length, 17);
+	assert_eq!(streams.stage_length, 17);
+	let expected = *blake3::hash(&[7; 17]).as_bytes();
+	assert_eq!(streams.source_digest.as_bytes(), &expected);
+	assert_eq!(streams.stage_digest.as_bytes(), &expected);
+	let trace = trace.borrow();
+	assert!(
+		trace
+			.iter()
+			.position(|effect| *effect == Effect::CloseWriter)
+			.unwrap()
+			< trace
+				.iter()
+				.position(|effect| *effect == Effect::ReadBack)
+				.unwrap()
+	);
+}
+
+#[test]
 fn readback_mismatch_stops_before_metadata_and_sealing() {
 	use Effect::*;
 

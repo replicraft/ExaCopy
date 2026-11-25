@@ -26,9 +26,9 @@ a future effect must separately obtain fresh time and check expiry.
 
 Signing authenticates a local profile's declaration. It does not verify a
 portable Approval, authorize roots, measure actual source or staged bytes,
-establish metadata fidelity or qualify requested durability. No executor
-or recovery entrypoint currently consumes this record. Legacy resume/retry
-continues to reject it. The [execution bridge](public-plan-bridge.md) still
+establish metadata fidelity or qualify requested durability. The experimental [public staging coordinator](public-apply-staging.md)
+persists this record before preparing a job and stops before publication.
+Public recovery is still separate; legacy resume/retry continues to reject it. The [execution bridge](public-plan-bridge.md) still
 requires non-bypassable expected-content verification and bound recovery
 before product apply can be exposed.
 

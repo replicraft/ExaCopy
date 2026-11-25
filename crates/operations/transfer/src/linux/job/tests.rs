@@ -344,3 +344,61 @@ fn token_alias_is_rejected_before_namespace_effects() {
 		assert!(root.trace.borrow().effects.is_empty());
 	}
 }
+
+#[test]
+fn public_stage_syncs_only_the_mandatory_public_owner_before_preparation() {
+	use exacopy_journal::{
+		ApplyMetadataPolicyDigest, ApplyRequestedDurability, ApprovedPublicPlanDigest,
+		ApprovedStreamDigest, JournalEntryId, PublicApplyBinding, PublicApplyOwnerRecord,
+		PublicPlanEntryId, StreamLength,
+	};
+
+	use super::protocol::prepare_public;
+
+	let request = request();
+	let root = Root::new(None);
+	let signer = SigningKey::from_bytes(&[0x57; 32]);
+	let binding = PublicApplyBinding {
+		public_plan: ApprovedPublicPlanDigest::from_bytes([0x11; 32]),
+		public_entry: PublicPlanEntryId::from_bytes([0x22; 16]).unwrap(),
+		private_entry: JournalEntryId::from_bytes([0x33; 16]),
+		epoch: request.context.epoch,
+		source_root: request.destination_id,
+		destination_root: request.destination_id,
+		stream_length: StreamLength::new(29).unwrap(),
+		stream_digest: ApprovedStreamDigest::from_bytes([0x44; 32]),
+		metadata_policy: ApplyMetadataPolicyDigest::from_bytes([0x55; 32]),
+		expires_at: None,
+		requested_durability: ApplyRequestedDurability::ProcessCrash,
+	};
+	let prepared = prepare_public::<_, Journal>(&root, request, &signer, PLAN, binding).unwrap();
+	let trace = root.trace.borrow();
+	assert_eq!(trace.effects, WITH_PLAN);
+	assert_eq!(trace.plan, PLAN);
+	let key = signer.verifying_key();
+	let authenticated =
+		PublicApplyOwnerRecord::decode(&trace.owner, request.profile, &key).unwrap();
+	assert_eq!(authenticated.manifest().binding, binding);
+	assert_eq!(
+		authenticated.manifest().owner.plan_digest,
+		request.context.plan_digest
+	);
+	assert_eq!(prepared.initial_frame.owner_digest, authenticated.digest());
+	assert_eq!(
+		OwnerRecord::decode(&trace.owner, request.profile, &key),
+		Err(OwnerError::WrongDomain)
+	);
+
+	let interrupted = Root::new(Some(Effect::Namespace(JobStep::CreateJournal)));
+	assert!(prepare_public::<_, Journal>(&interrupted, request, &signer, PLAN, binding).is_err());
+	let trace = interrupted.trace.borrow();
+	assert!(!trace.effects.contains(&Effect::AppendPrepared));
+	assert_eq!(
+		PublicApplyOwnerRecord::decode(&trace.owner, request.profile, &key).unwrap(),
+		authenticated
+	);
+	assert_eq!(
+		OwnerRecord::decode(&trace.owner, request.profile, &key),
+		Err(OwnerError::WrongDomain)
+	);
+}

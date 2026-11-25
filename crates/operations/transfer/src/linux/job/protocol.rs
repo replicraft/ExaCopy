@@ -5,8 +5,9 @@ use exacopy_endpoint::linux_job::{
 	JobBootstrapRoot, JobFileIdentity, JobJournalDirectory, JobRecord, JobWorkspace,
 };
 use exacopy_journal::{
-	DestinationRootBinding, JobPrepared, LinuxFileIdentity, OwnerError, OwnerManifest, OwnerRecord,
-	OwnerStateDirectory,
+	DestinationRootBinding, JobPrepared, LinuxFileIdentity, OwnerDigest, OwnerError, OwnerManifest,
+	OwnerRecord, OwnerStateDirectory, PublicApplyBinding, PublicApplyOwnerManifest,
+	PublicApplyOwnerRecord,
 };
 
 use super::{JobBootstrap, JobStep};
@@ -22,9 +23,9 @@ pub(super) trait InitialJournal: Sized {
 	-> Result<Self::Frame, Self::Error>;
 }
 
-pub(super) struct Prepared<Directory, Journal, Frame> {
+pub(super) struct Prepared<Directory, Journal, Frame, O = OwnerRecord> {
 	pub(super) directory: Directory,
-	pub(super) owner: OwnerRecord,
+	pub(super) owner: O,
 	pub(super) journal: Journal,
 	pub(super) initial_frame: Frame,
 }
@@ -48,8 +49,8 @@ impl JobStep {
 	}
 }
 
-type PreparationResult<Directory, NamespaceError, Journal> = Result<
-	Prepared<Directory, Journal, <Journal as InitialJournal>::Frame>,
+type PreparationResult<Directory, NamespaceError, Journal, O = OwnerRecord> = Result<
+	Prepared<Directory, Journal, <Journal as InitialJournal>::Frame, O>,
 	BootstrapFailure<NamespaceError, <Journal as InitialJournal>::Error>,
 >;
 
@@ -62,6 +63,54 @@ pub(super) fn prepare<'root, Root, Journal>(
 where
 	Root: JobBootstrapRoot<'root>,
 	Journal: InitialJournal<Segment = <Root::Job as JobWorkspace>::Segment>,
+{
+	prepare_with_owner(destination, request, plan, |manifest| {
+		OwnerRecord::sign(manifest, signer)
+	})
+}
+
+pub(super) fn prepare_public<'root, Root, Journal>(
+	destination: &'root Root,
+	request: JobBootstrap<'_>,
+	signer: &SigningKey,
+	plan: &[u8],
+	binding: PublicApplyBinding,
+) -> PreparationResult<Root::Job, Root::Error, Journal, PublicApplyOwnerRecord>
+where
+	Root: JobBootstrapRoot<'root>,
+	Journal: InitialJournal<Segment = <Root::Job as JobWorkspace>::Segment>,
+{
+	prepare_with_owner(destination, request, Some(plan), |owner| {
+		PublicApplyOwnerRecord::sign(PublicApplyOwnerManifest { owner, binding }, signer)
+	})
+}
+
+trait PreparedOwner {
+	fn bytes_and_digest(&self) -> (&[u8], OwnerDigest);
+}
+
+impl PreparedOwner for OwnerRecord {
+	fn bytes_and_digest(&self) -> (&[u8], OwnerDigest) {
+		(self.as_bytes(), self.digest())
+	}
+}
+
+impl PreparedOwner for PublicApplyOwnerRecord {
+	fn bytes_and_digest(&self) -> (&[u8], OwnerDigest) {
+		(self.as_bytes(), self.digest())
+	}
+}
+
+fn prepare_with_owner<'root, Root, Journal, O>(
+	destination: &'root Root,
+	request: JobBootstrap<'_>,
+	plan: Option<&[u8]>,
+	sign: impl FnOnce(OwnerManifest) -> Result<O, OwnerError>,
+) -> PreparationResult<Root::Job, Root::Error, Journal, O>
+where
+	Root: JobBootstrapRoot<'root>,
+	Journal: InitialJournal<Segment = <Root::Job as JobWorkspace>::Segment>,
+	O: PreparedOwner,
 {
 	if request.owner_token.as_bytes() == request.context.job.as_bytes()
 		|| request.owner_token.as_bytes() == request.profile.as_bytes()
@@ -82,25 +131,23 @@ where
 	} else {
 		vec![OwnerStateDirectory::Journal, OwnerStateDirectory::Stage]
 	};
-	let owner = OwnerRecord::sign(
-		OwnerManifest {
-			token: request.owner_token,
-			job: request.context.job,
-			profile: request.profile,
-			created: request.created,
-			destination_device: destination_identity.device(),
-			state_root: journal_identity(directory.identity()),
-			plan_digest: request.context.plan_digest,
-			directories,
-		},
-		signer,
-	)
+	let owner = sign(OwnerManifest {
+		token: request.owner_token,
+		job: request.context.job,
+		profile: request.profile,
+		created: request.created,
+		destination_device: destination_identity.device(),
+		state_root: journal_identity(directory.identity()),
+		plan_digest: request.context.plan_digest,
+		directories,
+	})
 	.map_err(BootstrapFailure::Owner)?;
+	let (owner_bytes, owner_digest) = owner.bytes_and_digest();
 	let mut record = directory
 		.create_owner_record()
 		.map_err(JobStep::CreateOwner.failure())?;
 	record
-		.write_all(owner.as_bytes())
+		.write_all(owner_bytes)
 		.map_err(BootstrapFailure::WriteOwner)?;
 	record.sync_all().map_err(BootstrapFailure::SyncOwner)?;
 	drop(record);
@@ -133,7 +180,7 @@ where
 
 	let initial = JobPrepared {
 		context: request.context,
-		owner_digest: owner.digest(),
+		owner_digest,
 		destination_root: DestinationRootBinding {
 			id: request.destination_id,
 			identity: destination_identity,

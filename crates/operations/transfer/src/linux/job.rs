@@ -8,8 +8,9 @@ use exacopy_endpoint::linux_copy::CopyWorkspace;
 use exacopy_endpoint::linux_job::{JobBootstrapRoot, JobWorkspace};
 use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{
-	DurableJournal, DurableJournalError, JobPrepared, JournalContext, OwnerError, OwnerProfileId,
-	OwnerRecord, OwnerTimestamp, OwnerToken, RootCapabilityId, SyncedFrame,
+	DurableJournal, DurableJournalError, JobPrepared, JournalContext, OwnerDigest, OwnerError,
+	OwnerProfileId, OwnerRecord, OwnerTimestamp, OwnerToken, PublicApplyBinding, RootCapabilityId,
+	SyncedFrame,
 };
 
 use super::LocalCopyPlan;
@@ -108,14 +109,7 @@ pub(super) fn prepare_durable_copy<'root, Root>(
 where
 	Root: JobBootstrapRoot<'root, Job: JobWorkspace<Segment = File>>,
 {
-	let request = JobBootstrap {
-		name: plan.attempt().job_name,
-		context: plan.context(),
-		destination_id: plan.destination().root.id,
-		profile: profile.id,
-		created: profile.created,
-		owner_token: profile.owner_token,
-	};
+	let request = copy_bootstrap_request(plan, profile);
 	let prepared = protocol::prepare::<_, DurableJournal>(
 		destination,
 		request,
@@ -123,6 +117,43 @@ where
 		Some(&plan.encode()),
 	)?;
 	Ok((prepared.directory, prepared.journal))
+}
+
+pub(super) fn prepare_public_stage<'root, Root>(
+	destination: &'root Root,
+	plan: &LocalCopyPlan<'_>,
+	profile: super::CopyProfile<'_>,
+	binding: PublicApplyBinding,
+) -> Result<(Root::Job, DurableJournal, OwnerDigest), BootstrapError<Root::Error>>
+where
+	Root: JobBootstrapRoot<'root, Job: JobWorkspace<Segment = File>>,
+{
+	let prepared = protocol::prepare_public::<_, DurableJournal>(
+		destination,
+		copy_bootstrap_request(plan, profile),
+		profile.signer,
+		&plan.encode(),
+		binding,
+	)?;
+	Ok((
+		prepared.directory,
+		prepared.journal,
+		prepared.owner.digest(),
+	))
+}
+
+fn copy_bootstrap_request<'name>(
+	plan: &LocalCopyPlan<'name>,
+	profile: super::CopyProfile<'_>,
+) -> JobBootstrap<'name> {
+	JobBootstrap {
+		name: plan.attempt().job_name,
+		context: plan.context(),
+		destination_id: plan.destination().root.id,
+		profile: profile.id,
+		created: profile.created,
+		owner_token: profile.owner_token,
+	}
 }
 
 /// An attempted namespace operation during private job bootstrap.

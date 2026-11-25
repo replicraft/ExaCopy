@@ -217,6 +217,6 @@ stays fatal, even under the process-crash profile.
 
 
 The [public-apply owner codec](public-apply-owner.md) now implements the
-separate authenticated public/private binding form. It is not yet consumed
-by execution or recovery; the expected-content and effect-boundary work
-above remains required before exposing public apply.
+separate authenticated public/private binding form. The [staging coordinator](public-apply-staging.md) consumes it and checks
+approved source and read-back bytes. Public-aware recovery and the fresh
+time/durability boundary remain required before exposing public apply.

@@ -11,7 +11,8 @@ mod replay;
 pub use checkpoint::CopyCheckpoint;
 pub use job::{BootstrapError, JobBootstrap, JobStep, PreparedJob};
 pub use local_copy::{
-	CopyError, CopyProfile, PlanningRoots, copy_with_capabilities, plan_with_capabilities,
+	CopyError, CopyProfile, PlanningRoots, PublicApplyStage, PublicApplyStageRequest,
+	copy_with_capabilities, plan_with_capabilities, stage_public_apply,
 };
 pub use plan::{
 	DestinationPlanBinding, LocalCopyPlan, LocalCopyPlanError, MAX_LOCAL_COPY_PLAN_BYTES,

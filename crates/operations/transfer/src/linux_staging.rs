@@ -25,7 +25,7 @@ type StageResult<T, Source, Writer> = Result<
 	StageCopyError<<Source as exacopy_endpoint::ReadView>::Error, <Writer as StageWriter>::Error>,
 >;
 type PreparedStage<Source, Writer> = Result<
-	(<Writer as StageWriter>::Reader, ContentDigest),
+	(<Writer as StageWriter>::Reader, ObservedStreams),
 	StageFailure<<Source as exacopy_endpoint::ReadView>::Error, <Writer as StageWriter>::Error>,
 >;
 
@@ -65,14 +65,22 @@ pub trait StageRecords<Identity, ReadError, StageError> {
 pub struct VerifiedStage<Reader> {
 	stage: Reader,
 	session: CopySession,
-	digest: ContentDigest,
+	streams: ObservedStreams,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ObservedStreams {
+	pub(crate) source_length: u64,
+	pub(crate) source_digest: ContentDigest,
+	pub(crate) stage_length: u64,
+	pub(crate) stage_digest: ContentDigest,
 }
 
 impl<Reader: StageReader> VerifiedStage<Reader> {
 	/// The verified BLAKE3 digest of the observed logical stream.
 	#[must_use]
 	pub const fn digest(&self) -> ContentDigest {
-		self.digest
+		self.streams.source_digest
 	}
 
 	/// The verified logical length.
@@ -96,7 +104,11 @@ impl<Reader: StageReader> VerifiedStage<Reader> {
 	/// Transfers the pinned stage, its decision session and the verified digest to the coordinator.
 	#[must_use]
 	pub fn into_parts(self) -> (Reader, CopySession, ContentDigest) {
-		(self.stage, self.session, self.digest)
+		(self.stage, self.session, self.streams.source_digest)
+	}
+
+	pub(crate) const fn observed_streams(&self) -> ObservedStreams {
+		self.streams
 	}
 }
 
@@ -122,10 +134,10 @@ where
 	let mut session = CopySession::new(request.binding);
 	let result = prepare(source, directory, request, scratch, &mut session, records);
 	match result {
-		Ok((stage, digest)) => Ok(VerifiedStage {
+		Ok((stage, streams)) => Ok(VerifiedStage {
 			stage,
 			session,
-			digest,
+			streams,
 		}),
 		Err(failure) => Err(StageCopyError {
 			phase: session.phase(),
@@ -148,7 +160,8 @@ where
 	S: StagingSource,
 	D: StagingDirectory<Identity = S::Identity, Metadata = S::Metadata>,
 {
-	validate_stream_input(source.length(), scratch.len()).map_err(StageFailure::Input)?;
+	let source_length = source.length();
+	validate_stream_input(source_length, scratch.len()).map_err(StageFailure::Input)?;
 	check_source(source)?;
 	let mut writable = directory
 		.create_file(request.stage_name, request.target, request.binding)
@@ -169,21 +182,28 @@ where
 	begin_stage_reads(session, request.binding)?;
 
 	let source_digest = if let Some((records, measurement)) = checkpoints {
-		copy_with_checkpoints(source, &mut writable, scratch, records, measurement)?
+		copy_with_checkpoints(
+			source,
+			source_length,
+			&mut writable,
+			scratch,
+			records,
+			measurement,
+		)?
 	} else {
 		copy_and_measure_at(
-			source.length(),
+			source_length,
 			scratch,
 			|offset, bytes| source.read_exact_at(offset, bytes),
 			|offset, bytes| writable.write_all_at(offset, bytes),
 		)
 		.map_err(StageFailure::Copy)?
 	};
-	flush_written_stage(&mut writable, source.length(), session, request.binding)?;
+	flush_written_stage(&mut writable, source_length, session, request.binding)?;
 	let stage = writable.close_writes().map_err(StageFailure::Stage)?;
-	verify_stage_readback(
+	let (stage_length, stage_digest) = verify_stage_readback(
 		&stage,
-		source.length(),
+		source_length,
 		source_digest,
 		scratch,
 		session,
@@ -196,11 +216,20 @@ where
 		session,
 		request.binding,
 	)?;
-	Ok((stage, source_digest))
+	Ok((
+		stage,
+		ObservedStreams {
+			source_length,
+			source_digest,
+			stage_length,
+			stage_digest,
+		},
+	))
 }
 
 fn copy_with_checkpoints<S, W>(
 	source: &S,
+	length: u64,
 	writer: &mut W,
 	scratch: &mut [u8],
 	records: &mut dyn StageRecords<S::Identity, S::Error, W::Error>,
@@ -211,7 +240,7 @@ where
 	W: StageWriter<Identity = S::Identity, Metadata = S::Metadata>,
 {
 	copy_and_checkpoint_at(
-		source.length(),
+		length,
 		scratch,
 		|offset, bytes| source.read_exact_at(offset, bytes),
 		|offset, bytes, range| {
@@ -264,21 +293,23 @@ pub(crate) fn verify_stage_readback<R, S: StageReader>(
 	scratch: &mut [u8],
 	session: &mut CopySession,
 	binding: CopyBinding,
-) -> Result<(), StageFailure<R, S::Error>> {
-	if stage.length() != source_length {
+) -> Result<(u64, ContentDigest), StageFailure<R, S::Error>> {
+	let stage_length = stage.length();
+	if stage_length != source_length {
 		return Err(StageFailure::LengthMismatch {
 			expected: source_length,
-			actual: stage.length(),
+			actual: stage_length,
 		});
 	}
-	let stage_digest = measure_at(stage.length(), scratch, |offset, bytes| {
+	let stage_digest = measure_at(stage_length, scratch, |offset, bytes| {
 		stage.read_exact_at(offset, bytes)
 	})
 	.map_err(StageFailure::Readback)?;
 	if stage_digest != source_digest {
 		return Err(StageFailure::DigestMismatch);
 	}
-	observe(session, binding, CopyEvent::ReadbackVerified)
+	observe(session, binding, CopyEvent::ReadbackVerified)?;
+	Ok((stage_length, stage_digest))
 }
 
 pub(crate) fn complete_stage_metadata<S, R>(
