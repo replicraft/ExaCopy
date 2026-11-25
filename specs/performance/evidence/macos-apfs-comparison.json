@@ -1,0 +1,916 @@
+{
+  "schema_version": 1,
+  "protocol": "exacopy-reference-v1",
+  "lane": "compare",
+  "outcome": "passed",
+  "configuration": {
+    "source_revision": "d82ce08b78f770e500de9b2c7965f24d625b757a",
+    "build_profile": "release",
+    "exacopy_binary_sha256": "c5e5f8c7d950c594040e215765b82df69f3bd55271dd28182342d9920e6d8ab9",
+    "cargo_lock_sha256": "2c4cd6d3567a3c5f4f0638ba1dcfc3bf61b5dfb711a36373f586204a8fc17e7d",
+    "workspace_lock_dependencies": [
+      "arrayvec 0.7.8",
+      "autocfg 1.5.1",
+      "bitflags 2.13.2",
+      "blake3 1.8.7",
+      "block-buffer 0.10.4",
+      "bumpalo 3.20.4",
+      "camino 1.2.6",
+      "cargo-platform 0.3.3",
+      "cargo_metadata 0.23.1",
+      "cc 1.11.2",
+      "cfg-if 1.0.5",
+      "chacha20 0.10.2",
+      "constant_time_eq 0.4.2",
+      "core_detect 1.0.0",
+      "cpufeatures 0.2.17",
+      "cpufeatures 0.3.1",
+      "crc32c 0.6.9",
+      "crypto-common 0.1.7",
+      "curve25519-dalek 4.1.3",
+      "curve25519-dalek-derive 0.1.1",
+      "digest 0.10.7",
+      "ed25519 2.2.3",
+      "ed25519-dalek 2.2.0",
+      "equivalent 1.0.3",
+      "errno 0.3.15",
+      "fiat-crypto 0.2.9",
+      "find-msvc-tools 0.1.15",
+      "futures-core 0.3.34",
+      "futures-task 0.3.34",
+      "futures-util 0.3.34",
+      "generic-array 0.14.7",
+      "getrandom 0.4.3",
+      "hashbrown 0.17.1",
+      "hax-lib 0.4.2",
+      "hax-lib-macros 0.4.2",
+      "hax-lib-macros-types 0.4.2",
+      "indexmap 2.14.2",
+      "itoa 1.0.19",
+      "js-sys 0.3.107",
+      "libc 0.2.191",
+      "linux-raw-sys 0.12.1",
+      "memchr 2.8.3",
+      "minicbor 2.3.0",
+      "num-bigint 0.4.8",
+      "num-integer 0.1.47",
+      "num-traits 0.2.19",
+      "pin-project-lite 0.2.18",
+      "proc-macro2 1.0.107",
+      "proptest 1.12.0",
+      "quote 1.0.47",
+      "r-efi 6.0.0",
+      "rand 0.10.4",
+      "rand_core 0.10.1",
+      "rand_xorshift 0.5.0",
+      "regex-syntax 0.8.12",
+      "rustc_version 0.4.1",
+      "rustix 1.1.6",
+      "rustversion 1.0.23",
+      "semver 1.0.28",
+      "serde 1.0.229",
+      "serde_core 1.0.229",
+      "serde_derive 1.0.229",
+      "serde_json 1.0.154",
+      "serde_spanned 1.1.3",
+      "sha2 0.10.9",
+      "shlex 2.0.1",
+      "signature 2.2.0",
+      "slab 0.4.12",
+      "subtle 2.6.1",
+      "syn 2.0.119",
+      "syn 3.0.10",
+      "thiserror 2.0.21",
+      "thiserror-impl 2.0.21",
+      "toml 1.2.1+spec-1.1.0",
+      "toml_datetime 1.1.3+spec-1.1.0",
+      "toml_parser 1.1.5+spec-1.1.0",
+      "toml_writer 1.2.0+spec-1.1.0",
+      "typenum 1.20.1",
+      "unarray 0.1.4",
+      "unicode-ident 1.0.27",
+      "uuid 1.29.3",
+      "version_check 0.9.5",
+      "wasm-bindgen 0.2.130",
+      "wasm-bindgen-macro 0.2.130",
+      "wasm-bindgen-macro-support 0.2.130",
+      "wasm-bindgen-shared 0.2.130",
+      "windows-link 0.2.1",
+      "windows-sys 0.61.2",
+      "winnow 1.0.5",
+      "zeroize 1.9.2",
+      "zmij 1.0.23"
+    ],
+    "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09) (Homebrew)\nbinary: rustc\ncommit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a\ncommit-date: 2026-11-09\nhost: aarch64-apple-darwin\nrelease: 1.100.0\nLLVM version: 23.1.5",
+    "cargo": "cargo 1.100.0 (3acc79c0c 2026-11-05) (Homebrew)",
+    "platform": {
+      "os": "Darwin",
+      "kernel": "23.6.0",
+      "machine": "arm64",
+      "version": "14.7.2",
+      "filesystem": "apfs",
+      "python": "3.14.0"
+    },
+    "hardware": "MacBookPro18,1; Apple M1 Pro 10-core; 32 GiB; internal Apple SSD through APFS",
+    "cmp_version": "/usr/bin/cmp:\n\tPROGRAM:cmp  PROJECT:patch_cmds-61\n\tPROGRAM:cmp  PROJECT:patch_cmds-61",
+    "cmp_sha256": "a263bc10a851ba075d1d1861176513206034207aeecd2ef69d1863dda00371c4",
+    "runner_sha256": "b568c1c52621826f6665dbacceca68638d8bcc74af4063c5434b090e82aeaa12",
+    "fixture_helper_sha256": "f3a13b225dde78a1b84fd95420f96d9b55833ea0ef14c01d25ec45ef59e02674",
+    "cache": "warm: fresh fixtures, read before trials; one warm-up excluded",
+    "repeats": 9
+  },
+  "evidence": [
+    {
+      "case": "small-equal",
+      "bytes_per_file": 4096,
+      "first_byte": null,
+      "verified_samples": {
+        "cmp": [
+          {
+            "elapsed_ns": 2086792,
+            "user_cpu_ns": 379000,
+            "system_cpu_ns": 755000,
+            "peak_rss_bytes": 1015808
+          },
+          {
+            "elapsed_ns": 2208500,
+            "user_cpu_ns": 346000,
+            "system_cpu_ns": 787000,
+            "peak_rss_bytes": 1015808
+          },
+          {
+            "elapsed_ns": 2052416,
+            "user_cpu_ns": 350000,
+            "system_cpu_ns": 754000,
+            "peak_rss_bytes": 1015808
+          },
+          {
+            "elapsed_ns": 1908250,
+            "user_cpu_ns": 278000,
+            "system_cpu_ns": 687000,
+            "peak_rss_bytes": 1015808
+          },
+          {
+            "elapsed_ns": 2072458,
+            "user_cpu_ns": 361000,
+            "system_cpu_ns": 746000,
+            "peak_rss_bytes": 1015808
+          },
+          {
+            "elapsed_ns": 2395333,
+            "user_cpu_ns": 401000,
+            "system_cpu_ns": 911000,
+            "peak_rss_bytes": 1015808
+          },
+          {
+            "elapsed_ns": 2165667,
+            "user_cpu_ns": 362000,
+            "system_cpu_ns": 1052000,
+            "peak_rss_bytes": 1081344
+          },
+          {
+            "elapsed_ns": 1787250,
+            "user_cpu_ns": 297000,
+            "system_cpu_ns": 660000,
+            "peak_rss_bytes": 1015808
+          },
+          {
+            "elapsed_ns": 1801750,
+            "user_cpu_ns": 300000,
+            "system_cpu_ns": 777000,
+            "peak_rss_bytes": 1015808
+          }
+        ],
+        "exacopy-workers-1": [
+          {
+            "elapsed_ns": 3714750,
+            "user_cpu_ns": 826000,
+            "system_cpu_ns": 1578000,
+            "peak_rss_bytes": 9699328
+          },
+          {
+            "elapsed_ns": 3892208,
+            "user_cpu_ns": 860000,
+            "system_cpu_ns": 1769000,
+            "peak_rss_bytes": 9699328
+          },
+          {
+            "elapsed_ns": 3732000,
+            "user_cpu_ns": 835000,
+            "system_cpu_ns": 1712000,
+            "peak_rss_bytes": 9699328
+          },
+          {
+            "elapsed_ns": 3904333,
+            "user_cpu_ns": 852000,
+            "system_cpu_ns": 1713000,
+            "peak_rss_bytes": 9699328
+          },
+          {
+            "elapsed_ns": 4117708,
+            "user_cpu_ns": 890000,
+            "system_cpu_ns": 1923000,
+            "peak_rss_bytes": 9863168
+          },
+          {
+            "elapsed_ns": 4203042,
+            "user_cpu_ns": 905000,
+            "system_cpu_ns": 1774000,
+            "peak_rss_bytes": 9797632
+          },
+          {
+            "elapsed_ns": 3643750,
+            "user_cpu_ns": 848000,
+            "system_cpu_ns": 1718000,
+            "peak_rss_bytes": 9732096
+          },
+          {
+            "elapsed_ns": 3418584,
+            "user_cpu_ns": 812000,
+            "system_cpu_ns": 1648000,
+            "peak_rss_bytes": 9732096
+          },
+          {
+            "elapsed_ns": 3719125,
+            "user_cpu_ns": 807000,
+            "system_cpu_ns": 1778000,
+            "peak_rss_bytes": 9764864
+          }
+        ],
+        "exacopy-workers-4": [
+          {
+            "elapsed_ns": 3747167,
+            "user_cpu_ns": 888000,
+            "system_cpu_ns": 2378000,
+            "peak_rss_bytes": 9895936
+          },
+          {
+            "elapsed_ns": 4362292,
+            "user_cpu_ns": 950000,
+            "system_cpu_ns": 2435000,
+            "peak_rss_bytes": 9928704
+          },
+          {
+            "elapsed_ns": 4306042,
+            "user_cpu_ns": 963000,
+            "system_cpu_ns": 2483000,
+            "peak_rss_bytes": 9928704
+          },
+          {
+            "elapsed_ns": 4274084,
+            "user_cpu_ns": 928000,
+            "system_cpu_ns": 2804000,
+            "peak_rss_bytes": 9928704
+          },
+          {
+            "elapsed_ns": 4231458,
+            "user_cpu_ns": 960000,
+            "system_cpu_ns": 2494000,
+            "peak_rss_bytes": 9961472
+          },
+          {
+            "elapsed_ns": 4070750,
+            "user_cpu_ns": 976000,
+            "system_cpu_ns": 2266000,
+            "peak_rss_bytes": 9879552
+          },
+          {
+            "elapsed_ns": 3828083,
+            "user_cpu_ns": 910000,
+            "system_cpu_ns": 2360000,
+            "peak_rss_bytes": 9912320
+          },
+          {
+            "elapsed_ns": 3633667,
+            "user_cpu_ns": 898000,
+            "system_cpu_ns": 2356000,
+            "peak_rss_bytes": 9945088
+          },
+          {
+            "elapsed_ns": 3756250,
+            "user_cpu_ns": 882000,
+            "system_cpu_ns": 2174000,
+            "peak_rss_bytes": 9895936
+          }
+        ]
+      },
+      "summary": {
+        "cmp": {
+          "elapsed_median_ns": 2072458,
+          "elapsed_min_ns": 1787250,
+          "elapsed_max_ns": 2395333,
+          "cpu_median_ns": 1107000,
+          "peak_rss_bytes": 1081344
+        },
+        "exacopy-workers-1": {
+          "elapsed_median_ns": 3732000,
+          "elapsed_min_ns": 3418584,
+          "elapsed_max_ns": 4203042,
+          "cpu_median_ns": 2566000,
+          "peak_rss_bytes": 9863168
+        },
+        "exacopy-workers-4": {
+          "elapsed_median_ns": 4070750,
+          "elapsed_min_ns": 3633667,
+          "elapsed_max_ns": 4362292,
+          "cpu_median_ns": 3270000,
+          "peak_rss_bytes": 9961472
+        }
+      }
+    },
+    {
+      "case": "large-equal",
+      "bytes_per_file": 67108864,
+      "first_byte": null,
+      "verified_samples": {
+        "cmp": [
+          {
+            "elapsed_ns": 99980333,
+            "user_cpu_ns": 89380000,
+            "system_cpu_ns": 8629000,
+            "peak_rss_bytes": 17760256
+          },
+          {
+            "elapsed_ns": 99808916,
+            "user_cpu_ns": 89098000,
+            "system_cpu_ns": 8591000,
+            "peak_rss_bytes": 17760256
+          },
+          {
+            "elapsed_ns": 100755584,
+            "user_cpu_ns": 89364000,
+            "system_cpu_ns": 9329000,
+            "peak_rss_bytes": 17760256
+          },
+          {
+            "elapsed_ns": 106215750,
+            "user_cpu_ns": 90462000,
+            "system_cpu_ns": 9947000,
+            "peak_rss_bytes": 17760256
+          },
+          {
+            "elapsed_ns": 130867959,
+            "user_cpu_ns": 97724000,
+            "system_cpu_ns": 12184000,
+            "peak_rss_bytes": 17760256
+          },
+          {
+            "elapsed_ns": 101502333,
+            "user_cpu_ns": 89526000,
+            "system_cpu_ns": 9394000,
+            "peak_rss_bytes": 17760256
+          },
+          {
+            "elapsed_ns": 101906375,
+            "user_cpu_ns": 89816000,
+            "system_cpu_ns": 9520000,
+            "peak_rss_bytes": 17760256
+          },
+          {
+            "elapsed_ns": 101381958,
+            "user_cpu_ns": 89630000,
+            "system_cpu_ns": 9187000,
+            "peak_rss_bytes": 17760256
+          },
+          {
+            "elapsed_ns": 101214458,
+            "user_cpu_ns": 89719000,
+            "system_cpu_ns": 9318000,
+            "peak_rss_bytes": 17858560
+          }
+        ],
+        "exacopy-workers-1": [
+          {
+            "elapsed_ns": 40732666,
+            "user_cpu_ns": 25554000,
+            "system_cpu_ns": 13566000,
+            "peak_rss_bytes": 9797632
+          },
+          {
+            "elapsed_ns": 41743333,
+            "user_cpu_ns": 25594000,
+            "system_cpu_ns": 13850000,
+            "peak_rss_bytes": 9928704
+          },
+          {
+            "elapsed_ns": 42130042,
+            "user_cpu_ns": 26089000,
+            "system_cpu_ns": 14151000,
+            "peak_rss_bytes": 9863168
+          },
+          {
+            "elapsed_ns": 43472250,
+            "user_cpu_ns": 26391000,
+            "system_cpu_ns": 14498000,
+            "peak_rss_bytes": 9830400
+          },
+          {
+            "elapsed_ns": 43689291,
+            "user_cpu_ns": 25085000,
+            "system_cpu_ns": 16248000,
+            "peak_rss_bytes": 9830400
+          },
+          {
+            "elapsed_ns": 41222875,
+            "user_cpu_ns": 25503000,
+            "system_cpu_ns": 13901000,
+            "peak_rss_bytes": 9863168
+          },
+          {
+            "elapsed_ns": 41239709,
+            "user_cpu_ns": 25572000,
+            "system_cpu_ns": 13771000,
+            "peak_rss_bytes": 9830400
+          },
+          {
+            "elapsed_ns": 61795834,
+            "user_cpu_ns": 27356000,
+            "system_cpu_ns": 16477000,
+            "peak_rss_bytes": 9928704
+          },
+          {
+            "elapsed_ns": 59108458,
+            "user_cpu_ns": 27203000,
+            "system_cpu_ns": 14379000,
+            "peak_rss_bytes": 9895936
+          }
+        ],
+        "exacopy-workers-4": [
+          {
+            "elapsed_ns": 14672833,
+            "user_cpu_ns": 24090000,
+            "system_cpu_ns": 19152000,
+            "peak_rss_bytes": 9994240
+          },
+          {
+            "elapsed_ns": 14614416,
+            "user_cpu_ns": 23762000,
+            "system_cpu_ns": 18229000,
+            "peak_rss_bytes": 9977856
+          },
+          {
+            "elapsed_ns": 16353125,
+            "user_cpu_ns": 24866000,
+            "system_cpu_ns": 20361000,
+            "peak_rss_bytes": 10059776
+          },
+          {
+            "elapsed_ns": 15065708,
+            "user_cpu_ns": 24135000,
+            "system_cpu_ns": 18397000,
+            "peak_rss_bytes": 9994240
+          },
+          {
+            "elapsed_ns": 15645583,
+            "user_cpu_ns": 24278000,
+            "system_cpu_ns": 20365000,
+            "peak_rss_bytes": 9994240
+          },
+          {
+            "elapsed_ns": 14822625,
+            "user_cpu_ns": 24034000,
+            "system_cpu_ns": 18909000,
+            "peak_rss_bytes": 9977856
+          },
+          {
+            "elapsed_ns": 43401625,
+            "user_cpu_ns": 26727000,
+            "system_cpu_ns": 21714000,
+            "peak_rss_bytes": 10059776
+          },
+          {
+            "elapsed_ns": 15241125,
+            "user_cpu_ns": 24305000,
+            "system_cpu_ns": 19133000,
+            "peak_rss_bytes": 9994240
+          },
+          {
+            "elapsed_ns": 19211500,
+            "user_cpu_ns": 24240000,
+            "system_cpu_ns": 18981000,
+            "peak_rss_bytes": 10027008
+          }
+        ]
+      },
+      "summary": {
+        "cmp": {
+          "elapsed_median_ns": 101381958,
+          "elapsed_min_ns": 99808916,
+          "elapsed_max_ns": 130867959,
+          "cpu_median_ns": 98920000,
+          "peak_rss_bytes": 17858560
+        },
+        "exacopy-workers-1": {
+          "elapsed_median_ns": 42130042,
+          "elapsed_min_ns": 40732666,
+          "elapsed_max_ns": 61795834,
+          "cpu_median_ns": 40240000,
+          "peak_rss_bytes": 9928704
+        },
+        "exacopy-workers-4": {
+          "elapsed_median_ns": 15241125,
+          "elapsed_min_ns": 14614416,
+          "elapsed_max_ns": 43401625,
+          "cpu_median_ns": 43242000,
+          "peak_rss_bytes": 10059776
+        }
+      }
+    },
+    {
+      "case": "large-early-difference",
+      "bytes_per_file": 67108864,
+      "first_byte": 0,
+      "verified_samples": {
+        "cmp": [
+          {
+            "elapsed_ns": 2953708,
+            "user_cpu_ns": 373000,
+            "system_cpu_ns": 995000,
+            "peak_rss_bytes": 1015808
+          },
+          {
+            "elapsed_ns": 2700667,
+            "user_cpu_ns": 394000,
+            "system_cpu_ns": 831000,
+            "peak_rss_bytes": 1015808
+          },
+          {
+            "elapsed_ns": 2786958,
+            "user_cpu_ns": 394000,
+            "system_cpu_ns": 809000,
+            "peak_rss_bytes": 1015808
+          },
+          {
+            "elapsed_ns": 2921750,
+            "user_cpu_ns": 390000,
+            "system_cpu_ns": 917000,
+            "peak_rss_bytes": 1015808
+          },
+          {
+            "elapsed_ns": 2833209,
+            "user_cpu_ns": 399000,
+            "system_cpu_ns": 1115000,
+            "peak_rss_bytes": 1015808
+          },
+          {
+            "elapsed_ns": 2592167,
+            "user_cpu_ns": 377000,
+            "system_cpu_ns": 771000,
+            "peak_rss_bytes": 1015808
+          },
+          {
+            "elapsed_ns": 2449709,
+            "user_cpu_ns": 362000,
+            "system_cpu_ns": 831000,
+            "peak_rss_bytes": 1015808
+          },
+          {
+            "elapsed_ns": 2624667,
+            "user_cpu_ns": 390000,
+            "system_cpu_ns": 846000,
+            "peak_rss_bytes": 1015808
+          },
+          {
+            "elapsed_ns": 2364875,
+            "user_cpu_ns": 350000,
+            "system_cpu_ns": 729000,
+            "peak_rss_bytes": 1015808
+          }
+        ],
+        "exacopy-workers-1": [
+          {
+            "elapsed_ns": 5060625,
+            "user_cpu_ns": 896000,
+            "system_cpu_ns": 2603000,
+            "peak_rss_bytes": 9764864
+          },
+          {
+            "elapsed_ns": 5479708,
+            "user_cpu_ns": 941000,
+            "system_cpu_ns": 2950000,
+            "peak_rss_bytes": 9732096
+          },
+          {
+            "elapsed_ns": 5232208,
+            "user_cpu_ns": 927000,
+            "system_cpu_ns": 2620000,
+            "peak_rss_bytes": 9699328
+          },
+          {
+            "elapsed_ns": 5549792,
+            "user_cpu_ns": 948000,
+            "system_cpu_ns": 2757000,
+            "peak_rss_bytes": 9699328
+          },
+          {
+            "elapsed_ns": 5810334,
+            "user_cpu_ns": 909000,
+            "system_cpu_ns": 2668000,
+            "peak_rss_bytes": 9732096
+          },
+          {
+            "elapsed_ns": 4687541,
+            "user_cpu_ns": 851000,
+            "system_cpu_ns": 2499000,
+            "peak_rss_bytes": 9732096
+          },
+          {
+            "elapsed_ns": 5045167,
+            "user_cpu_ns": 928000,
+            "system_cpu_ns": 2551000,
+            "peak_rss_bytes": 9764864
+          },
+          {
+            "elapsed_ns": 4950625,
+            "user_cpu_ns": 875000,
+            "system_cpu_ns": 2631000,
+            "peak_rss_bytes": 9732096
+          },
+          {
+            "elapsed_ns": 4594792,
+            "user_cpu_ns": 868000,
+            "system_cpu_ns": 2465000,
+            "peak_rss_bytes": 9732096
+          }
+        ],
+        "exacopy-workers-4": [
+          {
+            "elapsed_ns": 5397542,
+            "user_cpu_ns": 2046000,
+            "system_cpu_ns": 3531000,
+            "peak_rss_bytes": 9928704
+          },
+          {
+            "elapsed_ns": 5438458,
+            "user_cpu_ns": 2072000,
+            "system_cpu_ns": 3800000,
+            "peak_rss_bytes": 9928704
+          },
+          {
+            "elapsed_ns": 5351292,
+            "user_cpu_ns": 2092000,
+            "system_cpu_ns": 3496000,
+            "peak_rss_bytes": 9912320
+          },
+          {
+            "elapsed_ns": 6121000,
+            "user_cpu_ns": 2107000,
+            "system_cpu_ns": 3789000,
+            "peak_rss_bytes": 9928704
+          },
+          {
+            "elapsed_ns": 5476792,
+            "user_cpu_ns": 2082000,
+            "system_cpu_ns": 3636000,
+            "peak_rss_bytes": 9928704
+          },
+          {
+            "elapsed_ns": 5226875,
+            "user_cpu_ns": 2047000,
+            "system_cpu_ns": 3314000,
+            "peak_rss_bytes": 9879552
+          },
+          {
+            "elapsed_ns": 5457250,
+            "user_cpu_ns": 2070000,
+            "system_cpu_ns": 3402000,
+            "peak_rss_bytes": 9879552
+          },
+          {
+            "elapsed_ns": 5049625,
+            "user_cpu_ns": 2045000,
+            "system_cpu_ns": 3657000,
+            "peak_rss_bytes": 9961472
+          },
+          {
+            "elapsed_ns": 5052792,
+            "user_cpu_ns": 2064000,
+            "system_cpu_ns": 3282000,
+            "peak_rss_bytes": 9912320
+          }
+        ]
+      },
+      "summary": {
+        "cmp": {
+          "elapsed_median_ns": 2700667,
+          "elapsed_min_ns": 2364875,
+          "elapsed_max_ns": 2953708,
+          "cpu_median_ns": 1225000,
+          "peak_rss_bytes": 1015808
+        },
+        "exacopy-workers-1": {
+          "elapsed_median_ns": 5060625,
+          "elapsed_min_ns": 4594792,
+          "elapsed_max_ns": 5810334,
+          "cpu_median_ns": 3506000,
+          "peak_rss_bytes": 9764864
+        },
+        "exacopy-workers-4": {
+          "elapsed_median_ns": 5397542,
+          "elapsed_min_ns": 5049625,
+          "elapsed_max_ns": 6121000,
+          "cpu_median_ns": 5588000,
+          "peak_rss_bytes": 9961472
+        }
+      }
+    },
+    {
+      "case": "large-late-difference",
+      "bytes_per_file": 67108864,
+      "first_byte": 67108863,
+      "verified_samples": {
+        "cmp": [
+          {
+            "elapsed_ns": 104882959,
+            "user_cpu_ns": 90644000,
+            "system_cpu_ns": 9939000,
+            "peak_rss_bytes": 17760256
+          },
+          {
+            "elapsed_ns": 106803417,
+            "user_cpu_ns": 90372000,
+            "system_cpu_ns": 9742000,
+            "peak_rss_bytes": 17760256
+          },
+          {
+            "elapsed_ns": 105074208,
+            "user_cpu_ns": 89496000,
+            "system_cpu_ns": 9257000,
+            "peak_rss_bytes": 17760256
+          },
+          {
+            "elapsed_ns": 100768334,
+            "user_cpu_ns": 89781000,
+            "system_cpu_ns": 8898000,
+            "peak_rss_bytes": 17760256
+          },
+          {
+            "elapsed_ns": 107265250,
+            "user_cpu_ns": 90309000,
+            "system_cpu_ns": 10159000,
+            "peak_rss_bytes": 17858560
+          },
+          {
+            "elapsed_ns": 100444042,
+            "user_cpu_ns": 89581000,
+            "system_cpu_ns": 8846000,
+            "peak_rss_bytes": 17760256
+          },
+          {
+            "elapsed_ns": 101396542,
+            "user_cpu_ns": 89385000,
+            "system_cpu_ns": 8791000,
+            "peak_rss_bytes": 17760256
+          },
+          {
+            "elapsed_ns": 100008250,
+            "user_cpu_ns": 89229000,
+            "system_cpu_ns": 8628000,
+            "peak_rss_bytes": 17760256
+          },
+          {
+            "elapsed_ns": 103514417,
+            "user_cpu_ns": 90292000,
+            "system_cpu_ns": 10228000,
+            "peak_rss_bytes": 17760256
+          }
+        ],
+        "exacopy-workers-1": [
+          {
+            "elapsed_ns": 41351750,
+            "user_cpu_ns": 25414000,
+            "system_cpu_ns": 13836000,
+            "peak_rss_bytes": 9928704
+          },
+          {
+            "elapsed_ns": 58216167,
+            "user_cpu_ns": 25814000,
+            "system_cpu_ns": 15546000,
+            "peak_rss_bytes": 9863168
+          },
+          {
+            "elapsed_ns": 49740833,
+            "user_cpu_ns": 27763000,
+            "system_cpu_ns": 14461000,
+            "peak_rss_bytes": 9994240
+          },
+          {
+            "elapsed_ns": 41823625,
+            "user_cpu_ns": 25547000,
+            "system_cpu_ns": 14090000,
+            "peak_rss_bytes": 9895936
+          },
+          {
+            "elapsed_ns": 41857792,
+            "user_cpu_ns": 25743000,
+            "system_cpu_ns": 14390000,
+            "peak_rss_bytes": 9863168
+          },
+          {
+            "elapsed_ns": 41855792,
+            "user_cpu_ns": 25535000,
+            "system_cpu_ns": 14355000,
+            "peak_rss_bytes": 9863168
+          },
+          {
+            "elapsed_ns": 42951750,
+            "user_cpu_ns": 25980000,
+            "system_cpu_ns": 14532000,
+            "peak_rss_bytes": 9961472
+          },
+          {
+            "elapsed_ns": 41060583,
+            "user_cpu_ns": 25725000,
+            "system_cpu_ns": 13444000,
+            "peak_rss_bytes": 9830400
+          },
+          {
+            "elapsed_ns": 43779167,
+            "user_cpu_ns": 25440000,
+            "system_cpu_ns": 15516000,
+            "peak_rss_bytes": 9928704
+          }
+        ],
+        "exacopy-workers-4": [
+          {
+            "elapsed_ns": 15098250,
+            "user_cpu_ns": 24065000,
+            "system_cpu_ns": 18245000,
+            "peak_rss_bytes": 9994240
+          },
+          {
+            "elapsed_ns": 15786458,
+            "user_cpu_ns": 24081000,
+            "system_cpu_ns": 20850000,
+            "peak_rss_bytes": 9994240
+          },
+          {
+            "elapsed_ns": 23843250,
+            "user_cpu_ns": 25845000,
+            "system_cpu_ns": 21939000,
+            "peak_rss_bytes": 10059776
+          },
+          {
+            "elapsed_ns": 16718875,
+            "user_cpu_ns": 25116000,
+            "system_cpu_ns": 20170000,
+            "peak_rss_bytes": 10059776
+          },
+          {
+            "elapsed_ns": 15342375,
+            "user_cpu_ns": 24374000,
+            "system_cpu_ns": 20335000,
+            "peak_rss_bytes": 10027008
+          },
+          {
+            "elapsed_ns": 14475833,
+            "user_cpu_ns": 24008000,
+            "system_cpu_ns": 18251000,
+            "peak_rss_bytes": 9994240
+          },
+          {
+            "elapsed_ns": 14989042,
+            "user_cpu_ns": 24105000,
+            "system_cpu_ns": 19456000,
+            "peak_rss_bytes": 10027008
+          },
+          {
+            "elapsed_ns": 15635375,
+            "user_cpu_ns": 24372000,
+            "system_cpu_ns": 19396000,
+            "peak_rss_bytes": 10059776
+          },
+          {
+            "elapsed_ns": 15246625,
+            "user_cpu_ns": 24171000,
+            "system_cpu_ns": 19547000,
+            "peak_rss_bytes": 10010624
+          }
+        ]
+      },
+      "summary": {
+        "cmp": {
+          "elapsed_median_ns": 103514417,
+          "elapsed_min_ns": 100008250,
+          "elapsed_max_ns": 107265250,
+          "cpu_median_ns": 98753000,
+          "peak_rss_bytes": 17858560
+        },
+        "exacopy-workers-1": {
+          "elapsed_median_ns": 41857792,
+          "elapsed_min_ns": 41060583,
+          "elapsed_max_ns": 58216167,
+          "cpu_median_ns": 40133000,
+          "peak_rss_bytes": 9994240
+        },
+        "exacopy-workers-4": {
+          "elapsed_median_ns": 15342375,
+          "elapsed_min_ns": 14475833,
+          "elapsed_max_ns": 23843250,
+          "cpu_median_ns": 43768000,
+          "peak_rss_bytes": 10059776
+        }
+      }
+    }
+  ]
+}

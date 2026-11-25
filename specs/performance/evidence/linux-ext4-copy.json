@@ -1,0 +1,302 @@
+{
+  "schema_version": 1,
+  "protocol": "exacopy-reference-v1",
+  "lane": "copy",
+  "outcome": "passed",
+  "configuration": {
+    "source_revision": "d82ce08b78f770e500de9b2c7965f24d625b757a",
+    "build_profile": "release",
+    "exacopy_binary_sha256": "ecb87a1407a4ee46ff985379bd0e3e4580fae124aa358ddd4097b8b48c712283",
+    "cargo_lock_sha256": "2c4cd6d3567a3c5f4f0638ba1dcfc3bf61b5dfb711a36373f586204a8fc17e7d",
+    "workspace_lock_dependencies": [
+      "arrayvec 0.7.8",
+      "autocfg 1.5.1",
+      "bitflags 2.13.2",
+      "blake3 1.8.7",
+      "block-buffer 0.10.4",
+      "bumpalo 3.20.4",
+      "camino 1.2.6",
+      "cargo-platform 0.3.3",
+      "cargo_metadata 0.23.1",
+      "cc 1.11.2",
+      "cfg-if 1.0.5",
+      "chacha20 0.10.2",
+      "constant_time_eq 0.4.2",
+      "core_detect 1.0.0",
+      "cpufeatures 0.2.17",
+      "cpufeatures 0.3.1",
+      "crc32c 0.6.9",
+      "crypto-common 0.1.7",
+      "curve25519-dalek 4.1.3",
+      "curve25519-dalek-derive 0.1.1",
+      "digest 0.10.7",
+      "ed25519 2.2.3",
+      "ed25519-dalek 2.2.0",
+      "equivalent 1.0.3",
+      "errno 0.3.15",
+      "fiat-crypto 0.2.9",
+      "find-msvc-tools 0.1.15",
+      "futures-core 0.3.34",
+      "futures-task 0.3.34",
+      "futures-util 0.3.34",
+      "generic-array 0.14.7",
+      "getrandom 0.4.3",
+      "hashbrown 0.17.1",
+      "hax-lib 0.4.2",
+      "hax-lib-macros 0.4.2",
+      "hax-lib-macros-types 0.4.2",
+      "indexmap 2.14.2",
+      "itoa 1.0.19",
+      "js-sys 0.3.107",
+      "libc 0.2.191",
+      "linux-raw-sys 0.12.1",
+      "memchr 2.8.3",
+      "minicbor 2.3.0",
+      "num-bigint 0.4.8",
+      "num-integer 0.1.47",
+      "num-traits 0.2.19",
+      "pin-project-lite 0.2.18",
+      "proc-macro2 1.0.107",
+      "proptest 1.12.0",
+      "quote 1.0.47",
+      "r-efi 6.0.0",
+      "rand 0.10.4",
+      "rand_core 0.10.1",
+      "rand_xorshift 0.5.0",
+      "regex-syntax 0.8.12",
+      "rustc_version 0.4.1",
+      "rustix 1.1.6",
+      "rustversion 1.0.23",
+      "semver 1.0.28",
+      "serde 1.0.229",
+      "serde_core 1.0.229",
+      "serde_derive 1.0.229",
+      "serde_json 1.0.154",
+      "serde_spanned 1.1.3",
+      "sha2 0.10.9",
+      "shlex 2.0.1",
+      "signature 2.2.0",
+      "slab 0.4.12",
+      "subtle 2.6.1",
+      "syn 2.0.119",
+      "syn 3.0.10",
+      "thiserror 2.0.21",
+      "thiserror-impl 2.0.21",
+      "toml 1.2.1+spec-1.1.0",
+      "toml_datetime 1.1.3+spec-1.1.0",
+      "toml_parser 1.1.5+spec-1.1.0",
+      "toml_writer 1.2.0+spec-1.1.0",
+      "typenum 1.20.1",
+      "unarray 0.1.4",
+      "unicode-ident 1.0.27",
+      "uuid 1.29.3",
+      "version_check 0.9.5",
+      "wasm-bindgen 0.2.130",
+      "wasm-bindgen-macro 0.2.130",
+      "wasm-bindgen-macro-support 0.2.130",
+      "wasm-bindgen-shared 0.2.130",
+      "windows-link 0.2.1",
+      "windows-sys 0.61.2",
+      "winnow 1.0.5",
+      "zeroize 1.9.2",
+      "zmij 1.0.23"
+    ],
+    "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)\nbinary: rustc\ncommit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a\ncommit-date: 2026-11-09\nhost: aarch64-unknown-linux-gnu\nrelease: 1.100.0\nLLVM version: 23.1.5",
+    "cargo": "cargo 1.100.0 (3acc79c0c 2026-11-05)",
+    "platform": {
+      "os": "Linux",
+      "kernel": "6.8.0-147-generic",
+      "machine": "aarch64",
+      "version": "Ubuntu 24.04.5 LTS",
+      "filesystem": "ext4",
+      "python": "3.12.3"
+    },
+    "hardware": "Lima aarch64 guest on Apple M1 Pro; 4 vCPU; 4.8 GiB RAM; virtio /dev/vda1 backed by internal Apple SSD; ext4 rw,relatime,discard,errors=remount-ro,commit=30",
+    "cmp_version": "cmp (GNU diffutils) 3.10",
+    "cmp_sha256": "58f9f2038d6eb030a70357c2e67ad9b048af0ca09eca754a5a70990e3e79b41f",
+    "runner_sha256": "b568c1c52621826f6665dbacceca68638d8bcc74af4063c5434b090e82aeaa12",
+    "fixture_helper_sha256": "f3a13b225dde78a1b84fd95420f96d9b55833ea0ef14c01d25ec45ef59e02674",
+    "cache": "warm: fresh fixtures, read before trials; one warm-up excluded",
+    "repeats": 9,
+    "rsync_version": "rsync  version 3.2.7  protocol version 31",
+    "rsync_sha256": "954f2a06af7b00bdf0117491c31072b178446e39fcf5ea6a5133d5752dd1fb8f"
+  },
+  "evidence": {
+    "workloads": [
+      {
+        "case": "small-copy",
+        "bytes": 4096,
+        "assurance": {
+          "schema": "exacopy.cli.copy",
+          "schema_version": "1.0",
+          "publication": "published",
+          "completed": 1,
+          "pending": 0,
+          "verification": "hash_readback",
+          "consistency": "live_observed",
+          "durability": "unconfirmed",
+          "preservation": "preserve",
+          "redundancy": "independent_writes",
+          "metadata": "complete_for_policy"
+        },
+        "sha256": "2db2bdbbd1132eba19278fdb292b8abcf4bbe5442cf2700b6f62479bed466cf8",
+        "verified_samples": [
+          {
+            "elapsed_ns": 20521949,
+            "user_cpu_ns": 0,
+            "system_cpu_ns": 3540000,
+            "peak_rss_bytes": 19791872
+          },
+          {
+            "elapsed_ns": 16411579,
+            "user_cpu_ns": 1697000,
+            "system_cpu_ns": 1697000,
+            "peak_rss_bytes": 19791872
+          },
+          {
+            "elapsed_ns": 16879287,
+            "user_cpu_ns": 0,
+            "system_cpu_ns": 3145000,
+            "peak_rss_bytes": 19791872
+          },
+          {
+            "elapsed_ns": 18752199,
+            "user_cpu_ns": 0,
+            "system_cpu_ns": 3686000,
+            "peak_rss_bytes": 19791872
+          },
+          {
+            "elapsed_ns": 14611342,
+            "user_cpu_ns": 0,
+            "system_cpu_ns": 3372000,
+            "peak_rss_bytes": 19791872
+          },
+          {
+            "elapsed_ns": 17509088,
+            "user_cpu_ns": 1593000,
+            "system_cpu_ns": 1593000,
+            "peak_rss_bytes": 19791872
+          },
+          {
+            "elapsed_ns": 15535596,
+            "user_cpu_ns": 0,
+            "system_cpu_ns": 3222000,
+            "peak_rss_bytes": 19791872
+          },
+          {
+            "elapsed_ns": 27714942,
+            "user_cpu_ns": 0,
+            "system_cpu_ns": 3667000,
+            "peak_rss_bytes": 19791872
+          },
+          {
+            "elapsed_ns": 44728918,
+            "user_cpu_ns": 0,
+            "system_cpu_ns": 4214000,
+            "peak_rss_bytes": 19791872
+          }
+        ],
+        "summary": {
+          "elapsed_median_ns": 17509088,
+          "elapsed_min_ns": 14611342,
+          "elapsed_max_ns": 44728918,
+          "cpu_median_ns": 3394000,
+          "peak_rss_bytes": 19791872
+        }
+      },
+      {
+        "case": "large-copy",
+        "bytes": 67108864,
+        "assurance": {
+          "schema": "exacopy.cli.copy",
+          "schema_version": "1.0",
+          "publication": "published",
+          "completed": 1,
+          "pending": 0,
+          "verification": "hash_readback",
+          "consistency": "live_observed",
+          "durability": "unconfirmed",
+          "preservation": "preserve",
+          "redundancy": "independent_writes",
+          "metadata": "complete_for_policy"
+        },
+        "sha256": "2f8320d9664c494e6da74515903ad6329dccf00e0c70e9f71d5e5ca43c3b7ed0",
+        "verified_samples": [
+          {
+            "elapsed_ns": 262263596,
+            "user_cpu_ns": 135558000,
+            "system_cpu_ns": 73385000,
+            "peak_rss_bytes": 21762048
+          },
+          {
+            "elapsed_ns": 259023604,
+            "user_cpu_ns": 135727000,
+            "system_cpu_ns": 67368000,
+            "peak_rss_bytes": 21762048
+          },
+          {
+            "elapsed_ns": 372018990,
+            "user_cpu_ns": 147134000,
+            "system_cpu_ns": 89741000,
+            "peak_rss_bytes": 21762048
+          },
+          {
+            "elapsed_ns": 372185244,
+            "user_cpu_ns": 169578000,
+            "system_cpu_ns": 96276000,
+            "peak_rss_bytes": 21762048
+          },
+          {
+            "elapsed_ns": 334495662,
+            "user_cpu_ns": 140000000,
+            "system_cpu_ns": 75000000,
+            "peak_rss_bytes": 21762048
+          },
+          {
+            "elapsed_ns": 482150075,
+            "user_cpu_ns": 149887000,
+            "system_cpu_ns": 194534000,
+            "peak_rss_bytes": 21762048
+          },
+          {
+            "elapsed_ns": 443562333,
+            "user_cpu_ns": 135441000,
+            "system_cpu_ns": 197644000,
+            "peak_rss_bytes": 21762048
+          },
+          {
+            "elapsed_ns": 368179234,
+            "user_cpu_ns": 135309000,
+            "system_cpu_ns": 96220000,
+            "peak_rss_bytes": 21762048
+          },
+          {
+            "elapsed_ns": 380074387,
+            "user_cpu_ns": 144256000,
+            "system_cpu_ns": 96843000,
+            "peak_rss_bytes": 21762048
+          }
+        ],
+        "summary": {
+          "elapsed_median_ns": 372018990,
+          "elapsed_min_ns": 259023604,
+          "elapsed_max_ns": 482150075,
+          "cpu_median_ns": 236875000,
+          "peak_rss_bytes": 21762048
+        }
+      }
+    ],
+    "rsync_copy": {
+      "reference_exit": 0,
+      "cmp_exit": 0,
+      "item": ">f+++++++++"
+    },
+    "incumbent_control": {
+      "exacopy_exit": 3,
+      "exacopy_error": "E_CONFLICT",
+      "rsync_exit": 0,
+      "rsync_itemized_change": "",
+      "source_and_incumbent_preserved": true
+    }
+  }
+}

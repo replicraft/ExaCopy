@@ -1,0 +1,590 @@
+{
+  "schema_version": 1,
+  "protocol": "exacopy-reference-v1",
+  "lane": "differential",
+  "outcome": "passed",
+  "configuration": {
+    "source_revision": "d82ce08b78f770e500de9b2c7965f24d625b757a",
+    "build_profile": "release",
+    "exacopy_binary_sha256": "c5e5f8c7d950c594040e215765b82df69f3bd55271dd28182342d9920e6d8ab9",
+    "cargo_lock_sha256": "2c4cd6d3567a3c5f4f0638ba1dcfc3bf61b5dfb711a36373f586204a8fc17e7d",
+    "workspace_lock_dependencies": [
+      "arrayvec 0.7.8",
+      "autocfg 1.5.1",
+      "bitflags 2.13.2",
+      "blake3 1.8.7",
+      "block-buffer 0.10.4",
+      "bumpalo 3.20.4",
+      "camino 1.2.6",
+      "cargo-platform 0.3.3",
+      "cargo_metadata 0.23.1",
+      "cc 1.11.2",
+      "cfg-if 1.0.5",
+      "chacha20 0.10.2",
+      "constant_time_eq 0.4.2",
+      "core_detect 1.0.0",
+      "cpufeatures 0.2.17",
+      "cpufeatures 0.3.1",
+      "crc32c 0.6.9",
+      "crypto-common 0.1.7",
+      "curve25519-dalek 4.1.3",
+      "curve25519-dalek-derive 0.1.1",
+      "digest 0.10.7",
+      "ed25519 2.2.3",
+      "ed25519-dalek 2.2.0",
+      "equivalent 1.0.3",
+      "errno 0.3.15",
+      "fiat-crypto 0.2.9",
+      "find-msvc-tools 0.1.15",
+      "futures-core 0.3.34",
+      "futures-task 0.3.34",
+      "futures-util 0.3.34",
+      "generic-array 0.14.7",
+      "getrandom 0.4.3",
+      "hashbrown 0.17.1",
+      "hax-lib 0.4.2",
+      "hax-lib-macros 0.4.2",
+      "hax-lib-macros-types 0.4.2",
+      "indexmap 2.14.2",
+      "itoa 1.0.19",
+      "js-sys 0.3.107",
+      "libc 0.2.191",
+      "linux-raw-sys 0.12.1",
+      "memchr 2.8.3",
+      "minicbor 2.3.0",
+      "num-bigint 0.4.8",
+      "num-integer 0.1.47",
+      "num-traits 0.2.19",
+      "pin-project-lite 0.2.18",
+      "proc-macro2 1.0.107",
+      "proptest 1.12.0",
+      "quote 1.0.47",
+      "r-efi 6.0.0",
+      "rand 0.10.4",
+      "rand_core 0.10.1",
+      "rand_xorshift 0.5.0",
+      "regex-syntax 0.8.12",
+      "rustc_version 0.4.1",
+      "rustix 1.1.6",
+      "rustversion 1.0.23",
+      "semver 1.0.28",
+      "serde 1.0.229",
+      "serde_core 1.0.229",
+      "serde_derive 1.0.229",
+      "serde_json 1.0.154",
+      "serde_spanned 1.1.3",
+      "sha2 0.10.9",
+      "shlex 2.0.1",
+      "signature 2.2.0",
+      "slab 0.4.12",
+      "subtle 2.6.1",
+      "syn 2.0.119",
+      "syn 3.0.10",
+      "thiserror 2.0.21",
+      "thiserror-impl 2.0.21",
+      "toml 1.2.1+spec-1.1.0",
+      "toml_datetime 1.1.3+spec-1.1.0",
+      "toml_parser 1.1.5+spec-1.1.0",
+      "toml_writer 1.2.0+spec-1.1.0",
+      "typenum 1.20.1",
+      "unarray 0.1.4",
+      "unicode-ident 1.0.27",
+      "uuid 1.29.3",
+      "version_check 0.9.5",
+      "wasm-bindgen 0.2.130",
+      "wasm-bindgen-macro 0.2.130",
+      "wasm-bindgen-macro-support 0.2.130",
+      "wasm-bindgen-shared 0.2.130",
+      "windows-link 0.2.1",
+      "windows-sys 0.61.2",
+      "winnow 1.0.5",
+      "zeroize 1.9.2",
+      "zmij 1.0.23"
+    ],
+    "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09) (Homebrew)\nbinary: rustc\ncommit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a\ncommit-date: 2026-11-09\nhost: aarch64-apple-darwin\nrelease: 1.100.0\nLLVM version: 23.1.5",
+    "cargo": "cargo 1.100.0 (3acc79c0c 2026-11-05) (Homebrew)",
+    "platform": {
+      "os": "Darwin",
+      "kernel": "23.6.0",
+      "machine": "arm64",
+      "version": "14.7.2",
+      "filesystem": "apfs",
+      "python": "3.14.0"
+    },
+    "hardware": "MacBookPro18,1; Apple M1 Pro 10-core; 32 GiB; internal Apple SSD through APFS",
+    "cmp_version": "/usr/bin/cmp:\n\tPROGRAM:cmp  PROJECT:patch_cmds-61\n\tPROGRAM:cmp  PROJECT:patch_cmds-61",
+    "cmp_sha256": "a263bc10a851ba075d1d1861176513206034207aeecd2ef69d1863dda00371c4",
+    "runner_sha256": "b568c1c52621826f6665dbacceca68638d8bcc74af4063c5434b090e82aeaa12",
+    "fixture_helper_sha256": "f3a13b225dde78a1b84fd95420f96d9b55833ea0ef14c01d25ec45ef59e02674",
+    "cache": "warm: fresh fixtures, read before trials; one warm-up excluded",
+    "repeats": 9,
+    "rsync_version": "rsync  version 3.5.2  protocol version 33",
+    "rsync_sha256": "1e192e2f6347b788297116460598775440763a0deeb7e4f2ec57abfa4d2ce2a7"
+  },
+  "evidence": {
+    "cases": [
+      {
+        "case": "empty-equal",
+        "left_bytes": 0,
+        "right_bytes": 0,
+        "first_byte": null,
+        "sparse_fixture": false,
+        "allocated_bytes": [
+          0,
+          0
+        ],
+        "sha256": [
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ],
+        "cmp_exit": 0,
+        "rsync_exit": 0,
+        "rsync_itemized_change": "",
+        "exa_copy": {
+          "1": {
+            "exit_code": 0,
+            "report": {
+              "schema": "exacopy.cli.diff",
+              "schema_version": "1.0",
+              "relation": "bytes",
+              "complete": true,
+              "result": "equal",
+              "consistency": "live_observed",
+              "length": "0"
+            }
+          },
+          "4": {
+            "exit_code": 0,
+            "report": {
+              "schema": "exacopy.cli.diff",
+              "schema_version": "1.0",
+              "relation": "bytes",
+              "complete": true,
+              "result": "equal",
+              "consistency": "live_observed",
+              "length": "0"
+            }
+          },
+          "16": {
+            "exit_code": 0,
+            "report": {
+              "schema": "exacopy.cli.diff",
+              "schema_version": "1.0",
+              "relation": "bytes",
+              "complete": true,
+              "result": "equal",
+              "consistency": "live_observed",
+              "length": "0"
+            }
+          }
+        },
+        "fixture_preserved": true
+      },
+      {
+        "case": "binary-equal",
+        "left_bytes": 3145728,
+        "right_bytes": 3145728,
+        "first_byte": null,
+        "sparse_fixture": false,
+        "allocated_bytes": [
+          3145728,
+          3145728
+        ],
+        "sha256": [
+          "e540b5b59f3eb19f221c77056dc0b2486df6bfaa83829df69ee5bf85d1d10038",
+          "e540b5b59f3eb19f221c77056dc0b2486df6bfaa83829df69ee5bf85d1d10038"
+        ],
+        "cmp_exit": 0,
+        "rsync_exit": 0,
+        "rsync_itemized_change": "",
+        "exa_copy": {
+          "1": {
+            "exit_code": 0,
+            "report": {
+              "schema": "exacopy.cli.diff",
+              "schema_version": "1.0",
+              "relation": "bytes",
+              "complete": true,
+              "result": "equal",
+              "consistency": "live_observed",
+              "length": "3145728"
+            }
+          },
+          "4": {
+            "exit_code": 0,
+            "report": {
+              "schema": "exacopy.cli.diff",
+              "schema_version": "1.0",
+              "relation": "bytes",
+              "complete": true,
+              "result": "equal",
+              "consistency": "live_observed",
+              "length": "3145728"
+            }
+          },
+          "16": {
+            "exit_code": 0,
+            "report": {
+              "schema": "exacopy.cli.diff",
+              "schema_version": "1.0",
+              "relation": "bytes",
+              "complete": true,
+              "result": "equal",
+              "consistency": "live_observed",
+              "length": "3145728"
+            }
+          }
+        },
+        "fixture_preserved": true
+      },
+      {
+        "case": "first-byte",
+        "left_bytes": 3145728,
+        "right_bytes": 3145728,
+        "first_byte": 0,
+        "sparse_fixture": false,
+        "allocated_bytes": [
+          3145728,
+          3145728
+        ],
+        "sha256": [
+          "d5f3b884adbde8f465e44f769a7c9cb5855c9ef0aa1a36469d0cd4a6334be928",
+          "6d7732667a7c54a7d244285476cd5188bc965653b1b9231cd7c447b7df60a4dc"
+        ],
+        "cmp_exit": 1,
+        "rsync_exit": 0,
+        "rsync_itemized_change": ">fc.T......",
+        "exa_copy": {
+          "1": {
+            "exit_code": 1,
+            "report": {
+              "schema": "exacopy.cli.diff",
+              "schema_version": "1.0",
+              "relation": "bytes",
+              "complete": true,
+              "result": "different",
+              "consistency": "live_observed",
+              "difference": {
+                "kind": "first_byte",
+                "offset": "0"
+              }
+            }
+          },
+          "4": {
+            "exit_code": 1,
+            "report": {
+              "schema": "exacopy.cli.diff",
+              "schema_version": "1.0",
+              "relation": "bytes",
+              "complete": true,
+              "result": "different",
+              "consistency": "live_observed",
+              "difference": {
+                "kind": "first_byte",
+                "offset": "0"
+              }
+            }
+          },
+          "16": {
+            "exit_code": 1,
+            "report": {
+              "schema": "exacopy.cli.diff",
+              "schema_version": "1.0",
+              "relation": "bytes",
+              "complete": true,
+              "result": "different",
+              "consistency": "live_observed",
+              "difference": {
+                "kind": "first_byte",
+                "offset": "0"
+              }
+            }
+          }
+        },
+        "fixture_preserved": true
+      },
+      {
+        "case": "middle-byte",
+        "left_bytes": 3145728,
+        "right_bytes": 3145728,
+        "first_byte": 1572864,
+        "sparse_fixture": false,
+        "allocated_bytes": [
+          3145728,
+          3145728
+        ],
+        "sha256": [
+          "fdedba1bbcafe55cfe50ce7b27a22ced69778c7db78135d35b24162c53c4bade",
+          "fe7844fbc571205f3171c0c6109596e0f034c5ff217ef9f704d145860410e617"
+        ],
+        "cmp_exit": 1,
+        "rsync_exit": 0,
+        "rsync_itemized_change": ">fc.T......",
+        "exa_copy": {
+          "1": {
+            "exit_code": 1,
+            "report": {
+              "schema": "exacopy.cli.diff",
+              "schema_version": "1.0",
+              "relation": "bytes",
+              "complete": true,
+              "result": "different",
+              "consistency": "live_observed",
+              "difference": {
+                "kind": "first_byte",
+                "offset": "1572864"
+              }
+            }
+          },
+          "4": {
+            "exit_code": 1,
+            "report": {
+              "schema": "exacopy.cli.diff",
+              "schema_version": "1.0",
+              "relation": "bytes",
+              "complete": true,
+              "result": "different",
+              "consistency": "live_observed",
+              "difference": {
+                "kind": "first_byte",
+                "offset": "1572864"
+              }
+            }
+          },
+          "16": {
+            "exit_code": 1,
+            "report": {
+              "schema": "exacopy.cli.diff",
+              "schema_version": "1.0",
+              "relation": "bytes",
+              "complete": true,
+              "result": "different",
+              "consistency": "live_observed",
+              "difference": {
+                "kind": "first_byte",
+                "offset": "1572864"
+              }
+            }
+          }
+        },
+        "fixture_preserved": true
+      },
+      {
+        "case": "final-byte",
+        "left_bytes": 3145728,
+        "right_bytes": 3145728,
+        "first_byte": 3145727,
+        "sparse_fixture": false,
+        "allocated_bytes": [
+          3145728,
+          3145728
+        ],
+        "sha256": [
+          "d65640e5e6a1b35fdde5b612a244d641028b9867862de5528c7227b17c229595",
+          "82e81c9776f0fc47c02613332d781d3794ccb777c6670331615e02582ab276f6"
+        ],
+        "cmp_exit": 1,
+        "rsync_exit": 0,
+        "rsync_itemized_change": ">fc.T......",
+        "exa_copy": {
+          "1": {
+            "exit_code": 1,
+            "report": {
+              "schema": "exacopy.cli.diff",
+              "schema_version": "1.0",
+              "relation": "bytes",
+              "complete": true,
+              "result": "different",
+              "consistency": "live_observed",
+              "difference": {
+                "kind": "first_byte",
+                "offset": "3145727"
+              }
+            }
+          },
+          "4": {
+            "exit_code": 1,
+            "report": {
+              "schema": "exacopy.cli.diff",
+              "schema_version": "1.0",
+              "relation": "bytes",
+              "complete": true,
+              "result": "different",
+              "consistency": "live_observed",
+              "difference": {
+                "kind": "first_byte",
+                "offset": "3145727"
+              }
+            }
+          },
+          "16": {
+            "exit_code": 1,
+            "report": {
+              "schema": "exacopy.cli.diff",
+              "schema_version": "1.0",
+              "relation": "bytes",
+              "complete": true,
+              "result": "different",
+              "consistency": "live_observed",
+              "difference": {
+                "kind": "first_byte",
+                "offset": "3145727"
+              }
+            }
+          }
+        },
+        "fixture_preserved": true
+      },
+      {
+        "case": "shorter",
+        "left_bytes": 4096,
+        "right_bytes": 4095,
+        "first_byte": null,
+        "sparse_fixture": false,
+        "allocated_bytes": [
+          4096,
+          4096
+        ],
+        "sha256": [
+          "5fee6160db105594e4b9f45f44a4f09d395695bfa51b4d625cf0ed8eac62226d",
+          "e0a31095446a730e5575b21346587c9f0f4a9d9b0d4eb29b02fcbf8a762c9cc8"
+        ],
+        "cmp_exit": 1,
+        "rsync_exit": 0,
+        "rsync_itemized_change": ">fcsT......",
+        "exa_copy": {
+          "1": {
+            "exit_code": 1,
+            "report": {
+              "schema": "exacopy.cli.diff",
+              "schema_version": "1.0",
+              "relation": "bytes",
+              "complete": true,
+              "result": "different",
+              "consistency": "live_observed",
+              "difference": {
+                "kind": "length",
+                "left": "4096",
+                "right": "4095"
+              }
+            }
+          },
+          "4": {
+            "exit_code": 1,
+            "report": {
+              "schema": "exacopy.cli.diff",
+              "schema_version": "1.0",
+              "relation": "bytes",
+              "complete": true,
+              "result": "different",
+              "consistency": "live_observed",
+              "difference": {
+                "kind": "length",
+                "left": "4096",
+                "right": "4095"
+              }
+            }
+          },
+          "16": {
+            "exit_code": 1,
+            "report": {
+              "schema": "exacopy.cli.diff",
+              "schema_version": "1.0",
+              "relation": "bytes",
+              "complete": true,
+              "result": "different",
+              "consistency": "live_observed",
+              "difference": {
+                "kind": "length",
+                "left": "4096",
+                "right": "4095"
+              }
+            }
+          }
+        },
+        "fixture_preserved": true
+      },
+      {
+        "case": "sparse-byte",
+        "left_bytes": 6291456,
+        "right_bytes": 6291456,
+        "first_byte": 4194321,
+        "sparse_fixture": true,
+        "allocated_bytes": [
+          0,
+          6291456
+        ],
+        "sha256": [
+          "b69dae56a14d1a8314ed40664c4033ea0a550eea2673e04df42a66ac6b9faf2c",
+          "623d875c6215fd90cff750f72334e8ff51f6c84e3372ff558b5e39a2d1b4cf88"
+        ],
+        "cmp_exit": 1,
+        "rsync_exit": 0,
+        "rsync_itemized_change": ">fc.T......",
+        "exa_copy": {
+          "1": {
+            "exit_code": 1,
+            "report": {
+              "schema": "exacopy.cli.diff",
+              "schema_version": "1.0",
+              "relation": "bytes",
+              "complete": true,
+              "result": "different",
+              "consistency": "live_observed",
+              "difference": {
+                "kind": "first_byte",
+                "offset": "4194321"
+              }
+            }
+          },
+          "4": {
+            "exit_code": 1,
+            "report": {
+              "schema": "exacopy.cli.diff",
+              "schema_version": "1.0",
+              "relation": "bytes",
+              "complete": true,
+              "result": "different",
+              "consistency": "live_observed",
+              "difference": {
+                "kind": "first_byte",
+                "offset": "4194321"
+              }
+            }
+          },
+          "16": {
+            "exit_code": 1,
+            "report": {
+              "schema": "exacopy.cli.diff",
+              "schema_version": "1.0",
+              "relation": "bytes",
+              "complete": true,
+              "result": "different",
+              "consistency": "live_observed",
+              "difference": {
+                "kind": "first_byte",
+                "offset": "4194321"
+              }
+            }
+          }
+        },
+        "fixture_preserved": true
+      }
+    ],
+    "symlink_control": {
+      "cmp_exit": 0,
+      "exa_copy_exit": 2,
+      "exa_copy": {
+        "schema": "exacopy.cli.diff",
+        "schema_version": "1.0",
+        "relation": "bytes",
+        "complete": false,
+        "result": "inconclusive",
+        "error": {
+          "code": "E_OPEN_INPUT",
+          "message": "could not open the right input file (selected child cannot be opened by this capability)"
+        }
+      }
+    }
+  }
+}
