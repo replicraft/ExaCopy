@@ -67,12 +67,36 @@ jobs:
         run: bash .github/ci/capture.sh fuzz-setup bash .github/ci/install.sh fuzz
       - name: Require the locked 250,000-input ASan campaign
         timeout-minutes: 10
-        run: bash .github/ci/capture.sh fuzz bash .github/ci/fuzz.sh
+        run: bash .github/ci/capture.sh fuzz bash .github/ci/fuzz.sh unix_component
       - name: Retain fuzz output and crash artifacts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: unix-component-fuzz-linux-x86_64-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-evidence/
+          if-no-files-found: error
+          retention-days: 90
+
+  journal-fuzz:
+    name: Journal frame ASan fuzzing (Linux x86_64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.100.0
+        run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
+      - name: Install pinned cargo-fuzz and nightly
+        run: bash .github/ci/capture.sh journal-fuzz-setup bash .github/ci/install.sh fuzz
+      - name: Require the locked 250,000-input ASan campaign
+        timeout-minutes: 10
+        run: bash .github/ci/capture.sh journal-fuzz bash .github/ci/fuzz.sh journal_frame
+      - name: Retain journal fuzz output and crash artifacts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: journal-frame-fuzz-linux-x86_64-${{ github.run_attempt }}
           path: ${{ runner.temp }}/exacopy-evidence/
           if-no-files-found: error
           retention-days: 90

@@ -3,6 +3,22 @@ set -euo pipefail
 # shellcheck source=.github/ci/common.sh
 source "$(dirname "$0")/common.sh"
 
+target=${1:-unix_component}
+case "$target" in
+	unix_component)
+		fuzz_dir="$PWD/crates/endpoints/endpoint/fuzz"
+		campaign_limits=(-max_total_time=15)
+		;;
+	journal_frame)
+		fuzz_dir="$PWD/crates/storage/journal/fuzz"
+		campaign_limits=(-max_total_time=45 -rss_limit_mb=768)
+		;;
+	*)
+		printf 'Usage: fuzz.sh [unix_component|journal_frame]\n' >&2
+		exit 2
+		;;
+esac
+
 temp_dir=$(runner_temp)
 run_dir=$(mktemp -d "$temp_dir/exacopy-fuzz.XXXXXX")
 evidence="$temp_dir/exacopy-evidence"
@@ -10,7 +26,6 @@ crashes="$evidence/fuzz-crashes"
 report="$evidence/fuzz-engine.log"
 mkdir -p "$run_dir/corpus" "$crashes"
 
-fuzz_dir="$PWD/crates/endpoints/endpoint/fuzz"
 fuzz_lock="$fuzz_dir/Cargo.lock"
 fuzz_before=$(hash_stream < "$fuzz_lock")
 workspace_before=$(hash_stream < Cargo.lock)
@@ -29,8 +44,8 @@ cargo metadata --locked --manifest-path "$fuzz_dir/Cargo.toml" --format-version 
 runs=250000
 set +e
 CARGO_NET_OFFLINE=true cargo fuzz run --fuzz-dir "$fuzz_dir" --target-dir "$run_dir/target" \
-	--sanitizer address unix_component "$run_dir/corpus" "$fuzz_dir/corpus/unix_component" \
-	-- -seed=18723 -runs="$runs" -max_len=512 -max_total_time=15 -timeout=2 \
+	--sanitizer address "$target" "$run_dir/corpus" "$fuzz_dir/corpus/$target" \
+	-- -seed=18723 -runs="$runs" -max_len=512 -timeout=2 "${campaign_limits[@]}" \
 	-artifact_prefix="$crashes/" 2>&1 | tee "$report"
 status=("${PIPESTATUS[@]}")
 set -e
