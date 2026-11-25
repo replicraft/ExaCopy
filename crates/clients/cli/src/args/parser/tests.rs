@@ -113,3 +113,66 @@ fn help_reports_explicit_verification_baseline_and_creation_output() {
 	assert!(create.contains("JSON"));
 	assert!(!create.contains("--format"));
 }
+
+#[test]
+fn plan_accepts_one_explicit_profile_and_output_and_refuses_unknown_policy() {
+	let command = parse(
+		[
+			"plan",
+			"source",
+			"target",
+			"--profile",
+			"owner",
+			"--output",
+			"bundle/plan.json",
+		]
+		.into_iter()
+		.map(OsString::from),
+	)
+	.ok()
+	.unwrap();
+	let Command::Plan(plan) = command else {
+		panic!("expected the typed plan command")
+	};
+	assert_eq!(plan.source, std::path::Path::new("source"));
+	assert_eq!(plan.destination, std::path::Path::new("target"));
+	assert_eq!(plan.profile, std::path::Path::new("owner"));
+	assert_eq!(plan.output, std::path::Path::new("bundle/plan.json"));
+
+	for args in [
+		&["plan", "source", "target", "--profile", "owner"][..],
+		&["plan", "source", "target", "--output", "out.json"],
+		&[
+			"plan",
+			"source",
+			"target",
+			"--profile",
+			"--overwrite",
+			"--output",
+			"out.json",
+		],
+		&[
+			"plan",
+			"source",
+			"target",
+			"--profile",
+			"owner",
+			"--output",
+			"out.json",
+			"--overwrite",
+		],
+		&[
+			"plan",
+			"source",
+			"target",
+			"--profile",
+			"owner",
+			"--output",
+			"out.json",
+			"--output",
+			"other.json",
+		],
+	] {
+		assert!(parse(args.iter().copied().map(OsString::from)).is_err());
+	}
+}

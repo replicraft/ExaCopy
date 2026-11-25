@@ -7,12 +7,14 @@ use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::{Arg, ArgAction, ArgMatches, Command as Cli};
 
 use super::{
-	Command, CopyCommand, DiffCommand, DiffProfile, Format, RecoveryAction, RecoveryCommand,
-	SourceRecoveryAction, VerifyCommand,
+	Command, CopyCommand, DiffCommand, DiffProfile, Format, PlanCommand, RecoveryAction,
+	RecoveryCommand, SourceRecoveryAction, VerifyCommand,
 };
 
 const DIFF: &str = "diff";
 const COPY: &str = "copy";
+const PLAN: &str = "plan";
+const OUTPUT: &str = "output";
 const MANIFEST: &str = "manifest";
 const CREATE: &str = "create";
 const VERIFY: &str = "verify";
@@ -112,6 +114,22 @@ fn definition() -> Cli {
 					"Select the private signing profile.",
 				))
 				.arg(output_format()),
+		)
+		.subcommand(
+			Cli::new(PLAN)
+				.about("Plan one preserve-mode copy without changing the source or destination.")
+				.after_help(OPERAND_ORDER)
+				.arg(operand("SOURCE", 1))
+				.arg(operand("DESTINATION", 2))
+				.arg(directory_option(
+					PROFILE,
+					"Select the original private owner profile.",
+				))
+				.arg(path_option(
+					OUTPUT,
+					"FILE",
+					"Write a new plan file under an existing owner-private bundle directory (mode 0700).",
+				)),
 		)
 		.subcommand(
 			Cli::new(MANIFEST)
@@ -260,10 +278,14 @@ fn frame_operands(
 		if is_help(&option) {
 			return Err("request help by itself or use -- before a path named like a help flag");
 		}
-		if (option == "--profile" || option == "--source-root" || option == "--manifest")
+		if (option == "--profile"
+			|| option == "--source-root"
+			|| option == "--manifest"
+			|| option == "--output")
 			&& let Some(value) = options.next_if(|value| {
 				let bytes = value.as_encoded_bytes();
-				let legacy_profile = option == "--profile" && scope.get_name() != RESUME;
+				let legacy_profile =
+					option == "--profile" && !matches!(scope.get_name(), RESUME | PLAN);
 				bytes.starts_with(b"-") && (legacy_profile || !bytes.starts_with(b"--"))
 			}) {
 			// Bind a literal dash-prefixed path without allowing the injected
@@ -325,6 +347,12 @@ fn typed_command(mut args: ArgMatches) -> Option<Command> {
 			target: path(&mut command, "TARGET")?,
 			profile: path(&mut command, PROFILE)?,
 			format: selected_format(&command),
+		})),
+		PLAN => Some(Command::Plan(PlanCommand {
+			source: path(&mut command, "SOURCE")?,
+			destination: path(&mut command, "DESTINATION")?,
+			profile: path(&mut command, PROFILE)?,
+			output: path(&mut command, OUTPUT)?,
 		})),
 		MANIFEST => {
 			let (action, mut args) = command.remove_subcommand()?;

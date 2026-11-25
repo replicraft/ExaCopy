@@ -16,6 +16,7 @@ mod linux_path;
 mod macos;
 mod manifest;
 mod manifest_report;
+mod plan;
 #[cfg(target_os = "linux")]
 mod profile;
 #[cfg(target_os = "linux")]
