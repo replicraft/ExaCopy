@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import tarfile
 import tempfile
@@ -14,6 +15,8 @@ import tomllib
 
 PRODUCT_PACKAGE = "exacopy-cli"
 PRODUCT_BINARY = "exacopy"
+NATIVE_FLAGS = ("CFLAGS", "CXXFLAGS", "CPPFLAGS", "ASFLAGS", "LDFLAGS")
+NATIVE_CPU = re.compile(r"(?:target-cpu|march|mcpu|mtune)\s*(?:=|\s)\s*native\b")
 
 
 def output(*command, cwd=None, env=None):
@@ -118,17 +121,31 @@ def write_sbom(source, env, evidence, target, commit, binary_sha256, units, root
     })
 
 
-def build(work, archive, evidence, attempt, target, commit, epoch):
-    source = work / "source"
-    with tarfile.open(archive) as files:
-        files.extractall(source, filter="data")
-    env = os.environ | {
+def build_environment(work, epoch):
+    env = os.environ.copy()
+    for key in list(env):
+        if any(key == flag or key.startswith(flag + "_") or key in ("HOST_" + flag, "TARGET_" + flag)
+               for flag in NATIVE_FLAGS):
+            del env[key]
+        elif key in ("CC", "CXX", "RUSTC") or key.startswith(("CC_", "CXX_")) or key in ("HOST_CC", "TARGET_CC", "HOST_CXX", "TARGET_CXX"):
+            if NATIVE_CPU.search(env[key]):
+                raise ValueError(f"{key} selects a host-native CPU for a distributed build")
+    env.update({
         "CARGO_ENCODED_RUSTFLAGS": f"--remap-path-prefix={work}=/exacopy",
+        "RUSTFLAGS": "",
         "CARGO_INCREMENTAL": "0",
         "RUSTC_WRAPPER": "",
         "RUSTC_WORKSPACE_WRAPPER": "",
         "SOURCE_DATE_EPOCH": epoch,
-    }
+    })
+    return env
+
+
+def build(work, archive, evidence, attempt, target, commit, epoch):
+    source = work / "source"
+    with tarfile.open(archive) as files:
+        files.extractall(source, filter="data")
+    env = build_environment(work, epoch)
     command = [
         "cargo", "build", "--release", "--locked", "--offline", "--no-default-features",
         "--package", PRODUCT_PACKAGE, "--bin", PRODUCT_BINARY, "--target", target,
@@ -171,6 +188,7 @@ def reproduce(evidence, target, fetch):
         "commit": commit,
         "native_cc": output("cc", "--version"),
         "rustc": rustc,
+        "runner_sha256": sha256(Path(__file__)),
         "source_date_epoch": int(epoch),
         "target": target,
         "tree": output("git", "rev-parse", f"{commit}^{{tree}}"),

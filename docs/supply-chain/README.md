@@ -81,6 +81,9 @@ The Linux x86_64 release-evidence job builds `exacopy-cli` twice from one Git
 revision. It uses two separate source and target directories, the pinned Rust
 release, locked dependencies, the default platform CPU baseline and normalized
 source paths. The two builds run offline after a locked dependency fetch.
+The runner clears ambient Rust and native compiler flags and compiler wrappers
+for the measured builds. Compiler commands containing host-native CPU flags
+are refused. The evidence records the runner digest and effective Rust flags.
 The gate requires identical executable and SBOM SHA-256 digests.
 
 ```sh

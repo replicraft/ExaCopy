@@ -3,8 +3,9 @@
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
-from sbom_release import build_inputs, component
+from sbom_release import build_environment, build_inputs, component
 
 
 def artifact(package, target_kind, features, binary=None):
@@ -18,6 +19,37 @@ def artifact(package, target_kind, features, binary=None):
 
 
 class SbomReleaseTests(unittest.TestCase):
+    def test_distributed_build_discards_ambient_cpu_flags_and_wrappers(self):
+        ambient = {
+            "RUSTFLAGS": "-Ctarget-cpu=native",
+            "CARGO_ENCODED_RUSTFLAGS": "-Ctarget-feature=+avx2",
+            "CFLAGS": "-march=native",
+            "CFLAGS_aarch64-apple-darwin": "-mcpu=native",
+            "CFLAGS_x86_64_unknown_linux_gnu": "-mavx2",
+            "HOST_CXXFLAGS": "-mtune=native",
+            "TARGET_ASFLAGS": "-march=native",
+            "RUSTC_WRAPPER": "host-wrapper",
+            "RUSTC_WORKSPACE_WRAPPER": "workspace-wrapper",
+            "PATH": "/trusted/toolchain",
+        }
+        with patch.dict("os.environ", ambient, clear=True):
+            environment = build_environment(Path("/scratch"), "123")
+        for key in ambient:
+            if "FLAGS" in key and key not in ("RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS"):
+                self.assertNotIn(key, environment)
+        self.assertEqual(environment["RUSTFLAGS"], "")
+        self.assertEqual(environment["CARGO_ENCODED_RUSTFLAGS"], "--remap-path-prefix=/scratch=/exacopy")
+        self.assertEqual(environment["RUSTC_WRAPPER"], "")
+        self.assertEqual(environment["RUSTC_WORKSPACE_WRAPPER"], "")
+        self.assertEqual(environment["PATH"], "/trusted/toolchain")
+
+    def test_distributed_build_rejects_native_cpu_compiler_commands(self):
+        for key, value in (("CC", "clang -march=native"), ("TARGET_CXX", "clang++ -mcpu=native"),
+                           ("CC_x86_64_unknown_linux_gnu", "cc -mtune native")):
+            with self.subTest(key=key), patch.dict("os.environ", {key: value}, clear=True):
+                with self.assertRaisesRegex(ValueError, "host-native CPU"):
+                    build_environment(Path("/scratch"), "123")
+
     def test_build_input_inventory_retains_build_and_library_units(self):
         artifacts = [
             artifact("integrity", "custom-build", ["a"]),
