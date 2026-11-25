@@ -4,6 +4,7 @@ use std::cell::{Cell, RefCell};
 use std::env;
 use std::fs::{self, DirBuilder, File};
 use std::io::{ErrorKind, Read as _, Write as _};
+use std::os::fd::AsRawFd as _;
 use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::os::unix::process::ExitStatusExt as _;
@@ -265,7 +266,7 @@ fn run_copy_worker(scratch: &mut [u8]) -> Result<super::CopyReceipt<'static>, Lo
 
 fn connect_checkpoint() -> PathBuf {
 	let root = env::current_dir().expect("locate the isolated fixture root");
-	let channel = UnixStream::connect(root.join(SOCKET)).expect("connect to the fixture parent");
+	let channel = UnixStream::connect(SOCKET).expect("connect to the fixture parent");
 	channel
 		.set_read_timeout(Some(TIMEOUT))
 		.expect("bound the child's checkpoint wait");
@@ -351,8 +352,12 @@ impl Fixture {
 	}
 
 	fn pause_worker(&self, stop: Checkpoint) -> (Worker, UnixStream) {
+		let directory = File::open(&self.0).expect("hold the crash fixture directory");
+		// The fixture can live beneath a TMPDIR longer than sockaddr_un permits.
+		let short_parent = PathBuf::from(format!("/proc/self/fd/{}", directory.as_raw_fd()));
 		let socket = self.0.join(SOCKET);
-		let listener = UnixListener::bind(&socket).expect("bind checkpoint socket");
+		let listener =
+			UnixListener::bind(short_parent.join(SOCKET)).expect("bind checkpoint socket");
 		listener
 			.set_nonblocking(true)
 			.expect("bound the wait for the child to connect");
