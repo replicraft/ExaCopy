@@ -3,10 +3,12 @@
 use std::error::Error;
 use std::io::{self, Read, Write};
 
+use exacopy_endpoint::UnixComponent;
 use exacopy_journal::frame::{
 	ChainHead, FRAME_OVERHEAD_BYTES, FrameKind, FrameProblem, FrameReadError, FrameReader,
 	FrameWriteError, FrameWriter, MAX_PAYLOAD_BYTES,
 };
+use exacopy_testkit::{Area, DiskId, Entry, Failure, Simulator, TransferFault, TransferOperation};
 
 // Formed outside the Rust codec using Python struct.pack and a bitwise Castagnoli CRC
 // (checked against "123456789"), then hashed with the upstream portable C BLAKE3 implementation.
@@ -113,14 +115,45 @@ fn another_segment_retains_chain_and_allows_strict_sequence_gaps() {
 
 #[test]
 fn every_prefix_of_a_second_frame_is_classified_without_losing_the_first_boundary() {
+	let segment = UnixComponent::new(b"segment").expect("valid segment name");
+	let target = UnixComponent::new(b"target").expect("valid unused target name");
+	let first_boundary = u64::try_from(FIRST.len()).expect("first frame fits in u64");
 	for cut in 0..=SECOND.len() {
-		let bytes = [FIRST, &SECOND[..cut]].concat();
-		let mut reader = FrameReader::new(bytes.as_slice(), ChainHead::start());
+		let mut storage = Simulator::new(DiskId::new(1));
+		let writer = storage
+			.create_stage(&segment, &target)
+			.expect("create simulated journal segment");
+		assert_eq!(
+			storage.write_at(&writer, 0, FIRST).expect("first append"),
+			FIRST.len()
+		);
+		storage
+			.inject_transfer(
+				TransferOperation::Write,
+				TransferFault::After {
+					bytes: cut,
+					failure: Failure::NoSpace,
+				},
+			)
+			.expect("script retained prefix of the second frame");
+		let error = storage
+			.write_at(&writer, first_boundary, SECOND)
+			.expect_err("append reply reports failure at every cut");
+		assert_eq!(error.kind(), io::ErrorKind::StorageFull);
+		storage.process_crash();
+		let recovered = storage.live_snapshot();
+		let Some(Entry::File(file)) = recovered.entry(Area::Private, &segment) else {
+			panic!("simulated process crash must retain the journal segment");
+		};
+		assert_eq!(file.bytes, [FIRST, &SECOND[..cut]].concat());
+		let mut reader = FrameReader::new(file.bytes, ChainHead::start());
 		assert!(reader.next_frame().expect("complete first frame").is_some());
 		let outcome = reader.next_frame();
 		match cut {
 			0 => assert!(outcome.expect("clean boundary").is_none()),
-			95 => assert!(outcome.expect("complete second frame").is_some()),
+			cut if cut == SECOND.len() => {
+				assert!(outcome.expect("complete second frame").is_some());
+			}
 			_ => {
 				assert!(
 					matches!(outcome, Err(FrameReadError::TornTail {

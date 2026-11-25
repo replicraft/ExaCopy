@@ -257,6 +257,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "exacopy-endpoint",
+ "exacopy-testkit",
 ]
 
 [[package]]
@@ -282,6 +283,7 @@ dependencies = [
  "ed25519-dalek",
  "exacopy-endpoint",
  "exacopy-model",
+ "exacopy-testkit",
  "minicbor",
  "rustix",
 ]

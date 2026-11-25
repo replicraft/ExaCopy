@@ -8,7 +8,8 @@ use exacopy_content::{
 	CopyMeasureError, MAX_SCRATCH_BYTES, MeasureError, StreamInputError, copy_and_measure_at,
 	measure_at, validate_stream_input,
 };
-use exacopy_endpoint::MAX_FILE_LENGTH;
+use exacopy_endpoint::{IoError, MAX_FILE_LENGTH, UnixComponent, read_exact_at, write_all_at};
+use exacopy_testkit::{Area, DiskId, Entry, Failure, Simulator, TransferFault, TransferOperation};
 
 // First 32 bytes of the canonical BLAKE3 outputs for the publisher's inputs.
 // https://github.com/BLAKE3-team/BLAKE3/blob/1.8.7/test_vectors/test_vectors.json
@@ -279,4 +280,83 @@ fn failed_stage_write_stops_without_reading_a_later_range() {
 	assert_eq!(reads, [0, 3]);
 	assert_eq!(writes, [0, 3]);
 	assert_eq!(stage_prefix, b"abcd");
+}
+
+#[test]
+fn storage_failure_after_a_partial_write_leaves_only_the_observed_stage_prefix() {
+	let source_name = UnixComponent::new(b"source").expect("valid source name");
+	let stage_name = UnixComponent::new(b"stage").expect("valid stage name");
+	let target_name = UnixComponent::new(b"target").expect("valid target name");
+	let input = b"abcdefghi";
+	let incumbent = b"incumbent";
+	let mut storage = Simulator::new(DiskId::new(1));
+	storage
+		.seed_file(Area::Source, &source_name, input)
+		.expect("seed source");
+	storage
+		.seed_file(Area::Destination, &target_name, incumbent)
+		.expect("seed incumbent");
+	let before = storage.live_snapshot();
+	let source = storage.open_source(&source_name).expect("open source");
+	let stage = storage
+		.create_stage(&stage_name, &target_name)
+		.expect("create stage");
+
+	storage
+		.inject_transfer(TransferOperation::Write, TransferFault::Pass)
+		.expect("allow first complete chunk");
+	storage
+		.inject_transfer(
+			TransferOperation::Write,
+			TransferFault::After {
+				bytes: 1,
+				failure: Failure::NoSpace,
+			},
+		)
+		.expect("fail the second chunk after writing one byte");
+
+	// Both streaming callbacks share the modeled storage, as the native adapter would.
+	let storage = std::cell::RefCell::new(storage);
+	let mut reads = Vec::new();
+	let mut writes = Vec::new();
+	let error = copy_and_measure_at(
+		9,
+		&mut [0; 3],
+		|offset, chunk| {
+			reads.push(offset);
+			read_exact_at(offset, chunk, |position, buffer| {
+				storage.borrow_mut().read_at(&source, position, buffer)
+			})
+		},
+		|offset, chunk| {
+			writes.push(offset);
+			write_all_at(offset, chunk, |position, buffer| {
+				storage.borrow_mut().write_at(&stage, position, buffer)
+			})
+		},
+	)
+	.expect_err("a partial change cannot produce a complete digest");
+	assert!(matches!(
+		error,
+		CopyMeasureError::Write {
+			offset: 3,
+			source: IoError::System { offset: 3, source },
+		} if source.kind() == io::ErrorKind::StorageFull
+	));
+	assert_eq!(reads, [0, 3]);
+	assert_eq!(writes, [0, 3]);
+	let after = storage.into_inner().live_snapshot();
+	let Some(Entry::File(file)) = after.entry(Area::Private, &stage_name) else {
+		panic!("the failed stage must remain available for inspection");
+	};
+	assert_eq!(file.identity, stage.identity());
+	assert_eq!(file.bytes, b"abcd");
+	assert_eq!(
+		after.entry(Area::Source, &source_name),
+		before.entry(Area::Source, &source_name)
+	);
+	assert_eq!(
+		after.entry(Area::Destination, &target_name),
+		before.entry(Area::Destination, &target_name)
+	);
 }

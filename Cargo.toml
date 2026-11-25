@@ -53,6 +53,7 @@ syn = { version = "2", features = ["full", "visit"] }
 toml = "1"
 
 # Test and verification
+exacopy-testkit = { path = "crates/engineering/exacopy-testkit", version = "=0.1.0" }
 hax-lib = { version = "=0.4.2", default-features = false, features = ["macros"] }
 proptest = { version = "1.12", default-features = false, features = ["std"] }
 
