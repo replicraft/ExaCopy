@@ -2,8 +2,7 @@ use std::fs::File;
 use std::io::Write as _;
 
 use exacopy_endpoint::{ReadView as _, UnixComponent};
-use exacopy_engine::linux::NamedReadView;
-use exacopy_platform::linux::ReadRoot;
+use exacopy_platform::linux::{NamedReadView, ReadRoot};
 use rustix::fs::{self, AtFlags, FileType, Mode, OFlags, Stat};
 use rustix::io::Errno;
 use rustix::process::geteuid;

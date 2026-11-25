@@ -1,6 +1,7 @@
 use exacopy_endpoint::linux_staging::{ExtendedAttributes, StagingSource};
 use exacopy_endpoint::{ReadView, UnixComponent};
-use exacopy_platform::linux::{FileIdentity, ReadError, ReadRoot, SourceFile, SourceObservation};
+
+use super::{FileIdentity, ReadError, ReadRoot, SourceFile, SourceObservation};
 
 #[cfg(test)]
 mod tests;

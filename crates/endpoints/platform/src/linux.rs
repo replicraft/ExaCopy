@@ -4,6 +4,7 @@ mod copy_capabilities;
 mod handle;
 mod job;
 mod mount_observation;
+mod named_read;
 mod process_crash;
 mod publication_capabilities;
 mod recovery;
@@ -16,6 +17,7 @@ pub use handle::FileIdentity;
 pub use job::{
 	CheckpointDirectory, JobDirectory, JournalDirectory, ReceiptDirectory, TargetStatus,
 };
+pub use named_read::NamedReadView;
 pub use process_crash::{
 	ProcessCrashEligibility, ProcessCrashEnvironment, ProcessCrashProfileError,
 	ProcessCrashProfileId, observe_process_crash_environment,

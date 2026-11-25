@@ -70,8 +70,7 @@ mod linux {
 	use exacopy_codec::{MAX_MANIFEST_JSON_BYTES, ManifestError, SingleFileManifest};
 	use exacopy_content::{MeasureError, StreamInputError};
 	use exacopy_endpoint::{IoError, ReadView, UnixComponent};
-	use exacopy_engine::linux::NamedReadView;
-	use exacopy_platform::linux::{ReadError, ReadRoot};
+	use exacopy_platform::linux::{NamedReadView, ReadError, ReadRoot};
 	use exacopy_transfer::manifest::{self, VerifyDecision};
 	use rustix::io::Errno;
 	use uuid::{Builder, Uuid};

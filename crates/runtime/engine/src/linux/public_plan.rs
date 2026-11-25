@@ -1,10 +1,8 @@
 use exacopy_endpoint::linux_copy::CopyDestinationView;
-use exacopy_platform::linux::{FileIdentity, ReadError, ReadRoot, StageError};
+use exacopy_platform::linux::{FileIdentity, NamedReadView, ReadError, ReadRoot, StageError};
 use exacopy_transfer::copy_planning::{
 	CreateNewRequest, PlannedCopy, PlanningError, plan_create_new,
 };
-
-use super::NamedReadView;
 
 /// Read-only planning failure at the native Linux application boundary.
 pub type NativePlanningError = PlanningError<ReadError, StageError>;
