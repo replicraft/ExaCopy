@@ -8,6 +8,7 @@ use exacopy_platform::macos::staging::{
 };
 
 mod error;
+pub mod plan;
 
 #[cfg(test)]
 mod tests;
