@@ -66,6 +66,62 @@ ExaCopy reaches this version through BLAKE3 digest equality. This audit does not
 qualify side-channel behavior for secret inputs across compilers and hardware.
 """
 
+[[audits.crc32c]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.6.9"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+7f132a176423ee852e8f0a35d43088d1850966b50745be818a88b76f64b1c6cb.
+Packaged source matches upstream commit 3098a6edd7b1cb28198e3048889907b7160043e4.
+Runtime CRC and SSE 4.2 detection gate the respective intrinsics. Reviewed whole
+three-lane chunks, table indices, aligned shared slice construction, empty
+slices, integer endianness and the software fallback. The alignment calculation
+assumes slice addresses leave room for adding seven. The I/O wrappers rely on
+their caller-supplied reader and writer count contracts. The build script uses
+the configured compiler version probe and generates fixed tables in Cargo's
+OUT_DIR. The compiler and build directory are trusted. Rust 1.100.0 differential
+checks passed on macOS ARM64, translated x86-64 and the direct software path.
+ExaCopy uses slice APIs on bounded journal frames for corruption detection.
+"""
+
+[[audits.crypto-common]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.1.7"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a.
+The library forbids unsafe code and has no build script. Type-level sizes fix
+block, output, key and IV lengths. Default slice constructors check exact
+length before conversion and blanket constructors delegate to the inner type.
+Optional random key and IV helpers fill fixed-size buffers through a generator
+supplied by the caller. The getrandom feature exposes rand_core's OS generator.
+The caller owns entropy, key handling and nonce policy. The std feature adds
+an error trait implementation. Exact-archive Apple ARM64 integration checks
+covered key and IV lengths and SHA-2 with and without std. ExaCopy uses no
+crypto-common features through digest. Upstream Git equivalence is unverified.
+"""
+
+[[audits.digest]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.10.7"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292.
+The library forbids unsafe code and has no build script. Reviewed fixed and
+variable output lengths, block and XOF delegation, reset, and the optional
+alloc, std, MAC, RNG, OID and test macro paths. The std adapters consume or
+fill in-memory slices. The dev macros include caller-selected local test
+fixtures at compilation and may print fixture bytes on failure. Boxed XOF
+callers must bound requested output sizes and truncated MAC callers must
+independently enforce the protocol's expected tag length. SHA-2 known answers,
+streaming and reset, invalid output lengths and XOF integration checks passed
+on Apple ARM64, with and without std. ExaCopy selects the default core-api
+path without alloc or std for production. Upstream Git equivalence is unverified.
+"""
+
 [[audits.equivalent]]
 who = "OpenAI Codex (dependency source review)"
 criteria = "safe-to-deploy"
@@ -93,6 +149,87 @@ string lifetime. The crate performs no ambient I/O. Native Rust 1.100.0 and
 Miri checks passed against the exact source with ExaCopy's resolved feature set.
 ExaCopy enables only the empty default feature through serde_json. The optional
 no-panic proc macro was outside the resolved build and this evidence.
+"""
+
+[[audits.pin-project-lite]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.2.18"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+c938015719552d665fd0553b90d96cd7ff58e83e4c061ca99e6bb78865a72752.
+Its VCS metadata identifies upstream release commit
+281af7d8b23d1a87c30f32af73b1596703f29d5f. This dependency-free no_std
+library has no build script. Its macro emits structural field projections.
+Reviewed pinned-field Unpin bounds and conflicting Drop checks, including
+unsized types, packed-field rejection by the compiler, and replacement
+guards that move only unpinned fields and drop pinned fields before
+overwriting the old value on return or unwind. The pinned compiler and
+private macro helpers are part of the soundness boundary. Native tests on
+Rust 1.100.0 and nightly Miri each passed 21 tests. Twelve native doctests
+and four targeted compile rejections passed. The packaged full runner
+lacks macrotest and trybuild. ExaCopy's locked UUID WebAssembly chain
+includes this crate without activating it in the workspace feature graph.
+"""
+
+[[audits.thiserror]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "2.0.21"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+09e52cb86a36cede5cb101bf8908837b3e4c6e5e59fe7fd85c23fb56200d189e.
+Its VCS metadata identifies upstream release commit
+b1827ee06f81a7d7f954e676771e19a97f9f8e3b. Reviewed the safe display,
+source, pointer and backtrace adapters, and the build script and probe.
+The script writes a versioned private module under OUT_DIR, directly
+invokes the configured compiler or wrappers to check metadata compilation
+of the packaged probe, queries the compiler version, and removes its
+OUT_DIR/probe directory. Its filesystem and process effects assume trusted
+Cargo configuration, toolchain, wrappers, flags and isolated output
+directory. ExaCopy uses default/std through cargo_metadata in xtask.
+Targeted native tests and a no-default-features check passed on Rust
+1.100.0. The explicit nightly compiler probe and four backtrace tests
+passed after a failed implicit compiler selection.
+"""
+
+[[audits.thiserror-impl]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "2.0.21"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+fe5197923287db20a58125f0bc85c062f7f2c892de97b18c356f9efb14b28524.
+Its VCS metadata identifies the impl directory of upstream release commit
+b1827ee06f81a7d7f954e676771e19a97f9f8e3b. Reviewed compiler-host token
+parsing, attribute and format validation, diagnostics, inferred bounds,
+and emitted Display, Error and From implementations. The macro has no
+build script, unsafe code or explicit ambient filesystem, process or
+network access. Generated formatting may evaluate expressions or invoke
+formatters specified in trusted build source. Runtime input does not
+control macro expansion. On the locked parser versions, 53 targeted
+native tests passed and rustc rejected 37 upstream compile-fail inputs.
+Four nightly-only backtrace tests passed. The offline upstream trybuild
+suite and exact diagnostic comparisons were unavailable.
+"""
+
+[[audits.unicode-ident]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.0.27"
+notes = """
+2026-11-25. Reviewed the locked registry archive SHA-256
+a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563.
+The archive identifies the upstream 1.0.27 release commit. This featureless
+no_std library has no build script, allocation or runtime I/O. Its two
+unchecked leaf loads follow checked trie lookups with valid all-zero fallback
+chunks. The static data bounds the largest possible offsets to 5215 and 8063
+in an 8064-byte leaf table. The arithmetic remains in bounds on 16-bit usize,
+where truncating the scalar can misclassify supplementary characters. On
+Rust 1.100.0 Apple ARM64, both properties matched Unicode 18.0.0 UCD data for
+all 1112064 valid scalars. The archive ships the tables as Rust constants.
+The upstream generation tool is outside the package, and the package's CI
+configuration is outside Cargo's dependency build.
 """
 
 [[audits.version_check]]
