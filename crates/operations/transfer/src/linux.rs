@@ -12,6 +12,7 @@ mod job;
 mod local_copy;
 mod plan;
 mod receipt;
+mod recovery;
 mod replay;
 
 pub use error::{StageCopyError, StageFailure};
@@ -22,6 +23,10 @@ pub use plan::{
 	PlanAttempt, SourcePlanBinding,
 };
 pub use receipt::{CopyReceipt, MAX_COPY_RECEIPT_BYTES, ReceiptError, ReceiptEvidence};
+pub use recovery::{
+	RecoveryDisposition, RecoveryInspectError, RecoveryInspection, RecoveryIssue, RecoveryProfile,
+	RecoveryStep, inspect_recovery,
+};
 pub use replay::{JournalBoundary, JournalReplay, JournalReplayError, JournalTail, replay_journal};
 
 const SPECIAL_MODE_BITS: u32 = 0o7000;
