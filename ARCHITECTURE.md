@@ -1,0 +1,36 @@
+# Architecture
+
+ExaCopy admits a file operation through typed capabilities. Its preserve-mode
+decision model authorizes exclusive publication only after identities match,
+writers are quiescent, read-back and required metadata checks pass, and
+publication intent is durable. An uncertain result enters reconciliation.
+The [foundation work package](docs/foundation.md) defines the model and its
+assurance boundary. The [local adapter](docs/local-adapter.md) and
+[verified staging](docs/verified-staging.md) record implemented platform
+behavior, recovery paths and their evidence.
+
+| Owner | Boundary |
+| --- | --- |
+| Applications | Parse user intent, select the concrete platform implementation and compose capabilities with engines. Render engine results and map them to exit status or UI state. |
+| Core model | Own typed identities, checked ranges and pure preserve-mode transitions. Keep OS, database, async runtime, network implementation and presentation dependencies outside this boundary. |
+| Endpoint contracts | Define bounded capabilities that callers can supply and adapters can implement. Represent unsupported operations explicitly. |
+| Operation engines | Own comparison, transfer orchestration, recovery decisions and eventual synchronization/conflict policy. Consume capabilities. |
+| Native platform code | Own operating-system handles, identity observation, leases, barriers, exclusive namespace operations and narrow FFI. Expose platform facts through the endpoint contracts. |
+| Storage | Own integrity primitives, bounded record codecs and journal framing. |
+| Engineering | Provide policy and evidence tooling, fixtures and independent test oracles. Production paths have no engineering dependencies. |
+
+The [dependency matrix](specs/architecture/dependencies.toml) is the
+enforced package-level authority, including transitional exceptions.
+Run the [engineering policy check](TESTING.md). Source review also follows
+the actual call graph because a permitted package edge does not establish
+how authority moves through a function.
+
+Generic I/O or network libraries belong outside product workflows.
+When transports are introduced, one capability policy owns admission and
+credential acquisition. Transports receive scoped authorization and
+translate their native observations into the shared contracts.
+
+[Contract versioning](docs/architecture/contract-versioning.md) defines
+independent public and persistent boundaries. [Technical stack](TECH_STACK.md)
+tracks adopted dependencies. [Roadmap](ROADMAP.md) gives the order for
+extending the system.

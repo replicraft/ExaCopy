@@ -21,9 +21,12 @@ Use Rust 1.100.0 and cargo-nextest 0.9.151 for the developer checks.
 ```sh
 cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-cargo nextest run --locked --workspace --profile ci
-cargo test --locked --workspace --doc
+cargo nextest run --locked --workspace --all-features --profile ci
+cargo test --locked --workspace --all-features --doc
 cargo run --locked -p xtask -- check
 ```
 
-The [foundation](docs/foundation.md), [Linux adapter](docs/local-adapter.md) and [verified staging](docs/verified-staging.md) work packages describe the current safety contracts and evidence. The original code is available under [Apache-2.0](LICENSE).
+Start with the [architecture](ARCHITECTURE.md) and [roadmap](ROADMAP.md). The
+[testing guide](TESTING.md) covers local checks and the feature matrix. The
+[verification guide](VERIFICATION.md) identifies the current formal gates and
+their evidence. The original code is available under [Apache-2.0](LICENSE).
