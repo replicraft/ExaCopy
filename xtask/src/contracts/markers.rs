@@ -15,6 +15,7 @@ pub(super) struct Binding {
 enum Marker {
 	Report,
 	Manifest,
+	DocumentPage,
 	Scalar {
 		version: &'static str,
 		magic: Option<&'static str>,
@@ -54,6 +55,11 @@ pub(super) const BINDINGS: &[Binding] = &[
 		"portable-manifests",
 		"crates/core/codec/src/manifest/json.rs",
 		Marker::Manifest,
+	),
+	Binding::new(
+		"public-plan-entries-page",
+		"crates/core/codec/src/plan_entries/wire.rs",
+		Marker::DocumentPage,
 	),
 	Binding::new(
 		"local-journal-frame",
@@ -127,6 +133,7 @@ impl Binding {
 		let (kind, status) = match self.marker {
 			Marker::Report => (Kind::CliOutput, Status::Implemented),
 			Marker::Manifest => (Kind::Manifest, Status::Implemented),
+			Marker::DocumentPage => (Kind::DocumentPage, Status::Implemented),
 			_ => (Kind::TransferJournal, Status::ImplementedPrivate),
 		};
 		record.check_classification(kind, status, Some(Path::new(self.owner)))?;
@@ -180,6 +187,20 @@ impl Marker {
 				None,
 				None,
 			),
+			Self::DocumentPage => {
+				let Expr::Array(values) = constant(file, "VERSION")? else {
+					return Err("expected a VERSION array".into());
+				};
+				let values = values
+					.elems
+					.iter()
+					.map(number)
+					.collect::<Result<Vec<_>, _>>()?;
+				let [major, minor] = values.as_slice() else {
+					return Err("expected two entries in VERSION".into());
+				};
+				(format!("{major}.{minor}"), None, None)
+			}
 			Self::Scalar { version, magic } => (
 				number(constant(file, version)?)?.to_string(),
 				None,

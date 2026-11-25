@@ -26,6 +26,7 @@ enum Kind {
 	ConnectionProfile,
 	Repository,
 	Manifest,
+	DocumentPage,
 	Ipc,
 	Mcp,
 	RemoteProtocol,

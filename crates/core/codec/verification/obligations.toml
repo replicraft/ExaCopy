@@ -12,3 +12,17 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/manifest.rs", test = "malformed_objects_duplicates_trailing_data_and_oversize_fail", oracle = "The valid envelope at the JSON byte limit decodes, while the oversized slice, truncated prefixes, duplicates, malformed objects and trailing document are rejected." }
+
+[[obligation]]
+id = "P-037"
+requirement_ids = ["R-193"]
+source = "src/plan_entries.rs"
+symbols = ["PlanEntriesPage::from_canonical_cbor"]
+assumptions = [
+    "Scoped under the P-010 parser boundary for one public PlanEntries leaf.",
+    "The caller obtains the expected reference from its bound parent and limits I/O before providing an in-memory slice.",
+    "The digest-binding result assumes BLAKE3 collision resistance and does not authorize filesystem changes.",
+    "Multi-level traversal and the complete public Plan envelope are outside this Rust gate.",
+]
+gates = ["rust"]
+rust = { file = "tests/plan_entries.rs", test = "document_reference_rejects_other_kind_and_wrong_digest", oracle = "A portable golden PlanEntries leaf verifies only in its own kind and digest domain. Wrong kind, digest, count, length, and excessive input fail closed." }

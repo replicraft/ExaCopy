@@ -921,3 +921,32 @@ acceptance_ids = ["A-052", "A-053", "A-054", "A-055", "A-094", "A-159", "A-162",
 invariant_ids = ["INV-020", "INV-023", "INV-028", "INV-029", "INV-030", "INV-031", "INV-032"]
 scope = "GUI, specialized viewers, IPC and scheduling, installer and signed platform release qualification, and experimental native I/O acceleration."
 limits = "The current CLI and checked-in build workflows cover the local development profiles."
+
+[[coverage]]
+id = "public-plan-entry-pages"
+status = "implemented"
+requirement_ids = ["R-182", "R-193"]
+acceptance_ids = ["A-182", "A-193"]
+invariant_ids = ["INV-013", "INV-018", "INV-019"]
+scope = "Bounded canonical DocumentRef and one regular create-new PlanEntries leaf, with exact kind, length, count and domain digest checks against independent portable vectors."
+limits = "Partial public-page scope: Plan envelope, child traversal, root/source-view authority binding and apply are not implemented. Native identities are opaque past observations. P-037 is a scoped Rust admission gate, not universal parser refinement."
+
+[[coverage.evidence]]
+owner = "exacopy-codec"
+level = "obligation"
+state = "defined"
+path = "crates/core/codec/verification/obligations.toml"
+target = "P-037"
+
+[[coverage.evidence]]
+owner = "exacopy-codec"
+level = "test"
+state = "defined"
+path = "crates/core/codec/tests/plan_entries.rs"
+target = "independent_canonical_vectors_bind_zero_length_entry_and_opaque_identity"
+
+[[coverage.evidence]]
+owner = "exacopy-codec"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/public-plan-pages.md"

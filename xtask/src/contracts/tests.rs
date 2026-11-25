@@ -46,6 +46,35 @@ fn root() -> &'static Path {
 }
 
 #[test]
+fn public_page_version_is_bound_to_its_canonical_wire_marker() {
+	let fixture = Fixture::new();
+	let owner = "crates/core/codec/src/plan_entries/wire.rs";
+	let text = format!(
+		r#"id = "public-plan-entries-page"
+kind = "document_page"
+status = "implemented"
+version = "1.0"
+owner = "{owner}"
+"#
+	);
+	let record: Contract = toml::from_str(&text).unwrap();
+	fixture.write(owner, "const VERSION: [u8; 2] = [1, 0];");
+	assert_eq!(check_record(fixture.root(), &record), Ok(()));
+	for source in [
+		"const VERSION: [u8; 2] = [2, 0];",
+		"const VERSION: [u8; 3] = [1, 0, 0];",
+		"const VERSION: &str = \"1.0\";",
+	] {
+		fixture.write(owner, source);
+		assert!(check_record(fixture.root(), &record).is_err(), "{source}");
+	}
+	fixture.write(owner, "const VERSION: [u8; 2] = [1, 0];");
+	let wrong_kind: Contract =
+		toml::from_str(&text.replace("document_page", "transfer_journal")).unwrap();
+	assert!(check_record(fixture.root(), &wrong_kind).is_err());
+}
+
+#[test]
 fn repository_inventory_matches_all_implementation_anchors() {
 	let mut findings = Findings::default();
 	check(root(), &mut findings);
