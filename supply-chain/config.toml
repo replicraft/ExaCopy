@@ -1,0 +1,17 @@
+
+# cargo-vet config file
+
+[cargo-vet]
+version = "0.10"
+
+[imports.bytecode-alliance]
+url = "https://raw.githubusercontent.com/bytecodealliance/wasmtime/fcbcdd4d2d9b60b4a843dba07517924d71deb908/supply-chain/audits.toml"
+
+[imports.isrg]
+url = "https://raw.githubusercontent.com/divviup/libprio-rs/9d36f2fb5759aa2382cedf5a703f1d52413c1177/supply-chain/audits.toml"
+
+[imports.mozilla]
+url = "https://raw.githubusercontent.com/mozilla/supply-chain/0ecbc0c0e1ffa71c171eca7e5f065adf35a46d08/audits.toml"
+
+[imports.zcash]
+url = "https://raw.githubusercontent.com/zcash/rust-ecosystem/ce132d7abdd52f2b3b0d55ed5dc9f152331535c2/supply-chain/audits.toml"

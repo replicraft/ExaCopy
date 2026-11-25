@@ -1,0 +1,28 @@
+[graph]
+# Include test dependencies and every target-specific dependency in the locked graph.
+all-features = true
+
+[advisories]
+db-urls = ["https://github.com/rustsec/advisory-db"]
+ignore = []
+yanked = "deny"
+unmaintained = "all"
+unsound = "all"
+
+[licenses]
+include-dev = true
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "Unicode-3.0",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
