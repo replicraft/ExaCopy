@@ -2,7 +2,7 @@ use std::error::Error;
 use std::fmt;
 use std::fs::File;
 use std::io;
-use std::os::fd::AsFd;
+use std::os::fd::{AsFd, OwnedFd};
 use std::os::unix::fs::FileExt;
 
 use exacopy_endpoint::{IoError, MAX_INTERRUPTED_RETRIES, ReadView, UnixComponent};
@@ -154,18 +154,52 @@ impl ReadRoot {
 	/// Fails for disallowed entry types or paths, unsupported kernel resolution or
 	/// procfs, an identity mismatch, invalid file metadata, or a filesystem error.
 	pub fn open_regular(&self, name: UnixComponent<'_>) -> Result<SourceFile, ReadError> {
-		let pinned = fs::openat2(
-			&self.directory,
-			name.as_bytes(),
-			OFlags::PATH | OFlags::CLOEXEC,
-			Mode::empty(),
-			CHILD_RESOLUTION,
-		)?;
+		let pinned = self.pin_name(name)?;
 		let (file, stat) = reopen_regular_read_only(&pinned)?;
 		Ok(SourceFile {
 			file,
 			observation: SourceObservation::capture(&stat)?,
 		})
+	}
+
+	/// Confirms that the selected name still identifies the admitted regular file.
+	///
+	/// The observation is relative to the held root and uses a metadata-only
+	/// descriptor. The supplied file remains pinned while its identity and
+	/// initial observations are compared with those of the selected name.
+	///
+	/// # Errors
+	/// Reports a missing, rebound, symlinked, or cross-mount name as an identity
+	/// change. Reports changed file observations and native lookup failures separately.
+	pub fn recheck_regular_name(
+		&self,
+		name: UnixComponent<'_>,
+		source: &SourceFile,
+	) -> Result<(), ReadError> {
+		let named = match self.pin_name(name) {
+			Ok(named) => named,
+			Err(Errno::NOENT | Errno::LOOP | Errno::XDEV) => {
+				return Err(ReadError::IdentityChanged);
+			}
+			Err(error) => return Err(error.into()),
+		};
+		let stat = fs::fstat(named)?;
+		if FileIdentity::from_stat(&stat) != source.identity() {
+			return Err(ReadError::IdentityChanged);
+		}
+		source
+			.observation
+			.recheck(SourceObservation::capture(&stat)?)
+	}
+
+	fn pin_name(&self, name: UnixComponent<'_>) -> Result<OwnedFd, Errno> {
+		fs::openat2(
+			&self.directory,
+			name.as_bytes(),
+			OFlags::PATH | OFlags::CLOEXEC,
+			Mode::empty(),
+			CHILD_RESOLUTION,
+		)
 	}
 }
 

@@ -19,6 +19,16 @@ The Unix component type preserves raw bytes and accepts at most 255 bytes. It re
 
 The caller supplies already authorized directory handles. Source selection pins one child with `openat2`, refuses symlinks and mount crossings, and rejects special files before opening a stream. The read-only descriptor is reopened through the calling thread's validated procfs descriptor directory and checked against the pinned device and inode. This assumes a trusted Linux kernel and mount namespace through reopen. A device and inode pair is used for comparison while both objects are held. Persisted identity and live source snapshot semantics require separate contracts. Read access may update atime.
 
+`ReadRoot::recheck_regular_name` checks a selected component against the held
+source through a metadata-only `openat2` descriptor. It refuses a missing,
+rebound, symlinked or cross-mount name without opening replacement payloads.
+The runtime's `NamedReadView` brackets its held observation and EOF check with
+that name revalidation. The underlying `SourceFile` remains a held-object
+view; callers needing selected-name continuity use the named view. This
+read-only capability supports R-007/A-007 and R-016/A-016 without creating
+source mutation authority. Native ARM64 Linux/ext4 tests cover raw names,
+moved held parents, changed content and symlink/FIFO replacement.
+
 The destination parent belongs to the effective user. If other principals have write access, the sticky bit must protect its owned entries. The adapter creates a fresh owner-private directory and a single-link owner-private stage using exclusive creation. It accepts no pre-existing lookalike as an owned stage. Each stage remembers its validated target bytes and copy binding before the first write. Flush observations and a pinned read-only reopen guard the transition out of the writer. A file `fsync` error permanently revokes that writer and leaves the private stage for reconciliation. Linux can report a writeback error only once per open file. A later mutation or name rebind that the adapter detects fails closed.
 
 Publication consumes a matching model authorization and the read-only stage. The coordinator owns independent verification, required metadata, durable intent for that target and uniqueness of the binding. The adapter rechecks the stage before a single no-replace rename. A late incumbent leaves the stage and incumbent in place. An uncertain rename keeps evidence for reconciliation. If a directory barrier fails after rename, the error reports the completed rename separately. Both affected directories are synchronized on the success path. The adapter performs no deletion or rollback. Privileged or malicious same-principal mutation is outside this adapter contract.

@@ -42,6 +42,13 @@ fn opens_a_raw_name_relative_to_the_held_directory_after_its_path_is_replaced() 
 		.read_exact_at(0, &mut read)
 		.expect("read from original root");
 	assert_eq!(&read, b"original");
+	root.recheck_regular_name(UnixComponent::new(name).unwrap(), &source)
+		.expect("recheck the raw name under the moved held root");
+	let other_case = UnixComponent::new(b"Raw-\xff\\:name").unwrap();
+	assert!(matches!(
+		root.recheck_regular_name(other_case, &source),
+		Err(ReadError::IdentityChanged)
+	));
 	assert_eq!(
 		fs::read(original_dir.join(raw)).expect("read replacement"),
 		b"replaced"
@@ -98,6 +105,42 @@ fn hard_links_share_identity_and_replacing_the_name_leaves_the_open_object_pinne
 		fs::read(scratch.path("source")).expect("read replacement"),
 		b"replaced"
 	);
+}
+
+#[test]
+fn rechecks_the_selected_name_without_opening_replacements_for_data() {
+	let scratch = Scratch::new();
+	let selected = scratch.path("selected");
+	let preserved = scratch.path("preserved");
+	let unrelated = scratch.path("unrelated");
+	fs::write(&selected, b"selected").unwrap();
+	fs::write(&unrelated, b"unrelated").unwrap();
+	let root = ReadRoot::from_directory(scratch.open()).unwrap();
+	let name = UnixComponent::new(b"selected").unwrap();
+	let source = root.open_regular(name).unwrap();
+	root.recheck_regular_name(name, &source).unwrap();
+
+	fs::rename(&selected, &preserved).unwrap();
+	assert!(matches!(
+		root.recheck_regular_name(name, &source),
+		Err(ReadError::IdentityChanged)
+	));
+
+	symlink(&unrelated, &selected).unwrap();
+	assert!(matches!(
+		root.recheck_regular_name(name, &source),
+		Err(ReadError::IdentityChanged)
+	));
+	fs::remove_file(&selected).unwrap();
+
+	// The FIFO has no peer, so revalidation must never wait on a data open.
+	unix::mkfifoat(scratch.open(), "selected", Mode::RUSR | Mode::WUSR).unwrap();
+	assert!(matches!(
+		root.recheck_regular_name(name, &source),
+		Err(ReadError::IdentityChanged)
+	));
+	assert_eq!(fs::read(preserved).unwrap(), b"selected");
+	assert_eq!(fs::read(unrelated).unwrap(), b"unrelated");
 }
 
 #[test]

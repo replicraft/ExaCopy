@@ -1,4 +1,4 @@
-//! Links the Linux local copy entry points to the selected platform capabilities.
+//! Composes Linux local operation entry points with the selected platform capabilities.
 
 use exacopy_endpoint::UnixComponent;
 use exacopy_platform::linux::{
@@ -12,7 +12,10 @@ use exacopy_transfer::linux::{
 
 #[cfg(test)]
 mod crash_tests;
+mod named_read;
 mod recovery;
+
+pub use named_read::NamedReadView;
 
 pub use recovery::{
 	RecoveryFinishError, RecoveryInspectError, RecoveryRetryError, RecoverySource, finish_recovery,
