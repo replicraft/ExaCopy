@@ -1,0 +1,11 @@
+{
+  "configuration": "CopyRecoveryEarlyPublication.cfg",
+  "invariant": "PriorPublicationEvidence",
+  "steps": [
+    { "action": "Init", "epoch": 1, "stage": null, "target": null, "intent": null },
+    { "action": "Prepare", "epoch": 1, "stage": 1, "target": null, "intent": null },
+    { "action": "StartAttempt", "epoch": 1, "stage": 1, "target": null, "intent": null },
+    { "action": "ApplyNoClobber", "epoch": 1, "stage": null, "target": 1, "intent": null }
+  ],
+  "final_evidence": "empty"
+}
