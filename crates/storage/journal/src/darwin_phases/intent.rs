@@ -8,7 +8,6 @@ use super::{
 	DarwinMetadataRecorded, DarwinPhaseBinding, DarwinPhaseDigest, DarwinPhaseError,
 	DarwinStageSealed, DarwinVerificationRecorded,
 };
-use crate::darwin_prepared::same_native_object;
 use crate::darwin_prepared::wire::{
 	read_effect_header, read_identity, write_effect_header, write_identity,
 };
@@ -40,9 +39,9 @@ impl DarwinPublishTarget<'_> {
 		{
 			return Err(DarwinPhaseError::VolumeMismatch);
 		}
-		if same_native_object(self.stage, self.stage_directory)
-			|| same_native_object(self.stage, self.parent)
-			|| same_native_object(self.stage_directory, self.parent)
+		if self.stage.may_alias(self.stage_directory)
+			|| self.stage.may_alias(self.parent)
+			|| self.stage_directory.may_alias(self.parent)
 		{
 			return Err(DarwinPhaseError::AliasedIdentity);
 		}

@@ -35,7 +35,7 @@ impl DarwinRequiredMetadata {
 	/// Constructs a descriptor under the strict managed APFS metadata policy.
 	///
 	/// # Errors
-	/// Refuses a mode other than `0600` or an owner outside the admitted Darwin UID range.
+	/// Refuses a mode other than `0600` or a UID or GID outside the admitted Darwin range.
 	pub fn new(
 		mode: u32,
 		uid: NonZeroU32,

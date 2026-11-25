@@ -16,6 +16,8 @@ pub enum DarwinPreparedError {
 	JobMismatch,
 	/// An observation identifies a different volume from its required root.
 	VolumeMismatch,
+	/// The source and destination have conflicting observations for a single root.
+	RootBindingMismatch,
 	/// Distinct observation roles identify the same native object.
 	IdentityAlias,
 	/// A raw source, stage, or target component is invalid.
@@ -30,6 +32,7 @@ impl fmt::Display for DarwinPreparedError {
 			Self::OwnerMismatch => "Darwin preparation does not match its signed owner record",
 			Self::JobMismatch => "Darwin entry preparation does not match its job preparation",
 			Self::VolumeMismatch => "Darwin preparation object is outside its root volume",
+			Self::RootBindingMismatch => "Darwin preparation has conflicting root observations",
 			Self::IdentityAlias => "Darwin preparation roles alias the same native object",
 		};
 		formatter.write_str(message)

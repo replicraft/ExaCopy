@@ -8,7 +8,7 @@ use self::body::{read_body, write_body};
 use super::wire::{read_entry_header, write_header};
 use super::{
 	DarwinJobPrepared, DarwinPreparedError, DarwinRootBinding, DarwinSourceView,
-	DarwinStageObservation, same_native_object,
+	DarwinStageObservation,
 };
 use crate::frame::{Frame, FrameKind};
 use crate::{JournalContext, JournalEntryId, OwnerDigest, PreparedError, TargetObservation};
@@ -159,21 +159,27 @@ impl<'a> DarwinEntryPrepared<'a> {
 			..
 		} = self.preparation;
 		let destination = self.destination_root.identity;
+		let source_root = source.root();
+		let same_root = source_root.identity == destination;
+		if !same_root
+			&& (source_root.id == self.destination_root.id
+				|| source_root.identity.may_alias(destination))
+		{
+			return Err(DarwinPreparedError::RootBindingMismatch);
+		}
 		if stage.directory.volume() != destination.volume()
 			|| stage.identity.volume() != destination.volume()
 		{
 			return Err(DarwinPreparedError::VolumeMismatch);
 		}
-		if same_native_object(stage.directory, stage.identity)
-			|| [source.root().identity, source.identity(), destination]
+		if stage.directory.may_alias(stage.identity)
+			|| [source_root.identity, source.identity(), destination]
 				.into_iter()
 				.any(|identity| {
-					same_native_object(identity, stage.directory)
-						|| same_native_object(identity, stage.identity)
+					identity.may_alias(stage.directory) || identity.may_alias(stage.identity)
 				})
-			|| same_native_object(source.identity(), destination)
-			|| (same_native_object(source.root().identity, destination)
-				&& source.component() == target_component)
+			|| source.identity().may_alias(destination)
+			|| (same_root && source.component() == target_component)
 		{
 			return Err(DarwinPreparedError::IdentityAlias);
 		}

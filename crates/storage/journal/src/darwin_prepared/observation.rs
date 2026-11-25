@@ -8,8 +8,8 @@ use super::DarwinPreparedError;
 use crate::{DarwinFileIdentity, OwnerTimestamp, PreparedError, RootCapabilityId};
 
 const MANAGED_SOURCE_MODE: u32 = 0o600;
-// Darwin's sys/syslimits.h defines UID_MAX as 2147483647U.
-const DARWIN_UID_MAX: u32 = 2_147_483_647;
+// Darwin's sys/syslimits.h defines UID_MAX and GID_MAX as 2147483647U.
+const DARWIN_ID_MAX: u32 = 2_147_483_647;
 
 /// A root capability and the native directory identity observed through it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -45,9 +45,9 @@ impl DarwinSourceMetadata {
 	/// Records the supported mode, owner and group after the strict checks.
 	///
 	/// # Errors
-	/// Refuses observations outside the profile's admitted mode or UID.
+	/// Refuses observations outside the profile's admitted mode, UID, or GID.
 	pub fn new(mode: u32, owner: NonZeroU32, group: u32) -> Result<Self, PreparedError> {
-		if mode != MANAGED_SOURCE_MODE || owner.get() > DARWIN_UID_MAX {
+		if mode != MANAGED_SOURCE_MODE || owner.get() > DARWIN_ID_MAX || group > DARWIN_ID_MAX {
 			return Err(PreparedError::UnsupportedSourceMetadata);
 		}
 		Ok(Self { owner, group })
@@ -102,7 +102,7 @@ impl<'a> DarwinSourceView<'a> {
 		if root.identity.volume() != identity.volume() {
 			return Err(DarwinPreparedError::VolumeMismatch);
 		}
-		if same_native_object(root.identity, identity) {
+		if root.identity.may_alias(identity) {
 			return Err(DarwinPreparedError::IdentityAlias);
 		}
 		Ok(Self {
@@ -193,9 +193,4 @@ pub struct DarwinStageObservation<'a> {
 	pub identity: DarwinFileIdentity,
 	/// The raw private component relative to the held stage directory.
 	pub component: UnixComponent<'a>,
-}
-
-// Mutable birth time and an unavailable generation cannot disprove an alias.
-pub(crate) fn same_native_object(left: DarwinFileIdentity, right: DarwinFileIdentity) -> bool {
-	left.volume() == right.volume() && left.inode() == right.inode()
 }

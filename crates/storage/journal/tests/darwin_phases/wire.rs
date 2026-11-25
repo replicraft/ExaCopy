@@ -54,7 +54,7 @@ fn independent_vectors_match_canonical_payloads_and_phase_digest_domains() {
 					metadata.metadata().permissions().owner().get(),
 					2_147_483_647
 				);
-				assert_eq!(metadata.metadata().permissions().group(), u32::MAX);
+				assert_eq!(metadata.metadata().permissions().group(), 2_147_483_647);
 				assert_eq!(metadata.metadata().accessed_at.seconds(), i64::MAX);
 				assert_eq!(metadata.metadata().accessed_at.nanoseconds(), 999_999_999);
 				(metadata.encode(), metadata.record_digest())
@@ -242,6 +242,20 @@ fn payload_refuses_forged_measurements_names_sequences_and_platforms() {
 		DarwinPublishIntent::decode(&intent).is_err(),
 		"Linux identity discriminator"
 	);
+}
+
+#[test]
+fn recorded_group_is_bounded_by_darwin_gid_max() {
+	let mut payload = bytes(VECTORS[2].1);
+	let group = find(&payload, &[0x1a, 0x7f, 0xff, 0xff, 0xff, 0x02, 0x1a, 0x7f]) + 6;
+	payload[group + 1] = 0xff;
+	assert_eq!(
+		DarwinMetadataRecorded::decode(&payload),
+		Err(DarwinPhaseError::MetadataMismatch),
+	);
+	payload.splice(group..group + 5, [0x00]);
+	let result = DarwinMetadataRecorded::decode(&payload).unwrap();
+	assert_eq!(result.metadata().permissions().group(), 0);
 }
 
 #[test]

@@ -179,9 +179,9 @@ impl<'name> DarwinCopyPlan<'name> {
 		let same_root = source.root_identity == destination.root_identity;
 		if (!same_root
 			&& (source.root_id == destination.root_id
-				|| possibly_same_object(source.root_identity, destination.root_identity)))
-			|| possibly_same_object(source.file_identity, destination.root_identity)
-			|| possibly_same_object(source.root_identity, source.file_identity)
+				|| source.root_identity.may_alias(destination.root_identity)))
+			|| source.file_identity.may_alias(destination.root_identity)
+			|| source.root_identity.may_alias(source.file_identity)
 		{
 			return Err(DarwinCopyPlanError::ConflictingIdentities);
 		}
@@ -222,11 +222,4 @@ impl<'name> DarwinCopyPlan<'name> {
 			plan_digest: self.digest(),
 		}
 	}
-}
-
-fn possibly_same_object(left: DarwinFileIdentity, right: DarwinFileIdentity) -> bool {
-	// Conflicting supporting observations on the same inode do not resolve aliasing.
-	left.inode() == right.inode()
-		&& (left.volume().device() == right.volume().device()
-			|| left.volume().physical_fsid() == right.volume().physical_fsid())
 }

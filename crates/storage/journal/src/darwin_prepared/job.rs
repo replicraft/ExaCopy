@@ -2,7 +2,7 @@ use minicbor::encode::write::{Cursor, EndOfArray};
 use minicbor::{Decoder, Encoder, encode};
 
 use super::wire::{read_job_header, read_root, write_header, write_root};
-use super::{DarwinPreparedError, DarwinRootBinding, same_native_object};
+use super::{DarwinPreparedError, DarwinRootBinding};
 use crate::frame::{Frame, FrameKind};
 use crate::prepared::wire::{expect_key, expect_map, read_fixed};
 use crate::{DarwinOwnerRecord, JournalContext, OwnerDigest, PlanDigest, PreparedError};
@@ -59,7 +59,10 @@ impl DarwinJobPrepared {
 		if manifest.destination_volume != self.destination_root.identity.volume() {
 			return Err(DarwinPreparedError::VolumeMismatch);
 		}
-		if same_native_object(manifest.state_root, self.destination_root.identity) {
+		if manifest
+			.state_root
+			.may_alias(self.destination_root.identity)
+		{
 			return Err(DarwinPreparedError::IdentityAlias);
 		}
 		Ok(())

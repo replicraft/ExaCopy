@@ -3,8 +3,8 @@ use core::num::NonZeroU32;
 use exacopy_endpoint::MAX_FILE_LENGTH;
 use exacopy_journal::{
 	DarwinEntryPrepared, DarwinFileIdentity, DarwinJobPrepared, DarwinPreparedError,
-	DarwinRootBinding, DarwinSourceMetadata, DarwinSourceView, JournalEpoch, JournalJobId,
-	PlanDigest, PreparedError, RootCapabilityId,
+	DarwinRootBinding, DarwinSourceMetadata, DarwinSourceView, DarwinVolumeIdentity, JournalEpoch,
+	JournalJobId, PlanDigest, PreparedError, RootCapabilityId,
 };
 use exacopy_model::StageId;
 
@@ -229,6 +229,64 @@ fn source_binding_rejects_mismatched_volume_bad_permissions_and_inconsistent_ext
 	assert_eq!(
 		DarwinSourceMetadata::new(0o600, NonZeroU32::MAX, source.metadata().group()),
 		Err(PreparedError::UnsupportedSourceMetadata)
+	);
+}
+
+#[test]
+fn entry_preparation_requires_consistent_root_observations() {
+	let destination = destination();
+	let job = DarwinJobPrepared::new(context(), &owner(0xcd), destination).unwrap();
+	let mut entry = preparation();
+	let source = entry.source;
+	let volume = destination.identity.volume();
+	let conflicting_device = DarwinVolumeIdentity::new(77, volume.physical_fsid()).unwrap();
+	let conflicting_fsid = DarwinVolumeIdentity::new(volume.device(), [77, 88]).unwrap();
+
+	for root in [
+		DarwinRootBinding {
+			id: destination.id,
+			identity: source.root().identity,
+		},
+		DarwinRootBinding {
+			identity: identity(conflicting_device, destination.identity.inode().get(), None),
+			..source.root()
+		},
+		DarwinRootBinding {
+			identity: identity(conflicting_fsid, destination.identity.inode().get(), None),
+			..source.root()
+		},
+	] {
+		entry.source = DarwinSourceView::new(
+			root,
+			source.component(),
+			identity(root.identity.volume(), 22, None),
+			source.length(),
+			source.times(),
+			source.metadata(),
+		)
+		.unwrap();
+		assert_eq!(
+			DarwinEntryPrepared::new(&job, entry_id(), entry),
+			Err(DarwinPreparedError::RootBindingMismatch),
+		);
+	}
+
+	entry.source = DarwinSourceView::new(
+		DarwinRootBinding {
+			id: source.root().id,
+			identity: destination.identity,
+		},
+		source.component(),
+		identity(volume, 22, None),
+		source.length(),
+		source.times(),
+		source.metadata(),
+	)
+	.unwrap();
+	let record = DarwinEntryPrepared::new(&job, entry_id(), entry).unwrap();
+	assert_eq!(
+		DarwinEntryPrepared::decode(&record.encode()).unwrap(),
+		record
 	);
 }
 

@@ -142,6 +142,28 @@ fn rejects_each_truncated_prefix_and_unbounded_input() {
 }
 
 #[test]
+fn entry_group_is_bounded_by_darwin_gid_max() {
+	let entry = decode_hex(golden::ENTRY_HEX);
+	let field = [0x00, 0x19, 0x01, 0x80, 0x01, 0x19, 0x01, 0xf5, 0x02, 20];
+	let group = position(&entry, &field) + field.len() - 1;
+	for (gid, encoded) in [
+		(0, &[0x00][..]),
+		(2_147_483_647, &[0x1a, 0x7f, 0xff, 0xff, 0xff][..]),
+	] {
+		let mut payload = entry.clone();
+		payload.splice(group..=group, encoded.iter().copied());
+		let result = DarwinEntryPrepared::decode(&payload).unwrap();
+		assert_eq!(result.preparation().source.metadata().group(), gid);
+	}
+	let mut unsupported = entry;
+	unsupported.splice(group..=group, [0x1a, 0xff, 0xff, 0xff, 0xff]);
+	assert_eq!(
+		DarwinEntryPrepared::decode(&unsupported),
+		Err(PreparedError::UnsupportedSourceMetadata.into()),
+	);
+}
+
+#[test]
 fn rejects_unrecognized_required_bits_and_noncanonical_encodings() {
 	let job = decode_hex(golden::JOB_HEX);
 	let entry = decode_hex(golden::ENTRY_HEX);

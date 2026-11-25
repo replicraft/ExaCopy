@@ -4,7 +4,6 @@ use super::codec::{
 	PayloadEncoder, PayloadWriteError, decode_record, encode_record, expect_code, frame_payload,
 };
 use super::{DarwinPhaseBinding, DarwinPhaseDigest, DarwinPhaseError, DarwinStageSealed};
-use crate::darwin_prepared::same_native_object;
 use crate::darwin_prepared::wire::{
 	read_entry_header, read_identity, write_header, write_identity,
 };
@@ -181,7 +180,7 @@ impl DarwinVerificationRecorded {
 		source: DarwinStreamEvidence,
 		stage: DarwinStreamEvidence,
 	) -> Result<(), DarwinPhaseError> {
-		if same_native_object(source.identity, stage.identity) {
+		if source.identity.may_alias(stage.identity) {
 			return Err(DarwinPhaseError::AliasedIdentity);
 		}
 		if source.length != stage.length || source.digest != stage.digest {

@@ -99,4 +99,15 @@ impl DarwinFileIdentity {
 	pub const fn birth(self) -> OwnerTimestamp {
 		self.birth
 	}
+
+	/// Checks whether two observations could identify the same native inode.
+	///
+	/// When either volume identifier agrees, conflicting volume, generation, or
+	/// birth observations cannot safely establish that equal inodes are distinct.
+	#[must_use]
+	pub fn may_alias(self, other: Self) -> bool {
+		self.inode == other.inode
+			&& (self.volume.device == other.volume.device
+				|| self.volume.physical_fsid == other.volume.physical_fsid)
+	}
 }
