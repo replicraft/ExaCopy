@@ -253,3 +253,44 @@ Implementation references are the [current adapter contract](../local-adapter.md
 [managed identity observation](../../crates/endpoints/platform/src/macos/managed/observation.rs),
 [publication primitive](../../crates/endpoints/platform/src/macos/publication/native.rs)
 and [journal barrier](../../crates/storage/journal/src/durable.rs).
+
+**Local development integration**
+
+The current checkouts are siblings under `replicraft/`. A Cargo path
+dependency can consume the companion directly while both repositories
+retain their own workspaces and Git histories. The following name and
+directory are illustrative until the companion package exists.
+
+In ExaCopy's root `Cargo.toml`, extend the existing dependency table.
+
+```toml
+[workspace.dependencies]
+apfs-mounted = { path = "../pomologie/apfs/crates/platform/apfs-mounted", default-features = false }
+```
+
+In the consuming platform package, extend its existing macOS table.
+
+```toml
+[target.'cfg(target_os = "macos")'.dependencies]
+apfs-mounted.workspace = true
+```
+
+Cargo reads the package's `Cargo.toml` at the named directory and rebuilds
+changed dependency source. The dependency retains its own workspace
+inheritance. ExaCopy uses its root lockfile for the resolved build.
+Create the real companion package before adding these declarations.
+[Cargo path dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#specifying-path-dependencies)
+
+After the first API slice is available, integrate it through thin ExaCopy
+wrappers implementing the existing endpoint contracts. Update the dependency
+matrix, feature and suitability inventories, lockfile and owning native
+tests with that slice. Keep the experimental copy admission gates in place
+through qualification.
+
+Record both repository revisions for native integration evidence. Path
+dependencies have mutable source, and the lockfile records their package
+version without pinning the checkout's contents. A dirty library checkout
+needs its changed-source evidence. CI must supply the sibling checkout in
+the same relative layout, or use a separately reviewed commit-pinned source.
+Cargo dependency resolution may need the sibling manifest even when the
+current build target excludes macOS code.
