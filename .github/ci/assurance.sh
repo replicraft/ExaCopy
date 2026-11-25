@@ -41,7 +41,9 @@ case "$1" in
 		' "$summary"
 		;;
 	mutation)
-		cargo +1.100.0 mutants --package exacopy-model --output "$evidence" --no-shuffle \
+		# cargo-mutants 27.1.0 leaves [workspace.dependencies] paths relative
+		# in its scratch copy. CI passes --in-place in a disposable checkout.
+		cargo +1.100.0 mutants "${@:2}" --package exacopy-model --output "$evidence" --no-shuffle \
 			--file crates/core/model/src/identity.rs \
 			--file crates/core/model/src/range.rs \
 			--file crates/core/model/src/transaction.rs -- --locked

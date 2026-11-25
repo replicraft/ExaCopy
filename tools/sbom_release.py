@@ -13,6 +13,12 @@ import tarfile
 import tempfile
 import tomllib
 
+from apfs_source import (
+    CONSUMER_MANIFEST, PIN as APFS_PIN, REPOSITORY as APFS_REPOSITORY, archive_apfs,
+    dependency_manifest_matches, read_pin, sibling, verify_consumer,
+)
+
+
 PRODUCT_PACKAGE = "exacopy-cli"
 PRODUCT_BINARY = "exacopy"
 NATIVE_FLAGS = ("CFLAGS", "CXXFLAGS", "CPPFLAGS", "ASFLAGS", "LDFLAGS")
@@ -51,14 +57,19 @@ def build_inputs(stream):
     return units, executable
 
 
-def component(package, units, checksum, application):
+def component(package, units, checksum, application, apfs_pin=None):
     name = package["name"]
     version = package["version"]
     source = package["source"]
     registry = source is not None
     if registry and (source != "registry+https://github.com/rust-lang/crates.io-index" or not checksum):
         raise ValueError(f"{name}@{version} requires a checked crates.io source")
-    reference = f"pkg:cargo/{name}@{version}" if registry else f"workspace:{name}@{version}"
+    if registry:
+        reference = f"pkg:cargo/{name}@{version}"
+    elif apfs_pin is not None:
+        reference = f"local-path:{name}@{version}#{apfs_pin['commit']}"
+    else:
+        reference = f"workspace:{name}@{version}"
     item = {
         "type": "application" if application else "library",
         "bom-ref": reference,
@@ -72,12 +83,19 @@ def component(package, units, checksum, application):
     if registry:
         item["purl"] = reference
         item["hashes"] = [{"alg": "SHA-256", "content": checksum}]
+    elif apfs_pin is not None:
+        item["externalReferences"] = [{"type": "vcs", "url": APFS_REPOSITORY}]
+        item["properties"].extend([
+            {"name": "exacopy:source-commit", "value": apfs_pin["commit"]},
+            {"name": "exacopy:source-tree", "value": apfs_pin["tree"]},
+            {"name": "exacopy:source-archive-sha256", "value": apfs_pin["archive_sha256"]},
+        ])
     if package["license"]:
         item["licenses"] = [{"expression": package["license"]}]
     return item
 
 
-def write_sbom(source, env, evidence, target, commit, binary_sha256, units, root_id):
+def write_sbom(source, env, evidence, target, commit, binary_sha256, units, root_id, apfs_pin):
     metadata = json.loads(output(
         "cargo", "metadata", "--format-version", "1", "--locked", "--offline",
         "--filter-platform", target, cwd=source, env=env,
@@ -88,12 +106,18 @@ def write_sbom(source, env, evidence, target, commit, binary_sha256, units, root
         (package["name"], package["version"], package["source"]): package["checksum"]
         for package in lock["package"] if "checksum" in package
     }
+    workspace = set(metadata["workspace_members"])
     components = {}
     for package_id, package_units in units.items():
         package = package_by_id[package_id]
         identity = (package["name"], package["version"], package["source"])
+        pin = None
+        if package["source"] is None and package_id not in workspace:
+            if target != "aarch64-apple-darwin" or not dependency_manifest_matches(package, source) or apfs_pin is None:
+                raise ValueError(f"unexpected local Cargo artifact: {package['name']}@{package['version']}")
+            pin = apfs_pin
         components[package_id] = component(
-            package, package_units, checksums.get(identity), package_id == root_id,
+            package, package_units, checksums.get(identity), package_id == root_id, apfs_pin=pin,
         )
     root = components.pop(root_id)
     if root["name"] != PRODUCT_PACKAGE:
@@ -141,11 +165,18 @@ def build_environment(work, epoch):
     return env
 
 
-def build(work, archive, evidence, attempt, target, commit, epoch):
+def extract_sources(work, archive, apfs_archive):
     source = work / "source"
-    with tarfile.open(archive) as files:
+    with tarfile.open(archive, "r:") as files:
         files.extractall(source, filter="data")
-    env = build_environment(work, epoch)
+    with tarfile.open(apfs_archive, "r:") as files:
+        files.extractall(sibling(source), filter="data")
+    return source
+
+
+def build(work, archive, apfs_archive, evidence, attempt, target, record):
+    source = extract_sources(work, archive, apfs_archive)
+    env = build_environment(work, str(record["source_date_epoch"]))
     command = [
         "cargo", "build", "--release", "--locked", "--offline", "--no-default-features",
         "--package", PRODUCT_PACKAGE, "--bin", PRODUCT_BINARY, "--target", target,
@@ -160,7 +191,7 @@ def build(work, archive, evidence, attempt, target, commit, epoch):
         units, (root_id, executable) = build_inputs(stream)
     binary_hash = sha256(executable)
     sbom = evidence / f"{attempt}.cdx.json"
-    write_sbom(source, env, sbom, target, commit, binary_hash, units, root_id)
+    write_sbom(source, env, sbom, target, record["commit"], binary_hash, units, root_id, record["apfs_source"])
     return {
         "binary_sha256": binary_hash,
         "cargo_messages_sha256": sha256(messages),
@@ -200,15 +231,23 @@ def reproduce(evidence, target, fetch):
             archive = root / "source.tar"
             subprocess.run(["git", "archive", "--output", str(archive), commit], check=True)
             record["source_archive_sha256"] = sha256(archive)
+            with tarfile.open(archive, "r:") as files:
+                apfs_pin = read_pin(files.extractfile(APFS_PIN.as_posix()).read().decode())
+                verify_consumer(*(
+                    tomllib.loads(files.extractfile(path).read().decode())
+                    for path in ("Cargo.toml", CONSUMER_MANIFEST.as_posix())
+                ))
+            apfs_archive = root / "apfs.tar"
+            record["apfs_source"] = {"repository": APFS_REPOSITORY, **apfs_pin}
+            archive_apfs(Path.cwd(), apfs_pin, apfs_archive)
             if fetch:
-                with tarfile.open(archive) as files:
-                    files.extractall(root / "fetch", filter="data")
+                fetch_source = extract_sources(root / "fetch", archive, apfs_archive)
                 subprocess.run(
-                    ["cargo", "fetch", "--locked", "--target", target], cwd=root / "fetch", check=True,
+                    ["cargo", "fetch", "--locked", "--target", target], cwd=fetch_source, check=True,
                 )
             for attempt in ("first", "second"):
                 record["attempts"][attempt] = {"result": "fail"}
-                record["attempts"][attempt] = build(root / attempt, archive, evidence, attempt, target, commit, epoch)
+                record["attempts"][attempt] = build(root / attempt, archive, apfs_archive, evidence, attempt, target, record)
                 record["attempts"][attempt]["result"] = "pass"
         first, second = (record["attempts"][name] for name in ("first", "second"))
         for key in ("binary_sha256", "lockfile_sha256", "sbom_sha256"):
@@ -216,7 +255,7 @@ def reproduce(evidence, target, fetch):
                 raise ValueError(f"release rebuilds differ in {key}: {first[key]} != {second[key]}")
         record["result"] = "pass"
         print(f"{target}: two unsigned CLI builds match SHA-256 {first['binary_sha256']}")
-    except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
+    except (OSError, ValueError, KeyError, subprocess.CalledProcessError, tarfile.TarError) as error:
         record["result"] = "fail"
         record["error"] = str(error)
         raise
@@ -234,7 +273,7 @@ def main():
         evidence = args.output.resolve()
         evidence.mkdir(parents=True)
         reproduce(evidence, args.target, args.fetch)
-    except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
+    except (OSError, ValueError, KeyError, subprocess.CalledProcessError, tarfile.TarError) as error:
         parser.exit(1, f"release evidence: {error}\n")
 
 

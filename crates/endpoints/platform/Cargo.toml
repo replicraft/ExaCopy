@@ -20,6 +20,7 @@ exacopy-model.workspace = true
 rustix.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
+apfs-mounted.workspace = true
 exacopy-endpoint.workspace = true
 exacopy-model.workspace = true
 getrandom.workspace = true

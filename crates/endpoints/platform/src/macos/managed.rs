@@ -31,10 +31,6 @@ pub mod publication;
 pub mod staging;
 #[cfg(test)]
 mod tests;
-#[allow(
-	unsafe_code,
-	reason = "scoped Darwin per-thread materialization policy"
-)]
 mod thread_policy;
 #[allow(
 	unsafe_code,

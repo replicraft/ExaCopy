@@ -112,6 +112,11 @@
     }
   },
   "production_dependencies": {
+    "apfs-mounted": {
+      "default_features": false,
+      "features": [],
+      "purpose": "Perform descriptor-scoped mounted APFS operations under the macOS adapter contract."
+    },
     "blake3": {
       "default_features": false,
       "features": [],
@@ -206,7 +211,7 @@
       "minicbor", "rustc_version", "semver", "sha2", "shlex", "signature", "subtle",
       "typenum", "version_check", "zeroize"
     ],
-    "macos_io": ["cfg-if", "errno", "getrandom", "libc"]
+    "macos_io": ["apfs-mounted", "cfg-if", "errno", "getrandom", "libc"]
   },
   "targets": {
     "x86_64-unknown-linux-gnu": {

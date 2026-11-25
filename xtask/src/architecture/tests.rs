@@ -1,6 +1,6 @@
-use cargo_metadata::{CargoOpt, MetadataCommand};
+use cargo_metadata::{CargoOpt, Dependency, DependencyKind, MetadataCommand};
 
-use super::{MATRIX_PATH, check};
+use super::{MATRIX_PATH, allowed_apfs_sibling, check};
 use crate::finding::Findings;
 use crate::test_support::Fixture;
 
@@ -212,6 +212,60 @@ targets = ['cfg(target_os = "linux")']
 		findings.contains("unused transitional allowance"),
 		"{findings}"
 	);
+}
+
+#[test]
+fn admits_only_the_exact_macos_apfs_sibling_edge() {
+	const MACOS: &str = r#"cfg(target_os = "macos")"#;
+	const LINUX: &str = r#"cfg(target_os = "linux")"#;
+	const PLATFORM: &str = "exacopy-platform";
+	let fixture = Fixture::new();
+	fixture.write("ExaCopy/Cargo.toml", "");
+	fixture.write("pomologie/apfs/crates/platform/apfs-mounted/Cargo.toml", "");
+	let root = fixture.root().join("ExaCopy");
+	let path = fixture
+		.root()
+		.join("pomologie/apfs/crates/platform/apfs-mounted");
+	let dependency: Dependency = serde_json::from_value(serde_json::json!({
+		"name": "apfs-mounted", "req": "*", "kind": null, "optional": false,
+		"uses_default_features": false, "features": [], "path": path,
+	}))
+	.expect("decode synthetic Cargo path dependency");
+	assert!(allowed_apfs_sibling(
+		&root,
+		PLATFORM,
+		&dependency,
+		Some(MACOS)
+	));
+	assert!(!allowed_apfs_sibling(
+		&root,
+		"exacopy-transfer",
+		&dependency,
+		Some(MACOS)
+	));
+	assert!(!allowed_apfs_sibling(
+		&root,
+		PLATFORM,
+		&dependency,
+		Some(LINUX)
+	));
+	assert!(!allowed_apfs_sibling(&root, PLATFORM, &dependency, None));
+
+	let mut wrong = dependency.clone();
+	wrong.kind = DependencyKind::Build;
+	assert!(!allowed_apfs_sibling(&root, PLATFORM, &wrong, Some(MACOS)));
+
+	let mut wrong = dependency.clone();
+	wrong.uses_default_features = true;
+	assert!(!allowed_apfs_sibling(&root, PLATFORM, &wrong, Some(MACOS)));
+
+	let mut wrong = dependency.clone();
+	wrong.features.push("unchecked".into());
+	assert!(!allowed_apfs_sibling(&root, PLATFORM, &wrong, Some(MACOS)));
+
+	let mut wrong = dependency;
+	wrong.path = Some(root.to_str().expect("fixture path is UTF-8").into());
+	assert!(!allowed_apfs_sibling(&root, PLATFORM, &wrong, Some(MACOS)));
 }
 
 enum Resolution {

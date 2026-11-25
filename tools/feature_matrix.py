@@ -7,6 +7,9 @@ import json
 from pathlib import Path
 import subprocess
 
+from apfs_source import CONSUMER, MACOS_CFG, NAME as APFS_NAME, WORKSPACE_PATH
+
+
 MATRIX = Path("docs/specs/features/matrix.json")
 
 
@@ -27,9 +30,18 @@ def check_manifests(policy, packages):
         if expected != actual:
             raise ValueError(f"{name}: Cargo features differ: expected {expected}, got {actual}")
         for dependency in package["dependencies"]:
-            if name not in production or dependency["kind"] == "dev" or dependency["source"] is None:
+            if name not in production or dependency["kind"] == "dev":
                 continue
             dep_name = dependency["name"]
+            if dependency["source"] is None:
+                if dep_name in production:
+                    continue
+                if (
+                    name != CONSUMER or dep_name != APFS_NAME or dependency["kind"] is not None
+                    or dependency["target"] != MACOS_CFG
+                    or Path(dependency["path"]).resolve() != (Path.cwd() / WORKSPACE_PATH).resolve()
+                ):
+                    raise ValueError(f"{name}: unreviewed production path dependency {dep_name}")
             if dep_name not in rules:
                 raise ValueError(f"{name}: unreviewed production dependency {dep_name}")
             seen.add(dep_name)

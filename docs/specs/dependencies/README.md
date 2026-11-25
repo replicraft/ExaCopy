@@ -1,8 +1,10 @@
 # Production dependency inventory
 
-[graph.json](graph.json) records the exact versions and archive checksums resolved
-from the root lockfile. Each package has its upstream repository, declared
-license expression, and build-script and procedural macro exposure. Each target
+[graph.json](graph.json) records exact dependency versions and archive
+checksums. The root lockfile supplies crates.io checksums.
+[apfs-source.toml](apfs-source.toml) supplies the commit, tree and source
+archive digest for the macOS-only Pomologie sibling. Each package has its
+upstream repository, declared license expression, and build-script and procedural macro exposure. Each target
 and profile records the incoming package edges and resolved feature union for
 normal and build dependencies. Identical profiles for the same target share a
 record. The profile and target definitions come from the [feature
@@ -21,7 +23,7 @@ identifies the inputs observed in actual builds of the selected binary.
 direct and transitive dependency assessments bind to exact archive checksums and record
 release observations, security history, unsafe boundaries, resource and
 input contracts, verification coverage and replacement implications. The
-2026-11-25 release observations use the local crates.io index. Security history
+2026-11-25 registry release observations use the local crates.io index. Registry security history
 uses the cached RustSec advisory database revision
 `263a4d951a0867d4bddc29dddd6d59427c78f9a7`. Those observations are dated
 inputs to suitability review. Current source, license, advisory and maintenance
@@ -38,7 +40,13 @@ determines whether those records cover the required criteria. License notices,
 permissions and exceptions follow [cargo-deny policy](../../../deny.toml) and
 the packaged license texts.
 
-Run from the workspace root with Python 3.12 or later and the pinned Rust toolchain.
+Run from the workspace root with Python 3.12 or later and the pinned Rust
+toolchain. Place a clean checkout of the exact commit in
+`../pomologie/apfs` before running Cargo on any target. Check the sibling
+with `python3 -B tools/apfs_source.py`. The `--fetch` form provisions an
+absent sibling by fetching that exact revision. CI records a provisioning
+failure if the revision is unavailable. Local evidence can use an existing
+verified checkout while remote provisioning remains blocked.
 
 ```sh
 python3 -B tools/dependency_review/check.py

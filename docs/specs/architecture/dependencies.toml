@@ -17,7 +17,7 @@ dev.groups = ["testkit"]
 [groups.platform]
 members = { exacopy-platform = "crates/endpoints/platform" }
 normal.groups = ["contracts", "core"]
-normal.external = ["getrandom", "libc", "rustix"]
+normal.external = ["apfs-mounted", "getrandom", "libc", "rustix"]
 # The private Windows fixture composes the checked read view and the exact comparison engine.
 dev.groups = ["testkit", "contracts", "operations"]
 dev.external = ["windows-sys"]

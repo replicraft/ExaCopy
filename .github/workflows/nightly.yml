@@ -26,6 +26,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Provision pinned Pomologie APFS checkout
+        shell: bash
+        run: |
+          apfs_python=python3
+          if [[ "$RUNNER_OS" == Windows ]]; then apfs_python=python; fi
+          bash .github/ci/capture.sh apfs-source "$apfs_python" -B tools/apfs_source.py --fetch
       - name: Install Rust 1.100.0
         run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
       - name: Install nextest
@@ -61,6 +67,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Provision pinned Pomologie APFS checkout
+        shell: bash
+        run: |
+          apfs_python=python3
+          if [[ "$RUNNER_OS" == Windows ]]; then apfs_python=python; fi
+          bash .github/ci/capture.sh apfs-source "$apfs_python" -B tools/apfs_source.py --fetch
       - name: Install Rust 1.100.0
         run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
       - name: Install pinned cargo-fuzz and nightly
@@ -85,6 +97,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Provision pinned Pomologie APFS checkout
+        shell: bash
+        run: |
+          apfs_python=python3
+          if [[ "$RUNNER_OS" == Windows ]]; then apfs_python=python; fi
+          bash .github/ci/capture.sh apfs-source "$apfs_python" -B tools/apfs_source.py --fetch
       - name: Install Rust 1.100.0
         run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
       - name: Install pinned cargo-fuzz and nightly
@@ -109,13 +127,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Provision pinned Pomologie APFS checkout
+        shell: bash
+        run: |
+          apfs_python=python3
+          if [[ "$RUNNER_OS" == Windows ]]; then apfs_python=python; fi
+          bash .github/ci/capture.sh apfs-source "$apfs_python" -B tools/apfs_source.py --fetch
       - name: Install Rust 1.100.0
         run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
       - name: Install cargo-mutants
         run: bash .github/ci/capture.sh mutation-setup bash .github/ci/install.sh mutation
       - name: Run scoped mutation campaign
         timeout-minutes: 30
-        run: bash .github/ci/capture.sh mutation bash .github/ci/assurance.sh mutation
+        run: bash .github/ci/capture.sh mutation bash .github/ci/assurance.sh mutation --in-place
       - name: Retain mutation reports and controls
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

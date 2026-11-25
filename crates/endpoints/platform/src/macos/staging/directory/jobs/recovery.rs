@@ -19,7 +19,6 @@ use super::{
 
 mod error;
 mod inventory;
-#[allow(unsafe_code, reason = "bounded Darwin descriptor name attribute")]
 mod name;
 mod record;
 

@@ -240,9 +240,12 @@ fn check_workspace(
 					false
 				})
 			} else {
-				dependency.path.is_none()
-					&& !workspace.contains_key(to)
-					&& member.allows_external(dependency)
+				let allowed_source = if to == "apfs-mounted" {
+					allowed_apfs_sibling(root, name, dependency, target.as_deref())
+				} else {
+					dependency.path.is_none()
+				};
+				allowed_source && !workspace.contains_key(to) && member.allows_external(dependency)
 			};
 			if !allowed {
 				let kind = dependency.kind;
@@ -301,3 +304,32 @@ impl Member<'_> {
 
 #[cfg(test)]
 mod tests;
+
+fn allowed_apfs_sibling(
+	root: &Path,
+	consumer: &str,
+	dependency: &Dependency,
+	target: Option<&str>,
+) -> bool {
+	if consumer != "exacopy-platform"
+		|| dependency.name != "apfs-mounted"
+		|| dependency.source.is_some()
+		|| dependency.kind != DependencyKind::Normal
+		|| dependency.optional
+		|| dependency.uses_default_features
+		|| !dependency.features.is_empty()
+		|| target != Some(r#"cfg(target_os = "macos")"#)
+	{
+		return false;
+	}
+	let Some(path) = dependency.path.as_ref() else {
+		return false;
+	};
+	root.join("../pomologie/apfs/crates/platform/apfs-mounted")
+		.canonicalize()
+		.is_ok_and(|expected| {
+			path.as_std_path()
+				.canonicalize()
+				.is_ok_and(|actual| actual == expected)
+		})
+}

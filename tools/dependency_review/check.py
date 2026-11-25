@@ -11,6 +11,10 @@ import sys
 import tomllib
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from apfs_source import (
+    CONSUMER, CONSUMER_MANIFEST, KEY as APFS_KEY, PIN as APFS_PIN, dependency_manifest_matches,
+    read_pin, verify_checkout, verify_consumer,
+)
 from feature_matrix import MATRIX, profile_flags
 
 SPEC = Path("docs/specs/dependencies")
@@ -78,6 +82,10 @@ def registry_inputs(package, checksums):
         raise ValueError(f"{key} lacks an exact crates.io archive SHA-256 in Cargo.lock")
     if not package["license"] or not package["repository"]:
         raise ValueError(f"{key} must identify its license and upstream repository")
+    return source_inputs(package, source, checksum)
+
+
+def source_inputs(package, source, checksum):
     kinds = {kind for target in package["targets"] for kind in target["kind"]}
     return {
         "source": source,
@@ -89,7 +97,20 @@ def registry_inputs(package, checksums):
     }
 
 
-def production_graph(policy, lock, offline):
+def apfs_inputs(package, source, pin, target, parents, features):
+    if (
+        not dependency_manifest_matches(package, source)
+        or target != "aarch64-apple-darwin"
+        or parents != {f"{CONSUMER}@0.1.0"}
+        or features
+    ):
+        raise ValueError(f"{target}: unexpected source, edges or features for {APFS_KEY}")
+    return source_inputs(package, "local-path", pin["archive_sha256"]) | {
+        "commit": pin["commit"], "tree": pin["tree"],
+    }
+
+
+def production_graph(policy, lock, offline, source, apfs_pin):
     checksums = {
         (package_id(entry["name"], entry["version"]), entry["source"]): entry["checksum"]
         for entry in lock["package"] if "checksum" in entry
@@ -99,7 +120,9 @@ def production_graph(policy, lock, offline):
     resolutions = {}
     for target in policy["targets"]:
         metadata = cargo("metadata", "--format-version", "1", "--filter-platform", target, offline=offline)
-        packages = packages_by_identity(json.loads(metadata), target)
+        metadata = json.loads(metadata)
+        packages = packages_by_identity(metadata, target)
+        workspace = set(metadata["workspace_members"])
         for profile_name, profile in policy["profiles"].items():
             if target not in profile.get("targets", policy["targets"]):
                 continue
@@ -113,14 +136,19 @@ def production_graph(policy, lock, offline):
             resolved = {}
             for key, selected in sorted(features.items()):
                 package = packages[key]
-                if package["source"] is None:
-                    if package["name"] not in policy["production_packages"]:
-                        raise ValueError(f"{target}/{profile_name}: unexpected local dependency {key}")
+                if package["id"] in workspace and package["name"] in policy["production_packages"]:
                     continue
-                record = registry_inputs(package, checksums)
+                if package["source"] is None:
+                    if key != APFS_KEY:
+                        raise ValueError(f"{target}/{profile_name}: unexpected local dependency {key}")
+                    record = apfs_inputs(package, source, apfs_pin, target, parents[key], selected)
+                else:
+                    record = registry_inputs(package, checksums)
                 if inputs.setdefault(key, record) != record:
                     raise ValueError(f"{key}: inconsistent package metadata across targets")
                 resolved[key] = {"parents": sorted(parents[key]), "features": sorted(selected)}
+            if target == "aarch64-apple-darwin" and APFS_KEY not in resolved:
+                raise ValueError(f"{target}/{profile_name}: missing {APFS_KEY}")
             # Store identical profiles for the same target once.
             target_resolutions = resolutions.setdefault(target, [])
             for group in target_resolutions:
@@ -214,7 +242,14 @@ def main():
     try:
         policy = json.loads(MATRIX.read_text(encoding="utf-8"))
         lock = tomllib.loads(Path("Cargo.lock").read_text(encoding="utf-8"))
-        graph = production_graph(policy, lock, args.offline)
+        source = Path.cwd()
+        apfs_pin = read_pin((source / APFS_PIN).read_text(encoding="utf-8"))
+        verify_consumer(*(
+            tomllib.loads((source / path).read_text(encoding="utf-8")) for path in
+            ("Cargo.toml", CONSUMER_MANIFEST)
+        ))
+        verify_checkout(source, apfs_pin)
+        graph = production_graph(policy, lock, args.offline, source, apfs_pin)
         if args.emit_graph:
             print(compact_graph(graph))
             return
@@ -222,7 +257,7 @@ def main():
         reviews = tomllib.loads((SPEC / "suitability.toml").read_text(encoding="utf-8"))
         direct, missing = review_gaps(graph, expected, reviews)
         count = len(graph["packages"])
-        print(f"Locked production graph matches {count} registry versions across {len(graph['resolutions'])} targets.")
+        print(f"Locked production graph matches {count} registry and pinned source versions across {len(graph['resolutions'])} targets.")
         print(f"{len(reviews['assessment'])} suitability assessments cover {len(direct)} direct dependencies and reviewed transitive inputs.")
         if missing:
             print(f"{len(missing)} versions lack a suitability entry in this inventory: {', '.join(missing)}")

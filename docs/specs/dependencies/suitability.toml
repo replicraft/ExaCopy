@@ -3,6 +3,7 @@ schema_version = 1
 # The locked graph identifies exact versions, parents, features, targets, licenses,
 # and build-code exposure. These purposes explain why the graph inputs exist.
 [purpose]
+apfs-mounted = "Descriptor-scoped APFS observations and operations for the macOS adapter."
 arrayvec = "BLAKE3's fixed-capacity tree and digest state."
 bitflags = "Typed operating-system flags in rustix."
 blake3 = "Source-stream and independent stage read-back digests, content bindings, and authenticated-record hashing."
@@ -567,3 +568,14 @@ adversarial_inputs = "serde_json classifies NaN and infinity before using format
 verification = "Packaged tests include boundary cases, exponent sweeps and comparison with Ryu. CLI JSON report tests establish the current report shapes. Native and scalar float-formatting parity requires separate execution evidence."
 replacement = "Preserve shortest round-trip finite decimal output, signed-zero behavior and Serde JSON's nonfinite policy if adopting another formatter. Check exact report fixtures if floating-point fields are introduced."
 review_gaps = ["Review float boundary arithmetic and SIMD and scalar output bounds", "Independent exact-version suitability and target-path evidence"]
+
+[assessment."apfs-mounted@0.1.0"]
+archive_sha256 = "0e884092018e8651527d104599c473ecac87f1bb15cd2401fac856d14af61e44"
+release_observation = "Local Pomologie source commit 8f19cd36c1d1ddf7a16a45adb849d389797dee89. The ExaCopy source pin binds the complete sibling Git tree and archive."
+security_history = "Local sibling source is outside crates.io archive and advisory matching. The archive pin is provenance evidence."
+unsafe_exposure = "The selected macOS library binds Darwin metadata, descriptor, data barrier and namespace operations with documented unsafe calls. Native results and descriptor lifetimes remain part of the adapter's trust boundary."
+resource_limits = "The API borrows or owns caller-authorized descriptors and accepts bounded names, buffers and read ranges. The ExaCopy coordinator owns overall reservations, input limits and effect ordering."
+adversarial_inputs = "Filesystem identities, namespace changes, metadata fidelity and uncertain syscall outcomes require typed validation. Copy and recovery policy, durable intent and reconciliation remain with the caller."
+verification = "Pomologie records a native private-stage, read-back and publication fixture on macOS 14.7.2. Its recorded disposable ExaCopy integration covers held identity, volume capabilities and dataless policy. These scopes leave strict copy-through-receipt qualification open."
+replacement = "Preserve authorized descriptor scope, live identity evidence, no-clobber publication and explicit uncertainty. Requalify the affected native adapter paths."
+review_gaps = ["Independent review of the selected Darwin FFI and descriptor contracts.", "Full adapter migration, strict metadata fidelity, genuine dataless and cross-volume fixtures, process-crash and power-loss qualification."]

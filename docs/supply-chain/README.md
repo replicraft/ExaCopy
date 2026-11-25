@@ -66,6 +66,7 @@ continues to block the audit gate.
 | `crc32c` | Fast noncryptographic frame corruption detection. Called on bounded frames. Review runtime instruction detection and its software path. An equivalent implementation must preserve CRC32C parameters and format vectors. |
 | `ed25519-dalek` and `zeroize` | Upstream signature and key handling primitives. ExaCopy feeds fixed-size public keys and signatures and bounds the signed record first. Review constant-time behavior, zeroization coverage, and transitive cryptographic code. Replacement needs authenticated format compatibility and security review. |
 | `minicbor` | Explicit CBOR tags and byte framing with allocation features disabled. Journal readers validate bounds and typed records. Validate codec changes against malformed inputs, persisted fixtures and the journal fuzz target. Replacement must keep the canonical encoding and unknown-version rejection. |
+| `apfs-mounted` | macOS-only descriptor-scoped Pomologie companion. The local source pin binds its commit, tree and archive. ExaCopy retains admission, journal and publication policy. Native wrapper tests and complete copy qualification remain separate. |
 | `getrandom` | macOS-only stage-attempt entropy through the system getentropy backend. Errors prevent private stage creation and preserve the original OS cause. |
 | `rustix` and `libc` | Narrow filesystem, process and entropy feature selection with native dependencies gated by target. Review raw-syscall and FFI behavior against each adapter's rights, identity, durability and no-clobber contract. A replacement needs native adapter qualification. |
 | `serde` and `serde_json` | CLI wire output uses explicit fields and enum encodings. The derive macro is a build input. Test output structure and exit behavior during migrations. Compare native report output against existing fixtures before changing the encoder. |
@@ -92,17 +93,33 @@ python3 tools/sbom_release.py --target x86_64-unknown-linux-gnu --fetch \
   --output target/unsigned-cli-rebuild
 ```
 
-Use Python 3.12 or newer and a native Rust toolchain. The input is the Git archive
-of `HEAD`. Commit changes before collecting revision-specific release evidence.
+Use Python 3.12 or newer and a native Rust toolchain. The inputs are the Git
+archive of ExaCopy `HEAD` and the pinned
+[Pomologie sibling archive](../specs/dependencies/apfs-source.toml). Commit
+changes before collecting revision-specific release evidence. Supply a clean
+checkout of that sibling revision on every target so Cargo can resolve its
+manifest. The runner verifies its tree and archive digest and unpacks both
+repositories separately for each build.
+
 The output directory must be new. CI retains compiler messages, both
-CycloneDX 1.6 inventories and the rebuild record with revision, compiler and
-native tool information. The SBOM lists Cargo build inputs, including build
-scripts and procedural macros, with their resolved features, declared licenses,
-and registry archive checksums. Cargo build messages bind the inventory to the
-selected binary. System libraries, link-level package relationships and
+CycloneDX 1.6 inventories and the rebuild record with both source identities,
+compiler and native tool information. The SBOM lists Cargo build inputs,
+including build scripts and procedural macros, with their resolved features,
+declared licenses and source checksums. A compiled `apfs-mounted` component
+records its source commit, tree and archive digest. Cargo build messages bind
+the inventory to the selected binary. System libraries, link-level package relationships and
 distribution packaging require their own inventories.
 
-This gate establishes same-runner reproducibility for the unsigned CLI payload.
+The macOS local-path check built both unsigned CLIs from isolated copies of
+the pinned archives, then failed the executable digest comparison. Cargo
+reported different artifact suffixes for the sibling `apfs-mounted` and its
+`exacopy-platform` consumer across the two paths. The same native runner
+matched binary digests twice before the sibling dependency was introduced.
+This leaves macOS unsigned CLI reproducibility open for the local path
+integration. Linux and Windows resolve the sibling manifest without
+compiling `apfs-mounted`.
+
+A passing gate establishes same-runner reproducibility for the unsigned CLI payload.
 Independent machine rebuilds and signed distribution artifacts require
 separate evidence. Cargo's graph and build message formats and the SBOM fields
 are defined in their respective references. [Cargo dependency graph](https://doc.rust-lang.org/cargo/commands/cargo-tree.html)
