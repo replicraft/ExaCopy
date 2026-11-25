@@ -1,10 +1,10 @@
 use std::fmt;
 use std::fs::File;
+use std::io;
 use std::os::fd::AsFd as _;
 use std::process;
 
 use exacopy_endpoint::{MAX_FILE_LENGTH, UnixComponent};
-use exacopy_model::CopyBinding;
 use rustix::fs::{self, AtFlags, FileType, FlockOperation, Mode, Stat};
 use rustix::io::Errno;
 
@@ -12,7 +12,9 @@ use super::super::{
 	DIRECTORY_OPEN, DirectoryIdentity, ManagedReadError, PhysicalFsid, capture_directory,
 	check_directory_authority, volume, with_materialization_disabled,
 };
-use super::{StageError, WriteStage};
+use super::entropy::fill_stage_entropy;
+use super::identity::RANDOM_STAGE_ID_BYTES;
+use super::{StageBindingContext, StageError, WriteStage};
 
 #[cfg(test)]
 mod tests;
@@ -130,22 +132,36 @@ pub struct StageDirectory<'root> {
 impl StageDirectory<'_> {
 	/// Exclusively creates a private file bound to its transaction, target and logical extent.
 	///
+	/// The adapter generates the attempt's StageId before creation. Attempts within this
+	/// process receive distinct IDs. Random bits make a repeated ID across processes unlikely.
+	///
 	/// # Errors
-	/// Rejects unsupported lengths, an existing public target, an existing stage name,
-	/// unsafe directories and filesystem or thread policy failures. A possibly created stage
-	/// is retained and reported for reconciliation.
+	/// Rejects unsupported lengths, name collisions, unsafe directories, ID allocation failures,
+	/// and filesystem or thread policy failures. A possibly created stage is retained and its
+	/// allocated identity is returned for reconciliation.
 	pub fn create_file<'stage>(
 		&'stage self,
 		name: UnixComponent<'stage>,
 		target: UnixComponent<'stage>,
-		binding: CopyBinding,
+		context: StageBindingContext,
 		length: u64,
+	) -> Result<WriteStage<'stage>, StageError> {
+		self.create_file_with_entropy(name, target, context, length, fill_stage_entropy)
+	}
+
+	fn create_file_with_entropy<'stage>(
+		&'stage self,
+		name: UnixComponent<'stage>,
+		target: UnixComponent<'stage>,
+		context: StageBindingContext,
+		length: u64,
+		entropy: impl FnOnce(&mut [u8; RANDOM_STAGE_ID_BYTES]) -> io::Result<()>,
 	) -> Result<WriteStage<'stage>, StageError> {
 		self.check_process()?;
 		if length > MAX_FILE_LENGTH {
 			return Err(StageError::InvalidLength);
 		}
-		let mut attempted = false;
+		let mut attempted = None;
 		let result = with_materialization_disabled(|| {
 			self.check_current()?;
 			match fs::statat(
@@ -157,14 +173,18 @@ impl StageDirectory<'_> {
 				Err(Errno::NOENT) => {}
 				Err(error) => return Err(error.into()),
 			}
-			attempted = true;
-			WriteStage::create(self, name, target, binding, length)
+			let identity = context.allocate(entropy)?;
+			attempted = Some(identity);
+			WriteStage::create(self, name, target, identity, length)
 		});
-		match result {
-			Err(error) if attempted && !matches!(error, StageError::NameCollision) => {
-				Err(StageError::CreateUncertain(Box::new(error)))
+		match (attempted, result) {
+			(Some(identity), Err(source)) if !matches!(source, StageError::NameCollision) => {
+				Err(StageError::CreateUncertain {
+					identity,
+					source: Box::new(source),
+				})
 			}
-			other => other,
+			(_, result) => result,
 		}
 	}
 

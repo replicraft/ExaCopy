@@ -12,7 +12,7 @@ use super::super::{
 	EVENT_ONLY, FILE_MODE, PhysicalFsid, acl, file::same_observation, with_materialization_disabled,
 };
 use super::close::close_writer;
-use super::{StageDirectory, StageError};
+use super::{StageDirectory, StageError, StageIdentity};
 
 const PRIVATE_OPEN: OFlags = OFlags::CLOEXEC
 	.union(OFlags::NONBLOCK)
@@ -35,7 +35,7 @@ impl<'stage> WriteStage<'stage> {
 		directory: &'stage StageDirectory<'stage>,
 		name: UnixComponent<'stage>,
 		target: UnixComponent<'stage>,
-		binding: CopyBinding,
+		identity: StageIdentity,
 		length: u64,
 	) -> Result<Self, StageError> {
 		let file = match fs::openat(
@@ -70,7 +70,7 @@ impl<'stage> WriteStage<'stage> {
 			directory,
 			name,
 			target,
-			binding,
+			identity,
 			length,
 			anchor,
 		};
@@ -81,6 +81,18 @@ impl<'stage> WriteStage<'stage> {
 			position: 0,
 			observed,
 		})
+	}
+
+	/// Returns the identity allocated before this private file was created.
+	#[must_use]
+	pub fn identity(&self) -> StageIdentity {
+		self.location.identity
+	}
+
+	/// Returns the transaction binding this writer will report to the model.
+	#[must_use]
+	pub fn binding(&self) -> CopyBinding {
+		self.identity().binding()
 	}
 
 	/// Completes the next positioned chunk using at most 1 MiB from the supplied buffer.
@@ -193,10 +205,16 @@ impl ClosedStage<'_> {
 		self.length() == 0
 	}
 
+	/// Returns the identity allocated for this stage before exclusive creation.
+	#[must_use]
+	pub fn identity(&self) -> StageIdentity {
+		self.location.identity
+	}
+
 	/// Returns the transaction binding fixed at exclusive creation.
 	#[must_use]
 	pub fn binding(&self) -> CopyBinding {
-		self.location.binding
+		self.identity().binding()
 	}
 
 	/// Returns the checked public target component fixed at exclusive creation.
@@ -218,7 +236,7 @@ pub(super) struct StageLocation<'stage> {
 	directory: &'stage StageDirectory<'stage>,
 	name: UnixComponent<'stage>,
 	target: UnixComponent<'stage>,
-	binding: CopyBinding,
+	identity: StageIdentity,
 	length: u64,
 	anchor: File,
 }

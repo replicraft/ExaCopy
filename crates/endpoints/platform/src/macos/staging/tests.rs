@@ -6,10 +6,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use exacopy_endpoint::{MAX_FILE_LENGTH, UnixComponent};
-use exacopy_model::{CopyBinding, EntryId, JobId, RunEpoch, StageId};
+use exacopy_model::{EntryId, JobId, RunEpoch};
 
 use super::super::{ManagedReadError, ManagedReadGrant, ManagedReadRoot, acl};
-use super::{ManagedStageGrant, ManagedStageRoot, StageDirectory, StageError};
+use super::{ManagedStageGrant, ManagedStageRoot, StageBindingContext, StageDirectory, StageError};
 
 const PRIVATE: &str = "private-stage";
 const STAGE: &str = "candidate";
@@ -78,15 +78,14 @@ pub(super) fn name(bytes: &[u8]) -> UnixComponent<'_> {
 	UnixComponent::new(bytes).expect("valid fixture component")
 }
 
-pub(super) fn binding() -> CopyBinding {
+pub(super) fn context() -> StageBindingContext {
 	let mut job = [0; 16];
 	job[6] = 0x70;
 	job[8] = 0x80;
-	CopyBinding::new(
+	StageBindingContext::new(
 		JobId::try_from_bytes(job).expect("synthetic UUIDv7"),
 		EntryId::new(1),
 		RunEpoch::new(1),
-		StageId::from_bytes([1; 16]),
 	)
 }
 
@@ -102,7 +101,7 @@ pub(super) fn make_stage<'a>(
 	directory.create_file(
 		name(STAGE.as_bytes()),
 		name(TARGET.as_bytes()),
-		binding(),
+		context(),
 		length,
 	)
 }
@@ -133,6 +132,8 @@ fn writes_whole_extent_then_reopens_same_private_inode_for_read_back() {
 	let directory = open_staging(&root);
 	let mut writer = make_stage(&directory, length).unwrap();
 	let staged = object(&fixture.stage_path());
+	let identity = writer.identity();
+	assert_eq!(writer.binding(), identity.binding());
 	writer.write_next(&PAYLOAD[..7]).unwrap();
 	writer.write_next(&PAYLOAD[7..]).unwrap();
 	assert!(matches!(
@@ -143,7 +144,8 @@ fn writes_whole_extent_then_reopens_same_private_inode_for_read_back() {
 	let closed = writer
 		.flush_and_close()
 		.expect("synchronize and confirm writer closure");
-	assert_eq!(closed.binding(), binding());
+	assert_eq!(closed.identity(), identity);
+	assert_eq!(closed.binding(), identity.binding());
 	assert_eq!(closed.target(), name(TARGET.as_bytes()));
 	assert_eq!(closed.length(), length);
 	let reader = closed.open_read_back().expect("independent read-only open");
@@ -377,7 +379,7 @@ fn existing_staging_directory_reserves_its_public_name_and_apfs_aliases() {
 		directory.create_file(
 			name(STAGE.as_bytes()),
 			name(PRIVATE.as_bytes()),
-			binding(),
+			context(),
 			1
 		),
 		Err(StageError::NameCollision)
@@ -385,7 +387,7 @@ fn existing_staging_directory_reserves_its_public_name_and_apfs_aliases() {
 	assert!(!fixture.stage_path().exists());
 	let alias = "PRIVATE-STAGE";
 	let result =
-		directory.create_file(name(STAGE.as_bytes()), name(alias.as_bytes()), binding(), 1);
+		directory.create_file(name(STAGE.as_bytes()), name(alias.as_bytes()), context(), 1);
 	if fixture.path(alias).exists() {
 		assert!(matches!(result, Err(StageError::NameCollision)));
 		assert!(!fixture.stage_path().exists());

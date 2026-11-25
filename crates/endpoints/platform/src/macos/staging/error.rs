@@ -4,6 +4,7 @@ use exacopy_endpoint::IoError;
 use rustix::io::Errno;
 
 use super::super::{ManagedReadError, thread_policy::PolicyError};
+use super::StageIdentity;
 
 /// Failure to create, write, synchronize or reopen a managed APFS stage.
 #[derive(Debug)]
@@ -20,7 +21,16 @@ pub enum StageError {
 	/// The stage name or public target already has an occupant.
 	NameCollision,
 	/// A creation may have occurred. Reconcile the retained private name before retrying.
-	CreateUncertain(Box<StageError>),
+	CreateUncertain {
+		/// The attempt identity allocated before the create syscall.
+		identity: StageIdentity,
+		/// The operation or check that failed.
+		source: Box<StageError>,
+	},
+	/// Darwin did not provide entropy. No private file creation was attempted.
+	EntropyUnavailable(io::Error),
+	/// The process exhausted its pool of distinct attempt serials.
+	StageIdsExhausted,
 	/// The requested extent exceeds the common signed offset ceiling.
 	InvalidLength,
 	/// A positioned operation exceeded the declared extent or the allowed chunk size.
@@ -55,11 +65,17 @@ impl fmt::Display for StageError {
 				write!(formatter, "managed APFS evidence unavailable ({error})")
 			}
 			Self::NameCollision => formatter.write_str("stage or target name is occupied"),
-			Self::CreateUncertain(error) => {
+			Self::CreateUncertain { source, .. } => {
 				write!(
 					formatter,
-					"private stage creation requires reconciliation ({error})"
+					"private stage creation requires reconciliation ({source})"
 				)
+			}
+			Self::EntropyUnavailable(error) => {
+				write!(formatter, "stage identity entropy unavailable ({error})")
+			}
+			Self::StageIdsExhausted => {
+				formatter.write_str("process exhausted stage attempt identities")
 			}
 			Self::InvalidLength => formatter.write_str("stage extent exceeds the offset limit"),
 			Self::InvalidRange => formatter.write_str("positioned range exceeds the stage bounds"),
@@ -85,11 +101,12 @@ impl std::error::Error for StageError {
 	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
 		match self {
 			Self::Managed(error) => Some(error),
-			Self::CreateUncertain(error) => Some(error.as_ref()),
+			Self::CreateUncertain { source, .. } => Some(source.as_ref()),
 			Self::Write(error) | Self::Read(error) => Some(error),
-			Self::FileBarrier(error) | Self::CloseWriter(error) | Self::System(error) => {
-				Some(error)
-			}
+			Self::EntropyUnavailable(error)
+			| Self::FileBarrier(error)
+			| Self::CloseWriter(error)
+			| Self::System(error) => Some(error),
 			_ => None,
 		}
 	}
