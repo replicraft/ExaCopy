@@ -34,6 +34,12 @@ pub mod macos;
 
 pub mod windows;
 
+mod protected_snapshot;
+
+pub use protected_snapshot::{
+	MAX_PROTECTED_SNAPSHOT_BYTES, ProtectedSnapshotError, read_protected_snapshot,
+};
+
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
 #[path = "../tests/common/scratch.rs"]
 mod scratch;

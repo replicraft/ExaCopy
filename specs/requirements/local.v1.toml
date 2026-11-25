@@ -1282,3 +1282,25 @@ owner = "exacopy-ssh"
 level = "documentation"
 state = "reported"
 path = "docs/architecture/ssh-transport.md"
+
+[[coverage]]
+id = "protected-trust-snapshot"
+status = "implemented"
+requirement_ids = ["R-224"]
+acceptance_ids = ["A-224"]
+invariant_ids = ["INV-001", "INV-013", "INV-023"]
+scope = "Explicit-path bounded Linux protected trust acquisition with checked held ancestors, owner-private file and parent, cooperative shared lease, double positioned read and name revalidation."
+limits = "Linux ext4/XFS whole-root profile only; native Linux fixtures remain unexecuted. Other platforms refuse before lookup. No ambient configuration discovery, SSH trust-policy integration or qualification claim."
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "test"
+state = "defined"
+path = "crates/platform/exacopy-platform/src/protected_snapshot/path.rs"
+target = "validates_raw_absolute_components_without_normalizing"
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/ssh-transport.md"

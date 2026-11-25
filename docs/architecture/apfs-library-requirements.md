@@ -172,6 +172,47 @@ including `com.apple.provenance`, cannot be ignored to obtain a passing copy.
 These are reusable filesystem capability requirements. None requires
 Pomologie to depend on ExaCopy's model, journal format or publication policy.
 
+**Protected trust records on the startup Data volume**
+
+The SSH R-224 trust source needs protected acquisition of an explicitly selected
+file. At inspected sibling revision
+`b621a8688457fb134650ec8d95ad3a851b9dd0b0`, `Directory::open_directory`
+offers held-relative no-follow lookup, while volume, identity and extended
+security queries operate on separate observations. `PinnedSource::open`
+compares the parent and selected file mount after the first named stat.
+The macOS profile needs a qualified pre-lookup boundary and bound ancestor
+observations before any selected-path open. Portable image evidence covers
+on-disk structures.
+
+- A held-directory walk must yield a typed snapshot for each component. It
+  needs the no-follow name binding, physical filesystem identity, actual
+  owner and mode, an affirmative absent or empty ACL observation, and flags
+  that identify symlink, dataless and firmlink entries. Hold each descriptor
+  through read-back and allow callers to revalidate metadata and the child's
+  binding relative to the preceding held parent.
+- Provide a safe, documented pre-lookup boundary for each admitted transition.
+  The first candidate profile starts at the startup system volume and permits
+  exactly the explicit `/System/Volumes/Data` crossing to positively identified
+  local ownership-enforced APFS. Refuse unqualified mount transitions, autofs,
+  and File Provider namespaces before any lookup that could activate them.
+  If the selected Darwin APIs cannot establish those conditions, restrict the
+  entry point to an independently authorized held anchor with those conditions
+  established. A no-follow open alone does not establish this boundary. The
+  existing thread-scoped dataless materialization control must cover the walk,
+  the selected file open, and revalidation.
+- Reuse the existing managed private-directory lease and pinned regular-file
+  methods for a cooperative writer protocol. They must be bound to the exact
+  owner-private directory admitted by the walk. The final file requires owner
+  mode `0600`, an affirmative absent or empty ACL observation, one link, and
+  held/name identity checks across bounded positioned reads and logical EOF. If the checked open or the ancestor recheck loses
+  authority, the selected trust source is unavailable. Native fixtures must
+  confirm the restricted startup Data profile and refusals without reading
+  ambient OpenSSH files.
+
+The selected path, the byte limit, the read-back comparison, and the SSH trust
+policy remain ExaCopy decisions. Native Darwin lookup and observation details
+belong to the mounted companion.
+
 **Existing libraries**
 
 `mach2` 0.7.0 provides Mach user-space interfaces such as ports, tasks, virtual

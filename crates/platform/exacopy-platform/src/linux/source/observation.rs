@@ -137,7 +137,10 @@ pub struct SourceTimestamp {
 }
 
 impl SourceTimestamp {
-	fn capture(seconds: i64, nanoseconds: impl TryInto<u32>) -> Result<Self, ReadError> {
+	pub(in crate::linux) fn capture(
+		seconds: i64,
+		nanoseconds: impl TryInto<u32>,
+	) -> Result<Self, ReadError> {
 		Self::new(
 			seconds,
 			nanoseconds

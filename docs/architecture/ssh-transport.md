@@ -37,8 +37,11 @@ not recoverable; this conservatively blocks key reuse at another authority.
 Host-key fingerprints remain SHA-256 and the authentication suite is unchanged.
 HMAC-SHA1 is
 used only for OpenSSH hostname-label compatibility. Protected byte acquisition
-is still caller-owned and unimplemented, so this is not an ambient OpenSSH
-configuration importer. SSH-keygen differential fixtures document its supported
+is caller-owned. The platform crate offers an explicit-path Linux prototype
+restricted to owner-private files beneath an admitted ext4/XFS root mount;
+its native Linux fixtures remain unexecuted. Other platforms refuse acquisition.
+This is not an ambient OpenSSH configuration importer.
+SSH-keygen differential fixtures document its supported
 lexical subset and intentional stricter refusals.
 
 SFTP v3 reads/listing preserve raw names and opaque handles. Selected response

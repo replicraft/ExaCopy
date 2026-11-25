@@ -6,6 +6,7 @@ mod job;
 mod mount_observation;
 mod named_read;
 mod process_crash;
+pub(crate) mod protected_snapshot;
 mod publication_capabilities;
 mod recovery;
 mod recovery_capabilities;
