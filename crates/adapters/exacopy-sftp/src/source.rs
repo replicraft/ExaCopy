@@ -10,6 +10,13 @@ use crate::error::SftpSourceError;
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
 mod tests;
 
+mod pending;
+
+pub use pending::{
+	PendingSftpSource, PendingSftpSourceRequest, PendingSourceOwner, open_pending_source,
+	with_pending_source,
+};
+
 const MAX_WINDOW: NonZeroUsize =
 	NonZeroUsize::new(1024 * 1024).expect("the fixed SFTP source window is nonzero");
 

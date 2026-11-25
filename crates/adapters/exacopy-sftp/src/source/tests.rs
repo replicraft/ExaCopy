@@ -20,6 +20,8 @@ mod peer;
 
 use peer::{Calls, Generated, NAME, SECRET, authority, fixture_trust, generated_peer};
 
+mod pending;
+
 const EPOCH: SourceEpoch = SourceEpoch::new(NonZeroU64::MIN);
 
 fn path() -> [UnixComponent<'static>; 1] {

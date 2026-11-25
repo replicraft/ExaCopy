@@ -159,6 +159,36 @@ impl RetrySupervisor {
 		Ok(RetryDecision::Start(attempt))
 	}
 
+	/// Checks the current authorized attempt while its source is still pending.
+	/// # Errors
+	/// Refuses a foreign, retired or already admitted attempt, expired authority,
+	/// and invalid time. Does not establish route, SSH or source evidence.
+	pub fn check_connecting(
+		&mut self,
+		now: Duration,
+		attempt: ConnectionAttempt,
+	) -> Result<(), RetryError> {
+		self.check_subject(FailureSubject::Attempt(attempt))?;
+		self.observe_time(now)
+	}
+
+	/// Checks the exact live attempt before or after its owner admits a source.
+	/// Data completions still require the full admitted connection binding.
+	/// # Errors
+	/// Refuses foreign or retired work, expired authority, and invalid time.
+	pub fn check_attempt(
+		&mut self,
+		now: Duration,
+		attempt: ConnectionAttempt,
+	) -> Result<(), RetryError> {
+		match self.phase {
+			Phase::Online(binding, _) if binding.attempt() == attempt => {
+				self.check_completion(now, binding)
+			}
+			_ => self.check_connecting(now, attempt),
+		}
+	}
+
 	/// Accepts separately refreshed route, SSH and source evidence for this attempt.
 	///
 	/// # Errors
@@ -169,8 +199,7 @@ impl RetrySupervisor {
 		attempt: ConnectionAttempt,
 		evidence: ReconnectEvidence,
 	) -> Result<ConnectionBinding, RetryError> {
-		self.check_subject(FailureSubject::Attempt(attempt))?;
-		self.observe_time(now)?;
+		self.check_connecting(now, attempt)?;
 		if evidence.route_checked_for != attempt
 			|| evidence.ssh_authenticated_for != attempt
 			|| evidence.source_checked_for != attempt
