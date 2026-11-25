@@ -24,7 +24,7 @@ const SEED: &str = "profile/owner.seed";
 fn publishes_raw_name_and_retains_authenticated_job_and_matching_receipt() {
 	let fixture = Fixture::with_profile();
 	let source = OsStr::from_bytes(b"-raw\xff\nsource");
-	let target = OsStr::from_bytes(b"raw\xfe\ntarget");
+	let target = OsStr::from_bytes(b".exacopy-raw\xfe\ntarget");
 	let contents = b"verified synthetic contents\0\xff";
 	fs::write(fixture.path(source), contents).expect("write synthetic source");
 	fs::set_permissions(fixture.path(source), Permissions::from_mode(0o640))

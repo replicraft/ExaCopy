@@ -33,12 +33,6 @@ fn copy(command: &CopyCommand) -> Result<CopySuccess, CopyFailure> {
 		.map_err(|error| CopyFailure::new(ErrorKind::InvalidRequest, error))?;
 	let (target_parent, target) = split(&command.target)
 		.map_err(|error| CopyFailure::new(ErrorKind::InvalidRequest, error))?;
-	if target.as_bytes().starts_with(JOB_PREFIX.as_bytes()) {
-		return Err(CopyFailure::new(
-			ErrorKind::InvalidRequest,
-			"the target uses the reserved .exacopy- job prefix",
-		));
-	}
 	let profile = LocalProfile::open(&command.profile)
 		.map_err(|error| CopyFailure::new(ErrorKind::ProfileAuthorization, error))?;
 	let source_root = ReadRoot::from_directory(open_directory(source_parent).map_err(io_failure)?)
