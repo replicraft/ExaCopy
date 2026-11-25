@@ -3,9 +3,7 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
-use crate::args::{
-	self, Command, CopyCommand, DiffCommand, DiffProfile, Format, RecoveryCommand, USAGE,
-};
+use crate::args::{self, Command, CopyCommand, DiffCommand, DiffProfile, Format, RecoveryCommand};
 use crate::copy_report::CopyOutcome;
 use crate::recovery_report::RecoveryOutcome;
 use crate::report::{INCONCLUSIVE, Outcome, Report};
@@ -16,12 +14,12 @@ pub(crate) fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
 	let command = match args::parse(args) {
 		Ok(command) => command,
 		Err(error) => {
-			let _ = writeln!(stderr, "exacopy: {error}\n{USAGE}");
+			let _ = write!(stderr, "{error}");
 			return ExitCode::from(INCONCLUSIVE);
 		}
 	};
 	match command {
-		Command::Help => match writeln!(stdout, "{USAGE}").and_then(|()| stdout.flush()) {
+		Command::Help(help) => match write!(stdout, "{help}").and_then(|()| stdout.flush()) {
 			Ok(()) => ExitCode::SUCCESS,
 			Err(_) => ExitCode::from(INCONCLUSIVE),
 		},

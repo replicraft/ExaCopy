@@ -125,6 +125,11 @@
       },
       "purpose": "Source stream and independent stage read-back digests, and content bindings."
     },
+    "clap": {
+      "default_features": false,
+      "features": ["error-context", "help", "std", "usage"],
+      "purpose": "Parse the native CLI argument grammar and generate command help and usage."
+    },
     "crc32c": {
       "default_features": true,
       "features": [],
@@ -195,6 +200,7 @@
     }
   },
   "cli_graph_groups": {
+    "command_line": ["anstyle", "clap", "clap_builder", "clap_lex"],
     "reporting": [
       "exacopy-cli", "itoa", "memchr", "proc-macro2", "quote",
       "serde", "serde_core", "serde_derive", "serde_json", "syn", "unicode-ident", "zmij"
@@ -220,7 +226,7 @@
         "diff": "local regular files",
         "copy_and_recovery": "Linux verified single-file transfer and recovery"
       },
-      "cli_graph_groups": ["reporting", "local_comparison", "linux_verified_transfer"],
+      "cli_graph_groups": ["command_line", "reporting", "local_comparison", "linux_verified_transfer"],
       "rustix_features": ["alloc", "default", "fs", "process", "rand", "std"]
     },
     "aarch64-apple-darwin": {
@@ -229,7 +235,7 @@
         "diff": "regular files in managed APFS directories with --managed-macos",
         "copy_and_recovery": "unsupported through the CLI"
       },
-      "cli_graph_groups": ["reporting", "local_comparison", "macos_io"],
+      "cli_graph_groups": ["command_line", "reporting", "local_comparison", "macos_io"],
       "rustix_features": ["alloc", "default", "fs", "process", "std", "try_close"]
     },
     "x86_64-pc-windows-msvc": {
@@ -238,7 +244,7 @@
         "diff": "unsupported",
         "copy_and_recovery": "unsupported"
       },
-      "cli_graph_groups": ["reporting"],
+      "cli_graph_groups": ["command_line", "reporting"],
       "rustix_features": []
     }
   },

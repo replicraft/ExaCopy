@@ -3,6 +3,7 @@ schema_version = 1
 # The locked graph identifies exact versions, parents, features, targets, licenses,
 # and build-code exposure. These purposes explain why the graph inputs exist.
 [purpose]
+anstyle = "Represent fixed help and diagnostic styles used internally by Clap even with terminal color disabled."
 apfs-mounted = "Descriptor-scoped APFS observations and operations for the macOS adapter."
 arrayvec = "BLAKE3's fixed-capacity tree and digest state."
 bitflags = "Typed operating-system flags in rustix."
@@ -10,6 +11,9 @@ blake3 = "Source-stream and independent stage read-back digests, content binding
 block-buffer = "Fixed-size block buffering for the digest traits and SHA-512."
 cc = "Compile BLAKE3's target-specific native implementation inputs."
 cfg-if = "Select architecture and feature-specific implementations in hash, signature and system entropy dependencies."
+clap = "Parse ExaCopy's typed command-line grammar and provide command-specific usage and help."
+clap_builder = "Implement Clap command grammar, argument validation, error contexts, and help rendering."
+clap_lex = "Tokenize native OS argument strings for Clap while preserving path operand bytes."
 constant_time_eq = "Fixed-length digest equality in BLAKE3."
 cpufeatures = "Runtime architecture feature selection in BLAKE3, Curve25519, and SHA-2."
 crc32c = "Detect torn or corrupt journal frames before authenticated record decoding."
@@ -579,3 +583,47 @@ adversarial_inputs = "Filesystem identities, namespace changes, metadata fidelit
 verification = "Pomologie records a native private-stage, read-back and publication fixture on macOS 14.7.2. Its recorded disposable ExaCopy integration covers held identity, volume capabilities and dataless policy. These scopes leave strict copy-through-receipt qualification open."
 replacement = "Preserve authorized descriptor scope, live identity evidence, no-clobber publication and explicit uncertainty. Requalify the affected native adapter paths."
 review_gaps = ["Independent review of the selected Darwin FFI and descriptor contracts.", "Full adapter migration, strict metadata fidelity, genuine dataless and cross-volume fixtures, process-crash and power-loss qualification."]
+
+[assessment."clap@4.6.10"]
+archive_sha256 = "50066ca966813ca8957ee15361752f19424a8ff620dbe9c8993d9f99d99b04b3"
+release_observation = "The local crates.io index lists unyanked 4.6.10 on 2026-11-24 after 4.6.9 on 2026-11-20. The archive identifies clap-rs/clap commit 54fac10c7b2287eed9eff478105f86dc69aaf0a4. The library MSRV is 1.85."
+security_history = "No package advisory in the recorded RustSec snapshot 263a4d951a0867d4bddc29dddd6d59427c78f9a7."
+unsafe_exposure = "The crate forbids unsafe. No build script or proc macro. Selected std, help, usage, and error-context forward to clap_builder. Default color and suggestions, env, and derive are disabled. Transitive lexer and style unsafe is recorded separately."
+resource_limits = "ExaCopy uses an OS-provided argv and a fixed grammar. It collects and reframes argv without a separate application byte cap. The parser is a local CLI entry point, with no network or document input source."
+adversarial_inputs = "Path operands and grant paths travel through OsStringValueParser and PathBuf. Known command names, format and comparison enums, duplicate options, and worker range 1 through 16 are checked before invoking operations. Parser errors use fixed messages and scoped statically defined usage instead of echoing raw inputs."
+verification = "Exact candidate normal feature graph checked with locked offline Cargo metadata. Final candidate CLI tests passed on native macOS ARM64 (13) and in the Linux guest (38), including raw paths, redacted parse errors, and missing or duplicate grants. Earlier candidate failed one Linux diagnostic test before correction."
+replacement = "Preserve raw path handling, option ordering and delimiters, validation before dispatch, help and diagnostic routing, and stable command exit classifications."
+review_gaps = ["Independent exact-release upstream source comparison and whole package Cargo Vet review", "Native Windows argument execution"]
+
+[assessment."clap_builder@4.6.10"]
+archive_sha256 = "a0ed97c96ef4efb3cc84e09fa388df4463e7cc3224ec38d7b1d9e45749333590"
+release_observation = "The local crates.io index lists unyanked 4.6.10 on 2026-11-24 after 4.6.7 on 2026-09-14. The archive identifies clap-rs/clap commit 54fac10c7b2287eed9eff478105f86dc69aaf0a4 and workspace subdirectory clap_builder. The library MSRV is 1.85."
+security_history = "No package advisory in the recorded RustSec snapshot 263a4d951a0867d4bddc29dddd6d59427c78f9a7."
+unsafe_exposure = "The crate forbids unsafe. No build script or proc macro. The selected std, help, usage, and error-context paths use clap_lex and anstyle. The optional terminal color, environment, suggestions, Unicode, debug, and wrapping paths are excluded."
+resource_limits = "Matches and error contexts are allocated from the local OS arguments and the fixed client grammar. Help and plain usage are generated from that grammar. No arbitrary argv size limit is imposed by this package on library callers."
+adversarial_inputs = "try_get_matches_from returns a typed parse error. The OsString parser returns the owned OS value unchanged. ExaCopy projects error kinds and a known context key into fixed descriptions, retains help separately, and does not render Clap's raw value-bearing error payload."
+verification = "Reviewed normalized features, try_get_matches_from, OsStringValueParser, and plain rendering in the exact registry source. The exact candidate macOS and Linux CLI suites exercise help, error context, duplicate or missing values, and raw path preservation."
+replacement = "Retain typed grammar, OS-string operand semantics, non-exiting parse errors, and equivalent static help and usage for the CLI."
+review_gaps = ["Independent exact-release upstream source comparison and whole package Cargo Vet review", "Native Windows argument execution"]
+
+[assessment."clap_lex@1.1.2"]
+archive_sha256 = "e0921b3876b3a1df8a1c9f912e7f94342458022c2e84288015893d83c4d62a79"
+release_observation = "The local crates.io index lists unyanked 1.1.2 on 2026-11-16 after 1.1.1 on 2026-09-14. The archive identifies clap-rs/clap release commit db86ef6eccb2ed5ae16d3035982907692ecb10ef and subdirectory clap_lex. The library MSRV is 1.85."
+security_history = "No package advisory in the recorded RustSec snapshot 263a4d951a0867d4bddc29dddd6d59427c78f9a7."
+unsafe_exposure = "No build script, proc macro, or runtime dependencies. The library reconstructs borrowed OsStr fragments through unsafe from_encoded_bytes_unchecked. Reviewed selected ASCII flag-prefix and equals delimiters, char_indices, and valid_up_to supplies for split boundaries on bytes originating in the same OsStr."
+resource_limits = "RawArgs collects local OS arguments. Tokenization slices native strings without normalizing path bytes. ExaCopy supplies a fixed local CLI grammar with OS-bounded argv."
+adversarial_inputs = "The lexer separates ASCII switches and attached values while retaining opaque OsStr values. Invalid UTF-8 option-name fragments can be rejected by the grammar without converting accepted path values. Raw input echo suppression is a caller responsibility."
+verification = "Native macOS and Linux candidate CLI tests cover raw-byte input acceptance, dash-prefixed operands, attached values, and malformed argument diagnostics. The exact release source records separate short-flag and raw-suffix splitting."
+replacement = "Retain OS-native argument bytes or code units, delimiters, and non-lossy attached values. Preserve Unix and Windows-specific checks for native encoding boundaries."
+review_gaps = ["Native Windows wide-string boundary execution and whole package Cargo Vet review"]
+
+[assessment."anstyle@1.0.14"]
+archive_sha256 = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
+release_observation = "The local crates.io index lists unyanked 1.0.14 on 2026-03-13 after 1.0.13 on 2025-09-29. The archive identifies rust-cli/anstyle commit 0fe6f0ff6d52e9f91d4071199bd0b24bd46f3d35 and subdirectory crates/anstyle. The library MSRV is 1.66.0."
+security_history = "No package advisory in the recorded RustSec snapshot 263a4d951a0867d4bddc29dddd6d59427c78f9a7."
+unsafe_exposure = "No build script, proc macro, or runtime dependencies. The color formatter uses from_utf8_unchecked on an initialized prefix of its fixed buffer, filled from private static UTF-8 fragments and ASCII decimal digits. Clap is integrated without its color feature."
+resource_limits = "Typed style values and fixed-size escape-sequence formatting do not parse terminal input or allocate attacker-selected formats. Clap receives only the statically defined style and emits plain help or usage in the selected configuration."
+adversarial_inputs = "This is a typed style and formatting library. ExaCopy never routes untrusted path bytes through a style parser and replaces raw parse errors with fixed diagnostic text."
+verification = "Selected default and std feature union was checked in locked resolution. Exact candidate native macOS and Linux guest tests cover plain help, usage, and redacted error output. No independent terminal capability or color behavior claim."
+replacement = "Keep the selected terminal output free of automatic color and preserve the CLI's fixed help and diagnostic rendering."
+review_gaps = ["Independent exact-release upstream source comparison and whole package Cargo Vet review"]

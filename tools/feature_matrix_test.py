@@ -50,7 +50,12 @@ class FeatureMatrixTests(unittest.TestCase):
         graph = {name: set() for group in target["cli_graph_groups"] for name in groups[group]}
         graph["rustix"] = set(target["rustix_features"])
         graph["ed25519-dalek"] = {"zeroize"}
+        graph["clap"] = {"error-context", "help", "std", "usage"}
         check_cli_graph(POLICY, LINUX, graph)
+        defaulted = deepcopy(graph)
+        defaulted["clap"].add("default")
+        with self.assertRaisesRegex(ValueError, "CLI dependency clap"):
+            check_cli_graph(POLICY, LINUX, defaulted)
         corrupted = deepcopy(graph)
         del corrupted["blake3"]
         corrupted["unreviewed-network-library"] = set()
