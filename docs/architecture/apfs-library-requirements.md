@@ -4,11 +4,17 @@ This integration contract records the capabilities needed to replace ExaCopy's
 mounted APFS implementation. The original accounting used ExaCopy
 `6e24897d3a185bc5b4a3a99b6931233f24501503`. Native composition was moved to
 the runtime at `885b74e`; `39af383` introduced the pinned local companion
-and its dataless and stored-name consumers. The source pin selects Pomologie
+and its dataless and stored-name consumers. At that checkpoint the source pin selected Pomologie
 `618768ae353febd9f87ee285e24984a9302ccb13`, which contains
 `crates/platform/apfs-mounted`. The diff from the preceding pin `8f19cd3`
 changes comments and dependency ordering in four Cargo manifests. Their
 parsed contents and the mounted implementation are identical.
+
+The current [source pin](../../specs/dependencies/apfs-source.toml) selects
+`fdcc3ea51e4cdc694453b7bfeb626f4d03367e1a`. The
+[filesystem companion audit](../engineering/filesystem-companion-boundary-audit.md)
+records the current consumers, remaining duplication and API gaps. The unsafe
+counts below describe the original checkpoint rather than the current tree.
 
 **Ownership**
 

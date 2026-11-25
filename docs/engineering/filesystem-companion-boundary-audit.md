@@ -67,8 +67,8 @@ existing identity representation in signed records and receipts.
 
 The private stage uses a native held writer, an event-only anchor, a
 second independent reader, checked writer close, and timestamp
-installation with new observations. The firewall around metadata is
-ExaCopy's strict unnamed-stream profile. The metadata and object
+installation with new observations. ExaCopy applies its strict unnamed-stream
+profile to metadata. The metadata and object
 observations must bind to the correct stage before the transfer
 coordinator can use them.
 [Stage write and close](../../crates/platform/exacopy-platform/src/macos/staging/file.rs#L129).
