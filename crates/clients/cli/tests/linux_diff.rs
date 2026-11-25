@@ -34,6 +34,56 @@ fn equal_bytes_with_raw_filename_produce_a_structured_live_result() {
 }
 
 #[test]
+fn worker_choices_keep_exact_reports_and_raw_filename_bytes() {
+	let fixture = Fixture::new();
+	let left = OsStr::from_bytes(b"left\xff\nraw");
+	let right = OsStr::from_bytes(b"right\xfe\nraw");
+	let original = b"abcdefghi";
+	fs::write(fixture.0.join(left), original).expect("write left raw filename");
+
+	for (bytes, exit) in [
+		(&original[..], 0),
+		(&b"axcdefgzi"[..], 1),
+		(&b"abcd"[..], 1),
+	] {
+		fs::write(fixture.0.join(right), bytes).expect("write right raw filename");
+		let serial = fixture
+			.diff(left, right)
+			.args(["--format", "json"])
+			.output()
+			.expect("invoke default serial comparison");
+		let expected = read_json(serial, exit);
+		for workers in ["1", "4", "16"] {
+			let selected = fixture
+				.diff(left, right)
+				.args([
+					"--workers",
+					workers,
+					"--format",
+					"json",
+					"--compare",
+					"bytes",
+				])
+				.output()
+				.expect("invoke explicitly bounded comparison");
+			assert_eq!(
+				read_json(selected, exit),
+				expected,
+				"worker ceiling {workers}"
+			);
+		}
+		assert_eq!(
+			fs::read(fixture.0.join(left)).expect("left survives"),
+			original
+		);
+		assert_eq!(
+			fs::read(fixture.0.join(right)).expect("right survives"),
+			bytes
+		);
+	}
+}
+
+#[test]
 fn same_length_and_different_length_comparisons_use_exit_one() {
 	let fixture = Fixture::new();
 	fs::write(fixture.0.join("left"), b"abc").expect("write left file");

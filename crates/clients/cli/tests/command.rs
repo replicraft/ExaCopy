@@ -14,6 +14,7 @@ fn help_describes_diff_and_exits_successfully() {
 	let usage = String::from_utf8(output.stdout).expect("read help as UTF-8");
 	assert!(usage.contains("exacopy diff"));
 	assert!(usage.contains("--format human|json"));
+	assert!(usage.contains("--workers N"));
 	assert!(usage.contains("exacopy recover retry [--] JOB --source-root DIR"));
 }
 
@@ -38,11 +39,84 @@ fn rejects_missing_operands_and_unsupported_or_repeated_options() {
 	}
 }
 
+#[test]
+fn diff_worker_ceiling_requires_one_positive_supported_count() {
+	for (options, diagnostic) in [
+		(
+			&["--workers"][..],
+			"--workers requires an integer from 1 to 16",
+		),
+		(
+			&["--workers", "--format", "json"],
+			"--workers requires an integer from 1 to 16",
+		),
+		(
+			&["--workers", "0"],
+			"--workers requires an integer from 1 to 16",
+		),
+		(
+			&["--workers", "-1"],
+			"--workers requires an integer from 1 to 16",
+		),
+		(
+			&["--workers", "1.5"],
+			"--workers requires an integer from 1 to 16",
+		),
+		(
+			&["--workers", "17"],
+			"--workers requires an integer from 1 to 16",
+		),
+		(
+			&["--workers", "99999999999999999999999999"],
+			"--workers requires an integer from 1 to 16",
+		),
+		(
+			&["--workers", "1", "--workers", "4"],
+			"repeated diff option",
+		),
+	] {
+		let output = exacopy()
+			.args(["diff", "absent-left", "absent-right", "--format", "json"])
+			.args(options)
+			.output()
+			.expect("invoke diff with invalid worker option");
+		assert_eq!(output.status.code(), Some(2));
+		assert!(output.stdout.is_empty());
+		let stderr = String::from_utf8(output.stderr).expect("read usage");
+		assert!(stderr.contains(diagnostic), "{options:?}: {stderr}");
+		assert!(stderr.contains("Usage:"));
+	}
+
+	let copy = exacopy()
+		.args([
+			"copy",
+			"absent-source",
+			"absent-target",
+			"--profile",
+			"profile",
+			"--workers",
+			"4",
+		])
+		.output()
+		.expect("invoke copy with a diff-only option");
+	assert_eq!(copy.status.code(), Some(2));
+	assert!(copy.stdout.is_empty());
+	assert!(String::from_utf8_lossy(&copy.stderr).contains("unknown copy option"));
+}
+
 #[cfg(not(target_os = "linux"))]
 #[test]
 fn unsupported_platform_returns_structured_inconclusive_result() {
 	let output = exacopy()
-		.args(["diff", "left", "right", "--format", "json"])
+		.args([
+			"diff",
+			"left",
+			"right",
+			"--format",
+			"json",
+			"--workers",
+			"4",
+		])
 		.output()
 		.expect("invoke diff on unsupported platform");
 	assert_eq!(output.status.code(), Some(2));

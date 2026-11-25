@@ -4,8 +4,10 @@ The `exacopy` binary compares regular local files and copies one regular file to
 
 ```sh
 cargo run --locked -p exacopy-cli -- diff ./left ./right
-cargo run --locked -p exacopy-cli -- diff /path/to/left /path/to/right --compare bytes --format json
+cargo run --locked -p exacopy-cli -- diff /path/to/left /path/to/right --compare bytes --workers 4 --format json
 ```
+
+The default comparison runs serially. Use `--workers N` after the two paths to set a ceiling from 1 through 16 for positioned reads. The comparator uses up to that many workers within the same 8 MiB scratch budget. All worker choices use the same byte relation, report format, and exit codes.
 
 Each input may be absolute or relative to the current working directory. The command opens the named parent directory and selects its final filename within that capability. Linux file names are preserved as raw bytes. A trailing separator, a reserved final component, a final symlink, or a non-regular file is refused. A parent path is the directory the caller chose, following ordinary Linux directory resolution. A filename that matches a help flag can be passed after `diff --` or with a leading `./`.
 

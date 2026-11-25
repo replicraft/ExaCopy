@@ -79,12 +79,12 @@ fn run_diff(diff: DiffCommand, stdout: &mut impl Write, stderr: &mut impl Write)
 
 #[cfg(target_os = "linux")]
 fn compare(diff: &DiffCommand) -> Outcome {
-	crate::linux::compare(&diff.left, &diff.right)
+	crate::linux::compare(&diff.left, &diff.right, diff.workers)
 }
 
 #[cfg(not(target_os = "linux"))]
 fn compare(diff: &DiffCommand) -> Outcome {
-	let _ = (&diff.left, &diff.right);
+	let _ = (&diff.left, &diff.right, diff.workers);
 	Outcome::Inconclusive {
 		error: crate::report::Failure {
 			code: crate::report::ErrorCode::UnsupportedPlatform,

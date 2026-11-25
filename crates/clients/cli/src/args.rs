@@ -1,7 +1,16 @@
 use std::ffi::{OsStr, OsString};
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
-pub(crate) const USAGE: &str = "Usage:\n  exacopy diff [--] LEFT RIGHT [--compare bytes] [--format human|json]\n  exacopy copy [--] SOURCE TARGET --profile DIR [--format human|json]\n  exacopy recover inspect|finish [--] JOB --profile DIR [--format human|json]\n  exacopy recover retry [--] JOB --source-root DIR --profile DIR [--format human|json]\n  exacopy profile init [--] DIR";
+pub(crate) const USAGE: &str = "Usage:\n  exacopy diff [--] LEFT RIGHT [--compare bytes] [--workers N] [--format human|json]\n  exacopy copy [--] SOURCE TARGET --profile DIR [--format human|json]\n  exacopy recover inspect|finish [--] JOB --profile DIR [--format human|json]\n  exacopy recover retry [--] JOB --source-root DIR --profile DIR [--format human|json]\n  exacopy profile init [--] DIR";
+
+const MAX_DIFF_WORKERS: usize = 16;
+
+#[cfg(target_os = "linux")]
+const _: () = assert!(
+	MAX_DIFF_WORKERS == exacopy_diff::linux::MAX_WORKERS,
+	"the CLI worker limit must match the comparison engine"
+);
 
 pub(crate) enum Command {
 	Help,
@@ -14,6 +23,7 @@ pub(crate) enum Command {
 pub(crate) struct DiffCommand {
 	pub(crate) left: PathBuf,
 	pub(crate) right: PathBuf,
+	pub(crate) workers: Option<NonZeroUsize>,
 	pub(crate) format: Format,
 }
 
@@ -125,6 +135,7 @@ fn parse_diff(mut args: impl Iterator<Item = OsString>) -> Result<Command, &'sta
 
 	let mut format = None;
 	let mut compare_selected = false;
+	let mut workers = None;
 	while let Some(flag) = args.next() {
 		match flag.to_str() {
 			Some("--format") if format.is_none() => format = Some(parse_format(args.next())?),
@@ -134,7 +145,10 @@ fn parse_diff(mut args: impl Iterator<Item = OsString>) -> Result<Command, &'sta
 				}
 				compare_selected = true;
 			}
-			Some("--format" | "--compare") => return Err("repeated diff option"),
+			Some("--workers") if workers.is_none() => workers = Some(parse_workers(args.next())?),
+			Some("--format" | "--compare" | "--workers") => {
+				return Err("repeated diff option");
+			}
 			_ => return Err("unknown diff option"),
 		}
 	}
@@ -142,6 +156,7 @@ fn parse_diff(mut args: impl Iterator<Item = OsString>) -> Result<Command, &'sta
 	Ok(Command::Diff(DiffCommand {
 		left: left.into(),
 		right: right.into(),
+		workers,
 		format: format.unwrap_or(Format::Human),
 	}))
 }
@@ -207,4 +222,13 @@ fn parse_format(value: Option<OsString>) -> Result<Format, &'static str> {
 		Some("json") => Ok(Format::Json),
 		_ => Err("--format requires human or json"),
 	}
+}
+
+fn parse_workers(value: Option<OsString>) -> Result<NonZeroUsize, &'static str> {
+	value
+		.as_deref()
+		.and_then(OsStr::to_str)
+		.and_then(|value| value.parse::<NonZeroUsize>().ok())
+		.filter(|workers| workers.get() <= MAX_DIFF_WORKERS)
+		.ok_or("--workers requires an integer from 1 to 16")
 }
