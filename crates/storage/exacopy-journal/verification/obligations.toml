@@ -36,3 +36,15 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/remote_download.rs", test = "independent_owner_and_frame_vectors_round_trip_in_the_remote_profile", oracle = "Independent canonical CBOR and OpenSSL signatures match the exact Rust owner and private payloads. The selected profile validates the envelope and the frame decoder validates the exact framing predecessor." }
+
+[[obligation]]
+id = "P-044"
+requirement_ids = ["R-013", "R-017", "R-140"]
+source = "src/remote_download/replay.rs"
+symbols = ["replay_remote_download"]
+assumptions = [
+    "The caller selects the exact first segment and independently authenticates its scoped owner under a trusted local key.",
+    "The framed Rust fixtures apply to historical claims. Native artifact provenance, barriers and recovery authority have separate obligations.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_download_replay.rs", test = "framed_replay_burns_allocations_and_keeps_only_exact_active_progress", oracle = "The scanner retains every admitted allocation and only advances contiguous checkpoint evidence for its exact prepared stage and source pass. Superseded or unbound attempts cannot contribute progress to the latest capture." }

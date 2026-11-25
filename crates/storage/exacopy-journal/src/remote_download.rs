@@ -3,6 +3,7 @@
 mod error;
 mod owner;
 mod records;
+pub mod replay;
 mod scope;
 mod wire;
 

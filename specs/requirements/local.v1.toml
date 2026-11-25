@@ -1239,6 +1239,30 @@ path = "crates/storage/exacopy-journal/tests/remote_download.rs"
 target = "exact_predecessor_sequence_digest_and_kind_are_required"
 
 [[coverage]]
+id = "remote-download-journal-replay"
+status = "implemented"
+requirement_ids = ["R-013", "R-017", "R-140"]
+acceptance_ids = ["A-013", "A-017", "A-140"]
+invariant_ids = ["INV-002", "INV-009", "INV-013", "INV-019", "INV-024"]
+scope = "Read-only bounded semantic replay of the authenticated first remote-download segment, with exact allocation, local stage declaration, source-pass and contiguous checkpoint bindings."
+limits = "Historical journal evidence from the selected stream. Current artifact observations, durability qualification and authorization for any effect are outside this scanner."
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "obligation"
+state = "defined"
+path = "crates/storage/exacopy-journal/verification/obligations.toml"
+target = "P-044"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/remote_download_replay.rs"
+target = "all_byte_cuts_retain_only_complete_semantic_boundaries"
+
+
+[[coverage]]
 id = "public-apply-intent-receipt"
 status = "implemented"
 requirement_ids = ["R-015", "R-155"]
