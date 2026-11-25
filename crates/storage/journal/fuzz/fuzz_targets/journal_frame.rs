@@ -7,7 +7,9 @@ use std::io::{self, Read};
 use libfuzzer_sys::fuzz_target;
 
 use exacopy_journal::frame::{ChainHead, FrameKind, FrameReadError, FrameReader, FrameWriter};
-use exacopy_journal::{RecoveryDecision, RetainedPublicationDecision};
+use exacopy_journal::{
+	MAX_RANGE_PAGE_BYTES, RangeCheckpoint, RangePage, RecoveryDecision, RetainedPublicationDecision,
+};
 
 const WIRE_PAYLOAD_LIMIT: usize = 1_048_576;
 const WIRE_HEADER_BYTES: usize = 56;
@@ -28,6 +30,15 @@ impl Read for BoundedRead<'_> {
 
 fuzz_target!(|input: &[u8]| {
 	check_recovery_payload(input);
+	if let Ok(checkpoint) = RangeCheckpoint::decode(input) {
+		assert_eq!(checkpoint.encode(), input);
+	}
+	if let Ok(page) = RangePage::decode(input) {
+		assert!(input.len() <= MAX_RANGE_PAGE_BYTES);
+		assert_eq!(page.encode(), input);
+		assert_eq!(page.reference().byte_length(), input.len());
+		assert_eq!(page.reference().ordinal(), page.ordinal());
+	}
 	let mut reader = FrameReader::new(BoundedRead(input), ChainHead::start());
 	let mut consumed = 0;
 	let mut previous = ChainHead::start();
@@ -64,8 +75,14 @@ fuzz_target!(|input: &[u8]| {
 					frame.head()
 				);
 				assert_eq!(writer.into_inner().as_slice(), &input[consumed..end]);
-				if frame.kind() == FrameKind::RecoveryDecision {
-					check_recovery_payload(frame.payload());
+				match frame.kind() {
+					FrameKind::RangeCheckpoint => {
+						if let Ok(checkpoint) = RangeCheckpoint::from_frame(&frame) {
+							assert_eq!(checkpoint.encode(), frame.payload());
+						}
+					}
+					FrameKind::RecoveryDecision => check_recovery_payload(frame.payload()),
+					_ => {}
 				}
 				consumed = end;
 				previous = frame.head();

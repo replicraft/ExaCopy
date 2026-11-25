@@ -36,6 +36,8 @@ pub use recovery_records::{
 	RetainedPublicationEvidence,
 };
 pub use verification_records::{
-	BasicMetadata, MetadataOmission, MetadataRecorded, StageSealed, StreamDigest, StreamEvidence,
-	StreamLength, VerificationRecordError, VerificationRecorded,
+	BasicMetadata, MAX_CHECKPOINT_RANGE_BYTES, MAX_RANGE_CHECKPOINTS, MAX_RANGE_PAGE_BYTES,
+	MetadataOmission, MetadataRecorded, RangeCheckpoint, RangePage, RangePageRef,
+	SourceMeasurementId, StageSealed, StreamDigest, StreamEvidence, StreamLength,
+	VerificationRecordError, VerificationRecorded,
 };

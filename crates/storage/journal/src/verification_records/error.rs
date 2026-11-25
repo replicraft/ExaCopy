@@ -5,7 +5,7 @@ use minicbor::decode;
 use crate::frame::FrameKind;
 use crate::prepared::PreparedError;
 
-/// Why a local sealed-stage observation could not be constructed or read.
+/// Why a local verification observation could not be constructed or read.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum VerificationRecordError {
@@ -30,6 +30,12 @@ pub enum VerificationRecordError {
 	NonCanonical,
 	/// A stream exceeds the signed local file extent limit.
 	UnsupportedLength,
+	/// The checkpoint ordinal is outside the local range inventory.
+	InvalidRangeOrdinal,
+	/// The page reference declares a length outside the bounded page codec.
+	InvalidRangePageLength,
+	/// The checkpoint range is empty, too large, or extends beyond the local file limit.
+	InvalidCheckpointRange,
 	/// The sealed stage body repeats an epoch different from the record header.
 	EpochMismatch,
 	/// A required method, barrier or metadata scope is outside the local profile.
@@ -76,14 +82,21 @@ impl fmt::Display for VerificationRecordError {
 				);
 			}
 			Self::Common(error) => return write!(formatter, "invalid observation field: {error}"),
-			Self::PayloadTooLong => "sealed-stage observation exceeds the local record size",
-			Self::Truncated => "truncated sealed-stage observation",
-			Self::InvalidCbor => "invalid CBOR item in sealed-stage observation",
-			Self::TrailingBytes => "trailing bytes after sealed-stage observation",
-			Self::NonCanonical => "noncanonical sealed-stage observation",
+			Self::PayloadTooLong => "verification observation exceeds the local record size",
+			Self::Truncated => "truncated verification observation",
+			Self::InvalidCbor => "invalid CBOR item in verification observation",
+			Self::TrailingBytes => "trailing bytes after verification observation",
+			Self::NonCanonical => "noncanonical verification observation",
 			Self::UnsupportedLength => "stream length exceeds the local file limit",
+			Self::InvalidRangeOrdinal => {
+				"checkpoint ordinal lies outside the local range inventory"
+			}
+			Self::InvalidRangePageLength => {
+				"checkpoint page length lies outside the local page limit"
+			}
+			Self::InvalidCheckpointRange => "checkpoint range lies outside the local stream limits",
 			Self::EpochMismatch => "sealed-stage epoch differs from the record header",
-			Self::UnsupportedEvidence => "unsupported verification or metadata evidence",
+			Self::UnsupportedEvidence => "unsupported verification evidence",
 			Self::AliasedIdentity => "source and stage identify the same native file",
 			Self::MismatchedStreams => "observed source and stage stream evidence differs",
 			Self::UnsupportedMode => "metadata mode includes bits outside ordinary permissions",
