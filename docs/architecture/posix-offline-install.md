@@ -1,6 +1,26 @@
 # Offline CLI installation on macOS and Linux
 
-The root shell scripts install and remove an exact, user-scoped CLI release from an offline bundle. Use the scripts from a trusted source tree, with their companion shell files in `tools/installer`. ExaCopy has yet to provision an official publisher certificate or signed distributable bundle for this profile.
+The root shell scripts install a user-scoped CLI release from GitHub's latest stable release or an exact offline bundle. Use the scripts from a trusted source tree, with their companion shell files in `tools/installer`. ExaCopy has yet to provision an official publisher certificate or signed distributable bundle for this profile.
+
+## Install the latest stable release
+
+Supply the independently trusted publisher certificate and fingerprint:
+
+```sh
+./install.sh --latest --publisher-cert "$CERT" --publisher-sha256 "$PIN"
+```
+
+Latest mode is also the default when `--offline-bundle` is absent. An optional
+`--version` requires the selected latest release to match that exact version.
+The installer resolves `releases/latest` once, downloads the running platform's
+`exacopy-cli-<target>.tar.gz` and `SHA256SUMS.txt` from that tag, checks the
+archive checksum, and extracts only the three permitted files into private
+staging. The existing publisher signature and executable hash checks run before
+installation. This mode requires a supported host curl and `/usr/bin/perl`
+with `IO::Uncompress::Gunzip`; missing prerequisites stop before download.
+The [online release contract](../supply-chain/online-cli-release-profile.md)
+defines redirect, size and extraction limits. Live official delivery remains
+unqualified; local tests use synthetic signed releases and scripted HTTP.
 
 ## Verify the source and choose a release
 
@@ -38,7 +58,7 @@ Repeating removal or preview for the absent version recorded in the retained rel
 
 On macOS, removal also refuses if the selected version directory or any of its four owned paths carries a resource fork. The signed raw release verifies the ordinary file bytes. A separately attached resource fork needs preservation before the version can be removed. Preview performs the same check. The check reads attribute names using the host `/usr/bin/xattr`.
 
-Profiles, saved credentials, journals, partial transfers, repositories, source and destination files, retained originals, shell startup files, PATH, and other installed versions are outside the removal scope. A stable launcher, profile migrations, safe service draining, managed update and rollback, purge, online downloads, system scope, and power-loss qualification remain later work. The script assumes cooperative processes of the installing UID and a trusted administrator.
+Profiles, saved credentials, journals, partial transfers, repositories, source and destination files, retained originals, shell startup files, PATH, and other installed versions are outside the removal scope. A stable launcher, profile migrations, safe service draining, managed update and rollback, purge, system scope, and power-loss qualification remain later work. The script assumes cooperative processes of the installing UID and a trusted administrator.
 
 ## Verification
 

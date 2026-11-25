@@ -1,4 +1,4 @@
-# User-scoped, offline POSIX installer support.
+# User-scoped POSIX installer support.
 
 PATH=/usr/bin:/bin:/usr/sbin:/sbin
 LC_ALL=C
@@ -19,16 +19,16 @@ fail() {
 
 usage() {
 	if [ "$operation" = install ]; then
-		extra='--offline-bundle DIR'
+		printf 'Usage: install.sh --publisher-cert FILE --publisher-sha256 HASH [--latest] [--version N.N.N]\n'
+		printf '       install.sh --publisher-cert FILE --publisher-sha256 HASH --version N.N.N --offline-bundle DIR\n'
 	else
-		extra='--quiesced'
+		printf 'Usage: uninstall.sh --version N.N.N --publisher-cert FILE --publisher-sha256 HASH --quiesced\n'
 	fi
-	printf 'Usage: %s.sh --version N.N.N --publisher-cert FILE --publisher-sha256 HASH %s\n' "$operation" "$extra"
 	printf '       [--install-root DIR] [--scope user] [--cli-only] [--non-interactive] [--dry-run]\n'
 }
 
 read_flags() {
-	version='' publisher_cert='' publisher_pin='' bundle='' root='' dry_run=no quiesced=no
+	version='' publisher_cert='' publisher_pin='' bundle='' root='' dry_run=no quiesced=no latest=no
 	while [ "$#" -gt 0 ]; do
 		case $1 in
 			--version|--publisher-cert|--publisher-sha256|--offline-bundle|--install-root|--scope)
@@ -43,6 +43,7 @@ read_flags() {
 				esac
 				shift 2
 				;;
+			--latest) latest=yes; shift ;;
 			--cli-only|--non-interactive) shift ;;
 			--dry-run) dry_run=yes; shift ;;
 			--quiesced) quiesced=yes; shift ;;
@@ -50,13 +51,23 @@ read_flags() {
 			*) fail "unsupported argument: $1" ;;
 		esac
 	done
-	valid_version "$version" || fail 'provide exact --version N.N.N'
+	if [ "$operation" != install ] || [ -n "$bundle" ] || [ -n "$version" ]; then
+		valid_version "$version" || fail 'provide exact --version N.N.N'
+	fi
 	hex_pin "$publisher_pin" || fail 'provide independently trusted lowercase --publisher-sha256'
 	[ -n "$publisher_cert" ] || fail 'provide independently trusted --publisher-cert'
 	if [ "$operation" = install ]; then
-		[ -n "$bundle" ] && [ "$quiesced" = no ] || fail 'provide --offline-bundle for install'
-	elif [ -n "$bundle" ] || { [ "$quiesced" != yes ] && [ "$dry_run" != yes ]; }; then
-		fail 'uninstall requires --quiesced after the owner stops all uses of this version'
+		[ "$quiesced" = no ] || fail '--quiesced applies to uninstall'
+		if [ -z "$bundle" ]; then
+			latest=yes
+		else
+			[ "$latest" = no ] || fail '--latest and --offline-bundle are mutually exclusive'
+		fi
+	else
+		[ "$latest" = no ] || fail '--latest applies to install'
+		if [ -n "$bundle" ] || { [ "$quiesced" != yes ] && [ "$dry_run" != yes ]; }; then
+			fail 'uninstall requires --quiesced after the owner stops all uses of this version'
+		fi
 	fi
 }
 
@@ -189,6 +200,11 @@ cleanup() {
 	if [ -n "$scratch" ]; then
 		rm -f "$scratch/exacopy" "$scratch/release.manifest" "$scratch/release.sig" \
 			"$scratch/publisher.der" "$scratch/publisher.pem" "$scratch/attribute-names" || :
+		if [ "$latest" = yes ]; then
+			rm -f "$scratch/redirect" "$scratch/checksums" "$scratch/archive.tar.gz" \
+				"$scratch/bundle/exacopy" "$scratch/bundle/release.manifest" "$scratch/bundle/release.sig" || :
+			rmdir "$scratch/bundle" 2>/dev/null || :
+		fi
 		rmdir "$scratch" 2>/dev/null || :
 	fi
 }
@@ -222,6 +238,11 @@ installer_main() {
 	trap 'exit 1' HUP INT TERM
 	scratch=$(mktemp -d "$temp_base/exacopy-release.XXXXXXXX") || fail 'cannot create verification directory'
 	snapshot "$publisher_cert" "$scratch/publisher.der" 16384
+	if [ "$latest" = yes ]; then
+		# shellcheck source=tools/installer/download.sh
+		. "$script_dir/tools/installer/download.sh"
+		download_release
+	fi
 	high_water=$root/.high-water
 	version_store=$root/versions
 	version_dir=$version_store/$version
