@@ -83,3 +83,34 @@ architecture enforcement, core/format boundaries, portability and
 verification audit. Their private patches integrate serially. Only the
 parent updates shared manifests, lockfile and common inventories. No
 push, release, VM recreation or sibling-repository change is implied.
+
+## Corrected package placement
+
+The application now resides in `apps/exacopy-cli`, including native
+capability assembly and its integration tests. There is no empty
+`exacopy-engine` compatibility package. Actual workflow decisions remain
+in `crates/engines/exacopy-transfer` and exact comparison in
+`crates/engines/exacopy-diff`.
+
+Existing libraries use their complete package directory names under
+`foundation/`, `interfaces/`, `platform/`, `net/`, `formats/`, `storage/`
+and `engineering/`. Only implemented responsibilities have packages.
+The shared component validator and its P-013/fuzz ownership now live in
+`exacopy-core`; Plan and manifest formats have separate owners. Their
+independent oracle paths and frozen vectors were preserved and repaired
+where relocation broke imports. The selected dependency features remain
+unchanged; the broader `minicbor/alloc` selection was rejected in review.
+
+The schema-2 dependency checker derives composition roles from canonical
+package locations and inspects Cargo declarations, including aliases,
+optional/target-specific edges and engine dependency closures. Negative
+fixtures cover misplaced executables, alternate binary source paths,
+cross-package target sources and invalid fuzz workspace exemptions.
+Source review remains necessary for capability authority and macro
+behavior; a permitted graph does not prove workflow correctness.
+
+Historical evidence retains its recorded revision and paths. Current
+source links and reproduction entry points follow the corrected layout.
+When reproducing an older pinned revision, use that revision's package
+inventory. Remaining native qualification, dependency review and journal
+I/O capability findings from the initial audit are still open.

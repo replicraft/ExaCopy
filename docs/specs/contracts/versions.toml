@@ -6,28 +6,28 @@ id = "exacopy.cli.verify"
 kind = "cli_output"
 status = "implemented"
 version = "1.0"
-owner = "crates/clients/cli/src/manifest_report.rs"
+owner = "apps/exacopy-cli/src/manifest_report.rs"
 
 [[contract]]
 id = "exacopy.cli.diff"
 kind = "cli_output"
 status = "implemented"
 version = "1.0"
-owner = "crates/clients/cli/src/report.rs"
+owner = "apps/exacopy-cli/src/report.rs"
 
 [[contract]]
 id = "exacopy.cli.copy"
 kind = "cli_output"
 status = "implemented"
 version = "1.0"
-owner = "crates/clients/cli/src/copy_report.rs"
+owner = "apps/exacopy-cli/src/copy_report.rs"
 
 [[contract]]
 id = "exacopy.local_recovery_inspection"
 kind = "cli_output"
 status = "implemented"
 version = "1.0"
-owner = "crates/clients/cli/src/recovery_report.rs"
+owner = "apps/exacopy-cli/src/recovery_report.rs"
 
 [[contract]]
 id = "portable-manifests"
@@ -65,7 +65,7 @@ notes = "Unsigned JSON projection of the canonical body. Attached Approval objec
 id = "local-owner-seed"
 kind = "local_profile"
 status = "development_unversioned"
-owner = "crates/clients/cli/src/profile.rs"
+owner = "apps/exacopy-cli/src/profile.rs"
 notes = "Private fixed-length Ed25519 seed in owner.seed. No configuration or saved connection profile schema."
 
 [[contract]]
@@ -73,7 +73,7 @@ id = "local-journal-frame"
 kind = "transfer_journal"
 status = "implemented_private"
 version = "1"
-owner = "crates/storage/journal/src/frame.rs"
+owner = "crates/storage/exacopy-journal/src/frame.rs"
 magic = "EXAJNL01"
 notes = "The framing version is shared. Linux and managed APFS payloads have distinct record families."
 
@@ -83,7 +83,7 @@ kind = "transfer_journal"
 status = "implemented_private"
 version = "1.0"
 required_features = 0
-owner = "crates/storage/journal/src/owner/codec.rs"
+owner = "crates/storage/exacopy-journal/src/owner/codec.rs"
 
 [[contract]]
 id = "linux-public-apply-owner"
@@ -91,7 +91,7 @@ kind = "transfer_journal"
 status = "implemented_private"
 version = "1.0"
 required_features = 1
-owner = "crates/storage/journal/src/owner/apply_codec.rs"
+owner = "crates/storage/exacopy-journal/src/owner/apply_codec.rs"
 notes = "Signed domain code 3, ExaCopy/owner/linux-public-apply/v1 plus NUL. Public/private Plan and exact approved stream binding; legacy owner readers refuse this form. No executor or recovery authority is implied."
 
 [[contract]]
@@ -99,7 +99,7 @@ id = "linux-copy-plan"
 kind = "transfer_journal"
 status = "implemented_private"
 version = "1.0"
-owner = "crates/operations/transfer/src/linux/plan/wire.rs"
+owner = "crates/engines/exacopy-transfer/src/linux/plan/wire.rs"
 
 [[contract]]
 id = "linux-prepared"
@@ -107,7 +107,7 @@ kind = "transfer_journal"
 status = "implemented_private"
 version = "1.0"
 required_features = 0
-owner = "crates/storage/journal/src/prepared/wire.rs"
+owner = "crates/storage/exacopy-journal/src/prepared/wire.rs"
 notes = "Shared header version for Linux preparation, verification, publication evidence and recovery payloads."
 
 [[contract]]
@@ -116,14 +116,14 @@ kind = "transfer_journal"
 status = "implemented_private"
 version = "1.0"
 required_features = 0
-owner = "crates/storage/journal/src/intent.rs"
+owner = "crates/storage/exacopy-journal/src/intent.rs"
 
 [[contract]]
 id = "linux-range-page"
 kind = "transfer_journal"
 status = "implemented_private"
 version = "1"
-owner = "crates/storage/journal/src/verification_records/ranges.rs"
+owner = "crates/storage/exacopy-journal/src/verification_records/ranges.rs"
 
 [[contract]]
 id = "linux-copy-receipt"
@@ -131,7 +131,7 @@ kind = "transfer_journal"
 status = "implemented_private"
 version = "1.0"
 required_features = 0
-owner = "crates/operations/transfer/src/linux/receipt.rs"
+owner = "crates/engines/exacopy-transfer/src/linux/receipt.rs"
 
 [[contract]]
 id = "darwin-managed-apfs-owner"
@@ -139,7 +139,7 @@ kind = "transfer_journal"
 status = "implemented_private"
 version = "2.0"
 required_features = 1
-owner = "crates/storage/journal/src/owner/darwin_codec.rs"
+owner = "crates/storage/exacopy-journal/src/owner/darwin_codec.rs"
 
 [[contract]]
 id = "darwin-managed-apfs-copy-plan"
@@ -147,7 +147,7 @@ kind = "transfer_journal"
 status = "implemented_private"
 version = "2.0"
 required_features = 1
-owner = "crates/operations/transfer/src/macos/plan/wire.rs"
+owner = "crates/engines/exacopy-transfer/src/macos/plan/wire.rs"
 
 [[contract]]
 id = "darwin-managed-apfs-prepared"
@@ -155,7 +155,7 @@ kind = "transfer_journal"
 status = "implemented_private"
 version = "2.0"
 required_features = 1
-owner = "crates/storage/journal/src/darwin_prepared/wire.rs"
+owner = "crates/storage/exacopy-journal/src/darwin_prepared/wire.rs"
 notes = "Shared header version for managed APFS preparation and phase payloads, including publication intent."
 
 [[contract]]
@@ -164,7 +164,7 @@ kind = "transfer_journal"
 status = "implemented_private"
 version = "1.0"
 required_features = 0
-owner = "crates/operations/transfer/src/macos/receipt/wire.rs"
+owner = "crates/engines/exacopy-transfer/src/macos/receipt/wire.rs"
 
 [[contract]]
 id = "configuration-schema"

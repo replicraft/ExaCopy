@@ -1,18 +1,18 @@
 [workspace]
 members = [
-    "crates/clients/cli",
+    "apps/exacopy-cli",
     "crates/formats/exacopy-manifest",
     "crates/formats/exacopy-plan",
-    "crates/core/model",
+    "crates/foundation/exacopy-model",
     "crates/foundation/exacopy-core",
-    "crates/endpoints/endpoint",
-    "crates/endpoints/platform",
-    "crates/network/ssh",
-    "crates/network/wireguard",
-    "crates/operations/diff",
-    "crates/operations/transfer",
-    "crates/storage/content",
-    "crates/storage/journal",
+    "crates/interfaces/exacopy-endpoint",
+    "crates/platform/exacopy-platform",
+    "crates/net/exacopy-ssh",
+    "crates/net/exacopy-wireguard",
+    "crates/engines/exacopy-diff",
+    "crates/engines/exacopy-transfer",
+    "crates/storage/exacopy-content",
+    "crates/storage/exacopy-journal",
     "crates/engineering/exacopy-testkit",
     "xtask",
 ]
@@ -29,13 +29,13 @@ license = "Apache-2.0"
 exacopy-core = { path = "crates/foundation/exacopy-core", version = "=0.1.0" }
 exacopy-manifest = { path = "crates/formats/exacopy-manifest", version = "=0.1.0" }
 exacopy-plan = { path = "crates/formats/exacopy-plan", version = "=0.1.0" }
-exacopy-content = { path = "crates/storage/content", version = "=0.1.0" }
-exacopy-diff = { path = "crates/operations/diff", version = "=0.1.0" }
-exacopy-endpoint = { path = "crates/endpoints/endpoint", version = "=0.1.0" }
-exacopy-journal = { path = "crates/storage/journal", version = "=0.1.0" }
-exacopy-model = { path = "crates/core/model", version = "=0.1.0" }
-exacopy-platform = { path = "crates/endpoints/platform", version = "=0.1.0" }
-exacopy-transfer = { path = "crates/operations/transfer", version = "=0.1.0" }
+exacopy-content = { path = "crates/storage/exacopy-content", version = "=0.1.0" }
+exacopy-diff = { path = "crates/engines/exacopy-diff", version = "=0.1.0" }
+exacopy-endpoint = { path = "crates/interfaces/exacopy-endpoint", version = "=0.1.0" }
+exacopy-journal = { path = "crates/storage/exacopy-journal", version = "=0.1.0" }
+exacopy-model = { path = "crates/foundation/exacopy-model", version = "=0.1.0" }
+exacopy-platform = { path = "crates/platform/exacopy-platform", version = "=0.1.0" }
+exacopy-transfer = { path = "crates/engines/exacopy-transfer", version = "=0.1.0" }
 
 # Public codec
 base64 = { version = "=0.23.1", default-features = false, features = ["alloc"] }

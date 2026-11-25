@@ -20,7 +20,7 @@ From the repository root, run:
 ```sh
 TLA2TOOLS_JAR=/path/to/tla2tools.jar \
   TLC_LOG_DIR=/path/to/logs \
-  crates/core/model/verification/tla/check.sh
+  crates/foundation/exacopy-model/verification/tla/check.sh
 ```
 
 `TLC_LOG_DIR` is optional. Set it to retain coverage reports and the raw counterexample. The gate requires completed normal exploration, reachability of the named risk actions, and exit 12 for both mutants through `PriorPublicationEvidence`. It checks that the early trace reaches `ApplyNoClobber` and the unverified retry trace reaches `ApplyRetainedStageNoClobber` after rebinding.

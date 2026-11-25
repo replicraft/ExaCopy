@@ -95,4 +95,4 @@ cargo nextest run --locked -p exacopy-content -p exacopy-journal
 cargo test --locked -p exacopy-platform -p exacopy-transfer -p exacopy-cli
 ```
 
-The native tests use private Linux fixtures. The [journal frame fuzz target](../crates/storage/journal/fuzz/README.md) independently checks framing boundaries under AddressSanitizer.
+The native tests use private Linux fixtures. The [journal frame fuzz target](../crates/storage/exacopy-journal/fuzz/README.md) independently checks framing boundaries under AddressSanitizer.

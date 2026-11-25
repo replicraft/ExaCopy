@@ -10,7 +10,7 @@ use crate::finding::Findings;
 pub(super) fn check(path: &Path, file: &syn::File, findings: &mut Findings) {
 	if path
 		.ancestors()
-		.any(|ancestor| ancestor.ends_with("crates/network/ssh/src"))
+		.any(|ancestor| ancestor.ends_with("crates/net/exacopy-ssh/src"))
 	{
 		CallerStreamPolicy { path, findings }.visit_file(file);
 	}

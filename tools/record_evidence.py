@@ -18,7 +18,7 @@ import uuid
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_KANI_PIN = Path("crates/core/model/verification/kani/toolchain.lock.json")
+DEFAULT_KANI_PIN = Path("crates/foundation/exacopy-model/verification/kani/toolchain.lock.json")
 GATES = ("rust", "lean", "kani", "tlc")
 RUN_TIMEOUT_SECONDS = 900
 TOOL_QUERY_TIMEOUT_SECONDS = 30

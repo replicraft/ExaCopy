@@ -36,14 +36,14 @@ pub(super) fn check_main(path: &Path, file: &syn::File, findings: &mut Findings)
 			_ => findings.at_line(
 				path,
 				item.span().start().line,
-				"main.rs may declare modules and imports, and define only main",
+				"binary entrypoint may declare modules and imports, and define only main",
 			),
 		}
 	}
 	if main_count != 1 {
 		findings.add(
 			path,
-			"main.rs must contain one main that delegates to application code",
+			"binary entrypoint must contain one main that delegates to application code",
 		);
 	}
 }
@@ -63,7 +63,7 @@ fn check_main_body(path: &Path, main: &syn::ItemFn, findings: &mut Findings) {
 			findings.at_line(
 				path,
 				statement.span().start().line,
-				"main.rs may initialize and delegate using straight-line calls and assignments",
+				"binary entrypoint may initialize and delegate using straight-line calls and assignments",
 			);
 		}
 	}

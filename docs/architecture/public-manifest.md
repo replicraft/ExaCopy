@@ -114,7 +114,7 @@ The root verification ledger records its actual Rust gate; the separate
 records source, lock, sanitizer, seed and budget information for each run.
 
 The native CLI integration probe is retained at
-[`manifest_probe.py`](../../crates/clients/cli/tests/manifest_probe.py). Run it
+[`manifest_probe.py`](../../apps/exacopy-cli/tests/manifest_probe.py). Run it
 on Linux with the CLI binary and the codec vector directory as its two
 arguments. The native pre-commit snapshot, raw logs and JUnit are retained
 at `/private/tmp/exacopy-manifest-native.0S53Xk`. Its 546 passing tests and

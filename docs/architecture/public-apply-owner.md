@@ -36,7 +36,7 @@ The independent Python CBOR encoder and OpenSSL Ed25519 signer reproduce
 the committed 541-byte fixture. Seven new Rust tests cover the external
 trust boundary, signature prefix, every authenticated field, canonical
 shape, scalar limits, expiry and legacy-reader refusal; existing Linux and
-Darwin vectors remain unchanged. The [recipe](../../crates/storage/journal/verification/public_apply_owner/README.md)
+Darwin vectors remain unchanged. The [recipe](../../crates/storage/exacopy-journal/verification/public_apply_owner/README.md)
 and P-040 identify this scoped admission result. It is not a mathematical
 proof of Ed25519 or native filesystem qualification. Private raw logs and
 negative controls remain in `/private/tmp/exacopy-public-apply-owner.Jye0jFGp`.

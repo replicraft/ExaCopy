@@ -10,14 +10,14 @@ id = "exacopy.cli.diff"
 kind = "cli_output"
 status = "implemented"
 version = "1.0"
-owner = "crates/clients/cli/src/report.rs"
+owner = "apps/exacopy-cli/src/report.rs"
 "#;
 const FRAME: &str = r#"
 id = "local-journal-frame"
 kind = "transfer_journal"
 status = "implemented_private"
 version = "1"
-owner = "crates/storage/journal/src/frame.rs"
+owner = "crates/storage/exacopy-journal/src/frame.rs"
 magic = "EXAJNL01"
 "#;
 const PLAN: &str = r#"
@@ -26,7 +26,7 @@ kind = "transfer_journal"
 status = "implemented_private"
 version = "2.0"
 required_features = 1
-owner = "crates/operations/transfer/src/macos/plan/wire.rs"
+owner = "crates/engines/exacopy-transfer/src/macos/plan/wire.rs"
 "#;
 
 const MANIFEST_OWNER: &str = "crates/formats/exacopy-manifest/src/manifest/json.rs";
@@ -165,7 +165,7 @@ fn rejects_invalid_inventory_schema_or_coverage() {
 			"expected kind CliOutput",
 		),
 		(
-			"owner = \"crates/clients/cli/src/report.rs\"",
+			"owner = \"apps/exacopy-cli/src/report.rs\"",
 			"owner = \"../report.rs\"",
 			"expected owner",
 		),
@@ -182,7 +182,7 @@ fn rejects_invalid_inventory_schema_or_coverage() {
 fn detects_cli_version_and_id_drift_in_report_initializers() {
 	let fixture = Fixture::new();
 	let record: Contract = toml::from_str(DIFF).expect("parse fixture contract");
-	let owner = "crates/clients/cli/src/report.rs";
+	let owner = "apps/exacopy-cli/src/report.rs";
 	fixture.write(
 		owner,
 		r#"fn report() -> Report { Report { schema: "exacopy.cli.diff", schema_version: "1.0" } }"#,
@@ -206,7 +206,7 @@ fn detects_cli_version_and_id_drift_in_report_initializers() {
 fn refuses_comment_only_and_duplicate_constants() {
 	let fixture = Fixture::new();
 	let record: Contract = toml::from_str(FRAME).expect("parse fixture contract");
-	let owner = "crates/storage/journal/src/frame.rs";
+	let owner = "crates/storage/exacopy-journal/src/frame.rs";
 	let magic = r#"const MAGIC: &[u8; 8] = b"EXAJNL01";"#;
 	for version in [
 		"// const VERSION: u16 = 1;",
@@ -232,7 +232,7 @@ fn refuses_comment_only_and_duplicate_constants() {
 fn detects_private_required_feature_drift() {
 	let fixture = Fixture::new();
 	let record: Contract = toml::from_str(PLAN).expect("parse fixture contract");
-	let owner = "crates/operations/transfer/src/macos/plan/wire.rs";
+	let owner = "crates/engines/exacopy-transfer/src/macos/plan/wire.rs";
 	fixture.write(owner, "const VERSION: [u8; 3] = [2, 0, 3];");
 	let error =
 		check_record(fixture.root(), &record).expect_err("reject changed required feature mask");

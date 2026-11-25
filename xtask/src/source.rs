@@ -76,6 +76,16 @@ pub(crate) fn check(path: &Path, findings: &mut Findings) {
 	}
 }
 
+pub(crate) fn check_binary(path: &Path, findings: &mut Findings) {
+	match fs::read_to_string(path) {
+		Ok(source) => match syn::parse_file(&source) {
+			Ok(file) => entrypoint::check_main(path, &file, findings),
+			Err(error) => findings.at_line(path, error.span().start().line, error),
+		},
+		Err(error) => findings.add(path, error),
+	}
+}
+
 fn check_text(path: &Path, source: &str, findings: &mut Findings) {
 	let line_count = source.lines().count();
 	if line_count > MAX_PHYSICAL_LINES {

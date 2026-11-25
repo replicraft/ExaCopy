@@ -5,36 +5,41 @@ use crate::finding::Findings;
 use crate::test_support::Fixture;
 
 const MATRIX: &str = r#"
-schema_version = 1
+schema_version = 2
+
+[inversion]
+concrete_external = ["tokio"]
 
 [groups.core]
-members = { domain = "crates/core/domain" }
+members = { exacopy-domain = "crates/foundation/exacopy-domain" }
 dev.groups = ["testkit"]
 
 [groups.contracts]
-members = { capability = "crates/capability/contract" }
+members = { exacopy-capability = "crates/interfaces/exacopy-capability" }
 normal.groups = ["core"]
 
 [groups.platform]
-members = { native = "crates/platform/native" }
+role = "adapter"
+members = { exacopy-native = "crates/platform/exacopy-native" }
 normal.groups = ["contracts"]
 
 [groups.operations]
-members = { workflow = "crates/operations/workflow" }
+role = "engine"
+members = { exacopy-workflow = "crates/engines/exacopy-workflow" }
 normal.groups = ["contracts"]
 
 [groups.testkit]
-members = { testkit = "crates/engineering/testkit" }
+members = { exacopy-testkit = "crates/engineering/exacopy-testkit" }
 engineering = true
 normal.groups = ["contracts"]
 dev.groups = ["core"]
 "#;
 
-const DOMAIN: &str = "crates/core/domain";
-const CAPABILITY: &str = "crates/capability/contract";
-const NATIVE: &str = "crates/platform/native";
-const WORKFLOW: &str = "crates/operations/workflow";
-const TESTKIT: &str = "crates/engineering/testkit";
+const DOMAIN: &str = "crates/foundation/exacopy-domain";
+const CAPABILITY: &str = "crates/interfaces/exacopy-capability";
+const NATIVE: &str = "crates/platform/exacopy-native";
+const WORKFLOW: &str = "crates/engines/exacopy-workflow";
+const TESTKIT: &str = "crates/engineering/exacopy-testkit";
 
 #[test]
 fn accepts_valid_inversion_and_development_only_testkit() {
@@ -42,14 +47,14 @@ fn accepts_valid_inversion_and_development_only_testkit() {
 	package(
 		&fixture,
 		WORKFLOW,
-		"workflow",
-		"[dependencies]\nport = { package = \"capability\", path = \"../../capability/contract\" }",
+		"exacopy-workflow",
+		"[dependencies]\nport = { package = \"exacopy-capability\", path = \"../../interfaces/exacopy-capability\" }",
 	);
 	package(
 		&fixture,
 		DOMAIN,
-		"domain",
-		"[dev-dependencies]\ntestkit = { path = \"../../engineering/testkit\" }",
+		"exacopy-domain",
+		"[dev-dependencies]\ntestkit = { package = \"exacopy-testkit\", path = \"../../engineering/exacopy-testkit\" }",
 	);
 	let findings = inspect(&fixture, Resolution::All);
 	assert!(findings.is_empty(), "{findings}");
@@ -58,23 +63,23 @@ fn accepts_valid_inversion_and_development_only_testkit() {
 #[test]
 fn rejects_members_without_their_declared_architectural_location() {
 	let fixture = workspace();
-	package(&fixture, DOMAIN, "unknown", "");
+	package(&fixture, DOMAIN, "exacopy-unknown", "");
 	let findings = inspect(&fixture, Resolution::Declarations).to_string();
 	assert!(
-		findings.contains("unknown has no architectural group"),
+		findings.contains("exacopy-unknown has no architectural group"),
 		"{findings}"
 	);
 	assert!(
-		findings.contains("architecture member domain is absent"),
+		findings.contains("architecture member exacopy-domain is absent"),
 		"{findings}"
 	);
 
 	let fixture = workspace();
-	package(&fixture, DOMAIN, "native", "");
-	package(&fixture, NATIVE, "domain", "");
+	package(&fixture, DOMAIN, "exacopy-native", "");
+	package(&fixture, NATIVE, "exacopy-domain", "");
 	let findings = inspect(&fixture, Resolution::Declarations).to_string();
 	assert!(
-		findings.contains("domain must live at crates/core/domain"),
+		findings.contains("exacopy-domain must live at crates/foundation/exacopy-domain"),
 		"{findings}"
 	);
 }
@@ -85,7 +90,7 @@ fn rejects_misclassifying_engineering_directories_as_production() {
 	fixture.write(MATRIX_PATH, &MATRIX.replace("engineering = true", ""));
 	let findings = inspect(&fixture, Resolution::Declarations).to_string();
 	assert!(
-		findings.contains("testkit has an engineering role and directory mismatch"),
+		findings.contains("exacopy-testkit has an engineering role and directory mismatch"),
 		"{findings}"
 	);
 }
@@ -96,18 +101,19 @@ fn rejects_renamed_optional_and_target_specific_edges_to_concrete_adapters() {
 	package(
 		&fixture,
 		WORKFLOW,
-		"workflow",
+		"exacopy-workflow",
 		r#"
 [features]
 legacy = ["dep:adapter"]
 
 [target.'cfg(target_os = "windows")'.dependencies]
-adapter = { package = "native", path = "../../platform/native", optional = true }
+adapter = { package = "exacopy-native", path = "../../platform/exacopy-native", optional = true }
 "#,
 	);
 	let findings = inspect(&fixture, Resolution::All).to_string();
 	assert!(
-		findings.contains("architecture forbids normal dependency workflow -> native"),
+		findings
+			.contains("architecture forbids normal dependency exacopy-workflow -> exacopy-native"),
 		"{findings}"
 	);
 	assert!(
@@ -130,12 +136,14 @@ fn rejects_normal_and_build_edges_into_engineering_even_if_a_group_lists_them() 
 		package(
 			&fixture,
 			DOMAIN,
-			"domain",
-			&format!("[{kind}]\ntestkit = {{ path = \"../../engineering/testkit\" }}"),
+			"exacopy-domain",
+			&format!(
+				"[{kind}]\ntestkit = {{ package = \"exacopy-testkit\", path = \"../../engineering/exacopy-testkit\" }}"
+			),
 		);
 		let findings = inspect(&fixture, Resolution::All).to_string();
 		assert!(
-			findings.contains("dependency domain -> testkit"),
+			findings.contains("dependency exacopy-domain -> exacopy-testkit"),
 			"{kind}: {findings}"
 		);
 	}
@@ -144,10 +152,15 @@ fn rejects_normal_and_build_edges_into_engineering_even_if_a_group_lists_them() 
 #[test]
 fn rejects_external_runtime_dependencies_in_the_pure_domain() {
 	let fixture = workspace();
-	package(&fixture, DOMAIN, "domain", "[dependencies]\ntokio = \"1\"");
+	package(
+		&fixture,
+		DOMAIN,
+		"exacopy-domain",
+		"[dependencies]\ntokio = \"1\"",
+	);
 	let findings = inspect(&fixture, Resolution::Declarations).to_string();
 	assert!(
-		findings.contains("architecture forbids normal dependency domain -> tokio"),
+		findings.contains("architecture forbids normal dependency exacopy-domain -> tokio"),
 		"{findings}"
 	);
 }
@@ -158,18 +171,20 @@ fn rejects_dependency_cycles_cargo_allows_between_development_edges() {
 	package(
 		&fixture,
 		DOMAIN,
-		"domain",
-		"[dev-dependencies]\ntestkit = { path = \"../../engineering/testkit\" }",
+		"exacopy-domain",
+		"[dev-dependencies]\ntestkit = { package = \"exacopy-testkit\", path = \"../../engineering/exacopy-testkit\" }",
 	);
 	package(
 		&fixture,
 		TESTKIT,
-		"testkit",
-		"[dev-dependencies]\ndomain = { path = \"../../core/domain\" }",
+		"exacopy-testkit",
+		"[dev-dependencies]\ndomain = { package = \"exacopy-domain\", path = \"../../foundation/exacopy-domain\" }",
 	);
 	let findings = inspect(&fixture, Resolution::All).to_string();
 	assert!(
-		findings.contains("workspace dependency cycle: domain -> testkit -> domain"),
+		findings.contains(
+			"workspace dependency cycle: exacopy-domain -> exacopy-testkit -> exacopy-domain"
+		),
 		"{findings}"
 	);
 }
@@ -177,14 +192,15 @@ fn rejects_dependency_cycles_cargo_allows_between_development_edges() {
 #[test]
 fn transitional_edges_apply_only_to_the_listed_package_and_target() {
 	let fixture = workspace();
-	const EDGE: &str = "native = { path = \"../../platform/native\" }";
+	const EDGE: &str =
+		r#"domain = { package = "exacopy-domain", path = "../../foundation/exacopy-domain" }"#;
 	fixture.write(
 		MATRIX_PATH,
 		&format!(
 			r#"{MATRIX}
 [[transitional_normal]]
-from = "workflow"
-to = "native"
+from = "exacopy-workflow"
+to = "exacopy-domain"
 targets = ['cfg(target_os = "linux")']
 "#
 		),
@@ -192,7 +208,7 @@ targets = ['cfg(target_os = "linux")']
 	package(
 		&fixture,
 		WORKFLOW,
-		"workflow",
+		"exacopy-workflow",
 		&format!("[target.'cfg(target_os = \"linux\")'.dependencies]\n{EDGE}"),
 	);
 	let findings = inspect(&fixture, Resolution::All);
@@ -200,12 +216,12 @@ targets = ['cfg(target_os = "linux")']
 	package(
 		&fixture,
 		WORKFLOW,
-		"workflow",
+		"exacopy-workflow",
 		&format!("[dependencies]\n{EDGE}"),
 	);
 	let findings = inspect(&fixture, Resolution::All).to_string();
 	assert!(
-		findings.contains("workflow -> native (all targets)"),
+		findings.contains("exacopy-workflow -> exacopy-domain (all targets)"),
 		"{findings}"
 	);
 	assert!(
@@ -282,11 +298,11 @@ fn workspace() -> Fixture {
 	);
 	fixture.write(MATRIX_PATH, MATRIX);
 	for (path, name) in [
-		(DOMAIN, "domain"),
-		(CAPABILITY, "capability"),
-		(NATIVE, "native"),
-		(WORKFLOW, "workflow"),
-		(TESTKIT, "testkit"),
+		(DOMAIN, "exacopy-domain"),
+		(CAPABILITY, "exacopy-capability"),
+		(NATIVE, "exacopy-native"),
+		(WORKFLOW, "exacopy-workflow"),
+		(TESTKIT, "exacopy-testkit"),
 	] {
 		package(&fixture, path, name, "");
 	}
@@ -315,3 +331,6 @@ fn inspect(fixture: &Fixture, resolution: Resolution) -> Findings {
 	check(&metadata, &mut findings);
 	findings
 }
+
+mod inversion;
+mod placement;

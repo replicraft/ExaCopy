@@ -11,6 +11,8 @@ use toml::{Table, Value};
 use crate::architecture;
 use crate::finding::Findings;
 
+mod fuzz;
+
 const APP_VERSION: &str = "1.100.0";
 const APP_EDITION: &str = "2024";
 const APP_LICENSE: &str = "Apache-2.0";
@@ -38,16 +40,12 @@ pub(crate) fn check(metadata: &Metadata, files: &[std::path::PathBuf], findings:
 		.workspace_packages()
 		.into_iter()
 		.map(|package| {
-			check_package(root, package, findings);
+			check_package(package, findings);
 			package.manifest_path.as_std_path()
 		})
 		.collect::<BTreeSet<_>>();
 	for path in files {
-		if path.starts_with(root.join("crates"))
-			&& path
-				.components()
-				.any(|part| part.as_os_str() == OsStr::new("fuzz"))
-		{
+		if fuzz::owns_manifest_or_lock(root, path, &member_manifests) {
 			continue;
 		}
 		match path.file_name().and_then(OsStr::to_str) {
@@ -175,46 +173,21 @@ fn check_dependency_groups(path: &Path, contents: &str, findings: &mut Findings)
 	}
 }
 
-fn check_package(root: &Path, package: &Package, findings: &mut Findings) {
+fn check_package(package: &Package, findings: &mut Findings) {
 	let path = package.manifest_path.as_std_path();
 	if package.name.as_str() == "exacopy-ssh" {
 		check_caller_stream_ssh_manifest(package, findings);
 	}
-	let expected_location = if package.name.as_str() == XTASK {
-		path == root.join(XTASK).join(MANIFEST_NAME)
-	} else {
-		package.name.starts_with("exacopy-")
-			&& path
-				.strip_prefix(root.join("crates"))
-				.is_ok_and(|relative| relative.components().count() == 3)
+	let safety_kind = match package.name.as_str() {
+		XTASK => Some(TargetKind::Bin),
+		"exacopy-model" | "exacopy-core" => Some(TargetKind::Lib),
+		_ => None,
 	};
-	if !expected_location {
-		findings.add(
-			path,
-			"application members belong under crates/<group>/<crate> and use exacopy-* names",
-		);
-	}
-	for target in &package.targets {
-		let source = target.src_path.as_std_path();
-		if !source.starts_with(root)
-			|| source
-				.canonicalize()
-				.is_ok_and(|real| !real.starts_with(root))
-		{
-			findings.add(
-				path,
-				format_args!(
-					"Cargo target source escapes the workspace: {}",
-					source.display()
-				),
-			);
-		}
-		if matches!(package.name.as_str(), XTASK | "exacopy-model")
-			&& matches!(
-				source.file_name().and_then(OsStr::to_str),
-				Some("lib.rs" | "main.rs")
-			) {
-			check_safe_crate(source, findings);
+	if let Some(kind) = safety_kind {
+		for target in &package.targets {
+			if target.kind.contains(&kind) {
+				check_safe_crate(target.src_path.as_std_path(), findings);
+			}
 		}
 	}
 	let Some((manifest, _)) = read_manifest(path, findings) else {

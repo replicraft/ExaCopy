@@ -47,7 +47,7 @@ renamed = { package = "renamed-actual", version = "1" }
 	.parse::<Table>()
 	.expect("fixture is valid TOML");
 	let mut findings = Findings::default();
-	let path = Path::new("crates/core/model/Cargo.toml");
+	let path = Path::new("crates/foundation/exacopy-model/Cargo.toml");
 	check_dependency_tables(path, &manifest, &mut findings);
 	check_dependency_tables(
 		path,

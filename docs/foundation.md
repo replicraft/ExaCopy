@@ -9,7 +9,7 @@
 | Independent reference histories, TLC and a counterexample replay | R-181, R-320, R-323–324, R-326–327 and corresponding A-IDs | INV-003, INV-032 |
 | Reproducible workspace and evidence gates | R-190, R-317–318, R-325, R-329–330, R-332–339 and corresponding A-IDs | INV-020, INV-032 |
 
-The [obligation manifest](../crates/core/model/verification/obligations.toml) maps exactly which contracted properties are exercised by the initial gates. A gate pass applies to the specified test, theorem, harness, or finite model.
+The [obligation manifest](../crates/foundation/exacopy-model/verification/obligations.toml) maps exactly which contracted properties are exercised by the initial gates. A gate pass applies to the specified test, theorem, harness, or finite model.
 
 ## Model contract
 
@@ -21,7 +21,7 @@ The independent CopyRecovery model has one entry and target, two epochs, and one
 
 ## Evidence and reproduction
 
-The [verification dispatcher](../crates/core/model/verification/check.sh) runs the crate-local Lean, Kani, TLC and Miri gates. The [CI workflow](../.github/workflows/ci.yml) supplies the pinned tools and keeps raw results. TLC checks its jar checksum and exact Temurin runtime. Miri runs the deterministic model tests with isolation enabled. Native nextest runs the generated properties and reads their persisted regressions.
+The [verification dispatcher](../crates/foundation/exacopy-model/verification/check.sh) runs the crate-local Lean, Kani, TLC and Miri gates. The [CI workflow](../.github/workflows/ci.yml) supplies the pinned tools and keeps raw results. TLC checks its jar checksum and exact Temurin runtime. Miri runs the deterministic model tests with isolation enabled. Native nextest runs the generated properties and reads their persisted regressions.
 
 With the formal tools installed, capture and validate model evidence from a clean checkout.
 
@@ -29,7 +29,7 @@ With the formal tools installed, capture and validate model evidence from a clea
 evidence_dir="target/foundation-evidence/$(git rev-parse HEAD)"
 python3 tools/record_evidence.py "$evidence_dir"
 cargo run --locked -p xtask -- check-evidence "$evidence_dir"
-crates/core/model/verification/check.sh miri
+crates/foundation/exacopy-model/verification/check.sh miri
 ```
 
 The recorder takes `--gate rust|lean|kani|tlc` for a single lane. It retains the command output and the TLC counterexample with their SHA-256 digests. These records carry execution results. Independent assurance review and filesystem qualification are separate gates. Supply-chain review remains subject to [cargo-vet's import policy](../supply-chain/config.toml).

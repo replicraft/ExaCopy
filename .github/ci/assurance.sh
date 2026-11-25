@@ -46,9 +46,9 @@ case "$1" in
 		# cargo-mutants 27.1.0 leaves [workspace.dependencies] paths relative
 		# in its scratch copy. CI passes --in-place in a disposable checkout.
 		cargo +1.100.0 mutants "${@:2}" --package exacopy-model --output "$evidence" --no-shuffle \
-			--file crates/core/model/src/identity.rs \
-			--file crates/core/model/src/range.rs \
-			--file crates/core/model/src/transaction.rs -- --locked
+			--file crates/foundation/exacopy-model/src/identity.rs \
+			--file crates/foundation/exacopy-model/src/range.rs \
+			--file crates/foundation/exacopy-model/src/transaction.rs -- --locked
 		report="$evidence/mutants.out/outcomes.json"
 		jq '{total_mutants, caught, missed, timeout, unviable}' "$report"
 		jq -e '
@@ -56,9 +56,9 @@ case "$1" in
 			.total_mutants == .caught + .unviable and
 			(.outcomes[0] | .scenario == "Baseline" and .summary == "Success") and
 			([.outcomes[1:][].scenario.Mutant.file] | unique == [
-				"crates/core/model/src/identity.rs",
-				"crates/core/model/src/range.rs",
-				"crates/core/model/src/transaction.rs"
+				"crates/foundation/exacopy-model/src/identity.rs",
+				"crates/foundation/exacopy-model/src/range.rs",
+				"crates/foundation/exacopy-model/src/transaction.rs"
 			])
 		' "$report"
 		;;

@@ -210,7 +210,7 @@ jobs:
         run: bash .github/ci/capture.sh miri-setup bash .github/ci/install.sh miri
       - name: Run Miri
         if: ${{ !cancelled() && steps.miri.outcome == 'success' }}
-        run: bash .github/ci/capture.sh miri bash crates/core/model/verification/check.sh miri
+        run: bash .github/ci/capture.sh miri bash crates/foundation/exacopy-model/verification/check.sh miri
       - name: Validate EVS records against current sources
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
         run: bash .github/ci/capture.sh evs cargo run --locked -p xtask -- check-evidence "$EVS_RECORDS"

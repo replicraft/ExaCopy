@@ -340,8 +340,7 @@ impl Fixture {
 		DirBuilder::new().mode(0o700).create(&path).unwrap();
 		let fixture = Self(path);
 		let helper = fixture.0.join("empty-acl");
-		let source =
-			Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../fixtures/macos/empty_acl.c");
+		let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/macos/empty_acl.c");
 		assert!(
 			Command::new("/usr/bin/cc")
 				.args(["-Wall", "-Wextra", "-Werror"])

@@ -35,22 +35,22 @@ enum Marker {
 pub(super) const BINDINGS: &[Binding] = &[
 	Binding::new(
 		"exacopy.cli.verify",
-		"crates/clients/cli/src/manifest_report.rs",
+		"apps/exacopy-cli/src/manifest_report.rs",
 		Marker::Report,
 	),
 	Binding::new(
 		"exacopy.cli.diff",
-		"crates/clients/cli/src/report.rs",
+		"apps/exacopy-cli/src/report.rs",
 		Marker::Report,
 	),
 	Binding::new(
 		"exacopy.cli.copy",
-		"crates/clients/cli/src/copy_report.rs",
+		"apps/exacopy-cli/src/copy_report.rs",
 		Marker::Report,
 	),
 	Binding::new(
 		"exacopy.local_recovery_inspection",
-		"crates/clients/cli/src/recovery_report.rs",
+		"apps/exacopy-cli/src/recovery_report.rs",
 		Marker::Report,
 	),
 	Binding::new(
@@ -75,7 +75,7 @@ pub(super) const BINDINGS: &[Binding] = &[
 	),
 	Binding::new(
 		"local-journal-frame",
-		"crates/storage/journal/src/frame.rs",
+		"crates/storage/exacopy-journal/src/frame.rs",
 		Marker::Scalar {
 			version: "VERSION",
 			magic: Some("MAGIC"),
@@ -83,32 +83,32 @@ pub(super) const BINDINGS: &[Binding] = &[
 	),
 	Binding::new(
 		"linux-owner",
-		"crates/storage/journal/src/owner/codec.rs",
+		"crates/storage/exacopy-journal/src/owner/codec.rs",
 		Marker::pair("FORMAT_MAJOR", "FORMAT_MINOR", "REQUIRED_FEATURES"),
 	),
 	Binding::new(
 		"linux-public-apply-owner",
-		"crates/storage/journal/src/owner/apply_codec.rs",
+		"crates/storage/exacopy-journal/src/owner/apply_codec.rs",
 		Marker::pair("FORMAT_MAJOR", "FORMAT_MINOR", "REQUIRED_FEATURES"),
 	),
 	Binding::new(
 		"linux-copy-plan",
-		"crates/operations/transfer/src/linux/plan/wire.rs",
+		"crates/engines/exacopy-transfer/src/linux/plan/wire.rs",
 		Marker::Array { width: 2 },
 	),
 	Binding::new(
 		"linux-prepared",
-		"crates/storage/journal/src/prepared/wire.rs",
+		"crates/storage/exacopy-journal/src/prepared/wire.rs",
 		Marker::pair("VERSION_MAJOR", "VERSION_MINOR", "REQUIRED_FEATURES"),
 	),
 	Binding::new(
 		"linux-publication-intent",
-		"crates/storage/journal/src/intent.rs",
+		"crates/storage/exacopy-journal/src/intent.rs",
 		Marker::pair("FORMAT_MAJOR", "FORMAT_MINOR", "REQUIRED_FEATURES"),
 	),
 	Binding::new(
 		"linux-range-page",
-		"crates/storage/journal/src/verification_records/ranges.rs",
+		"crates/storage/exacopy-journal/src/verification_records/ranges.rs",
 		Marker::Scalar {
 			version: "PAGE_FORMAT_VERSION",
 			magic: None,
@@ -116,27 +116,27 @@ pub(super) const BINDINGS: &[Binding] = &[
 	),
 	Binding::new(
 		"linux-copy-receipt",
-		"crates/operations/transfer/src/linux/receipt.rs",
+		"crates/engines/exacopy-transfer/src/linux/receipt.rs",
 		Marker::pair("MAJOR_VERSION", "MINOR_VERSION", "REQUIRED_FEATURES"),
 	),
 	Binding::new(
 		"darwin-managed-apfs-owner",
-		"crates/storage/journal/src/owner/darwin_codec.rs",
+		"crates/storage/exacopy-journal/src/owner/darwin_codec.rs",
 		Marker::pair("FORMAT_MAJOR", "FORMAT_MINOR", "MANAGED_APFS_REQUIRED"),
 	),
 	Binding::new(
 		"darwin-managed-apfs-copy-plan",
-		"crates/operations/transfer/src/macos/plan/wire.rs",
+		"crates/engines/exacopy-transfer/src/macos/plan/wire.rs",
 		Marker::Array { width: 3 },
 	),
 	Binding::new(
 		"darwin-managed-apfs-prepared",
-		"crates/storage/journal/src/darwin_prepared/wire.rs",
+		"crates/storage/exacopy-journal/src/darwin_prepared/wire.rs",
 		Marker::pair("VERSION_MAJOR", "VERSION_MINOR", "MANAGED_APFS_REQUIRED"),
 	),
 	Binding::new(
 		"darwin-managed-apfs-copy-receipt",
-		"crates/operations/transfer/src/macos/receipt/wire.rs",
+		"crates/engines/exacopy-transfer/src/macos/receipt/wire.rs",
 		Marker::Array { width: 3 },
 	),
 ];

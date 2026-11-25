@@ -10,7 +10,7 @@ case "$target" in
 		campaign_limits=(-max_total_time=15)
 		;;
 	journal_frame)
-		fuzz_dir="$PWD/crates/storage/journal/fuzz"
+		fuzz_dir="$PWD/crates/storage/exacopy-journal/fuzz"
 		campaign_limits=(-max_total_time=45 -rss_limit_mb=768)
 		;;
 	*)

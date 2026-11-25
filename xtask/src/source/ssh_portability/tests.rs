@@ -2,8 +2,8 @@ use super::*;
 
 #[test]
 fn checks_production_source_only_and_ignores_text() {
-	let source = Path::new("crates/network/ssh/src/transport.rs");
-	let fixture = Path::new("crates/network/ssh/tests/openssh.rs");
+	let source = Path::new("crates/net/exacopy-ssh/src/transport.rs");
+	let fixture = Path::new("crates/net/exacopy-ssh/tests/openssh.rs");
 	let allowed = syn::parse_file(
 		r#"
 		#[cfg(feature = "experimental-ssh")]

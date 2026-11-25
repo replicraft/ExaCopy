@@ -2,7 +2,7 @@
 set -euo pipefail
 
 kani_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
-toolchain_lock="$kani_dir/../../../../core/model/verification/kani/toolchain.lock.json"
+toolchain_lock="$kani_dir/../../../../foundation/exacopy-model/verification/kani/toolchain.lock.json"
 read -r kani_version toolchain rust_revision cbmc_version supported_targets < <(
 	python3 - "$toolchain_lock" <<'PY'
 import json

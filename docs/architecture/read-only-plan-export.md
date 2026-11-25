@@ -5,7 +5,7 @@ exports the public Plan v1 envelope and one PlanEntries leaf for a
 preserve-mode `create_new` copy. The CLI owns the filesystem bundle writer.
 The Linux engine supplies held native observations, the transfer planner
 owns admission and measurement, and the codec owns canonical body and page
-encoding. See the [CLI instructions](../../crates/clients/cli/README.md#export-a-plan-for-one-regular-file),
+encoding. See the [CLI instructions](../../apps/exacopy-cli/README.md#export-a-plan-for-one-regular-file),
 [public Plan JSON](public-plan-json.md), and [page format](public-plan-pages.md).
 
 ## Source and destination observations

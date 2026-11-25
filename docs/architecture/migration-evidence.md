@@ -4,7 +4,7 @@ This check exercises unchanged private Linux formats between two pinned developm
 
 ## Inputs and reproduction
 
-Run the [two-binary compatibility harness](../../crates/clients/cli/tests/contract_compatibility.py) with Python 3.11 or newer on Linux. Build each revision from a clean source archive and use separate Cargo target directories. Pass a scratch directory on the filesystem under test. Each direction creates its own private fixture with a sparse synthetic source, an unrelated incumbent, a profile created by the writer, and a real copy that produces a journal, checkpoint pages and a receipt.
+Run the [two-binary compatibility harness](../../apps/exacopy-cli/tests/contract_compatibility.py) with Python 3.11 or newer on Linux. Build each revision from a clean source archive and use separate Cargo target directories. Pass a scratch directory on the filesystem under test. Each direction creates its own private fixture with a sparse synthetic source, an unrelated incumbent, a profile created by the writer, and a real copy that produces a journal, checkpoint pages and a receipt.
 
 ```sh
 # In each pinned revision's extracted workspace
@@ -12,7 +12,7 @@ CARGO_PROFILE_DEV_DEBUG=0 CARGO_INCREMENTAL=0 \
   cargo +1.100.0 build --offline --locked -p exacopy-cli
 
 # On Linux, with the two resulting executables
-python3 -u crates/clients/cli/tests/contract_compatibility.py \
+python3 -u apps/exacopy-cli/tests/contract_compatibility.py \
   /path/to/older/exacopy /path/to/newer/exacopy /path/to/ext4/scratch
 ```
 

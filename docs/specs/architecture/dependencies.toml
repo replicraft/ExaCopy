@@ -1,9 +1,12 @@
 # Direct dependency allowances by architectural role. Omitted entries deny the edge.
 # Each package has one role and a workspace-relative directory.
-schema_version = 1
+schema_version = 2
+
+[inversion]
+concrete_external = ["apfs-mounted", "boringtun", "libc", "russh", "russh-sftp", "tokio", "tokio-util", "windows-sys"]
 
 [groups.core]
-members = { exacopy-model = "crates/core/model" }
+members = { exacopy-model = "crates/foundation/exacopy-model" }
 normal.external = ["uuid"]
 normal.optional_external = ["hax-lib"] # Extraction annotations, only with proof-extraction.
 dev.groups = ["testkit"]
@@ -18,12 +21,13 @@ members = { exacopy-manifest = "crates/formats/exacopy-manifest", exacopy-plan =
 normal.external = ["base64", "blake3", "chrono", "minicbor", "serde", "serde_json", "uuid"]
 
 [groups.contracts]
-members = { exacopy-endpoint = "crates/endpoints/endpoint" }
+members = { exacopy-endpoint = "crates/interfaces/exacopy-endpoint" }
 normal.groups = ["core", "foundation"]
 dev.groups = ["testkit"]
 
 [groups.platform]
-members = { exacopy-platform = "crates/endpoints/platform" }
+role = "adapter"
+members = { exacopy-platform = "crates/platform/exacopy-platform" }
 normal.groups = ["contracts", "core"]
 normal.external = ["apfs-mounted", "getrandom", "libc", "rustix", "windows-sys"]
 # The private Windows fixture composes the checked read view and the exact comparison engine.
@@ -31,25 +35,28 @@ dev.groups = ["testkit", "contracts", "operations"]
 dev.external = ["windows-sys"]
 
 [groups.storage]
-members = { exacopy-content = "crates/storage/content", exacopy-journal = "crates/storage/journal" }
+members = { exacopy-content = "crates/storage/exacopy-content", exacopy-journal = "crates/storage/exacopy-journal" }
 normal.groups = ["contracts", "core"]
 normal.external = ["blake3", "crc32c", "ed25519-dalek", "minicbor", "rustix"]
 dev.groups = ["testkit"]
 
 [groups.operations]
-members = { exacopy-diff = "crates/operations/diff", exacopy-transfer = "crates/operations/transfer" }
+role = "engine"
+members = { exacopy-diff = "crates/engines/exacopy-diff", exacopy-transfer = "crates/engines/exacopy-transfer" }
 normal.groups = ["contracts", "core", "storage", "codecs"]
 normal.external = ["blake3", "ed25519-dalek", "minicbor", "uuid"]
 dev.groups = ["testkit"]
 dev.external = ["ed25519-dalek", "rustix"]
 
 [groups.network]
-members = { exacopy-ssh = "crates/network/ssh", exacopy-wireguard = "crates/network/wireguard" }
+role = "adapter"
+members = { exacopy-ssh = "crates/net/exacopy-ssh", exacopy-wireguard = "crates/net/exacopy-wireguard" }
 normal.groups = ["contracts"]
 normal.optional_external = ["boringtun", "bytes", "russh", "russh-sftp", "rustix", "tokio", "tokio-util", "zeroize", "hmac", "sha1"]
 
 [groups.clients]
-members = { exacopy-cli = "crates/clients/cli" }
+role = "application"
+members = { exacopy-cli = "apps/exacopy-cli" }
 normal.groups = ["contracts", "operations", "platform", "core", "storage", "codecs"]
 normal.external = ["blake3", "clap", "ed25519-dalek", "rustix", "serde", "serde_json", "uuid", "zeroize"]
 dev.groups = ["testkit"]

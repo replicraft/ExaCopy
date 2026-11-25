@@ -14,7 +14,7 @@ Inventory profiles marked `not_executed` describe future paired runs. Version di
 
 ## Reproduce the managed APFS differential
 
-Use Python 3.11+, `cmp`, rsync, the pinned Rust toolchain and a C compiler on macOS. Use a scratch parent satisfying the [managed APFS prerequisites](../../crates/clients/cli/README.md#managed-apfs-comparison-on-macos). `/private/tmp` was used on the test host and should only be used where the required mount, ownership and ancestor conditions hold. The runner creates per-side directories with private modes and explicitly empty ACLs. It opens no pre-existing data fixture. Output paths must be new.
+Use Python 3.11+, `cmp`, rsync, the pinned Rust toolchain and a C compiler on macOS. Use a scratch parent satisfying the [managed APFS prerequisites](../../apps/exacopy-cli/README.md#managed-apfs-comparison-on-macos). `/private/tmp` was used on the test host and should only be used where the required mount, ownership and ancestor conditions hold. The runner creates per-side directories with private modes and explicitly empty ACLs. It opens no pre-existing data fixture. Output paths must be new.
 
 ```sh
 cargo build --locked --release -p exacopy-cli

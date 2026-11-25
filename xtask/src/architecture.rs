@@ -8,14 +8,17 @@ use serde::Deserialize;
 use crate::finding::Findings;
 
 mod graph;
+mod inversion;
+mod placement;
 
 const MATRIX_PATH: &str = "docs/specs/architecture/dependencies.toml";
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Matrix {
 	schema_version: u32,
+	inversion: inversion::Policy,
 	groups: BTreeMap<String, Group>,
 	#[serde(default)]
 	transitional_normal: Vec<Transition>,
@@ -25,6 +28,8 @@ struct Matrix {
 #[serde(deny_unknown_fields)]
 struct Group {
 	members: BTreeMap<String, PathBuf>,
+	#[serde(default)]
+	role: inversion::Role,
 	#[serde(default)]
 	engineering: bool,
 	#[serde(default)]
@@ -136,6 +141,12 @@ impl Matrix {
 						format_args!("{name} has an engineering role and directory mismatch"),
 					);
 				}
+				if group.role != inversion::Role::at(directory) {
+					findings.add(
+						path,
+						format_args!("{name} has an inversion role and directory mismatch"),
+					);
+				}
 				if !directories.insert(directory) {
 					findings.add(
 						path,
@@ -200,8 +211,10 @@ fn check_workspace(
 		}
 	}
 	let mut graph = graph::Graph::new();
+	let mut inversion = inversion::Check::new(root, &workspace, &matrix.inversion);
 	for (&name, package) in &workspace {
 		let manifest = package.manifest_path.as_std_path();
+		placement::check(root, package, findings);
 		let Some(member) = members.get(name) else {
 			findings.add(manifest, format_args!("{name} has no architectural group"));
 			continue;
@@ -221,6 +234,13 @@ fn check_workspace(
 					.as_ref()
 					.is_some_and(|path| target_package.manifest_path.parent() == Some(path))
 			});
+			inversion.edge(
+				name,
+				manifest,
+				dependency,
+				target_member.is_some(),
+				findings,
+			);
 			let allowed = if target_member.is_some() {
 				graph.entry(name).or_default().insert(to);
 				members.get(to).is_some_and(|target_member| {
@@ -259,6 +279,7 @@ fn check_workspace(
 			}
 		}
 	}
+	inversion.check(findings);
 	for ((from, to, target), used) in transitions {
 		if !used {
 			findings.add(

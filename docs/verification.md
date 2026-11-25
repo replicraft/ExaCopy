@@ -7,9 +7,9 @@ assumptions and owners before enabling new safety-relevant behavior.
 
 | Implemented owner | Obligations and reproduction |
 | --- | --- |
-| Core model | [Manifest](../crates/core/model/verification/obligations.toml), [dispatcher](../crates/core/model/verification/check.sh), [foundation evidence](foundation.md) |
+| Core model | [Manifest](../crates/foundation/exacopy-model/verification/obligations.toml), [dispatcher](../crates/foundation/exacopy-model/verification/check.sh), [foundation evidence](foundation.md) |
 | Core | [Manifest](../crates/foundation/exacopy-core/verification/obligations.toml), [dispatcher](../crates/foundation/exacopy-core/verification/check.sh) |
-| Diff | [Manifest](../crates/operations/diff/verification/obligations.toml), [dispatcher](../crates/operations/diff/verification/check.sh) |
+| Diff | [Manifest](../crates/engines/exacopy-diff/verification/obligations.toml), [dispatcher](../crates/engines/exacopy-diff/verification/check.sh) |
 
 Keep proofs, extraction, models, harnesses and obligation ownership in
 `<crate>/verification/`. Root tooling [captures](../tools/record_evidence.py)

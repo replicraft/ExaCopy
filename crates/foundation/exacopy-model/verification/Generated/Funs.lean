@@ -27,7 +27,7 @@ noncomputable section
 namespace ExaCopy
 
 /-- [exacopy_model::range::checked_range_end]:
-    Source: 'crates/core/model/src/range.rs', lines 16:0-25:1
+    Source: 'crates/foundation/exacopy-model/src/range.rs', lines 16:0-25:1
     Visibility: public -/
 def range.checked_range_end
   (file_len : Std.U64) (start : Std.U64) (len : Std.U64) :

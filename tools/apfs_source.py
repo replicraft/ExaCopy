@@ -21,7 +21,7 @@ VERSION = "0.1.0"
 KEY = f"{NAME}@{VERSION}"
 REPOSITORY = "https://github.com/pomologie/apfs"
 CONSUMER = "exacopy-platform"
-CONSUMER_MANIFEST = Path("crates/endpoints/platform/Cargo.toml")
+CONSUMER_MANIFEST = Path("crates/platform/exacopy-platform/Cargo.toml")
 MACOS_CFG = 'cfg(target_os = "macos")'
 
 

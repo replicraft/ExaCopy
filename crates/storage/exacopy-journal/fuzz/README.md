@@ -9,7 +9,7 @@ Raw canonical recovery-start seeds exercise disjoint admission of the Linux and 
 From the repository root, use cargo-fuzz 0.13.2, the isolated tool lockfile, and Rust nightly-2026-11-04 on a target with AddressSanitizer support.
 
 ```sh
-fuzz_dir="$PWD/crates/storage/journal/fuzz"
+fuzz_dir="$PWD/crates/storage/exacopy-journal/fuzz"
 run_dir="$(mktemp -d)"
 nightly_rustc="$(rustup which --toolchain nightly-2026-11-04 rustc)"
 export PATH="$(dirname "$nightly_rustc"):$PATH"

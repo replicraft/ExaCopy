@@ -23,41 +23,41 @@ limits = "P-001–003 depend on truthful coordinator observations and the adapte
 owner = "exacopy-model"
 level = "obligation"
 state = "defined"
-path = "crates/core/model/verification/obligations.toml"
+path = "crates/foundation/exacopy-model/verification/obligations.toml"
 target = "P-001"
 
 [[coverage.evidence]]
 owner = "exacopy-model"
 level = "obligation"
 state = "defined"
-path = "crates/core/model/verification/obligations.toml"
+path = "crates/foundation/exacopy-model/verification/obligations.toml"
 target = "P-002"
 
 [[coverage.evidence]]
 owner = "exacopy-model"
 level = "obligation"
 state = "defined"
-path = "crates/core/model/verification/obligations.toml"
+path = "crates/foundation/exacopy-model/verification/obligations.toml"
 target = "P-003"
 
 [[coverage.evidence]]
 owner = "exacopy-model"
 level = "test"
 state = "defined"
-path = "crates/core/model/tests/transaction.rs"
+path = "crates/foundation/exacopy-model/tests/transaction.rs"
 target = "tlc_early_publication_counterexample_stops_before_namespace_effect"
 
 [[coverage.evidence]]
 owner = "exacopy-model"
 level = "fixture"
 state = "defined"
-path = "crates/core/model/verification/tla/CopyRecoveryEarlyPublication.trace.json"
+path = "crates/foundation/exacopy-model/verification/tla/CopyRecoveryEarlyPublication.trace.json"
 
 [[coverage.evidence]]
 owner = "exacopy-model"
 level = "fixture"
 state = "defined"
-path = "crates/core/model/verification/tla/CopyRecoveryUnverifiedRetry.cfg"
+path = "crates/foundation/exacopy-model/verification/tla/CopyRecoveryUnverifiedRetry.cfg"
 
 [[coverage]]
 id = "bounded-write-range"
@@ -72,7 +72,7 @@ limits = "P-004 covers the single-range guard. Disjoint allocation, multiworker 
 owner = "exacopy-model"
 level = "obligation"
 state = "defined"
-path = "crates/core/model/verification/obligations.toml"
+path = "crates/foundation/exacopy-model/verification/obligations.toml"
 target = "P-004"
 
 [[coverage.evidence]]
@@ -95,21 +95,21 @@ limits = "The simulated faults exercise the declared model. Native asynchronous 
 owner = "exacopy-endpoint"
 level = "test"
 state = "defined"
-path = "crates/endpoints/endpoint/tests/contracts.rs"
+path = "crates/interfaces/exacopy-endpoint/tests/contracts.rs"
 target = "advances_short_reads_and_retries_the_same_position_on_interruption"
 
 [[coverage.evidence]]
 owner = "exacopy-endpoint"
 level = "test"
 state = "defined"
-path = "crates/endpoints/endpoint/tests/contracts.rs"
+path = "crates/interfaces/exacopy-endpoint/tests/contracts.rs"
 target = "advances_short_writes_without_replaying_written_prefixes"
 
 [[coverage.evidence]]
 owner = "exacopy-endpoint"
 level = "test"
 state = "defined"
-path = "crates/endpoints/endpoint/tests/contracts.rs"
+path = "crates/interfaces/exacopy-endpoint/tests/contracts.rs"
 target = "reports_early_eof_and_write_zero_at_the_first_incomplete_offset"
 
 [[coverage.evidence]]
@@ -137,7 +137,7 @@ target = "a_failed_stage_file_barrier_is_never_retried_by_the_attempt"
 owner = "exacopy-transfer"
 level = "test"
 state = "defined"
-path = "crates/operations/transfer/src/linux/job/tests.rs"
+path = "crates/engines/exacopy-transfer/src/linux/job/tests.rs"
 target = "each_failed_effect_stops_bootstrap_at_that_effect"
 
 [[coverage]]
@@ -172,14 +172,14 @@ path = "crates/foundation/exacopy-core/fuzz/corpus/unix_component/non-utf8"
 owner = "exacopy-platform"
 level = "test"
 state = "defined"
-path = "crates/endpoints/platform/src/windows/component/tests.rs"
+path = "crates/platform/exacopy-platform/src/windows/component/tests.rs"
 target = "admits_original_code_units_including_unpaired_surrogates"
 
 [[coverage.evidence]]
 owner = "exacopy-platform"
 level = "test"
 state = "defined"
-path = "crates/endpoints/platform/src/windows/component/tests.rs"
+path = "crates/platform/exacopy-platform/src/windows/component/tests.rs"
 target = "refuses_path_and_stream_syntax"
 
 [[coverage]]
@@ -195,42 +195,42 @@ limits = "Containment is relative to admitted roots. Initial CLI parent path res
 owner = "exacopy-platform"
 level = "native"
 state = "defined"
-path = "crates/endpoints/platform/tests/linux_source.rs"
+path = "crates/platform/exacopy-platform/tests/linux_source.rs"
 target = "opens_a_raw_name_relative_to_the_held_directory_after_its_path_is_replaced"
 
 [[coverage.evidence]]
 owner = "exacopy-platform"
 level = "native"
 state = "defined"
-path = "crates/endpoints/platform/tests/linux_source.rs"
+path = "crates/platform/exacopy-platform/tests/linux_source.rs"
 target = "hard_links_share_identity_and_replacing_the_name_leaves_the_open_object_pinned"
 
 [[coverage.evidence]]
 owner = "exacopy-platform"
 level = "native"
 state = "defined"
-path = "crates/endpoints/platform/tests/linux_source.rs"
+path = "crates/platform/exacopy-platform/tests/linux_source.rs"
 target = "rejects_links_inside_and_outside_the_root_and_invalid_components"
 
 [[coverage.evidence]]
 owner = "exacopy-platform"
 level = "native"
 state = "defined"
-path = "crates/endpoints/platform/tests/linux_source.rs"
+path = "crates/platform/exacopy-platform/tests/linux_source.rs"
 target = "rejects_crossing_the_proc_mount_from_a_root_directory_handle"
 
 [[coverage.evidence]]
 owner = "exacopy-platform"
 level = "native"
 state = "defined"
-path = "crates/endpoints/platform/tests/linux_source.rs"
+path = "crates/platform/exacopy-platform/tests/linux_source.rs"
 target = "rejects_fifos_and_directories_as_nonregular_without_opening_a_data_stream"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/clients/cli/tests/linux_copy.rs"
+path = "apps/exacopy-cli/tests/linux_copy.rs"
 target = "refuses_incumbents_symlinks_and_source_aliases_without_starting_a_job"
 
 [[coverage.evidence]]
@@ -253,49 +253,49 @@ limits = "The metadata profile preserves selected basic attributes and refuses u
 owner = "exacopy-platform"
 level = "native"
 state = "defined"
-path = "crates/endpoints/platform/tests/linux_stage.rs"
+path = "crates/platform/exacopy-platform/tests/linux_stage.rs"
 target = "stage_close_requires_a_full_flush_after_the_last_write_or_resize"
 
 [[coverage.evidence]]
 owner = "exacopy-platform"
 level = "native"
 state = "defined"
-path = "crates/endpoints/platform/tests/linux_scope.rs"
+path = "crates/platform/exacopy-platform/tests/linux_scope.rs"
 target = "changing_a_closed_stage_in_place_at_the_same_length_blocks_publication"
 
 [[coverage.evidence]]
 owner = "exacopy-content"
 level = "test"
 state = "defined"
-path = "crates/storage/content/tests/streams.rs"
+path = "crates/storage/exacopy-content/tests/streams.rs"
 target = "scratch_boundaries_do_not_change_the_standard_whole_stream_digest"
 
 [[coverage.evidence]]
 owner = "exacopy-content"
 level = "test"
 state = "defined"
-path = "crates/storage/content/tests/streams.rs"
+path = "crates/storage/exacopy-content/tests/streams.rs"
 target = "copies_logical_zero_bytes_and_detects_same_length_readback_changes"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/clients/cli/tests/verified_staging.rs"
+path = "apps/exacopy-cli/tests/verified_staging.rs"
 target = "stages_a_known_dense_stream_across_scratch_boundaries_and_preserves_metadata"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/clients/cli/tests/verified_staging.rs"
+path = "apps/exacopy-cli/tests/verified_staging.rs"
 target = "rejects_a_changed_observed_source_before_allocating_a_stage"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/clients/cli/tests/verified_staging.rs"
+path = "apps/exacopy-cli/tests/verified_staging.rs"
 target = "rejects_visible_source_attributes_before_allocating_a_stage"
 
 [[coverage]]
@@ -311,35 +311,35 @@ limits = "Native tests and fault injection exercise namespace and barrier semant
 owner = "exacopy-platform"
 level = "native"
 state = "defined"
-path = "crates/endpoints/platform/tests/linux_stage.rs"
+path = "crates/platform/exacopy-platform/tests/linux_stage.rs"
 target = "a_late_incumbent_file_link_or_directory_keeps_its_identity_and_the_stage_survives"
 
 [[coverage.evidence]]
 owner = "exacopy-platform"
 level = "native"
 state = "defined"
-path = "crates/endpoints/platform/src/linux/stage/publish/tests.rs"
+path = "crates/platform/exacopy-platform/src/linux/stage/publish/tests.rs"
 target = "a_real_exclusive_rename_precedes_both_directory_barriers_even_on_failure"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/clients/cli/tests/job_bootstrap/copy.rs"
+path = "apps/exacopy-cli/tests/job_bootstrap/copy.rs"
 target = "journaled_copy_persists_a_receipt_bound_to_verified_bytes_and_observed_publication"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/clients/cli/tests/linux_copy.rs"
+path = "apps/exacopy-cli/tests/linux_copy.rs"
 target = "concurrent_processes_cannot_replace_the_winner"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/clients/cli/tests/linux_copy.rs"
+path = "apps/exacopy-cli/tests/linux_copy.rs"
 target = "failed_report_output_keeps_the_committed_copy_and_names_the_job"
 
 [[coverage.evidence]]
@@ -362,61 +362,61 @@ limits = "Corrupt and torn histories stop mutation. The implemented reader prese
 owner = "exacopy-journal"
 level = "test"
 state = "defined"
-path = "crates/storage/journal/tests/frame.rs"
+path = "crates/storage/exacopy-journal/tests/frame.rs"
 target = "every_prefix_of_a_second_frame_is_classified_without_losing_the_first_boundary"
 
 [[coverage.evidence]]
 owner = "exacopy-journal"
 level = "test"
 state = "defined"
-path = "crates/storage/journal/tests/frame.rs"
+path = "crates/storage/exacopy-journal/tests/frame.rs"
 target = "corrupt_or_unsupported_middle_frame_stops_even_with_later_magic"
 
 [[coverage.evidence]]
 owner = "exacopy-journal"
 level = "test"
 state = "defined"
-path = "crates/storage/journal/tests/recovery_records.rs"
+path = "crates/storage/exacopy-journal/tests/recovery_records.rs"
 target = "malformed_or_noncanonical_cbor_is_refused"
 
 [[coverage.evidence]]
 owner = "exacopy-journal"
 level = "fuzz"
 state = "defined"
-path = "crates/storage/journal/fuzz/fuzz_targets/journal_frame.rs"
+path = "crates/storage/exacopy-journal/fuzz/fuzz_targets/journal_frame.rs"
 
 [[coverage.evidence]]
 owner = "exacopy-journal"
 level = "fixture"
 state = "defined"
-path = "crates/storage/journal/fuzz/corpus/journal_frame/broken-chain-with-later-magic"
+path = "crates/storage/exacopy-journal/fuzz/corpus/journal_frame/broken-chain-with-later-magic"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/clients/cli/tests/job_bootstrap.rs"
+path = "apps/exacopy-cli/tests/job_bootstrap.rs"
 target = "a_private_looking_incumbent_job_is_never_adopted"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/clients/cli/tests/recovery.rs"
+path = "apps/exacopy-cli/tests/recovery.rs"
 target = "compares_the_actual_stream_and_current_metadata_even_after_committed_receipt"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/clients/cli/tests/recovery/finish.rs"
+path = "apps/exacopy-cli/tests/recovery/finish.rs"
 target = "finishes_an_observed_rename_then_repeats_without_changing_evidence"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/clients/cli/tests/recovery/finish.rs"
+path = "apps/exacopy-cli/tests/recovery/finish.rs"
 target = "retains_stage_only_and_torn_prefixes_without_writing_records"
 
 [[coverage]]
@@ -439,56 +439,56 @@ target = "checkpoint_barrier_failures_leave_only_the_completed_stable_prefix"
 owner = "exacopy-content"
 level = "test"
 state = "defined"
-path = "crates/storage/content/tests/resume_reference.rs"
+path = "crates/storage/exacopy-content/tests/resume_reference.rs"
 target = "resume_matches_the_byte_exact_reference"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "process-kill"
 state = "defined"
-path = "crates/clients/cli/src/assembly/linux/crash_tests.rs"
+path = "apps/exacopy-cli/src/assembly/linux/crash_tests.rs"
 target = "kill_after_rename_before_observation_frame"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "process-kill"
 state = "defined"
-path = "crates/clients/cli/src/assembly/linux/crash_tests.rs"
+path = "apps/exacopy-cli/src/assembly/linux/crash_tests.rs"
 target = "kill_after_receipt_sync_before_commit"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "process-kill"
 state = "defined"
-path = "crates/clients/cli/src/assembly/linux/crash_tests/ranges.rs"
+path = "apps/exacopy-cli/src/assembly/linux/crash_tests/ranges.rs"
 target = "kill_after_range_page_sync_before_frame"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "process-kill"
 state = "defined"
-path = "crates/clients/cli/src/assembly/linux/crash_tests/ranges.rs"
+path = "apps/exacopy-cli/src/assembly/linux/crash_tests/ranges.rs"
 target = "kill_after_range_frame_sync"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "process-kill"
 state = "defined"
-path = "crates/clients/cli/src/assembly/linux/crash_tests/resume.rs"
+path = "apps/exacopy-cli/src/assembly/linux/crash_tests/resume.rs"
 target = "changed_live_source_with_the_old_mtime_leaves_the_partial_stage_private"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "process-kill"
 state = "defined"
-path = "crates/clients/cli/src/assembly/linux/crash_tests/resume.rs"
+path = "apps/exacopy-cli/src/assembly/linux/crash_tests/resume.rs"
 target = "rewrites_corrupt_checkpointed_bytes_before_publishing"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "process-kill"
 state = "defined"
-path = "crates/clients/cli/src/assembly/linux/crash_tests/retry.rs"
+path = "apps/exacopy-cli/src/assembly/linux/crash_tests/retry.rs"
 target = "kill_after_retry_rename_before_observation"
 
 [[coverage.evidence]]
@@ -511,7 +511,7 @@ limits = "P-036 checks ordering and joining in an independent finite model of th
 owner = "exacopy-diff"
 level = "obligation"
 state = "defined"
-path = "crates/operations/diff/verification/obligations.toml"
+path = "crates/engines/exacopy-diff/verification/obligations.toml"
 target = "P-036"
 detail = "Repository-owned extension to the design inventory."
 
@@ -519,28 +519,28 @@ detail = "Repository-owned extension to the design inventory."
 owner = "exacopy-diff"
 level = "test"
 state = "defined"
-path = "crates/operations/diff/src/compare/parallel/tests.rs"
+path = "crates/engines/exacopy-diff/src/compare/parallel/tests.rs"
 target = "partitions_cover_every_byte_without_overflow_or_overlap"
 
 [[coverage.evidence]]
 owner = "exacopy-diff"
 level = "test"
 state = "defined"
-path = "crates/operations/diff/src/compare/parallel/tests.rs"
+path = "crates/engines/exacopy-diff/src/compare/parallel/tests.rs"
 target = "waits_for_started_workers_before_the_final_observation_check"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/clients/cli/tests/linux_diff_capabilities.rs"
+path = "apps/exacopy-cli/tests/linux_diff_capabilities.rs"
 target = "sparse_holes_compare_as_logical_zeros_and_can_contain_a_mismatch"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/clients/cli/tests/macos_diff.rs"
+path = "apps/exacopy-cli/tests/macos_diff.rs"
 target = "compares_held_managed_apfs_files_and_preserves_inputs"
 
 [[coverage.evidence]]
@@ -569,70 +569,70 @@ limits = "This slice covers one unsigned JSON manifest, one unnamed stream, live
 owner = "exacopy-cli"
 level = "test"
 state = "defined"
-path = "crates/clients/cli/src/args/parser/tests.rs"
+path = "apps/exacopy-cli/src/args/parser/tests.rs"
 target = "new_commands_keep_raw_input_and_baseline_paths"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "test"
 state = "defined"
-path = "crates/clients/cli/src/args/parser/tests.rs"
+path = "apps/exacopy-cli/src/args/parser/tests.rs"
 target = "invalid_manifest_cli_syntax_never_returns_a_command"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/clients/cli/tests/linux_manifest.rs"
+path = "apps/exacopy-cli/tests/linux_manifest.rs"
 target = "creates_and_verifies_raw_basename_without_a_profile"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/clients/cli/tests/linux_manifest.rs"
+path = "apps/exacopy-cli/tests/linux_manifest.rs"
 target = "verification_mismatches_report_completed_integrity_failures"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/clients/cli/tests/linux_manifest.rs"
+path = "apps/exacopy-cli/tests/linux_manifest.rs"
 target = "validates_baseline_before_target_admission"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/clients/cli/tests/linux_manifest.rs"
+path = "apps/exacopy-cli/tests/linux_manifest.rs"
 target = "verification_requires_a_baseline_and_checks_exact_basename"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/clients/cli/tests/linux_manifest.rs"
+path = "apps/exacopy-cli/tests/linux_manifest.rs"
 target = "human_verification_does_not_follow_or_replay_manifest_display"
 
 [[coverage.evidence]]
 owner = "exacopy-transfer"
 level = "test"
 state = "defined"
-path = "crates/operations/transfer/src/manifest/tests.rs"
+path = "crates/engines/exacopy-transfer/src/manifest/tests.rs"
 target = "measurement_bounds_reads_and_checks_observations_in_order"
 
 [[coverage.evidence]]
 owner = "exacopy-transfer"
 level = "test"
 state = "defined"
-path = "crates/operations/transfer/src/manifest/tests.rs"
+path = "crates/engines/exacopy-transfer/src/manifest/tests.rs"
 target = "first_observation_and_failed_read_stop_at_their_respective_boundaries"
 
 [[coverage.evidence]]
 owner = "exacopy-transfer"
 level = "test"
 state = "defined"
-path = "crates/operations/transfer/src/manifest/tests.rs"
+path = "crates/engines/exacopy-transfer/src/manifest/tests.rs"
 target = "compares_length_then_digest_only_after_final_observation"
 
 [[coverage.evidence]]
@@ -689,28 +689,28 @@ limits = "Strict end-to-end acceptance is blocked on the tested host’s visible
 owner = "exacopy-platform"
 level = "native"
 state = "defined"
-path = "crates/endpoints/platform/src/macos/publication/tests/adapter.rs"
+path = "crates/platform/exacopy-platform/src/macos/publication/tests/adapter.rs"
 target = "late_regular_and_symlink_incumbents_retain_the_stage"
 
 [[coverage.evidence]]
 owner = "exacopy-platform"
 level = "native"
 state = "defined"
-path = "crates/endpoints/platform/src/macos/publication/tests/adapter.rs"
+path = "crates/platform/exacopy-platform/src/macos/publication/tests/adapter.rs"
 target = "even_when_a_barrier_fails_both_are_attempted_and_rename_is_retained"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/clients/cli/src/assembly/macos/job/tests/publication.rs"
+path = "apps/exacopy-cli/src/assembly/macos/job/tests/publication.rs"
 target = "prepared_copy_refuses_visible_source_metadata_before_any_content_or_intent"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "native"
 state = "blocked"
-path = "crates/clients/cli/src/assembly/macos/job/tests/publication.rs"
+path = "apps/exacopy-cli/src/assembly/macos/job/tests/publication.rs"
 target = "strict_native_copy_publishes_the_stage_and_commits_its_receipt"
 detail = "Ignored unless the fixture satisfies strict managed APFS source metadata admission."
 
@@ -718,14 +718,14 @@ detail = "Ignored unless the fixture satisfies strict managed APFS source metada
 owner = "exacopy-cli"
 level = "native"
 state = "defined"
-path = "crates/clients/cli/src/assembly/macos/job/tests/inspection.rs"
+path = "apps/exacopy-cli/src/assembly/macos/job/tests/inspection.rs"
 target = "reopened_job_binds_trusted_destination_and_keeps_live_names_separate_from_history"
 
 [[coverage.evidence]]
 owner = "exacopy-transfer"
 level = "fixture"
 state = "defined"
-path = "crates/operations/transfer/src/macos/receipt/tests/receipt.hex"
+path = "crates/engines/exacopy-transfer/src/macos/receipt/tests/receipt.hex"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
@@ -744,21 +744,21 @@ detail = "Preserves the native adapter outcome and blocked strict end-to-end pat
 owner = "exacopy-transfer"
 level = "test"
 state = "defined"
-path = "crates/operations/transfer/src/macos/replay/tests/recovery.rs"
+path = "crates/engines/exacopy-transfer/src/macos/replay/tests/recovery.rs"
 target = "requires_the_exact_original_attempt_and_recovery_start"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "test"
 state = "defined"
-path = "crates/clients/cli/src/assembly/macos/job/entry/publish/tests.rs"
+path = "apps/exacopy-cli/src/assembly/macos/job/entry/publish/tests.rs"
 target = "coordinator_commits_only_after_receipt_persistence"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "test"
 state = "defined"
-path = "crates/clients/cli/src/assembly/macos/job/tests/inspection.rs"
+path = "apps/exacopy-cli/src/assembly/macos/job/tests/inspection.rs"
 target = "retained_stage_read_back_refuses_a_visible_attribute_before_payload_io"
 
 [[coverage]]
@@ -964,7 +964,7 @@ limits = "Windows cross-checks and code generation passed. Native Windows tests 
 owner = "exacopy-platform"
 level = "test"
 state = "defined"
-path = "crates/endpoints/platform/src/windows/stage/tests.rs"
+path = "crates/platform/exacopy-platform/src/windows/stage/tests.rs"
 target = "bounded_writes_flush_close_and_reopen_the_original_file"
 
 [[coverage.evidence]]
@@ -1046,7 +1046,7 @@ limits = "No inventory producer, baseline persistence, approvals, mutation, tomb
 owner = "exacopy-model"
 level = "test"
 state = "defined"
-path = "crates/core/model/tests/sync.rs"
+path = "crates/foundation/exacopy-model/tests/sync.rs"
 target = "verified_common_file_follows_the_three_way_preview_table"
 
 [[coverage.evidence]]
@@ -1069,7 +1069,7 @@ limits = "No transport, trust-store parser, credential broker implementation or 
 owner = "exacopy-endpoint"
 level = "test"
 state = "defined"
-path = "crates/endpoints/endpoint/tests/ssh_sftp.rs"
+path = "crates/interfaces/exacopy-endpoint/tests/ssh_sftp.rs"
 target = "trust_policy_refuses_downgrades_even_with_an_explicit_pin"
 
 [[coverage.evidence]]
@@ -1092,7 +1092,7 @@ limits = "Caller supplies truthful serialized observations. No packet routing, s
 owner = "exacopy-endpoint"
 level = "test"
 state = "defined"
-path = "crates/endpoints/endpoint/src/wireguard/tests.rs"
+path = "crates/interfaces/exacopy-endpoint/src/wireguard/tests.rs"
 target = "mandatory_route_rejects_direct_system_and_unavailable_at_bind_or_consumption"
 
 [[coverage.evidence]]
@@ -1115,14 +1115,14 @@ limits = "Codec and authentication only, no portable Approval verification, live
 owner = "exacopy-journal"
 level = "obligation"
 state = "defined"
-path = "crates/storage/journal/verification/obligations.toml"
+path = "crates/storage/exacopy-journal/verification/obligations.toml"
 target = "P-040"
 
 [[coverage.evidence]]
 owner = "exacopy-journal"
 level = "test"
 state = "defined"
-path = "crates/storage/journal/tests/public_apply_owner.rs"
+path = "crates/storage/exacopy-journal/tests/public_apply_owner.rs"
 target = "independent_vector_fixes_the_signed_projection_and_legacy_boundary"
 
 [[coverage.evidence]]
@@ -1145,7 +1145,7 @@ limits = "Staging only; no intent, rename, receipt, CLI apply or native durabili
 owner = "exacopy-transfer"
 level = "test"
 state = "defined"
-path = "crates/operations/transfer/src/linux/local_copy/public_apply/tests.rs"
+path = "crates/engines/exacopy-transfer/src/linux/local_copy/public_apply/tests.rs"
 target = "stream_evidence_requires_both_actual_measurements_and_lengths"
 
 [[coverage.evidence]]
@@ -1168,7 +1168,7 @@ limits = "No mutating continuation or CLI entrypoint. Native Linux fixture sourc
 owner = "exacopy-transfer"
 level = "test"
 state = "defined"
-path = "crates/operations/transfer/src/linux/recovery/public_apply/tests.rs"
+path = "crates/engines/exacopy-transfer/src/linux/recovery/public_apply/tests.rs"
 target = "altered_approval_and_unsupported_suffix_refuse_before_inventory"
 
 [[coverage.evidence]]
@@ -1191,7 +1191,7 @@ limits = "In-memory protocol result only. No sockets, DNS, inner TCP/port admiss
 owner = "exacopy-wireguard"
 level = "test"
 state = "defined"
-path = "crates/network/wireguard/src/protocol/tests.rs"
+path = "crates/net/exacopy-wireguard/src/protocol/tests.rs"
 target = "actual_boringtun_handshake_and_encryption_round_trip_both_families"
 
 [[coverage.evidence]]
@@ -1214,21 +1214,21 @@ limits = "Live unnamed-stream comparison only. Windows cross-check and Clippy pa
 owner = "exacopy-platform"
 level = "test"
 state = "defined"
-path = "crates/endpoints/platform/src/windows/read_path/tests.rs"
+path = "crates/platform/exacopy-platform/src/windows/read_path/tests.rs"
 target = "refuses_ambiguous_path_syntax_and_bounds_component_depth"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "test"
 state = "defined"
-path = "crates/clients/cli/tests/windows_diff/native.rs"
+path = "apps/exacopy-cli/tests/windows_diff/native.rs"
 target = "ordinary_ntfs_compares_and_preserves_regular_files"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "documentation"
 state = "reported"
-path = "crates/clients/cli/README.md"
+path = "apps/exacopy-cli/README.md"
 
 
 [[coverage]]
@@ -1244,7 +1244,7 @@ limits = "Synthetic in-memory peer execution only; Linux cross-check and Windows
 owner = "exacopy-ssh"
 level = "test"
 state = "defined"
-path = "crates/network/ssh/tests/in_process.rs"
+path = "crates/net/exacopy-ssh/tests/in_process.rs"
 target = "a_mismatched_pin_or_revocation_never_requests_or_sends_a_credential"
 
 [[coverage.evidence]]

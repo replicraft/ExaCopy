@@ -27,7 +27,7 @@ The portable tests and the [three-range scheduling model](verification/tla/Paral
 Run the local gate using the TLC and Temurin versions pinned in the [TLC toolchain lock](verification/tla/toolchain.lock.json). Set `TLC_LOG_DIR` to retain the model and negative-control logs.
 
 ```sh
-crates/operations/diff/verification/check.sh
+crates/engines/exacopy-diff/verification/check.sh
 ```
 
 ## Native adapters

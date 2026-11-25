@@ -140,7 +140,7 @@ fn check_record(root: &Path, record: &Contract) -> Result<(), String> {
 		"local-owner-seed" => (
 			Kind::LocalProfile,
 			Status::DevelopmentUnversioned,
-			Some(Path::new("crates/clients/cli/src/profile.rs")),
+			Some(Path::new("apps/exacopy-cli/src/profile.rs")),
 		),
 		"rust-library-apis" => (
 			Kind::LibraryApi,

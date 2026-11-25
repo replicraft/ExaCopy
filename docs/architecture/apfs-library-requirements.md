@@ -387,9 +387,9 @@ status until an eligible fixture or a qualified richer metadata profile
 establishes the required fidelity.
 
 Implementation references are the [current adapter contract](../local-adapter.md),
-[managed identity observation](../../crates/endpoints/platform/src/macos/managed/observation.rs),
-[publication primitive](../../crates/endpoints/platform/src/macos/publication/native.rs)
-and [journal barrier](../../crates/storage/journal/src/durable.rs).
+[managed identity observation](../../crates/platform/exacopy-platform/src/macos/managed/observation.rs),
+[publication primitive](../../crates/platform/exacopy-platform/src/macos/publication/native.rs)
+and [journal barrier](../../crates/storage/exacopy-journal/src/durable.rs).
 
 **Local development integration**
 

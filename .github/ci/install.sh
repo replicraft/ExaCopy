@@ -59,7 +59,7 @@ case "$tool" in
 		add_path "$install_dir"
 		;;
 	kani)
-		lock=crates/core/model/verification/kani/toolchain.lock.json
+		lock=crates/foundation/exacopy-model/verification/kani/toolchain.lock.json
 		platform=x86_64-unknown-linux-gnu
 		version=$(jq -er '.kani.version' "$lock")
 		archive_url=$(jq -er --arg platform "$platform" '.kani.archives[$platform].url' "$lock")
@@ -110,7 +110,7 @@ case "$tool" in
 		tar -xzf "$asset" --strip-components=1 -C "$install_dir/java"
 		"$install_dir/java/bin/java" -version
 		add_path "$install_dir/java/bin"
-		lock=crates/core/model/verification/tla/toolchain.lock.json
+		lock=crates/foundation/exacopy-model/verification/tla/toolchain.lock.json
 		jar_url=$(jq -er '.tlc.url' "$lock")
 		jar_digest=$(jq -er '.tlc.sha256' "$lock")
 		fetch "$jar_url" "$jar_digest" "$install_dir/tla2tools.jar"

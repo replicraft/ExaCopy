@@ -13,7 +13,8 @@ behavior, recovery paths and their evidence.
 | --- | --- |
 | Applications | Parse user intent, select the concrete platform implementation and compose capabilities with engines. Render engine results and map them to exit status or UI state. |
 | Application assembly | Compose held native capabilities with reusable operation policies. Linux CLI planning, copy and recovery use `exacopy-cli` application assembly. Its experimental managed APFS assembly supplies native capabilities to transfer policy. |
-| Public codecs | Own bounded, versioned interoperability records and canonical digest projections. Filesystem lookup and authorization remain with callers. |
+| Public formats | `exacopy-manifest` and `exacopy-plan` own bounded interoperability records and canonical digest projections. Filesystem lookup and authorization remain with callers. |
+| Foundational core | Own shared validated raw filename primitives, their tests, fuzz corpus and bounded verification. Keep dependencies minimal and forbid unsafe code. |
 | Core model | Own typed identities, checked ranges and pure preserve-mode transitions. Keep OS, database, async runtime, network implementation and presentation dependencies outside this boundary. |
 | Endpoint contracts | Define bounded capabilities that callers can supply and adapters can implement. Represent unsupported operations explicitly. |
 | Operation engines | Own comparison, transfer orchestration, recovery decisions and eventual synchronization/conflict policy. Consume capabilities. |

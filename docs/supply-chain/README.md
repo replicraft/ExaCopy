@@ -21,7 +21,7 @@ combination of all features applicable to the target. The experimental APFS
 runtime requires `exacopy-cli/experimental-apfs-copy` and has a separate macOS test run.
 The macOS CLI comparison opt-in is a runtime filesystem contract. The CLI
 rejects unavailable operations with explicit unsupported outcomes. See the
-[CLI guide](../../crates/clients/cli/README.md) for the operation contracts.
+[CLI guide](../../apps/exacopy-cli/README.md) for the operation contracts.
 
 Linux's transfer feature set always includes bounds checking, staging and
 read-back verification, integrity framing, authenticated publication intent,

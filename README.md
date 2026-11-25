@@ -14,9 +14,9 @@ cargo run --locked -p exacopy-cli -- recover resume JOB_DIRECTORY --source-root 
 cargo run --locked -p exacopy-cli -- recover retry JOB_DIRECTORY --source-root SOURCE_DIRECTORY --profile PRIVATE_PROFILE --format json
 ```
 
-The copy report identifies the job directory inside the target's parent. See the [CLI guide](crates/clients/cli/README.md) for supported inputs, recovery outcomes, and exit codes.
+The copy report identifies the job directory inside the target's parent. See the [CLI guide](apps/exacopy-cli/README.md) for supported inputs, recovery outcomes, and exit codes.
 
-On macOS, `diff LEFT RIGHT --managed-macos` enables exact comparison of regular files in explicitly provisioned owner-managed APFS directories. The flag attests that both input parents satisfy the [managed directory contract](crates/clients/cli/README.md#managed-apfs-comparison-on-macos).
+On macOS, `diff LEFT RIGHT --managed-macos` enables exact comparison of regular files in explicitly provisioned owner-managed APFS directories. The flag attests that both input parents satisfy the [managed directory contract](apps/exacopy-cli/README.md#managed-apfs-comparison-on-macos).
 
 Use Rust 1.100.0 and cargo-nextest 0.9.151 for the developer checks. Supply the
 [pinned Pomologie sibling checkout](docs/specs/dependencies/README.md) before
