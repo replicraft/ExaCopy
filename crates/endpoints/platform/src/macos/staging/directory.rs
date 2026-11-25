@@ -222,15 +222,7 @@ impl StageDirectory<'_> {
 		let mut attempted = None;
 		let result = with_materialization_disabled(|| {
 			self.check_current()?;
-			match fs::statat(
-				self.destination(),
-				target.as_bytes(),
-				AtFlags::SYMLINK_NOFOLLOW,
-			) {
-				Ok(_) => return Err(StageError::NameCollision),
-				Err(Errno::NOENT) => {}
-				Err(error) => return Err(error.into()),
-			}
+			self.check_target_absent(target)?;
 			let identity = context.allocate(entropy)?;
 			attempted = Some(identity);
 			WriteStage::create(self, name, target, identity, length)
@@ -263,6 +255,18 @@ impl StageDirectory<'_> {
 			return Err(StageError::DirectoryChanged);
 		}
 		Ok(())
+	}
+
+	fn check_target_absent(&self, target: UnixComponent<'_>) -> Result<(), StageError> {
+		match fs::statat(
+			self.destination(),
+			target.as_bytes(),
+			AtFlags::SYMLINK_NOFOLLOW,
+		) {
+			Ok(_) => Err(StageError::NameCollision),
+			Err(Errno::NOENT) => Ok(()),
+			Err(error) => Err(error.into()),
+		}
 	}
 
 	pub(super) fn observe_directories(

@@ -110,6 +110,27 @@ impl<'root> ManagedRegularFile<'root> {
 		with_materialization_disabled(|| self.check_basic_metadata_with_policy())
 	}
 
+	/// Rechecks strict basic metadata and the original access time before content reads.
+	///
+	/// Call immediately before starting a managed copy to confirm that the captured
+	/// access time still applies.
+	///
+	/// # Errors
+	/// Refuses changed access time, unavailable evidence, or any strict metadata failure.
+	pub fn check_pre_read_basic_metadata(&self) -> Result<BasicMetadata, ManagedReadError> {
+		with_materialization_disabled(|| {
+			let metadata = self.check_basic_metadata_with_policy()?;
+			let held = fs::fstat(&self.file)?;
+			if !same_observation(&held, &self.initial)
+				|| ManagedTimestamp::from_stat_parts(held.st_atime, held.st_atime_nsec)
+					!= Some(metadata.atime())
+			{
+				return Err(ManagedReadError::SourceChanged);
+			}
+			Ok(metadata)
+		})
+	}
+
 	pub(super) fn check_basic_metadata_with_policy(
 		&self,
 	) -> Result<BasicMetadata, ManagedReadError> {

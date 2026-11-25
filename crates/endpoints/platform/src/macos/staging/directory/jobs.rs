@@ -27,6 +27,29 @@ const RECEIPTS: &[u8] = b"receipts";
 const STAGE: &[u8] = b"stage";
 
 impl StageDirectory<'_> {
+	/// Checks the provisioned private container and observes an empty public target.
+	///
+	/// Returns the identity of the leased destination root that contains this container.
+	/// The raw target is looked up without following symlinks. The observation is
+	/// current only under the managed lease contract and authorizes no publication.
+	///
+	/// # Errors
+	/// Refuses a directory inside an existing job, changed authority or identity,
+	/// an occupied target, and inconclusive lookups.
+	pub fn observe_empty_job_destination(
+		&self,
+		target: UnixComponent<'_>,
+	) -> Result<ManagedObjectIdentity, JobError> {
+		if self.job.is_some() {
+			return Err(JobError::NestedJob);
+		}
+		with_materialization_disabled(|| {
+			self.check_current()?;
+			self.check_target_absent(target)?;
+			Ok(self.root.lease.observe_identity()?)
+		})
+	}
+
 	/// Exclusively creates a job under the already reserved private container.
 	///
 	/// The caller's managed grant covers the container and all job artifacts it creates.
