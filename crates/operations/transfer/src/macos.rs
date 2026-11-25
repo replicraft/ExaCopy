@@ -8,6 +8,7 @@ use exacopy_platform::macos::staging::{
 use exacopy_platform::macos::{BasicMetadata, ManagedRegularFile};
 
 mod error;
+pub mod inspection;
 pub mod job;
 pub mod plan;
 pub mod receipt;

@@ -70,7 +70,7 @@ fn same_time(native: ManagedTimestamp, planned: ObservedTimestamp) -> bool {
 	(native.seconds(), native.nanoseconds()) == (planned.seconds(), planned.nanoseconds())
 }
 
-pub(super) fn native_identity(
+pub(in crate::macos) fn native_identity(
 	observed: ManagedObjectIdentity,
 ) -> Result<DarwinFileIdentity, OwnerError> {
 	let volume = DarwinVolumeIdentity::new(observed.device(), observed.physical_fsid())?;

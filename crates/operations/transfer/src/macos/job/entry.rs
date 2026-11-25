@@ -13,8 +13,8 @@ use exacopy_platform::macos::staging::jobs::{JobDirectory, JobName};
 use exacopy_platform::macos::staging::{StageBindingContext, WriteStage};
 
 use super::super::plan::{DarwinCopyPlan, SourcePlanBinding};
-use super::PreparedDarwinJob;
 use super::admission::{check_source, native_identity};
+use super::{PreparedDarwinJob, STAGE_PAYLOAD};
 
 mod error;
 mod publish;
@@ -22,7 +22,6 @@ mod publish;
 pub use error::{EntryPreparationError, EntryPreparationFailure};
 pub use publish::{DarwinCopyError, DarwinCopyFailure, PublicationProgress};
 
-const STAGE_PAYLOAD: &[u8] = b"payload";
 // This preserve profile has exactly one model entry. Its persisted entry UUID
 // comes from the independent plan and is copied exactly into kind 2.
 const MODEL_ENTRY: EntryId = EntryId::new(1);

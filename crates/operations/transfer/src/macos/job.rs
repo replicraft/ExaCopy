@@ -29,7 +29,10 @@ pub use entry::{
 };
 pub use error::{JobAdmissionError, JobBootstrapError, JobPreparationError, JobPreparationStep};
 
-use self::admission::{admit_destination, check_source, native_identity};
+pub(super) use self::admission::native_identity;
+use self::admission::{admit_destination, check_source};
+
+pub(super) const STAGE_PAYLOAD: &[u8] = b"payload";
 
 /// The independently trusted local signing profile and this attempt's owner claims.
 #[derive(Clone, Copy)]
