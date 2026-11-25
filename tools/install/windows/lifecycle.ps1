@@ -1,3 +1,5 @@
+. (Join-Path $PSScriptRoot 'launcher.ps1')
+
 $ExaCopyOwnerFile = 'owner.marker'
 $ExaCopyVersions = 'versions'
 $ExaCopyOwnerLimit = 16384
@@ -92,17 +94,28 @@ function Read-ExaCopyReleaseFiles {
 function Open-ExaCopyInstallation {
     param([string] $Root, $Context, [byte[]] $Certificate)
     Confirm-ExaCopyOwnerAcl $Root $Context.Owner -Root
-    Assert-ExaCopyExactEntries $Root $ExaCopyRootFiles
     $ownerPath = Join-Path $Root $ExaCopyOwnerFile
     [void](Confirm-ExaCopyPath $ownerPath -File)
     $lease = [IO.FileStream]::new($ownerPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None)
     try {
+        $bin = Join-Path $Root 'bin'
+        $hasLauncher = Confirm-ExaCopyPath $bin -AllowMissing
+        $expectedEntries = if ($hasLauncher) { $ExaCopyRootFiles + 'bin' } else { $ExaCopyRootFiles }
+        Assert-ExaCopyExactEntries $Root $expectedEntries
         $signed = Read-ExaCopyReleaseFiles $Root $Context $Certificate -Historical
         $expected = Get-ExaCopyOwnerBytes $Context $signed.ManifestHash
         Assert-ExaCopySameBytes $expected (Read-ExaCopyStreamBytes $lease $ExaCopyOwnerLimit)
         $versions = Join-Path $Root $ExaCopyVersions
         Confirm-ExaCopyOwnerAcl $versions $Context.Owner
-        return [pscustomobject]@{ Lease = $lease; Signed = $signed; OwnerBytes = $expected; Versions = $versions }
+        $installation = [pscustomobject]@{
+            Lease = $lease; Signed = $signed; OwnerBytes = $expected; Versions = $versions
+            HasLauncher = $hasLauncher
+        }
+        if ($hasLauncher) {
+            $material = Get-ExaCopyLauncherMaterial $Context $installation $Certificate
+            Confirm-ExaCopyLauncherDirectory $bin $material $Context.Owner
+        }
+        return $installation
     }
     catch {
         $lease.Dispose()
@@ -205,6 +218,7 @@ function Install-ExaCopySignedVersion {
         status = if ($DryRun) { 'would_install' } else { 'installed' }
         version = $Context.Version
         path = $executable
+        launcher = Join-Path (Join-Path $Context.Root 'bin') 'exacopy.ps1'
     }
 
     if ($hasRoot) {
@@ -215,8 +229,17 @@ function Install-ExaCopySignedVersion {
             }
             $existing = Get-ExaCopyOwnedVersion $Context $installation
             if ($null -ne $existing) {
-                $result.status = 'already_installed'
+                if ($DryRun) {
+                    if ($installation.HasLauncher) { $result.status = 'already_installed' }
+                }
+                else {
+                    Publish-ExaCopyLauncher $Context $installation $certificate
+                    if ($installation.HasLauncher) { $result.status = 'already_installed' }
+                }
                 return $result
+            }
+            if ($installation.HasLauncher) {
+                throw 'A selection exists although the signed version is missing. Inspect installation evidence.'
             }
             if ($DryRun) { return $result }
             $stage = New-ExaCopyPrivateStage $installation.Versions $Context.Owner
@@ -229,6 +252,7 @@ function Install-ExaCopySignedVersion {
             catch {
                 throw "Version publication could not be confirmed. Inspect stage '$stage' and the selected version. $($_.Exception.Message)"
             }
+            Publish-ExaCopyLauncher $Context $installation $certificate
             return $result
         }
         finally {
@@ -270,6 +294,9 @@ function Publish-ExaCopyNewInstallation {
     }
     Assert-ExaCopyInstallAncestors $Context.Programs $Context.Owner
     [IO.Directory]::Move($rootStage, $Context.Root)
+    $published = Open-ExaCopyInstallation $Context.Root $Context $certificate
+    try { Publish-ExaCopyLauncher $Context $published $certificate }
+    finally { $published.Lease.Dispose() }
 }
 
 function Assert-ExaCopyExecutableIdle {
@@ -308,6 +335,9 @@ function Uninstall-ExaCopySignedVersion {
     try {
         Assert-ExaCopyWindowsFloor $installation.Signed.Release.min_os
         $owned = Get-ExaCopyOwnedVersion $Context $installation -AllowIncomplete
+        if ($installation.HasLauncher -and ($null -eq $owned -or !$owned.ExecutablePresent)) {
+            throw 'A launcher selects a missing executable. Inspect installation evidence.'
+        }
         if ($null -eq $owned) { return $result }
         $result.path = $owned.Path
         Assert-ExaCopyNoNamedStreams $owned.Path
@@ -317,6 +347,7 @@ function Uninstall-ExaCopySignedVersion {
             Assert-ExaCopyExecutableIdle $owned.Executable
         }
         if ($DryRun) {
+            Remove-ExaCopyLauncher $Context $installation $certificate -DryRun
             $result.status = 'would_uninstall'
             return $result
         }
@@ -325,6 +356,7 @@ function Uninstall-ExaCopySignedVersion {
         }
         Assert-ExaCopyInstallAncestors $Context.Programs $Context.Owner
         Confirm-ExaCopyOwnerAcl $owned.Path $Context.Owner
+        Remove-ExaCopyLauncher $Context $installation $certificate
         if ($owned.ExecutablePresent) {
             [void](Confirm-ExaCopyPath $owned.Executable -File)
             [IO.File]::Delete($owned.Executable)

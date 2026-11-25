@@ -62,7 +62,22 @@ the same inputs and observes any existing installation without creating
 files. The scripts use an exclusive, same-volume directory rename and
 report the exact executable under
 `%LOCALAPPDATA%\Programs\ExaCopy\versions\<version>\exacopy.exe`.
-They do not register an active version or alter PATH.
+The installer also publishes a stable PowerShell launcher at
+`%LOCALAPPDATA%\Programs\ExaCopy\bin\exacopy.ps1`. It does not alter PATH.
+
+```powershell
+$launcher = Join-Path $env:LOCALAPPDATA 'Programs\ExaCopy\bin\exacopy.ps1'
+& $launcher --version
+```
+
+The launcher verifies the selected signed manifest and executable and holds
+the executable against write or deletion through child exit. It forwards
+arguments and the child exit status. Its locally installed script requires
+PowerShell 7.4+ and an execution policy that admits it. The direct executable
+path remains available for Command Prompt and restricted script policies.
+The launcher itself makes no Authenticode claim. Install and uninstall
+must use the same trusted launcher-generation support files; a changed
+generation needs a separately specified migration.
 
 ## Reinstall and uninstall
 
@@ -89,7 +104,8 @@ Uninstall revalidates the retained signature, ownership, exact version
 contents, and expected executable bytes. It refuses conflicting entries,
 named NTFS streams, reparse points, unsafe permissions, and observable
 active or locked binaries. It removes only the owned executable, its version
-marker, and the empty version directory. The root owner marker and signed
+marker, and the empty version directory. It first withdraws the exact owned
+launcher directory and removes its known files. The root owner marker and signed
 release records stay in place to retain provenance. Expired release
 metadata can still authenticate an uninstall.
 
@@ -106,6 +122,7 @@ uninstall in the presence of concurrent launches.
 ## Testing
 
 Run `pwsh -NoProfile -NonInteractive -File tools/install/windows/test.ps1`.
+Also run `pwsh -NoProfile -NonInteractive -File tools/install/windows/launcher-fixture.ps1`.
 The fixture tests PowerShell syntax, ephemeral signed metadata, PE header
 admission, and failure controls in disposable directories. On Windows,
 `-Artifact PATH` adds validation of a built native CLI binary without
