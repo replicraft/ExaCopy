@@ -19,7 +19,7 @@ pub enum ExtendedAttributes {
 // Linux's VFS caps the name list returned by flistxattr at 64 KiB.
 const MAX_LINUX_XATTR_LIST: usize = 64 * 1024;
 
-pub(super) fn inspect(fd: impl AsFd) -> Result<ExtendedAttributes, ReadError> {
+pub(in crate::linux) fn inspect(fd: impl AsFd) -> Result<ExtendedAttributes, ReadError> {
 	classify(fs::flistxattr_query(fd))
 }
 

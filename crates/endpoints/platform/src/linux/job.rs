@@ -3,7 +3,7 @@ use std::fmt;
 use std::fs::File;
 
 use exacopy_endpoint::UnixComponent;
-use rustix::fs::{self, AtFlags, OFlags};
+use rustix::fs::{self, AtFlags, FlockOperation, OFlags};
 use rustix::io::Errno;
 
 use super::handle::FileIdentity;
@@ -64,6 +64,7 @@ impl DestinationRoot {
 		self.check_current()?;
 		let name = component(name);
 		let (directory, identity) = create_private_directory(&self.directory, name, self.mount)?;
+		try_lock_job(&directory, FlockOperation::NonBlockingLockExclusive)?;
 		Ok(JobDirectory {
 			root: self,
 			directory,
@@ -73,10 +74,19 @@ impl DestinationRoot {
 	}
 }
 
+pub(super) fn try_lock_job(directory: &File, operation: FlockOperation) -> Result<(), StageError> {
+	match fs::flock(directory, operation) {
+		Ok(()) => Ok(()),
+		Err(Errno::WOULDBLOCK) => Err(StageError::JobBusy),
+		Err(error) => Err(error.into()),
+	}
+}
+
 /// An exclusively created private job directory rooted in one destination handle.
 ///
 /// The job can create its fixed records and state directories. Each operation
-/// rechecks the held job binding.
+/// rechecks the held job binding. The directory handle owns a nonblocking
+/// exclusive advisory lock for the lifetime of this capability.
 pub struct JobDirectory<'root> {
 	root: &'root DestinationRoot,
 	directory: File,

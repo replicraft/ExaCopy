@@ -11,8 +11,15 @@ use rustix::process::geteuid;
 
 use super::handle::{FileIdentity, file_identity, mount_id};
 use super::job::{FIRST_SEGMENT, JOURNAL, OWNER, PLAN, RECEIPT, RECEIPTS, STAGE};
-use super::source::{ReadError, SourceObservation, reopen_regular_read_only};
+use super::source::{
+	ExtendedAttributes, ReadError, SourceObservation, check_logical_eof, reopen_regular_read_only,
+	xattrs,
+};
 use super::stage::{CHILD_RESOLVE, DestinationRoot, StageError, check_private_child, component};
+
+mod lease;
+
+pub use lease::RecoveryReadLease;
 
 #[cfg(test)]
 mod tests;
@@ -290,6 +297,22 @@ impl RecoveryFile {
 	pub fn recheck_observation(&self) -> Result<(), ReadError> {
 		let stat = fs::fstat(&self.file)?;
 		self.observation.recheck(SourceObservation::capture(&stat)?)
+	}
+
+	/// Checks EOF at the captured length with a bounded positional probe.
+	///
+	/// # Errors
+	/// Reports extra data, an unsupported probe or a read failure.
+	pub fn check_logical_eof(&self) -> Result<(), ReadError> {
+		check_logical_eof(&self.file, self.len())
+	}
+
+	/// Checks for extended attribute names visible to this process.
+	///
+	/// # Errors
+	/// Reports an unreadable or unrepresentable attribute list.
+	pub fn extended_attributes(&self) -> Result<ExtendedAttributes, ReadError> {
+		xattrs::inspect(&self.file)
 	}
 
 	/// Fills a buffer at a given offset without changing the stream cursor.

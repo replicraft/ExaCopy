@@ -22,6 +22,26 @@ const PRIVATE_MODE: u32 = 0o600;
 const PRIVATE_DIR_MODE: u32 = 0o700;
 
 #[test]
+fn the_writer_lease_excludes_inspection_until_the_writer_drops() {
+	let fixture = Scratch::new();
+	let destination = DestinationRoot::from_directory(fixture.open()).expect("destination root");
+	let writer = destination
+		.create_job_directory(name(JOB))
+		.expect("writer owns exclusive lease");
+	let reader = destination
+		.open_recovery_job(name(JOB))
+		.expect("independent job handle");
+	assert!(matches!(reader.try_read_lease(), Err(StageError::JobBusy)));
+	drop(writer);
+	let _first = reader
+		.try_read_lease()
+		.expect("acquire a shared reader lease");
+	let _second = reader
+		.try_read_lease()
+		.expect("another reader can share the lease");
+}
+
+#[test]
 fn fixed_records_reopen_with_read_only_rights_and_distinct_identifiers() {
 	let (fixture, root) = fixture();
 	let path = fixture.path(JOB);
@@ -65,6 +85,13 @@ fn fixed_records_reopen_with_read_only_rights_and_distinct_identifiers() {
 		assert_eq!(output, bytes);
 		file.recheck_observation()
 			.expect("allow access-time change");
+		file.check_logical_eof()
+			.expect("record ends at its observed extent");
+		assert_ne!(
+			file.extended_attributes()
+				.expect("inspect visible attributes"),
+			crate::linux::ExtendedAttributes::Present
+		);
 		assert!(matches!(
 			file.read_exact_at(file.len(), &mut [0]),
 			Err(ReadError::RangeOutsideFile)

@@ -8,7 +8,7 @@ mod stage;
 
 pub use handle::FileIdentity;
 pub use job::{JobDirectory, JournalDirectory, ReceiptDirectory, TargetStatus};
-pub use recovery::{RecoveryFile, RecoveryInventory, RecoveryJob};
+pub use recovery::{RecoveryFile, RecoveryInventory, RecoveryJob, RecoveryReadLease};
 pub use source::{
 	ExtendedAttributes, ReadError, ReadRoot, SourceFile, SourceObservation, SourceTimestamp,
 };

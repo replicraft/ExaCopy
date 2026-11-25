@@ -13,7 +13,7 @@ use rustix::path::DecInt;
 use super::handle::FileIdentity;
 
 mod observation;
-mod xattrs;
+pub(super) mod xattrs;
 
 pub use observation::{SourceObservation, SourceTimestamp};
 pub use xattrs::ExtendedAttributes;
@@ -233,19 +233,7 @@ impl SourceFile {
 	/// # Errors
 	/// Reports unexpected data, an unsupported probe, or a read failure.
 	pub fn check_logical_eof(&self) -> Result<(), ReadError> {
-		let mut remaining_retries = MAX_INTERRUPTED_RETRIES;
-		loop {
-			match self.file.read_at(&mut [0], self.len()) {
-				Ok(0) => return Ok(()),
-				Ok(_) => return Err(ReadError::UnexpectedDataAfterEnd),
-				Err(error)
-					if error.kind() == io::ErrorKind::Interrupted && remaining_retries > 0 =>
-				{
-					remaining_retries -= 1;
-				}
-				Err(error) => return Err(ReadError::System(error)),
-			}
-		}
+		check_logical_eof(&self.file, self.len())
 	}
 
 	/// Inspect whether this process can see extended attribute names on the held inode.
@@ -282,6 +270,20 @@ impl SourceFile {
 			self.file.read_at(remaining, position)
 		})
 		.map_err(ReadError::Io)
+	}
+}
+
+pub(super) fn check_logical_eof(file: &File, length: u64) -> Result<(), ReadError> {
+	let mut remaining_retries = MAX_INTERRUPTED_RETRIES;
+	loop {
+		match file.read_at(&mut [0], length) {
+			Ok(0) => return Ok(()),
+			Ok(_) => return Err(ReadError::UnexpectedDataAfterEnd),
+			Err(error) if error.kind() == io::ErrorKind::Interrupted && remaining_retries > 0 => {
+				remaining_retries -= 1;
+			}
+			Err(error) => return Err(ReadError::System(error)),
+		}
 	}
 }
 

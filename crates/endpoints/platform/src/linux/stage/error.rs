@@ -16,6 +16,8 @@ mod tests;
 pub enum StageError {
 	/// Exclusive creation found an existing entry and left it untouched.
 	AlreadyExists,
+	/// A cooperating reader or writer already holds an incompatible job lease.
+	JobBusy,
 	/// A directory failed its required type, ownership, or permissions check.
 	UnsafeDirectory,
 	/// The staged file failed its type, ownership, permissions, or link-count check.
@@ -69,6 +71,7 @@ impl fmt::Display for StageError {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
 			Self::AlreadyExists => f.write_str("exclusive staging name already exists"),
+			Self::JobBusy => f.write_str("the job is in use"),
 			Self::UnsafeDirectory => f.write_str("directory failed the managed staging policy"),
 			Self::UnsafeFile => f.write_str("file failed the private staging policy"),
 			Self::IdentityChanged => f.write_str("staged object identity or observations changed"),
