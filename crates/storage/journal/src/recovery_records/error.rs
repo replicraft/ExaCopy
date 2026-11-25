@@ -42,7 +42,7 @@ pub enum RecoveryRecordError {
 	InvalidEpoch,
 	/// Evidence disagrees with its independently supplied context or exact frame reference.
 	BindingMismatch,
-	/// The stage and destination directories or file fail the identity scope checks.
+	/// The file and directory identities fail the identity scope checks.
 	InvalidIdentityScope,
 	/// The retained-stage effect sequence is zero or fails to succeed the prior effect.
 	InvalidEffectSequence,
@@ -102,7 +102,7 @@ impl fmt::Display for RecoveryRecordError {
 				"retained publication effect sequence does not succeed the prior effect"
 			}
 			Self::InvalidIdentityScope => {
-				"recovery identities do not describe a file and two distinct directories on one device"
+				"recovery identities must be distinct and reside on one device"
 			}
 		};
 		formatter.write_str(message)

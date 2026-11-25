@@ -2,6 +2,8 @@
 
 #[path = "recovery_records/bindings.rs"]
 mod bindings;
+#[path = "recovery_records/range_resume.rs"]
+mod range_resume;
 #[path = "recovery_records/retained.rs"]
 mod retained;
 

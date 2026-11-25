@@ -6,9 +6,12 @@ use std::io::{self, Read};
 
 use libfuzzer_sys::fuzz_target;
 
-use exacopy_journal::frame::{ChainHead, FrameKind, FrameReadError, FrameReader, FrameWriter};
+use exacopy_journal::frame::{
+	ChainHead, Frame, FrameKind, FrameReadError, FrameReader, FrameWriter,
+};
 use exacopy_journal::{
-	MAX_RANGE_PAGE_BYTES, RangeCheckpoint, RangePage, RecoveryDecision, RetainedPublicationDecision,
+	MAX_RANGE_PAGE_BYTES, RangeCheckpoint, RangePage, RangeResumeStarted, RecoveryDecision,
+	RecoveryStarted, RetainedPublicationDecision,
 };
 
 const WIRE_PAYLOAD_LIMIT: usize = 1_048_576;
@@ -30,6 +33,9 @@ impl Read for BoundedRead<'_> {
 
 fuzz_target!(|input: &[u8]| {
 	check_recovery_payload(input);
+	if let Some(resume) = check_recovery_start_payload(input) {
+		check_resume_envelope(input, resume);
+	}
 	if let Ok(checkpoint) = RangeCheckpoint::decode(input) {
 		assert_eq!(checkpoint.encode(), input);
 	}
@@ -81,6 +87,18 @@ fuzz_target!(|input: &[u8]| {
 							assert_eq!(checkpoint.encode(), frame.payload());
 						}
 					}
+					FrameKind::RecoveryStarted => {
+						if let Some(resume) = check_recovery_start_payload(frame.payload()) {
+							let preceding = resume.evidence().preceding;
+							let frame_matches = preceding == previous
+								&& preceding.sequence().checked_add(1) == Some(sequence);
+							assert_eq!(
+								RangeResumeStarted::from_frame(&frame).is_ok(),
+								frame_matches
+							);
+							assert!(RecoveryStarted::from_frame(&frame).is_err());
+						}
+					}
 					FrameKind::RecoveryDecision => check_recovery_payload(frame.payload()),
 					_ => {}
 				}
@@ -128,4 +146,44 @@ fn check_recovery_payload(input: &[u8]) {
 		assert_eq!(published.encode(), input);
 		assert!(RetainedPublicationDecision::decode(input).is_err());
 	}
+}
+
+fn check_recovery_start_payload(input: &[u8]) -> Option<RangeResumeStarted> {
+	if let Ok(start) = RecoveryStarted::decode(input) {
+		assert_eq!(start.encode(), input);
+		assert!(RangeResumeStarted::decode(input).is_err());
+	}
+	let resume = RangeResumeStarted::decode(input).ok()?;
+	assert_eq!(resume.encode(), input);
+	assert!(RecoveryStarted::decode(input).is_err());
+	Some(resume)
+}
+
+fn check_resume_envelope(payload: &[u8], resume: RangeResumeStarted) {
+	let preceding = resume.evidence().preceding;
+	let Some(sequence) = preceding.sequence().checked_add(1) else {
+		return;
+	};
+	let frame = write_and_read_start(preceding, payload);
+	assert_eq!(frame.head().sequence(), sequence);
+	assert_eq!(RangeResumeStarted::from_frame(&frame), Ok(resume));
+	assert!(RecoveryStarted::from_frame(&frame).is_err());
+
+	let mut other_digest = preceding.digest();
+	other_digest[0] ^= 1;
+	if let Some(other_head) = ChainHead::after(preceding.sequence(), other_digest) {
+		let other_frame = write_and_read_start(other_head, payload);
+		assert!(RangeResumeStarted::from_frame(&other_frame).is_err());
+	}
+}
+
+fn write_and_read_start(anchor: ChainHead, payload: &[u8]) -> Frame {
+	let mut writer = FrameWriter::new(Vec::new(), anchor);
+	writer
+		.append(FrameKind::RecoveryStarted, payload)
+		.expect("write the bounded recovery start");
+	FrameReader::new(BoundedRead(&writer.into_inner()), anchor)
+		.next_frame()
+		.expect("read the generated recovery envelope")
+		.expect("generated recovery start is present")
 }

@@ -31,9 +31,9 @@ pub use publication_records::{
 	PublicationOutcome, PublicationRecordError, PublishObserved, ReceiptCommitted, ReceiptDigest,
 };
 pub use recovery_records::{
-	PublishedRecoveryEvidence, RecoveryDecision, RecoveryDecisionFrames, RecoveryDirectories,
-	RecoveryRecordError, RecoveryStartEvidence, RecoveryStarted, RetainedPublicationDecision,
-	RetainedPublicationEvidence,
+	PublishedRecoveryEvidence, RangeResumeEvidence, RangeResumeStarted, RecoveryDecision,
+	RecoveryDecisionFrames, RecoveryDirectories, RecoveryRecordError, RecoveryStartEvidence,
+	RecoveryStarted, RetainedPublicationDecision, RetainedPublicationEvidence,
 };
 pub use verification_records::{
 	BasicMetadata, MAX_CHECKPOINT_RANGE_BYTES, MAX_RANGE_CHECKPOINTS, MAX_RANGE_PAGE_BYTES,

@@ -4,6 +4,8 @@
 
 The seed corpus contains independently generated, valid checksummed frames from the framing tests, including a valid sequence gap. It also covers an oversized length, an unsupported kind, interrupted integrity trailers, and a broken chain followed by later magic bytes. Raw canonical recovery-decision seeds exercise both kind-20 payload variants. The target verifies exact re-encoding and disjoint admission for those variants, including when a decoded frame carries a kind-20 payload. The independently emitted kind-3 payload and immutable range-page vectors exercise both bounded range codecs. The range seeds carry an input derived from the canonical EntryPrepared vector used in the journal integration tests. Replay, ownership, and effect authority have separate checks.
 
+Raw canonical recovery-start seeds exercise disjoint admission of the two kind-19 variants. The target wraps an admitted range-resume payload in a frame built from its claimed predecessor and checks that changing the predecessor digest makes the same payload fail frame binding.
+
 From the repository root, use cargo-fuzz 0.13.2, the isolated tool lockfile, and Rust nightly-2026-11-04 on a target with AddressSanitizer support.
 
 ```sh
