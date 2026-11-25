@@ -1,0 +1,211 @@
+{
+  "schema_version": 1,
+  "product_package": "exacopy-cli",
+  "production_packages": [
+    "exacopy-cli",
+    "exacopy-content",
+    "exacopy-diff",
+    "exacopy-endpoint",
+    "exacopy-journal",
+    "exacopy-model",
+    "exacopy-platform",
+    "exacopy-transfer"
+  ],
+  "engineering_packages": ["exacopy-testkit", "xtask"],
+  "profiles": {
+    "minimal": {
+      "defaults": false,
+      "check_cli": true,
+      "feature_statuses": [],
+      "purpose": "Compile the mandatory model, integrity, transaction and recovery code without optional features."
+    },
+    "default": {
+      "defaults": true,
+      "check_cli": true,
+      "feature_statuses": [],
+      "purpose": "Check what an ordinary Cargo invocation enables."
+    },
+    "all-stable": {
+      "defaults": true,
+      "check_cli": true,
+      "feature_statuses": ["stable"],
+      "purpose": "Compile all stable optional features for this target together. There are currently none."
+    },
+    "proof-extraction": {
+      "defaults": false,
+      "check_cli": false,
+      "feature_statuses": ["verification"],
+      "purpose": "Compile the minimal workspace with the individual model extraction feature enabled."
+    },
+    "experimental-apfs-copy": {
+      "defaults": false,
+      "check_cli": false,
+      "feature_statuses": ["experimental"],
+      "targets": ["aarch64-apple-darwin"],
+      "purpose": "Compile the opt-in transfer library and its managed APFS adapter regressions."
+    },
+    "development-all": {
+      "defaults": true,
+      "check_cli": false,
+      "feature_statuses": ["stable", "experimental", "verification"],
+      "purpose": "Compile all features applicable to the target together with the default workspace."
+    }
+  },
+  "features": {
+    "exacopy-model": {
+      "proof-extraction": {
+        "status": "verification",
+        "enables": ["dep:hax-lib"],
+        "resolution_probe": ["hax-lib"],
+        "purpose": "Expose annotations for the pinned hax extraction path."
+      }
+    },
+    "exacopy-transfer": {
+      "experimental-apfs-copy": {
+        "status": "experimental",
+        "targets": ["aarch64-apple-darwin"],
+        "enables": [
+          "dep:blake3",
+          "dep:ed25519-dalek",
+          "dep:exacopy-content",
+          "dep:exacopy-endpoint",
+          "dep:exacopy-journal",
+          "dep:exacopy-model",
+          "dep:exacopy-platform",
+          "dep:minicbor"
+        ],
+        "resolution_probe": [
+          "blake3", "ed25519-dalek", "exacopy-content", "exacopy-endpoint", "exacopy-journal",
+          "exacopy-model", "exacopy-platform", "minicbor"
+        ],
+        "purpose": "Enable the unqualified managed APFS copy and recovery library for development."
+      }
+    }
+  },
+  "production_dependencies": {
+    "blake3": {
+      "default_features": false,
+      "features": [],
+      "optional_targets": {
+        "exacopy-transfer": ["cfg(target_os = \"macos\")"]
+      },
+      "purpose": "Source stream and independent stage read-back digests, and content bindings."
+    },
+    "crc32c": {
+      "default_features": true,
+      "features": [],
+      "purpose": "Detect torn or corrupt journal frames before authenticated record decoding."
+    },
+    "ed25519-dalek": {
+      "default_features": false,
+      "features": ["zeroize"],
+      "optional_targets": {
+        "exacopy-transfer": ["cfg(target_os = \"macos\")"]
+      },
+      "purpose": "Sign and verify transaction journal records and receipts."
+    },
+    "hax-lib": {
+      "default_features": false,
+      "features": ["macros"],
+      "optional": true,
+      "purpose": "Annotate the model for proof extraction."
+    },
+    "libc": {
+      "default_features": true,
+      "features": [],
+      "purpose": "Access macOS functions and constants unavailable through the safe platform wrapper."
+    },
+    "minicbor": {
+      "default_features": false,
+      "features": [],
+      "optional_targets": {
+        "exacopy-transfer": ["cfg(target_os = \"macos\")"]
+      },
+      "purpose": "Read and write bounded, explicitly encoded journal records and receipts."
+    },
+    "rustix": {
+      "default_features": true,
+      "features": ["fs", "process"],
+      "feature_additions": {
+        "exacopy-cli": ["rand"],
+        "exacopy-platform": {
+          "cfg(target_os = \"macos\")": ["try_close"]
+        }
+      },
+      "purpose": "Perform capability-scoped filesystem operations and obtain required OS process and entropy data."
+    },
+    "serde": {
+      "default_features": true,
+      "features": ["derive"],
+      "purpose": "Describe stable field and enum names for CLI reports."
+    },
+    "serde_json": {
+      "default_features": true,
+      "features": [],
+      "purpose": "Serialize the versioned CLI report on all command targets."
+    },
+    "uuid": {
+      "default_features": false,
+      "features": [],
+      "purpose": "Represent and encode fixed-size transaction identities."
+    },
+    "zeroize": {
+      "default_features": false,
+      "features": [],
+      "purpose": "Clear temporary copies of Linux CLI signing key material."
+    }
+  },
+  "cli_graph_groups": {
+    "reporting": [
+      "exacopy-cli", "itoa", "memchr", "proc-macro2", "quote",
+      "serde", "serde_core", "serde_derive", "serde_json", "syn", "unicode-ident", "zmij"
+    ],
+    "local_comparison": [
+      "bitflags", "exacopy-diff", "exacopy-endpoint", "exacopy-model",
+      "exacopy-platform", "rustix", "uuid"
+    ],
+    "linux_verified_transfer": [
+      "arrayvec", "blake3", "block-buffer", "cc", "cfg-if", "constant_time_eq",
+      "cpufeatures", "crc32c", "crypto-common", "curve25519-dalek", "curve25519-dalek-derive",
+      "digest", "ed25519", "ed25519-dalek", "exacopy-content", "exacopy-journal",
+      "exacopy-transfer", "find-msvc-tools", "generic-array", "linux-raw-sys",
+      "minicbor", "rustc_version", "semver", "sha2", "shlex", "signature", "subtle",
+      "typenum", "version_check", "zeroize"
+    ],
+    "macos_io": ["errno", "libc"]
+  },
+  "targets": {
+    "x86_64-unknown-linux-gnu": {
+      "cli": {
+        "status": "local",
+        "diff": "local regular files",
+        "copy_and_recovery": "Linux verified single-file transfer and recovery"
+      },
+      "cli_graph_groups": ["reporting", "local_comparison", "linux_verified_transfer"],
+      "rustix_features": ["alloc", "default", "fs", "process", "rand", "std"]
+    },
+    "aarch64-apple-darwin": {
+      "cli": {
+        "status": "local",
+        "diff": "regular files in managed APFS directories with --managed-macos",
+        "copy_and_recovery": "unsupported through the CLI"
+      },
+      "cli_graph_groups": ["reporting", "local_comparison", "macos_io"],
+      "rustix_features": ["alloc", "default", "fs", "process", "std", "try_close"]
+    },
+    "x86_64-pc-windows-msvc": {
+      "cli": {
+        "status": "explicit-refusal",
+        "diff": "unsupported",
+        "copy_and_recovery": "unsupported"
+      },
+      "cli_graph_groups": ["reporting"],
+      "rustix_features": []
+    }
+  },
+  "other_targets": "No CI build or release qualification is asserted for other triples.",
+  "unimplemented_capabilities": [
+    "GUI", "network transfer", "VPN", "Android", "cloud storage", "backup repositories",
+    "specialized document processing", "experimental I/O backends"
+  ]
+}

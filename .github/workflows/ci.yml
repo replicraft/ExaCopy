@@ -48,12 +48,17 @@ jobs:
       - name: Compile locked workspace
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
         run: bash .github/ci/capture.sh build cargo +1.100.0 build --locked --workspace --all-targets
-      - name: Compile verification feature
+      - name: Check Cargo feature and target matrix
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
-        run: bash .github/ci/capture.sh build-proof-feature cargo +1.100.0 check --locked -p exacopy-model --features proof-extraction
+        run: |
+          matrix_python=python3
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            matrix_python=python
+          fi
+          bash .github/ci/capture.sh feature-matrix "$matrix_python" tools/feature_matrix.py --target "$EXPECTED_RUST_HOST"
       - name: Run Clippy
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
-        run: bash .github/ci/capture.sh clippy cargo +1.100.0 clippy --locked --workspace --all-targets -- -D warnings
+        run: bash .github/ci/capture.sh clippy cargo +1.100.0 clippy --locked --workspace --all-targets --all-features -- -D warnings
       - name: Install nextest
         id: nextest
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
@@ -63,9 +68,17 @@ jobs:
         run: |
           bash .github/ci/capture.sh nextest cargo +1.100.0 nextest run --locked --workspace --profile ci --no-tests fail
           test -s target/nextest/ci/junit.xml
+      - name: Run opt-in managed APFS transfer tests
+        if: ${{ !cancelled() && steps.nextest.outcome == 'success' && runner.os == 'macOS' }}
+        env:
+          CARGO_TARGET_DIR: target/experimental-apfs-copy
+        run: |
+          bash .github/ci/capture.sh experimental-apfs-copy cargo +1.100.0 nextest run --locked \
+            -p exacopy-transfer --features experimental-apfs-copy --profile ci --no-tests fail
+          test -s "$CARGO_TARGET_DIR/nextest/ci/junit.xml"
       - name: Run doctests
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
-        run: bash .github/ci/capture.sh doctest cargo +1.100.0 test --locked --workspace --doc
+        run: bash .github/ci/capture.sh doctest cargo +1.100.0 test --locked --workspace --all-features --doc
       - name: Retain native evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -74,6 +87,7 @@ jobs:
           path: |
             ${{ runner.temp }}/exacopy-evidence/
             target/nextest/ci/junit.xml
+            target/experimental-apfs-copy/nextest/ci/junit.xml
           if-no-files-found: error
           retention-days: 30
 
@@ -89,6 +103,14 @@ jobs:
         run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
       - name: Run engineering policy
         run: bash .github/ci/capture.sh policy cargo run --locked -p xtask -- check
+      - name: Run feature and SBOM policy controls
+        if: ${{ !cancelled() }}
+        run: |
+          bash .github/ci/capture.sh build-policy-controls python3 -B -m unittest discover \
+            -s tools -p '*_test.py'
+      - name: Check independent reference and performance evidence
+        if: ${{ !cancelled() }}
+        run: bash .github/ci/capture.sh reference-evidence python3 -B tools/reference/check.py
       - name: Retain policy evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -202,6 +224,32 @@ jobs:
           path: ${{ runner.temp }}/exacopy-evidence/
           if-no-files-found: error
           retention-days: 30
+
+  release-evidence:
+    name: Unsigned CLI rebuild and SBOM (Linux x86_64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      EXPECTED_RUST_HOST: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.100.0
+        run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
+      - name: Rebuild from the archived source and inventory compiled crates
+        run: |
+          bash .github/ci/capture.sh release-rebuild python3 tools/sbom_release.py \
+            --target "$EXPECTED_RUST_HOST" --fetch \
+            --output "$RUNNER_TEMP/exacopy-evidence/unsigned-cli"
+      - name: Retain release evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unsigned-cli-linux-x86_64-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-evidence/
+          if-no-files-found: error
+          retention-days: 90
 
   scanners:
     name: Repository security scans
