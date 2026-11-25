@@ -15,7 +15,10 @@ use crate::wire::Wire;
 
 mod source;
 
-pub use source::{MAX_READ_CHUNK_BYTES, MAX_STREAM_BYTES, RemoteReadFile};
+pub use source::{
+	MAX_READ_CHUNK_BYTES, MAX_STREAM_BYTES, RemotePositionedRead, RemoteReadFile, RemoteReadWindow,
+	WindowObservation,
+};
 
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_PATH_BYTES: usize = 4096;

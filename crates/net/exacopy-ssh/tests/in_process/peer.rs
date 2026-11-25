@@ -24,6 +24,7 @@ pub(super) struct Calls {
 	pub(super) key_auth: AtomicUsize,
 	pub(super) subsystem: AtomicUsize,
 	pub(super) unsupported: AtomicUsize,
+	pub(super) open: AtomicUsize,
 	pub(super) close: AtomicUsize,
 	pub(super) read: AtomicUsize,
 }
@@ -114,12 +115,19 @@ struct Files {
 	held_checks: usize,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum ChangedObservation {
+	Held,
+	Named,
+}
+
 pub(super) struct Generated {
 	pub(super) observed_length: u64,
 	pub(super) actual_length: u64,
 	pub(super) max_reply: u32,
 	pub(super) changed_handle: bool,
 	pub(super) changed_name: bool,
+	pub(super) change_during_window: Option<ChangedObservation>,
 	pub(super) refuse_close: bool,
 	pub(super) pending_read: Option<Arc<Notify>>,
 }
@@ -132,6 +140,7 @@ impl Generated {
 			max_reply: 4093,
 			changed_handle: false,
 			changed_name: false,
+			change_during_window: None,
 			refuse_close: false,
 			pending_read: None,
 		}
@@ -139,6 +148,14 @@ impl Generated {
 }
 
 impl Files {
+	fn changed_during_window(&self, observation: ChangedObservation) -> bool {
+		self.calls.read.load(Ordering::Relaxed) != 0
+			&& self
+				.generated
+				.as_ref()
+				.is_some_and(|file| file.change_during_window == Some(observation))
+	}
+
 	fn attributes(&self, changed: bool) -> sftp::FileAttributes {
 		let mut attrs = file_attrs();
 		if let Some(generated) = &self.generated {
@@ -175,6 +192,7 @@ impl sftp_server::Handler for Files {
 			.as_ref()
 			.is_some_and(|file| file.changed_name)
 			&& self.calls.close.load(Ordering::Relaxed) != 0;
+		let changed = changed || self.changed_during_window(ChangedObservation::Named);
 		Ok(sftp::Attrs {
 			id,
 			attrs: self.attributes(changed),
@@ -189,6 +207,7 @@ impl sftp_server::Handler for Files {
 			.as_ref()
 			.is_some_and(|file| file.changed_handle)
 			&& self.held_checks > 1;
+		let changed = changed || self.changed_during_window(ChangedObservation::Held);
 		Ok(sftp::Attrs {
 			id,
 			attrs: self.attributes(changed),
@@ -231,6 +250,7 @@ impl sftp_server::Handler for Files {
 	) -> Result<sftp::Handle, Self::Error> {
 		assert_eq!(name.as_bytes(), NAME);
 		assert_eq!(flags.bits(), sftp::OpenFlags::READ.bits());
+		self.calls.open.fetch_add(1, Ordering::Relaxed);
 		Ok(sftp::Handle {
 			id,
 			handle: sftp::SftpHandle::from(&[0, 255]),

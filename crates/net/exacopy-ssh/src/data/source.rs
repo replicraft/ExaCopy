@@ -11,11 +11,17 @@ use super::{
 use crate::error::Error;
 use crate::wire::Wire;
 
+mod positioned;
+mod range;
+
+pub use positioned::{RemotePositionedRead, RemoteReadWindow, WindowObservation};
+
+use range::ReadRange;
+
 /// The largest caller buffer accepted by one streaming read.
 pub const MAX_READ_CHUNK_BYTES: usize = 32 * 1024;
-const MAX_READ_REQUESTS: u64 = 4096;
-/// The largest admitted stream, if every data read returns a full chunk.
-pub const MAX_STREAM_BYTES: u64 = MAX_READ_REQUESTS * MAX_READ_CHUNK_BYTES as u64;
+/// The largest admitted sequential stream or positioned window.
+pub const MAX_STREAM_BYTES: u64 = range::MAX_READ_REQUESTS * MAX_READ_CHUNK_BYTES as u64;
 const MAX_FILE_BYTES: usize = 4 * 1024 * 1024;
 
 /// A sequential reader bound to one open SFTP handle and its SSH session.
@@ -27,6 +33,7 @@ pub struct RemoteReadFile<'a> {
 	parent: &'a mut Option<Session>,
 	session: Option<Session>,
 	source: Source,
+	range: ReadRange,
 	deadline: Instant,
 }
 
@@ -45,17 +52,14 @@ impl ReadOnlySftp {
 		path: &[UnixComponent<'_>],
 	) -> Result<RemoteReadFile<'_>, Error> {
 		let path = encode_path(path)?;
-		let mut session = self.session.take().ok_or(Error::Closed)?;
 		let deadline = Instant::now() + OPERATION_TIMEOUT;
-		let source = session
-			.run(deadline, async move |wire| {
-				Source::open(wire, path, None).await
-			})
-			.await?;
+		let (session, source) = self.open_source(path, Extent::Sequential, deadline).await?;
+		let range = ReadRange::new(0, source.before.length, source.before.length)?;
 		Ok(RemoteReadFile {
 			parent: &mut self.session,
 			session: Some(session),
 			source,
+			range,
 			deadline,
 		})
 	}
@@ -78,16 +82,35 @@ impl ReadOnlySftp {
 		let path = encode_path(path)?;
 		self.with_wire(async move |wire| {
 			let length = u64::try_from(output.len()).map_err(|_| Error::Limit)?;
-			let mut source = Source::open(wire, path, Some(length)).await?;
+			let source = Source::open(wire, path, Extent::Exact(length)).await?;
+			let mut range = ReadRange::new(0, length, source.before.length)?;
 			let mut remaining = output;
 			while !remaining.is_empty() {
 				let limit = remaining.len().min(MAX_READ_CHUNK_BYTES);
-				let count = source.read_into(wire, &mut remaining[..limit]).await?;
+				let count = range
+					.read_into(wire, &source.file, &mut remaining[..limit])
+					.await?;
 				remaining = &mut remaining[count..];
 			}
+			range.require_complete()?;
 			source.finish(wire).await
 		})
 		.await
+	}
+
+	async fn open_source(
+		&mut self,
+		path: SftpString,
+		extent: Extent,
+		deadline: Instant,
+	) -> Result<(Session, Source), Error> {
+		let mut session = self.session.take().ok_or(Error::Closed)?;
+		let source = session
+			.run(deadline, async move |wire| {
+				Source::open(wire, path, extent).await
+			})
+			.await?;
+		Ok((session, source))
 	}
 }
 
@@ -111,7 +134,7 @@ impl RemoteReadFile<'_> {
 		let mut session = self.session.take().ok_or(Error::Closed)?;
 		let read = session
 			.run(self.deadline, async |wire| {
-				self.source.read_into(wire, output).await
+				self.range.read_into(wire, &self.source.file, output).await
 			})
 			.await?;
 		self.session = Some(session);
@@ -128,6 +151,7 @@ impl RemoteReadFile<'_> {
 		let mut session = self.session.ok_or(Error::Closed)?;
 		let source = session
 			.run(self.deadline, async move |wire| {
+				self.range.require_complete()?;
 				self.source.finish(wire).await
 			})
 			.await?;
@@ -140,22 +164,21 @@ struct Source {
 	path: SftpString,
 	file: SftpHandle,
 	before: FileObservation,
-	offset: u64,
-	requests_left: u64,
+}
+
+enum Extent {
+	Sequential,
+	Exact(u64),
+	Positioned,
 }
 
 impl Source {
-	async fn open(
-		wire: &mut Wire,
-		path: SftpString,
-		expected_length: Option<u64>,
-	) -> Result<Self, Error> {
+	async fn open(wire: &mut Wire, path: SftpString, extent: Extent) -> Result<Self, Error> {
 		let before = lstat(wire, path.clone()).await?;
-		if expected_length.is_some_and(|expected| expected != before.length) {
-			return Err(Error::Changed);
-		}
-		if before.length > MAX_STREAM_BYTES {
-			return Err(Error::Limit);
+		match extent {
+			Extent::Sequential if before.length > MAX_STREAM_BYTES => return Err(Error::Limit),
+			Extent::Exact(expected) if before.length != expected => return Err(Error::Changed),
+			_ => {}
 		}
 		let file = handle(
 			wire.request(|id| {
@@ -169,66 +192,43 @@ impl Source {
 			})
 			.await?,
 		)?;
-		if fstat(wire, &file).await? != before {
-			return Err(Error::Changed);
-		}
-		Ok(Self {
-			path,
-			file,
-			before,
-			offset: 0,
-			requests_left: MAX_READ_REQUESTS,
-		})
+		let source = Self { path, file, before };
+		source.recheck_handle(wire).await?;
+		Ok(source)
 	}
 
-	async fn read_into(&mut self, wire: &mut Wire, output: &mut [u8]) -> Result<usize, Error> {
-		if !(1..=MAX_READ_CHUNK_BYTES).contains(&output.len()) {
-			return Err(Error::Limit);
+	async fn recheck(&self, wire: &mut Wire) -> Result<(), Error> {
+		self.recheck_handle(wire).await?;
+		Self::recheck_name(wire, self.path.clone(), self.before).await
+	}
+
+	async fn recheck_handle(&self, wire: &mut Wire) -> Result<(), Error> {
+		if fstat(wire, &self.file).await? != self.before {
+			return Err(Error::Changed);
 		}
-		let remaining = self
-			.before
-			.length
-			.checked_sub(self.offset)
-			.ok_or(Error::Protocol)?;
-		if remaining == 0 {
-			return Ok(0);
+		Ok(())
+	}
+
+	async fn recheck_name(
+		wire: &mut Wire,
+		path: SftpString,
+		before: FileObservation,
+	) -> Result<(), Error> {
+		if lstat(wire, path).await? != before {
+			return Err(Error::Changed);
 		}
-		self.requests_left = self.requests_left.checked_sub(1).ok_or(Error::Limit)?;
-		let requested =
-			u32::try_from(remaining.min(output.len() as u64)).map_err(|_| Error::Limit)?;
-		match read(wire, &self.file, self.offset, requested).await? {
-			Packet::Data(data)
-				if !data.data.is_empty() && data.data.len() <= requested as usize =>
-			{
-				let count = data.data.len();
-				self.offset = self.offset.checked_add(count as u64).ok_or(Error::Limit)?;
-				output[..count].copy_from_slice(&data.data);
-				Ok(count)
-			}
-			Packet::Status(status) if status.status_code == StatusCode::Eof => Err(Error::Changed),
-			response => Err(unexpected(response)),
-		}
+		Ok(())
 	}
 
 	async fn finish(self, wire: &mut Wire) -> Result<FileObservation, Error> {
-		if self.offset != self.before.length {
-			return Err(Error::IncompleteRead {
-				expected: self.before.length,
-				read: self.offset,
-			});
-		}
-		match read(wire, &self.file, self.offset, 1).await? {
+		match read(wire, &self.file, self.before.length, 1).await? {
 			Packet::Status(status) if status.status_code == StatusCode::Eof => {}
 			Packet::Data(_) => return Err(Error::Changed),
 			response => return Err(unexpected(response)),
 		}
-		if fstat(wire, &self.file).await? != self.before {
-			return Err(Error::Changed);
-		}
+		self.recheck_handle(wire).await?;
 		close(wire, self.file).await?;
-		if lstat(wire, self.path).await? != self.before {
-			return Err(Error::Changed);
-		}
+		Self::recheck_name(wire, self.path, self.before).await?;
 		Ok(self.before)
 	}
 }

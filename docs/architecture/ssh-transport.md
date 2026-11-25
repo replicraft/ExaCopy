@@ -53,8 +53,19 @@ request limit. `open_read` also supports incremental reads with caller-owned
 probe. Its single 20-second deadline includes caller processing between reads.
 Bytes remain provisional until EOF, held metadata, successful CLOSE and named
 metadata checks complete; only then may the session be reused. Dropping an
-unfinished reader or cancelling a started read fences it. This bounded
-prototype does not yet provide positioned reads or resumable transfer jobs.
+unfinished reader or cancelling a started read fences it.
+
+`open_positioned` holds one read-only handle for checked 64-bit file extents.
+Each positive window admits at most 128 MiB and 4,096 reads into 1–32 KiB
+caller buffers, with its own 20-second deadline including caller processing.
+Window completion requires exact consumption and matching held and named
+observations. Its result covers only that interval. Source finish separately
+checks EOF at the captured extent, held metadata, CLOSE acknowledgement and
+named metadata; it does not attest unvisited bytes. Open and finish have
+separate deadlines. The existing 20-second transport inactivity limit still
+applies between windows. Dropping an unfinished window or source fences the
+session. This API does not yet implement resumable transfer jobs.
+
 Connect and each operation have 20-second timeouts. Cancellation,
 started-operation error or timeout fences the session rather than reusing an uncertain channel.
 These conservative prototype limits do not implement the final scheduler.

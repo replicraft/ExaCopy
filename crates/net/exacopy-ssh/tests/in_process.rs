@@ -13,6 +13,8 @@ use exacopy_ssh::{Error, KnownHostTrust, Password, connect};
 mod key_auth;
 #[path = "in_process/peer.rs"]
 mod peer;
+#[path = "in_process/positioned.rs"]
+mod positioned;
 #[path = "in_process/streaming.rs"]
 mod streaming;
 

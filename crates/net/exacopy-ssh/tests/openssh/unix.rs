@@ -16,6 +16,8 @@ use exacopy_ssh::{Ed25519Key, KnownHostTrust, MAX_READ_CHUNK_BYTES, connect_with
 use russh::keys::{HashAlg, PrivateKey, PublicKey};
 use zeroize::Zeroizing;
 
+#[path = "positioned.rs"]
+mod positioned;
 #[path = "settings.rs"]
 mod settings;
 
@@ -30,12 +32,25 @@ const CONTENT: &[u8] = b"independent OpenSSH readback";
 
 type FixtureResult<T> = Result<T, Box<dyn std::error::Error>>;
 
+#[derive(Clone, Copy)]
+enum Reference {
+	Sequential,
+	Positioned,
+}
+
 #[tokio::test]
 #[ignore = "requires a local OpenSSH server executable and unprivileged loopback sockets"]
 async fn reads_a_file_from_a_private_openssh_subsystem_with_ed25519() {
+	run_fixture(Reference::Sequential).await;
+}
+
+async fn run_fixture(reference: Reference) {
 	let settings = Settings::from_env().expect("provision the optional private OpenSSH fixture");
 	let account = current_account(&settings.id).expect("verify the unprivileged fixture account");
 	let fixture = Fixture::create(&settings).expect("create private synthetic SSH files");
+	if matches!(reference, Reference::Positioned) {
+		positioned::create(&fixture.path.join("data")).expect("create a sparse synthetic file");
+	}
 	fixture
 		.configure(&settings.sshd, &account)
 		.expect("preflight the private OpenSSH daemon");
@@ -45,7 +60,7 @@ async fn reads_a_file_from_a_private_openssh_subsystem_with_ed25519() {
 
 	let result = tokio::time::timeout(
 		FIXTURE_TIMEOUT,
-		check_contents(&fixture, &account, stream, port),
+		check_contents(&fixture, &account, stream, port, reference),
 	)
 	.await;
 	daemon.stop();
@@ -61,6 +76,7 @@ async fn check_contents(
 	account: &str,
 	stream: TcpStream,
 	port: NonZeroU16,
+	reference: Reference,
 ) -> FixtureResult<()> {
 	let target = SshAuthority::new("127.0.0.1", port, account)?;
 	let host_key = PublicKey::read_openssh_file(fixture.path.join("host-key.pub"))?;
@@ -91,6 +107,10 @@ async fn check_contents(
 		Ed25519Key::from_seed(seed)
 	})
 	.await?;
+
+	if matches!(reference, Reference::Positioned) {
+		return positioned::check(&mut sftp).await;
+	}
 
 	let listed = sftp.list(&[]).await?;
 	assert!(listed.iter().any(|name| name == FILE_NAME.as_bytes()));
