@@ -156,3 +156,38 @@ fn detects_transitive_dependencies_on_matrix_classified_engineering_packages() {
 		"{findings}"
 	);
 }
+
+#[test]
+fn ssh_manifest_requires_portable_production_dependencies_only() {
+	let fixture = crate::test_support::Fixture::new();
+	fixture.write("src/lib.rs", "");
+	fixture.write("helper/src/lib.rs", "");
+	fixture.write(
+		"helper/Cargo.toml",
+		"[package]\nname = \"fixture-tool\"\nversion = \"0.1.0\"\n",
+	);
+	for (section, should_fail) in [
+		("dependencies", false),
+		("target.'cfg(unix)'.dependencies", true),
+		("target.'cfg(unix)'.dev-dependencies", false),
+		("build-dependencies", true),
+	] {
+		fixture.write(
+			"Cargo.toml",
+			&format!(
+				"[package]\nname = \"exacopy-ssh\"\nversion = \"0.1.0\"\n[{section}]\nfixture-tool = {{ path = \"helper\" }}\n"
+			),
+		);
+		let metadata = cargo_metadata::MetadataCommand::new()
+			.current_dir(fixture.root())
+			.other_options(vec!["--offline".into()])
+			.exec()
+			.expect("resolve Cargo's fixture metadata");
+		let mut findings = Findings::default();
+		super::check_caller_stream_ssh_manifest(
+			metadata.root_package().expect("fixture root"),
+			&mut findings,
+		);
+		assert_eq!(!findings.is_empty(), should_fail, "{section}: {findings}");
+	}
+}

@@ -7,6 +7,7 @@ use syn::visit::Visit;
 use crate::finding::Findings;
 
 mod entrypoint;
+mod ssh_portability;
 mod syntax;
 
 const MAX_PHYSICAL_LINES: usize = 500;
@@ -102,6 +103,7 @@ fn check_text(path: &Path, source: &str, findings: &mut Findings) {
 		_ => (),
 	}
 	syntax::SourcePolicy::new(path, findings).visit_file(&file);
+	ssh_portability::check(path, &file, findings);
 }
 
 #[cfg(test)]

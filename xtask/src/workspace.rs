@@ -3,7 +3,9 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
 
-use cargo_metadata::{CargoOpt, DependencyKind, Metadata, MetadataCommand, Package, PackageId};
+use cargo_metadata::{
+	CargoOpt, DependencyKind, Metadata, MetadataCommand, Package, PackageId, TargetKind,
+};
 use toml::{Table, Value};
 
 use crate::architecture;
@@ -175,6 +177,9 @@ fn check_dependency_groups(path: &Path, contents: &str, findings: &mut Findings)
 
 fn check_package(root: &Path, package: &Package, findings: &mut Findings) {
 	let path = package.manifest_path.as_std_path();
+	if package.name.as_str() == "exacopy-ssh" {
+		check_caller_stream_ssh_manifest(package, findings);
+	}
 	let expected_location = if package.name.as_str() == XTASK {
 		path == root.join(XTASK).join(MANIFEST_NAME)
 	} else {
@@ -241,6 +246,30 @@ fn check_package(root: &Path, package: &Package, findings: &mut Findings) {
 		for target in targets.values().filter_map(Value::as_table) {
 			check_dependency_tables(path, target, findings);
 		}
+	}
+}
+
+fn check_caller_stream_ssh_manifest(package: &Package, findings: &mut Findings) {
+	let path = package.manifest_path.as_std_path();
+	for dependency in &package.dependencies {
+		if dependency.kind != DependencyKind::Development
+			&& (dependency.target.is_some() || dependency.kind != DependencyKind::Normal)
+		{
+			findings.add(
+				path,
+				format_args!(
+					"caller-stream SSH dependency {} must be target-neutral and normal",
+					dependency.name
+				),
+			);
+		}
+	}
+	if package
+		.targets
+		.iter()
+		.any(|target| target.kind.contains(&TargetKind::CustomBuild))
+	{
+		findings.add(path, "caller-stream SSH cannot have a build script");
 	}
 }
 

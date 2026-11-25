@@ -3,8 +3,11 @@
 `exacopy-ssh` is a default-off library using exact Russh 0.65.4 and
 Russh-SFTP 4.0.0. `experimental-ssh` enables it without adding a CLI command.
 The caller supplies an owned async stream; this crate performs no DNS
-lookup, direct socket connection, proxy command, shell fallback or forwarding.
-The future route owner must enforce its connection and generation policy.
+lookup or direct socket connection. It does not launch local subprocesses.
+A supported build runs with no installed `ssh`, `sshd`, `ssh-keygen` or
+`ssh-agent`, including on Windows. An actual remote connection still needs
+an SSH server offering the selected suite and SFTP subsystem. The caller
+owns the route and connection generation.
 
 The initial suite admits strict Curve25519 key exchange, an Ed25519 host
 key, AES-256-GCM and no compression. A mandatory independently supplied
@@ -80,8 +83,43 @@ SSH support tier or production qualification is claimed.
 
 The supplied-key API owns an upstream Ed25519 private key constructed from a
 zeroizing seed. It never contacts an agent or falls back to a password after
-key refusal. Key exchange remains fenced on a second KEX. The reproducible
-native test is `tests/openssh.rs`; its system-server dependency is test-only.
-Native source and raw results are retained in
+key refusal. Key exchange remains fenced on a second KEX.
+
+## Portability and independent server tests
+
+The normal experimental tests supply an in-memory SSH/SFTP peer. They run
+with the feature enabled in the native Ubuntu, macOS and Windows CI jobs, with
+no local SSH installation needed. Native CI requires the Rust target and its
+C toolchain to build the pinned Ring backend. The workspace policy checks that
+the production adapter uses target-neutral Cargo dependencies and guards
+direct process and ambient I/O references.
+
+The separate ignored OpenSSH reference test runs a private daemon over a
+connected socket. Its descriptor wiring is currently implemented for Linux
+and macOS. Windows interoperability with an independent local server has
+yet to be qualified. The fixture has no Windows OpenSSH installation or
+service prerequisite for ordinary tests.
+
+For the optional daemon test, use a disposable environment with a normal
+unprivileged account and an available loopback socket. Supply these
+test-only variables before running the test.
+
+| Variable | Absolute path |
+| --- | --- |
+| `EXACOPY_TEST_OPENSSH_SSHD` | The reference server executable |
+| `EXACOPY_TEST_OPENSSH_KEYGEN` | The key generator for synthetic Ed25519 keys |
+| `EXACOPY_TEST_OPENSSH_ID` | The fixture account query tool supporting `-u` and `-un` |
+| `EXACOPY_TEST_OPENSSH_ROOT` | A writable scratch directory with a literal ASCII path and no spaces or config metacharacters |
+| `EXACOPY_TEST_OPENSSH_SYSTEM_CONFIG_DIR` | The selected daemon's system configuration directory, which must have no `sshrc` |
+
+```sh
+cargo test --locked -p exacopy-ssh --features experimental-ssh --test openssh -- --ignored --nocapture
+```
+
+The daemon receives an explicit temporary configuration and uses its in-process
+read-only SFTP subsystem. The fixture creates ephemeral keys and files and
+avoids system service changes. Missing tools or an unsuitable fixture profile
+fail this opt-in check. Record the specific server build and OS when retaining
+the result. Earlier Apple OpenSSH source and raw results are retained in
 `/private/tmp/exacopy-ssh-key-auth.xUpRlk`, with an integrated root run at
 `/private/tmp/exacopy-openssh-root-native.log`.
