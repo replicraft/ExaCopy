@@ -100,13 +100,48 @@ including `com.apple.provenance`, cannot be ignored to obtain a passing copy.
 
 **Remaining full-port seams**
 
-- **Owning source and stage capabilities.** `PinnedSource` borrows its root
-  and entry name; the writer lifecycle also retains borrowed locations.
-  ExaCopy constructs names during open/create and returns owning capabilities.
-  An owned-name/owned-root variant or a consumer scope redesign is needed;
-  a wrapper must not become self-referential or use unsafe lifetime extension.
-  The current `Lease` already owns its independently opened descriptor and
-  named binding, so lease ownership is no longer a missing capability.
+- **Source lifetime and same-descriptor observations.** `PinnedSource`
+  already opens once under disabled materialization, captures scalar metadata,
+  checks held and named identity including birth time, and supports exact
+  positioned reads and EOF revalidation. It borrows both the root and the
+  `EntryName`. ExaCopy's source view borrows the admitted directory lease and
+  can outlive a name converted locally to the library's type. The source
+  capability needs an owned component and either a borrowed authorized
+  directory view or an owned directory adopted from the held handle. It also
+  needs a scoped observation of its exact read descriptor, or equivalent
+  methods for current timestamps and ACL/GUID/xattr/fork observations.
+  ExaCopy compares the access time captured at admission with the live access
+  time before content reads. It checks strict inventory between revalidations
+  on that same inode. A second open by name supplies different observations.
+- **Source admission and read diagnostics.** A delegated regular open must
+  let ExaCopy enforce its stricter pre-open checks and tie the held descriptor
+  to that pre-open evidence. `Directory::open_file` repeats lookup around
+  its open but represents both wrong kind and changed binding as
+  `InvalidData`. Its `NotFound` may come from the open or the final lookup,
+  where ExaCopy requires a source-change result. A typed, phase-aware
+  checked open should distinguish missing at initial lookup, ineligible
+  entry, changed binding, and native failures with their original errno.
+  For positioned reads and EOF probes, preserve the failing byte offset
+  after short progress and distinguish read errors, data beyond captured EOF,
+  and source changes. `PinnedSource` currently omits the failing read offset,
+  reports extra EOF data as `Changed`, and checks for source changes after a
+  failed read before reporting the read error. Delegation requires access to
+  the separate observations or a primitive that leaves ExaCopy's error
+  ordering intact.
+- **Lease descriptor access and stage lifetime.** `Lease` already owns the
+  independently opened descriptor and any named binding. It verifies process
+  ownership and explicitly unlocks on drop in that process. Its descriptor is
+  private. ExaCopy uses the locked descriptor itself for strict authority
+  checks and as the relative parent for both a shared read root and a source
+  under a destination's exclusive lease. A process-checked view of the
+  leased descriptor or equivalent scoped observation and relative operations
+  would permit those uses without a parallel directory handle. Acquisition
+  needs a way to apply strict directory admission to the independently
+  opened handle before locking and recheck it after locking. The writer
+  lifecycle separately retains borrowed locations where ExaCopy constructs
+  the name during creation and returns the capability. Its post-metadata
+  and post-publication observations must support the complete ExaCopy
+  predicate beyond the library's baseline writer checks.
 - **Appendable private records.** `PrivateWriter` has a declared final extent
   and performs its full-file barrier while consuming and closing the writer.
   The authoritative journal needs a confirmed new empty inode, bounded growth,
@@ -115,12 +150,6 @@ including `com.apple.provenance`, cannot be ignored to obtain a passing copy.
   can expose generic bounded private-file operations; ExaCopy keeps frame
   encoding, accepted-prefix validation, chain heads and intent ordering.
   Read-only recovery inventory alone does not provide append authority.
-- **Metadata of the actual held source.** Scalar captured source metadata is
-  available, but the consumer must also bracket current timestamps and strict
-  ACL/GUID/xattr/fork observations against that same held inode. A scoped safe
-  observation method can supply this without opening a second source by name.
-  Post-metadata and post-publication checks also retain the complete ExaCopy
-  predicate rather than only the library's baseline writer checks.
 - **Birth-time changes during metadata application.** APFS can change birth
   time when applying an earlier modification time. The companion returns the
   resulting live identity. ExaCopy's existing prepared-stage journal identity
@@ -203,8 +232,9 @@ with ExaCopy's bounded short-I/O loops.
 4. **Shared and exclusive advisory leases.** Provide nonblocking typed
    acquisition, busy results, revalidation and process-aware release.
    Independently opened handles and inherited handles need explicit
-   lifetime semantics. Document that advisory leases require cooperating
-   writers. They cannot establish a snapshot or exclude arbitrary writers.
+   lifetime semantics. Allow the authorized consumer to observe and use
+   the exact locked directory for dependent relative operations. Advisory
+   leases require cooperating writers and do not establish a snapshot.
 
 5. **Dataless behavior.** Permit metadata observation and bounded file
    access with automatic materialization disabled. Establish and verify
@@ -217,10 +247,13 @@ with ExaCopy's bounded short-I/O loops.
 6. **Pinned source reads.** Open a selected regular file read-only under
    a held root, record its logical length and metadata, and provide bounded
    positioned reads that handle short progress and bounded interruption
-   internally, returning exact success or typed bounds, EOF, I/O and change
-   failures. Revalidate the held object and selected name before and after
-   relevant operations. Describe the observation as live unless the
-   library supplies an independently qualified immutable view.
+   internally. Retain the first offset without confirmed read progress on
+   failure, including premature EOF. Let the caller validate its pre-open
+   evidence against the exact opened handle and observe that handle without
+   another named open. Revalidate the held object and selected name before
+   and after relevant operations. Expose extra data at the captured EOF
+   separately from an identity or stamp change. Describe the observation as
+   live unless the library supplies an independently qualified immutable view.
 
 7. **General metadata observations.** Expose type, length, owner/group,
    permissions, link count, BSD flags, access/modification/change/birth
@@ -326,6 +359,17 @@ Test thread-policy restoration after success, failure and unwind.
 Genuine dataless files and cross-volume substitutions require additional
 native qualification fixtures. Their absence remains visible in the results.
 
+For source and lease delegation, exercise name ownership after the caller
+drops the converted component and relative reads after an authorized parent
+is renamed. Verify that one opened source supplies captured and live timestamps
+and strict inventory, including an atime change before reading, a visible xattr
+and a present empty resource fork. Check initial absence, native open denial,
+and disappearance or rebinding after open with separate expected outcomes.
+Exercise short progress followed by EOF or native error at the exact failed
+position and distinguish data beyond captured EOF from changed identity.
+Verify independent shared readers, a borrowed exclusive lease, contention,
+wrong-process refusal and release while a descriptor alias remains alive.
+
 Include independent native observations for metadata and identities.
 Use synthetic redistributable images to compare mounted observations
 with Pomologie's raw reader where its profile admits them. Preserve
@@ -385,8 +429,14 @@ Cargo dependency resolution needs the sibling manifest even when the
 current build target excludes macOS code. The isolated rebuild runner
 verifies and extracts both repositories into independent sibling layouts.
 The current macOS local-path pair differs in executable digest and retains
-a failed reproducibility result; remote provisioning of the pinned revision
-is also unverified. See the [build evidence scope](../supply-chain/README.md#unsigned-cli-rebuild-evidence).
+a failed reproducibility result. On 2026-11-25, the public repository's HEAD
+and main still resolved to `b5f0d82eaae6795e8a80108b5fdcda78f8a742c9`.
+A disposable fetch of the pinned `8f19cd3` failed with `not our ref`.
+Remote provisioning is blocked until that exact source is published;
+the local checkout remains usable and no publication was performed.
+The raw checks are retained at
+`/var/folders/k_/xqf_xh_1491ffqbnfjtfkbr40000gn/T/exacopy-apfs-remote-status-m0g0f3mo`.
+See the [build evidence scope](../supply-chain/README.md#unsigned-cli-rebuild-evidence).
 
 **Commit-pinned Git integration**
 
