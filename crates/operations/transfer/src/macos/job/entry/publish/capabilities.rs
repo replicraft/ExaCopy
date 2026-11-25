@@ -4,28 +4,30 @@ use exacopy_journal::{
 	OwnerError, StreamDigest, SyncedFrame,
 };
 use exacopy_model::{CopyBinding, PublishNoClobber};
-use exacopy_platform::macos::publication::PublishError;
-
-use super::DarwinCopyFailure;
 
 /// A single unwritten stage bound to a strictly admitted source.
 pub(super) trait PreparedCopy {
-	type Verified: VerifiedCopy;
+	type Error;
+	type PublishError;
+	type Verified: VerifiedCopy<Error = Self::Error, PublishError = Self::PublishError>;
 
 	fn binding(&self) -> CopyBinding;
-	fn check_source_before_read(&self) -> Result<(), DarwinCopyFailure>;
-	fn verify(self, scratch: &mut [u8]) -> Result<Self::Verified, DarwinCopyFailure>;
+	fn check_source_before_read(&self) -> Result<(), Self::Error>;
+	fn verify(self, scratch: &mut [u8]) -> Result<Self::Verified, Self::Error>;
 }
 
 /// The same stage after writer closure, independent read-back and required metadata.
 pub(super) trait VerifiedCopy {
-	fn observe_streams(&self) -> Result<VerifiedStreams, DarwinCopyFailure>;
-	fn required_metadata(&self) -> Result<DarwinRequiredMetadata, DarwinCopyFailure>;
-	fn check_source_after_metadata(&self) -> Result<(), DarwinCopyFailure>;
+	type Error;
+	type PublishError;
+
+	fn observe_streams(&self) -> Result<VerifiedStreams, Self::Error>;
+	fn required_metadata(&self) -> Result<DarwinRequiredMetadata, Self::Error>;
+	fn check_source_after_metadata(&self) -> Result<(), Self::Error>;
 	fn publish_exclusively(
 		self,
 		authorization: PublishNoClobber,
-	) -> Result<PublishedEvidence, PublicationFailure>;
+	) -> Result<PublishedEvidence, PublicationFailure<Self::PublishError>>;
 }
 
 pub(super) struct VerifiedStreams {
@@ -40,8 +42,8 @@ pub(super) struct PublishedEvidence {
 	pub(super) barriers: Result<DarwinPublicationBarriers, OwnerError>,
 }
 
-pub(super) struct PublicationFailure {
-	pub(super) cause: Box<PublishError>,
+pub(super) struct PublicationFailure<E> {
+	pub(super) cause: E,
 	pub(super) effect: FailedEffect,
 }
 
@@ -65,5 +67,7 @@ pub(super) trait PublicationJournal {
 
 /// Persists one immutable receipt in the leased private job.
 pub(super) trait ReceiptStore {
-	fn persist(&self, bytes: &[u8]) -> Result<(), DarwinCopyFailure>;
+	type Error;
+
+	fn persist(&self, bytes: &[u8]) -> Result<(), Self::Error>;
 }

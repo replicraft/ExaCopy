@@ -1,30 +1,36 @@
+use exacopy_endpoint::UnixComponent;
 use exacopy_journal::{
-	DarwinFileIdentity, DarwinRootBinding, DarwinVolumeIdentity, ObservedTimestamp, OwnerError,
-	OwnerTimestamp, RootCapabilityId,
+	DarwinFileIdentity, DarwinRootBinding, DarwinVolumeIdentity, OwnerError, OwnerTimestamp,
+	RootCapabilityId,
 };
-use exacopy_platform::macos::{ManagedObjectIdentity, ManagedRegularFile, ManagedTimestamp};
+use exacopy_platform::macos::{
+	ManagedObjectIdentity, ManagedReadError, ManagedRegularFile, ManagedTimestamp,
+};
 
 use super::{JobAdmissionError, JobBootstrap};
 use crate::macos::plan::{DestinationPlanBinding, SourcePlanBinding};
+
+mod engine;
+
+use engine::{
+	AdmissionFailure, ReadOnlySource, SourceIdentities, SourceMetadataObservation, Timestamp,
+};
 
 pub(super) fn admit_destination(
 	planned: DestinationPlanBinding<'_>,
 	request: JobBootstrap<'_, '_>,
 ) -> Result<DarwinRootBinding, JobAdmissionError> {
-	if request.destination_root_id != planned.root_id {
-		return Err(JobAdmissionError::DestinationMismatch);
-	}
-	let observed = request
-		.container
-		.observe_empty_job_destination(planned.component)
-		.map_err(JobAdmissionError::Destination)?;
-	let identity = native_identity(observed).map_err(JobAdmissionError::Identity)?;
-	if identity != planned.root_identity {
-		return Err(JobAdmissionError::DestinationMismatch);
-	}
-	Ok(DarwinRootBinding {
-		id: request.destination_root_id,
-		identity,
+	engine::bind_destination(planned, request.destination_root_id, |component| {
+		let observed = request
+			.container
+			.observe_empty_job_destination(component)
+			.map_err(AdmissionFailure::Adapter)?;
+		native_identity(observed).map_err(AdmissionFailure::Identity)
+	})
+	.map_err(|failure| match failure {
+		AdmissionFailure::Mismatch => JobAdmissionError::DestinationMismatch,
+		AdmissionFailure::Identity(error) => JobAdmissionError::Identity(error),
+		AdmissionFailure::Adapter(error) => JobAdmissionError::Destination(error),
 	})
 }
 
@@ -33,41 +39,55 @@ pub(super) fn check_source(
 	source: &ManagedRegularFile<'_>,
 	source_root_id: RootCapabilityId,
 ) -> Result<(), JobAdmissionError> {
-	if (source_root_id, source.component(), source.length())
-		!= (planned.root_id, planned.component, planned.length)
-	{
-		return Err(JobAdmissionError::SourceMismatch);
-	}
-	let identities = source
-		.observe_identities()
-		.map_err(JobAdmissionError::Source)?;
-	let root = native_identity(identities.parent).map_err(JobAdmissionError::Identity)?;
-	let file = native_identity(identities.file).map_err(JobAdmissionError::Identity)?;
-	if (root, file) != (planned.root_identity, planned.file_identity) {
-		return Err(JobAdmissionError::SourceMismatch);
-	}
-	let live = source
-		.check_pre_read_basic_metadata()
-		.map_err(JobAdmissionError::Source)?;
-	let change_time = source.change_time().map_err(JobAdmissionError::Source)?;
-	let metadata = planned.metadata;
-	if (live.uid(), live.gid(), live.mode())
-		!= (
-			metadata.uid().get(),
-			metadata.gid(),
-			u32::from(metadata.mode()),
-		)
-		|| !same_time(live.atime(), metadata.accessed_at())
-		|| !same_time(live.mtime(), metadata.modified_at())
-		|| !same_time(change_time, metadata.changed_at())
-	{
-		return Err(JobAdmissionError::SourceMismatch);
-	}
-	Ok(())
+	engine::check_source(planned, source, source_root_id).map_err(|failure| match failure {
+		AdmissionFailure::Mismatch => JobAdmissionError::SourceMismatch,
+		AdmissionFailure::Identity(error) => JobAdmissionError::Identity(error),
+		AdmissionFailure::Adapter(error) => JobAdmissionError::Source(error),
+	})
 }
 
-fn same_time(native: ManagedTimestamp, planned: ObservedTimestamp) -> bool {
-	(native.seconds(), native.nanoseconds()) == (planned.seconds(), planned.nanoseconds())
+impl ReadOnlySource for ManagedRegularFile<'_> {
+	type Error = ManagedReadError;
+
+	fn component(&self) -> UnixComponent<'_> {
+		self.component()
+	}
+
+	fn length(&self) -> u64 {
+		self.length()
+	}
+
+	fn observe_identities(&self) -> Result<SourceIdentities, AdmissionFailure<Self::Error>> {
+		let identities = self
+			.observe_identities()
+			.map_err(AdmissionFailure::Adapter)?;
+		Ok(SourceIdentities {
+			root: native_identity(identities.parent).map_err(AdmissionFailure::Identity)?,
+			file: native_identity(identities.file).map_err(AdmissionFailure::Identity)?,
+		})
+	}
+
+	fn check_pre_read_metadata(&self) -> Result<SourceMetadataObservation, Self::Error> {
+		let observed = self.check_pre_read_basic_metadata()?;
+		Ok(SourceMetadataObservation {
+			uid: observed.uid(),
+			gid: observed.gid(),
+			mode: observed.mode(),
+			accessed: observed_time(observed.atime()),
+			modified: observed_time(observed.mtime()),
+		})
+	}
+
+	fn change_time(&self) -> Result<Timestamp, Self::Error> {
+		self.change_time().map(observed_time)
+	}
+}
+
+fn observed_time(time: ManagedTimestamp) -> Timestamp {
+	Timestamp {
+		seconds: time.seconds(),
+		nanoseconds: time.nanoseconds(),
+	}
 }
 
 pub(in crate::macos) fn native_identity(

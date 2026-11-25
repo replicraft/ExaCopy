@@ -11,18 +11,7 @@ use exacopy_platform::macos::staging::jobs::{JobError, JobName};
 use crate::macos::StageTransferError;
 use crate::macos::receipt::DarwinCopyReceiptError;
 
-/// The last established namespace boundary of the managed APFS copy.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum PublicationProgress {
-	/// The coordinator has only operated on the private job.
-	Private,
-	/// Intent passed its barrier. Recovery must resolve any unobserved namespace effect.
-	IntentSynchronized,
-	/// Exclusive rename is known to have succeeded.
-	Renamed,
-	/// The receipt file and exact journal commitment passed their barriers.
-	ReceiptCommitted,
-}
+use super::engine::PublicationProgress;
 
 /// A failed copy with its retained private job and last established publication boundary.
 #[derive(Debug)]

@@ -4,14 +4,11 @@ use std::io;
 
 use exacopy_journal::frame::{Frame, FrameKind};
 use exacopy_journal::{
-	DarwinNamespaceObservation, DarwinPublicationBarriers, DarwinPublicationOutcome,
-	DarwinPublishObserved, DarwinRequiredMetadata, DurableJournal, DurableJournalError,
-	OwnerTimestamp, StreamDigest, SyncedFrame,
+	DarwinNamespaceObservation, DarwinPhaseError, DarwinPublicationBarriers,
+	DarwinPublicationOutcome, DarwinPublishIntent, DarwinPublishObserved, DarwinRequiredMetadata,
+	DurableJournal, DurableJournalError, OwnerTimestamp, StreamDigest, SyncedFrame,
 };
 use exacopy_model::{CopyBinding, PublishNoClobber};
-use exacopy_platform::macos::ManagedReadError;
-use exacopy_platform::macos::publication::PublishError;
-use exacopy_platform::macos::staging::jobs::JobError;
 
 use crate::macos::job::tests::with_publication_fixture;
 use crate::macos::receipt::DarwinCopyReceipt;
@@ -20,7 +17,22 @@ use super::capabilities::{
 	FailedEffect, PreparedCopy, PublicationFailure, PublicationJournal, PublishedEvidence,
 	ReceiptStore, VerifiedCopy, VerifiedStreams,
 };
-use super::{DarwinCopyFailure, PreparedEvidence, PublicationProgress, engine};
+use super::engine::{self, CoordinatorError, CopyFailure};
+use super::{PreparedEvidence, PublicationProgress};
+
+#[derive(Debug)]
+struct SourceChanged;
+
+#[derive(Debug)]
+enum PublishCause {
+	Conflict,
+	Renamed,
+}
+
+#[derive(Debug)]
+struct ReceiptWriteFailed;
+
+type ScriptFailure = CopyFailure<SourceChanged, PublishCause, ReceiptWriteFailed>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Step {
@@ -38,6 +50,8 @@ enum Scenario {
 	SourceChanged,
 	IntentBarrierFailed,
 	WrongIntentToken,
+	WrongIntentPayload,
+	RenamedRecordingFailed,
 	Conflict,
 	ReceiptFailed,
 }
@@ -57,6 +71,7 @@ fn coordinator_refuses_publication_without_current_source_and_exact_synced_inten
 		(Scenario::SourceChanged, false),
 		(Scenario::IntentBarrierFailed, true),
 		(Scenario::WrongIntentToken, true),
+		(Scenario::WrongIntentPayload, true),
 	] {
 		run(scenario, |result, progress, script| {
 			let mut expected = THROUGH_METADATA.to_vec();
@@ -64,20 +79,30 @@ fn coordinator_refuses_publication_without_current_source_and_exact_synced_inten
 				expected.push(Step::Append(FrameKind::PublishIntent));
 			}
 			match scenario {
-				Scenario::SourceChanged => assert!(matches!(
-					result,
-					Err(DarwinCopyFailure::Source(ManagedReadError::SourceChanged))
-				)),
+				Scenario::SourceChanged => {
+					assert!(matches!(result, Err(CopyFailure::Adapter(SourceChanged))))
+				}
 				Scenario::IntentBarrierFailed => assert!(matches!(
 					result,
-					Err(DarwinCopyFailure::Journal {
+					Err(CopyFailure::Coordinator(CoordinatorError::Journal {
 						kind: FrameKind::PublishIntent,
 						error: DurableJournalError::Sync(_),
-					})
+					}))
 				)),
 				Scenario::WrongIntentToken => {
-					assert!(matches!(result, Err(DarwinCopyFailure::UnexpectedBarrier)));
+					assert!(matches!(
+						result,
+						Err(CopyFailure::Coordinator(
+							CoordinatorError::UnexpectedBarrier
+						))
+					));
 				}
+				Scenario::WrongIntentPayload => assert!(matches!(
+					result,
+					Err(CopyFailure::Coordinator(CoordinatorError::Record(
+						DarwinPhaseError::BindingMismatch
+					)))
+				)),
 				_ => unreachable!("non-refusal scenario in intent refusal test"),
 			}
 			assert_eq!(progress, PublicationProgress::Private, "{scenario:?}");
@@ -91,8 +116,10 @@ fn coordinator_records_conflict_and_keeps_receipt_uncommitted() {
 	run(Scenario::Conflict, |result, progress, script| {
 		assert!(matches!(
 			result,
-			Err(DarwinCopyFailure::Publish { error, recording: None })
-				if matches!(*error, PublishError::Conflict { .. })
+			Err(CopyFailure::Publish {
+				error: PublishCause::Conflict,
+				recording: None
+			})
 		));
 		assert_eq!(progress, PublicationProgress::IntentSynchronized);
 		assert_eq!(
@@ -121,6 +148,43 @@ fn coordinator_records_conflict_and_keeps_receipt_uncommitted() {
 }
 
 #[test]
+fn confirmed_rename_survives_failed_outcome_recording() {
+	run(
+		Scenario::RenamedRecordingFailed,
+		|result, progress, script| {
+			let Err(CopyFailure::Publish {
+				error: PublishCause::Renamed,
+				recording: Some(recording),
+			}) = result
+			else {
+				panic!("failed recording must retain the original rename evidence");
+			};
+			assert!(matches!(
+				*recording,
+				CoordinatorError::Journal {
+					kind: FrameKind::PublishObserved,
+					error: DurableJournalError::Sync(_),
+				}
+			));
+			assert_eq!(progress, PublicationProgress::Renamed);
+			assert_eq!(
+				*script.steps.borrow(),
+				[
+					THROUGH_METADATA,
+					&[
+						Step::Append(FrameKind::PublishIntent),
+						Step::Publish,
+						Step::Append(FrameKind::PublishObserved),
+					],
+				]
+				.concat()
+			);
+			assert!(script.receipt.borrow().is_empty());
+		},
+	);
+}
+
+#[test]
 fn coordinator_commits_only_after_receipt_persistence() {
 	for scenario in [Scenario::Success, Scenario::ReceiptFailed] {
 		run(scenario, |result, progress, script| {
@@ -140,7 +204,10 @@ fn coordinator_commits_only_after_receipt_persistence() {
 					expected.push(Step::Append(FrameKind::ReceiptCommitted));
 				}
 				Scenario::ReceiptFailed => {
-					assert!(matches!(result, Err(DarwinCopyFailure::PersistReceipt(_))));
+					assert!(matches!(
+						result,
+						Err(CopyFailure::PersistReceipt(ReceiptWriteFailed))
+					));
 					assert_eq!(progress, PublicationProgress::Renamed);
 					assert!(script.receipt.borrow().is_empty());
 				}
@@ -173,36 +240,41 @@ struct ScriptedCopy<'test> {
 }
 
 impl PreparedCopy for ScriptedCopy<'_> {
+	type Error = SourceChanged;
+	type PublishError = PublishCause;
 	type Verified = Self;
 
 	fn binding(&self) -> CopyBinding {
 		self.binding
 	}
 
-	fn check_source_before_read(&self) -> Result<(), DarwinCopyFailure> {
+	fn check_source_before_read(&self) -> Result<(), SourceChanged> {
 		self.script.step(Step::SourceBeforeRead);
 		Ok(())
 	}
 
-	fn verify(self, _scratch: &mut [u8]) -> Result<Self, DarwinCopyFailure> {
+	fn verify(self, _scratch: &mut [u8]) -> Result<Self, SourceChanged> {
 		self.script.step(Step::Verified);
 		Ok(self)
 	}
 }
 
 impl VerifiedCopy for ScriptedCopy<'_> {
-	fn observe_streams(&self) -> Result<VerifiedStreams, DarwinCopyFailure> {
+	type Error = SourceChanged;
+	type PublishError = PublishCause;
+
+	fn observe_streams(&self) -> Result<VerifiedStreams, SourceChanged> {
 		Ok(VerifiedStreams { ..self.streams })
 	}
 
-	fn required_metadata(&self) -> Result<DarwinRequiredMetadata, DarwinCopyFailure> {
+	fn required_metadata(&self) -> Result<DarwinRequiredMetadata, SourceChanged> {
 		Ok(self.metadata)
 	}
 
-	fn check_source_after_metadata(&self) -> Result<(), DarwinCopyFailure> {
+	fn check_source_after_metadata(&self) -> Result<(), SourceChanged> {
 		self.script.step(Step::SourceAfterMetadata);
 		if matches!(self.script.scenario, Scenario::SourceChanged) {
-			return Err(DarwinCopyFailure::Source(ManagedReadError::SourceChanged));
+			return Err(SourceChanged);
 		}
 		Ok(())
 	}
@@ -210,14 +282,25 @@ impl VerifiedCopy for ScriptedCopy<'_> {
 	fn publish_exclusively(
 		self,
 		authorization: PublishNoClobber,
-	) -> Result<PublishedEvidence, PublicationFailure> {
+	) -> Result<PublishedEvidence, PublicationFailure<Self::PublishError>> {
 		assert_eq!(authorization.binding(), self.binding);
 		self.script.step(Step::Publish);
-		if matches!(self.script.scenario, Scenario::Conflict) {
-			return Err(PublicationFailure {
-				cause: Box::new(PublishError::Conflict { policy_error: None }),
-				effect: FailedEffect::Conflict,
-			});
+		match self.script.scenario {
+			Scenario::Conflict => {
+				return Err(PublicationFailure {
+					cause: PublishCause::Conflict,
+					effect: FailedEffect::Conflict,
+				});
+			}
+			Scenario::RenamedRecordingFailed => {
+				return Err(PublicationFailure {
+					cause: PublishCause::Renamed,
+					effect: FailedEffect::Renamed {
+						target: Some(Ok(self.streams.stage)),
+					},
+				});
+			}
+			_ => {}
 		}
 		Ok(PublishedEvidence {
 			target: Ok(self.streams.stage),
@@ -236,15 +319,22 @@ impl PublicationJournal for Journal<'_> {
 	fn append(
 		&mut self,
 		kind: FrameKind,
-		payload: Vec<u8>,
+		mut payload: Vec<u8>,
 	) -> Result<(Frame, SyncedFrame), DurableJournalError> {
 		self.script.step(Step::Append(kind));
-		if kind == FrameKind::PublishIntent
-			&& matches!(self.script.scenario, Scenario::IntentBarrierFailed)
-		{
+		if matches!(
+			(kind, self.script.scenario),
+			(FrameKind::PublishIntent, Scenario::IntentBarrierFailed)
+				| (FrameKind::PublishObserved, Scenario::RenamedRecordingFailed)
+		) {
 			return Err(DurableJournalError::Sync(io::Error::other(
 				"fixture barrier failure",
 			)));
+		}
+		if kind == FrameKind::PublishIntent
+			&& matches!(self.script.scenario, Scenario::WrongIntentPayload)
+		{
+			substitute_metadata_digest(&mut payload);
 		}
 		let (frame, synced) = self.journal.append_frame(kind, payload)?;
 		if kind == FrameKind::PublishObserved {
@@ -262,11 +352,27 @@ impl PublicationJournal for Journal<'_> {
 	}
 }
 
+fn substitute_metadata_digest(payload: &mut [u8]) {
+	let digest = *DarwinPublishIntent::decode(payload)
+		.unwrap()
+		.metadata_digest()
+		.as_bytes();
+	let offset = payload
+		.windows(digest.len())
+		.position(|window| window == digest)
+		.expect("the canonical intent contains its metadata digest");
+	payload[offset] ^= 1;
+	let substituted = DarwinPublishIntent::decode(payload).unwrap();
+	assert_ne!(substituted.metadata_digest().as_bytes(), &digest);
+}
+
 impl ReceiptStore for Script {
-	fn persist(&self, bytes: &[u8]) -> Result<(), DarwinCopyFailure> {
+	type Error = ReceiptWriteFailed;
+
+	fn persist(&self, bytes: &[u8]) -> Result<(), ReceiptWriteFailed> {
 		self.step(Step::Persist);
 		if matches!(self.scenario, Scenario::ReceiptFailed) {
-			return Err(DarwinCopyFailure::PersistReceipt(JobError::IdentityChanged));
+			return Err(ReceiptWriteFailed);
 		}
 		self.receipt.replace(bytes.to_vec());
 		Ok(())
@@ -275,7 +381,7 @@ impl ReceiptStore for Script {
 
 fn run(
 	scenario: Scenario,
-	check: impl FnOnce(Result<DarwinCopyReceipt<'_>, DarwinCopyFailure>, PublicationProgress, &Script),
+	check: impl FnOnce(Result<DarwinCopyReceipt<'_>, ScriptFailure>, PublicationProgress, &Script),
 ) {
 	with_publication_fixture(|entry, path| {
 		let script = Script {

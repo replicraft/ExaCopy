@@ -1,30 +1,23 @@
-use std::mem;
-
-use exacopy_endpoint::UnixComponent;
-use exacopy_journal::frame::{Frame, FrameKind};
-use exacopy_journal::{
-	DarwinEntryPreparation, DarwinEntryPrepared, DarwinRootBinding, DarwinSourceMetadata,
-	DarwinSourceTimes, DarwinSourceView, DarwinStageId, DarwinStageObservation, DurableJournal,
-	ObservedTimestamp, OwnerTimestamp, SyncedFrame, TargetObservation,
-};
-use exacopy_model::{EntryId, RunEpoch};
+use exacopy_journal::frame::Frame;
+use exacopy_journal::{DarwinEntryPrepared, DarwinStageId, DurableJournal, SyncedFrame};
 use exacopy_platform::macos::ManagedRegularFile;
 use exacopy_platform::macos::staging::jobs::{JobDirectory, JobName};
-use exacopy_platform::macos::staging::{StageBindingContext, WriteStage};
+use exacopy_platform::macos::staging::{
+	StageBindingContext, StageDirectory, StageError, WriteStage,
+};
 
-use super::super::plan::{DarwinCopyPlan, SourcePlanBinding};
+use super::super::plan::DarwinCopyPlan;
+use super::PreparedDarwinJob;
 use super::admission::{check_source, native_identity};
-use super::{PreparedDarwinJob, STAGE_PAYLOAD};
 
+mod engine;
 mod error;
 mod publish;
 
+use engine::{ObservedStage, PrivateStage, StageAdmissionFailure, StageRequest};
+
 pub use error::{EntryPreparationError, EntryPreparationFailure};
 pub use publish::{DarwinCopyError, DarwinCopyFailure, PublicationProgress};
-
-// This preserve profile has exactly one model entry. Its persisted entry UUID
-// comes from the independent plan and is copied exactly into kind 2.
-const MODEL_ENTRY: EntryId = EntryId::new(1);
 
 /// The private unwritten stage and synchronized kind-2 evidence for one entry.
 #[derive(Debug)]
@@ -101,88 +94,55 @@ impl PreparedDarwinJob<'_> {
 		&mut self,
 		operation: impl FnOnce(&mut PreparedDarwinEntry<'_>) -> T,
 	) -> Result<T, EntryPreparationFailure> {
-		if mem::replace(&mut self.entry_attempted, true) {
-			return Err(EntryPreparationFailure::AlreadyAttempted);
-		}
 		let plan = self.plan;
-		let source = source_view(plan.source())?;
-		let target = plan.destination().component;
-		let component =
-			UnixComponent::new(STAGE_PAYLOAD).map_err(EntryPreparationFailure::StageComponent)?;
-		let context = StageBindingContext::new(
-			self.job.name().job_id(),
-			MODEL_ENTRY,
-			RunEpoch::new(plan.attempt().epoch.get()),
-		);
+		let request = engine::begin(&mut self.entry_attempted, plan, self.job.name().job_id())?;
 		let stage = self
 			.job
 			.create_stage_directory()
 			.map_err(EntryPreparationFailure::Directory)?;
-		let writer = stage
-			.create_file(component, target, context, source.length())
-			.map_err(EntryPreparationFailure::Stage)?;
-		let stage_identity = writer
-			.observe_identity()
-			.map_err(EntryPreparationFailure::Stage)?;
-		let directory_identity = stage
-			.observe_identity()
-			.map_err(EntryPreparationFailure::Stage)?;
-		let preparation = DarwinEntryPrepared::new(
-			&self.preparation,
-			plan.attempt().entry,
-			DarwinEntryPreparation {
-				source,
-				stage: DarwinStageObservation {
-					id: DarwinStageId::from_bytes(*writer.identity().stage_id_bytes()),
-					directory: native_identity(directory_identity)?,
-					identity: native_identity(stage_identity)?,
-					component,
-				},
-				target_component: target,
-				target_observation: TargetObservation::AbsentObserved,
-			},
-		)?;
-		let (frame, synced) = self
-			.journal
-			.append_frame(FrameKind::EntryPrepared, preparation.encode())
-			.map_err(EntryPreparationFailure::Journal)?;
+		let prepared = engine::prepare(request, &self.preparation, &stage, &mut self.journal)?;
 		let mut entry = PreparedDarwinEntry {
-			writer: Some(writer),
+			writer: Some(prepared.writer),
 			source: self.source,
 			journal: &mut self.journal,
 			plan,
 			progress: PublicationProgress::Private,
 			job: self.job,
-			preparation,
-			frame,
-			synced,
+			preparation: prepared.preparation,
+			frame: prepared.frame,
+			synced: prepared.synced,
 		};
 		Ok(operation(&mut entry))
 	}
 }
 
-fn source_view(
-	source: SourcePlanBinding<'_>,
-) -> Result<DarwinSourceView<'_>, EntryPreparationFailure> {
-	let metadata = source.metadata;
-	Ok(DarwinSourceView::new(
-		DarwinRootBinding {
-			id: source.root_id,
-			identity: source.root_identity,
-		},
-		source.component,
-		source.file_identity,
-		source.length,
-		DarwinSourceTimes {
-			accessed_at: owner_time(metadata.accessed_at())?,
-			modified_at: owner_time(metadata.modified_at())?,
-			changed_at: owner_time(metadata.changed_at())?,
-		},
-		DarwinSourceMetadata::new(u32::from(metadata.mode()), metadata.uid(), metadata.gid())
-			.map_err(EntryPreparationFailure::Metadata)?,
-	)?)
-}
+impl PrivateStage for StageDirectory<'_> {
+	type Error = StageError;
+	type Writer<'stage>
+		= WriteStage<'stage>
+	where
+		Self: 'stage;
 
-fn owner_time(timestamp: ObservedTimestamp) -> Result<OwnerTimestamp, exacopy_journal::OwnerError> {
-	OwnerTimestamp::new(timestamp.seconds(), timestamp.nanoseconds())
+	fn create<'stage>(
+		&'stage self,
+		request: &StageRequest<'stage>,
+	) -> Result<ObservedStage<Self::Writer<'stage>>, StageAdmissionFailure<Self::Error>> {
+		let context = StageBindingContext::new(request.job, request.entry, request.epoch);
+		let writer = self
+			.create_file(request.component, request.target, context, request.length)
+			.map_err(StageAdmissionFailure::Adapter)?;
+		let observed_file = writer
+			.observe_identity()
+			.map_err(StageAdmissionFailure::Adapter)?;
+		let observed_directory = self
+			.observe_identity()
+			.map_err(StageAdmissionFailure::Adapter)?;
+		Ok(ObservedStage {
+			id: DarwinStageId::from_bytes(*writer.identity().stage_id_bytes()),
+			directory: native_identity(observed_directory)
+				.map_err(StageAdmissionFailure::Observation)?,
+			identity: native_identity(observed_file).map_err(StageAdmissionFailure::Observation)?,
+			writer,
+		})
+	}
 }

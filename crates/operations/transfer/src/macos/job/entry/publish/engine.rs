@@ -5,19 +5,33 @@ use exacopy_journal::{
 	DarwinDurabilityRecorded, DarwinFileIdentity, DarwinMetadataRecorded,
 	DarwinNamespaceObservation, DarwinPhaseError, DarwinPublicationNames, DarwinPublicationOutcome,
 	DarwinPublishIntent, DarwinPublishObserved, DarwinReceiptCommitted, DarwinStageSealed,
-	DarwinStreamEvidence, DarwinVerificationRecorded, JournalFileBarrier, StreamLength,
-	SyncedFrame,
+	DarwinStreamEvidence, DarwinVerificationRecorded, DurableJournalError, JournalFileBarrier,
+	OwnerError, StreamLength, SyncedFrame,
 };
-use exacopy_model::{CopyBinding, CopyEffect, CopyEvent, CopySession, PublishNoClobber};
+use exacopy_model::{
+	CopyBinding, CopyEffect, CopyEvent, CopySession, PublishNoClobber, TransitionError,
+};
 
 use crate::macos::plan::DarwinCopyPlan;
-use crate::macos::receipt::{DarwinCopyReceipt, DarwinReceiptFrames};
+use crate::macos::receipt::{DarwinCopyReceipt, DarwinCopyReceiptError, DarwinReceiptFrames};
 
 use super::capabilities::{
 	FailedEffect, PreparedCopy, PublicationJournal, PublishedEvidence, ReceiptStore, VerifiedCopy,
 	VerifiedStreams,
 };
-use super::{DarwinCopyFailure, PublicationProgress};
+
+/// The last established namespace boundary of the managed APFS copy.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum PublicationProgress {
+	/// The coordinator has only operated on the private job.
+	Private,
+	/// Intent passed its barrier. Recovery must resolve any unobserved namespace effect.
+	IntentSynchronized,
+	/// Exclusive rename is known to have succeeded.
+	Renamed,
+	/// The receipt file and exact journal commitment passed their barriers.
+	ReceiptCommitted,
+}
 
 pub(super) struct PreparedEvidence<'frame, 'name> {
 	pub(super) frame: &'frame Frame,
@@ -25,25 +39,69 @@ pub(super) struct PreparedEvidence<'frame, 'name> {
 	pub(super) plan: &'frame DarwinCopyPlan<'name>,
 }
 
-pub(super) fn execute<'entry>(
+#[derive(Debug)]
+pub(super) enum CopyFailure<A, P, R> {
+	Adapter(A),
+	Coordinator(CoordinatorError),
+	Publish {
+		error: P,
+		recording: Option<Box<CoordinatorError>>,
+	},
+	PersistReceipt(R),
+}
+
+#[derive(Debug)]
+pub(super) enum CoordinatorError {
+	Observation(OwnerError),
+	Record(DarwinPhaseError),
+	Model(TransitionError),
+	UnexpectedEffect,
+	UnexpectedBarrier,
+	Journal {
+		kind: FrameKind,
+		error: DurableJournalError,
+	},
+	Receipt(DarwinCopyReceiptError),
+}
+
+impl From<DarwinPhaseError> for CoordinatorError {
+	fn from(error: DarwinPhaseError) -> Self {
+		Self::Record(error)
+	}
+}
+
+impl<A, P, R> From<CoordinatorError> for CopyFailure<A, P, R> {
+	fn from(error: CoordinatorError) -> Self {
+		Self::Coordinator(error)
+	}
+}
+
+type ExecutionError<C, R> = CopyFailure<
+	<C as PreparedCopy>::Error,
+	<C as PreparedCopy>::PublishError,
+	<R as ReceiptStore>::Error,
+>;
+
+pub(super) fn execute<'entry, C: PreparedCopy, R: ReceiptStore>(
 	prepared: PreparedEvidence<'_, 'entry>,
-	copy: impl PreparedCopy,
+	copy: C,
 	journal: &mut impl PublicationJournal,
-	receipts: &impl ReceiptStore,
+	receipts: &R,
 	scratch: &mut [u8],
 	progress: &mut PublicationProgress,
-) -> Result<DarwinCopyReceipt<'entry>, DarwinCopyFailure> {
+) -> Result<DarwinCopyReceipt<'entry>, ExecutionError<C, R>> {
 	let binding = copy.binding();
 	let mut session = CopySession::new(binding);
 	match session
 		.apply(binding, CopyEvent::StagePrepared)
-		.map_err(DarwinCopyFailure::Model)?
+		.map_err(CoordinatorError::Model)?
 	{
 		Some(CopyEffect::ReadSource(read)) if read.binding() == binding => {}
-		_ => return Err(DarwinCopyFailure::UnexpectedEffect),
+		_ => return Err(CoordinatorError::UnexpectedEffect.into()),
 	}
-	copy.check_source_before_read()?;
-	let verified = copy.verify(scratch)?;
+	copy.check_source_before_read()
+		.map_err(CopyFailure::Adapter)?;
+	let verified = copy.verify(scratch).map_err(CopyFailure::Adapter)?;
 	for event in [
 		CopyEvent::WritersJoined,
 		CopyEvent::DataFlushed,
@@ -54,16 +112,19 @@ pub(super) fn execute<'entry>(
 		observe(&mut session, binding, event)?;
 	}
 
-	let phases = VerifiedPhases::new(prepared.frame, prepared.source, &verified)?;
+	let phases = verified_phases::<_, R::Error>(prepared.frame, prepared.source, &verified)?;
 	let metadata_frame = phases.record(journal)?;
-	verified.check_source_after_metadata()?;
+	verified
+		.check_source_after_metadata()
+		.map_err(CopyFailure::Adapter)?;
 	let intent = DarwinPublishIntent::new(
 		NonZeroU64::MIN,
 		prepared.frame,
 		&phases.seal,
 		&phases.verification,
 		&phases.metadata,
-	)?;
+	)
+	.map_err(CoordinatorError::Record)?;
 	let (intent_frame, authorization) =
 		authorize(journal, &mut session, binding, intent, progress)?;
 
@@ -78,7 +139,7 @@ pub(super) fn execute<'entry>(
 				})
 				.err()
 				.map(Box::new);
-			return Err(DarwinCopyFailure::Publish {
+			return Err(CopyFailure::Publish {
 				error: error.cause,
 				recording,
 			});
@@ -104,9 +165,12 @@ pub(super) fn execute<'entry>(
 		},
 		&synced,
 	)
-	.map_err(DarwinCopyFailure::Receipt)?;
-	receipts.persist(&receipt.encode())?;
-	let committed = DarwinReceiptCommitted::new(&durability, receipt.digest())?;
+	.map_err(CoordinatorError::Receipt)?;
+	receipts
+		.persist(&receipt.encode())
+		.map_err(CopyFailure::PersistReceipt)?;
+	let committed = DarwinReceiptCommitted::new(&durability, receipt.digest())
+		.map_err(CoordinatorError::Record)?;
 	let _ = append_frame(journal, FrameKind::ReceiptCommitted, committed.encode())?;
 	*progress = PublicationProgress::ReceiptCommitted;
 	observe(&mut session, binding, CopyEvent::ReceiptRecorded)?;
@@ -124,48 +188,53 @@ struct VerifiedFrames {
 	metadata: Frame,
 }
 
-impl VerifiedPhases {
-	fn new(
-		prepared: &Frame,
-		source: DarwinFileIdentity,
-		verified: &impl VerifiedCopy,
-	) -> Result<Self, DarwinCopyFailure> {
-		let VerifiedStreams {
-			stage,
-			length,
-			source_digest,
-			stage_digest,
-		} = verified.observe_streams()?;
-		let length = StreamLength::new(length).map_err(|_| DarwinPhaseError::StreamMismatch)?;
-		let seal = DarwinStageSealed::new(prepared, stage, length)?;
-		let verification = DarwinVerificationRecorded::new(
-			prepared,
-			&seal,
-			DarwinStreamEvidence {
-				identity: source,
-				length,
-				digest: source_digest,
-			},
-			DarwinStreamEvidence {
-				identity: stage,
-				length,
-				digest: stage_digest,
-			},
-		)?;
-		let observed = verified.required_metadata()?;
-		let metadata =
-			DarwinMetadataRecorded::new(prepared, &seal, &verification, stage, observed)?;
-		Ok(Self {
-			seal,
-			verification,
-			metadata,
-		})
-	}
+type VerificationError<V, R> =
+	CopyFailure<<V as VerifiedCopy>::Error, <V as VerifiedCopy>::PublishError, R>;
 
+fn verified_phases<V: VerifiedCopy, R>(
+	prepared: &Frame,
+	source: DarwinFileIdentity,
+	verified: &V,
+) -> Result<VerifiedPhases, VerificationError<V, R>> {
+	let VerifiedStreams {
+		stage,
+		length,
+		source_digest,
+		stage_digest,
+	} = verified.observe_streams().map_err(CopyFailure::Adapter)?;
+	let length = StreamLength::new(length)
+		.map_err(|_| CoordinatorError::Record(DarwinPhaseError::StreamMismatch))?;
+	let seal = DarwinStageSealed::new(prepared, stage, length).map_err(CoordinatorError::Record)?;
+	let verification = DarwinVerificationRecorded::new(
+		prepared,
+		&seal,
+		DarwinStreamEvidence {
+			identity: source,
+			length,
+			digest: source_digest,
+		},
+		DarwinStreamEvidence {
+			identity: stage,
+			length,
+			digest: stage_digest,
+		},
+	)
+	.map_err(CoordinatorError::Record)?;
+	let observed = verified.required_metadata().map_err(CopyFailure::Adapter)?;
+	let metadata = DarwinMetadataRecorded::new(prepared, &seal, &verification, stage, observed)
+		.map_err(CoordinatorError::Record)?;
+	Ok(VerifiedPhases {
+		seal,
+		verification,
+		metadata,
+	})
+}
+
+impl VerifiedPhases {
 	fn record(
 		&self,
 		journal: &mut impl PublicationJournal,
-	) -> Result<VerifiedFrames, DarwinCopyFailure> {
+	) -> Result<VerifiedFrames, CoordinatorError> {
 		let _ = append_frame(journal, FrameKind::StageSealed, self.seal.encode())?;
 		let (verification, _) = append_frame(
 			journal,
@@ -185,13 +254,13 @@ fn observe(
 	session: &mut CopySession,
 	binding: CopyBinding,
 	event: CopyEvent,
-) -> Result<(), DarwinCopyFailure> {
+) -> Result<(), CoordinatorError> {
 	if session
 		.apply(binding, event)
-		.map_err(DarwinCopyFailure::Model)?
+		.map_err(CoordinatorError::Model)?
 		.is_some()
 	{
-		return Err(DarwinCopyFailure::UnexpectedEffect);
+		return Err(CoordinatorError::UnexpectedEffect);
 	}
 	Ok(())
 }
@@ -202,13 +271,13 @@ fn authorize(
 	binding: CopyBinding,
 	intent: DarwinPublishIntent<'_>,
 	progress: &mut PublicationProgress,
-) -> Result<(Frame, PublishNoClobber), DarwinCopyFailure> {
+) -> Result<(Frame, PublishNoClobber), CoordinatorError> {
 	let (frame, synced) = append_frame(journal, FrameKind::PublishIntent, intent.encode())?;
 	if synced.kind() != FrameKind::PublishIntent
 		|| synced.head() != frame.head()
 		|| synced.barrier() != JournalFileBarrier::DarwinFullFsync
 	{
-		return Err(DarwinCopyFailure::UnexpectedBarrier);
+		return Err(CoordinatorError::UnexpectedBarrier);
 	}
 	if DarwinPublishIntent::from_frame(&frame)? != intent {
 		return Err(DarwinPhaseError::BindingMismatch.into());
@@ -216,9 +285,9 @@ fn authorize(
 	*progress = PublicationProgress::IntentSynchronized;
 	let effect = session
 		.apply(binding, CopyEvent::PublishIntentRecorded)
-		.map_err(DarwinCopyFailure::Model)?;
+		.map_err(CoordinatorError::Model)?;
 	let Some(CopyEffect::PublishNoClobber(authorization)) = effect else {
-		return Err(DarwinCopyFailure::UnexpectedEffect);
+		return Err(CoordinatorError::UnexpectedEffect);
 	};
 	Ok((frame, authorization))
 }
@@ -240,14 +309,14 @@ impl FailedEffect {
 		(outcome, CopyEvent::OutcomeUncertain)
 	}
 
-	fn names(self) -> Result<DarwinPublicationNames, DarwinCopyFailure> {
+	fn names(self) -> Result<DarwinPublicationNames, CoordinatorError> {
 		if let Self::Renamed {
 			target: Some(target),
 		} = self
 		{
 			return Ok(DarwinPublicationNames {
 				target: DarwinNamespaceObservation::Present(
-					target.map_err(DarwinCopyFailure::Observation)?,
+					target.map_err(CoordinatorError::Observation)?,
 				),
 				stage: DarwinNamespaceObservation::Absent,
 			});
@@ -264,7 +333,7 @@ fn record_observation(
 	intent: &Frame,
 	outcome: DarwinPublicationOutcome,
 	names: DarwinPublicationNames,
-) -> Result<Frame, DarwinCopyFailure> {
+) -> Result<Frame, CoordinatorError> {
 	let observed = DarwinPublishObserved::new(intent, outcome, names)?;
 	let (frame, _) = append_frame(journal, FrameKind::PublishObserved, observed.encode())?;
 	Ok(frame)
@@ -277,8 +346,8 @@ fn record_success(
 	published: PublishedEvidence,
 	session: &mut CopySession,
 	binding: CopyBinding,
-) -> Result<(Frame, Frame, SyncedFrame), DarwinCopyFailure> {
-	let target = published.target.map_err(DarwinCopyFailure::Observation)?;
+) -> Result<(Frame, Frame, SyncedFrame), CoordinatorError> {
+	let target = published.target.map_err(CoordinatorError::Observation)?;
 	let observed = record_observation(
 		journal,
 		intent,
@@ -293,7 +362,7 @@ fn record_success(
 		&frames.metadata,
 		intent,
 		&observed,
-		published.barriers.map_err(DarwinCopyFailure::Observation)?,
+		published.barriers.map_err(CoordinatorError::Observation)?,
 	)?;
 	let (durability, synced) =
 		append_frame(journal, FrameKind::DurabilityRecorded, durability.encode())?;
@@ -305,8 +374,8 @@ fn append_frame(
 	journal: &mut impl PublicationJournal,
 	kind: FrameKind,
 	payload: Vec<u8>,
-) -> Result<(Frame, SyncedFrame), DarwinCopyFailure> {
+) -> Result<(Frame, SyncedFrame), CoordinatorError> {
 	journal
 		.append(kind, payload)
-		.map_err(|error| DarwinCopyFailure::Journal { kind, error })
+		.map_err(|error| CoordinatorError::Journal { kind, error })
 }

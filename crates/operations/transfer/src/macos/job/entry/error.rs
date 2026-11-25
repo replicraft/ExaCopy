@@ -6,6 +6,7 @@ use exacopy_platform::macos::staging::StageError;
 use exacopy_platform::macos::staging::jobs::{JobError, JobName};
 
 use super::super::JobAdmissionError;
+use super::engine::{PreparationFailure, RequestError};
 
 /// The retained job and cause of a failed Darwin entry preparation.
 #[derive(Debug)]
@@ -121,5 +122,28 @@ impl From<OwnerError> for EntryPreparationFailure {
 impl From<DarwinPreparedError> for EntryPreparationFailure {
 	fn from(error: DarwinPreparedError) -> Self {
 		Self::Binding(error)
+	}
+}
+
+impl From<RequestError> for EntryPreparationFailure {
+	fn from(error: RequestError) -> Self {
+		match error {
+			RequestError::AlreadyAttempted => Self::AlreadyAttempted,
+			RequestError::StageComponent(error) => Self::StageComponent(error),
+			RequestError::Observation(error) => Self::Observation(error),
+			RequestError::Metadata(error) => Self::Metadata(error),
+			RequestError::Binding(error) => Self::Binding(error),
+		}
+	}
+}
+
+impl From<PreparationFailure<StageError>> for EntryPreparationFailure {
+	fn from(error: PreparationFailure<StageError>) -> Self {
+		match error {
+			PreparationFailure::Stage(error) => Self::Stage(error),
+			PreparationFailure::Observation(error) => Self::Observation(error),
+			PreparationFailure::Binding(error) => Self::Binding(error),
+			PreparationFailure::Journal(error) => Self::Journal(error),
+		}
 	}
 }

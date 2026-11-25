@@ -3,22 +3,72 @@ use std::num::NonZeroU32;
 use exacopy_journal::frame::{Frame, FrameKind};
 use exacopy_journal::{
 	DarwinPhaseError, DarwinPublicationBarriers, DarwinRequiredMetadata, DurableJournal,
-	DurableJournalError, OwnerTimestamp, StreamDigest, SyncedFrame,
+	DurableJournalError, OwnerError, OwnerTimestamp, StreamDigest, SyncedFrame,
 };
 use exacopy_model::{CopyBinding, PublishNoClobber};
-use exacopy_platform::macos::ManagedRegularFile;
 use exacopy_platform::macos::publication::PublishError;
-use exacopy_platform::macos::staging::WriteStage;
-use exacopy_platform::macos::staging::jobs::JobDirectory;
+use exacopy_platform::macos::staging::jobs::{JobDirectory, JobError};
+use exacopy_platform::macos::staging::{StageError, WriteStage};
+use exacopy_platform::macos::{ManagedReadError, ManagedRegularFile};
 
 use crate::macos::job::admission::native_identity;
-use crate::macos::{VerifiedBasicStage, copy_with_basic_metadata};
+use crate::macos::{StageTransferError, VerifiedBasicStage, copy_with_basic_metadata};
 
 use super::DarwinCopyFailure;
 use super::capabilities::{
 	FailedEffect, PreparedCopy, PublicationFailure, PublicationJournal, PublishedEvidence,
 	ReceiptStore, VerifiedCopy, VerifiedStreams,
 };
+
+use super::engine::{CoordinatorError, CopyFailure};
+
+pub(super) enum NativeCopyError {
+	Source(ManagedReadError),
+	Transfer(StageTransferError),
+	Stage(StageError),
+	Observation(OwnerError),
+	Record(DarwinPhaseError),
+}
+
+impl From<DarwinPhaseError> for NativeCopyError {
+	fn from(error: DarwinPhaseError) -> Self {
+		Self::Record(error)
+	}
+}
+
+impl From<CopyFailure<NativeCopyError, Box<PublishError>, JobError>> for DarwinCopyFailure {
+	fn from(failure: CopyFailure<NativeCopyError, Box<PublishError>, JobError>) -> Self {
+		match failure {
+			CopyFailure::Adapter(error) => match error {
+				NativeCopyError::Source(error) => Self::Source(error),
+				NativeCopyError::Transfer(error) => Self::Transfer(error),
+				NativeCopyError::Stage(error) => Self::Stage(error),
+				NativeCopyError::Observation(error) => Self::Observation(error),
+				NativeCopyError::Record(error) => Self::Record(error),
+			},
+			CopyFailure::Coordinator(error) => error.into(),
+			CopyFailure::Publish { error, recording } => Self::Publish {
+				error,
+				recording: recording.map(|error| Box::new((*error).into())),
+			},
+			CopyFailure::PersistReceipt(error) => Self::PersistReceipt(error),
+		}
+	}
+}
+
+impl From<CoordinatorError> for DarwinCopyFailure {
+	fn from(error: CoordinatorError) -> Self {
+		match error {
+			CoordinatorError::Observation(error) => Self::Observation(error),
+			CoordinatorError::Record(error) => Self::Record(error),
+			CoordinatorError::Model(error) => Self::Model(error),
+			CoordinatorError::UnexpectedEffect => Self::UnexpectedEffect,
+			CoordinatorError::UnexpectedBarrier => Self::UnexpectedBarrier,
+			CoordinatorError::Journal { kind, error } => Self::Journal { kind, error },
+			CoordinatorError::Receipt(error) => Self::Receipt(error),
+		}
+	}
+}
 
 pub(super) struct NativePreparedCopy<'entry> {
 	source: &'entry ManagedRegularFile<'entry>,
@@ -35,22 +85,24 @@ impl<'entry> NativePreparedCopy<'entry> {
 }
 
 impl<'entry> PreparedCopy for NativePreparedCopy<'entry> {
+	type Error = NativeCopyError;
+	type PublishError = Box<PublishError>;
 	type Verified = NativeVerifiedCopy<'entry>;
 
 	fn binding(&self) -> CopyBinding {
 		self.writer.binding()
 	}
 
-	fn check_source_before_read(&self) -> Result<(), DarwinCopyFailure> {
+	fn check_source_before_read(&self) -> Result<(), NativeCopyError> {
 		self.source
 			.check_pre_read_basic_metadata()
 			.map(|_| ())
-			.map_err(DarwinCopyFailure::Source)
+			.map_err(NativeCopyError::Source)
 	}
 
-	fn verify(self, scratch: &mut [u8]) -> Result<Self::Verified, DarwinCopyFailure> {
+	fn verify(self, scratch: &mut [u8]) -> Result<Self::Verified, NativeCopyError> {
 		let verified = copy_with_basic_metadata(self.source, self.writer, scratch)
-			.map_err(DarwinCopyFailure::Transfer)?;
+			.map_err(NativeCopyError::Transfer)?;
 		Ok(NativeVerifiedCopy {
 			source: self.source,
 			verified,
@@ -64,44 +116,47 @@ pub(super) struct NativeVerifiedCopy<'entry> {
 }
 
 impl VerifiedCopy for NativeVerifiedCopy<'_> {
-	fn observe_streams(&self) -> Result<VerifiedStreams, DarwinCopyFailure> {
+	type Error = NativeCopyError;
+	type PublishError = Box<PublishError>;
+
+	fn observe_streams(&self) -> Result<VerifiedStreams, NativeCopyError> {
 		let stage = self
 			.verified
 			.stage
 			.observe_identity()
-			.map_err(DarwinCopyFailure::Stage)?;
+			.map_err(NativeCopyError::Stage)?;
 		Ok(VerifiedStreams {
-			stage: native_identity(stage).map_err(DarwinCopyFailure::Observation)?,
+			stage: native_identity(stage).map_err(NativeCopyError::Observation)?,
 			length: self.verified.stage.length(),
 			source_digest: StreamDigest::from_bytes(*self.verified.source_digest.as_bytes()),
 			stage_digest: StreamDigest::from_bytes(*self.verified.digest().as_bytes()),
 		})
 	}
 
-	fn required_metadata(&self) -> Result<DarwinRequiredMetadata, DarwinCopyFailure> {
+	fn required_metadata(&self) -> Result<DarwinRequiredMetadata, NativeCopyError> {
 		let required = self.verified.metadata();
 		Ok(DarwinRequiredMetadata::new(
 			required.mode(),
 			NonZeroU32::new(required.uid()).ok_or(DarwinPhaseError::MetadataMismatch)?,
 			required.gid(),
 			OwnerTimestamp::new(required.atime().seconds(), required.atime().nanoseconds())
-				.map_err(DarwinCopyFailure::Observation)?,
+				.map_err(NativeCopyError::Observation)?,
 			OwnerTimestamp::new(required.mtime().seconds(), required.mtime().nanoseconds())
-				.map_err(DarwinCopyFailure::Observation)?,
+				.map_err(NativeCopyError::Observation)?,
 		)?)
 	}
 
-	fn check_source_after_metadata(&self) -> Result<(), DarwinCopyFailure> {
+	fn check_source_after_metadata(&self) -> Result<(), NativeCopyError> {
 		self.source
 			.check_basic_metadata()
 			.map(|_| ())
-			.map_err(DarwinCopyFailure::Source)
+			.map_err(NativeCopyError::Source)
 	}
 
 	fn publish_exclusively(
 		self,
 		authorization: PublishNoClobber,
-	) -> Result<PublishedEvidence, PublicationFailure> {
+	) -> Result<PublishedEvidence, PublicationFailure<Self::PublishError>> {
 		let published = self
 			.verified
 			.stage
@@ -120,7 +175,7 @@ impl VerifiedCopy for NativeVerifiedCopy<'_> {
 	}
 }
 
-fn publication_failure(error: PublishError) -> PublicationFailure {
+fn publication_failure(error: PublishError) -> PublicationFailure<Box<PublishError>> {
 	let effect = match &error {
 		PublishError::Rejected { .. } => FailedEffect::Rejected,
 		PublishError::Conflict { .. } => FailedEffect::Conflict,
@@ -148,10 +203,11 @@ impl PublicationJournal for DurableJournal {
 }
 
 impl ReceiptStore for JobDirectory<'_> {
-	fn persist(&self, bytes: &[u8]) -> Result<(), DarwinCopyFailure> {
+	type Error = JobError;
+
+	fn persist(&self, bytes: &[u8]) -> Result<(), JobError> {
 		self.create_receipt_directory()
 			.and_then(|directory| directory.write_receipt(bytes))
 			.map(|_| ())
-			.map_err(DarwinCopyFailure::PersistReceipt)
 	}
 }

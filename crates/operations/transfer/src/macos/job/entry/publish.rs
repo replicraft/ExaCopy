@@ -11,7 +11,8 @@ mod tests;
 use engine::PreparedEvidence;
 use native::NativePreparedCopy;
 
-pub use error::{DarwinCopyError, DarwinCopyFailure, PublicationProgress};
+pub use engine::PublicationProgress;
+pub use error::{DarwinCopyError, DarwinCopyFailure};
 
 impl<'entry> PreparedDarwinEntry<'entry> {
 	/// Copies the bound source and exclusively publishes the verified private stage.
@@ -45,6 +46,7 @@ impl<'entry> PreparedDarwinEntry<'entry> {
 					scratch,
 					&mut progress,
 				)
+				.map_err(DarwinCopyFailure::from)
 			});
 		self.progress = progress;
 		result.map_err(|failure| DarwinCopyError::new(self.job_name(), progress, failure))
