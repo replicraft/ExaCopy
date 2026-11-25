@@ -4,11 +4,12 @@ use std::path::{Path, PathBuf};
 use std::process::{self, Command};
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use ed25519_dalek::SigningKey;
 use exacopy_endpoint::UnixComponent;
 use exacopy_journal::frame::{ChainHead, FrameReader};
 use exacopy_journal::{
 	DarwinEntryPrepared, JournalEntryId, JournalEpoch, JournalJobId, ObservedTimestamp,
-	TargetObservation,
+	OwnerProfileId, OwnerTimestamp, OwnerToken, TargetObservation,
 };
 use exacopy_platform::macos::staging::jobs::{JobArtifact, JobError};
 use exacopy_platform::macos::staging::{ManagedStageGrant, ManagedStageRoot, StageError};

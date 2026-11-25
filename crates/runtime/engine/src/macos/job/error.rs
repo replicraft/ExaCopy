@@ -4,6 +4,7 @@ use exacopy_journal::{DarwinPreparedError, DurableJournalError, OwnerError};
 use exacopy_model::InvalidJobId;
 use exacopy_platform::macos::ManagedReadError;
 use exacopy_platform::macos::staging::jobs::{JobError, JobName};
+use exacopy_transfer::macos::job::JobPreparationStep;
 
 /// A failed managed APFS job bootstrap and its reconciliation boundary.
 #[derive(Debug)]
@@ -153,25 +154,5 @@ impl Error for JobPreparationError {
 impl From<OwnerError> for JobPreparationError {
 	fn from(error: OwnerError) -> Self {
 		Self::Owner(error)
-	}
-}
-
-/// The private artifact that an attempted preparation was operating on.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[non_exhaustive]
-pub enum JobPreparationStep {
-	/// The signed owner envelope.
-	OwnerRecord,
-	/// The canonical copy plan.
-	PlanRecord,
-	/// The first segment's parent directory.
-	JournalDirectory,
-	/// The exclusively created first segment.
-	FirstSegment,
-}
-
-impl JobPreparationStep {
-	pub(super) fn error(self) -> impl FnOnce(JobError) -> JobPreparationError {
-		move |source| JobPreparationError::Artifact { step: self, source }
 	}
 }

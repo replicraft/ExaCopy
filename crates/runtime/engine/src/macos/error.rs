@@ -5,7 +5,7 @@ use exacopy_content::{ContentDigest, CopyMeasureError, MeasureError, StreamInput
 use exacopy_platform::macos::ManagedReadError;
 use exacopy_platform::macos::staging::{MAX_STAGE_IO_BYTES, StageError, StageIdentity};
 
-use crate::staging::StageCopyFailure;
+use exacopy_transfer::staging::StageCopyFailure;
 
 /// A failed private transfer and the identity of its retained stage.
 #[derive(Debug)]

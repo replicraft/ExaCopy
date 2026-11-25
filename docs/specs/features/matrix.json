@@ -43,7 +43,7 @@
       "check_cli": false,
       "feature_statuses": ["experimental"],
       "targets": ["aarch64-apple-darwin"],
-      "purpose": "Compile the opt-in transfer library and its managed APFS adapter regressions."
+      "purpose": "Compile the opt-in transfer policies, native runtime, and managed APFS regressions."
     },
     "development-all": {
       "defaults": true,
@@ -70,6 +70,26 @@
         "purpose": "Compile private held-directory and exact comparison fixtures. Windows API dependencies are test-only."
       }
     },
+    "exacopy-engine": {
+      "experimental-apfs-copy": {
+        "status": "experimental",
+        "targets": ["aarch64-apple-darwin"],
+        "enables": [
+          "dep:exacopy-content",
+          "dep:exacopy-endpoint",
+          "dep:exacopy-journal",
+          "dep:exacopy-model",
+          "dep:exacopy-platform",
+          "dep:exacopy-transfer",
+          "exacopy-transfer/experimental-apfs-copy"
+        ],
+        "resolution_probe": [
+          "exacopy-content", "exacopy-endpoint", "exacopy-journal",
+          "exacopy-model", "exacopy-platform", "exacopy-transfer"
+        ],
+        "purpose": "Compose the experimental managed APFS copy and recovery entry points with the mounted adapter."
+      }
+    },
     "exacopy-transfer": {
       "experimental-apfs-copy": {
         "status": "experimental",
@@ -81,14 +101,13 @@
           "dep:exacopy-endpoint",
           "dep:exacopy-journal",
           "dep:exacopy-model",
-          "dep:exacopy-platform",
           "dep:minicbor"
         ],
         "resolution_probe": [
           "blake3", "ed25519-dalek", "exacopy-content", "exacopy-endpoint", "exacopy-journal",
-          "exacopy-model", "exacopy-platform", "minicbor"
+          "exacopy-model", "minicbor"
         ],
-        "purpose": "Enable the unqualified managed APFS copy and recovery library for development."
+        "purpose": "Enable the managed APFS operation policies, canonical records, and recovery decisions."
       }
     }
   },

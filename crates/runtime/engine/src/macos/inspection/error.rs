@@ -5,6 +5,8 @@ use exacopy_journal::{DarwinPhaseError, DarwinPreparedError, OwnerError};
 use exacopy_platform::macos::staging::MAX_STAGE_IO_BYTES;
 use exacopy_platform::macos::staging::jobs::{JobArtifact, RecoveryError};
 
+use exacopy_transfer::macos::inspection::{ProtocolError, ReadBackError, RecordKind};
+
 use crate::macos::plan::DarwinCopyPlanError;
 use crate::macos::replay::DarwinReplayError;
 
@@ -162,19 +164,17 @@ impl Error for DarwinStageReadBackError {
 	}
 }
 
-impl From<super::protocol::ProtocolError<RecoveryError>> for DarwinInspectionError {
-	fn from(error: super::protocol::ProtocolError<RecoveryError>) -> Self {
-		use super::protocol::ProtocolError;
-
+impl From<ProtocolError<RecoveryError>> for DarwinInspectionError {
+	fn from(error: ProtocolError<RecoveryError>) -> Self {
 		match error {
 			ProtocolError::Platform(error) => Self::Platform(error),
 			ProtocolError::Identity(error) => Self::Identity(error),
 			ProtocolError::ArtifactTooLarge { artifact, limit } => Self::ArtifactTooLarge {
-				artifact: artifact.into(),
+				artifact: job_artifact(artifact),
 				limit,
 			},
 			ProtocolError::Read { artifact, error } => Self::Read {
-				artifact: artifact.into(),
+				artifact: job_artifact(artifact),
 				error,
 			},
 			ProtocolError::Plan(error) => Self::Plan(error),
@@ -186,22 +186,16 @@ impl From<super::protocol::ProtocolError<RecoveryError>> for DarwinInspectionErr
 	}
 }
 
-impl From<super::protocol::RecordKind> for JobArtifact {
-	fn from(kind: super::protocol::RecordKind) -> Self {
-		use super::protocol::RecordKind;
-
-		match kind {
-			RecordKind::Plan => Self::Plan,
-			RecordKind::Owner => Self::Owner,
-			RecordKind::Receipt => Self::Receipt,
-		}
+fn job_artifact(kind: RecordKind) -> JobArtifact {
+	match kind {
+		RecordKind::Plan => JobArtifact::Plan,
+		RecordKind::Owner => JobArtifact::Owner,
+		RecordKind::Receipt => JobArtifact::Receipt,
 	}
 }
 
-impl From<super::readback::ReadBackError<RecoveryError>> for DarwinStageReadBackError {
-	fn from(error: super::readback::ReadBackError<RecoveryError>) -> Self {
-		use super::readback::ReadBackError;
-
+impl From<ReadBackError<RecoveryError>> for DarwinStageReadBackError {
+	fn from(error: ReadBackError<RecoveryError>) -> Self {
 		match error {
 			ReadBackError::MissingVerification => Self::MissingVerification,
 			ReadBackError::StageBinding => Self::StageBinding,

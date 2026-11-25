@@ -4,9 +4,9 @@ use exacopy_endpoint::NameError;
 use exacopy_journal::{DarwinPreparedError, DurableJournalError, OwnerError, PreparedError};
 use exacopy_platform::macos::staging::StageError;
 use exacopy_platform::macos::staging::jobs::{JobError, JobName};
+use exacopy_transfer::macos::job::entry::{PreparationFailure, RequestError};
 
 use super::super::JobAdmissionError;
-use super::engine::{PreparationFailure, RequestError};
 
 /// The retained job and cause of a failed Darwin entry preparation.
 #[derive(Debug)]

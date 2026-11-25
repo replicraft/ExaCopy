@@ -7,11 +7,10 @@ use exacopy_platform::macos::ManagedReadError;
 use exacopy_platform::macos::publication::PublishError;
 use exacopy_platform::macos::staging::StageError;
 use exacopy_platform::macos::staging::jobs::{JobError, JobName};
+use exacopy_transfer::macos::job::entry::publish::PublicationProgress;
 
 use crate::macos::StageTransferError;
 use crate::macos::receipt::DarwinCopyReceiptError;
-
-use super::engine::PublicationProgress;
 
 /// A failed copy with its retained private job and last established publication boundary.
 #[derive(Debug)]

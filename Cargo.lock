@@ -344,7 +344,6 @@ dependencies = [
  "exacopy-endpoint",
  "exacopy-journal",
  "exacopy-model",
- "exacopy-platform",
  "minicbor",
 ]
 

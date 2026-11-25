@@ -1,11 +1,10 @@
-//! Preparation policy for an exclusively created, leased private job.
+//! Synchronized preparation policy for an exclusively created, leased private job.
 
 mod capabilities;
 mod engine;
-mod native;
 
 #[cfg(test)]
 mod tests;
 
-pub(super) use engine::JobPreparation;
-pub(super) use native::prepare_created_job;
+pub use capabilities::{PrivateJob, PrivateJournalDirectory};
+pub use engine::{BootstrapError, JobPreparation, prepare};

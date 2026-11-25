@@ -18,7 +18,7 @@ checksums. The [license and source policy](../../deny.toml) and
 The minimal, default, and all-stable profiles currently select the same product
 capabilities. CI checks those profiles, each applicable opt-in feature, and the
 combination of all features applicable to the target. The experimental APFS
-library requires `experimental-apfs-copy` and has a separate macOS test run.
+runtime requires `exacopy-engine/experimental-apfs-copy` and has a separate macOS test run.
 The macOS CLI comparison opt-in is a runtime filesystem contract. The CLI
 rejects unavailable operations with explicit unsupported outcomes. See the
 [CLI guide](../../crates/clients/cli/README.md) for the operation contracts.
@@ -26,7 +26,8 @@ rejects unavailable operations with explicit unsupported outcomes. See the
 Linux's transfer feature set always includes bounds checking, staging and
 read-back verification, integrity framing, authenticated publication intent,
 exclusive publication and recovery. The macOS experimental feature enables
-the whole transfer library with its mandatory integrity and recovery mechanisms.
+the native composition and its transfer policies, including the integrity
+and recovery mechanisms.
 GUI, networking, VPN, Android, cloud storage, backup repositories, and
 specialized document processing have no production feature or dependency.
 

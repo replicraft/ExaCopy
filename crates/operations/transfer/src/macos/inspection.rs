@@ -1,22 +1,19 @@
-//! Read-only inspection of a private managed APFS copy job and its initial history.
+//! Authenticates held private job history and verifies opt-in stage read-back.
 
 use ed25519_dalek::VerifyingKey;
 use exacopy_content::ContentDigest;
 use exacopy_journal::{DarwinReceiptDigest, OwnerProfileId, RootCapabilityId};
-use exacopy_platform::macos::ManagedObjectIdentity;
-use exacopy_platform::macos::staging::jobs::{RecoveryFileObservation, RecoveryJob};
-
-use super::replay::DarwinJournalReplay;
 
 mod capabilities;
-mod error;
-mod native;
 mod protocol;
 mod readback;
 
-pub use error::{DarwinInspectionError, DarwinStageReadBackError};
-
-use protocol::{NamespaceOnly, StageReadBack};
+pub use capabilities::{
+	InspectionInventory, InspectionJob, InspectionRecord, InspectionStageReader, ObservationError,
+	StageMetadata, StageObservation,
+};
+pub use protocol::{Inspection, ProtocolError, RecordKind};
+pub use readback::ReadBackError;
 
 /// Trust inputs independently supplied by the caller holding the recovered destination.
 #[derive(Clone, Copy, Debug)]
@@ -40,56 +37,26 @@ pub enum DarwinReceiptArtifact {
 	MatchesCommitment(DarwinReceiptDigest),
 }
 
-/// Authenticated initial history and freshly checked namespace observations.
-#[derive(Debug)]
-pub struct DarwinJobInspection {
-	/// The canonical plan bytes authenticated by the signed owner.
-	pub plan_bytes: Vec<u8>,
-	/// The accepted prefix from the held first journal segment.
-	pub replay: DarwinJournalReplay,
-	/// The private receipt artifact observation, independent of live file content.
-	pub receipt: DarwinReceiptArtifact,
-	/// The observed private stage directory, if present.
-	pub stage_directory: Option<ManagedObjectIdentity>,
-	/// The observed private stage name, if occupied by a checked regular file.
-	pub stage: Option<RecoveryFileObservation>,
-	/// The observed public target name, if occupied by a checked regular file.
-	pub target: Option<RecoveryFileObservation>,
-}
-
-/// Joins the native recovery inventory to the authenticated, read-only initial replay.
-///
-/// Reports current namespace observations and historical commitment under the held job
-/// lease. The stage and target observations cover identity and extent.
-///
+/// Authenticates private records and revalidates the held inventory and journal.
 /// # Errors
-/// Refuses changed or unsafe artifacts, incompatible or unauthenticated history, and a
-/// receipt that disagrees with an accepted commitment.
-pub fn inspect_job(
-	job: &RecoveryJob<'_>,
+/// Refuses unsafe artifacts, changed observations, and incompatible or untrusted records.
+pub fn inspect<J: InspectionJob>(
+	job: &J,
 	authority: DarwinInspectionAuthority<'_>,
-) -> Result<DarwinJobInspection, DarwinInspectionError> {
-	protocol::inspect(job, authority, NamespaceOnly)
-		.map(|(inspection, ())| inspection.into())
-		.map_err(Into::into)
+) -> Result<Inspection<J::Snapshot>, ProtocolError<J::Error>> {
+	protocol::inspect(job, authority, protocol::NamespaceOnly).map(|(inspection, ())| inspection)
 }
 
-/// Checks the retained private stage against accepted historical verification.
-///
-/// This opt-in inspection can advance the stage's access time. If the replay
-/// includes required metadata, it must match both before and after the reads.
-/// The returned digest describes the private stage observed during this
-/// inspection. Neither the source nor the public target is opened for content.
-///
+/// Authenticated namespace and digest from a selected private stage read-back.
+pub type StageReadBackResult<S, E> = Result<(Inspection<S>, ContentDigest), ProtocolError<E>>;
+
+/// Authenticates the job and independently measures its retained private stage.
 /// # Errors
-/// Refuses missing verification, changed bindings, invalid scratch bounds,
-/// ineligible stage metadata, I/O failures, and digest or recorded metadata mismatches.
-pub fn inspect_job_with_stage_read_back(
-	job: &RecoveryJob<'_>,
+/// Refuses the same inconsistencies as [inspect] and any unsupported or changed stage evidence.
+pub fn inspect_with_stage_read_back<J: InspectionJob>(
+	job: &J,
 	authority: DarwinInspectionAuthority<'_>,
 	scratch: &mut [u8],
-) -> Result<(DarwinJobInspection, ContentDigest), DarwinInspectionError> {
-	protocol::inspect(job, authority, StageReadBack(scratch))
-		.map(|(inspection, digest)| (inspection.into(), digest))
-		.map_err(Into::into)
+) -> StageReadBackResult<J::Snapshot, J::Error> {
+	protocol::inspect(job, authority, protocol::StageReadBack(scratch))
 }

@@ -11,19 +11,37 @@ use super::super::{DarwinJobProfile, JobPreparationStep};
 use super::capabilities::{PrivateJob, PrivateJournalDirectory};
 use crate::macos::plan::DarwinCopyPlan;
 
-pub(in crate::macos::job) struct JobPreparation<D> {
+/// Signed owner, synchronized first frame, and held journal namespace.
+#[derive(Debug)]
+pub struct JobPreparation<D> {
 	// Drop the sole segment writer before releasing the journal directory lease.
-	pub(in crate::macos::job) journal: DurableJournal,
-	pub(in crate::macos::job) journal_directory: D,
-	pub(in crate::macos::job) owner: DarwinOwnerRecord,
-	pub(in crate::macos::job) preparation: DarwinJobPrepared,
-	pub(in crate::macos::job) initial_frame: SyncedFrame,
+	/// The sole first-segment writer, closed before the journal directory lease is released.
+	pub journal: DurableJournal,
+	/// The private lease held for the entire journal writer lifetime.
+	pub journal_directory: D,
+	/// The signed owner envelope persisted for this job.
+	pub owner: DarwinOwnerRecord,
+	/// The exact preparation matching the synchronized first frame.
+	pub preparation: DarwinJobPrepared,
+	/// The completed file barrier for the first frame.
+	pub initial_frame: SyncedFrame,
 }
 
-pub(super) enum BootstrapError<E> {
+/// The boundary at which preparation of a created private job stopped.
+#[derive(Debug)]
+pub enum BootstrapError<E> {
+	/// The owner record could not be constructed or signed.
 	Owner(OwnerError),
+	/// The observations could not be associated with the prepared job.
 	Binding(DarwinPreparedError),
-	Artifact { step: JobPreparationStep, source: E },
+	/// A private record or namespace operation failed.
+	Artifact {
+		/// The private artifact or namespace that was being prepared.
+		step: JobPreparationStep,
+		/// The original failure, including any uncertain creation.
+		source: E,
+	},
+	/// The journal could not accept or synchronize the frame.
 	Journal(DurableJournalError),
 }
 
@@ -39,7 +57,14 @@ impl<E> From<OwnerError> for BootstrapError<E> {
 	}
 }
 
-pub(super) fn prepare<'job, J: PrivateJob>(
+/// Signs and persists the private preparation before returning the first synchronized frame.
+///
+/// The job must have been exclusively created under the admitted destination.
+/// The caller must use the independently validated signing profile and retain the job lease.
+///
+/// # Errors
+/// Refuses an invalid binding, failed artifact creation, or incomplete journal synchronization.
+pub fn prepare<'job, J: PrivateJob>(
 	plan: &DarwinCopyPlan<'_>,
 	profile: DarwinJobProfile<'_>,
 	job: &'job J,

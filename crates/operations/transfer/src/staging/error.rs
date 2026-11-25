@@ -4,7 +4,6 @@ use std::fmt;
 use exacopy_content::{ContentDigest, CopyMeasureError, MeasureError, StreamInputError};
 /// Admission, source, stage or verification failure during a private transfer.
 #[derive(Debug)]
-#[non_exhaustive]
 pub enum StageCopyFailure<R, W> {
 	/// The stage writer could not be admitted as fresh.
 	InitialStage(W),

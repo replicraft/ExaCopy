@@ -74,7 +74,7 @@ jobs:
           CARGO_TARGET_DIR: target/experimental-apfs-copy
         run: |
           bash .github/ci/capture.sh experimental-apfs-copy cargo +1.100.0 nextest run --locked \
-            -p exacopy-transfer --features experimental-apfs-copy --profile ci --no-tests fail
+            -p exacopy-engine -p exacopy-transfer --features exacopy-engine/experimental-apfs-copy --profile ci --no-tests fail
           test -s "$CARGO_TARGET_DIR/nextest/ci/junit.xml"
       - name: Run doctests
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}

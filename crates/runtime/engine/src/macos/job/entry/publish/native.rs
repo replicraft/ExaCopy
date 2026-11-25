@@ -1,26 +1,23 @@
 use std::num::NonZeroU32;
 
-use exacopy_journal::frame::{Frame, FrameKind};
 use exacopy_journal::{
-	DarwinPhaseError, DarwinPublicationBarriers, DarwinRequiredMetadata, DurableJournal,
-	DurableJournalError, OwnerError, OwnerTimestamp, StreamDigest, SyncedFrame,
+	DarwinPhaseError, DarwinPublicationBarriers, DarwinRequiredMetadata, OwnerError,
+	OwnerTimestamp, StreamDigest,
 };
 use exacopy_model::{CopyBinding, PublishNoClobber};
 use exacopy_platform::macos::publication::PublishError;
 use exacopy_platform::macos::staging::jobs::{JobDirectory, JobError};
 use exacopy_platform::macos::staging::{StageError, WriteStage};
 use exacopy_platform::macos::{ManagedReadError, ManagedRegularFile};
+use exacopy_transfer::macos::job::entry::publish::{
+	CoordinatorError, CopyFailure, FailedEffect, PreparedCopy, PublicationFailure,
+	PublishedEvidence, ReceiptStore, VerifiedCopy, VerifiedStreams,
+};
 
 use crate::macos::job::admission::native_identity;
 use crate::macos::{StageTransferError, VerifiedBasicStage, copy_with_basic_metadata};
 
 use super::DarwinCopyFailure;
-use super::capabilities::{
-	FailedEffect, PreparedCopy, PublicationFailure, PublicationJournal, PublishedEvidence,
-	ReceiptStore, VerifiedCopy, VerifiedStreams,
-};
-
-use super::engine::{CoordinatorError, CopyFailure};
 
 pub(super) enum NativeCopyError {
 	Source(ManagedReadError),
@@ -192,21 +189,14 @@ fn publication_failure(error: PublishError) -> PublicationFailure<Box<PublishErr
 	}
 }
 
-impl PublicationJournal for DurableJournal {
-	fn append(
-		&mut self,
-		kind: FrameKind,
-		payload: Vec<u8>,
-	) -> Result<(Frame, SyncedFrame), DurableJournalError> {
-		self.append_frame(kind, payload)
-	}
-}
+pub(super) struct NativeReceiptStore<'job>(pub(super) &'job JobDirectory<'job>);
 
-impl ReceiptStore for JobDirectory<'_> {
+impl ReceiptStore for NativeReceiptStore<'_> {
 	type Error = JobError;
 
 	fn persist(&self, bytes: &[u8]) -> Result<(), JobError> {
-		self.create_receipt_directory()
+		self.0
+			.create_receipt_directory()
 			.and_then(|directory| directory.write_receipt(bytes))
 			.map(|_| ())
 	}

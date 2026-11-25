@@ -5,7 +5,7 @@ use exacopy_content::{CopyMeasureError, StreamInputError, measure_at};
 use exacopy_platform::macos::staging::{MAX_STAGE_IO_BYTES, StageError};
 use exacopy_platform::macos::{BasicMetadataError, ManagedReadError};
 
-use crate::staging::verify_read_back;
+use exacopy_transfer::staging::verify_read_back;
 
 use super::{StageTransferFailure, copy_verified_stage, copy_with_basic_metadata};
 

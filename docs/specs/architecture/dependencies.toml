@@ -56,10 +56,3 @@ dev.groups = ["core"]
 members = { xtask = "xtask" }
 engineering = true
 normal.external = ["cargo_metadata", "proc-macro2", "serde", "serde_json", "sha2", "syn", "toml"]
-
-# Managed APFS recovery still hosts concrete native entry points.
-# Move those entry points to the runtime before removing this allowance.
-[[transitional_normal]]
-from = "exacopy-transfer"
-to = "exacopy-platform"
-targets = ['cfg(target_os = "macos")']

@@ -116,7 +116,11 @@ where
 	})
 }
 
-pub(crate) fn verify_read_back<R, C: ClosedStage>(
+/// Independently verifies a closed private stage against a previously measured stream.
+/// The caller supplies the bound stage's declared extent and scratch within its adapter limit.
+/// # Errors
+/// Refuses an unbound or changed reader, an extent mismatch, incomplete reads, or a digest mismatch.
+pub fn verify_read_back<R, C: ClosedStage>(
 	stage: &C,
 	stage_length: u64,
 	source_digest: ContentDigest,

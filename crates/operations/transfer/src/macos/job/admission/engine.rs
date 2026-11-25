@@ -5,21 +5,33 @@ use exacopy_journal::{
 
 use crate::macos::plan::{DestinationPlanBinding, SourcePlanBinding};
 
-pub(super) enum AdmissionFailure<E> {
+/// A mismatch or observation failure that prevented plan admission.
+#[derive(Debug)]
+pub enum AdmissionFailure<E> {
+	/// The live or independently supplied facts differ from the plan.
 	Mismatch,
+	/// The observed identity is outside the journal's representation.
 	Identity(OwnerError),
+	/// The adapter failed the requested operation.
 	Adapter(E),
 }
 
-pub(super) struct SourceIdentities {
-	pub(super) root: DarwinFileIdentity,
-	pub(super) file: DarwinFileIdentity,
+/// The held root and file bound to the selected source name.
+#[derive(Debug)]
+pub struct SourceIdentities {
+	/// The revalidated source parent identity.
+	pub root: DarwinFileIdentity,
+	/// The revalidated source file identity.
+	pub file: DarwinFileIdentity,
 }
 
-#[derive(PartialEq, Eq)]
-pub(super) struct Timestamp {
-	pub(super) seconds: i64,
-	pub(super) nanoseconds: u32,
+#[derive(Debug, PartialEq, Eq)]
+/// Timestamp components reported by the held source.
+pub struct Timestamp {
+	/// Whole seconds relative to the Unix epoch.
+	pub seconds: i64,
+	/// Elapsed nanoseconds within the second.
+	pub nanoseconds: u32,
 }
 
 impl From<ObservedTimestamp> for Timestamp {
@@ -31,26 +43,42 @@ impl From<ObservedTimestamp> for Timestamp {
 	}
 }
 
-pub(super) struct SourceMetadataObservation {
-	pub(super) uid: u32,
-	pub(super) gid: u32,
-	pub(super) mode: u32,
-	pub(super) accessed: Timestamp,
-	pub(super) modified: Timestamp,
+/// The source's revalidated metadata after strict pre-read admission.
+#[derive(Debug)]
+pub struct SourceMetadataObservation {
+	/// The observed owner identifier.
+	pub uid: u32,
+	/// The observed group identifier.
+	pub gid: u32,
+	/// The observed permission bits.
+	pub mode: u32,
+	/// The observed last access time.
+	pub accessed: Timestamp,
+	/// The observed last modification time.
+	pub modified: Timestamp,
 }
 
 /// A held, read-only source selected under an independently authorized root.
-pub(super) trait ReadOnlySource {
+pub trait ReadOnlySource {
+	/// The adapter failure retained for diagnostics.
 	type Error;
 
+	/// Returns the raw selected component under the held root.
 	fn component(&self) -> UnixComponent<'_>;
+	/// Returns the captured logical length.
 	fn length(&self) -> u64;
+	/// Revalidates the held source parent, selected name, and file.
 	fn observe_identities(&self) -> Result<SourceIdentities, AdmissionFailure<Self::Error>>;
+	/// Checks strict basic metadata before payload reads.
 	fn check_pre_read_metadata(&self) -> Result<SourceMetadataObservation, Self::Error>;
+	/// Revalidates and observes the source file's change time.
 	fn change_time(&self) -> Result<Timestamp, Self::Error>;
 }
 
-pub(super) fn bind_destination<E>(
+/// Checks the independently held root and observes the selected public name absent.
+/// # Errors
+/// Refuses mismatched authority or inconclusive destination observations.
+pub fn bind_destination<E>(
 	planned: DestinationPlanBinding<'_>,
 	root_id: RootCapabilityId,
 	observe_empty: impl FnOnce(UnixComponent<'_>) -> Result<DarwinFileIdentity, AdmissionFailure<E>>,
@@ -68,7 +96,10 @@ pub(super) fn bind_destination<E>(
 	})
 }
 
-pub(super) fn check_source<S: ReadOnlySource>(
+/// Checks the held source and strict basic metadata against the original plan.
+/// # Errors
+/// Refuses mismatched authority, changed objects or metadata, and incomplete observations.
+pub fn check_source<S: ReadOnlySource>(
 	planned: SourcePlanBinding<'_>,
 	source: &S,
 	root_id: RootCapabilityId,

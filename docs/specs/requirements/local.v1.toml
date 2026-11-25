@@ -562,7 +562,7 @@ status = "experimental"
 requirement_ids = ["R-008", "R-013", "R-016", "R-018", "R-021", "R-023", "R-025", "R-026", "R-027", "R-028", "R-039", "R-040", "R-045", "R-051", "R-056", "R-062", "R-194"]
 acceptance_ids = ["A-008", "A-013", "A-016", "A-018", "A-021", "A-023", "A-025", "A-026", "A-027", "A-028", "A-039", "A-040", "A-045", "A-051", "A-056", "A-062", "A-194"]
 invariant_ids = ["INV-002", "INV-003", "INV-004", "INV-005", "INV-006", "INV-009", "INV-013", "INV-019", "INV-020"]
-scope = "The managed APFS adapter exercises stage writes, full file barriers, separate read-back, native exclusive rename and name reconciliation. The opt-in library owns plan, receipt and read-only recovery inspection."
+scope = "The opt-in runtime composes the managed APFS adapter with transfer policy for copy, receipts and read-only inspection. Native cases exercise stage writes, full file barriers, independent read-back, exclusive rename and name reconciliation."
 limits = "Strict end-to-end acceptance is blocked on the tested host’s visible source provenance attribute. CLI copy/recovery, Darwin process-kill recovery and power-loss qualification remain open."
 
 [[coverage.evidence]]
@@ -580,25 +580,25 @@ path = "crates/endpoints/platform/src/macos/publication/tests/adapter.rs"
 target = "even_when_a_barrier_fails_both_are_attempted_and_rename_is_retained"
 
 [[coverage.evidence]]
-owner = "exacopy-transfer"
+owner = "exacopy-engine"
 level = "native"
 state = "defined"
-path = "crates/operations/transfer/src/macos/job/tests/publication.rs"
+path = "crates/runtime/engine/src/macos/job/tests/publication.rs"
 target = "prepared_copy_refuses_visible_source_metadata_before_any_content_or_intent"
 
 [[coverage.evidence]]
-owner = "exacopy-transfer"
+owner = "exacopy-engine"
 level = "native"
 state = "blocked"
-path = "crates/operations/transfer/src/macos/job/tests/publication.rs"
+path = "crates/runtime/engine/src/macos/job/tests/publication.rs"
 target = "strict_native_copy_publishes_the_stage_and_commits_its_receipt"
 detail = "Ignored unless the fixture satisfies strict managed APFS source metadata admission."
 
 [[coverage.evidence]]
-owner = "exacopy-transfer"
+owner = "exacopy-engine"
 level = "native"
 state = "defined"
-path = "crates/operations/transfer/src/macos/job/tests/inspection.rs"
+path = "crates/runtime/engine/src/macos/job/tests/inspection.rs"
 target = "reopened_job_binds_trusted_destination_and_keeps_live_names_separate_from_history"
 
 [[coverage.evidence]]
@@ -608,7 +608,7 @@ state = "defined"
 path = "crates/operations/transfer/src/macos/receipt/tests/receipt.hex"
 
 [[coverage.evidence]]
-owner = "exacopy-transfer"
+owner = "exacopy-engine"
 level = "fixture"
 state = "defined"
 path = "fixtures/macos/empty_acl.c"
@@ -628,17 +628,17 @@ path = "crates/operations/transfer/src/macos/replay/tests/recovery.rs"
 target = "requires_the_exact_original_attempt_and_recovery_start"
 
 [[coverage.evidence]]
-owner = "exacopy-transfer"
+owner = "exacopy-engine"
 level = "test"
 state = "defined"
-path = "crates/operations/transfer/src/macos/job/entry/publish/tests.rs"
+path = "crates/runtime/engine/src/macos/job/entry/publish/tests.rs"
 target = "coordinator_commits_only_after_receipt_persistence"
 
 [[coverage.evidence]]
-owner = "exacopy-transfer"
+owner = "exacopy-engine"
 level = "test"
 state = "defined"
-path = "crates/operations/transfer/src/macos/job/tests/inspection.rs"
+path = "crates/runtime/engine/src/macos/job/tests/inspection.rs"
 target = "retained_stage_read_back_refuses_a_visible_attribute_before_payload_io"
 
 [[coverage]]

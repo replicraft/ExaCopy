@@ -33,34 +33,56 @@ pub enum PublicationProgress {
 	ReceiptCommitted,
 }
 
-pub(super) struct PreparedEvidence<'frame, 'name> {
-	pub(super) frame: &'frame Frame,
-	pub(super) source: DarwinFileIdentity,
-	pub(super) plan: &'frame DarwinCopyPlan<'name>,
+/// The exact entry preparation and plan bound to a single stage publication.
+#[derive(Debug)]
+pub struct PreparedEvidence<'frame, 'name> {
+	/// The synchronized envelope for the entry preparation.
+	pub frame: &'frame Frame,
+	/// The source identity recorded by that envelope.
+	pub source: DarwinFileIdentity,
+	/// The admitted plan supplying the receipt binding.
+	pub plan: &'frame DarwinCopyPlan<'name>,
 }
 
 #[derive(Debug)]
-pub(super) enum CopyFailure<A, P, R> {
+/// An adapter or coordinator failure with any established publication evidence.
+pub enum CopyFailure<A, P, R> {
+	/// An adapter check or operation failed.
 	Adapter(A),
+	/// The coordinator could not establish a required observation or decision.
 	Coordinator(CoordinatorError),
+	/// Native publication failed or left incomplete evidence.
 	Publish {
+		/// The original publication failure.
 		error: P,
+		/// An additional failure while recording the observed namespace outcome.
 		recording: Option<Box<CoordinatorError>>,
 	},
+	/// A publication receipt could not be persisted.
 	PersistReceipt(R),
 }
 
 #[derive(Debug)]
-pub(super) enum CoordinatorError {
+/// A failed decision, record binding, or journal barrier during publication.
+pub enum CoordinatorError {
+	/// An observation is outside the journal's representation.
 	Observation(OwnerError),
+	/// A journal record could not bind to its prerequisites.
 	Record(DarwinPhaseError),
+	/// The model refused a coordinator event.
 	Model(TransitionError),
+	/// The model returned an effect inconsistent with the current phase.
 	UnexpectedEffect,
+	/// The append evidence did not establish the exact Darwin full-sync intent.
 	UnexpectedBarrier,
+	/// Writing or synchronizing the requested frame failed.
 	Journal {
+		/// The kind of frame the coordinator attempted to append.
 		kind: FrameKind,
+		/// The exact journal failure.
 		error: DurableJournalError,
 	},
+	/// The receipt could not bind to the plan and synchronized history.
 	Receipt(DarwinCopyReceiptError),
 }
 
@@ -82,7 +104,14 @@ type ExecutionError<C, R> = CopyFailure<
 	<R as ReceiptStore>::Error,
 >;
 
-pub(super) fn execute<'entry, C: PreparedCopy, R: ReceiptStore>(
+/// Verifies the stage, records exclusive publication intent, and commits the receipt.
+///
+/// Use the bound writer, entry frame, and journal from the same admitted private job.
+/// The adapter retains the directory leases and reports the observed namespace effect.
+///
+/// # Errors
+/// Reports adapter, binding, and barrier failures, retaining any known namespace effect.
+pub fn execute<'entry, C: PreparedCopy, R: ReceiptStore>(
 	prepared: PreparedEvidence<'_, 'entry>,
 	copy: C,
 	journal: &mut impl PublicationJournal,

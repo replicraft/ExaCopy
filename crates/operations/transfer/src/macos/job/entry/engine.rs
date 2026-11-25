@@ -18,63 +18,110 @@ use crate::macos::plan::{DarwinCopyPlan, SourcePlanBinding};
 // are separate identities.
 const MODEL_ENTRY: EntryId = EntryId::new(1);
 
-pub(super) enum RequestError {
+/// A failed prerequisite before any private stage creation.
+#[derive(Debug)]
+pub enum RequestError {
+	/// This prepared job already consumed its sole stage attempt.
 	AlreadyAttempted,
+	/// The fixed private payload component failed validation.
 	StageComponent(NameError),
+	/// An observation is outside the journal's representation.
 	Observation(OwnerError),
+	/// The source metadata is outside the journal's representation.
 	Metadata(PreparedError),
+	/// The observations could not be associated with the prepared job.
 	Binding(DarwinPreparedError),
 }
 
-pub(super) enum PreparationFailure<E> {
+/// The reason preparation of the private stage or its exact frame stopped.
+#[derive(Debug)]
+pub enum PreparationFailure<E> {
+	/// The private stage adapter failed creation or revalidation.
 	Stage(E),
+	/// An observation is outside the journal's representation.
 	Observation(OwnerError),
+	/// The observations could not be associated with the prepared job.
 	Binding(DarwinPreparedError),
+	/// The journal could not accept or synchronize the frame.
 	Journal(DurableJournalError),
 }
 
-pub(super) enum StageAdmissionFailure<E> {
+/// A stage creation or observation that did not yield a bound writer.
+#[derive(Debug)]
+pub enum StageAdmissionFailure<E> {
+	/// The adapter failed the requested operation.
 	Adapter(E),
+	/// An observation is outside the journal's representation.
 	Observation(OwnerError),
 }
 
 /// Inputs for a single exclusive private creation beneath the held stage directory.
-pub(super) struct StageRequest<'name> {
-	pub(super) component: UnixComponent<'name>,
-	pub(super) target: UnixComponent<'name>,
-	pub(super) length: u64,
-	pub(super) job: JobId,
-	pub(super) entry: EntryId,
-	pub(super) epoch: RunEpoch,
+#[derive(Debug)]
+pub struct StageRequest<'name> {
+	/// The fixed component of the private stage payload.
+	pub component: UnixComponent<'name>,
+	/// The public component whose absence the adapter checks before creation.
+	pub target: UnixComponent<'name>,
+	/// The logical length of the unnamed stream in bytes.
+	pub length: u64,
+	/// The model job identity of the held private directory.
+	pub job: JobId,
+	/// The model entry identity in the single-file profile.
+	pub entry: EntryId,
+	/// The model epoch of this copy attempt.
+	pub epoch: RunEpoch,
 }
 
-pub(super) struct EntryRequest<'name> {
+/// The single stage attempt owned by a prepared job.
+#[derive(Debug, Default)]
+pub struct EntryAttempt {
+	attempted: bool,
+}
+
+/// A checked plan and consumed attempt ready for exclusive stage creation.
+#[derive(Debug)]
+pub struct EntryRequest<'name> {
 	stage: StageRequest<'name>,
 	source: DarwinSourceView<'name>,
 	entry: JournalEntryId,
 }
 
-pub(super) struct ObservedStage<W> {
-	pub(super) writer: W,
-	pub(super) id: DarwinStageId,
-	pub(super) directory: DarwinFileIdentity,
-	pub(super) identity: DarwinFileIdentity,
+/// An unwritten stage and fresh identity evidence supplied by the adapter.
+#[derive(Debug)]
+pub struct ObservedStage<W> {
+	/// The sole authorized writer of the unwritten stage.
+	pub writer: W,
+	/// The allocated logical stage identifier.
+	pub id: DarwinStageId,
+	/// The fresh identity of the held staging directory.
+	pub directory: DarwinFileIdentity,
+	/// The observed file identity in the journal profile.
+	pub identity: DarwinFileIdentity,
 }
 
-pub(super) struct PreparedStage<'name, W> {
-	pub(super) writer: W,
-	pub(super) preparation: DarwinEntryPrepared<'name>,
-	pub(super) frame: Frame,
-	pub(super) synced: SyncedFrame,
+/// The unwritten stage and the exact synchronized entry frame.
+#[derive(Debug)]
+pub struct PreparedStage<'name, W> {
+	/// The sole authorized writer of the unwritten stage.
+	pub writer: W,
+	/// The entry preparation bound to the job and stage.
+	pub preparation: DarwinEntryPrepared<'name>,
+	/// The complete appended entry frame.
+	pub frame: Frame,
+	/// The successful barrier associated with the exact entry frame.
+	pub synced: SyncedFrame,
 }
 
 /// Creates an unwritten stage and rechecks its held file and parent identities.
-pub(super) trait PrivateStage {
+pub trait PrivateStage {
+	/// The adapter failure retained for diagnostics.
 	type Error;
+	/// The unwritten stage writer borrowing the private directory lease.
 	type Writer<'stage>
 	where
 		Self: 'stage;
 
+	/// Checks target absence, creates the unwritten stage exclusively, and revalidates it.
 	fn create<'stage>(
 		&'stage self,
 		request: &StageRequest<'stage>,
@@ -82,12 +129,12 @@ pub(super) trait PrivateStage {
 }
 
 /// Claims the attempt and validates all record inputs before private directory creation.
-pub(super) fn begin<'name>(
-	attempted: &mut bool,
+pub fn begin<'name>(
+	attempt: &mut EntryAttempt,
 	plan: DarwinCopyPlan<'name>,
 	job: JobId,
 ) -> Result<EntryRequest<'name>, RequestError> {
-	if mem::replace(attempted, true) {
+	if mem::replace(&mut attempt.attempted, true) {
 		return Err(RequestError::AlreadyAttempted);
 	}
 	let source = source_view(plan.source())?;
@@ -106,7 +153,10 @@ pub(super) fn begin<'name>(
 	})
 }
 
-pub(super) fn prepare<'stage, S: PrivateStage>(
+/// Creates the private stage and appends its entry preparation before returning its writer.
+/// # Errors
+/// Reports failed stage admission, mismatched observations, or a failed append or barrier.
+pub fn prepare<'stage, S: PrivateStage>(
 	request: EntryRequest<'stage>,
 	job: &DarwinJobPrepared,
 	stage: &'stage S,

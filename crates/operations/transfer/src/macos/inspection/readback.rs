@@ -11,16 +11,30 @@ use exacopy_journal::{
 use super::capabilities::{InspectionInventory, InspectionStageReader, StageMetadata};
 
 #[derive(Debug)]
-pub(super) enum ReadBackError<E> {
+/// A failure to reestablish recorded evidence for the retained private stage.
+pub enum ReadBackError<E> {
+	/// The journal lacks accepted prior verification.
 	MissingVerification,
+	/// The observed stage or its directory differs from the accepted preparation.
 	StageBinding,
+	/// A required historical stage phase could not be decoded.
 	Phase(DarwinPhaseError),
-	ScratchTooLarge { length: usize },
+	/// The buffer exceeds the adapter's positioned read limit.
+	ScratchTooLarge {
+		/// The supplied buffer length in bytes.
+		length: usize,
+	},
+	/// The scratch buffer or extent does not meet the stream bounds.
 	Input(StreamInputError),
+	/// The adapter could not establish the required observation.
 	Platform(E),
+	/// The bounded independent read and measurement failed.
 	Read(MeasureError<E>),
+	/// The measured stage digest differs from the accepted digest.
 	DigestMismatch,
+	/// The initial observed metadata differs from the accepted metadata.
 	InitialMetadataMismatch,
+	/// The metadata observed after reading or revalidation differs.
 	FinalMetadataMismatch,
 }
 

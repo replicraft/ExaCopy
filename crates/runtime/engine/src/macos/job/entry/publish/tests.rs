@@ -9,15 +9,14 @@ use exacopy_journal::{
 	DurableJournal, DurableJournalError, OwnerTimestamp, StreamDigest, SyncedFrame,
 };
 use exacopy_model::{CopyBinding, PublishNoClobber};
+use exacopy_transfer::macos::job::entry::publish::{
+	CoordinatorError, CopyFailure, FailedEffect, PreparedCopy, PublicationFailure,
+	PublicationJournal, PublishedEvidence, ReceiptStore, VerifiedCopy, VerifiedStreams, execute,
+};
 
 use crate::macos::job::tests::with_publication_fixture;
 use crate::macos::receipt::DarwinCopyReceipt;
 
-use super::capabilities::{
-	FailedEffect, PreparedCopy, PublicationFailure, PublicationJournal, PublishedEvidence,
-	ReceiptStore, VerifiedCopy, VerifiedStreams,
-};
-use super::engine::{self, CoordinatorError, CopyFailure};
 use super::{PreparedEvidence, PublicationProgress};
 
 #[derive(Debug)]
@@ -439,7 +438,7 @@ fn run(
 			},
 		};
 		let mut progress = PublicationProgress::Private;
-		let result = engine::execute(
+		let result = execute(
 			PreparedEvidence {
 				frame: &entry.frame,
 				source: prep.source.identity(),

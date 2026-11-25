@@ -14,7 +14,6 @@ experimental-apfs-copy = [
 	"dep:exacopy-endpoint",
 	"dep:exacopy-journal",
 	"dep:exacopy-model",
-	"dep:exacopy-platform",
 	"dep:minicbor",
 ]
 
@@ -34,11 +33,7 @@ exacopy-content = { workspace = true, optional = true }
 exacopy-endpoint = { workspace = true, optional = true }
 exacopy-journal = { workspace = true, optional = true }
 exacopy-model = { workspace = true, optional = true }
-exacopy-platform = { workspace = true, optional = true }
 minicbor = { workspace = true, optional = true }
-
-[target.'cfg(target_os = "macos")'.dev-dependencies]
-ed25519-dalek.workspace = true
 
 [lints]
 workspace = true

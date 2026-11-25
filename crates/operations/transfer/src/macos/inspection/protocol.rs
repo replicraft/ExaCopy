@@ -21,28 +21,46 @@ use super::readback::{self, ReadBackError};
 use super::{DarwinInspectionAuthority, DarwinReceiptArtifact};
 
 #[derive(Debug, Clone, Copy)]
-pub(super) enum RecordKind {
+/// A private artifact selected for bounded decoding.
+pub enum RecordKind {
+	/// The canonical copy plan.
 	Plan,
+	/// The signed owner envelope.
 	Owner,
+	/// The committed copy receipt.
 	Receipt,
 }
 
 #[derive(Debug)]
-pub(super) enum ProtocolError<E> {
+/// The reason held job inspection or authentication stopped.
+pub enum ProtocolError<E> {
+	/// The adapter could not establish the required observation.
 	Platform(E),
+	/// The observed identity is outside the journal's representation.
 	Identity(OwnerError),
+	/// The artifact exceeds its codec bound.
 	ArtifactTooLarge {
+		/// The private artifact being inspected.
 		artifact: RecordKind,
+		/// The codec's maximum supported size in bytes.
 		limit: usize,
 	},
+	/// The bounded record read failed.
 	Read {
+		/// The private artifact being inspected.
 		artifact: RecordKind,
+		/// The underlying read error.
 		error: std::io::Error,
 	},
+	/// The plan could not be decoded under the trusted profile.
 	Plan(DarwinCopyPlanError),
+	/// The observed job or destination differs from the plan.
 	PlanBinding,
+	/// The accepted entry did not provide a valid private stage component.
 	Preparation(DarwinPreparedError),
+	/// The owner, journal, or receipt failed authentication or semantic replay.
 	Replay(DarwinReplayError),
+	/// The requested private stage measurement failed.
 	StageReadBack(ReadBackError<E>),
 }
 
@@ -61,11 +79,17 @@ impl<E> From<ObservationError<E>> for ProtocolError<E> {
 	}
 }
 
-pub(super) struct Inspection<S> {
-	pub(super) plan_bytes: Vec<u8>,
-	pub(super) replay: DarwinJournalReplay,
-	pub(super) receipt: DarwinReceiptArtifact,
-	pub(super) namespace: S,
+/// Authenticated history and current checked namespace evidence.
+#[derive(Debug)]
+pub struct Inspection<S> {
+	/// The exact canonical plan bytes authenticated by the signed owner.
+	pub plan_bytes: Vec<u8>,
+	/// The accepted prefix of the held first journal segment.
+	pub replay: DarwinJournalReplay,
+	/// The receipt artifact's association with accepted journal history.
+	pub receipt: DarwinReceiptArtifact,
+	/// Current namespace observations returned by the leased adapter.
+	pub namespace: S,
 }
 
 pub(super) trait InspectStage<E> {

@@ -59,11 +59,13 @@ class FeatureMatrixTests(unittest.TestCase):
 
     def test_experimental_apfs_feature_is_target_scoped_and_default_off(self):
         profiles = POLICY["profiles"]
-        qualified_feature = "exacopy-transfer/experimental-apfs-copy"
-        for profile in ("default", "minimal", "all-stable"):
-            self.assertNotIn(qualified_feature, ",".join(profile_flags(POLICY, profiles[profile], MACOS)))
-        self.assertIn(qualified_feature, profile_flags(POLICY, profiles["experimental-apfs-copy"], MACOS))
-        self.assertNotIn(qualified_feature, ",".join(profile_flags(POLICY, profiles["development-all"], LINUX)))
+        for package in ("exacopy-transfer", "exacopy-engine"):
+            feature = f"{package}/experimental-apfs-copy"
+            for profile in ("default", "minimal", "all-stable"):
+                self.assertNotIn(feature, ",".join(profile_flags(POLICY, profiles[profile], MACOS)))
+            opt_in = ",".join(profile_flags(POLICY, profiles["experimental-apfs-copy"], MACOS))
+            self.assertIn(feature, opt_in.split(","))
+            self.assertNotIn(feature, ",".join(profile_flags(POLICY, profiles["development-all"], LINUX)))
 
 
 if __name__ == "__main__":
