@@ -25,3 +25,9 @@ pub mod remote_capture;
 pub mod remote_resume;
 
 pub mod remote_metadata;
+
+#[cfg(any(
+	target_os = "linux",
+	all(target_os = "macos", feature = "experimental-apfs-copy")
+))]
+pub mod remote_finalization;

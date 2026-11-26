@@ -94,6 +94,12 @@ impl RemoteFinalizationReplay<'_> {
 		self.prefix.attempts()
 	}
 
+	/// Returns the expected qualification digest supplied for this historical scan.
+	#[must_use]
+	pub const fn expected_qualification(&self) -> [u8; 32] {
+		self.history.expected_qualification()
+	}
+
 	/// Returns the last accepted finalization phase, even when a suffix was refused.
 	#[must_use]
 	pub const fn phase(&self) -> RemoteFinalizationPhase {

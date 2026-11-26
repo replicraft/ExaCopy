@@ -43,6 +43,10 @@ impl FinalizationHistory {
 		}
 	}
 
+	pub(super) const fn expected_qualification(&self) -> [u8; 32] {
+		self.expected_qualification
+	}
+
 	pub(in super::super) const fn phase(&self) -> Phase {
 		self.phase
 	}
