@@ -232,7 +232,7 @@ function Assert-ReadDiffExactResult {
 }
 
 function Invoke-ExactReadDiff {
-    param([string] $Mode, [string] $Build, [string] $Evidence, [string] $Repository)
+    param([string] $Mode, [string] $Build, [string] $EvidencePath, [string] $Repository)
     $selection = Get-ReadDiffProfile $Mode
     $arguments = @('+1.100.0', 'test', '--locked', '--offline', '--jobs', '2',
         '--target', 'x86_64-pc-windows-msvc', '-p', $selection.Package, '--test',
@@ -240,7 +240,7 @@ function Invoke-ExactReadDiff {
     if ((Invoke-Lane -Name 'exact_build' -Program 'cargo' -Arguments $arguments -QuietStdout) -ne 0) {
         throw 'The pinned Read/Diff build failed.'
     }
-    $events = @(Get-Content -LiteralPath (Join-Path $Evidence 'exact_build.stdout.log') |
+    $events = @(Get-Content -LiteralPath (Join-Path $EvidencePath 'exact_build.stdout.log') |
         ForEach-Object { ConvertFrom-Json -InputObject $_ -Depth 32 } |
         Where-Object { $_.reason -ceq 'compiler-artifact' -and $_.executable })
     $manifest = [IO.Path]::GetFullPath((Join-Path $Repository $selection.Manifest))
@@ -268,7 +268,7 @@ function Invoke-ExactReadDiff {
         [void](Confirm-ExaCopyPath $path -File)
         $fingerprints[$path] = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash
     }
-    $fingerprints | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Evidence 'executables.json')
+    $fingerprints | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $EvidencePath 'executables.json')
     if ($Mode -eq 'Diff') { $env:EXACOPY_WINDOWS_QUALIFIED_CLI = $cli[0].executable }
 
     $binary = $harness[0].executable
@@ -276,7 +276,7 @@ function Invoke-ExactReadDiff {
     if ((Invoke-Lane -Name 'exact_inventory' -Program $binary -Arguments @('--list', '--format', 'terse')) -ne 0) {
         throw 'The selected native test inventory was unavailable.'
     }
-    $inventory = Get-Content -LiteralPath (Join-Path $Evidence 'exact_inventory.stdout.log')
+    $inventory = Get-Content -LiteralPath (Join-Path $EvidencePath 'exact_inventory.stdout.log')
     foreach ($name in $tests) {
         if (@($inventory | Where-Object { $_ -ceq "${name}: test" }).Count -ne 1) {
             throw "Expected exactly one declared native test: $Name"
@@ -289,10 +289,10 @@ function Invoke-ExactReadDiff {
         if ($name -cin $selection.Native) { $arguments += '--ignored' }
         try {
             $exitCode = Invoke-Lane -Name $label -Program $binary -Arguments $arguments
-            $output = Get-Content -Raw -LiteralPath (Join-Path $Evidence ($label + '.stdout.log'))
+            $output = Get-Content -Raw -LiteralPath (Join-Path $EvidencePath ($label + '.stdout.log'))
             Assert-ReadDiffExactResult $name $exitCode $output
         } catch {
-            Add-Content -LiteralPath (Join-Path $Evidence 'qualification-failures.txt') -Value $_
+            Add-Content -LiteralPath (Join-Path $EvidencePath 'qualification-failures.txt') -Value $_
             $failed++
         }
     }

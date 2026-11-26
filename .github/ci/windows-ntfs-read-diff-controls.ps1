@@ -30,4 +30,30 @@ foreach ($mode in @('Read', 'Diff')) {
         throw "Duplicate test selectors in $mode."
     }
 }
+
+# The shared lane borrows its caller's DirectoryInfo through PowerShell's
+# dynamic scope. The exact builder must not shadow that object with a string.
+& {
+    $evidence = [IO.DirectoryInfo]::new((Join-Path ([IO.Path]::GetTempPath()) 'exacopy-read-diff-scope-control'))
+    $expectedDirectory = $evidence.FullName
+    $observedDirectories = [Collections.Generic.List[string]]::new()
+    function Invoke-Lane {
+        param([string] $Name, [string] $Program, [string[]] $Arguments, [switch] $QuietStdout)
+        if ($evidence -isnot [IO.DirectoryInfo]) {
+            throw 'The nested lane lost the original evidence directory object.'
+        }
+        $observedDirectories.Add($evidence.FullName)
+        return 1
+    }
+    $buildRefused = $false
+    try { Invoke-ExactReadDiff 'Read' 'unused-build' $expectedDirectory 'unused-repository' }
+    catch {
+        if ($_.Exception.Message -cne 'The pinned Read/Diff build failed.') { throw }
+        $buildRefused = $true
+    }
+    if (!$buildRefused -or $observedDirectories.Count -ne 1 -or
+        $observedDirectories[0] -cne $expectedDirectory) {
+        throw 'The exact builder did not retain its caller evidence directory.'
+    }
+}
 Write-Output 'Read/Diff exact attendance controls passed.'
