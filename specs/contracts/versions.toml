@@ -330,7 +330,7 @@ status = "implemented_private"
 version = "1.0"
 required_features = 15
 owner = "crates/storage/exacopy-journal/src/remote_download/continuation/wire.rs"
-notes = "Private signed kind 40 records exact independently expected retained-prefix claims under a separate signature domain and 1024-byte cap. Legacy replay refuses it. Advanced replay, append authority, qualification, finalization and continued receipt remain separate."
+notes = "Private signed kind 40 records retained-prefix claims under a separate signature domain and 1024-byte cap. An explicitly selected read-only scanner resolves one first continuation against original capture history and independently selected V2 qualification. Legacy replay refuses it. Native append, continued finalization and receipt remain separate."
 
 [[contract]]
 id = "linux-remote-continued-checkpoint"
@@ -339,4 +339,4 @@ status = "implemented_private"
 version = "1.0"
 required_features = 15
 owner = "crates/storage/exacopy-journal/src/remote_download/continuation/checkpoint.rs"
-notes = "Explicit continuation-prepared kind-3 checkpoint codec. V1 and V2 mutually refuse. Historical lineage resolution and native continuation authority are separate."
+notes = "Explicit continuation-prepared kind-3 checkpoint codec. The opt-in reader checks actual active preparation, epochs, contiguous coverage and source extent. V1 and V2 mutually refuse. Native continuation authority remains separate."

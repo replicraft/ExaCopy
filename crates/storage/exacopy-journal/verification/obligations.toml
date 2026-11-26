@@ -178,3 +178,16 @@ symbols = ["verify_remote_continuation_qualification"]
 assumptions = ["The separately provisioned attestor reports truthful campaign evidence for the exact build, route, scope and append-specific coverage profile.", "Signed historical destination facts are declarations. Native admission separately matches current facts and holds the actual grant and lease; this gate confers no effect authority."]
 gates = ["rust"]
 rust = { file = "tests/remote_continuation_qualification.rs", test = "independent_v2_vectors_require_selected_route_and_do_not_cross_v1", oracle = "Authenticate independent OpenSSL V2 records only under the independently selected route, attestor and build; require V1 and V2 mutual refusal without changing legacy bytes." }
+
+[[obligation]]
+id = "P-062"
+requirement_ids = ["R-253", "R-255"]
+source = "src/remote_download/continuation/replay.rs"
+symbols = ["replay_remote_continuation"]
+assumptions = [
+    "The caller independently selects the authenticated owner/profile/key, archived V1 qualification and separately verified V2 qualification for the owner's exact route and destination parent.",
+    "The caller supplies the complete selected first segment from byte zero and the independently bound immutable grant digest. Framing integrity alone does not authenticate unsigned capture declarations.",
+    "The result describes historical claims and validated semantic ancestry. Native lineage and bytes, current lease and grant, writer exclusion, barrier, receipt and effects require independent evidence.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_continued_replay.rs", test = "independent_history_keeps_aggregate_original_lineage_and_suffix_distinct", oracle = "Admit an independent OpenSSL and C BLAKE3 transcript with typed V2 strategy qualification and two suffix checkpoints. Preserve original preparation, active continued lineage and adopted aggregate separately from the moving head. Require legacy replay to stop at the preceding boundary." }

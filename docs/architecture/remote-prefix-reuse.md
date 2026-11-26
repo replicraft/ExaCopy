@@ -67,3 +67,31 @@ range reuse. Preserve the old profile and select advanced reuse explicitly
 until the new journal, native appender, finalizer, receipt and fault campaign
 are implemented and qualified together. This is not a relaxation of source
 consistency or a size-based append mode.
+
+## Explicit continued-history reader
+
+The opt-in `replay_remote_continuation` scanner authenticates one first
+kind-40 continuation from a clean, physically prepared original capture
+with at least one accepted checkpoint. It separately selects the legacy
+qualification, typed V2 retained-append attestation and immutable grant
+digest. V2 evidence must match the actual selected owner key, route class
+and recorded destination parent. Historical attestation facts remain
+claims; they supply no current lease, grant or native admission.
+
+The reader resolves the original allocation, preparation, bootstrap,
+private name and nonce, recorded identities, epochs and old source extent
+from the preceding history. It applies the 1,024-byte kind-40 payload cap
+before reading or allocating. Continued checkpoints use the explicit
+[1,0,15] required-version tuple; the old and new codecs mutually refuse.
+The adopted aggregate over `[0, adopted_end)` remains separate from the
+later suffix checkpoint rows. A historical range hash is not current
+byte verification. A later append verifier must freshly reread both
+regions, including the aggregate, before relying on them.
+
+The first scanner supports continued capture, zero suffix and explicit
+uncertainty. A further allocation, retirement, continuation or finalization
+after kind 40 is refused pending its own explicit grammar. Unknown or torn
+suffixes retain the accepted preceding boundary and require reconciliation.
+Current commands still use fresh private capture from byte zero. The native
+appender, continued finalizer and receipt, live qualification and interruption
+campaign remain required before enabling prefix-preserving writes.

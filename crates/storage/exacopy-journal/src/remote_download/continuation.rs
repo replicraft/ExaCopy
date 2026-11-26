@@ -18,6 +18,7 @@ use super::{
 };
 
 pub mod checkpoint;
+pub mod replay;
 mod validation;
 mod wire;
 
@@ -187,7 +188,25 @@ impl RemoteBootstrapTrust<'_> {
 		observed_end: RemoteReplayBoundary,
 		expected: &RemoteContinuationExpectation<'_>,
 	) -> Result<RemoteCaptureContinued<'frame>, Error> {
-		let previous = expected.claims.previous;
+		let recorded = self.verify_continuation_frame(
+			frame,
+			expected.claims.previous,
+			observed_end,
+			expected.prior_source_extent,
+		)?;
+		if recorded.claims != expected.claims {
+			return Err(Error::Binding);
+		}
+		Ok(recorded)
+	}
+
+	pub(super) fn verify_continuation_frame<'frame>(
+		&self,
+		frame: &'frame Frame,
+		previous: RemoteReplayBoundary,
+		observed_end: RemoteReplayBoundary,
+		prior_source_extent: StreamLength,
+	) -> Result<RemoteCaptureContinued<'frame>, Error> {
 		if frame.kind() != FrameKind::RemoteCaptureContinued
 			|| observed_end.head != frame.head()
 			|| observed_end.offset > MAX_FIRST_SEGMENT_BYTES
@@ -205,10 +224,10 @@ impl RemoteBootstrapTrust<'_> {
 			)
 			.map_err(|_| OwnerError::InvalidSignature)?;
 		let claims = wire::decode_body(body)?;
-		if claims != expected.claims {
+		if claims.previous != previous {
 			return Err(Error::Binding);
 		}
-		validation::claims(self, &claims, expected.prior_source_extent)?;
+		validation::claims(self, &claims, prior_source_extent)?;
 		Ok(RemoteCaptureContinued {
 			claims,
 			boundary: observed_end,

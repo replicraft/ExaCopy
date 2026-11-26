@@ -8,6 +8,7 @@ use crate::frame::{
 	MAX_PAYLOAD_BYTES,
 };
 
+use super::super::continuation::{MAX_REMOTE_CONTINUATION_PAYLOAD_BYTES, replay::ContinuedHistory};
 use super::super::finalization::MAX_REMOTE_FINALIZATION_BYTES;
 use super::super::finalization_replay::{FinalizationHistory, RemoteFinalizationPhase};
 use super::super::retirement::MAX_REMOTE_RETIREMENT_BYTES;
@@ -24,7 +25,13 @@ pub(super) fn replay(
 	max_bytes: u64,
 	max_attempts: usize,
 ) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
-	scan(input, owner, None, None, false, max_bytes, max_attempts)
+	scan(
+		input,
+		owner,
+		ScanProfile::default(),
+		max_bytes,
+		max_attempts,
+	)
 }
 
 pub(super) fn replay_with_bootstrap(
@@ -36,9 +43,10 @@ pub(super) fn replay_with_bootstrap(
 	scan(
 		input,
 		trust.owner(),
-		Some(trust),
-		None,
-		false,
+		ScanProfile {
+			bootstrap: Some(trust),
+			..ScanProfile::default()
+		},
 		max_bytes,
 		max_attempts,
 	)
@@ -55,23 +63,60 @@ pub(super) fn scan_finalization(
 	scan(
 		input,
 		trust.owner(),
-		Some(trust),
-		Some(history),
-		retain_checkpoints,
+		ScanProfile {
+			bootstrap: Some(trust),
+			finalization: Some(history),
+			retain_checkpoints,
+			..ScanProfile::default()
+		},
 		max_bytes,
 		max_attempts,
 	)
 }
 
-fn scan(
+pub(super) fn scan_continuation(
 	input: impl Read,
-	owner: &RemoteDownloadOwnerRecord,
-	bootstrap: Option<&RemoteBootstrapTrust<'_>>,
-	mut finalization: Option<&mut FinalizationHistory>,
-	retain_checkpoints: bool,
+	trust: &RemoteBootstrapTrust<'_>,
+	history: &mut FinalizationHistory,
+	continued: &mut ContinuedHistory,
 	max_bytes: u64,
 	max_attempts: usize,
 ) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
+	scan(
+		input,
+		trust.owner(),
+		ScanProfile {
+			bootstrap: Some(trust),
+			finalization: Some(history),
+			continued: Some(continued),
+			retain_checkpoints: true,
+		},
+		max_bytes,
+		max_attempts,
+	)
+}
+
+#[derive(Default)]
+struct ScanProfile<'scan, 'owner> {
+	bootstrap: Option<&'scan RemoteBootstrapTrust<'owner>>,
+	finalization: Option<&'scan mut FinalizationHistory>,
+	continued: Option<&'scan mut ContinuedHistory>,
+	retain_checkpoints: bool,
+}
+
+fn scan(
+	input: impl Read,
+	owner: &RemoteDownloadOwnerRecord,
+	profile: ScanProfile<'_, '_>,
+	max_bytes: u64,
+	max_attempts: usize,
+) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
+	let ScanProfile {
+		bootstrap,
+		mut finalization,
+		mut continued,
+		retain_checkpoints,
+	} = profile;
 	let manifest = owner.manifest();
 	let validation = ReplayValidation {
 		manifest,
@@ -106,6 +151,8 @@ fn scan(
 			let profile_limit = if bootstrap.is_some() && kind == FrameKind::StageDirectoryPrepared
 			{
 				MAX_REMOTE_BOOTSTRAP_PAYLOAD_BYTES
+			} else if continued.is_some() && kind == FrameKind::RemoteCaptureContinued {
+				MAX_REMOTE_CONTINUATION_PAYLOAD_BYTES
 			} else if finalization.is_some() && kind == FrameKind::RemoteCaptureRetired {
 				MAX_REMOTE_RETIREMENT_BYTES
 			} else if finalization.is_some() && is_finalization_kind(kind) {
@@ -145,6 +192,9 @@ fn scan(
 			Ok(Some(frame)) => frame,
 			Ok(None) => {
 				if replay.uncertainty.is_some()
+					|| continued
+						.as_ref()
+						.is_some_and(|history| history.failure().is_some())
 					|| finalization.as_ref().is_some_and(|history| {
 						history.phase() == RemoteFinalizationPhase::Uncertain
 					}) {
@@ -159,8 +209,23 @@ fn scan(
 				break;
 			}
 		};
-		let head = frame.head();
-		let accepted = if let Some(history) = finalization.as_deref_mut() {
+		let end = RemoteReplayBoundary {
+			head: frame.head(),
+			offset: reader.offset(),
+		};
+		let kind = frame.kind();
+		let accepted = if let (Some(continued), Some(trust), Some(history)) =
+			(continued.as_deref_mut(), bootstrap, finalization.as_ref())
+			&& (kind == FrameKind::RemoteCaptureContinued || continued.active().is_some())
+		{
+			continued
+				.accept(&mut replay, history.phase(), trust, frame, end)
+				.map_err(|problem| RemoteReplayIssue::Record {
+					offset: replay.boundary.offset,
+					kind,
+					problem,
+				})
+		} else if let Some(history) = finalization.as_deref_mut() {
 			accept_extended(&validation, &mut replay, history, owner, frame)
 		} else {
 			validation.accept(&mut replay, &frame)
@@ -169,10 +234,7 @@ fn scan(
 			replay.issue = Some(issue);
 			break;
 		}
-		replay.boundary = RemoteReplayBoundary {
-			head,
-			offset: reader.offset(),
-		};
+		replay.boundary = end;
 	}
 	Ok(replay)
 }

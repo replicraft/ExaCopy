@@ -263,3 +263,19 @@ pub(super) fn scan_finalization(
 		MAX_REMOTE_REPLAY_ATTEMPTS,
 	)
 }
+
+pub(super) fn scan_continuation(
+	input: impl Read,
+	trust: &RemoteBootstrapTrust<'_>,
+	history: &mut FinalizationHistory,
+	continued: &mut super::continuation::replay::ContinuedHistory,
+) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
+	reader::scan_continuation(
+		input,
+		trust,
+		history,
+		continued,
+		MAX_REMOTE_REPLAY_SEGMENT_BYTES,
+		MAX_REMOTE_REPLAY_ATTEMPTS,
+	)
+}

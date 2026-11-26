@@ -24,7 +24,7 @@ GRANT = bytes([0x72]) * 32
 QUALIFICATION = bytes([0x71]) * 32
 
 
-def fixture(hasher, openssl, directory):
+def fixture(hasher, openssl, directory, *, qualification=QUALIFICATION, fresh_length=5, replay_controls=False):
     def digest(data):
         return bytes.fromhex(subprocess.check_output([hasher], input=data).decode("ascii"))
 
@@ -85,13 +85,13 @@ def fixture(hasher, openssl, directory):
         3: [bootstrap, allocation, prepared, [2, prepared], *epochs, NAME, nonce],
         4: [stage_directory, stage],
         5: [3, checkpoint, 1, 2],
-        6: [2, 9, len(stream) + 1, 0o100600, 23],
+        6: [2, 9, fresh_length, 0o100600, 23],
         7: [len(stream), digest(stream), 1],
-        8: [1, GRANT, QUALIFICATION, 1],
+        8: [1, GRANT, qualification, 1],
     }
     valid = sign(encode(body))
     append(40, valid)
-    return {
+    results = {
         "journal": b"".join(frames),
         "future_features": sign(encode(body | {0: [1, 0, 31]})),
         "future_version": sign(encode(body | {0: [2, 0, 15]})),
@@ -101,6 +101,14 @@ def fixture(hasher, openssl, directory):
         "foreign_stage": sign(encode(body | {4: [stage_directory, identity(7, 14)]})),
         "body_trailing": sign(encode(body) + b"\x00"),
     }
+    if replay_controls:
+        forged_head = [prepared[0], bytes([0x44]) * 32]
+        results["wrong_prepared"] = sign(encode(body | {
+            3: [bootstrap, allocation, forged_head, [2, forged_head], *epochs, NAME, nonce],
+        }))
+        results["wrong_coverage"] = sign(encode(body | {5: [3, checkpoint, 1, 3]}))
+        results["wrong_old_extent"] = sign(encode(body | {7: [5, digest(b"ABCDE"), 1]}))
+    return results
 
 
 def main():
