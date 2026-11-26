@@ -26,6 +26,7 @@ from remote_commissioning_wireguard_observations import CASES, Counters, check_d
 import remote_commissioning_wireguard_provider as provider
 import remote_commissioning_wireguard_provider_b as provider_b
 from remote_commissioning_wireguard_provider_profiles import DispatchMode
+from remote_commissioning_wireguard_progress import Progress, Step
 
 SCHEMA = "exacopy.linux-kernel-wireguard-commissioning.v1"
 JOB = "exacopy-wireguard-commissioning"
@@ -289,8 +290,11 @@ def execute(parent, work, report, evidence, choice=ProviderChoice.EXISTING):
         "keepers": [f"exacopy-wg-{fixture.nonce}-{role}.service" for role in ("client", "peer")],
         "client_lanes": [client_unit_name(fixture, mode) for mode in CLIENT_MODES],
     })
+    setup, cleanup = Progress(), Progress()
+    evidence["fixture_progress"] = {"setup": setup.evidence, "cleanup": cleanup.evidence}
     with native.fresh_target(target):
         try:
+            setup.advance(Step.BUILD)
             binary, manifest = native.build_cli(native.EMBEDDED, work / "build", target, env, staged_executable=target / "exacopy")
             build, digest = direct.read_build_manifest(manifest)
 
@@ -300,13 +304,16 @@ def execute(parent, work, report, evidence, choice=ProviderChoice.EXISTING):
                 direct.verify_build_custody(manifest, binary, build, digest)
 
             verify()
+            setup.advance(Step.FIXTURE_ROOT)
             fixture.make_root()
+            setup.advance(Step.PEER_TOOL)
             protected_wg = fixture.root / "wg"
             command(work, "stage exact root-owned WireGuard tool", [INSTALL, "-m", "0755", "--", wg, protected_wg])
             info = protected_wg.lstat()
             if info.st_uid or info.st_nlink != 1 or not stat.S_ISREG(info.st_mode) or file_digest(protected_wg) != staged_wg_sha:
                 raise Blocked("kernel peer tool custody changed")
             if boot is not None:
+                setup.advance(Step.PROVIDER)
                 details = evidence["provider_b"] = {}
                 provider_b.prepare(
                     parent.parent / "exacopy-commissioning-tools", work, report, fixture, provider_profile, boot, details,
@@ -314,13 +321,14 @@ def execute(parent, work, report, evidence, choice=ProviderChoice.EXISTING):
                 expected_provider = check_provider(evidence)
                 if expected_provider != (boot, "already-live"):
                     raise Blocked("provider B did not establish WireGuard Live on the same boot")
-            kernel = KernelPeer(fixture, work, protected_wg)
+            kernel = KernelPeer(fixture, work, protected_wg, setup=setup, cleanup=cleanup)
             kernel.prepare(lambda: check_provider(evidence, expected_provider))
             evidence["topology"] = {
                 "namespaces": {"client": kernel.client.identity, "peer": kernel.peer.identity},
                 "kernel_ifindex": kernel.ifindex, "outer_port": kernel.port, "wg_sha256": staged_wg_sha,
                 "client_inner": CLIENT, "server_inner": SERVER, "sshd_sha256": sshd_sha,
             }
+            setup.advance(Step.SSH_SETUP)
             route = kernel.profile()
             revision = route_revision(route, b3sum)
             evidence["topology"]["route_revision"] = revision
@@ -343,8 +351,10 @@ def execute(parent, work, report, evidence, choice=ProviderChoice.EXISTING):
             input_digests = {name: file_digest(path) for name, path in inputs.items()}
             validate_listener(fixture, kernel)
             verify()
+            setup.advance(Step.CAMPAIGN)
             result = execute_campaign(fixture, kernel, work, b3sum, binary, evidence, input_digests)
             if result == 0:
+                setup.advance(Step.CARRIER_DOWN)
                 kernel.check_geometry()
                 validate_listener(fixture, kernel)
                 verify()
@@ -354,19 +364,28 @@ def execute(parent, work, report, evidence, choice=ProviderChoice.EXISTING):
                 verify()
                 if any(file_digest(path) != input_digests[name] for name, path in inputs.items()):
                     raise direct.EvidenceFailed("protected route or authority inputs changed")
-        except CleanupUnconfirmed:
-            unresolved = True
+            setup.completed()
+        except Exception as error:
+            unresolved = isinstance(error, CleanupUnconfirmed)
+            setup.failed(error)
             raise
         finally:
-            if not unresolved:
+            if unresolved:
+                cleanup.held()
+            else:
                 try:
+                    cleanup.advance(Step.SSH_STOP)
                     fixture.stop_peer()
                     fixture.unit_attempted = False
                     if kernel is not None:
                         kernel.stop()
+                    cleanup.advance(Step.FIXTURE_REMOVE)
                     fixture.stop()
+                    cleanup.advance(Step.MARKER_REMOVE)
                     marker.unlink()
+                    cleanup.completed()
                 except Exception as error:
+                    cleanup.failed(error)
                     raise CleanupUnconfirmed("kernel commissioning cleanup is unconfirmed") from error
     checkpoint()
     return result
@@ -404,9 +423,12 @@ def main(choice=ProviderChoice.EXISTING):
         evidence["reason"] = "owned fixture cleanup remains unconfirmed"
     except direct.EvidenceFailed as error:
         status = 1
-        evidence["reason"] = str(error)
+        evidence["reason"] = "kernel commissioning fixture checks failed" if "fixture_progress" in evidence else str(error)
     except (Blocked, OSError, KeyError, TypeError, ValueError, subprocess.SubprocessError) as error:
-        evidence["reason"] = str(error) if isinstance(error, Blocked) else type(error).__name__
+        if evidence.get("fixture_progress", {}).get("setup", {}).get("disposition") == "failed":
+            evidence["reason"] = "kernel commissioning fixture step failed"
+        else:
+            evidence["reason"] = str(error) if isinstance(error, Blocked) else type(error).__name__
     finally:
         evidence["cleanup_unconfirmed"] = uncertain
         try:

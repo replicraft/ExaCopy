@@ -1,12 +1,14 @@
+from contextlib import nullcontext
 from pathlib import Path
 import hashlib
 import json
 import os
+import stat
 import sys
 from types import SimpleNamespace
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import remote_commissioning_wireguard as fixture
 import remote_commissioning_wireguard_client as client
@@ -163,6 +165,105 @@ class KernelFixtureTests(unittest.TestCase):
                 kernel.stop()
             command.assert_not_called()
             stop.assert_not_called()
+
+    def test_keeper_command_failure_retains_primary_and_secondary_without_raw_output(self):
+        self.check_keeper_report(uncertain=False)
+
+    def test_keeper_ownership_uncertainty_retains_marker_and_skips_cleanup(self):
+        self.check_keeper_report(uncertain=True)
+
+    def check_keeper_report(self, *, uncertain):
+        with tempfile.TemporaryDirectory() as scratch:
+            parent = Path(scratch)
+            root = parent / "synthetic-private-path"
+            owned = Mock(root=root, nonce="0" * 20, account="synthetic-account", unit="synthetic-unit")
+            original_lstat = Path.lstat
+            injected_output = b"synthetic-secret-from-command"
+
+            def fixture_stat(path):
+                if path == root / "wg":
+                    return SimpleNamespace(st_uid=0, st_nlink=1, st_mode=stat.S_IFREG)
+                return original_lstat(path)
+
+            def refuse(_argv, transcript, _deadline, **_options):
+                transcript.write_bytes(injected_output)
+                if uncertain:
+                    raise CleanupUnconfirmed(injected_output.decode())
+                return supervision.ProcessResult("exited", 19)
+
+            with (
+                patch.dict(os.environ, {"GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REF_PROTECTED": "true",
+                                        "GITHUB_SHA": "a" * 40}),
+                patch.object(fixture.direct, "hosted_parent", return_value=parent),
+                patch.object(fixture.signal, "signal"),
+                patch.object(fixture, "check_provider", return_value=({}, "built-in")),
+                patch.object(fixture.direct, "preflight", return_value=1),
+                patch.object(fixture, "Fixture", return_value=owned),
+                patch.object(fixture, "staged_tool", side_effect=lambda _parent, name: root / name),
+                patch.object(fixture, "file_digest", return_value="b" * 64),
+                patch.object(fixture.native, "source_identity", return_value={"revision": "a" * 40}),
+                patch.object(fixture.native, "build_environment", return_value={}),
+                patch.object(fixture.native, "fresh_target", return_value=nullcontext()),
+                patch.object(fixture.native, "build_cli", return_value=(root / "binary", root / "manifest")),
+                patch.object(fixture.direct, "read_build_manifest", return_value=({}, "c" * 64)),
+                patch.object(fixture.direct, "verify_build_custody"),
+                patch.object(fixture, "command"),
+                patch.object(network, "unit_known", return_value=False),
+                patch.object(network, "logged_command", side_effect=refuse),
+                patch.object(Path, "lstat", fixture_stat),
+            ):
+                self.assertEqual(fixture.main(), 77)
+
+            job = parent / fixture.JOB
+            report = job / "report"
+            self.assertTrue((report / "cleanup-unconfirmed.json").is_file())
+            self.assertTrue((job / "private").is_dir())
+            self.assertEqual(list((job / "private").glob("kernel-peer-*")), [])
+            if uncertain:
+                owned.stop_peer.assert_not_called()
+            else:
+                owned.stop_peer.assert_called_once()
+            owned.stop.assert_not_called()
+            raw = (report / "provider.json").read_bytes()
+            for protected in (injected_output, os.fsencode(root), b"/usr/bin/sleep", b"synthetic-account"):
+                self.assertNotIn(protected, raw)
+            evidence = json.loads(raw)
+            self.assertTrue(evidence["cleanup_unconfirmed"])
+            primary = ({"kind": "ownership-unconfirmed"} if uncertain else
+                       {"kind": "command", "status": "exited", "exit_status": 19})
+            cleanup = ({"disposition": "held-uncertain"} if uncertain else {
+                "disposition": "failed", "step": {"code": "keeper-stop", "role": "client"},
+                "last_completed": {"code": "ssh-stop"}, "failure": {"kind": "ownership-unconfirmed"},
+            })
+            self.assertEqual(evidence["fixture_progress"], {
+                "setup": {"disposition": "failed", "step": {"code": "keeper-start", "role": "client"},
+                          "last_completed": {"code": "keeper-admission", "role": "client"},
+                          "failure": primary},
+                "cleanup": cleanup,
+            })
+
+    def test_peer_pin_query_refusal_records_only_bounded_status(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            keeper = network.Keeper(Fixture("0" * 20, 1), "peer", Path(scratch))
+
+            def supervise(argv, transcript, _deadline, **_options):
+                if network.STAT in argv:
+                    transcript.write_bytes(b"20:42\n")
+                    return supervision.ProcessResult("exited", 0)
+                transcript.write_bytes(b"synthetic-protected-stdout")
+                return supervision.ProcessResult("output-limit", -15)
+
+            with patch.object(network, "logged_command", side_effect=supervise):
+                with self.assertRaises(Blocked) as failed:
+                    keeper.measure_pin(setup_trace=True)
+            keeper.setup.failed(failed.exception)
+            self.assertEqual(keeper.setup.evidence, {
+                "disposition": "failed", "step": {"code": "pin-mount-query", "role": "peer"},
+                "last_completed": {"code": "pin-stat", "role": "peer"},
+                "failure": {"kind": "command", "status": "output-limit", "exit_status": -15,
+                            "operation": "pin-mount-query"},
+            })
+            self.assertEqual(list(Path(scratch).iterdir()), [])
 
     def test_client_group_ambiguity_does_not_stop_a_replacement(self):
         client = lane.ClientLane("owned.service", Path("/invalid"), 20, attempted=True, invocation="original", group=(1, 2))
