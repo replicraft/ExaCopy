@@ -140,7 +140,7 @@ pub(crate) fn check(
 		let native = inventory.native_fixtures.remove(package.name.as_str());
 		if let Some(manifests) = &native {
 			native::check(
-				metadata.workspace_root.as_std_path(),
+				metadata,
 				package,
 				root,
 				manifests,

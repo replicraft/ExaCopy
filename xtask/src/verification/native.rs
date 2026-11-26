@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
-use cargo_metadata::{Package, TargetKind};
+use cargo_metadata::{Metadata, Package, TargetKind};
 use serde::Deserialize;
 use syn::{Expr, Item, Lit, MetaNameValue};
 
@@ -31,12 +31,16 @@ impl Target {
 enum Profile {
 	#[serde(rename = "linux-unprivileged-same-device-bind-v1")]
 	LinuxUnprivilegedSameDeviceBind,
+	#[serde(rename = "linux-unprivileged-tmpfs-sync-preview-v1")]
+	LinuxUnprivilegedTmpfsSyncPreview,
 }
 
 impl Profile {
 	fn target(self) -> Target {
 		match self {
-			Self::LinuxUnprivilegedSameDeviceBind => Target::LinuxX86_64Gnu,
+			Self::LinuxUnprivilegedSameDeviceBind | Self::LinuxUnprivilegedTmpfsSyncPreview => {
+				Target::LinuxX86_64Gnu
+			}
 		}
 	}
 }
@@ -57,38 +61,54 @@ struct Fixture {
 	cases: Vec<Case>,
 }
 
+#[derive(Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum CaseKind {
+	#[default]
+	RustUnit,
+	Command,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Case {
+	#[serde(default)]
+	kind: CaseKind,
+	owner: Option<String>,
 	selector: String,
 	source: PathBuf,
 	ignored: bool,
 }
 
 pub(super) fn check(
-	workspace: &Path,
+	metadata: &Metadata,
 	package: &Package,
 	root: &Path,
 	manifests: &[PathBuf],
 	ids: &mut BTreeSet<String>,
 	findings: &mut Findings,
 ) {
-	let lib = root.join("src/lib.rs");
-	if !package.targets.iter().any(|target| {
-		target.kind.contains(&TargetKind::Lib) && target.src_path.as_std_path() == lib.as_path()
-	}) {
+	if !has_default_library(package, root) {
 		findings.add(
 			root,
 			"native fixture owner must have a src/lib.rs library target",
 		);
 	}
 	for manifest in manifests {
-		check_manifest(workspace, root, manifest, ids, findings);
+		check_manifest(metadata, package, root, manifest, ids, findings);
 	}
 }
 
+fn has_default_library(package: &Package, root: &Path) -> bool {
+	let lib = root.join("src/lib.rs");
+	package.targets.iter().any(|target| {
+		target.kind.contains(&TargetKind::Lib) && target.src_path.as_std_path() == lib.as_path()
+	})
+}
+
 fn check_manifest(
-	workspace: &Path,
+	metadata: &Metadata,
+	package: &Package,
 	root: &Path,
 	manifest: &Path,
 	ids: &mut BTreeSet<String>,
@@ -138,8 +158,14 @@ fn check_manifest(
 		);
 	}
 
-	check_custody(workspace, root, manifest, &fixture, findings);
-	check_cases(root, &path, &fixture.cases, findings);
+	check_custody(
+		metadata.workspace_root.as_std_path(),
+		root,
+		manifest,
+		&fixture,
+		findings,
+	);
+	check_cases(metadata, package, &path, &fixture, findings);
 }
 
 fn check_custody(
@@ -203,19 +229,18 @@ fn check_custody(
 	}
 }
 
-fn check_cases(root: &Path, manifest: &Path, cases: &[Case], findings: &mut Findings) {
-	if cases.is_empty() {
+fn check_cases(
+	metadata: &Metadata,
+	package: &Package,
+	manifest: &Path,
+	fixture: &Fixture,
+	findings: &mut Findings,
+) {
+	if fixture.cases.is_empty() {
 		findings.add(manifest, "native fixture needs exact test cases");
 	}
 	let mut selectors = BTreeSet::new();
-	for case in cases {
-		let Some((modules, leaf)) = selector(&case.source, &case.selector) else {
-			findings.add(
-				manifest,
-				format_args!("invalid native test selector {}", case.selector),
-			);
-			continue;
-		};
+	for case in &fixture.cases {
 		if !selectors.insert(&case.selector) {
 			findings.add(
 				manifest,
@@ -223,39 +248,108 @@ fn check_cases(root: &Path, manifest: &Path, cases: &[Case], findings: &mut Find
 			);
 			continue;
 		}
-		if !check_module_chain(root, &modules, findings) {
-			continue;
+		match case.kind {
+			CaseKind::RustUnit => check_rust_case(metadata, package, manifest, case, findings),
+			CaseKind::Command => {
+				if case.owner.is_some()
+					|| case.ignored
+					|| case.source != fixture.runner
+					|| !command_identifier(&case.selector)
+				{
+					findings.add(
+						manifest,
+						format_args!(
+							"native command case {} needs an identifier, the declared runner, and no owner override or ignore",
+							case.selector
+						),
+					);
+				}
+			}
 		}
-		let Some(contents) = artifact_text(root, &case.source, findings) else {
-			continue;
-		};
-		let matches = syn::parse_file(&contents).is_ok_and(|syntax| {
-			syntax.items.iter().any(|item| {
-				let Item::Fn(function) = item else {
-					return false;
-				};
-				function.sig.ident == leaf
-					&& !function.block.stmts.is_empty()
-					&& function
-						.attrs
-						.iter()
-						.any(|attr| attr.path().is_ident("test"))
-					&& function
-						.attrs
-						.iter()
-						.any(|attr| attr.path().is_ident("ignore"))
-						== case.ignored
-			})
-		});
-		if !matches {
-			findings.add(
-				&root.join(&case.source),
-				format_args!(
-					"expected native #[test] with declared ignore state for {}",
-					case.selector
-				),
-			);
-		}
+	}
+}
+
+fn command_identifier(selector: &str) -> bool {
+	let mut bytes = selector.bytes();
+	bytes
+		.next()
+		.is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_')
+		&& selector != "_"
+		&& bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
+fn check_rust_case(
+	metadata: &Metadata,
+	package: &Package,
+	manifest: &Path,
+	case: &Case,
+	findings: &mut Findings,
+) {
+	let Some(owner) = case.owner.as_deref().map_or(Some(package), |name| {
+		metadata
+			.workspace_packages()
+			.into_iter()
+			.find(|member| member.name.as_str() == name)
+	}) else {
+		findings.add(
+			manifest,
+			format_args!(
+				"unknown workspace owner for native Rust test {}",
+				case.selector
+			),
+		);
+		return;
+	};
+	let Some(root) = owner.manifest_path.as_std_path().parent() else {
+		findings.add(manifest, "native Rust test owner has no package root");
+		return;
+	};
+	if !has_default_library(owner, root) {
+		findings.add(
+			root,
+			"native Rust test owner must have a src/lib.rs library target",
+		);
+		return;
+	}
+	let Some((modules, leaf)) = selector(&case.source, &case.selector) else {
+		findings.add(
+			manifest,
+			format_args!("invalid native test selector {}", case.selector),
+		);
+		return;
+	};
+	if !check_module_chain(root, &modules, findings) {
+		return;
+	}
+	let Some(contents) = artifact_text(root, &case.source, findings) else {
+		return;
+	};
+	let matches = syn::parse_file(&contents).is_ok_and(|syntax| {
+		syntax.items.iter().any(|item| {
+			let Item::Fn(function) = item else {
+				return false;
+			};
+			function.sig.ident == leaf
+				&& !function.block.stmts.is_empty()
+				&& function
+					.attrs
+					.iter()
+					.any(|attr| attr.path().is_ident("test"))
+				&& function
+					.attrs
+					.iter()
+					.any(|attr| attr.path().is_ident("ignore"))
+					== case.ignored
+		})
+	});
+	if !matches {
+		findings.add(
+			&root.join(&case.source),
+			format_args!(
+				"expected native #[test] with declared ignore state for {}",
+				case.selector
+			),
+		);
 	}
 }
 

@@ -27,8 +27,11 @@ The same inventory registers native fixtures separately. A native fixture
 manifest binds the owning package, target, profile, exact test selectors,
 runner, controls, workflow and result filename. The protected-slot manifest
 is under `crates/platform/exacopy-platform/verification/protected_slot/`.
-Workspace validation checks the declarations and their source paths.
-Native results require the corresponding execution and retained evidence.
+The [sync preview manifest](../apps/exacopy-cli/verification/sync_preview/fixture.toml)
+links command cases to its owned runner and Rust unit cases to exact
+selectors in their workspace packages. Workspace validation checks the
+declarations and their source paths. Native results require the
+corresponding execution and retained evidence.
 
 Keep proofs, extraction, models, harnesses and obligation ownership in
 `<crate>/verification/`. Root tooling [captures](../tools/record_evidence.py)

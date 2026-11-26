@@ -16,4 +16,5 @@ exacopy-wireguard = ["rust"]
 
 # Native fixtures have platform-specific execution and do not add generic gates.
 [native_fixtures]
+exacopy-cli = ["verification/sync_preview/fixture.toml"]
 exacopy-platform = ["verification/protected_slot/fixture.toml"]

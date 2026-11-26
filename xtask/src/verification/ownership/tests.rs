@@ -370,3 +370,103 @@ fn native_fixture_rejects_conditional_alternate_module_sources() {
 		"{findings}"
 	);
 }
+
+const SYNC_COMMAND_CASE: &str = r#"
+[[case]]
+kind = "command"
+selector = "preview_equal"
+source = "verification/demo/run.py"
+ignored = false
+"#;
+
+const SYNC_UNIT_CASE: &str = r#"
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-first"
+selector = "linux::tests::observes"
+source = "src/linux/tests.rs"
+ignored = false
+"#;
+
+fn sync_manifest(command: &str, unit: &str) -> String {
+	let (header, _) = NATIVE_MANIFEST
+		.split_once("[[case]]")
+		.expect("manifest header");
+	let header = header.replace(
+		"linux-unprivileged-same-device-bind-v1",
+		"linux-unprivileged-tmpfs-sync-preview-v1",
+	);
+	format!("{header}{command}{unit}")
+}
+
+#[test]
+fn native_sync_profile_checks_cross_package_rust_and_owned_command_cases() {
+	let fixture = workspace();
+	add_native_fixture(&fixture);
+	fixture.write(
+		"exacopy-first/src/lib.rs",
+		r#"pub fn observe() -> bool { true }
+#[cfg(target_os = "linux")]
+mod linux;
+"#,
+	);
+	fixture.write("exacopy-first/src/linux.rs", "#[cfg(test)] mod tests;\n");
+	fixture.write(
+		"exacopy-first/src/linux/tests.rs",
+		"#[test] fn observes() { assert!(crate::observe()); }\n",
+	);
+
+	// The legacy manifest defaults to the protected profile's local Rust case.
+	let (projects, findings) = inspect(&fixture);
+	assert!(findings.is_empty(), "{findings}");
+	assert_eq!(projects[0].obligations.len(), 1);
+
+	fixture.write(
+		NATIVE_PATH,
+		&sync_manifest(SYNC_COMMAND_CASE, SYNC_UNIT_CASE),
+	);
+	let (projects, findings) = inspect(&fixture);
+	assert!(findings.is_empty(), "{findings}");
+	assert_eq!(projects.len(), 1);
+	assert_eq!(projects[0].obligations.len(), 1);
+
+	for (old, new) in [
+		(
+			"verification/demo/run.py",
+			"verification/demo/test_runner.py",
+		),
+		("ignored = false", "ignored = true"),
+		("preview_equal", "linux::preview_equal"),
+		(
+			"kind = \"command\"",
+			"kind = \"command\"\nowner = \"exacopy-second\"",
+		),
+	] {
+		let command = SYNC_COMMAND_CASE.replace(old, new);
+		fixture.write(NATIVE_PATH, &sync_manifest(&command, SYNC_UNIT_CASE));
+		let (_, findings) = inspect(&fixture);
+		assert!(
+			findings.to_string().contains("native command case"),
+			"{old}: {findings}"
+		);
+	}
+
+	for (old, new, expected) in [
+		(
+			"exacopy-first",
+			"not-in-workspace",
+			"unknown workspace owner",
+		),
+		(
+			"linux::tests::observes",
+			"linux::unlinked::observes",
+			"invalid native test selector",
+		),
+		("exacopy-first", "exacopy-second", "declared ignore state"),
+	] {
+		let unit = SYNC_UNIT_CASE.replace(old, new);
+		fixture.write(NATIVE_PATH, &sync_manifest(SYNC_COMMAND_CASE, &unit));
+		let (_, findings) = inspect(&fixture);
+		assert!(findings.to_string().contains(expected), "{old}: {findings}");
+	}
+}

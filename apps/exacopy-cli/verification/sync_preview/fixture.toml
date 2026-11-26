@@ -1,0 +1,151 @@
+schema_version = 1
+id = "linux-sync-preview"
+target = "x86_64-unknown-linux-gnu"
+profile = "linux-unprivileged-tmpfs-sync-preview-v1"
+rust_toolchain = "1.100.0"
+runner = "verification/sync_preview/qualify.py"
+controls = "verification/sync_preview/test_qualify.py"
+workflow = ".github/workflows/linux-sync-preview-qualification.yml"
+result = "result.json"
+
+[[case]]
+kind = "command"
+selector = "equal"
+source = "verification/sync_preview/qualify.py"
+ignored = false
+
+[[case]]
+kind = "command"
+selector = "same_extent_divergent"
+source = "verification/sync_preview/qualify.py"
+ignored = false
+
+[[case]]
+kind = "command"
+selector = "metadata_divergent"
+source = "verification/sync_preview/qualify.py"
+ignored = false
+
+[[case]]
+kind = "command"
+selector = "one_sided"
+source = "verification/sync_preview/qualify.py"
+ignored = false
+
+[[case]]
+kind = "command"
+selector = "both_absent"
+source = "verification/sync_preview/qualify.py"
+ignored = false
+
+[[case]]
+kind = "command"
+selector = "different_spelling"
+source = "verification/sync_preview/qualify.py"
+ignored = false
+
+[[case]]
+kind = "command"
+selector = "unsupported_link"
+source = "verification/sync_preview/qualify.py"
+ignored = false
+
+[[case]]
+kind = "command"
+selector = "aliased_files"
+source = "verification/sync_preview/qualify.py"
+ignored = false
+
+[[case]]
+kind = "command"
+selector = "oversized"
+source = "verification/sync_preview/qualify.py"
+ignored = false
+
+[[case]]
+kind = "command"
+selector = "directory_cap"
+source = "verification/sync_preview/qualify.py"
+ignored = false
+
+[[case]]
+kind = "command"
+selector = "unavailable_root"
+source = "verification/sync_preview/qualify.py"
+ignored = false
+
+[[case]]
+kind = "command"
+selector = "explicit_no_history_required"
+source = "verification/sync_preview/qualify.py"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::tests::a_bounded_directory_scan_cannot_certify_absence_when_exhausted"
+source = "src/linux/sync_preview/tests.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::tests::matching_inode_cannot_substitute_a_different_raw_name"
+source = "src/linux/sync_preview/tests.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::tests::recheck_rejects_absent_name_that_appears_and_rebound_root"
+source = "src/linux/sync_preview/tests.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::tests::recheck_rejects_changed_bytes_and_required_metadata"
+source = "src/linux/sync_preview/tests.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::tests::unsupported_and_aliased_subjects_never_become_absence"
+source = "src/linux/sync_preview/tests.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::namespaces::tests::accepts_only_fixed_kind_and_bounded_canonical_inode_text"
+source = "src/linux/sync_preview/namespaces/tests.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::namespaces::tests::current_namespace_pins_are_read_only_and_match_fresh_observations"
+source = "src/linux/sync_preview/namespaces/tests.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::namespaces::tests::distinguishes_missing_support_from_native_read_failure"
+source = "src/linux/sync_preview/namespaces/tests.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::namespaces::tests::procfs_directory_cannot_be_used_as_a_namespace_object"
+source = "src/linux/sync_preview/namespaces/tests.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-transfer"
+selector = "linux::sync_preview::tests::checks_both_limits_before_reading_and_refuses_incomplete_recheck"
+source = "src/linux/sync_preview/tests.rs"
+ignored = false

@@ -1,0 +1,123 @@
+name: Linux sync preview qualification
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/linux-sync-preview-qualification.yml'
+      - '.github/ci/common.sh'
+      - '.github/ci/capture.sh'
+      - '.github/ci/install.sh'
+      - '.cargo/config.toml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'apps/exacopy-cli/Cargo.toml'
+      - 'apps/exacopy-cli/src/args.rs'
+      - 'apps/exacopy-cli/src/args/parser.rs'
+      - 'apps/exacopy-cli/src/args/parser/sync_preview.rs'
+      - 'apps/exacopy-cli/src/command.rs'
+      - 'apps/exacopy-cli/src/lib.rs'
+      - 'apps/exacopy-cli/src/sync_preview.rs'
+      - 'apps/exacopy-cli/src/sync_preview/**'
+      - 'apps/exacopy-cli/verification/sync_preview/**'
+      - 'crates/platform/exacopy-platform/Cargo.toml'
+      - 'crates/platform/exacopy-platform/src/lib.rs'
+      - 'crates/platform/exacopy-platform/src/linux.rs'
+      - 'crates/platform/exacopy-platform/src/linux/handle.rs'
+      - 'crates/platform/exacopy-platform/src/linux/mount_observation.rs'
+      - 'crates/platform/exacopy-platform/src/linux/named_read.rs'
+      - 'crates/platform/exacopy-platform/src/linux/source.rs'
+      - 'crates/platform/exacopy-platform/src/linux/source/**'
+      - 'crates/platform/exacopy-platform/src/linux/sync_preview.rs'
+      - 'crates/platform/exacopy-platform/src/linux/sync_preview/**'
+      - 'crates/engines/exacopy-transfer/Cargo.toml'
+      - 'crates/engines/exacopy-transfer/src/lib.rs'
+      - 'crates/engines/exacopy-transfer/src/linux.rs'
+      - 'crates/engines/exacopy-transfer/src/linux/sync_preview.rs'
+      - 'crates/engines/exacopy-transfer/src/linux/sync_preview/**'
+      - 'crates/engines/exacopy-transfer/src/manifest.rs'
+      - 'crates/foundation/exacopy-model/src/sync.rs'
+      - 'crates/foundation/exacopy-core/src/component.rs'
+      - 'crates/interfaces/exacopy-endpoint/src/read_view.rs'
+      - 'crates/interfaces/exacopy-endpoint/src/positioned.rs'
+      - 'crates/storage/exacopy-content/src/stream.rs'
+      - 'crates/formats/exacopy-manifest/src/sync_baseline.rs'
+      - 'crates/formats/exacopy-manifest/src/sync_baseline/**'
+      - 'crates/formats/exacopy-manifest/verification/manifest/build-hash.sh'
+      - 'crates/formats/exacopy-manifest/verification/manifest/hash.c'
+      - 'crates/formats/exacopy-manifest/verification/manifest/reference.py'
+      - 'specs/verification/owners.toml'
+      - 'specs/dependencies/**'
+      - 'tools/apfs_source.py'
+      - 'tools/transport_source.py'
+      - 'xtask/src/verification/native.rs'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+  CARGO_BUILD_JOBS: "2"
+  EXPECTED_RUST_HOST: x86_64-unknown-linux-gnu
+
+jobs:
+  qualify:
+    if: github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main'
+    name: Single-subject preview (Linux x64 tmpfs)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify exact clean synthetic source
+        run: |
+          bash .github/ci/capture.sh sync-admission bash -e -c '
+            test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+            test -z "$(git status --porcelain)"
+            test "$GITHUB_SERVER_URL" = https://github.com
+            test "${GITHUB_REPOSITORY,,}" = replicraft/exacopy
+            test "$GITHUB_REF" = refs/heads/main
+            case "$GITHUB_EVENT_NAME" in
+              push|workflow_dispatch) ;;
+              *) exit 1 ;;
+            esac
+            test "$RUNNER_ENVIRONMENT" = github-hosted
+            test "$RUNNER_OS" = Linux
+            test "$RUNNER_ARCH" = X64
+            test "$(id -u)" -ne 0
+          '
+      - name: Run portable qualification harness controls
+        run: |
+          bash .github/ci/capture.sh sync-harness python3 -B -Werror \
+            apps/exacopy-cli/verification/sync_preview/test_qualify.py -v
+      - name: Prepare pinned sources and tools
+        run: |
+          bash .github/ci/capture.sh sync-apfs-source python3 -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh sync-transport-source python3 -B tools/transport_source.py --fetch
+          bash .github/ci/capture.sh sync-rust-setup bash .github/ci/install.sh rust
+          bash .github/ci/capture.sh sync-locked-fetch cargo +1.100.0 fetch --locked \
+            --target "$EXPECTED_RUST_HOST"
+      - name: Qualify the exact registered read-only fixture
+        run: |
+          bash .github/ci/capture.sh sync-native python3 -B -Werror \
+            apps/exacopy-cli/verification/sync_preview/qualify.py \
+            --revision "$GITHUB_SHA" --evidence "$RUNNER_TEMP/exacopy-sync-native"
+      - name: Retain exact native evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-sync-preview-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-evidence/
+            ${{ runner.temp }}/exacopy-sync-native/
+          if-no-files-found: error
+          retention-days: 90
