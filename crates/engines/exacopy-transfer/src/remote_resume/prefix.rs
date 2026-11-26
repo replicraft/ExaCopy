@@ -16,8 +16,13 @@ use crate::remote_capture::{CapturedReadAt, SourceEpoch};
 
 mod compare;
 mod error;
+mod handoff;
 
 pub use error::PrefixVerificationError;
+pub use handoff::{
+	LentRetainedReader, LentRetainedSuffix, ObservedRetainedContinuation, RetainedContinuation,
+	SuffixSourceObservation, VerifiedHeldRetainedPrefix, verify_held_retained_prefix,
+};
 
 use compare::{Comparison, Mismatch};
 

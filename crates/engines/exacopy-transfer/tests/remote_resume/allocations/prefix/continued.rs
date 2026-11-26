@@ -386,3 +386,6 @@ fn interrupted_continued_comparison_cannot_return_partial_hasher_or_drop_origina
 	));
 	assert_eq!(local.checks.get(), 2);
 }
+
+#[path = "continued/handoff.rs"]
+mod handoff;

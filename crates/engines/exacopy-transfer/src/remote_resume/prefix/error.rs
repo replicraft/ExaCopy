@@ -90,11 +90,30 @@ pub enum PrefixVerificationError<R, L> {
 		/// Uncheckpointed tail start.
 		offset: u64,
 	},
+	/// The checked suffix reader cannot continue after a failed or interrupted operation.
+	ContinuationStopped,
+	/// The live source has not been read through its complete observed extent.
+	IncompleteContinuation {
+		/// First byte still needed.
+		offset: u64,
+		/// Complete observed source length.
+		length: u64,
+	},
+	/// Terminal source observation, EOF or handle closure failed.
+	SourceFinish(R),
 }
 
 impl<R: fmt::Display, L: fmt::Display> fmt::Display for PrefixVerificationError<R, L> {
 	fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
+			Self::ContinuationStopped => out.write_str("retained source continuation has stopped"),
+			Self::IncompleteContinuation { offset, length } => {
+				write!(
+					out,
+					"retained source read stopped at {offset} of {length} bytes"
+				)
+			}
+			Self::SourceFinish(cause) => write!(out, "terminal source check failed ({cause})"),
 			Self::History(cause) => cause.fmt(out),
 			Self::Input(cause) => cause.fmt(out),
 			Self::StageIdentity => out.write_str("held stage differs from the prepared stage"),
@@ -166,7 +185,9 @@ impl<R: std::error::Error + 'static, L: std::error::Error + 'static> std::error:
 		match self {
 			Self::History(cause) => Some(cause),
 			Self::Input(cause) => Some(cause),
-			Self::SourceObservation(cause) | Self::SourceRead { cause, .. } => Some(cause),
+			Self::SourceObservation(cause)
+			| Self::SourceRead { cause, .. }
+			| Self::SourceFinish(cause) => Some(cause),
 			Self::StageObservation(cause) | Self::StageRead { cause, .. } => Some(cause),
 			_ => None,
 		}
