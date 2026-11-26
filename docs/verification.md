@@ -23,6 +23,13 @@ crate-local ledger and dispatcher land. The workspace policy check requires
 the registered packages, ledgers, dispatchers and declared gate kinds.
 The crate-local ledgers own individual obligations and their linked inputs.
 
+The same inventory registers native fixtures separately. A native fixture
+manifest binds the owning package, target, profile, exact test selectors,
+runner, controls, workflow and result filename. The protected-slot manifest
+is under `crates/platform/exacopy-platform/verification/protected_slot/`.
+Workspace validation checks the declarations and their source paths.
+Native results require the corresponding execution and retained evidence.
+
 Keep proofs, extraction, models, harnesses and obligation ownership in
 `<crate>/verification/`. Root tooling [captures](../tools/record_evidence.py)
 and validates scoped results. Preserve the original log and minimized

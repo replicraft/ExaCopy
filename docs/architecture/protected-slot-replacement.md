@@ -131,3 +131,21 @@ both missing barriers, missing image evidence and a racing public arrival
 after capture. Require negative controls for wrong-object publication,
 early publication and a clobbered late arrival. Process and power-loss
 qualification remain separate from these pure checks.
+
+## Native observation component
+
+Linux now exposes a metadata-only `HeldSlot` under a caller-authorized held
+parent and one validated raw component. It pins an observed entry without
+following a link or opening payload bytes, distinguishes absence from an
+unsupported or failed observation, and rechecks the same held parent and
+entry identity. Lookup follows the filesystem's native name equivalence.
+This component does not establish parent path provenance, layout exclusion,
+current authorization, durable capture, restoration or mutation authority.
+
+The [native qualification workflow](../../.github/workflows/linux-protected-slot-qualification.yml)
+selects six ordinary fixtures and a separate same-device bind-mount crossing
+control. It records the exact source, executable, filesystem, outer UID and
+namespace identities, and cleanup. The mount control runs inside a fresh
+user and mount namespace; unavailable namespace support remains blocked.
+Cross-compilation and portable runner controls passed before integration.
+Native fixture execution and the protected effect workflow remain open.

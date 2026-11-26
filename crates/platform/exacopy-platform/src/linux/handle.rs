@@ -40,7 +40,16 @@ pub(super) fn file_identity(fd: impl AsFd) -> io::Result<FileIdentity> {
 }
 
 pub(super) fn mount_id(fd: impl AsFd) -> io::Result<u64> {
-	let stat = fs::statx(fd, c"", AtFlags::EMPTY_PATH, StatxFlags::MNT_ID)?;
+	mount_id_with_flags(fd, AtFlags::EMPTY_PATH)
+}
+
+// A last-component O_PATH pin can refer to a symlink itself.
+pub(super) fn mount_id_no_follow(fd: impl AsFd) -> io::Result<u64> {
+	mount_id_with_flags(fd, AtFlags::EMPTY_PATH | AtFlags::SYMLINK_NOFOLLOW)
+}
+
+fn mount_id_with_flags(fd: impl AsFd, flags: AtFlags) -> io::Result<u64> {
+	let stat = fs::statx(fd, c"", flags, StatxFlags::MNT_ID)?;
 	if stat.stx_mask & StatxFlags::MNT_ID.bits() == 0 {
 		return Err(Errno::NOTSUP);
 	}

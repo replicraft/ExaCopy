@@ -1,0 +1,53 @@
+name: Linux protected slot observation qualification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+  EXPECTED_RUST_HOST: x86_64-unknown-linux-gnu
+
+jobs:
+  protected-slot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify exact clean checkout
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA" && test -z "$(git status --porcelain)"
+      - name: Prepare pinned sources and tools
+        run: |
+          bash .github/ci/capture.sh apfs-source python3 -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source python3 -B tools/transport_source.py --fetch
+          bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
+          bash .github/ci/capture.sh locked-fetch cargo +1.100.0 fetch --locked
+      - name: Validate evidence selectors and cleanup controls
+        run: |
+          bash .github/ci/capture.sh protected-slot-controls python3 -B \
+            crates/platform/exacopy-platform/verification/protected_slot/test_runner.py
+      - name: Qualify held slot observations
+        run: |
+          bash .github/ci/capture.sh protected-slot python3 -B \
+            crates/platform/exacopy-platform/verification/protected_slot/run.py \
+            --revision "$GITHUB_SHA" --evidence "$RUNNER_TEMP/exacopy-protected-slot"
+      - name: Retain protected slot results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: exacopy-linux-protected-slot-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-evidence/
+            ${{ runner.temp }}/exacopy-protected-slot/
+          if-no-files-found: error
+          retention-days: 90

@@ -1,0 +1,44 @@
+schema_version = 1
+id = "linux-protected-slot-observation"
+target = "x86_64-unknown-linux-gnu"
+profile = "linux-unprivileged-same-device-bind-v1"
+rust_toolchain = "1.100.0"
+runner = "verification/protected_slot/run.py"
+controls = "verification/protected_slot/test_runner.py"
+workflow = ".github/workflows/linux-protected-slot-qualification.yml"
+result = "result.json"
+
+[[case]]
+selector = "linux::protected_slot::tests::distinguishes_lookup_absence_and_rebound_objects"
+source = "src/linux/protected_slot/tests.rs"
+ignored = false
+
+[[case]]
+selector = "linux::protected_slot::tests::reports_opaque_kind_without_following_or_opening_payload"
+source = "src/linux/protected_slot/tests.rs"
+ignored = false
+
+[[case]]
+selector = "linux::protected_slot::tests::refuses_non_directory_and_previously_unlinked_parent"
+source = "src/linux/protected_slot/tests.rs"
+ignored = false
+
+[[case]]
+selector = "linux::protected_slot::tests::distinguishes_hard_link_identity_from_distinct_slot_names"
+source = "src/linux/protected_slot/tests.rs"
+ignored = false
+
+[[case]]
+selector = "linux::protected_slot::tests::refuses_unknown_entry_kind"
+source = "src/linux/protected_slot/tests.rs"
+ignored = false
+
+[[case]]
+selector = "linux::protected_slot::tests::renamed_parent_survives_as_a_held_observation_only"
+source = "src/linux/protected_slot/tests.rs"
+ignored = false
+
+[[case]]
+selector = "linux::protected_slot::tests::mount::refuses_same_device_bind_mount_at_the_selected_name"
+source = "src/linux/protected_slot/tests/mount.rs"
+ignored = true

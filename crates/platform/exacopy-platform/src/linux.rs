@@ -9,6 +9,7 @@ mod named_read;
 mod owner_seed;
 mod plan_bundle;
 mod process_crash;
+pub mod protected_slot;
 pub(crate) mod protected_snapshot;
 mod publication_capabilities;
 mod recovery;
