@@ -1,0 +1,118 @@
+name: Linux protected slot hosted root setup
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/linux-protected-slot-root-setup.yml'
+      - '.github/ci/capture.sh'
+      - '.github/ci/install.sh'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'specs/verification/owners.toml'
+      - 'crates/platform/exacopy-platform/src/linux/protected_slot/**'
+      - 'crates/platform/exacopy-platform/src/linux/protected_slot.rs'
+      - 'crates/platform/exacopy-platform/verification/protected_root_setup/**'
+      - 'crates/platform/exacopy-platform/verification/protected_slot/**'
+
+permissions:
+  contents: read
+
+jobs:
+  protected-root-setup:
+    if: github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment: protected-slot-root-setup
+    env:
+      CARGO_TERM_COLOR: never
+      CARGO_INCREMENTAL: "0"
+      EXPECTED_RUST_HOST: x86_64-unknown-linux-gnu
+      REVIEWED_HELPER_SHA256: ${{ vars.EXACOPY_PROTECTED_ROOT_HELPER_SHA256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify clean canonical revision and pinned source
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          source_status=$(git status --porcelain)
+          test -z "$source_status"
+          [[ "$REVIEWED_HELPER_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          helper=crates/platform/exacopy-platform/verification/protected_root_setup/setup.py
+          test "$(git show "HEAD:$helper" | sha256sum | cut -d ' ' -f1)" = "$REVIEWED_HELPER_SHA256"
+      - name: Prepare pinned sources and controls
+        shell: bash
+        run: |
+          bash .github/ci/capture.sh apfs-source python3 -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source python3 -B tools/transport_source.py --fetch
+          bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
+          bash .github/ci/capture.sh locked-fetch cargo +1.100.0 fetch --locked
+          bash .github/ci/capture.sh root-setup-controls python3 -B             crates/platform/exacopy-platform/verification/protected_root_setup/test_runner.py
+      - name: Install verified closed service inputs
+        shell: bash
+        run: |
+          root=/run/exacopy-protected-root-v1
+          marker="$RUNNER_TEMP/exacopy-root-setup-owned"
+          test ! -e "$root"
+          test ! -L "$root"
+          test ! -e "$marker"
+          test ! -L "$marker"
+          sudo -n /usr/bin/mkdir -m 0755 -- "$root"
+          owned=$(stat -c "%d:%i:%u:%g:%a" -- "$root")
+          [[ "$owned" =~ ^[0-9]+:[0-9]+:0:0:755$ ]]
+          (set -o noclobber; printf '%s\n' "$owned" > "$marker")
+          helper=crates/platform/exacopy-platform/verification/protected_root_setup/setup.py
+          git show "HEAD:$helper" | sudo -n /usr/bin/tee "$root/setup.py" >/dev/null
+          sudo -n /usr/bin/chmod 0444 -- "$root/setup.py"
+          test "$(sha256sum "$root/setup.py" | cut -d ' ' -f1)" = "$REVIEWED_HELPER_SHA256"
+          sudo -n /usr/bin/install -d -o 1001 -g 1001 -m 0700 -- "$root/inbox"
+      - name: Qualify held slot observations with isolated root setup
+        shell: bash
+        run: |
+          bash .github/ci/capture.sh root-setup-native python3 -B             crates/platform/exacopy-platform/verification/protected_root_setup/run.py             --revision "$GITHUB_SHA" --evidence "$RUNNER_TEMP/exacopy-protected-root"
+      - name: Verify service and installation cleanup
+        if: always()
+        shell: bash
+        run: |
+          marker="$RUNNER_TEMP/exacopy-root-setup-owned"
+          if [[ -e "$marker" || -L "$marker" ]]; then
+            mkdir -p "$RUNNER_TEMP/exacopy-protected-root"
+            {
+              root=/run/exacopy-protected-root-v1
+              test ! -L "$root"
+              test ! -L "$marker"
+              test -f "$marker"
+              expected=$(cat -- "$marker")
+              observed=$(stat -c "%d:%i:%u:%g:%a" -- "$root")
+              [[ "$expected" =~ ^[0-9]+:[0-9]+:0:0:755$ ]]
+              test "$observed" = "$expected"
+              units=$(systemctl list-units --all --plain --no-legend exacopy-protected-root-v1.service) || {
+                printf 'service inventory unavailable; retaining installation\n' >&2
+                exit 1
+              }
+              test -z "$units"
+              test ! -e /sys/fs/cgroup/system.slice/exacopy-protected-root-v1.service
+              test ! -L /sys/fs/cgroup/system.slice/exacopy-protected-root-v1.service
+              test ! -e "$root/fixture"
+              test ! -L "$root/fixture"
+              sudo -n /usr/bin/rm -f -- "$root/setup.py"
+              if [[ -d "$root/inbox" ]]; then sudo -n /usr/bin/rmdir -- "$root/inbox"; fi
+              sudo -n /usr/bin/rmdir -- "$root"
+              test ! -e "$root"
+              test ! -L "$root"
+              rm -- "$marker"
+              printf 'fixture service, cgroup and staged installation absent\n'
+            } > "$RUNNER_TEMP/exacopy-protected-root/installation-cleanup.log" 2>&1
+          fi
+      - name: Retain root-setup profile results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: exacopy-linux-protected-root-setup-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-evidence/
+            ${{ runner.temp }}/exacopy-protected-root/
+          if-no-files-found: error
+          retention-days: 90

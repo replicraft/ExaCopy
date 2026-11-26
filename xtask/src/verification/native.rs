@@ -30,17 +30,19 @@ impl Target {
 #[derive(Clone, Copy, Deserialize)]
 enum Profile {
 	#[serde(rename = "linux-unprivileged-same-device-bind-v1")]
-	LinuxUnprivilegedSameDeviceBind,
+	UnprivilegedSameDeviceBind,
+	#[serde(rename = "linux-hosted-root-setup-unprivileged-observer-v1")]
+	HostedRootSetupUnprivilegedObserver,
 	#[serde(rename = "linux-unprivileged-tmpfs-sync-preview-v1")]
-	LinuxUnprivilegedTmpfsSyncPreview,
+	UnprivilegedTmpfsSyncPreview,
 }
 
 impl Profile {
 	fn target(self) -> Target {
 		match self {
-			Self::LinuxUnprivilegedSameDeviceBind | Self::LinuxUnprivilegedTmpfsSyncPreview => {
-				Target::LinuxX86_64Gnu
-			}
+			Self::UnprivilegedSameDeviceBind
+			| Self::HostedRootSetupUnprivilegedObserver
+			| Self::UnprivilegedTmpfsSyncPreview => Target::LinuxX86_64Gnu,
 		}
 	}
 }

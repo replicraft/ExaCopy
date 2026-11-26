@@ -63,7 +63,7 @@ class Blocked(RuntimeError):
 
 def collect(command, *, env=None, timeout=20, isolate=True):
     with subprocess.Popen(
-        command, env=env, text=True, encoding="utf-8", errors="replace",
+        command, env=env, text=True, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=isolate,
     ) as process:
         try:
@@ -250,8 +250,12 @@ def private_work(parent, report):
         report["cleanup"] = "verified_absent"
 
 
-def run(revision, evidence, report):
-    report.update(fixture_binding(Path(__file__).with_name("fixture.toml")))
+def default_binding():
+    return fixture_binding(Path(__file__).with_name("fixture.toml"))
+
+
+def run(revision, evidence, report, *, binding, mount_runner):
+    report.update(binding())
     if platform.system() != "Linux" or platform.machine() != "x86_64":
         raise Blocked(f"expected native {TARGET}")
     report["outer_identity"] = {
@@ -304,7 +308,7 @@ def run(revision, evidence, report):
             raise RuntimeError("unit-test executable changed before mount run")
         report["mount"] = "pending"
         try:
-            run_mount(evidence, work, binary)
+            mount_runner(evidence, work, binary)
         except Blocked:
             report["mount"] = "blocked"
             raise
@@ -321,14 +325,15 @@ def run(revision, evidence, report):
                 raise RuntimeError("unit-test executable changed during qualification")
 
 
-def main():
+def main(*, binding=default_binding, mount_runner=run_mount, permit_helper=True):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--evidence", type=Path)
     parser.add_argument("--revision")
-    parser.add_argument("--mount-helper", nargs=3)
+    if permit_helper:
+        parser.add_argument("--mount-helper", nargs=3)
     args = parser.parse_args()
     os.environ["LC_ALL"] = "C"
-    if args.mount_helper:
+    if permit_helper and args.mount_helper:
         work, binary, namespace = args.mount_helper
         try:
             mount_helper(Path(work), Path(binary), namespace)
@@ -346,7 +351,7 @@ def main():
     }
     status = 1
     try:
-        run(args.revision, evidence, report)
+        run(args.revision, evidence, report, binding=binding, mount_runner=mount_runner)
     except Blocked as error:
         report.update(outcome="blocked", reason=str(error))
         status = BLOCKED_EXIT
