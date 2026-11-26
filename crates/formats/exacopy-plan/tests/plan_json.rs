@@ -116,6 +116,24 @@ fn refuses_tampered_body_digest_and_wrong_lexical_scalar_forms() {
 
 #[test]
 fn all_structs_are_map_only_and_reject_missing_duplicate_and_unknown_fields() {
+	let complete = PublicPlan::from_json(COMPLETE_JSON).expect("admit complete JSON vector");
+	assert_eq!(complete.canonical_cbor(), COMPLETE_CBOR);
+
+	// Preserve the complete body bytes so either member alone would be valid.
+	let (prefix, body_and_end) = text(COMPLETE_JSON)
+		.split_once("\"body\": ")
+		.expect("complete fixture has a body");
+	let body = body_and_end
+		.trim_end()
+		.strip_suffix('}')
+		.expect("complete fixture ends with the envelope delimiter")
+		.trim_end();
+	let duplicate_body = format!("{prefix}\"body\": {body}, \"body\": {body}}}");
+	assert_eq!(
+		PublicPlan::from_json(duplicate_body.as_bytes()),
+		Err(PlanJsonError::Json)
+	);
+
 	// The positional struct-array alternative would otherwise be accepted by Serde.
 	let body = empty()["body"].clone();
 	let digest = empty()["digest"].clone();
@@ -144,7 +162,6 @@ fn all_structs_are_map_only_and_reject_missing_duplicate_and_unknown_fields() {
 	}
 
 	for (search, replacement) in [
-		("\"body\": {", "\"body\": {}, \"body\": {"),
 		("\"body\": {", "\"body\": {\"other\": false,"),
 		("\"policy\": {", "\"policy\": {\"other\": false,"),
 		("\"policy\": {", "\"policy\": {\"conflict\": \"error\","),

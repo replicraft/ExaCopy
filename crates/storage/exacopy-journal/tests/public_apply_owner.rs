@@ -102,6 +102,9 @@ fn each_selected_field_is_in_the_authenticated_body() {
 #[test]
 fn independent_profile_and_signature_domain_are_mandatory() {
 	let expected = golden();
+	let decoded = decode(&expected).expect("the independent signed owner should be admitted");
+	assert_eq!(decoded.manifest(), &manifest());
+
 	let key = signing_key();
 	let foreign_profile = OwnerProfileId::from_bytes([0xee; 16]).unwrap();
 	assert_eq!(
