@@ -250,6 +250,7 @@ class ProviderChoice(Enum):
 
 def execute(parent, work, report, evidence, choice=ProviderChoice.EXISTING):
     boot = None
+    provider_profile = None
     if choice is ProviderChoice.EXISTING:
         if os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch" or os.environ.get("GITHUB_REF_PROTECTED") != "true":
             raise Blocked("embedded fixture requires manual commissioning")
@@ -258,8 +259,9 @@ def execute(parent, work, report, evidence, choice=ProviderChoice.EXISTING):
         provider_b.hosted_scope()
         observed = provider.report()
         evidence["provider_before"] = observed
-        boot = provider_b.admit(observed)
-        evidence["dispatch"] = provider_b.verify_dispatch(parent.parent, boot)
+        provider_profile = provider_b.known_profile(observed.get("kernel", {}))
+        boot = provider_b.admit(observed, provider_profile)
+        evidence["dispatch"] = provider_b.verify_dispatch(parent.parent, provider_profile, boot)
     else:
         raise ValueError("unexpected provider choice")
     evidence["provider_choice"] = choice.value
@@ -302,7 +304,7 @@ def execute(parent, work, report, evidence, choice=ProviderChoice.EXISTING):
             if boot is not None:
                 details = evidence["provider_b"] = {}
                 provider_b.prepare(
-                    parent.parent / "exacopy-commissioning-tools", work, report, fixture, boot, details,
+                    parent.parent / "exacopy-commissioning-tools", work, report, fixture, provider_profile, boot, details,
                 )
                 expected_provider = check_provider(evidence)
                 if expected_provider != (boot, "already-live"):

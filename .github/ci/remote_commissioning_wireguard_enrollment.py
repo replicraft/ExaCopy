@@ -155,19 +155,7 @@ def module_metadata(work, candidate, name, path, digest):
 
 
 def order_modules(candidate, modules, plan):
-    # Translate each exact candidate path to the reviewed path grammar used by
-    # the closed provider-B dependency validator. Commands are only parsed.
-    original = candidate.modules()
-    names = {str(path): name for name, path in original.items()} | {
-        f"/usr{path}": name for name, path in original.items()
-    }
-    translated = []
-    for line in plan.decode("ascii").splitlines():
-        parts = line.split()
-        if len(parts) != 2 or parts[0] != "insmod" or parts[1] not in names:
-            raise Blocked("candidate kmod plan contains a hook, parameter or foreign path")
-        translated.append(f"insmod {parsing.MODULES[names[parts[1]]]}\n")
-    return parsing.closure_order(modules, "".join(translated).encode("ascii"))
+    return parsing.closure_order(modules, plan, candidate.modules())
 
 
 def check_selected_archive(work, candidate, signed, fingerprints, evidence):

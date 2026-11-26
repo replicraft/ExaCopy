@@ -69,14 +69,16 @@ jobs:
         id: provider
         run: python3 -B -Werror .github/ci/remote_commissioning_wireguard_dispatch.py
       - name: Prepare pinned sources and Rust
-        if: steps.provider.outputs.mode == 'commission-azure-1017'
+        if: (steps.provider.outputs.mode == 'commission-azure-1017' || steps.provider.outputs.mode == 'commission-azure-1020')
         run: |
           python3 -B tools/apfs_source.py --fetch
           python3 -B tools/transport_source.py --fetch
           bash .github/ci/install.sh rust
           cargo +1.100.0 fetch --locked
       - name: Stage bounded independent fixture tools
-        if: steps.provider.outputs.mode == 'commission-azure-1017'
+        if: (steps.provider.outputs.mode == 'commission-azure-1017' || steps.provider.outputs.mode == 'commission-azure-1020')
+        env:
+          PROVIDER_MODE: ${{ steps.provider.outputs.mode }}
         run: |
           tool_dir="$RUNNER_TEMP/exacopy-commissioning-tools"
           tool_marker="$RUNNER_TEMP/exacopy-wireguard-provider-b-tools.pending"
@@ -89,9 +91,13 @@ jobs:
           tool_identity="$(stat -c '%d:%i:%u:%a' -- .)"
           [[ "$tool_identity" == *:"$(id -u)":700 ]]
           printf '%s/%s\n%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$tool_identity" > fixture-owner
+          case "$PROVIDER_MODE" in
+            commission-azure-1017) module_package='linux-modules-7.0.0-1017-azure=7.0.0-1017.17~24.04.1' ;;
+            commission-azure-1020) module_package='linux-modules-7.0.0-1020-azure=7.0.0-1020.21~24.04.2' ;;
+            *) exit 1 ;;
+          esac
           timeout --kill-after=5s 180s apt-get -o APT::Get::AllowUnauthenticated=false download \
-            b3sum wireguard-tools=1.0.20210914-1ubuntu4 \
-            linux-modules-7.0.0-1017-azure=7.0.0-1017.17~24.04.1
+            b3sum wireguard-tools=1.0.20210914-1ubuntu4 "$module_package"
           b3=(b3sum_*_amd64.deb)
           wg=wireguard-tools_1.0.20210914-1ubuntu4_amd64.deb
           test "${#b3[@]}" -eq 1
@@ -106,10 +112,10 @@ jobs:
           test -x unpacked/usr/bin/b3sum
           test -x unpacked/usr/bin/wg
       - name: Verify the Azure module closure and commission the ordinary embedded CLI
-        if: steps.provider.outputs.mode == 'commission-azure-1017'
+        if: (steps.provider.outputs.mode == 'commission-azure-1017' || steps.provider.outputs.mode == 'commission-azure-1020')
         run: python3 -B .github/ci/remote_commissioning_wireguard_azure.py
       - name: Remove the owned tool staging
-        if: always() && steps.provider.outputs.mode == 'commission-azure-1017'
+        if: always() && (steps.provider.outputs.mode == 'commission-azure-1017' || steps.provider.outputs.mode == 'commission-azure-1020')
         run: |
           tool_dir="$RUNNER_TEMP/exacopy-commissioning-tools"
           tool_marker="$RUNNER_TEMP/exacopy-wireguard-provider-b-tools.pending"

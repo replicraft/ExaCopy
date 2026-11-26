@@ -11,20 +11,24 @@ import remote_commissioning_wireguard_enrollment as enrollment
 import remote_commissioning_wireguard_provider as provider
 import remote_commissioning_wireguard_provider_b as azure
 from native_supervision import file_digest, write_json
+from remote_commissioning_wireguard_provider_profiles import DispatchMode, known_profile
 
 
 def select(observed, revision):
     if observed.get("revision") != revision:
-        return azure.DispatchMode.BLOCKED, "provider observation lacks the selected revision"
-    try:
-        azure.admit(observed)
-    except Blocked:
+        return DispatchMode.BLOCKED, "provider observation lacks the selected revision"
+    profile = known_profile(observed.get("kernel", {}))
+    if profile is not None:
         try:
-            candidate = enrollment.selected(observed)
+            azure.admit(observed, profile)
         except Blocked:
-            return azure.DispatchMode.BLOCKED, "no exact admitted provider or read-only enrollment candidate"
-        return azure.DispatchMode.OBSERVE, candidate.tag
-    return azure.DispatchMode.AZURE_1017, "exact packaged-unloaded Azure provider"
+            return DispatchMode.BLOCKED, "known profile lacks exact packaged-unloaded admission"
+        return profile.mode, "exact packaged-unloaded Azure provider"
+    try:
+        candidate = enrollment.selected(observed)
+    except Blocked:
+        return DispatchMode.BLOCKED, "no exact admitted provider or read-only enrollment candidate"
+    return DispatchMode.OBSERVE, candidate.tag
 
 
 def write_mode(parent, mode):
@@ -55,13 +59,14 @@ def main():
     observed = provider.report()
     provider.write_report(directory, observed)
     mode, reason = select(observed, revision)
+    profile = known_profile(observed.get("kernel", {}))
     try:
-        if mode is azure.DispatchMode.AZURE_1017:
-            azure.recheck_boot(observed["kernel"])
-        elif mode is azure.DispatchMode.OBSERVE:
+        if profile is not None and mode is profile.mode:
+            azure.recheck_boot(profile, observed["kernel"])
+        elif mode is DispatchMode.OBSERVE:
             enrollment.same_boot(observed["kernel"])
     except Blocked:
-        mode, reason = azure.DispatchMode.BLOCKED, "boot no longer matches provider selection"
+        mode, reason = DispatchMode.BLOCKED, "boot no longer matches provider selection"
     write_json(directory / azure.DISPATCH_RECORD, {
         "schema": azure.DISPATCH_SCHEMA, "mode": mode.value, "reason": reason, "revision": revision,
         "source": source, "run": run, "kernel": observed["kernel"],
@@ -69,12 +74,12 @@ def main():
         "qualified": False, "load_attempted": False,
     })
     write_mode(parent, mode)
-    if mode is azure.DispatchMode.OBSERVE:
+    if mode is DispatchMode.OBSERVE:
         # Enrollment can succeed as an observation only. Commissioning keeps a
         # nonpassing disposition for this boot even with complete observations.
         enrollment.main(enrollment.EnrollmentContext.PROVIDER_B_OBSERVATION, observed)
         return 77
-    return 0 if mode is azure.DispatchMode.AZURE_1017 else 77
+    return 0 if profile is not None and mode is profile.mode else 77
 
 
 if __name__ == "__main__":
