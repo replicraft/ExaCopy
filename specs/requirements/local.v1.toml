@@ -1664,3 +1664,26 @@ owner = "exacopy-transfer"
 level = "documentation"
 state = "reported"
 path = "docs/architecture/remote-capture.md"
+
+
+[[coverage]]
+id = "linux-witnessed-closeout-composition-model"
+status = "implemented"
+requirement_ids = ["R-253", "R-255", "R-320"]
+acceptance_ids = ["A-253", "A-255", "A-320"]
+invariant_ids = ["INV-003", "INV-009", "INV-013", "INV-018", "INV-019", "INV-032"]
+scope = "P-075 models repeated verified continuation and pre-intent retirement, exact run/head/coverage, bounded closeout reservation, and fresh private receipt convergence after ambiguity."
+limits = "Independent finite TLC evidence only. Actual prefix bytes, immutable scanner correspondence, Rust/executor counterexample replay, native authority and qualified crash or power-loss behavior are outside this obligation."
+
+[[coverage.evidence]]
+owner = "exacopy-model"
+level = "obligation"
+state = "defined"
+path = "crates/foundation/exacopy-model/verification/obligations.toml"
+target = "P-075"
+
+[[coverage.evidence]]
+owner = "exacopy-model"
+level = "documentation"
+state = "reported"
+path = "crates/foundation/exacopy-model/verification/tla/WITNESSED_CLOSEOUT.md"

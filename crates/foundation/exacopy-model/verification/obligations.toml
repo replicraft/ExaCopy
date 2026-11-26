@@ -106,3 +106,16 @@ assumptions = [
 gates = ["rust", "tlc"]
 rust = { file = "tests/protected_replace.rs", test = "rejects_previously_issued_or_uncertain_history_at_fresh_admission", oracle = "After issued capture uncertainty, prior or indeterminate replay, stale held scope or divergent heads cannot admit a new capture. A fresh attempt still refuses a capture intent with the wrong predecessor." }
 tlc = { spec = "verification/tla/ProtectedReplacement.tla", config = "verification/tla/ProtectedReplacement.cfg", negative_control = "verification/tla/ProtectedReplacementAdmitPriorHistory.cfg", seeds = ["TLC seed and fingerprint index 0."], model_bounds = ["One selected source, verified stage, target and reserved recovery name with one pre-capture replacement, one late arrival, one private collision, either image policy, clean/prior/ambiguous initial history and one interrupted attempt."], oracle = "Exhaust the modeled namespace histories and reject nine weakened controls. Preserve actual capture, older and racing entries, expected-incumbent gating, post-barrier evidence, required image, public no-clobber sticky uncertainty and pre-intent-only admission." }
+
+[[obligation]]
+id = "P-075"
+requirement_ids = ["R-253", "R-255", "R-320"]
+source = "verification/tla/WitnessedCloseoutPhase.tla"
+symbols = ["BoundedAndExact", "ReservedCapacity", "CoverageFence", "CustodyFence", "CurrentReceiptPermit"]
+assumptions = [
+    "A trusted caller supplies the selected owner, exact journal anchor, retained stage, independently verified bytes and epochs, protected names, lease, current authority, and truthful barriers. This model abstracts rather than implements those premises.",
+    "The protected receipt has one exact inode, an atomic no-replace move, and exact current held observations. A stopped process cannot reuse its prior permit. A fresh lease must independently observe and reauthorize private convergence.",
+    "The bounded TLA+ model exercises the selector-2 phase graph and retained/fresh ancestry. It provides no Rust refinement, native filesystem, qualified process-crash, or power-loss claim.",
+]
+gates = ["tlc"]
+tlc = { spec = "verification/tla/WitnessedCloseoutPhase.tla", config = "verification/tla/WitnessedCloseoutPhase-none.cfg", negative_control = "verification/tla/WitnessedCloseoutPhase-reuse-unknown.cfg", seeds = ["TLC seed and fingerprint index 0."], model_bounds = ["Two physical attempts, initial run counts 1/62/63, at most 64 logical runs, up to two suffix checkpoints, a 64 MiB segment bound, finite sequence ceiling 27, one interruption, and one protected receipt inode with independently reobserved pending/final disposition."], oracle = "Exhaust the healthy phase graph, require the repeated continuation, late-retirement and last-run paths, and reject fourteen weakening controls including direct commit after native success without independent observation and barriers. Require an exact same-session uncertainty counterexample and separately preserve the fresh-convergence counterexample to a stronger global no-resubmission proposition." }
