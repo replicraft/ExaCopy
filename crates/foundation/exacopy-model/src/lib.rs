@@ -4,6 +4,7 @@
 mod binding;
 mod range;
 mod sync;
+pub mod sync_genesis;
 mod transaction;
 
 #[cfg(kani)]

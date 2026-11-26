@@ -121,8 +121,10 @@ claims.
 After the scored baseline, `7753fa8` integrated the bounded TCP carrier,
 verified SSH rekey, per-key WireGuard renewal, one outstanding SSH keepalive
 and exact-session cancellation. The new P-052 Rust gate checks one bounded
-in-memory renewal case with explicit features. There are now seven declared
-verification owners and 29 gates. This adds implementation evidence; it does
+in-memory renewal case with explicit features. P-053 adds a bounded pure genesis admission gate with 131,072 reported-fact
+cases. There are seven declared verification owners and 30 gates. Genesis
+still needs native observations, artifact formats and a writer before use.
+This adds implementation evidence; it does
 not qualify the complete CLI, socket route or cryptographic primitive.
 
 - **APFS companion.** Move duplicated APFS-native identity, leases and held

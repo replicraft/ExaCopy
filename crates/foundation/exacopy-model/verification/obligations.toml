@@ -49,3 +49,16 @@ assumptions = ["One fixed endpoint pair, raw path and policy with truthful compl
 gates = ["rust", "tlc"]
 rust = { test = "sync_classifier_matches_all_tlc_subjects", file = "tests/sync_tlc.rs", oracle = "Compare the public Rust classifier with all 432 distinct rows from the independently modeled TLA+ decision matrix, including content-only and required-metadata-only differences." }
 tlc = { spec = "verification/tla/SyncBaseline.tla", config = "verification/tla/SyncBaseline.cfg", negative_control = "verification/tla/SyncBaselineTreatUnknownAsAbsent.cfg", model_bounds = ["One path, two fixed endpoints, 432 initial classifier subjects, one scan at generation 1, one competing generation advance and at most one receipt per endpoint."], seeds = ["TLC seed and fingerprint index 0."], oracle = "Exhaust all reachable states and require an exact 432-row table match. Require complete, known observations and paired matching receipts for modeled baseline admission at the current predecessor, and detect unknown-as-absence, receipt bypass and stale-generation controls." }
+
+[[obligation]]
+id = "P-053"
+requirement_ids = ["R-269", "R-270"]
+source = "src/sync_genesis.rs"
+symbols = ["admit"]
+assumptions = [
+    "One exact subject at two selected, ordered roots. Caller-supplied identities and scope/policy projections faithfully describe the admitted native observations.",
+    "Both reads independently verify complete supported regular files, EOF and required metadata. Completion and recheck positions are truthful and monotonic within the current scan.",
+    "Native identity, lease, measurement and artifact persistence are separate obligations. This result contains observation evidence and has no effect authority.",
+]
+gates = ["rust"]
+rust = { file = "tests/sync_genesis.rs", test = "genesis_matches_independent_bounded_observation_oracle", oracle = "The independent defect oracle accepts only complete matched pairs in a finite product of 16 reported-fault axes and both read orders (131072 cases, two healthy). Accepted outputs retain the ordered observations and exact selection." }
