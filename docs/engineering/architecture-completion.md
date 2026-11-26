@@ -7,7 +7,9 @@ remaining assurance gates are open. The [reconciliation](architecture-reconcilia
 identifies both governing supplement digests and retains the initial
 discrepancies at `a73c649`. This report records the §§57–58 review against the reviewed
 source and recorded results. The full numbered audit remains in local
-engineering evidence.
+engineering evidence. The evidence table and remaining-work section include
+later revision-specific updates through `1b89477`. The scores remain tied
+to the original review.
 
 ## Changes and affected repositories
 
@@ -40,7 +42,8 @@ integrate serially, with failure evidence kept by revision.
 The reviewed baseline used `fdcc3ea`; `5e936f0` advanced the selected pin to
 `0266afa`; the sealed-handle metadata follow-up selected `fc71ded` and removed
 the duplicate consumer descriptor. The current pin selects public `af97d385`,
-which adds observation-only recovery reopening; consumer adoption is pending. The bounded [companion audit](filesystem-companion-boundary-audit.md)
+which provides observation-only recovery reopening. Consumer adoption is
+pending. The bounded [companion audit](filesystem-companion-boundary-audit.md)
 reviewed APFS and HFS+ source without changing either. At `1660ab3`,
 [BoringTun and Russh](../supply-chain/local-transport-sources.md) became
 locally reconstructed, reviewed dependencies pinned to repair commits
@@ -55,6 +58,8 @@ tree and notices remain recorded. The repairs are local source inputs.
 | Pinned transport integration through `8633ee7` | `cargo test --locked -p exacopy-ssh --features experimental-ssh` and `cargo test --locked -p exacopy-wireguard --features experimental-udp` passed 49 SSH cases with five ignored and 18 native macOS WireGuard cases using loopback. The first SSH rekey attempt failed; the explicit strict callback restored the typed refusal and the unchanged regression passed. Strict selected host/Linux Clippy passed. The feature-matrix tool checked Linux, macOS and Windows dependency graphs. Exact pinned sibling graph/suitability verification covered 208 versions across three targets, with 67 suitability assessments and 141 without a suitability entry. |
 | Tooling and release development through `8633ee7` | 48 tool tests and 12 mocked release controls passed. Actionlint and affected shell syntax checks passed. The signed candidate and installer workflow definitions are present. Hosted execution for the revised workflows and production publication remain pending. |
 | Core benchmark at `8633ee7` | `cargo bench --locked -p exacopy-core --bench unix_component` executed all three warm cases in the host optimized profile. Batch medians were 9.326 ns for a 10-byte accepted input, 32.609 ns for a 255-byte accepted input and 33.622 ns for terminal-NUL refusal at 255 bytes. This adds a baseline for the pure validator. Cold-start, I/O and before-and-after performance evidence remain unmeasured. |
+| Follow-up at `1b89477` | The all-feature macOS workspace run passed 906 tests with 27 skips after 13 loopback-dependent WireGuard failures under sandbox restrictions. The unchanged rerun with loopback access passed. The owner inventory lists eight crates. The architecture checker reported 36 declared gates. The checker result covers the structure of the declarations. |
+| Historical exact integration `c8e3bd0` | The macOS workspace run passed 881 tests with 25 skips. Formatting, strict Clippy, doctests and architecture policy passed. All 30 declared gates passed at that revision, including 23 Rust, four TLC, one Lean and two Kani gates. The original TLC sandbox bind failures and the unchanged retry are retained. |
 | Historical full integration `8503dd3` | The locked all-feature workspace nextest and doctests executed on macOS. Nextest passed 804 tests with 21 skips after seven sandbox loopback failures were rerun with loopback access. Strict Linux cross-Clippy passed. The local APFS mounted crate matched the pin; the entire sibling checkout was at a different revision. |
 | Historical exact pinned `15e3c4e` | The full native workspace run passed 739 tests with 21 skips; all 21 declared Rust/Lean/Kani/TLC gates passed. Reproduction and evidence ownership follow the [verification guide](../verification.md). |
 | Native Linux ARM64 subset and candidates | In the documented Docker environment, 887 baseline cases passed, three Plan cases refused a subtree mount, and 16 were ignored. Four Plan cases passed in the separate overlay run. The frozen adapter candidate passed 86 cases. Five publication fixtures refused before effects because the required procfs observation crossed a mount. |
@@ -62,12 +67,11 @@ tree and notices remain recorded. The repairs are local source inputs.
 Commands, exit statuses and failure logs are retained locally under
 `target/agent-evidence/`, including `integration-8633ee7`,
 `root-integration-8503dd3`, `final-pinned-verification/15e3c4e`,
-and `native-linux-arm64-fccd020`. The [remote readiness record](remote-transfer-readiness.md)
-describes environment conditions and the remaining end-to-end cases.
-The 28 gates at the reviewed revision still require a complete integrated
-execution with clean pinned inputs. Historical results retain their original
-revision boundaries. Configured hosted jobs and source graph checks
-provide distinct evidence.
+`native-linux-arm64-fccd020`, `integration-c8e3bd0` and the
+`latest-apfs-workspace-tests*.log` pair. The full 36-gate set at
+`1b89477` still needs integrated execution and exact-revision evidence.
+The [remote readiness record](remote-transfer-readiness.md) describes
+environment conditions and the remaining end-to-end cases.
 
 ## Review dimensions
 
@@ -121,27 +125,30 @@ claims.
 
 After the scored baseline, `7753fa8` integrated the bounded TCP carrier,
 verified SSH rekey, per-key WireGuard renewal, one outstanding SSH keepalive
-and exact-session cancellation. The new P-052 Rust gate checks one bounded
-in-memory renewal case with explicit features. P-053 adds a bounded pure genesis admission gate with 131,072 reported-fact
-cases. There are seven declared verification owners and 30 gates. Genesis
-still needs native observations, artifact formats and a writer before use.
-This adds implementation evidence; it does
-not qualify the complete CLI, socket route or cryptographic primitive.
+and exact-session cancellation. P-052 checks a bounded in-memory renewal case.
+At `c8e3bd0`, P-053 added a pure genesis admission gate with 131,072
+reported-fact cases. The 30-gate execution at that revision covers those
+obligations within their stated bounds.
 
-- **APFS companion.** Move duplicated APFS-native identity, leases and held
-  reads first, stage operations second, and exclusive rename last. The
-  subsequent companion revision `0266afa` provides leased pre-open admission,
-  strict initial flags and birth-time checks, and exclusive rename with
-  post-barrier observations. The companion exercised its native publication
-  fixture. ExaCopy pinned its exact commit, tree and archive at `5e936f0`;
-  the existing platform suite passed against that pin before migration.
-  `d9defab` integrated source and live staging/publication migration after
-  native consumer checks, including the stricter stage ACL predicate and
-  honest partial-read diagnostics. Restart recovery retains its existing
-  adapter until the companion supplies reopened-stage authority. The strict copy-through-receipt profile still
-  needs qualification. Keep ExaCopy authorization, metadata
-  policy and receipts at their present boundary. The bounded audit found no
-  tracked HFS+/HFSX production implementation.
+At `1b89477`, the paired baseline leaf codec and the pure genesis predicate
+are implemented. Genesis still needs native paired observations, an
+authenticated workflow root and dependency closure, and immutable publication
+into separately authorized output. For remote recovery, the retained-prefix
+verifier, continuation model and signed kind-40 codec are implemented.
+Continued replay, tail append authority and finalization remain separate from
+the current fresh-attempt command. [Registered contracts](../../specs/contracts/versions.toml)
+
+- **APFS companion.** The source and live staging/publication adapters use
+  the companion mechanisms, including the strict stage ACL predicate and
+  explicit partial-read diagnostics. The pinned `af97d385` companion supplies
+  `ReopenedStage` for restart read-back. Adoption must keep the reader's
+  borrows of the event anchor, held directory and matching lease live through
+  read-back and revalidation. ExaCopy still checks protected ancestry, both
+  selected names, recorded identity and strict metadata. Preserve its current
+  post-open initial and final live metadata checks when projecting the
+  companion observations. The strict copy-through-receipt profile still needs
+  native qualification. The bounded audit found no tracked HFS+/HFSX production
+  implementation. [Companion audit](filesystem-companion-boundary-audit.md)
 - **Current support.** Linux exposes exact comparison, single-file manifests,
   preserve-mode copy and local recovery within stated profiles. macOS offers
   explicit owner-managed APFS comparison and an experimental transfer library.

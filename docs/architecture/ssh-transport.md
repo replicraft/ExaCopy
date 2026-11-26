@@ -1,7 +1,9 @@
 # Experimental SSH/SFTP transport
 
 `exacopy-ssh` is a default-off library using exact Russh 0.65.4 and
-Russh-SFTP 4.0.0. `experimental-ssh` enables it without adding a CLI command.
+Russh-SFTP 4.0.0. `experimental-ssh` enables the library. The Linux
+application exposes its commands through separate opt-in features.
+[Experimental SSH download](../../apps/exacopy-cli/README.md#experimental-ssh-download-on-linux)
 The caller supplies an owned async stream; this crate performs no DNS
 lookup or direct socket connection. It does not launch local subprocesses.
 A supported build runs with no installed `ssh`, `sshd`, `ssh-keygen` or
@@ -18,8 +20,12 @@ host, port, account and verified key. Only a confirmed SFTP subsystem is
 opened. Setup tolerates at most eight channel-window adjustments before the
 explicit subsystem Success reply, within the same connection deadline. Data,
 failure, EOF, closure and excess controls refuse setup. This fixes the ordering
-observed with Apple OpenSSH 9.7p1. All known peer-initiated channels are refused. Rekey currently
-fences the connection and requires a new verified handshake.
+observed with Apple OpenSSH 9.7p1. All known peer-initiated channels are
+refused. Established sessions can rekey through the verified host-key
+callback. The callback checks the presented key against the original
+authority, explicit pin and admitted trust snapshot for the connection.
+The exchange must complete with strict KEX. Failed identity or exchange
+validation stops the session. [Rekey callback](../../crates/net/exacopy-ssh/src/connection/host.rs#L82)
 
 Password ownership uses zeroizing buffers and the upstream password method.
 This does not establish complete credential erasure: the exact upstream
@@ -85,9 +91,10 @@ These conservative prototype limits do not implement the final scheduler.
 
 File observations compare server-reported size, mode and second-resolution
 mtime around read-only handle use. They do not establish a snapshot, stable
-remote inode or universal symlink/root confinement. Required metadata fidelity,
-remote staging, writes, exclusive publication and recovery are unimplemented.
-SFTP extension advertisements confer no such authority.
+remote inode or universal symlink/root confinement. The SFTP session supplies
+read-only source evidence. The Linux application owns local staging, durable
+intent, publication and fresh-attempt restart. SFTP extension advertisements
+confer no write, fidelity or publication authority.
 
 Twenty-eight native macOS SSH tests passed, including exchanges with an in-memory
 SSH/SFTP peer. They cover raw names, short reads, EOF refusal, host and
@@ -114,7 +121,7 @@ SSH support tier or production qualification is claimed.
 
 The supplied-key API owns an upstream Ed25519 private key constructed from a
 zeroizing seed. It never contacts an agent or falls back to a password after
-key refusal. Key exchange remains fenced on a second KEX.
+key refusal.
 
 ## Portability and independent server tests
 
