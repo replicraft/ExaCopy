@@ -38,6 +38,7 @@ mod protected_snapshot;
 
 pub use protected_snapshot::{
 	MAX_PROTECTED_SNAPSHOT_BYTES, ProtectedSnapshotError, read_protected_snapshot,
+	read_protected_snapshot_into,
 };
 
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]

@@ -91,3 +91,44 @@ fn an_unsupported_platform_refuses_even_before_path_validation() {
 		Err(ProtectedSnapshotError::Unsupported)
 	);
 }
+
+/// Read a protected snapshot with a caller-selected smaller byte limit.
+///
+/// The caller owns both buffers and their lifecycle. Both may contain
+/// partial snapshot bytes on failure. Consumers of secrets should wipe
+/// them on every exit. The platform never allocates a second data buffer.
+///
+/// The path, lease, identity and double-read checks are the same as in
+/// [`read_protected_snapshot`].
+///
+/// # Errors
+/// Refuses an empty read-back buffer, an unsupported platform or any
+/// failed protection, size, identity or stability check.
+pub fn read_protected_snapshot_into(
+	path: &Path,
+	bytes: &mut [u8],
+	readback: &mut [u8],
+) -> Result<usize, ProtectedSnapshotError> {
+	#[cfg(target_os = "linux")]
+	return crate::linux::protected_snapshot::read_into(path, bytes, readback);
+
+	#[cfg(not(target_os = "linux"))]
+	{
+		let _ = (path, bytes, readback);
+		Err(ProtectedSnapshotError::Unsupported)
+	}
+}
+
+#[cfg(test)]
+#[test]
+fn caller_buffer_snapshot_refuses_an_invalid_path_without_touching_buffers() {
+	let mut bytes = [0x31; 8];
+	let mut readback = [0x32; 4];
+	let result = read_protected_snapshot_into(Path::new("relative"), &mut bytes, &mut readback);
+	#[cfg(target_os = "linux")]
+	assert_eq!(result, Err(ProtectedSnapshotError::InvalidPath));
+	#[cfg(not(target_os = "linux"))]
+	assert_eq!(result, Err(ProtectedSnapshotError::Unsupported));
+	assert_eq!(bytes, [0x31; 8]);
+	assert_eq!(readback, [0x32; 4]);
+}

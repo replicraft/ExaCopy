@@ -36,6 +36,34 @@ const OTHER_WRITE: Mode = Mode::WGRP.union(Mode::WOTH);
 const READBACK_CHUNK_BYTES: usize = 16 * 1024;
 
 pub(crate) fn read(path: &Path) -> Result<Vec<u8>, ProtectedSnapshotError> {
+	read_checked(path, MAX_PROTECTED_SNAPSHOT_BYTES, read_twice)
+}
+
+pub(crate) fn read_into(
+	path: &Path,
+	bytes: &mut [u8],
+	readback: &mut [u8],
+) -> Result<usize, ProtectedSnapshotError> {
+	if readback.is_empty() {
+		return Err(ProtectedSnapshotError::Unavailable);
+	}
+	let limit = bytes.len().min(MAX_PROTECTED_SNAPSHOT_BYTES);
+	read_checked(path, limit, |root, name, file, length| {
+		read_twice_into(root, name, file, &mut bytes[..length], readback)?;
+		Ok(length)
+	})
+}
+
+fn read_checked<T>(
+	path: &Path,
+	limit: usize,
+	load: impl FnOnce(
+		&ReadRoot,
+		UnixComponent<'_>,
+		&SourceFile,
+		usize,
+	) -> Result<T, ProtectedSnapshotError>,
+) -> Result<T, ProtectedSnapshotError> {
 	let components = checked_components(path.as_os_str().as_bytes())?;
 	let (&name, ancestors) = components
 		.split_last()
@@ -54,7 +82,10 @@ pub(crate) fn read(path: &Path) -> Result<Vec<u8>, ProtectedSnapshotError> {
 	let root = parent.lock_private(owner)?;
 	let file = root.open_regular(name).map_err(read_error)?;
 	let length = protected_length(&file, owner)?;
-	let bytes = read_twice(&root, name, &file, length)?;
+	if length > limit {
+		return Err(ProtectedSnapshotError::TooLarge);
+	}
+	let bytes = load(&root, name, &file, length)?;
 
 	recheck_chain(&chain, ancestors, owner, admitted_mount)?;
 	check_file(&root, name, &file)?;
@@ -257,16 +288,27 @@ fn read_twice(
 	file: &SourceFile,
 	length: usize,
 ) -> Result<Vec<u8>, ProtectedSnapshotError> {
-	check_file(root, name, file)?;
 	let mut bytes = vec![0; length];
-	file.read_exact_at(0, &mut bytes).map_err(read_error)?;
+	let mut readback = [0; READBACK_CHUNK_BYTES];
+	read_twice_into(root, name, file, &mut bytes, &mut readback)?;
+	Ok(bytes)
+}
+
+fn read_twice_into(
+	root: &ReadRoot,
+	name: UnixComponent<'_>,
+	file: &SourceFile,
+	bytes: &mut [u8],
+	readback: &mut [u8],
+) -> Result<(), ProtectedSnapshotError> {
+	check_file(root, name, file)?;
+	file.read_exact_at(0, bytes).map_err(read_error)?;
 	file.check_logical_eof().map_err(read_error)?;
 	check_file(root, name, file)?;
 
-	let mut observed = [0; READBACK_CHUNK_BYTES];
 	let mut offset = 0_u64;
-	for expected in bytes.chunks(READBACK_CHUNK_BYTES) {
-		let chunk = &mut observed[..expected.len()];
+	for expected in bytes.chunks(readback.len()) {
+		let chunk = &mut readback[..expected.len()];
 		file.read_exact_at(offset, chunk).map_err(read_error)?;
 		if chunk != expected {
 			return Err(ProtectedSnapshotError::Changed);
@@ -277,8 +319,7 @@ fn read_twice(
 			.ok_or(ProtectedSnapshotError::TooLarge)?;
 	}
 	file.check_logical_eof().map_err(read_error)?;
-	check_file(root, name, file)?;
-	Ok(bytes)
+	check_file(root, name, file)
 }
 
 fn check_file(

@@ -8,8 +8,8 @@ use super::{
 	UnixComponent, check_file, current_owner, open_child, protected_length, read_twice,
 	recheck_chain,
 };
-use crate::read_protected_snapshot;
 use crate::scratch::Scratch;
+use crate::{read_protected_snapshot, read_protected_snapshot_into};
 
 const FILE: &str = "selected.fixture";
 
@@ -159,6 +159,40 @@ fn selected_path_refuses_an_ancestor_acl_that_effectively_grants_write() {
 		read_protected_snapshot(&path),
 		Err(ProtectedSnapshotError::Unprotected)
 	);
+}
+
+#[test]
+#[ignore = "requires a nonroot native Linux account and TMPDIR on a protected whole ext4 or XFS root mount"]
+fn secret_buffers_enforce_the_selected_bound_and_native_mode() {
+	use std::io::Write as _;
+
+	let scratch = Scratch::new();
+	let path = scratch.path(FILE);
+	create_fixture(&scratch).write_all(b"synthetic").unwrap();
+	let mut small = [0x31; 8];
+	let mut readback = [0x32; 4];
+	assert_eq!(
+		read_protected_snapshot_into(&path, &mut small, &mut readback),
+		Err(ProtectedSnapshotError::TooLarge)
+	);
+	assert_eq!(small, [0x31; 8]);
+	assert_eq!(readback, [0x32; 4]);
+
+	let mut bytes = [0x31; 16];
+	assert_eq!(
+		read_protected_snapshot_into(&path, &mut bytes, &mut readback),
+		Ok(9)
+	);
+	assert_eq!(&bytes[..9], b"synthetic");
+	fs::set_permissions(&path, Permissions::from_mode(0o644)).unwrap();
+	bytes.fill(0x31);
+	readback.fill(0x32);
+	assert_eq!(
+		read_protected_snapshot_into(&path, &mut bytes, &mut readback),
+		Err(ProtectedSnapshotError::Unprotected)
+	);
+	assert_eq!(bytes, [0x31; 16]);
+	assert_eq!(readback, [0x32; 4]);
 }
 
 #[test]
