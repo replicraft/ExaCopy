@@ -261,10 +261,12 @@ fn check_workspace(
 					false
 				})
 			} else {
-				let allowed_source = if to == "apfs-mounted" {
-					allowed_apfs_sibling(root, name, dependency, target.as_deref())
-				} else {
-					dependency.path.is_none()
+				let allowed_source = match to {
+					"apfs-mounted" => {
+						allowed_apfs_sibling(root, name, dependency, target.as_deref())
+					}
+					"boringtun" | "russh" => allowed_transport_sibling(root, name, dependency),
+					_ => dependency.path.is_none(),
 				};
 				allowed_source && !workspace.contains_key(to) && member.allows_external(dependency)
 			};
@@ -348,6 +350,51 @@ fn allowed_apfs_sibling(
 		return false;
 	};
 	root.join("../pomologie/apfs/crates/platform/apfs-mounted")
+		.canonicalize()
+		.is_ok_and(|expected| {
+			path.as_std_path()
+				.canonicalize()
+				.is_ok_and(|actual| actual == expected)
+		})
+}
+
+fn allowed_transport_sibling(root: &Path, consumer: &str, dependency: &Dependency) -> bool {
+	const UNIX_FIXTURES: &str = r#"cfg(any(target_os = "linux", target_os = "macos"))"#;
+	let target = dependency.target.as_ref().map(ToString::to_string);
+	let (version, features, optional): (&str, &[&str], bool) = match (
+		dependency.name.as_str(),
+		consumer,
+		dependency.kind,
+		target.as_deref(),
+	) {
+		("boringtun", "exacopy-wireguard", DependencyKind::Normal, None) => ("=0.7.1", &[], true),
+		("russh", "exacopy-ssh", DependencyKind::Normal, None) => ("=0.65.4", &["ring"], true),
+		(
+			"russh",
+			"exacopy-cli" | "exacopy-sftp",
+			DependencyKind::Development,
+			Some(UNIX_FIXTURES),
+		) => ("=0.65.4", &["ring"], false),
+		_ => return false,
+	};
+	if dependency.req.to_string() != version
+		|| dependency.source.is_some()
+		|| dependency.rename.is_some()
+		|| dependency.optional != optional
+		|| dependency.uses_default_features
+		|| dependency
+			.features
+			.iter()
+			.map(String::as_str)
+			.ne(features.iter().copied())
+	{
+		return false;
+	}
+	let Some(path) = dependency.path.as_ref() else {
+		return false;
+	};
+	root.join("../local-deps")
+		.join(&dependency.name)
 		.canonicalize()
 		.is_ok_and(|expected| {
 			path.as_std_path()

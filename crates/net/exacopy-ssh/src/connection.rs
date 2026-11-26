@@ -166,6 +166,13 @@ impl Handler for HostCheck {
 		Ok(true)
 	}
 
+	async fn check_server_key_on_rekey(
+		&mut self,
+		_presented: &PublicKeyOrCertificate,
+	) -> Result<bool, Error> {
+		Err(Error::Rekey)
+	}
+
 	async fn kex_done(
 		&mut self,
 		_shared_secret: Option<&[u8]>,

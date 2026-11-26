@@ -14,6 +14,7 @@ import tempfile
 import time
 
 import release_candidate as candidate
+import transport_source
 
 from installer_fixture import TARGETS, bundle, encoded
 from release.package import MAX_ARCHIVE, MAX_EXECUTABLE
@@ -55,6 +56,7 @@ def verified_build(directory, target, commit, tag, version):
         "features": [],
         "tree": candidate.git("rev-parse", "HEAD^{tree}"),
         "lockfile_sha256": sha256(candidate.ROOT / "Cargo.lock"),
+        "transport_sources": transport_source.read_pins(candidate.ROOT),
     }
     if any(provenance.get(name) != value for name, value in expected.items()):
         raise ValueError(f"{target}: build record does not match the admitted release source")

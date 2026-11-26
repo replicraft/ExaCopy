@@ -50,6 +50,7 @@ jobs:
           apfs_python=python3
           if [[ "$RUNNER_OS" == Windows ]]; then apfs_python=python; fi
           bash .github/ci/capture.sh installer-apfs-source "$apfs_python" -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source "$apfs_python" -B tools/transport_source.py --fetch
       - name: Install Rust 1.100.0
         run: bash .github/ci/capture.sh installer-rust-setup bash .github/ci/install.sh rust
       - name: Build a fresh locked CLI release-profile binary

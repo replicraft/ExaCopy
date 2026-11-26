@@ -16,6 +16,7 @@ from apfs_source import (
     read_pin, verify_checkout, verify_consumer,
 )
 from feature_matrix import MATRIX, profile_features, profile_flags
+import transport_source
 
 SPEC = Path("specs/dependencies")
 CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
@@ -110,7 +111,25 @@ def apfs_inputs(package, source, pin, target, parents, features):
     }
 
 
-def production_graph(policy, lock, offline, source, apfs_pin):
+def transport_inputs(package, source, pin, parents, features, consumer_version):
+    name = package["name"]
+    _, consumer, expected_features, _, _ = transport_source.POLICY[name]
+    if (
+        not transport_source.package_matches(package, source)
+        or parents != {package_id(consumer, consumer_version)}
+        or features != set(expected_features)
+    ):
+        raise ValueError(f"unexpected pins, edges or features for {name} local source")
+    repair = pin["repair"]
+    return source_inputs(package, "local-path", repair["archive_sha256"]) | {
+        "commit": repair["commit"], "tree": repair["tree"],
+        "upstream_commit": pin["upstream_commit"], "registry_archive_sha256": pin["registry_archive_sha256"],
+        "repair_patch_sha256": pin["repair_patch_sha256"],
+        "attribution_patch_sha256": pin["attribution_patch_sha256"],
+    }
+
+
+def production_graph(policy, lock, offline, source, apfs_pin, transport_pins):
     checksums = {
         (package_id(entry["name"], entry["version"]), entry["source"]): entry["checksum"]
         for entry in lock["package"] if "checksum" in entry
@@ -148,10 +167,18 @@ def production_graph(policy, lock, offline, source, apfs_pin):
                 package = packages[key]
                 if package["id"] in workspace and package["name"] in policy["production_packages"]:
                     continue
-                if package["source"] is None:
-                    if key != APFS_KEY:
-                        raise ValueError(f"{target}/{profile_name}: unexpected local dependency {key}")
+                name = package["name"]
+                if name in transport_pins:
+                    consumer = transport_source.POLICY[name][1]
+                    consumer_version = next(member["version"] for member in metadata["packages"]
+                                            if member["id"] in workspace and member["name"] == consumer)
+                    record = transport_inputs(
+                        package, source, transport_pins[name], parents[key], selected, consumer_version,
+                    )
+                elif key == APFS_KEY:
                     record = apfs_inputs(package, source, apfs_pin, target, parents[key], selected)
+                elif package["source"] is None:
+                    raise ValueError(f"{target}/{profile_name}: unexpected local dependency {key}")
                 else:
                     record = registry_inputs(package, checksums)
                 if inputs.setdefault(key, record) != record:
@@ -259,7 +286,10 @@ def main():
             ("Cargo.toml", CONSUMER_MANIFEST)
         ))
         verify_checkout(source, apfs_pin)
-        graph = production_graph(policy, lock, args.offline, source, apfs_pin)
+        transport_pins = transport_source.read_pins(source)
+        transport_source.verify_manifests(source)
+        transport_source.archive_sources(source, transport_pins)
+        graph = production_graph(policy, lock, args.offline, source, apfs_pin, transport_pins)
         if args.emit_graph:
             print(compact_graph(graph))
             return

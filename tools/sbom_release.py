@@ -19,6 +19,9 @@ from apfs_source import (
 )
 
 
+import transport_source
+
+
 PRODUCT_PACKAGE = "exacopy-cli"
 PRODUCT_BINARY = "exacopy"
 NATIVE_FLAGS = ("CFLAGS", "CXXFLAGS", "CPPFLAGS", "ASFLAGS", "LDFLAGS")
@@ -57,7 +60,7 @@ def build_inputs(stream):
     return units, executable
 
 
-def component(package, units, checksum, application, apfs_pin=None):
+def component(package, units, checksum, application, local_pin=None):
     name = package["name"]
     version = package["version"]
     source = package["source"]
@@ -66,8 +69,8 @@ def component(package, units, checksum, application, apfs_pin=None):
         raise ValueError(f"{name}@{version} requires a checked crates.io source")
     if registry:
         reference = f"pkg:cargo/{name}@{version}"
-    elif apfs_pin is not None:
-        reference = f"local-path:{name}@{version}#{apfs_pin['commit']}"
+    elif local_pin is not None:
+        reference = f"local-path:{name}@{version}#{local_pin['commit']}"
     else:
         reference = f"workspace:{name}@{version}"
     item = {
@@ -83,19 +86,27 @@ def component(package, units, checksum, application, apfs_pin=None):
     if registry:
         item["purl"] = reference
         item["hashes"] = [{"alg": "SHA-256", "content": checksum}]
-    elif apfs_pin is not None:
-        item["externalReferences"] = [{"type": "vcs", "url": APFS_REPOSITORY}]
+    elif local_pin is not None:
+        if "upstream_commit" in local_pin:
+            item["externalReferences"] = [{"type": "vcs", "url": local_pin["repository"],
+                                            "comment": "Upstream repository for the separately pinned modified source"}]
+            item["properties"].extend(
+                {"name": f"exacopy:{name.replace('_', '-')}", "value": local_pin[name]}
+                for name in ("upstream_commit", "registry_archive_sha256", "repair_patch_sha256", "attribution_patch_sha256")
+            )
+        else:
+            item["externalReferences"] = [{"type": "vcs", "url": APFS_REPOSITORY}]
         item["properties"].extend([
-            {"name": "exacopy:source-commit", "value": apfs_pin["commit"]},
-            {"name": "exacopy:source-tree", "value": apfs_pin["tree"]},
-            {"name": "exacopy:source-archive-sha256", "value": apfs_pin["archive_sha256"]},
+            {"name": "exacopy:source-commit", "value": local_pin["commit"]},
+            {"name": "exacopy:source-tree", "value": local_pin["tree"]},
+            {"name": "exacopy:source-archive-sha256", "value": local_pin["archive_sha256"]},
         ])
     if package["license"]:
         item["licenses"] = [{"expression": package["license"]}]
     return item
 
 
-def write_sbom(source, env, evidence, target, commit, binary_sha256, units, root_id, apfs_pin):
+def write_sbom(source, env, evidence, target, commit, binary_sha256, units, root_id, apfs_pin, transport_pins):
     metadata = json.loads(output(
         "cargo", "metadata", "--format-version", "1", "--locked", "--offline",
         "--filter-platform", target, cwd=source, env=env,
@@ -112,12 +123,23 @@ def write_sbom(source, env, evidence, target, commit, binary_sha256, units, root
         package = package_by_id[package_id]
         identity = (package["name"], package["version"], package["source"])
         pin = None
-        if package["source"] is None and package_id not in workspace:
+        if package["name"] in transport_pins:
+            name = package["name"]
+            if not transport_source.package_matches(package, source) or package_id in workspace:
+                raise ValueError(f"unexpected {name} artifact source")
+            repair = transport_pins[name]
+            pin = repair["repair"] | {
+                "repository": repair["upstream_repository"], "upstream_commit": repair["upstream_commit"],
+                "registry_archive_sha256": repair["registry_archive_sha256"],
+                "repair_patch_sha256": repair["repair_patch_sha256"],
+                "attribution_patch_sha256": repair["attribution_patch_sha256"],
+            }
+        elif package["source"] is None and package_id not in workspace:
             if target != "aarch64-apple-darwin" or not dependency_manifest_matches(package, source) or apfs_pin is None:
                 raise ValueError(f"unexpected local Cargo artifact: {package['name']}@{package['version']}")
             pin = apfs_pin
         components[package_id] = component(
-            package, package_units, checksums.get(identity), package_id == root_id, apfs_pin=pin,
+            package, package_units, checksums.get(identity), package_id == root_id, local_pin=pin,
         )
     root = components.pop(root_id)
     if root["name"] != PRODUCT_PACKAGE:
@@ -165,17 +187,20 @@ def build_environment(work, epoch):
     return env
 
 
-def extract_sources(work, archive, apfs_archive):
+def extract_sources(work, archive, apfs_archive, transport_archives=None):
     source = work / "source"
     with tarfile.open(archive, "r:") as files:
         files.extractall(source, filter="data")
     with tarfile.open(apfs_archive, "r:") as files:
         files.extractall(sibling(source), filter="data")
+    if transport_archives is not None:
+        transport_source.verify_manifests(source)
+        transport_source.extract_sources(source, transport_archives, transport_source.read_pins(source))
     return source
 
 
-def build(work, archive, apfs_archive, evidence, attempt, target, record):
-    source = extract_sources(work, archive, apfs_archive)
+def build(work, archive, apfs_archive, transport_archives, evidence, attempt, target, record):
+    source = extract_sources(work, archive, apfs_archive, transport_archives)
     env = build_environment(work, str(record["source_date_epoch"]))
     command = [
         "cargo", "build", "--release", "--locked", "--offline", "--no-default-features",
@@ -191,7 +216,7 @@ def build(work, archive, apfs_archive, evidence, attempt, target, record):
         units, (root_id, executable) = build_inputs(stream)
     binary_hash = sha256(executable)
     sbom = evidence / f"{attempt}.cdx.json"
-    write_sbom(source, env, sbom, target, record["commit"], binary_hash, units, root_id, record["apfs_source"])
+    write_sbom(source, env, sbom, target, record["commit"], binary_hash, units, root_id, record["apfs_source"], record["transport_sources"])
     return {
         "binary_sha256": binary_hash,
         "cargo_messages_sha256": sha256(messages),
@@ -240,14 +265,20 @@ def reproduce(evidence, target, fetch):
             apfs_archive = root / "apfs.tar"
             record["apfs_source"] = {"repository": APFS_REPOSITORY, **apfs_pin}
             archive_apfs(Path.cwd(), apfs_pin, apfs_archive)
+            # Read these pins from the exact application archive, then verify the project siblings.
+            committed_source = extract_sources(root / "pins", archive, apfs_archive)
+            transport_pins = transport_source.read_pins(committed_source)
+            transport_source.verify_manifests(committed_source)
+            record["transport_sources"] = transport_pins
+            transport_archives = transport_source.archive_sources(Path.cwd(), transport_pins, root)
             if fetch:
-                fetch_source = extract_sources(root / "fetch", archive, apfs_archive)
+                fetch_source = extract_sources(root / "fetch", archive, apfs_archive, transport_archives)
                 subprocess.run(
                     ["cargo", "fetch", "--locked", "--target", target], cwd=fetch_source, check=True,
                 )
             for attempt in ("first", "second"):
                 record["attempts"][attempt] = {"result": "fail"}
-                record["attempts"][attempt] = build(root / attempt, archive, apfs_archive, evidence, attempt, target, record)
+                record["attempts"][attempt] = build(root / attempt, archive, apfs_archive, transport_archives, evidence, attempt, target, record)
                 record["attempts"][attempt]["result"] = "pass"
         first, second = (record["attempts"][name] for name in ("first", "second"))
         for key in ("binary_sha256", "lockfile_sha256", "sbom_sha256"):

@@ -46,12 +46,13 @@ jobs:
           apfs_python=python3
           if [[ "$RUNNER_OS" == Windows ]]; then apfs_python=python; fi
           bash .github/ci/capture.sh apfs-source "$apfs_python" -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source "$apfs_python" -B tools/transport_source.py --fetch
       - name: Install Rust 1.100.0
         id: rust
         run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
       - name: Check formatting
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
-        run: bash .github/ci/capture.sh fmt cargo +1.100.0 fmt --all --check
+        run: bash .github/ci/capture.sh fmt cargo +1.100.0 fmt --check
       - name: Compile locked workspace
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
         run: bash .github/ci/capture.sh build cargo +1.100.0 build --locked --workspace --all-targets
@@ -142,6 +143,7 @@ jobs:
           apfs_python=python3
           if [[ "$RUNNER_OS" == Windows ]]; then apfs_python=python; fi
           bash .github/ci/capture.sh apfs-source "$apfs_python" -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source "$apfs_python" -B tools/transport_source.py --fetch
       - name: Install Rust 1.100.0
         run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
       - name: Run engineering policy
@@ -191,6 +193,7 @@ jobs:
           apfs_python=python3
           if [[ "$RUNNER_OS" == Windows ]]; then apfs_python=python; fi
           bash .github/ci/capture.sh apfs-source "$apfs_python" -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source "$apfs_python" -B tools/transport_source.py --fetch
       - name: Set formal evidence paths
         run: printf 'EVS_RECORDS=%s/exacopy-evs\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Install Rust 1.100.0
@@ -260,6 +263,7 @@ jobs:
           apfs_python=python3
           if [[ "$RUNNER_OS" == Windows ]]; then apfs_python=python; fi
           bash .github/ci/capture.sh apfs-source "$apfs_python" -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source "$apfs_python" -B tools/transport_source.py --fetch
       - name: Install Rust 1.100.0
         id: rust
         run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
@@ -277,6 +281,12 @@ jobs:
       - name: Audit the lockfile
         if: ${{ !cancelled() && steps.audit.outcome == 'success' }}
         run: bash .github/ci/capture.sh audit cargo audit --file Cargo.lock --deny warnings
+      - name: Audit the two upstream transport bases
+        if: ${{ !cancelled() && steps.audit.outcome == 'success' }}
+        run: |
+          base_lock="$RUNNER_TEMP/exacopy-evidence/transport-registry-base.lock"
+          bash .github/ci/capture.sh transport-advisory-input python3 -B tools/transport_source.py --advisory-lock "$base_lock"
+          bash .github/ci/capture.sh transport-base-audit cargo audit --file "$base_lock" --deny warnings
       - name: Install cargo-vet
         id: vet
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
@@ -310,6 +320,7 @@ jobs:
           apfs_python=python3
           if [[ "$RUNNER_OS" == Windows ]]; then apfs_python=python; fi
           bash .github/ci/capture.sh apfs-source "$apfs_python" -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source "$apfs_python" -B tools/transport_source.py --fetch
       - name: Install Rust 1.100.0
         run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
       - name: Rebuild from the archived source and inventory compiled crates

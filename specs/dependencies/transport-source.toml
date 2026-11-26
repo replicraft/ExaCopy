@@ -1,0 +1,49 @@
+schema_version = 1
+
+[boringtun]
+version = "0.7.1"
+registry_archive_sha256 = "15dd6a8a89cbe8997f37ca0cf035e6ea4d64cd2ecea4aed83ffb9f99f7126939"
+upstream_repository = "https://github.com/cloudflare/boringtun"
+upstream_commit = "051c9d47dc9c5cb36e461b7d36dcd673820dc98b"
+license = "BSD-3-Clause"
+license_file = "LICENSE.md"
+license_sha256 = "6dbef24708bad8c727bd80cca58ba8aa1637cdcb2cc6e9a31ea49235717e9391"
+normalized_manifest_sha256 = "affa0ace664dac9ae168499ff71c2005bd17bfeb4b87ce322c020116ae0f3426"
+repair_patch_sha256 = "3b5708e37cfa8de7a3e87f6a7d0c25b7811ecb4520b111de48563b45b5bbf84c"
+repair_patch = "boringtun-0.7.1-transport-key-api.patch"
+attribution_patch = "boringtun-modification-notice.patch"
+attribution_patch_sha256 = "736efe721857e9df1a35d40472c06c4f804aff57eaaa3c56db3618fb04df9800"
+
+[boringtun.base]
+commit = "496258f46a5897ba849d606ced503a53c9e6c6b7"
+tree = "b5559f162d77369fc931d19b6def79cb74c183b4"
+archive_sha256 = "e19608a83a8500a358befd1a4cb140024c686713135093a6efd0ba7e8954b45d"
+
+[boringtun.repair]
+commit = "ea14f16348ae16fbc56290abc2170328691f9046"
+tree = "3ccc0cb434857a1a9d97b33ee6d9212de341e260"
+archive_sha256 = "31a6d8a2bf14f9490112e05c4aac38de2c35282bdef5f971d28db6ca7dcc0b56"
+
+[russh]
+version = "0.65.4"
+registry_archive_sha256 = "569d8c45e20c123af2fc5ecb4803fde0a98572449ba4c24ed97741d7b02fedf7"
+upstream_repository = "https://github.com/warp-tech/russh"
+upstream_commit = "4977b1afba8802137ac93f3e2c8bf916c35f437c"
+license = "Apache-2.0"
+license_file = "LICENSE.txt"
+license_sha256 = "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+normalized_manifest_sha256 = "5e930b57ac2aa604aca0fb099e6d0103a55bd2355ee7790f2c38eded5abc8035"
+repair_patch_sha256 = "79046522321b25f545f1f13f61f441546da335e8d6c2a0d12f33904156612c8b"
+repair_patch = "russh-rekey-api.patch"
+attribution_patch = "russh-modification-notice.patch"
+attribution_patch_sha256 = "e3bcfe8f3b9b3e8e4b85f2777dd43247b87db4284de970ed1294346c0c817c8b"
+
+[russh.base]
+commit = "9940a1cb57c221824cc921429ae6eea8485beea4"
+tree = "c1058224945c2bb61c980742b2f171b5ec579c83"
+archive_sha256 = "31d44ed3554febed5b895a05ae34a1361722336ad8421cd056f0550cde870f03"
+
+[russh.repair]
+commit = "7bcc7bd46141c3eca20b885c1abc8031fd3ed4ff"
+tree = "201bf925a701826df74a4241eb42cdc707f9ac2e"
+archive_sha256 = "46a46524d96f2d7965b091aef2eaf3be58e2bb8b15ec6b5d8523a6fa40e74fd9"

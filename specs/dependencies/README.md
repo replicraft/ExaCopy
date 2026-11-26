@@ -62,3 +62,8 @@ lockfile diff, update the affected exact-version assessments, and run the
 a change. A passing graph check establishes that the records match the
 selected locked inputs and that their required fields are present. Review
 gaps stay visible in the check output, and Cargo Vet provides its own gate.
+
+
+The repaired BoringTun and Russh packages are path sources with separately
+verified upstream archive, local commit, tree, repair and license pins.
+[See the reconstruction and admission record](../../docs/supply-chain/local-transport-sources.md).

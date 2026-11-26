@@ -55,7 +55,9 @@ jobs:
       - name: Verify exact tag, source and Cargo versions
         run: bash .github/ci/capture.sh release-source python -B .github/ci/release_candidate.py check-source
       - name: Fetch and admit pinned Pomologie source
-        run: bash .github/ci/capture.sh release-apfs python -B tools/apfs_source.py --fetch
+        run: |
+          bash .github/ci/capture.sh release-apfs python -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source python -B tools/transport_source.py --fetch
       - name: Install the pinned native Rust toolchain
         run: bash .github/ci/capture.sh release-rust bash .github/ci/install.sh rust
       - name: Check feature isolation

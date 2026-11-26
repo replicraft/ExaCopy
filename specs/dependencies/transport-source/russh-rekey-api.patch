@@ -1,0 +1,67 @@
+--- a/src/client/mod.rs
++++ b/src/client/mod.rs
+@@ -2035,8 +2035,16 @@
+                     session.common.strict_kex =
+                         session.common.strict_kex || newkeys.names.strict_kex();
+ 
++                    let server_identity = server_host_certificate
++                        .map(PublicKeyOrCertificate::from)
++                        .or_else(|| server_host_key.map(PublicKeyOrCertificate::from));
++
+                     if session.common.encrypted.is_some() {
+                         // This is a rekey
++                        let identity = server_identity.as_ref().ok_or(crate::Error::UnknownKey)?;
++                        if !handler.check_server_key_on_rekey(identity).await? {
++                            return Err(crate::Error::UnknownKey.into());
++                        }
+                         handler
+                             .kex_done(newkeys.kex.shared_secret_bytes(), &newkeys.names, session)
+                             .await?;
+@@ -2065,13 +2073,8 @@
+                         // something the client was ever told to trust — asking
+                         // about it as well would invite an implementation to
+                         // answer yes to the wrong question.
+-                        if let Some(certificate) = server_host_certificate {
+-                            if !handler.check_server_key(&certificate.into()).await? {
+-                                return Err(crate::Error::UnknownKey.into());
+-                            }
+-                        } else if let Some(server_host_key) = server_host_key {
+-                            let check = handler.check_server_key(&server_host_key.into()).await?;
+-                            if !check {
++                        if let Some(identity) = &server_identity {
++                            if !handler.check_server_key(identity).await? {
+                                 return Err(crate::Error::UnknownKey.into());
+                             }
+                         }
+@@ -2850,12 +2853,26 @@
+         async { Ok(false) }
+     }
+ 
++    /// Checks the server's key or certificate for a subsequent key exchange.
++    ///
++    /// The library verifies the exchange signature before invoking this callback.
++    /// The application must decide whether the verified identity is trusted.
++    /// Refusal terminates the session before the replacement traffic keys are
++    /// installed and before pending application packets are processed.
++    ///
++    /// By default this delegates to [Self::check_server_key]. The default
++    /// can call that method more than once per session. Implementations
++    /// that use a different policy on rekey may override it.
++    fn check_server_key_on_rekey(
++        &mut self,
++        server_public_key: &PublicKeyOrCertificate,
++    ) -> impl Future<Output = Result<bool, Self::Error>> + Send {
++        self.check_server_key(server_public_key)
++    }
++
+     /// Called when key exchange has completed.
+-    ///
+-    /// For the initial key exchange this runs only after
+-    /// [`check_server_key`](Self::check_server_key) has accepted the server,
+-    /// so the shared secret never reaches the application for a server that
+-    /// is about to be rejected.
++    /// For an exchange with a negotiated server identity, the corresponding
++    /// identity check runs before this callback.
+     ///
+     /// This callback provides access to the raw shared secret from the KEX,
+     /// which is useful for protocols that derive additional keys from the

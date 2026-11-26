@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 import apfs_source
 import installer_fixture
 import sbom_release
+import transport_source
 
 ASSETS = {
     "x86_64-unknown-linux-gnu": "exacopy-cli-x86_64-unknown-linux-gnu.tar.gz",
@@ -102,6 +103,10 @@ def create_build(target, evidence, work, ref, commit, version):
     pin = apfs_source.read_pin((ROOT / apfs_source.PIN).read_text(encoding="utf-8"))
     apfs_source.archive_apfs(ROOT, pin, apfs_archive)
     source = sbom_release.extract_sources(work / "inputs", source_archive, apfs_archive)
+    transport_pins = transport_source.read_pins(source)
+    transport_source.verify_manifests(source)
+    transport_archives = transport_source.archive_sources(ROOT, transport_pins, work)
+    transport_source.extract_sources(source, transport_archives, transport_pins)
     apfs_source.verify_consumer(*(
         tomllib.loads((source / path).read_text(encoding="utf-8"))
         for path in ("Cargo.toml", apfs_source.CONSUMER_MANIFEST)
@@ -136,7 +141,7 @@ def create_build(target, evidence, work, ref, commit, version):
         raise ValueError("an experimental dependency feature entered the main CLI artifact")
     sbom = evidence / "exacopy.cdx.json"
     artifact_hash = sbom_release.sha256(executable)
-    sbom_release.write_sbom(source, env, sbom, target, commit, artifact_hash, units, root_id, pin)
+    sbom_release.write_sbom(source, env, sbom, target, commit, artifact_hash, units, root_id, pin, transport_pins)
     provenance = evidence / "build-provenance.json"
     sbom_release.write_json(provenance, {
         "schema": "exacopy-ci-candidate-build-v1",
@@ -154,6 +159,7 @@ def create_build(target, evidence, work, ref, commit, version):
         "source_tar_sha256": sbom_release.sha256(source_archive),
         "lockfile_sha256": sbom_release.sha256(source / "Cargo.lock"),
         "apfs_source": {"repository": apfs_source.REPOSITORY, **pin},
+        "transport_sources": transport_pins,
         "binary": {"name": filename, "sha256": artifact_hash, "size": executable.stat().st_size},
         "sbom_sha256": sbom_release.sha256(sbom),
         "cargo_messages_sha256": sbom_release.sha256(messages),

@@ -32,6 +32,7 @@ jobs:
           apfs_python=python3
           if [[ "$RUNNER_OS" == Windows ]]; then apfs_python=python; fi
           bash .github/ci/capture.sh apfs-source "$apfs_python" -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source "$apfs_python" -B tools/transport_source.py --fetch
       - name: Install Rust 1.100.0
         run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
       - name: Install nextest
@@ -73,6 +74,7 @@ jobs:
           apfs_python=python3
           if [[ "$RUNNER_OS" == Windows ]]; then apfs_python=python; fi
           bash .github/ci/capture.sh apfs-source "$apfs_python" -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source "$apfs_python" -B tools/transport_source.py --fetch
       - name: Install Rust 1.100.0
         run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
       - name: Install pinned cargo-fuzz and nightly
@@ -103,6 +105,7 @@ jobs:
           apfs_python=python3
           if [[ "$RUNNER_OS" == Windows ]]; then apfs_python=python; fi
           bash .github/ci/capture.sh apfs-source "$apfs_python" -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source "$apfs_python" -B tools/transport_source.py --fetch
       - name: Install Rust 1.100.0
         run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
       - name: Install pinned cargo-fuzz and nightly
@@ -144,7 +147,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Provision pinned Pomologie APFS checkout
-        run: bash .github/ci/capture.sh apfs-source python3 -B tools/apfs_source.py --fetch
+        run: |
+          bash .github/ci/capture.sh apfs-source python3 -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source python3 -B tools/transport_source.py --fetch
       - name: Install Rust 1.100.0
         run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
       - name: Install pinned cargo-fuzz and nightly
@@ -184,6 +189,7 @@ jobs:
           apfs_python=python3
           if [[ "$RUNNER_OS" == Windows ]]; then apfs_python=python; fi
           bash .github/ci/capture.sh apfs-source "$apfs_python" -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source "$apfs_python" -B tools/transport_source.py --fetch
       - name: Install Rust 1.100.0
         run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
       - name: Install cargo-mutants

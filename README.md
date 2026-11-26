@@ -21,9 +21,16 @@ On macOS, `diff LEFT RIGHT --managed-macos` enables exact comparison of regular 
 Use Rust 1.100.0 and cargo-nextest 0.9.151 for the developer checks. Supply the
 [pinned Pomologie sibling checkout](specs/dependencies/README.md) before
 running Cargo on any target; verify it with `python3 -B tools/apfs_source.py`.
+Cargo also needs the two pinned repaired transport sibling sources. Run
+`python3 -B tools/transport_source.py --fetch` to reconstruct and verify
+them before Cargo resolves the workspace. An existing crate cache can be
+selected with `--crate-cache`. The source pins, reconstruction inputs and
+review scope are documented in
+[local transport source provenance](docs/supply-chain/local-transport-sources.md).
+
 
 ```sh
-cargo fmt --all --check
+cargo fmt --check
 cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 cargo nextest run --locked --workspace --all-features --profile ci
 cargo test --locked --workspace --all-features --doc

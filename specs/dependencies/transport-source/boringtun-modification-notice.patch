@@ -1,0 +1,67 @@
+diff --git a/src/noise/handshake.rs b/src/noise/handshake.rs
+--- a/src/noise/handshake.rs
++++ b/src/noise/handshake.rs
+@@ -1,5 +1,6 @@
+ // Copyright (c) 2019 Cloudflare, Inc. All rights reserved.
+ // SPDX-License-Identifier: BSD-3-Clause
++// Modified by ExaCopy to carry transport key identity at session creation.
+ 
+ use super::{HandshakeInit, HandshakeResponse, PacketCookieReply};
+ use crate::noise::errors::WireGuardError;
+diff --git a/src/noise/mod.rs b/src/noise/mod.rs
+--- a/src/noise/mod.rs
++++ b/src/noise/mod.rs
+@@ -1,5 +1,6 @@
+ // Copyright (c) 2019 Cloudflare, Inc. All rights reserved.
+ // SPDX-License-Identifier: BSD-3-Clause
++// Modified by ExaCopy to attribute operations to their exact transport keys.
+ 
+ pub mod errors;
+ pub mod handshake;
+diff --git a/src/noise/session.rs b/src/noise/session.rs
+--- a/src/noise/session.rs
++++ b/src/noise/session.rs
+@@ -1,5 +1,6 @@
+ // Copyright (c) 2019 Cloudflare, Inc. All rights reserved.
+ // SPDX-License-Identifier: BSD-3-Clause
++// Modified by ExaCopy to attach key lifecycle identity to transport sessions.
+ 
+ use super::PacketData;
+ use crate::noise::errors::WireGuardError;
+diff --git a/src/noise/timers.rs b/src/noise/timers.rs
+--- a/src/noise/timers.rs
++++ b/src/noise/timers.rs
+@@ -1,5 +1,6 @@
+ // Copyright (c) 2019 Cloudflare, Inc. All rights reserved.
+ // SPDX-License-Identifier: BSD-3-Clause
++// Modified by ExaCopy to attribute timer output to its transport key.
+ 
+ use super::errors::WireGuardError;
+ use crate::noise::{Tunn, TunnResult};
+diff --git a/src/noise/transport_key.rs b/src/noise/transport_key.rs
+--- a/src/noise/transport_key.rs
++++ b/src/noise/transport_key.rs
+@@ -1,4 +1,5 @@
+ // SPDX-License-Identifier: BSD-3-Clause
++// Added by ExaCopy for transport key lifecycle and operation attribution.
+ 
+ use std::fmt;
+ use std::net::IpAddr;
+diff --git a/src/sleepyinstant/mod.rs b/src/sleepyinstant/mod.rs
+--- a/src/sleepyinstant/mod.rs
++++ b/src/sleepyinstant/mod.rs
+@@ -1,3 +1,5 @@
++// Modified by ExaCopy to expose checked elapsed time for key age observation.
++
+ #![forbid(unsafe_code)]
+ //! Attempts to provide the same functionality as std::time::Instant, except it
+ //! uses a timer which accounts for time when the system is asleep
+diff --git a/src/sleepyinstant/unix.rs b/src/sleepyinstant/unix.rs
+--- a/src/sleepyinstant/unix.rs
++++ b/src/sleepyinstant/unix.rs
+@@ -1,3 +1,5 @@
++// Modified by ExaCopy to make clock subtraction fail closed on regression.
++
+ use std::time::Duration;
+ 
+ use nix::sys::time::TimeSpec;

@@ -21,3 +21,11 @@ url = "https://raw.githubusercontent.com/mozilla/supply-chain/0ecbc0c0e1ffa71c17
 
 [imports.zcash]
 url = "https://raw.githubusercontent.com/zcash/rust-ecosystem/ce132d7abdd52f2b3b0d55ed5dc9f152331535c2/supply-chain/audits.toml"
+
+[policy."boringtun:0.7.1"]
+audit-as-crates-io = false
+notes = "The modified path source is independently gated by specs/dependencies/transport-source.toml and tools/transport_source.py. Registry audit criteria remain in force for its resolved third-party dependencies."
+
+[policy."russh:0.65.4"]
+audit-as-crates-io = false
+notes = "The modified path source is independently gated by specs/dependencies/transport-source.toml and tools/transport_source.py. Registry audit criteria remain in force for its resolved third-party dependencies."

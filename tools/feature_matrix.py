@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 
 from apfs_source import CONSUMER, MACOS_CFG, NAME as APFS_NAME, WORKSPACE_PATH
+from transport_source import POLICY as TRANSPORT_SOURCES, dependency_edge_matches
 
 
 MATRIX = Path("specs/features/matrix.json")
@@ -33,7 +34,10 @@ def check_manifests(policy, packages):
             if name not in production or dependency["kind"] == "dev":
                 continue
             dep_name = dependency["name"]
-            if dependency["source"] is None:
+            if dep_name in TRANSPORT_SOURCES:
+                if not dependency_edge_matches(dependency, Path.cwd(), name):
+                    raise ValueError(f"{name}: invalid pinned transport edge {dep_name}")
+            elif dependency["source"] is None:
                 if dep_name in production:
                     continue
                 if (

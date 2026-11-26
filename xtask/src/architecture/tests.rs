@@ -1,6 +1,6 @@
 use cargo_metadata::{CargoOpt, Dependency, DependencyKind, MetadataCommand};
 
-use super::{MATRIX_PATH, allowed_apfs_sibling, check};
+use super::{MATRIX_PATH, allowed_apfs_sibling, allowed_transport_sibling, check};
 use crate::finding::Findings;
 use crate::test_support::Fixture;
 
@@ -282,6 +282,71 @@ fn admits_only_the_exact_macos_apfs_sibling_edge() {
 	let mut wrong = dependency;
 	wrong.path = Some(root.to_str().expect("fixture path is UTF-8").into());
 	assert!(!allowed_apfs_sibling(&root, PLATFORM, &wrong, Some(MACOS)));
+}
+
+#[test]
+fn admits_only_the_exact_repaired_transport_edges() {
+	let fixture = Fixture::new();
+	fixture.write("ExaCopy/Cargo.toml", "");
+	let root = fixture.root().join("ExaCopy");
+	for (name, version, consumer, features, kind) in [
+		("boringtun", "=0.7.1", "exacopy-wireguard", &[][..], None),
+		("russh", "=0.65.4", "exacopy-ssh", &["ring"][..], None),
+		(
+			"russh",
+			"=0.65.4",
+			"exacopy-cli",
+			&["ring"][..],
+			Some("dev"),
+		),
+		(
+			"russh",
+			"=0.65.4",
+			"exacopy-sftp",
+			&["ring"][..],
+			Some("dev"),
+		),
+	] {
+		fixture.write(&format!("local-deps/{name}/Cargo.toml"), "");
+		let path = fixture.root().join("local-deps").join(name);
+		let target = kind.map(|_| r#"cfg(any(target_os = "linux", target_os = "macos"))"#);
+		let dependency: Dependency = serde_json::from_value(serde_json::json!({
+			"name": name, "req": version, "kind": kind, "optional": kind.is_none(),
+			"uses_default_features": false, "features": features, "target": target, "path": path,
+		}))
+		.expect("decode synthetic Cargo path dependency");
+		assert!(allowed_transport_sibling(&root, consumer, &dependency));
+		assert!(!allowed_transport_sibling(
+			&root,
+			"exacopy-transfer",
+			&dependency
+		));
+
+		let mut wrong = dependency.clone();
+		wrong.kind = DependencyKind::Build;
+		assert!(!allowed_transport_sibling(&root, consumer, &wrong));
+
+		let mut wrong = dependency.clone();
+		wrong.kind = if kind.is_none() {
+			DependencyKind::Development
+		} else {
+			DependencyKind::Normal
+		};
+		wrong.optional = kind.is_some();
+		assert!(!allowed_transport_sibling(&root, consumer, &wrong));
+
+		let mut wrong = dependency.clone();
+		wrong.features.push("device".into());
+		assert!(!allowed_transport_sibling(&root, consumer, &wrong));
+
+		let mut wrong = dependency.clone();
+		wrong.target = Some(r#"cfg(target_os = "windows")"#.parse().unwrap());
+		assert!(!allowed_transport_sibling(&root, consumer, &wrong));
+
+		let mut wrong = dependency;
+		wrong.path = None;
+		assert!(!allowed_transport_sibling(&root, consumer, &wrong));
+	}
 }
 
 enum Resolution {

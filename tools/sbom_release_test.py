@@ -81,5 +81,29 @@ class SbomReleaseTests(unittest.TestCase):
         self.assertEqual(item["hashes"][0]["content"], "0" * 64)
 
 
+class LocalSourceComponentTests(unittest.TestCase):
+    def test_local_repair_component_has_no_registry_identity(self):
+        pin = {
+            "repository": "https://github.com/cloudflare/boringtun",
+            "upstream_commit": "a" * 40,
+            "registry_archive_sha256": "b" * 64,
+            "repair_patch_sha256": "c" * 64,
+            "attribution_patch_sha256": "d" * 64,
+            "commit": "d" * 40,
+            "tree": "e" * 40,
+            "archive_sha256": "f" * 64,
+        }
+        item = component(
+            {"name": "boringtun", "version": "0.7.1", "source": None, "license": "BSD-3-Clause"},
+            {("lib", "")}, None, False, local_pin=pin,
+        )
+        self.assertEqual(item["bom-ref"], f"local-path:boringtun@0.7.1#{pin['commit']}")
+        self.assertNotIn("purl", item)
+        self.assertNotIn("hashes", item)
+        self.assertIn(
+            {"name": "exacopy:source-archive-sha256", "value": pin["archive_sha256"]}, item["properties"],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

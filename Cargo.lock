@@ -212,8 +212,6 @@ dependencies = [
 [[package]]
 name = "boringtun"
 version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15dd6a8a89cbe8997f37ca0cf035e6ea4d64cd2ecea4aed83ffb9f99f7126939"
 dependencies = [
  "aead 0.5.2",
  "base64 0.22.1",
@@ -1884,8 +1882,6 @@ dependencies = [
 [[package]]
 name = "russh"
 version = "0.65.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "569d8c45e20c123af2fc5ecb4803fde0a98572449ba4c24ed97741d7b02fedf7"
 dependencies = [
  "aes",
  "bitflags",

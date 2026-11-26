@@ -1,0 +1,459 @@
+diff --git a/src/noise/handshake.rs b/src/noise/handshake.rs
+index 40ed803..d3d73bc 100644
+--- a/src/noise/handshake.rs
++++ b/src/noise/handshake.rs
+@@ -565,7 +565,7 @@ impl Handshake {
+     pub(super) fn receive_handshake_response(
+         &mut self,
+         packet: HandshakeResponse,
+-    ) -> Result<Session, WireGuardError> {
++    ) -> Result<(Session, super::TransportKeyOrigin), WireGuardError> {
+         // Check if there is a handshake awaiting a response and return the correct one
+         let (state, is_previous) = match (&self.state, &self.previous) {
+             (HandshakeState::InitSent(s), _) if s.local_index == packet.receiver_idx => (s, false),
+@@ -636,12 +636,14 @@ impl Handshake {
+         let rtt_time = Instant::now().duration_since(state.time_sent);
+         self.last_rtt = Some(rtt_time.as_millis() as u32);
+ 
+-        if is_previous {
++        let origin = if is_previous {
+             self.previous = HandshakeState::None;
++            super::TransportKeyOrigin::PreviousInitiation
+         } else {
+             self.state = HandshakeState::None;
+-        }
+-        Ok(Session::new(local_index, peer_index, temp3, temp2))
++            super::TransportKeyOrigin::CurrentInitiation
++        };
++        Ok((Session::new(local_index, peer_index, temp3, temp2), origin))
+     }
+ 
+     pub(super) fn receive_cookie_reply(
+diff --git a/src/noise/mod.rs b/src/noise/mod.rs
+index 76e377b..cff41c7 100644
+--- a/src/noise/mod.rs
++++ b/src/noise/mod.rs
+@@ -7,6 +7,12 @@ pub mod rate_limiter;
+ 
+ mod session;
+ mod timers;
++mod transport_key;
++
++pub use self::transport_key::{
++    TransportKey, TransportKeyId, TransportKeyOrigin, TransportKeyResult, TransportKeyUse,
++};
++use self::transport_key::RetainedKey;
+ 
+ use crate::noise::errors::WireGuardError;
+ use crate::noise::handshake::Handshake;
+@@ -61,7 +67,9 @@ pub struct Tunn {
+     /// The handshake currently in progress
+     handshake: handshake::Handshake,
+     /// The N_SESSIONS most recent sessions, index is session id modulo N_SESSIONS
+-    sessions: [Option<session::Session>; N_SESSIONS],
++    sessions: [Option<RetainedKey>; N_SESSIONS],
++    last_transport_key_id: u64,
++    last_transport_key_use: Option<TransportKeyUse>,
+     /// Index of most recently used session
+     current: usize,
+     /// Queue to store blocked packets
+@@ -210,6 +218,8 @@ impl Tunn {
+                 preshared_key,
+             ),
+             sessions: Default::default(),
++            last_transport_key_id: 0,
++            last_transport_key_use: None,
+             current: Default::default(),
+             tx_bytes: Default::default(),
+             rx_bytes: Default::default(),
+@@ -251,7 +261,8 @@ impl Tunn {
+         let current = self.current;
+         if let Some(ref session) = self.sessions[current % N_SESSIONS] {
+             // Send the packet using an established session
+-            let packet = session.format_packet_data(src, dst);
++            let packet = session.session.format_packet_data(src, dst);
++            self.last_transport_key_use = Some(TransportKeyUse::Sent(session.id));
+             self.timer_tick(TimerName::TimeLastPacketSent);
+             // Exclude Keepalive packets from timer update.
+             if !src.is_empty() {
+@@ -325,11 +336,17 @@ impl Tunn {
+             remote_idx = p.sender_idx
+         );
+ 
++        let key_id = self.next_transport_key_id()?;
++        let establishing_at = self.timers.transport_clock();
+         let (packet, session) = self.handshake.receive_handshake_initialization(p, dst)?;
+ 
+-        // Store new session in ring buffer
+         let index = session.local_index();
+-        self.sessions[index % N_SESSIONS] = Some(session);
++        self.install_transport_key(
++            session,
++            key_id,
++            TransportKeyOrigin::IncomingInitiation,
++            establishing_at,
++        );
+ 
+         self.timer_tick(TimerName::TimeLastPacketReceived);
+         self.timer_tick(TimerName::TimeLastPacketSent);
+@@ -351,13 +368,15 @@ impl Tunn {
+             remote_idx = p.sender_idx
+         );
+ 
+-        let session = self.handshake.receive_handshake_response(p)?;
++        let key_id = self.next_transport_key_id()?;
++        let establishing_at = self.timers.transport_clock();
++        let (session, origin) = self.handshake.receive_handshake_response(p)?;
+ 
+         let keepalive_packet = session.format_packet_data(&[], dst);
+-        // Store new session in ring buffer
+         let l_idx = session.local_index();
+         let index = l_idx % N_SESSIONS;
+-        self.sessions[index] = Some(session);
++        self.install_transport_key(session, key_id, origin, establishing_at);
++        self.last_transport_key_use = Some(TransportKeyUse::Sent(key_id));
+ 
+         self.timer_tick(TimerName::TimeLastPacketReceived);
+         self.timer_tick_session_established(true, index); // New session established, we are the initiator
+@@ -412,14 +431,12 @@ impl Tunn {
+         let idx = r_idx % N_SESSIONS;
+ 
+         // Get the (probably) right session
+-        let decapsulated_packet = {
+-            let session = self.sessions[idx].as_ref();
+-            let session = session.ok_or_else(|| {
+-                tracing::trace!(message = "No current session available", remote_idx = r_idx);
+-                WireGuardError::NoCurrentSession
+-            })?;
+-            session.receive_packet_data(packet, dst)?
+-        };
++        let session = self.sessions[idx].as_ref().ok_or_else(|| {
++            tracing::trace!(message = "No current session available", remote_idx = r_idx);
++            WireGuardError::NoCurrentSession
++        })?;
++        let decapsulated_packet = session.session.receive_packet_data(packet, dst)?;
++        self.last_transport_key_use = Some(TransportKeyUse::Received(session.id));
+ 
+         self.set_current_session(r_idx);
+ 
+@@ -549,7 +566,7 @@ impl Tunn {
+ 
+         for i in 0..N_SESSIONS {
+             if let Some(ref session) = self.sessions[(session_idx.wrapping_sub(i)) % N_SESSIONS] {
+-                let (expected, received) = session.current_packet_cnt();
++                let (expected, received) = session.session.current_packet_cnt();
+ 
+                 let loss = if expected == 0 {
+                     0.0
+diff --git a/src/noise/session.rs b/src/noise/session.rs
+index d547b98..a8b48ed 100644
+--- a/src/noise/session.rs
++++ b/src/noise/session.rs
+@@ -267,6 +267,10 @@ impl Session {
+         Ok(ret)
+     }
+ 
++    pub(super) fn next_sending_counter(&self) -> u64 {
++        self.sending_key_counter.load(Ordering::Relaxed)
++    }
++
+     /// Returns the estimated downstream packet loss for this session
+     pub(super) fn current_packet_cnt(&self) -> (u64, u64) {
+         let counter_validator = self.receiving_key_counter.lock();
+diff --git a/src/noise/timers.rs b/src/noise/timers.rs
+index 6b91d57..ac7566d 100644
+--- a/src/noise/timers.rs
++++ b/src/noise/timers.rs
+@@ -79,6 +79,15 @@ impl Timers {
+         }
+     }
+ 
++    pub(super) fn transport_clock(&self) -> Option<Duration> {
++        #[cfg(feature = "mock-instant")]
++        let now = Some(Instant::now());
++        #[cfg(not(feature = "mock-instant"))]
++        let now = Instant::try_now();
++
++        now?.checked_duration_since(self.time_started)
++    }
++
+     fn is_initiator(&self) -> bool {
+         self.is_initiator
+     }
+@@ -157,7 +166,7 @@ impl Tunn {
+                 if let Some(session) = self.sessions[i].take() {
+                     tracing::debug!(
+                         message = "SESSION_EXPIRED(REJECT_AFTER_TIME)",
+-                        session = session.receiving_index
++                        session = session.session.receiving_index
+                     );
+                 }
+                 *t = time_now;
+diff --git a/src/noise/transport_key.rs b/src/noise/transport_key.rs
+new file mode 100644
+index 0000000..94d9bce
+--- /dev/null
++++ b/src/noise/transport_key.rs
+@@ -0,0 +1,221 @@
++// SPDX-License-Identifier: BSD-3-Clause
++
++use std::fmt;
++use std::net::IpAddr;
++use std::num::NonZeroU64;
++use std::time::Duration;
++
++use super::errors::WireGuardError;
++use super::session::Session;
++use super::{Tunn, TunnResult, N_SESSIONS};
++
++/// Identifies a transport key pair for the lifetime of its owning tunnel.
++///
++/// Compare these identifiers only within the same [`Tunn`]. They are local
++/// observations and have no relationship to the cyclic wire session indices.
++#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
++pub struct TransportKeyId(NonZeroU64);
++
++/// The authenticated handshake event that installed a transport key pair.
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++#[non_exhaustive]
++pub enum TransportKeyOrigin {
++    /// A response matched the active outgoing initiation.
++    CurrentInitiation,
++    /// A delayed response matched the previous outgoing initiation.
++    PreviousInitiation,
++    /// An authenticated incoming initiation installed a responder key pair.
++    IncomingInitiation,
++}
++
++/// Local observations about one retained transport key pair, excluding key bytes.
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++#[non_exhaustive]
++pub struct TransportKey {
++    /// An identifier assigned once when this pair was installed.
++    pub id: TransportKeyId,
++    /// The authenticated event that established this pair.
++    pub origin: TransportKeyOrigin,
++    /// Age measured from before establishment using the tunnel clock.
++    ///
++    /// An unavailable clock or a sample before establishment has no age.
++    pub age: Option<Duration>,
++    /// Counter that the next send under this pair would consume, including keepalives.
++    pub next_send_counter: u64,
++    /// Number of records authenticated and marked in this pair's replay window.
++    ///
++    /// This counts keepalives and records whose inner bytes are later rejected.
++    pub received_packets: u64,
++}
++
++/// The actual transport key pair used during one tunnel operation.
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++#[non_exhaustive]
++pub enum TransportKeyUse {
++    /// A transport record was encrypted, including an empty keepalive.
++    Sent(TransportKeyId),
++    /// A record passed authentication and was marked in its replay window.
++    ///
++    /// The accompanying packet result still governs inner packet delivery.
++    Received(TransportKeyId),
++}
++
++/// A packet operation and the exact transport key pair it used, if any.
++#[must_use]
++pub struct TransportKeyResult<'a> {
++    /// Existing packet outcome and associated bytes.
++    pub result: TunnResult<'a>,
++    /// A transport authentication or encryption event from this operation.
++    ///
++    /// Unauthenticated input, handshake control packets, and idle returns have no
++    /// key use. A responder handshake can install a pair without using it here.
++    pub key_use: Option<TransportKeyUse>,
++}
++
++impl fmt::Debug for TransportKeyResult<'_> {
++    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
++        formatter
++            .debug_struct("TransportKeyResult")
++            .field("key_use", &self.key_use)
++            .finish_non_exhaustive()
++    }
++}
++
++pub(super) struct RetainedKey {
++    pub(super) session: Session,
++    pub(super) id: TransportKeyId,
++    origin: TransportKeyOrigin,
++    establishing_at: Option<Duration>,
++}
++
++impl RetainedKey {
++    fn observe(&self, now: Option<Duration>) -> TransportKey {
++        let (_, received_packets) = self.session.current_packet_cnt();
++        TransportKey {
++            id: self.id,
++            origin: self.origin,
++            age: now.and_then(|now| now.checked_sub(self.establishing_at?)),
++            next_send_counter: self.session.next_sending_counter(),
++            received_packets,
++        }
++    }
++}
++
++impl Tunn {
++    /// Observes the exact key pair that an immediate encapsulation would select.
++    ///
++    /// Incoming authenticated packets can change selection. Query again after a
++    /// tunnel operation before relying on this observation. Because the slot ring
++    /// is reused, a selected responder pair may still have received zero
++    /// authenticated records. Selection alone supplies no confirmation.
++    pub fn current_transport_key(&self) -> Option<TransportKey> {
++        let key = self.sessions[self.current % N_SESSIONS].as_ref()?;
++        Some(key.observe(self.timers.transport_clock()))
++    }
++
++    /// Observes the newest installed key pair among the retained slots.
++    ///
++    /// For a responder, an authenticated initiation can install a new pair before
++    /// this tunnel selects it for sending.
++    pub fn newest_transport_key(&self) -> Option<TransportKey> {
++        let key = self.sessions.iter().flatten().max_by_key(|key| key.id)?;
++        Some(key.observe(self.timers.transport_clock()))
++    }
++
++    /// Observes the retained pair identified by a result from this tunnel.
++    pub fn transport_key(&self, id: TransportKeyId) -> Option<TransportKey> {
++        let key = self.sessions.iter().flatten().find(|key| key.id == id)?;
++        Some(key.observe(self.timers.transport_clock()))
++    }
++
++    /// Encapsulates with an attestation of the exact transport key used.
++    ///
++    /// The same queue behavior and buffer requirements as [Self::encapsulate] apply.
++    pub fn encapsulate_with_transport_key<'a>(
++        &mut self,
++        src: &[u8],
++        dst: &'a mut [u8],
++    ) -> TransportKeyResult<'a> {
++        self.observe_transport_use(move |tunnel| tunnel.encapsulate(src, dst))
++    }
++
++    /// Processes input with an attestation of the transport key used.
++    ///
++    /// This also attests send keys if processing input produces an encrypted
++    /// confirmation or consumes queued data on empty input.
++    pub fn decapsulate_with_transport_key<'a>(
++        &mut self,
++        src_addr: Option<IpAddr>,
++        datagram: &[u8],
++        dst: &'a mut [u8],
++    ) -> TransportKeyResult<'a> {
++        self.observe_transport_use(move |tunnel| tunnel.decapsulate(src_addr, datagram, dst))
++    }
++
++    /// Updates timers with an attestation of the key used for an encrypted keepalive.
++    pub fn update_timers_with_transport_key<'a>(
++        &mut self,
++        dst: &'a mut [u8],
++    ) -> TransportKeyResult<'a> {
++        self.observe_transport_use(move |tunnel| tunnel.update_timers(dst))
++    }
++
++    fn observe_transport_use<'a>(
++        &mut self,
++        operation: impl FnOnce(&mut Self) -> TunnResult<'a>,
++    ) -> TransportKeyResult<'a> {
++        self.last_transport_key_use = None;
++        let result = operation(self);
++        TransportKeyResult {
++            result,
++            key_use: self.last_transport_key_use.take(),
++        }
++    }
++
++    /// Discards retained key pairs that the caller cannot authorize for further use.
++    ///
++    /// The callback runs once per occupied slot, at most eight times, with a
++    /// single clock sample. Other slots and their replay windows are preserved.
++    /// Removing the selected slot leaves no selected send key until the tunnel
++    /// selects a retained or newly established pair.
++    ///
++    /// For pre-operation fencing, call this immediately before processing input,
++    /// output or timers under the same exclusive ownership. New handshakes may
++    /// install a key during those operations. Check any applicable authority
++    /// again before releasing output. This method preserves the legacy packet
++    /// queue. A caller requiring no queue must check for an eligible selected
++    /// pair before submitting application bytes.
++    pub fn retain_transport_keys(&mut self, mut retain: impl FnMut(TransportKey) -> bool) {
++        let now = self.timers.transport_clock();
++        for slot in &mut self.sessions {
++            if slot.as_ref().is_some_and(|key| !retain(key.observe(now))) {
++                *slot = None;
++            }
++        }
++    }
++
++    pub(super) fn next_transport_key_id(&self) -> Result<TransportKeyId, WireGuardError> {
++        self.last_transport_key_id
++            .checked_add(1)
++            .and_then(NonZeroU64::new)
++            .map(TransportKeyId)
++            .ok_or(WireGuardError::ConnectionExpired)
++    }
++
++    pub(super) fn install_transport_key(
++        &mut self,
++        session: Session,
++        id: TransportKeyId,
++        origin: TransportKeyOrigin,
++        establishing_at: Option<Duration>,
++    ) {
++        let slot = session.local_index() % N_SESSIONS;
++        self.sessions[slot] = Some(RetainedKey {
++            session,
++            id,
++            origin,
++            establishing_at,
++        });
++        self.last_transport_key_id = id.0.get();
++    }
++}
+diff --git a/src/sleepyinstant/mod.rs b/src/sleepyinstant/mod.rs
+index 542beea..5427f60 100644
+--- a/src/sleepyinstant/mod.rs
++++ b/src/sleepyinstant/mod.rs
+@@ -47,6 +47,18 @@ impl Instant {
+         }
+     }
+ 
++    pub(crate) fn try_now() -> Option<Self> {
++        #[cfg(unix)]
++        let t = inner::Instant::try_now()?;
++        #[cfg(target_os = "windows")]
++        let t = inner::Instant::now();
++        Some(Self { t })
++    }
++
++    pub(crate) fn checked_duration_since(&self, earlier: Instant) -> Option<Duration> {
++        self.t.checked_duration_since(earlier.t)
++    }
++
+     /// Returns the amount of time elapsed from another instant to this one,
+     /// or zero duration if that instant is later than this one.
+     ///
+diff --git a/src/sleepyinstant/unix.rs b/src/sleepyinstant/unix.rs
+index 1c17c2e..408392e 100644
+--- a/src/sleepyinstant/unix.rs
++++ b/src/sleepyinstant/unix.rs
+@@ -30,7 +30,12 @@ impl Instant {
+         Self { t }
+     }
+ 
+-    fn checked_duration_since(&self, earlier: Instant) -> Option<Duration> {
++    pub(crate) fn try_now() -> Option<Self> {
++        let t = clock_gettime(CLOCK_ID).ok()?;
++        Some(Self { t })
++    }
++
++    pub(crate) fn checked_duration_since(&self, earlier: Instant) -> Option<Duration> {
+         const NANOSECOND: nix::libc::c_long = 1_000_000_000;
+         let (tv_sec, tv_nsec) = if self.t.tv_nsec() < earlier.t.tv_nsec() {
+             (
