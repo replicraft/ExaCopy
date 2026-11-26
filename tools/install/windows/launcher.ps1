@@ -80,6 +80,7 @@ function Publish-ExaCopyLauncher {
         return
     }
 
+    Assert-ExaCopyContextAncestors $Context $Context.Programs
     $stage = New-ExaCopyPrivateStage $Context.Programs $Context.Owner
     try {
         Write-ExaCopyNewBytes (Join-Path $stage 'exacopy.ps1') $material.Script
@@ -90,7 +91,7 @@ function Publish-ExaCopyLauncher {
         if ($null -eq (Get-ExaCopyOwnedVersion $Context $Installation)) {
             throw 'The signed version is absent. Launcher publication refused.'
         }
-        Assert-ExaCopyInstallAncestors $Context.Programs $Context.Owner
+        Assert-ExaCopyContextAncestors $Context $Context.Programs
         Confirm-ExaCopyOwnerAcl $Context.Root $Context.Owner -Root
         [IO.Directory]::Move($stage, $destination)
         Confirm-ExaCopyLauncherDirectory $destination $material $Context.Owner
@@ -108,7 +109,7 @@ function Remove-ExaCopyLauncher {
     Confirm-ExaCopyLauncherDirectory $destination $material $Context.Owner -ForRemoval
     if ($DryRun) { return }
 
-    Assert-ExaCopyInstallAncestors $Context.Programs $Context.Owner
+    Assert-ExaCopyContextAncestors $Context $Context.Programs
     Confirm-ExaCopyOwnerAcl $Context.Root $Context.Owner -Root
     $retired = Join-Path $Context.Programs ('.ExaCopy-launcher-retired-' + [Guid]::NewGuid().ToString('N'))
     try {

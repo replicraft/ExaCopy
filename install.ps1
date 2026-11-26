@@ -15,6 +15,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$ancestry = $null
 
 try {
     . (Join-Path $PSScriptRoot 'tools/install/windows/paths.ps1')
@@ -23,6 +24,8 @@ try {
     if ($PSBoundParameters.ContainsKey('OfflineBundle')) {
         if ($Latest) { throw '-Latest and -OfflineBundle are mutually exclusive.' }
         $context = Get-ExaCopyContext $Version $PublisherCert $PublisherSha256 $Scope
+        $ancestry = Open-ExaCopyProductAncestry $context.Local $context.Owner
+        $context | Add-Member -NotePropertyName ProductAncestry -NotePropertyValue $ancestry
         $result = Install-ExaCopySignedVersion $OfflineBundle $context -DryRun:$DryRun
     }
     else {
@@ -33,6 +36,8 @@ try {
         . (Join-Path $PSScriptRoot 'tools/install/windows/archive.ps1')
         . (Join-Path $PSScriptRoot 'tools/install/windows/online.ps1')
         $context = Get-ExaCopyContext $Version $PublisherCert $PublisherSha256 $Scope -ResolveLatest
+        $ancestry = Open-ExaCopyProductAncestry $context.Local $context.Owner
+        $context | Add-Member -NotePropertyName ProductAncestry -NotePropertyValue $ancestry
         $result = Install-ExaCopyLatestVersion $context -DryRun:$DryRun
     }
     if ($Json) { $result | ConvertTo-Json -Compress }
@@ -42,4 +47,7 @@ try {
 catch {
     [Console]::Error.WriteLine('ExaCopy install: ' + $_.Exception.Message)
     exit 1
+}
+finally {
+    if ($null -ne $ancestry) { $ancestry.Dispose() }
 }

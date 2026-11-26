@@ -206,11 +206,11 @@ function Install-ExaCopySignedVersion {
     $artifact = Join-Path $bundle 'exacopy.exe'
     Confirm-ExaCopyArtifact $artifact $signed.Release
 
-    Assert-ExaCopyInstallAncestors $Context.Local $Context.Owner
+    Assert-ExaCopyContextAncestors $Context $Context.Local
     $hasPrograms = Confirm-ExaCopyPath $Context.Programs -AllowMissing
     $hasRoot = $false
     if ($hasPrograms) {
-        Assert-ExaCopyParentAcl $Context.Programs $Context.Owner
+        Assert-ExaCopyContextAncestors $Context $Context.Programs
         $hasRoot = Confirm-ExaCopyPath $Context.Root -AllowMissing
     }
     $executable = Join-Path (Join-Path (Join-Path $Context.Root $ExaCopyVersions) $Context.Version) 'exacopy.exe'
@@ -242,10 +242,11 @@ function Install-ExaCopySignedVersion {
                 throw 'A selection exists although the signed version is missing. Inspect installation evidence.'
             }
             if ($DryRun) { return $result }
+            Assert-ExaCopyContextAncestors $Context $Context.Programs
             $stage = New-ExaCopyPrivateStage $installation.Versions $Context.Owner
             try {
                 Write-ExaCopyVersionStage $stage $artifact $signed $installation.OwnerBytes $Context
-                Assert-ExaCopyInstallAncestors $Context.Programs $Context.Owner
+                Assert-ExaCopyContextAncestors $Context $Context.Programs
                 [void](Confirm-ExaCopyPath $installation.Versions)
                 [IO.Directory]::Move($stage, (Join-Path $installation.Versions $Context.Version))
             }
@@ -262,9 +263,10 @@ function Install-ExaCopySignedVersion {
 
     if ($DryRun) { return $result }
     if (!$hasPrograms) {
+        Assert-ExaCopyContextAncestors $Context $Context.Local
         [void][IO.Directory]::CreateDirectory($Context.Programs)
     }
-    Assert-ExaCopyParentAcl $Context.Programs $Context.Owner
+    Assert-ExaCopyContextAncestors $Context $Context.Programs
     $rootStage = New-ExaCopyPrivateStage $Context.Programs $Context.Owner
     try {
         Publish-ExaCopyNewInstallation $rootStage $artifact $signed $Context $certificate
@@ -292,7 +294,7 @@ function Publish-ExaCopyNewInstallation {
     finally {
         $checked.Lease.Dispose()
     }
-    Assert-ExaCopyInstallAncestors $Context.Programs $Context.Owner
+    Assert-ExaCopyContextAncestors $Context $Context.Programs
     [IO.Directory]::Move($rootStage, $Context.Root)
     $published = Open-ExaCopyInstallation $Context.Root $Context $certificate
     try { Publish-ExaCopyLauncher $Context $published $certificate }
@@ -324,10 +326,10 @@ function Assert-ExaCopyExecutableIdle {
 function Uninstall-ExaCopySignedVersion {
     param($Context, [switch] $DryRun, [switch] $Quiesced)
 
-    Assert-ExaCopyInstallAncestors $Context.Local $Context.Owner
+    Assert-ExaCopyContextAncestors $Context $Context.Local
     $result = [ordered]@{ status = 'already_absent'; version = $Context.Version; path = $Context.Root }
     if (!(Confirm-ExaCopyPath $Context.Programs -AllowMissing)) { return $result }
-    Assert-ExaCopyParentAcl $Context.Programs $Context.Owner
+    Assert-ExaCopyContextAncestors $Context $Context.Programs
     if (!(Confirm-ExaCopyPath $Context.Root -AllowMissing)) { return $result }
 
     $certificate = Read-ExaCopyBoundedBytes $Context.CertificatePath $ExaCopyCertLimit
@@ -354,9 +356,10 @@ function Uninstall-ExaCopySignedVersion {
         if (!$Quiesced) {
             throw 'Close installed ExaCopy processes and prevent new launches, then supply -Quiesced.'
         }
-        Assert-ExaCopyInstallAncestors $Context.Programs $Context.Owner
+        Assert-ExaCopyContextAncestors $Context $Context.Programs
         Confirm-ExaCopyOwnerAcl $owned.Path $Context.Owner
         Remove-ExaCopyLauncher $Context $installation $certificate
+        Assert-ExaCopyContextAncestors $Context $Context.Programs
         if ($owned.ExecutablePresent) {
             [void](Confirm-ExaCopyPath $owned.Executable -File)
             [IO.File]::Delete($owned.Executable)

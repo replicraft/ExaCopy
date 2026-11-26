@@ -1,4 +1,5 @@
 # Fixed entry body included in the generated, owner-bound PowerShell shim.
+$ancestry = $null
 try {
     if (!$IsWindows) { throw 'This launcher requires Windows.' }
     $bin = Resolve-ExaCopyWindowsPath $PSScriptRoot
@@ -21,7 +22,8 @@ try {
         }
     }
     finally { $identity.Dispose() }
-    Assert-ExaCopyInstallAncestors $programs $owner
+    $ancestry = Open-ExaCopyProductAncestry $local $owner
+    Assert-ExaCopyInstallAncestors $programs $owner $ancestry
     Confirm-ExaCopyOwnerAcl $root $owner -Root
     Confirm-ExaCopyOwnerAcl $bin $owner -Root
     Assert-ExaCopyExactEntries $root @('owner.marker', 'release.manifest', 'release.sig', 'versions', 'bin')
@@ -70,6 +72,7 @@ try {
             Confirm-ExaCopyArtifact $exe $release
             $PSNativeCommandArgumentPassing = 'Standard'
             $PSNativeCommandUseErrorActionPreference = $false
+            Assert-ExaCopyInstallAncestors $programs $owner $ancestry
             & $exe @args
             $code = $LASTEXITCODE
         }
@@ -81,4 +84,7 @@ try {
 catch {
     [Console]::Error.WriteLine('ExaCopy launcher: ' + $_.Exception.Message)
     exit 1
+}
+finally {
+    if ($null -ne $ancestry) { $ancestry.Dispose() }
 }

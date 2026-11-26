@@ -1,7 +1,7 @@
 function Remove-ExaCopyDownloadStage {
     param([string] $Stage, [Collections.Generic.List[string]] $Created, $Context)
 
-    Assert-ExaCopyInstallAncestors $Context.Local $Context.Owner
+    Assert-ExaCopyContextAncestors $Context $Context.Local
     Confirm-ExaCopyOwnerAcl $Stage $Context.Owner -Root
     Assert-ExaCopyExactEntries $Stage ($Created.ToArray())
     Assert-ExaCopyNoNamedStreams $Stage
@@ -22,7 +22,7 @@ function Install-ExaCopyLatestVersion {
         throw 'Publisher certificate does not match the independently supplied pin.'
     }
     Assert-ExaCopyWindowsFloor ([Version]'10.0.20348')
-    Assert-ExaCopyInstallAncestors $Context.Local $Context.Owner
+    Assert-ExaCopyContextAncestors $Context $Context.Local
 
     $handler = [Net.Http.HttpClientHandler]::new()
     $handler.AllowAutoRedirect = $false
@@ -45,6 +45,7 @@ function Install-ExaCopyLatestVersion {
         }
         finally { $checksums.Dispose() }
 
+        Assert-ExaCopyContextAncestors $Context $Context.Local
         $stage = New-ExaCopyPrivateStage $Context.Local $Context.Owner
         $archivePath = Join-Path $stage $archiveName
         $archive = [IO.FileStream]::new($archivePath, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
@@ -60,6 +61,7 @@ function Install-ExaCopyLatestVersion {
         Assert-ExaCopyExactEntries $stage ($created.ToArray())
         [void](Confirm-ExaCopyPath $archivePath -File)
         Assert-ExaCopyNoNamedStreams $archivePath
+        Assert-ExaCopyContextAncestors $Context $Context.Local
         [IO.File]::Delete($archivePath)
         [void]$created.Remove($archiveName)
 

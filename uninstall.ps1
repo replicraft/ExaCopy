@@ -14,6 +14,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$ancestry = $null
 
 try {
     if ($Purge) { throw 'Purging profiles, credentials, or jobs is unsupported.' }
@@ -21,6 +22,8 @@ try {
     . (Join-Path $PSScriptRoot 'tools/install/windows/release.ps1')
     . (Join-Path $PSScriptRoot 'tools/install/windows/lifecycle.ps1')
     $context = Get-ExaCopyContext $Version $PublisherCert $PublisherSha256 $Scope
+    $ancestry = Open-ExaCopyProductAncestry $context.Local $context.Owner
+    $context | Add-Member -NotePropertyName ProductAncestry -NotePropertyValue $ancestry
     $result = Uninstall-ExaCopySignedVersion $context -DryRun:$DryRun -Quiesced:$Quiesced
     if ($Json) { $result | ConvertTo-Json -Compress }
     else { Write-Output ('{0} {1} at {2}' -f $result.status, $result.version, $result.path) }
@@ -29,4 +32,7 @@ try {
 catch {
     [Console]::Error.WriteLine('ExaCopy uninstall: ' + $_.Exception.Message)
     exit 1
+}
+finally {
+    if ($null -ne $ancestry) { $ancestry.Dispose() }
 }
