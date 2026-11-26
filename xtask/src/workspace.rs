@@ -13,7 +13,7 @@ use crate::finding::Findings;
 
 mod fuzz;
 
-const APP_VERSION: &str = "1.100.0";
+pub(crate) const APP_VERSION: &str = "1.100.0";
 const APP_EDITION: &str = "2024";
 const APP_LICENSE: &str = "Apache-2.0";
 const MANIFEST_NAME: &str = "Cargo.toml";

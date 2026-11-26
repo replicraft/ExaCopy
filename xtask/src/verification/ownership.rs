@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
@@ -14,6 +14,8 @@ const OWNER_INDEX: &str = "docs/verification.md";
 pub(super) struct Inventory {
 	schema_version: u32,
 	pub(super) owners: BTreeMap<String, Vec<Gate>>,
+	#[serde(default)]
+	pub(super) native_fixtures: BTreeMap<String, Vec<PathBuf>>,
 }
 
 impl Inventory {
@@ -28,7 +30,9 @@ impl Inventory {
 			}
 		};
 		let path = root.join(INVENTORY);
-		if inventory.schema_version != 1 || inventory.owners.is_empty() {
+		if inventory.schema_version != 1
+			|| (inventory.owners.is_empty() && inventory.native_fixtures.is_empty())
+		{
 			findings.add(
 				&path,
 				"expected schema_version 1 and at least one verification owner",
@@ -39,6 +43,16 @@ impl Inventory {
 				findings.add(
 					&path,
 					format_args!("{owner} must list unique, nonempty minimum gate kinds"),
+				);
+			}
+		}
+		for (owner, manifests) in &inventory.native_fixtures {
+			if manifests.is_empty()
+				|| manifests.iter().collect::<BTreeSet<_>>().len() != manifests.len()
+			{
+				findings.add(
+					&path,
+					format_args!("{owner} must list unique, nonempty native fixture manifests"),
 				);
 			}
 		}

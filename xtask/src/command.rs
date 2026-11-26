@@ -62,7 +62,7 @@ pub(crate) fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
 				evidence::check(root, &directory, &projects, &mut findings);
 				if findings.is_empty() {
 					println!(
-						"Current checkout has passing evidence for every declared verification gate."
+						"Current checkout has passing evidence for every declared generic verification gate."
 					);
 				}
 			} else {

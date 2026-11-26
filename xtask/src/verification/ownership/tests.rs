@@ -10,6 +10,25 @@ use crate::verification::{Project, check};
 const OWNER: &str = "exacopy-first";
 const ADDITIVE: &str = "exacopy-second";
 const POLICY: &str = "schema_version = 1\n[owners]\nexacopy-first = [\"rust\"]\n";
+const NATIVE_POLICY: &str =
+	"\n[native_fixtures]\nexacopy-second = [\"verification/demo/fixture.toml\"]\n";
+const NATIVE_MANIFEST: &str = r#"
+schema_version = 1
+id = "demo-native"
+target = "x86_64-unknown-linux-gnu"
+profile = "linux-unprivileged-same-device-bind-v1"
+rust_toolchain = "1.100.0"
+runner = "verification/demo/run.py"
+controls = "verification/demo/test_runner.py"
+workflow = ".github/workflows/native.yml"
+result = "result.json"
+
+[[case]]
+selector = "linux::tests::observes"
+source = "src/linux/tests.rs"
+ignored = true
+"#;
+const NATIVE_PATH: &str = "exacopy-second/verification/demo/fixture.toml";
 const OBLIGATION: &str = r#"
 schema_version = 1
 [[obligation]]
@@ -177,4 +196,177 @@ fn rust_gate_features_must_be_declared_by_the_owning_package() {
 			assert!(output.contains(expected), "{selector}: {output}");
 		}
 	}
+}
+
+fn add_native_fixture(fixture: &Fixture) {
+	fixture.write(INVENTORY, &format!("{POLICY}{NATIVE_POLICY}"));
+	fixture.write(NATIVE_PATH, NATIVE_MANIFEST);
+	fixture.write(
+		"exacopy-second/src/lib.rs",
+		"#[cfg(target_os = \"linux\")] mod linux;\n",
+	);
+	fixture.write("exacopy-second/src/linux.rs", "#[cfg(test)] mod tests;\n");
+	fixture.write(
+		"exacopy-second/src/linux/tests.rs",
+		"#[test] #[ignore = \"native fixture\"] fn observes() { assert!(true); }\n",
+	);
+	fixture.write(
+		"exacopy-second/verification/demo/run.py",
+		"print('runner')\n",
+	);
+	fixture.write(
+		"exacopy-second/verification/demo/test_runner.py",
+		"print('controls')\n",
+	);
+	fixture.write(
+		".github/workflows/native.yml",
+		r#"env:
+  EXPECTED_RUST_HOST: x86_64-unknown-linux-gnu
+steps:
+  - run: python3 exacopy-second/verification/demo/run.py
+  - run: python3 exacopy-second/verification/demo/test_runner.py
+"#,
+	);
+}
+
+#[test]
+fn native_only_fixture_owner_adds_no_generic_gate() {
+	let fixture = workspace();
+	add_native_fixture(&fixture);
+	let (projects, findings) = inspect(&fixture);
+	assert!(findings.is_empty(), "{findings}");
+	assert_eq!(projects.len(), 1);
+	assert_eq!(projects[0].package_name, OWNER);
+	assert_eq!(projects[0].obligations.len(), 1);
+}
+
+#[test]
+fn native_fixture_ownership_cannot_hide_unregistered_generic_ledger() {
+	let fixture = workspace();
+	add_native_fixture(&fixture);
+	add_ledger(&fixture, ADDITIVE, "P-002");
+	let (projects, findings) = inspect(&fixture);
+	assert_eq!(projects.len(), 1);
+	assert!(
+		findings
+			.to_string()
+			.contains("must register its verification ownership")
+	);
+}
+
+#[test]
+fn native_fixture_rejects_missing_owner_and_bad_fixture_declarations() {
+	let fixture = workspace();
+	add_native_fixture(&fixture);
+	for (old, new, expected) in [
+		("ignored = true", "ignored = false", "declared ignore state"),
+		(
+			"linux::tests::observes",
+			"linux::elsewhere::observes",
+			"invalid native test selector",
+		),
+		(
+			"x86_64-unknown-linux-gnu",
+			"aarch64-apple-darwin",
+			"unknown variant",
+		),
+		("1.100.0", "1.99.0", "does not match its profile"),
+		(
+			"result.json",
+			"../result.json",
+			"does not match its profile",
+		),
+		(
+			"verification/demo/run.py",
+			"verification/other/run.py",
+			"beside the manifest",
+		),
+		(
+			".github/workflows/native.yml",
+			".github/workflows/absent.yml",
+			"absent.yml",
+		),
+	] {
+		fixture.write(NATIVE_PATH, &NATIVE_MANIFEST.replace(old, new));
+		let (_, findings) = inspect(&fixture);
+		assert!(findings.to_string().contains(expected), "{old}: {findings}");
+	}
+	fixture.write(NATIVE_PATH, NATIVE_MANIFEST);
+	fixture.write(
+		INVENTORY,
+		&format!(
+			"{POLICY}{}",
+			NATIVE_POLICY.replace(ADDITIVE, "exacopy-absent")
+		),
+	);
+	let (_, findings) = inspect(&fixture);
+	assert!(
+		findings
+			.to_string()
+			.contains("missing native fixture owner workspace member")
+	);
+}
+
+#[test]
+fn native_fixture_rejects_unlinked_module_and_duplicate_case() {
+	let fixture = workspace();
+	add_native_fixture(&fixture);
+	fixture.write(
+		"exacopy-second/src/linux.rs",
+		"// The test source is unlinked.\n",
+	);
+	let (_, findings) = inspect(&fixture);
+	assert!(
+		findings
+			.to_string()
+			.contains("missing native module declaration tests")
+	);
+	fixture.write("exacopy-second/src/linux.rs", "#[cfg(test)] mod tests;\n");
+	let case = NATIVE_MANIFEST
+		.split_once("[[case]]")
+		.expect("case declaration")
+		.1;
+	fixture.write(NATIVE_PATH, &format!("{NATIVE_MANIFEST}\n[[case]]{case}"));
+	let (_, findings) = inspect(&fixture);
+	assert!(
+		findings
+			.to_string()
+			.contains("duplicate native test selector")
+	);
+}
+
+#[cfg(unix)]
+#[test]
+fn native_fixture_rejects_symlinked_custody() {
+	let fixture = workspace();
+	add_native_fixture(&fixture);
+	let runner = fixture
+		.root()
+		.join("exacopy-second/verification/demo/run.py");
+	fs::remove_file(&runner).expect("remove fixture runner");
+	let borrowed = fixture.write("borrowed.py", "print('external custody')\n");
+	std::os::unix::fs::symlink(borrowed, runner).expect("substitute a symlink");
+	let (_, findings) = inspect(&fixture);
+	assert!(
+		findings
+			.to_string()
+			.contains("owned regular files without symlinks")
+	);
+}
+
+#[test]
+fn native_fixture_rejects_conditional_alternate_module_sources() {
+	let fixture = workspace();
+	add_native_fixture(&fixture);
+	fixture.write(
+		"exacopy-second/src/linux.rs",
+		"#[cfg_attr(test, path = \"other.rs\")] mod tests;\n",
+	);
+	let (_, findings) = inspect(&fixture);
+	assert!(
+		findings
+			.to_string()
+			.contains("missing native module declaration tests"),
+		"{findings}"
+	);
 }

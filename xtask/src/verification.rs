@@ -8,6 +8,7 @@ use serde::Deserialize;
 use crate::finding::Findings;
 
 mod artifact;
+mod native;
 mod ownership;
 const VERIFICATION_DIR: &str = "verification";
 const OBLIGATIONS: &str = "obligations.toml";
@@ -121,6 +122,7 @@ pub(crate) fn check(
 ) -> Vec<Project> {
 	let mut projects = Vec::new();
 	let mut ids = BTreeSet::new();
+	let mut fixture_ids = BTreeSet::new();
 	let mut verification_roots = Vec::new();
 	let root = metadata.workspace_root.as_std_path();
 	let Some(mut inventory) = ownership::Inventory::load(root, findings) else {
@@ -135,14 +137,30 @@ pub(crate) fn check(
 			continue;
 		};
 		let verification = root.join(VERIFICATION_DIR);
+		let native = inventory.native_fixtures.remove(package.name.as_str());
+		if let Some(manifests) = &native {
+			native::check(
+				metadata.workspace_root.as_std_path(),
+				package,
+				root,
+				manifests,
+				&mut fixture_ids,
+				findings,
+			);
+		}
 		let Some(required_gates) = inventory.owners.remove(package.name.as_str()) else {
-			match fs::symlink_metadata(&verification) {
+			let unauthorized = if native.is_some() {
+				verification.join(OBLIGATIONS)
+			} else {
+				verification
+			};
+			match fs::symlink_metadata(&unauthorized) {
 				Ok(_) => findings.add(
-					&verification,
+					&unauthorized,
 					format_args!("{} must register its verification ownership", package.name),
 				),
 				Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-				Err(error) => findings.add(&verification, error),
+				Err(error) => findings.add(&unauthorized, error),
 			}
 			continue;
 		};
@@ -204,6 +222,12 @@ pub(crate) fn check(
 		findings.add(
 			root,
 			format_args!("missing verification owner workspace member {owner}"),
+		);
+	}
+	for owner in inventory.native_fixtures.keys() {
+		findings.add(
+			root,
+			format_args!("missing native fixture owner workspace member {owner}"),
 		);
 	}
 	if root.join("proofs").exists() || root.join(VERIFICATION_DIR).exists() {
