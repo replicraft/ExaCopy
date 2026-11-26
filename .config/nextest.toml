@@ -13,6 +13,11 @@ store-failure-output = true
 [profile.ci-experimental-ssh]
 inherits = "ci"
 
+[profile.ci-experimental-wireguard]
+inherits = "ci"
+slow-timeout = { period = "30s", terminate-after = 2 }
+global-timeout = "5m"
+
 [profile.ci-experimental-sftp]
 inherits = "ci"
 
