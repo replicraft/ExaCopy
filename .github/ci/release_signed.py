@@ -16,6 +16,7 @@ import time
 import release_candidate as candidate
 
 from installer_fixture import TARGETS, bundle, encoded
+from release.package import MAX_ARCHIVE, MAX_EXECUTABLE
 from sbom_release import sha256, write_json
 
 LINUX = "x86_64-unknown-linux-gnu"
@@ -30,7 +31,7 @@ def bounded_release_setting(name, value, maximum):
     return int(value)
 
 
-def checked(path, maximum=256 * 1024 * 1024):
+def checked(path, maximum=MAX_EXECUTABLE):
     if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= maximum:
         raise ValueError(f"missing or invalid release input {path.name}")
     return path
@@ -250,11 +251,14 @@ def publish(output, identity):
             if not item["draft"] and not item["prerelease"] and name.startswith("v") and candidate.VERSION.fullmatch(name[1:]):
                 if tuple(map(int, name[1:].split("."))) >= expected_version:
                     raise ValueError("the selected version must advance beyond the existing stable releases")
-    files = [output / "assets" / asset for asset in candidate.ASSETS.values()]
-    files.append(output / "assets/SHA256SUMS.txt")
+    archives = [output / "assets" / asset for asset in candidate.ASSETS.values()]
+    files = [*archives, output / "assets/SHA256SUMS.txt"]
     for target in candidate.ASSETS:
         files.extend(output / f"evidence/exacopy-cli-{target}.{kind}.json" for kind in ("cdx", "provenance"))
-    expected = {path.name: f"sha256:{sha256(checked(path))}" for path in files}
+    expected = {}
+    for path in files:
+        limit = MAX_ARCHIVE if path in archives else MAX_EXECUTABLE
+        expected[path.name] = f"sha256:{sha256(checked(path, limit))}"
     subprocess.run(["sha256sum", "--strict", "-c", "SHA256SUMS.txt"], cwd=output / "assets", check=True)
     ensure_tag = ["gh", "api", f"repos/{repository}/git/ref/tags/{tag}", "--jq", ".object.sha"]
     if subprocess.check_output(ensure_tag, text=True).strip() != local_ref:

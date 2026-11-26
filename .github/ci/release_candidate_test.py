@@ -4,11 +4,14 @@ import json
 import os
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 import release_candidate as candidate
 import release_signed as signed
+
+from release.package import MAX_ARCHIVE, MAX_EXECUTABLE
 
 
 class ReleaseControls(unittest.TestCase):
@@ -100,7 +103,7 @@ class ReleaseControls(unittest.TestCase):
 
 
     def simulate_publication(self, view_updates=None, draft_updates=None, latest_updates=None,
-                             moved_tag=False, expected_error=None):
+                             moved_tag=False, expected_error=None, reported_sizes=None):
         repo = "replicraft/ExaCopy"
         tag, version = "v0.1.0", "0.1.0"
         output = self.root / "dist"
@@ -161,10 +164,19 @@ class ReleaseControls(unittest.TestCase):
             self.assertIn(command, (sha_check, create, upload, publish_id))
             commands.append(command)
 
+        original_stat = Path.stat
+
+        def stat_with_reported_size(path, *args, **kwargs):
+            actual = original_stat(path, *args, **kwargs)
+            if reported_sizes is not None and path.name in reported_sizes:
+                return SimpleNamespace(st_mode=actual.st_mode, st_size=reported_sizes[path.name])
+            return actual
+
         environment = {"GITHUB_REPOSITORY": repo, "GITHUB_REF": self.ref, "EXACOPY_IMMUTABILITY_READ_TOKEN": "fixture"}
         with (
             patch.dict(os.environ, environment, clear=True),
             patch.object(candidate, "git", self.clean_git),
+            patch.object(Path, "stat", stat_with_reported_size),
             patch.object(signed.subprocess, "run", side_effect=run),
             patch.object(signed.subprocess, "check_output", side_effect=query),
         ):
@@ -206,6 +218,37 @@ class ReleaseControls(unittest.TestCase):
             latest_updates={"id": 48}, expected_error="latest release verification failed",
         )
         self.assertIn(promotion, commands)
+
+
+    def test_publication_uses_packaging_limit_for_release_archives(self):
+        archive = candidate.ASSETS["x86_64-pc-windows-msvc"]
+        commands, (create, _, upload, lookup, promotion) = self.simulate_publication(
+            reported_sizes={archive: MAX_ARCHIVE},
+        )
+        for step in (create, upload, lookup, promotion):
+            self.assertIn(step, commands)
+
+        for name, size in ((archive, MAX_ARCHIVE + 1), ("SHA256SUMS.txt", MAX_EXECUTABLE + 1)):
+            with self.subTest(name=name):
+                commands, (create, _, upload, _, promotion) = self.simulate_publication(
+                    reported_sizes={name: size}, expected_error="missing or invalid release input",
+                )
+                self.assertNotIn(create, commands)
+                self.assertNotIn(upload, commands)
+                self.assertNotIn(promotion, commands)
+
+    def test_raw_executable_limit_is_unchanged(self):
+        binary = self.root / "exacopy.exe"
+        binary.touch()
+        for extra_bytes, admitted in ((0, True), (1, False)):
+            with self.subTest(extra_bytes=extra_bytes), patch.object(
+                Path, "stat", return_value=SimpleNamespace(st_mode=0o100644, st_size=MAX_EXECUTABLE + extra_bytes),
+            ):
+                if admitted:
+                    self.assertEqual(signed.checked(binary), binary)
+                else:
+                    with self.assertRaisesRegex(ValueError, "missing or invalid release input"):
+                        signed.checked(binary)
 
 
 if __name__ == "__main__":
