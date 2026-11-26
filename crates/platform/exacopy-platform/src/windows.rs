@@ -38,3 +38,6 @@ mod read;
 mod read_path;
 #[cfg(all(target_os = "windows", feature = "experimental-windows-read"))]
 pub use read::{WindowsReadError, WindowsReadFile};
+
+#[cfg(all(target_os = "windows", feature = "experimental-windows-read"))]
+pub(crate) use read::protected as protected_snapshot;

@@ -23,7 +23,7 @@ pub enum ProtectedSnapshotError {
 	InvalidPath,
 	/// A directory or file lacks the required type, ownership or permissions.
 	Unprotected,
-	/// The private parent is already locked by a cooperating writer.
+	/// A parent lease or incompatible Windows share mode blocked stable acquisition.
 	Busy,
 	/// The selected file exceeds the snapshot's byte limit.
 	TooLarge,
@@ -49,9 +49,9 @@ impl fmt::Display for ProtectedSnapshotError {
 
 impl std::error::Error for ProtectedSnapshotError {}
 
-/// Read the explicitly selected protected trust file within the supported Linux profile.
+/// Read the explicitly selected protected trust file within an admitted platform profile.
 ///
-/// The profile assumes a nonprivileged process with matching real and
+/// The Linux profile assumes a nonprivileged process with matching real and
 /// effective user IDs, unchanged filesystem credentials, a trusted kernel
 /// and mount administrator, and a genuine procfs mounted at `/proc`.
 /// The entire path must be on the whole ext4 or XFS root mount. Every
@@ -67,23 +67,51 @@ impl std::error::Error for ProtectedSnapshotError {}
 /// observations rely on the cooperation of the owner and privileged actors.
 /// Ordinary reads may update access time. Success may contain zero bytes.
 ///
+/// Windows requires the opt-in native read feature. It accepts literal absolute
+/// drive paths on fixed local NTFS under a stable non-elevated, non-impersonated
+/// user token with no enabled backup, restore, take-ownership or manage-volume
+/// privilege. Every opened component is held without write or delete sharing.
+/// Upper directories must have trusted owners and refuse untrusted access that
+/// can rewrite existing entries. The current user must own the immediate parent
+/// and one-link regular file, with protected DACLs excluding untrusted grants.
+/// A metadata-only open precedes the data open. The reader compares two complete
+/// reads and checks identity, names, protection evidence, token, and actual EOF.
+/// The caller must trust the kernel, volume/device namespace, LocalSystem, local
+/// administrators, principals delegated equivalent storage or ACL-bypass
+/// privileges, and processes acting as the current user. Provisioning must
+/// exclude untrusted retained content capabilities for the private objects and
+/// untrusted retained security or namespace mutation capabilities throughout
+/// the admitted path.
+///
 /// # Errors
 /// Refuses any unsupported or unstable namespace, unusable lease, invalid or
-/// unprotected path, bound violation or I/O failure. macOS, Windows and other
-/// targets return Unsupported before inspecting the path. Errors omit the path
+/// unprotected path, bound violation or I/O failure. Unadmitted platforms return
+/// Unsupported before inspecting the path. Errors omit the path
 /// and the file contents.
 pub fn read_protected_snapshot(path: &Path) -> Result<Vec<u8>, ProtectedSnapshotError> {
 	#[cfg(target_os = "linux")]
 	return crate::linux::protected_snapshot::read(path);
 
-	#[cfg(not(target_os = "linux"))]
+	#[cfg(all(target_os = "windows", feature = "experimental-windows-read"))]
+	return crate::windows::protected_snapshot::read(path);
+
+	#[cfg(not(any(
+		target_os = "linux",
+		all(target_os = "windows", feature = "experimental-windows-read")
+	)))]
 	{
 		let _ = path;
 		Err(ProtectedSnapshotError::Unsupported)
 	}
 }
 
-#[cfg(all(test, not(target_os = "linux")))]
+#[cfg(all(
+	test,
+	not(any(
+		target_os = "linux",
+		all(target_os = "windows", feature = "experimental-windows-read")
+	))
+))]
 #[test]
 fn an_unsupported_platform_refuses_even_before_path_validation() {
 	assert_eq!(
@@ -112,7 +140,13 @@ pub fn read_protected_snapshot_into(
 	#[cfg(target_os = "linux")]
 	return crate::linux::protected_snapshot::read_into(path, bytes, readback);
 
-	#[cfg(not(target_os = "linux"))]
+	#[cfg(all(target_os = "windows", feature = "experimental-windows-read"))]
+	return crate::windows::protected_snapshot::read_into(path, bytes, readback);
+
+	#[cfg(not(any(
+		target_os = "linux",
+		all(target_os = "windows", feature = "experimental-windows-read")
+	)))]
 	{
 		let _ = (path, bytes, readback);
 		Err(ProtectedSnapshotError::Unsupported)
@@ -125,9 +159,15 @@ fn caller_buffer_snapshot_refuses_an_invalid_path_without_touching_buffers() {
 	let mut bytes = [0x31; 8];
 	let mut readback = [0x32; 4];
 	let result = read_protected_snapshot_into(Path::new("relative"), &mut bytes, &mut readback);
-	#[cfg(target_os = "linux")]
+	#[cfg(any(
+		target_os = "linux",
+		all(target_os = "windows", feature = "experimental-windows-read")
+	))]
 	assert_eq!(result, Err(ProtectedSnapshotError::InvalidPath));
-	#[cfg(not(target_os = "linux"))]
+	#[cfg(not(any(
+		target_os = "linux",
+		all(target_os = "windows", feature = "experimental-windows-read")
+	)))]
 	assert_eq!(result, Err(ProtectedSnapshotError::Unsupported));
 	assert_eq!(bytes, [0x31; 8]);
 	assert_eq!(readback, [0x32; 4]);

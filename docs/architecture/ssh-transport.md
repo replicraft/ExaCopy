@@ -38,9 +38,19 @@ Host-key fingerprints remain SHA-256 and the authentication suite is unchanged.
 HMAC-SHA1 is
 used only for OpenSSH hostname-label compatibility. Protected byte acquisition
 is caller-owned. The platform crate offers an explicit-path Linux prototype
-restricted to owner-private files beneath an admitted ext4/XFS root mount;
-its native Linux fixtures remain unexecuted. Other platforms refuse acquisition.
-This is not an ambient OpenSSH configuration importer.
+restricted to owner-private files beneath an admitted ext4/XFS root mount.
+Its native Linux fixtures remain unexecuted.
+
+On Windows, `exacopy-platform/experimental-windows-read` exposes bounded
+protected snapshots from literal drive paths on fixed local NTFS. The reader
+holds path components without write or delete sharing and checks the user
+token, enabled privileges, ownership and protected DACL evidence. It compares
+two complete reads and checks the final identity, names and EOF. The backend
+requires a trusted device namespace and cooperating trusted principals and
+processes. Windows cross-checks passed. Native NTFS qualification and Windows
+SSH command integration remain open. Acquisition on unadmitted platforms
+returns a typed unsupported result. Paths and credentials are explicitly
+selected by the caller.
 SSH-keygen differential fixtures document its supported
 lexical subset and intentional stricter refusals.
 

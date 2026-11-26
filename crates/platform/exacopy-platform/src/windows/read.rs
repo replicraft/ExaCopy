@@ -24,11 +24,13 @@ use super::native::{
 };
 
 mod error;
+
 #[allow(
 	unsafe_code,
 	reason = "bounded fixed-drive and initialized file information queries"
 )]
 mod native;
+pub(crate) mod protected;
 
 use super::read_path::{DrivePath, MAX_PATH_UNITS};
 use error::ReadError;
@@ -166,13 +168,17 @@ struct HeldDirectory {
 
 impl HeldDirectory {
 	fn open_root(letter: u8) -> Result<Self, WindowsReadError> {
+		Self::open_root_with(letter, DIRECTORY_RIGHTS, DIRECTORY_SHARING)
+	}
+
+	fn open_root_with(letter: u8, access: u32, share: u32) -> Result<Self, WindowsReadError> {
 		let root = [u16::from(letter), u16::from(b':'), u16::from(b'\\')];
 		ensure_fixed_drive(&[root[0], root[1], root[2], 0])?;
 		let mut spelling = OsString::from(r"\\?\");
 		spelling.push(OsString::from_wide(&root));
 		let handle = OpenOptions::new()
-			.access_mode(DIRECTORY_RIGHTS)
-			.share_mode(DIRECTORY_SHARING)
+			.access_mode(access)
+			.share_mode(share)
 			.custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
 			.open(spelling)
 			.map_err(ReadError::RootOpen)?;

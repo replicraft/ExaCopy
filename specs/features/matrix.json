@@ -62,7 +62,7 @@
       "targets": [
         "x86_64-pc-windows-msvc"
       ],
-      "purpose": "Compile the explicitly selected local NTFS read-only CLI comparison without staging or fixture features."
+      "purpose": "Compile the opt-in local NTFS comparison CLI and the platform protected-snapshot reader."
     },
     "experimental-windows-copy": {
       "defaults": false,
@@ -306,13 +306,14 @@
         ],
         "enables": [
           "dep:exacopy-endpoint",
-          "dep:windows-sys"
+          "dep:windows-sys",
+          "windows-sys/Win32_System_Threading"
         ],
         "resolution_probe": [
           "exacopy-endpoint",
           "windows-sys"
         ],
-        "purpose": "Admit read-only held regular files through bounded literal drive paths."
+        "purpose": "Admit held regular files and protected snapshots under the separate Windows read-only platform profiles."
       },
       "windows-read-fixture": {
         "status": "experimental",
@@ -531,7 +532,7 @@
           "Win32_Storage_FileSystem", "Win32_System_IO"
         ]
       },
-      "purpose": "Provide the Windows ABI for experimental private staging beneath an authorized NTFS directory."
+      "purpose": "Provide Windows ABI bindings for experimental private NTFS staging, held reads and protected-snapshot token checks."
     },
     "zeroize": {
       "default_features": false,
