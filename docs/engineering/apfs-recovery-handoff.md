@@ -147,3 +147,32 @@ ExaCopy still requires writer quiescence, complete independent read-back,
 durable intent, qualification and one no-clobber permit before publication.
 No duplicate consumer descriptor, raw barrier fallback or timestamp mutation
 is needed for this seal.
+
+## Future remote publication fence
+
+The fresh seal and read-back primitives are supplied. ExaCopy still needs a
+verified-capture handoff and a Darwin remote publication coordinator before
+adopting this seal for remote transfers. Locally observed metadata must not
+be presented as preserved remote metadata.
+
+The current companion `attempt_exclusive_rename` validates the held and named
+source internally before issuing the syscall. A remote grant check before
+calling it can expire during those native probes. For a future Darwin remote
+executor, a checked rename variant should let the caller establish its final
+current-grant fence after those probes and retain the guard through the one
+exclusive rename. An opaque prepared rename consumed under that guard is
+another possible interface; it must be single-use and bound to the original
+leases and exact names. Check the deadline at submission after all probes,
+with no intervening I/O, await or revalidation. The guard serializes
+application revocation through the syscall; it cannot freeze time or promise
+syscall completion before expiry. The companion should keep its existing source
+validation, no-clobber syscall and distinct refusal, conflict, uncertain and
+successful outcomes. ExaCopy owns the grant, deadline, revocation guard,
+durable intent and reconciliation. Existing local-copy publication has a
+separate authorization contract and does not acquire remote authority from
+this proposed interface.
+
+Qualification must include expiry or revocation during the native probes,
+before rename, alongside the ordinary binding and no-clobber controls. This
+is a future reusable mechanism request; neither the current companion tests
+nor consumer adapter migration qualifies Darwin remote transfers.
