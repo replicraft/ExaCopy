@@ -17,6 +17,7 @@ use super::{
 	RemoteScopeDigest, RemoteSourceObservation,
 };
 
+pub mod checkpoint;
 mod validation;
 mod wire;
 

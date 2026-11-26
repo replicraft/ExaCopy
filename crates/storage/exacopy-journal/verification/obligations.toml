@@ -160,3 +160,12 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/remote_continuation.rs", test = "independent_transcript_authenticates_and_reencodes_byte_exactly", oracle = "Decode the independently signed maximum-basename transcript under the selected owner and exact expectations and require byte-identical canonical re-encoding and domain binding." }
+
+[[obligation]]
+id = "P-060"
+requirement_ids = ["R-253", "R-255"]
+source = "src/remote_download/continuation/checkpoint.rs"
+symbols = ["RemoteContinuedCheckpoint"]
+assumptions = ["This codec authenticates canonical framing and recorded range declarations only; continued replay must independently resolve active lineage and contiguous coverage.", "No decoded checkpoint supplies a live writer, lease, synchronization or publication capability."]
+gates = ["rust"]
+rust = { file = "tests/remote_continued_checkpoint.rs", test = "independent_suffix_checkpoint_round_trips_and_legacy_refuses", oracle = "Reproduce the independently generated continued checkpoint frame exactly and require mutual refusal with the unchanged V1 checkpoint profile." }
