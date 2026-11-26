@@ -2,7 +2,11 @@
 # match the selected private test profile. Loading this file opens no handles.
 
 function New-StageAncestorCustody {
-    param([string] $Path, [Security.Principal.SecurityIdentifier] $Owner)
+    param(
+        [string] $Path,
+        [Security.Principal.SecurityIdentifier] $Owner,
+        [scriptblock] $BeforeAdmission
+    )
 
     $names = [Collections.Generic.Stack[string]]::new()
     for ($ancestor = [IO.DirectoryInfo]::new($Path); $null -ne $ancestor; $ancestor = $ancestor.Parent) {
@@ -25,6 +29,7 @@ function New-StageAncestorCustody {
             }
         }
         $custody = [pscustomobject]@{ Parent = $Path; Owner = $Owner; Held = $held }
+        & $BeforeAdmission $held
         Confirm-StageAncestorCustody $custody
         return $custody
     } catch {

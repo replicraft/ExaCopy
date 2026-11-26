@@ -210,6 +210,7 @@ try {
         . (Join-Path $repo 'tools/install/windows/paths.ps1')
         Add-Type -Path (Join-Path $repo '.github/ci/windows-ntfs-custody.cs')
         . (Join-Path $repo '.github/ci/windows-ntfs-custody.ps1')
+        . (Join-Path $repo '.github/ci/windows-ntfs-ancestor-diagnostic.ps1')
         $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
         try {
             $stageOwner = $identity.User
@@ -227,7 +228,11 @@ try {
         if ((Invoke-Lane -Name 'stage-token-groups-privileges' -Program 'whoami.exe' -Arguments @('/all')) -ne 0) {
             throw 'Could not record the native Stage caller token.'
         }
-        $stageAncestors = New-StageAncestorCustody $rootInfo.FullName $stageOwner
+        $usesUserProfile = [string]::Equals($rootInfo.FullName, $env:USERPROFILE, [StringComparison]::OrdinalIgnoreCase)
+        $stageAncestors = New-StageAncestorCustody $rootInfo.FullName $stageOwner {
+            param($Held)
+            Write-StageAncestorDiagnostic $Held $token $usesUserProfile (Join-Path $evidence.FullName 'stage-ancestor-admission.json')
+        }
         $scratch = [IO.DirectoryInfo]::new((Join-Path $rootInfo.FullName ('exacopy-native-' + [Guid]::NewGuid().ToString('N'))))
         New-StagePrivateFixture $scratch.FullName $stageOwner
         $stagePin = [ExaCopyQualification.DirectoryCustody]::HoldFixture($scratch.FullName)
