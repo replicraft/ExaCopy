@@ -263,25 +263,39 @@ def publish(output, identity):
         "gh", "release", "create", tag, "--repo", repository, "--verify-tag", "--draft",
         "--title", f"ExaCopy CLI {version}", "--generate-notes",
     ], check=True)
+    # gh release view can resolve drafts. The REST tag endpoint serves published releases.
+    draft = json.loads(subprocess.check_output([
+        "gh", "release", "view", tag, "--repo", repository,
+        "--json", "databaseId,isDraft,isPrerelease,tagName",
+    ], text=True, timeout=30))
+    draft_id = draft.get("databaseId")
+    if (
+        type(draft_id) is not int or draft_id <= 0 or draft.get("tagName") != tag
+        or draft.get("isDraft") is not True or draft.get("isPrerelease") is not False
+    ):
+        raise ValueError("could not identify the exact tagged draft; preserve it for maintainer reconciliation")
+    draft_path = f"repos/{repository}/releases/{draft_id}"
     subprocess.run(["gh", "release", "upload", tag, "--repo", repository, *files], check=True)
     release = json.loads(subprocess.check_output(
-        ["gh", "api", f"repos/{repository}/releases/tags/{tag}"], text=True, timeout=30,
+        ["gh", "api", draft_path], text=True, timeout=30,
     ))
     actual = {item["name"]: item["digest"] for item in release["assets"] if item["state"] == "uploaded"}
     if (
-        release["tag_name"] != tag or not release["draft"] or release["prerelease"]
+        release["id"] != draft_id or release["tag_name"] != tag or not release["draft"] or release["prerelease"]
         or len(release["assets"]) != len(files) or actual != expected
         or subprocess.check_output(ensure_tag, text=True, timeout=30).strip() != local_ref
     ):
         raise ValueError("draft assets or tag changed; preserve the draft for maintainer reconciliation")
     require_immutability(repository, administration_read_token)
-    subprocess.run(["gh", "release", "edit", tag, "--repo", repository, "--draft=false", "--latest"], check=True)
+    subprocess.run([
+        "gh", "api", "--method", "PATCH", draft_path, "-F", "draft=false", "-f", "make_latest=true",
+    ], check=True, timeout=30, stdout=subprocess.DEVNULL)
     published = json.loads(subprocess.check_output(
         ["gh", "api", f"repos/{repository}/releases/latest"], text=True, timeout=30,
     ))
     published_assets = {item["name"]: item["digest"] for item in published["assets"] if item["state"] == "uploaded"}
     if (
-        published["tag_name"] != tag or published["draft"] or published["prerelease"]
+        published["id"] != draft_id or published["tag_name"] != tag or published["draft"] or published["prerelease"]
         or not published["immutable"] or len(published["assets"]) != len(expected)
         or published_assets != expected
     ):
