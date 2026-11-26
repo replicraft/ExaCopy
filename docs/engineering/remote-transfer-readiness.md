@@ -1,6 +1,36 @@
 # Remote transfer release readiness
 
-## Latest native destination evidence
+## Hosted direct OpenSSH commissioning
+
+The ordinary main-push commissioning run at `69aecff` passed all seven
+cases with the compiled `experimental-ssh-capture` CLI on Ubuntu 24.04,
+Linux `7.0.0-1017-azure`, and a whole ext4 root. The independently
+implemented OpenSSH peer listened on loopback. [Commissioning run](https://github.com/replicraft/ExaCopy/actions/runs/45824720986)
+
+| Hosted case | Observed result | SSH connections |
+| --- | --- | ---: |
+| Qualification path control | The signed fixture record admitted the selected path. The occupied destination was refused before dialing. | 0 |
+| Qualification signature refusal | Changing the signature on that same fixture path produced an authorization refusal. | 0 |
+| Empty download | The CLI published an empty file and the harness verified its bytes and committed receipt. | 1 |
+| Incumbent preservation | The CLI refused the occupied name and preserved its identity and bytes. | 0 |
+| Capture interrupted by `SIGKILL` | The harness observed a 64 KiB partial stage. The target and receipt remained absent. | 1 |
+| Pre-intent recovery | The CLI opened a fresh authenticated connection and read the full 128 MiB again from byte zero. The harness verified final bytes and the committed receipt and confirmed the prior partial stage was unchanged. | 1 |
+| Post-intent reconciliation | Recovery reported confirmed publication and required reconciliation. The target, journal and receipt stayed unchanged. | 0 |
+
+Independent artifact review matched the revision, source tree, lockfile,
+harness hashes and staged executable digest, and checked all seven raw peer
+logs. The two successful publications exercised the explicit data-only
+omission profile and observed file and directory barriers. The artifact
+retains receipt and journal SHA-256 commitments. Their raw contents and
+payload bytes stayed in the disposable fixture. Its report records that
+the fixture was removed and owned process groups drained.
+
+The campaign used a synthetic, one-use fixture authority with assumed
+qualification claims. Production destination qualification, power-loss
+durability, independent embedded WireGuard commissioning and efficient
+verified range reuse remain open.
+
+## Earlier native destination evidence
 
 The ordinary main-push campaign at `d59f508` completed its unsigned hosted
 Linux destination diagnostic. The retained artifact passed an independent
@@ -15,7 +45,7 @@ over SSH or WireGuard, sign a production qualification, or qualify a later
 deployment. Both native facts and substrate results explicitly set
 `qualifies_remote_download` to false. The artifact records runner-measured
 executable hashes but does not contain the executable for independent
-rehashing. Full CLI commissioning and efficient verified resume remain open.
+rehashing. The later hosted direct campaign exercised the compiled CLI.
 
 ## Earlier integrated command review
 
@@ -24,8 +54,9 @@ Status reviewed on 2026-11-26 at `c8e3bd0`. The Linux source-build CLI provides
 `experimental-ssh-capture`. The `experimental-ssh-wireguard` build adds the
 embedded route. The default CLI and official release build exclude both
 features. The integrated revision passed its 30 declared proof gates and
-881 macOS workspace tests with 25 skips. Native Linux end-to-end acceptance
-for either route remains open. See the [CLI command and profile reference](../../apps/exacopy-cli/README.md#experimental-ssh-download-on-linux).
+881 macOS workspace tests with 25 skips. The later hosted direct campaign
+adds Linux CLI evidence on the disposable profile described above. See the
+[CLI command and profile reference](../../apps/exacopy-cli/README.md#experimental-ssh-download-on-linux).
 
 Earlier integration through `8503dd3` on the same date: the generic finalizer
 now requires a clean full-lifecycle capture replay, matching qualification
@@ -54,11 +85,11 @@ exact-source-pin reproduction of the entire dependency workspace.
 
 | Area | Integrated behavior | Remaining acceptance |
 | --- | --- | --- |
-| SFTP source | The experimental CLI composes a protected SSH profile, pinned host key, selected route and authenticated SFTP source. Selected relative and absolute server paths retain their exact bytes. | Exercise the compiled command against independent OpenSSH and compare the selected file bytes and final receipt. |
-| Private capture | The native Linux command captures to a new private stage, seals and independently verifies it. Clean pre-intent history permits a newly authenticated attempt from byte zero while preserving superseded private material. | Observe actual process interruption and fresh-attempt recovery. Efficient range reuse is separate. |
-| Remote journal | The native command signs scope, records allocation and capture, checks durable intent before exclusive publication and commits a receipt. Resume refuses another publish attempt when intent may have been recorded. | Exercise publication and receipt boundaries with a qualified native destination. Recovery from post-intent uncertainty remains a separate operation. |
+| SFTP source | The experimental CLI composes a protected SSH profile, pinned host key, selected route and authenticated SFTP source. The hosted direct fixture exercised absolute paths with independent OpenSSH. | Repeat against an independently qualified deployment and exercise both path forms there. |
+| Private capture | The hosted direct fixture exercised a process kill and a fresh attempt from byte zero, retaining the unpublished partial stage. | Verify efficient range reuse separately. |
+| Remote journal | The hosted direct fixture observed receipt commits and refused a fresh attempt after recorded publication. | Exercise additional publication and receipt interruption boundaries on a qualified deployment. Recovery from post-intent uncertainty remains a separate operation. |
 | WireGuard | The experimental CLI composes the pinned userspace WireGuard/TCP route, with no direct fallback. | Confirm the actual embedded route against an independent WireGuard peer and exercise revocation, loss and renewal. |
-| Fidelity | The CLI requires explicit `sftp-data-only-v1` before writes. Success with a committed receipt reports `published_with_omissions` and exits 11. | Confirm the exact omission set, bytes and durability observations in native results. SFTP does not establish source snapshot or inode identity, and the profile records incomplete metadata fidelity. |
+| Fidelity | The hosted direct fixture checked the explicit `sftp-data-only-v1` omission set, bytes, receipt and barrier observations. Success reported `published_with_omissions` and exited 11. | Confirm the same observations on qualified deployments. SFTP provides live byte observations with incomplete metadata fidelity. |
 | Distribution | Latest-release download, platform archive selection, SHA-256 verification, pinned publisher verification and owned launchers are implemented. | Execute hosted release jobs and native platform lifecycle qualification. Provision production signing and trust inputs. The Windows store currently accepts one release identity. |
 
 An isolated macOS fixture transferred 5 MiB plus 19 bytes through positioned
