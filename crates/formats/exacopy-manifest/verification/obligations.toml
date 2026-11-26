@@ -12,3 +12,16 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/manifest.rs", test = "malformed_objects_duplicates_trailing_data_and_oversize_fail", oracle = "The valid envelope at the JSON byte limit decodes, while the oversized slice, truncated prefixes, duplicates, malformed objects and trailing document are rejected." }
+
+[[obligation]]
+id = "P-055"
+requirement_ids = ["R-269", "R-270", "R-276"]
+source = "src/sync_baseline.rs"
+symbols = ["PairedBaselineLeaf::verify", "verify_sides"]
+assumptions = [
+    "The caller establishes the independently selected authenticated root, exact workflow page commitment, ordered rooted identities, complete closure, scope, policy and scan.",
+    "The comparison and commitment use standard BLAKE3 under the selected domain assumptions. The test uses synthetic native observation values and independently encoded canonical CBOR and C BLAKE3 expectations.",
+    "This gate covers bounded in-memory leaf admission only. A trusted root signature, live held observations, strict Linux metadata acquisition, persistence, mutations and successor semantics require separate evidence.",
+]
+gates = ["rust"]
+rust = { file = "tests/sync_baseline.rs", test = "independent_workflow_baseline_vectors_bind_scope_evidence_and_canonical_bytes", oracle = "Four independently committed accepted vectors and 46 independently committed refusal vectors exercise the exact canonical lookup shape, separately selected scope and exact raw bytes, reported pair evidence, recheck order and Linux owner-and-mode digest boundaries." }

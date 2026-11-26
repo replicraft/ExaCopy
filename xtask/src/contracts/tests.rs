@@ -96,30 +96,40 @@ owner = "{owner}"
 #[test]
 fn public_page_version_is_bound_to_its_canonical_wire_marker() {
 	let fixture = Fixture::new();
-	let owner = "crates/formats/exacopy-plan/src/plan_entries/wire.rs";
-	let text = format!(
-		r#"id = "public-plan-entries-page"
+	for (id, owner) in [
+		(
+			"public-plan-entries-page",
+			"crates/formats/exacopy-plan/src/plan_entries/wire.rs",
+		),
+		(
+			"workflow-paired-baseline-leaf",
+			"crates/formats/exacopy-manifest/src/sync_baseline/wire.rs",
+		),
+	] {
+		let text = format!(
+			r#"id = "{id}"
 kind = "document_page"
 status = "implemented"
 version = "1.0"
 owner = "{owner}"
 "#
-	);
-	let record: Contract = toml::from_str(&text).unwrap();
-	fixture.write(owner, "const VERSION: [u8; 2] = [1, 0];");
-	assert_eq!(check_record(fixture.root(), &record), Ok(()));
-	for source in [
-		"const VERSION: [u8; 2] = [2, 0];",
-		"const VERSION: [u8; 3] = [1, 0, 0];",
-		"const VERSION: &str = \"1.0\";",
-	] {
-		fixture.write(owner, source);
-		assert!(check_record(fixture.root(), &record).is_err(), "{source}");
+		);
+		let record: Contract = toml::from_str(&text).unwrap();
+		fixture.write(owner, "const VERSION: [u8; 2] = [1, 0];");
+		assert_eq!(check_record(fixture.root(), &record), Ok(()));
+		for source in [
+			"const VERSION: [u8; 2] = [2, 0];",
+			"const VERSION: [u8; 3] = [1, 0, 0];",
+			"const VERSION: &str = \"1.0\";",
+		] {
+			fixture.write(owner, source);
+			assert!(check_record(fixture.root(), &record).is_err(), "{source}");
+		}
+		fixture.write(owner, "const VERSION: [u8; 2] = [1, 0];");
+		let wrong_kind: Contract =
+			toml::from_str(&text.replace("document_page", "transfer_journal")).unwrap();
+		assert!(check_record(fixture.root(), &wrong_kind).is_err());
 	}
-	fixture.write(owner, "const VERSION: [u8; 2] = [1, 0];");
-	let wrong_kind: Contract =
-		toml::from_str(&text.replace("document_page", "transfer_journal")).unwrap();
-	assert!(check_record(fixture.root(), &wrong_kind).is_err());
 }
 
 #[test]

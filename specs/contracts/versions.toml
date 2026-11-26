@@ -306,3 +306,11 @@ kind = "library_api"
 status = "development"
 owner = "Cargo.toml"
 notes = "Workspace package version is not a stabilized external library compatibility commitment."
+
+[[contract]]
+id = "workflow-paired-baseline-leaf"
+kind = "document_page"
+status = "implemented"
+version = "1.0"
+owner = "crates/formats/exacopy-manifest/src/sync_baseline/wire.rs"
+notes = "Read-only workflow page kind 0x0100, distinct from public document pages. At most 2048 bytes, exactly one paired Linux owner-and-mode generation-one row. Verifies supplied commitment and expected selection. Root signature, full seed closure, artifact writer, live qualification and current-pointer actions remain separate."

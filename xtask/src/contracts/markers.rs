@@ -68,6 +68,11 @@ pub(super) const BINDINGS: &[Binding] = &[
 		Marker::DocumentPage,
 	),
 	Binding::new(
+		"workflow-paired-baseline-leaf",
+		"crates/formats/exacopy-manifest/src/sync_baseline/wire.rs",
+		Marker::DocumentPage,
+	),
+	Binding::new(
 		"public-plan-body",
 		"crates/formats/exacopy-plan/src/plan/wire.rs",
 		Marker::PlanBody,
