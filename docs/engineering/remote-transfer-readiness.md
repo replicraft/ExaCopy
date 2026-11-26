@@ -1,5 +1,24 @@
 # Remote transfer release readiness
 
+## Latest native destination evidence
+
+The ordinary main-push campaign at `d59f508` completed its unsigned hosted
+Linux destination diagnostic. The retained artifact passed an independent
+archive/digest review. The native fixture exercised four real process-kill
+cuts: private creation, synchronized data, closed read-back, and publication
+with directory synchronization. It ran on a whole ext4 root with
+`nobarrier,data=writeback`; this is process-crash evidence, not power-loss
+qualification. [Hosted run](https://github.com/replicraft/ExaCopy/actions/runs/45800002692)
+
+That campaign used a small destination-only fixture. It did not transfer
+over SSH or WireGuard, sign a production qualification, or qualify a later
+deployment. Both native facts and substrate results explicitly set
+`qualifies_remote_download` to false. The artifact records runner-measured
+executable hashes but does not contain the executable for independent
+rehashing. Full CLI commissioning and efficient verified resume remain open.
+
+## Earlier integrated command review
+
 Status reviewed on 2026-11-26 at `c8e3bd0`. The Linux source-build CLI provides
 `get` and `recover remote-resume` with opt-in features. The direct build uses
 `experimental-ssh-capture`. The `experimental-ssh-wireguard` build adds the
@@ -140,7 +159,8 @@ request assembler checks that parent identity against the separate facts
 capture. Manual facts-only captures measure an independently selected ELF
 and cannot attest a build from the checkout.
 
-The hosted probe and both deployed operations await actual runner execution.
+The hosted probe has run as described above. Both deployed operations still
+require their own actual runner execution.
 Before advertising the complete operation, extend the qualified campaign to
 cover these behaviors on each proposed native profile:
 
