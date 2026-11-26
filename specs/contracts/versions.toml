@@ -314,3 +314,12 @@ status = "implemented"
 version = "1.0"
 owner = "crates/formats/exacopy-manifest/src/sync_baseline/wire.rs"
 notes = "Read-only workflow page kind 0x0100, distinct from public document pages. At most 2048 bytes, exactly one paired Linux owner-and-mode generation-one row. Verifies supplied commitment and expected selection. Root signature, full seed closure, artifact writer, live qualification and current-pointer actions remain separate."
+
+[[contract]]
+id = "linux-remote-capture-continuation"
+kind = "transfer_journal"
+status = "implemented_private"
+version = "1.0"
+required_features = 15
+owner = "crates/storage/exacopy-journal/src/remote_download/continuation/wire.rs"
+notes = "Private signed kind 40 records exact independently expected retained-prefix claims under a separate signature domain and 1024-byte cap. Legacy replay refuses it. Advanced replay, append authority, qualification, finalization and continued receipt remain separate."

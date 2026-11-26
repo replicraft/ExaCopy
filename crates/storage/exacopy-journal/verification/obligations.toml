@@ -147,3 +147,16 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/remote_finalization_replay/checkpoints.rs", test = "checkpoints::checkpoint_inventory_matches_complete_history_and_failure_oracles", oracle = "Compare opt-in and legacy replay at every cut after preparation; refuse every damaged byte in the final checkpoint, semantic mismatch, recorded uncertainty and sealed phase; prove fresh allocation cannot reuse old rows and default scans do not collect them." }
+
+[[obligation]]
+id = "P-058"
+requirement_ids = ["R-253", "R-255"]
+source = "src/remote_download/continuation.rs"
+symbols = ["RemoteContinuationExpectation"]
+assumptions = [
+    "The caller independently authenticates the owner profile and key and resolves the exact historical and newly observed claim expectation.",
+    "The envelope is recorded evidence only. Native barriers, held leases, actual storage reservations, continuation replay, qualified append, finalization and receipts are separate obligations.",
+    "Ed25519 and BLAKE3 follow their selected cryptographic profiles. The independent vector uses OpenSSL signing and portable C BLAKE3 over independently encoded canonical bytes.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_continuation.rs", test = "independent_transcript_authenticates_and_reencodes_byte_exactly", oracle = "Decode the independently signed maximum-basename transcript under the selected owner and exact expectations and require byte-identical canonical re-encoding and domain binding." }

@@ -2,6 +2,7 @@
 
 mod bootstrap;
 pub mod checkpoints;
+pub mod continuation;
 mod error;
 pub mod finalization;
 pub mod finalization_policy;

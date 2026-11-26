@@ -137,6 +137,10 @@ impl<'owner> RemoteBootstrapTrust<'owner> {
 		self.owner
 	}
 
+	pub(super) const fn key(&self) -> &VerifyingKey {
+		self.key
+	}
+
 	pub(super) fn admit_after_job(
 		&self,
 		frame: &Frame,

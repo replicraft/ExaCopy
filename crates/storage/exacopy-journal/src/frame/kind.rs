@@ -80,6 +80,8 @@ pub enum FrameKind {
 	StageDirectoryPrepared = 38,
 	/// A sealed pre-intent remote capture was retired and its stage preserved.
 	RemoteCaptureRetired = 39,
+	/// Signed verified-prefix declaration for a continued private capture.
+	RemoteCaptureContinued = 40,
 }
 
 impl FrameKind {
@@ -132,6 +134,7 @@ impl FrameKind {
 			code if code == Self::RemoteStageAllocated.code() => Self::RemoteStageAllocated,
 			code if code == Self::StageDirectoryPrepared.code() => Self::StageDirectoryPrepared,
 			code if code == Self::RemoteCaptureRetired.code() => Self::RemoteCaptureRetired,
+			code if code == Self::RemoteCaptureContinued.code() => Self::RemoteCaptureContinued,
 			_ => return None,
 		})
 	}

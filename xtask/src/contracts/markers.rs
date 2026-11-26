@@ -169,6 +169,11 @@ pub(super) const BINDINGS: &[Binding] = &[
 		Marker::array("VERSION", 3),
 	),
 	Binding::new(
+		"linux-remote-capture-continuation",
+		"crates/storage/exacopy-journal/src/remote_download/continuation/wire.rs",
+		Marker::array("VERSION", 3),
+	),
+	Binding::new(
 		"linux-remote-destination-qualification",
 		"crates/storage/exacopy-journal/src/remote_download/qualification/wire.rs",
 		Marker::Scalar {
