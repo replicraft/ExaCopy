@@ -32,6 +32,7 @@ const MANAGED_MACOS: &str = "managed-macos";
 const LOCAL_NTFS: &str = "local-ntfs";
 #[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
 mod remote;
+mod sync_preview;
 #[cfg(test)]
 mod tests;
 
@@ -93,6 +94,7 @@ fn definition() -> Cli {
 		.no_binary_name(true)
 		.disable_help_subcommand(true)
 		.subcommand_required(true)
+		.subcommand(sync_preview::definition())
 		.subcommand(
 			Cli::new(DIFF)
 				.about("Compare the exact bytes of two regular files.")
@@ -406,6 +408,7 @@ fn typed_command(mut args: ArgMatches) -> Option<Command> {
 			profile: path(&mut command, PROFILE)?,
 			output: path(&mut command, OUTPUT)?,
 		})),
+		sync_preview::NAME => sync_preview::command(&mut command),
 		MANIFEST => {
 			let (action, mut args) = command.remove_subcommand()?;
 			if action != CREATE {

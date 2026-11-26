@@ -15,6 +15,7 @@ pub(crate) enum Command {
 	Diff(DiffCommand),
 	Copy(CopyCommand),
 	Plan(PlanCommand),
+	SyncPreview(SyncPreviewCommand),
 	ManifestCreate {
 		path: PathBuf,
 	},
@@ -52,6 +53,12 @@ pub(crate) struct PlanCommand {
 	pub(crate) destination: PathBuf,
 	pub(crate) profile: PathBuf,
 	pub(crate) output: PathBuf,
+}
+
+pub(crate) struct SyncPreviewCommand {
+	pub(crate) parent: PathBuf,
+	pub(crate) roots: [PathBuf; 2],
+	pub(crate) subject: PathBuf,
 }
 
 pub(crate) struct VerifyCommand {

@@ -66,6 +66,41 @@ escape live detection. Copy, recovery, metadata equivalence, named streams,
 and snapshots are outside this profile. Windows qualification remains pending.
 [NTFS fixture and evidence](../../docs/testing.md#windows-held-directory-ntfs-qualification)
 
+## Preview one sync subject on Linux
+
+```sh
+exacopy sync-preview /absolute/common/parent LEFT_ROOT RIGHT_ROOT BASENAME --no-history
+```
+
+The root names must be distinct, direct directory children of the specified
+parent. It must be on a whole local ext4, XFS or tmpfs mount with Linux
+`openat2` and trusted procfs observations. Use a trusted mount namespace.
+The command selects the same raw basename on both sides and refuses links
+and mount crossings as traversal. It confirms each raw root or subject name
+through a read-only directory scan bounded to 4,096 entries per check.
+Lookup aliases and inconclusive scans block the preview. It measures at most
+64 MiB per regular single-link file plus bounded one-byte EOF probes, and
+never writes synchronized content or private history. Reads may update atime.
+
+The JSON preview identifies observed absence, a measured file, or an existing
+entry outside the selected file profile. An unavailable or unstable scope
+blocks the entire preview. Present observations include the measured byte
+length, BLAKE3 of the unnamed stream and a digest of ordinary mode, UID and
+GID. Other metadata is outside the comparison. The report includes raw child
+and subject names in hexadecimal and numeric identifiers for the held objects.
+These identifiers describe only the live preview. Each held file is checked for
+identity, length, change/modification times and required metadata around its
+read and EOF probe. After both measurements the command rechecks the parent,
+root bindings and selected names. These are live observations under the
+stated kernel and filesystem contracts. Concurrent writers can change the
+files between observations or immediately after the report.
+
+Exit 0 reports matching live observations, both absent, or a possible
+create-new copy for later review. Exit 3 reports a conflict. Exit 2 reports
+a blocked preview or invalid invocation. Equal observations do not establish
+trusted history, and a copy candidate grants no action. Independent roots,
+subtree inventory and authenticated baseline selection remain open.
+
 ## Create and verify a single-file manifest
 
 ```sh

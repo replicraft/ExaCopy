@@ -35,6 +35,7 @@ mod remote_frontdoor;
 #[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
 mod remote_report;
 mod report;
+mod sync_preview;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod unix_path;
 #[cfg(all(target_os = "windows", feature = "experimental-windows-diff"))]

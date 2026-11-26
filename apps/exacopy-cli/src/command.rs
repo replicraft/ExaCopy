@@ -46,6 +46,9 @@ pub fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
 			ExitCode::from(code)
 		}
 		Command::Plan(plan) => ExitCode::from(crate::plan::run(&plan, &mut stdout, &mut stderr)),
+		Command::SyncPreview(preview) => {
+			ExitCode::from(crate::sync_preview::run(&preview, &mut stdout, &mut stderr))
+		}
 		Command::ManifestCreate { path } => {
 			ExitCode::from(crate::manifest::create(&path, &mut stdout, &mut stderr))
 		}
