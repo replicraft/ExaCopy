@@ -191,3 +191,16 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/remote_continued_replay.rs", test = "independent_history_keeps_aggregate_original_lineage_and_suffix_distinct", oracle = "Admit an independent OpenSSL and C BLAKE3 transcript with typed V2 strategy qualification and two suffix checkpoints. Preserve original preparation, active continued lineage and adopted aggregate separately from the moving head. Require legacy replay to stop at the preceding boundary." }
+
+[[obligation]]
+id = "P-065"
+requirement_ids = ["R-253", "R-255"]
+source = "src/remote_download/qualification/continuation/witness.rs"
+symbols = ["verify_remote_witness_qualification"]
+assumptions = [
+    "The caller independently selects the canonical nonweak attestor and owner keys, attestor identity, exact V2 operation/coverage, build, route and campaign scope and evidence.",
+    "The attestor is responsible for independently reviewed evidence from the real witnessed retained-append campaign. Signed native claims do not constitute current native facts or authorize retention or effects.",
+    "The synthetic OpenSSL fixtures exercise signed wire and scope selection, not execution of the native campaign.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_download/witness_qualification.rs", test = "witness::independently_signed_witness_vectors_require_exact_profile_and_route", oracle = "Authenticate independently encoded OpenSSL op2/coverage2 vectors under exact common scope and both route classes. The old verifier refuses them even if offered the witness selector, and the new verifier refuses V1/op1. A domain-bound digest identifies exact record bytes." }

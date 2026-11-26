@@ -17,6 +17,8 @@ use exacopy_journal::remote_download::qualification::{
 	verify_remote_destination_qualification as verify_v1,
 };
 
+#[path = "remote_download/witness_qualification.rs"]
+mod witness;
 const ATTESTOR: [u8; 16] = [0x31; 16];
 const BUILD: [u8; 32] = [0x61; 32];
 const V2_DOMAIN: &[u8] = b"ExaCopy/linux-remote-destination-qualification-record/v2\0";

@@ -234,7 +234,7 @@ kind = "transfer_journal"
 status = "implemented_private"
 version = "2"
 owner = "crates/storage/exacopy-journal/src/remote_download/qualification/continuation/wire.rs"
-notes = "Read-only verifier of independently selected retained-append process-crash attestation. Distinct V2 domains and closed coverage profile; current facts matching, native append admission and exact route qualification are separate."
+notes = "Separate read-only verifiers select retained append op1/coverage1 (exact 0x0fff) or consented witness op2/coverage2 (exact u32 0x00ffffff); they mutually refuse records. Both retain the V2 domains and canonical envelope. Current native facts, explicit retention consent, effect admission and actual route qualification remain separate."
 
 [[contract]]
 id = "linux-remote-download-receipt"

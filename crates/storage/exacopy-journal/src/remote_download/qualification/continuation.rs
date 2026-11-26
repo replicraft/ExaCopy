@@ -7,7 +7,15 @@ use exacopy_endpoint::linux_remote_qualification::RemoteDestinationFacts;
 
 use super::{MAX_REMOTE_QUALIFICATION_BYTES, RemoteQualificationError, RemoteQualificationScope};
 
+mod profile;
 mod wire;
+mod witness;
+
+use profile::Profile;
+pub use witness::{
+	CurrentRemoteWitnessQualification, VerifiedRemoteWitnessQualification,
+	verify_remote_witness_qualification,
+};
 
 const RECORD_DOMAIN: &[u8] = b"ExaCopy/linux-remote-destination-qualification-record/v2\0";
 
@@ -17,6 +25,8 @@ const RECORD_DOMAIN: &[u8] = b"ExaCopy/linux-remote-destination-qualification-re
 pub enum RemoteContinuationOperationProfile {
 	/// Independently verify a retained prefix, synchronize it, and append only its suffix.
 	VerifiedRetainedAppendV1,
+	/// Retained append with protected same-inode witness and durable receipt closeout.
+	VerifiedRetainedAppendWithWitnessV1,
 }
 
 /// Required independent campaign evidence for a continuation operation.
@@ -25,6 +35,8 @@ pub enum RemoteContinuationOperationProfile {
 pub enum RemoteContinuationCoverageProfile {
 	/// Every required retained-append case and observed process-crash cut.
 	RetainedAppendProcessCrashV1,
+	/// Every required witnessed retained-append and receipt process-crash case.
+	RetainedAppendWithWitnessProcessCrashV1,
 }
 
 /// Independently selected scope of one continuation qualification.
@@ -209,7 +221,8 @@ impl std::error::Error for RemoteContinuationQualificationError {
 
 /// Verifies bounded V2 bytes under independent attestor trust and expected scope.
 ///
-/// This entry point can verify historical records without live filesystem access.
+/// This entry point verifies only the original retained-append profile, including
+/// historical records without live filesystem access.
 /// Before selecting the append strategy the application must independently
 /// establish the current build and facts, then match them with this result.
 /// # Errors
@@ -218,6 +231,15 @@ pub fn verify_remote_continuation_qualification(
 	record: &[u8],
 	trust: &RemoteContinuationQualificationTrust<'_>,
 ) -> Result<VerifiedRemoteContinuationQualification, RemoteContinuationQualificationError> {
+	verify_profile(record, trust, Profile::Original)
+}
+
+fn verify_profile(
+	record: &[u8],
+	trust: &RemoteContinuationQualificationTrust<'_>,
+	profile: Profile,
+) -> Result<VerifiedRemoteContinuationQualification, RemoteContinuationQualificationError> {
+	use RemoteContinuationQualificationError as Error;
 	use RemoteQualificationError as Evidence;
 
 	if record.len() > MAX_REMOTE_QUALIFICATION_BYTES {
@@ -233,6 +255,13 @@ pub fn verify_remote_continuation_qualification(
 	if !trust.scope.common.is_valid() {
 		return Err(Evidence::Scope.into());
 	}
+	let (operation, coverage) = profile.selection();
+	if trust.scope.operation != operation {
+		return Err(Error::Operation);
+	}
+	if trust.scope.coverage != coverage {
+		return Err(Error::Coverage);
+	}
 	let envelope = wire::read_envelope(record)?;
 	if envelope.key != trust.attestor_key.to_bytes() {
 		return Err(Evidence::Attestor.into());
@@ -242,15 +271,9 @@ pub fn verify_remote_continuation_qualification(
 		trust.attestor_key.verify_strict(input, &signature)
 	})?
 	.map_err(|_| Evidence::Signature)?;
-	let claims = wire::read_claims(envelope.body)?;
+	let claims = wire::read_claims(envelope.body, profile)?;
 	if claims.attestor != trust.attestor {
 		return Err(Evidence::Attestor.into());
-	}
-	if claims.scope.operation != trust.scope.operation {
-		return Err(RemoteContinuationQualificationError::Operation);
-	}
-	if claims.scope.coverage != trust.scope.coverage {
-		return Err(RemoteContinuationQualificationError::Coverage);
 	}
 	if claims.scope.common != trust.scope.common {
 		return Err(Evidence::Scope.into());

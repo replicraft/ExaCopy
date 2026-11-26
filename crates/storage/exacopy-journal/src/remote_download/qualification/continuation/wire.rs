@@ -9,8 +9,7 @@ use super::super::wire::{read_facts, write_facts};
 use super::super::{MAX_REMOTE_QUALIFICATION_BYTES, RemoteQualificationError as Evidence};
 use super::super::{RemoteQualificationRouteClass, RemoteQualificationScope};
 use super::{
-	RemoteContinuationCoverageProfile, RemoteContinuationOperationProfile,
-	RemoteContinuationQualificationError as Error, RemoteContinuationQualificationScope,
+	Profile, RemoteContinuationQualificationError as Error, RemoteContinuationQualificationScope,
 };
 
 const VERSION: u8 = 2;
@@ -18,9 +17,6 @@ const QUALIFICATION_ATTESTOR_ROLE: u8 = 1;
 const SIGNATURE_DOMAIN: &[u8] = b"ExaCopy/linux-remote-destination-qualification/v2\0";
 const DIRECT_PINNED_TCP_V1: u8 = 1;
 const EMBEDDED_WIREGUARD_TCP_V1: u8 = 2;
-const VERIFIED_RETAINED_APPEND_V1: u8 = 1;
-const RETAINED_APPEND_PROCESS_CRASH_V1: u8 = 1;
-const REQUIRED_COVERAGE_MASK: u16 = 0x0fff;
 
 type Buffer = Cursor<[u8; MAX_REMOTE_QUALIFICATION_BYTES]>;
 
@@ -96,7 +92,7 @@ pub(super) fn with_signature_input<T>(
 	Ok(verify(encoded_bytes(&out.into_writer())))
 }
 
-pub(super) fn read_claims(body: &[u8]) -> Result<Claims, Error> {
+pub(super) fn read_claims(body: &[u8], profile: Profile) -> Result<Claims, Error> {
 	let mut input = Decoder::new(body);
 	map(&mut input, 9).map_err(Evidence::from)?;
 	key(&mut input, 0).map_err(Evidence::from)?;
@@ -115,22 +111,24 @@ pub(super) fn read_claims(body: &[u8]) -> Result<Claims, Error> {
 	let campaign_evidence = fixed(&mut input).map_err(Evidence::from)?;
 	key(&mut input, 5).map_err(Evidence::from)?;
 	let facts = read_facts(&mut input)?;
+	let (operation_code, coverage_code, expected_mask) = profile.wire();
 	key(&mut input, 6).map_err(Evidence::from)?;
-	let operation = match input.u8().map_err(Evidence::from)? {
-		VERIFIED_RETAINED_APPEND_V1 => RemoteContinuationOperationProfile::VerifiedRetainedAppendV1,
-		_ => return Err(Error::Operation),
-	};
+	if input.u8().map_err(Evidence::from)? != operation_code {
+		return Err(Error::Operation);
+	}
 	key(&mut input, 7).map_err(Evidence::from)?;
-	let coverage = match input.u8().map_err(Evidence::from)? {
-		RETAINED_APPEND_PROCESS_CRASH_V1 => {
-			RemoteContinuationCoverageProfile::RetainedAppendProcessCrashV1
-		}
-		_ => return Err(Error::Coverage),
-	};
-	key(&mut input, 8).map_err(Evidence::from)?;
-	if input.u16().map_err(Evidence::from)? != REQUIRED_COVERAGE_MASK {
+	if input.u8().map_err(Evidence::from)? != coverage_code {
 		return Err(Error::Coverage);
 	}
+	key(&mut input, 8).map_err(Evidence::from)?;
+	let mask = match profile {
+		Profile::Original => u32::from(input.u16().map_err(Evidence::from)?),
+		Profile::Witness => input.u32().map_err(Evidence::from)?,
+	};
+	if mask != expected_mask {
+		return Err(Error::Coverage);
+	}
+	let (operation, coverage) = profile.selection();
 	let claims = Claims {
 		attestor,
 		scope: RemoteContinuationQualificationScope {
@@ -145,27 +143,20 @@ pub(super) fn read_claims(body: &[u8]) -> Result<Claims, Error> {
 		},
 		facts,
 	};
-	if encoded_bytes(&encode_claims(&claims)?) != body {
+	if encoded_bytes(&encode_claims(&claims, profile)?) != body {
 		return Err(Evidence::NonCanonical.into());
 	}
 	Ok(claims)
 }
 
-fn encode_claims(claims: &Claims) -> Result<Buffer, Evidence> {
+fn encode_claims(claims: &Claims, profile: Profile) -> Result<Buffer, Evidence> {
 	let mut out = Encoder::new(Buffer::new([0; MAX_REMOTE_QUALIFICATION_BYTES]));
 	let common = claims.scope.common;
 	let route = match common.route {
 		RemoteQualificationRouteClass::DirectPinnedTcpV1 => DIRECT_PINNED_TCP_V1,
 		RemoteQualificationRouteClass::EmbeddedWireGuardTcpV1 => EMBEDDED_WIREGUARD_TCP_V1,
 	};
-	let operation = match claims.scope.operation {
-		RemoteContinuationOperationProfile::VerifiedRetainedAppendV1 => VERIFIED_RETAINED_APPEND_V1,
-	};
-	let coverage = match claims.scope.coverage {
-		RemoteContinuationCoverageProfile::RetainedAppendProcessCrashV1 => {
-			RETAINED_APPEND_PROCESS_CRASH_V1
-		}
-	};
+	let (operation, coverage, mask) = profile.wire();
 	out.map(9)?
 		.u8(0)?
 		.bytes(&claims.attestor)?
@@ -184,6 +175,6 @@ fn encode_claims(claims: &Claims) -> Result<Buffer, Evidence> {
 		.u8(7)?
 		.u8(coverage)?
 		.u8(8)?
-		.u16(REQUIRED_COVERAGE_MASK)?;
+		.u32(mask)?;
 	Ok(out.into_writer())
 }
