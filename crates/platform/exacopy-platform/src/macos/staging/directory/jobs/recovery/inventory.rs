@@ -2,11 +2,12 @@ use std::fmt;
 use std::fs::File;
 use std::os::fd::AsFd as _;
 
+use apfs_mounted::metadata::ObjectFlags;
 use exacopy_endpoint::{MAX_FILE_LENGTH, UnixComponent};
 use rustix::fs::{self, FileType, Mode, OFlags, Stat};
 
 use super::super::super::super::super::{
-	EVENT_ONLY, FILE_MODE, PhysicalFsid, UNSUPPORTED_OBJECT_FLAGS, file::same_observation,
+	EVENT_ONLY, FILE_MODE, PhysicalFsid, file::same_observation, materialized,
 };
 use super::super::STAGE;
 use super::{
@@ -236,7 +237,7 @@ fn observe(
 ) -> Result<RecoveryFileObservation, RecoveryError> {
 	if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile
 		|| stat.st_nlink != 1
-		|| stat.st_flags & UNSUPPORTED_OBJECT_FLAGS != 0
+		|| !materialized(ObjectFlags::from_raw(stat.st_flags))
 	{
 		return Err(RecoveryError::InvalidEntry(role));
 	}
@@ -254,4 +255,45 @@ fn observe(
 		.filter(|&length| length <= MAX_FILE_LENGTH)
 		.ok_or(RecoveryError::InvalidEntry(role))?;
 	Ok(RecoveryFileObservation { identity, length })
+}
+
+#[test]
+fn recovery_observation_preserves_public_and_private_flag_policies() {
+	use std::os::unix::fs::OpenOptionsExt as _;
+
+	use super::super::super::super::tests::Fixture;
+
+	let fixture = Fixture::new();
+	let root = fixture.bind();
+	let file = File::options()
+		.create_new(true)
+		.write(true)
+		.mode(0o600)
+		.open(fixture.path("flag-observation"))
+		.unwrap();
+	let mut stat = fs::fstat(&file).unwrap();
+
+	// Compare the production observation with the former masks using synthetic
+	// flag bits and otherwise native stat fields.
+	const LEGACY_UNSUPPORTED: u32 = 0x0080_0000 | 0x4000_0000;
+	for flags in core::iter::once(0)
+		.chain((0..u32::BITS).map(|bit| 1 << bit))
+		.chain([LEGACY_UNSUPPORTED, u32::MAX])
+	{
+		stat.st_flags = flags;
+		for (role, allowed) in [
+			(RecoveryName::Target, flags & LEGACY_UNSUPPORTED == 0),
+			(RecoveryName::Stage, flags == 0),
+		] {
+			let result = observe(&stat, &root.lease, role);
+			if allowed {
+				assert_eq!(result.unwrap().length(), 0, "{role:?}: {flags:#x}");
+			} else {
+				assert!(
+					matches!(result, Err(RecoveryError::InvalidEntry(rejected)) if rejected == role),
+					"{role:?}: {flags:#x}"
+				);
+			}
+		}
+	}
 }

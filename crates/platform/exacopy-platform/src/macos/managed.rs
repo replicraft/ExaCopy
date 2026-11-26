@@ -42,11 +42,6 @@ const DIRECTORY_OPEN: OFlags = OFlags::RDONLY
 	.union(OFlags::NOFOLLOW)
 	.union(OFlags::CLOEXEC);
 
-// Darwin <sys/stat.h>. Refuse firmlinks and dataless File Provider objects.
-const SF_FIRMLINK: u32 = 0x0080_0000;
-const SF_DATALESS: u32 = 0x4000_0000;
-const UNSUPPORTED_OBJECT_FLAGS: u32 = SF_FIRMLINK | SF_DATALESS;
-
 /// Explicit trust from the owner of an independently provisioned directory.
 ///
 /// The grant conveys a caller attestation. The adapter checks directory mode,
