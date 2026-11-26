@@ -189,3 +189,139 @@ For `possible_retry` with a clean journal, `recover retry` takes an explicit gra
 For a retained preparation with a clean journal and a bound private stage, `recover resume` takes an exclusive lease and an explicit grant for the original source directory. It checks each checkpoint against the current source and stage, then fills the remaining ranges. A full-length stage whose permissions were already applied can proceed after fresh full-file verification and metadata read-back. The source consistency remains `live_observed`. If the target is already published, recovery can finish its receipt. When the journal already holds an active publication intent and the stage is still private, the command reports the current disposition. Use `recover retry` for `possible_retry`. A conflict, torn journal, or unresolved evidence remains available for inspection.
 
 The `exacopy.local_recovery_inspection` JSON schema version `1.0` includes the last accepted journal sequence and byte offset as decimal strings, whether the tail was clean or torn, and the disposition or blocking error. Exit `0` means the committed receipt and current target agree, `3` means an unrelated entry occupies the target, and `9` means the job still needs reconciliation or is in use. Exit `5` indicates invalid integrity evidence and `8` indicates that the supplied profile could not authenticate the job.
+
+## Experimental SSH download on Linux
+
+Build with `experimental-ssh-capture` to expose `get` and
+`recover remote-resume` for direct SSH. The `experimental-ssh-wireguard`
+feature includes that CLI and adds the embedded WireGuard route. Your
+protected SSH profile selects the route. These commands are Linux-only
+source-build options. Default builds and the official release profile
+exclude them. Native qualification and production release evidence remain
+pending. See [remote transfer readiness](../../docs/engineering/remote-transfer-readiness.md).
+
+Use paths to already provisioned authority files in the following examples.
+The destination parent must be an admitted Linux directory and the final
+name must be absent.
+
+```sh
+cargo run --locked -p exacopy-cli --features experimental-ssh-capture -- \
+  get 'reader@files.example:/exports/report.bin' ./incoming/report.bin \
+  --profile ./private-profile \
+  --ssh-profile /path/to/private/ssh.json \
+  --destination-qualification /path/to/private/destination.attestation \
+  --qualification-trust /path/to/private/destination-trust.json \
+  --metadata sftp-data-only-v1 --format json
+
+cargo run --locked -p exacopy-cli --features experimental-ssh-capture -- \
+  recover remote-resume ./incoming/.exacopy-JOB_UUID \
+  --profile ./private-profile \
+  --ssh-profile /path/to/private/ssh.json \
+  --destination-qualification /path/to/private/destination.attestation \
+  --qualification-trust /path/to/private/destination-trust.json \
+  --metadata sftp-data-only-v1 --format json
+```
+
+Put the operands before the options. Supply the remote source as
+`ACCOUNT@HOST:PATH`, with brackets around an IPv6 literal. The profile sets
+the SSH port and must match the requested account and host. SFTP supports
+both account-relative and absolute paths in the server's namespace. The
+remote filename and local target retain their raw bytes on Linux. Empty
+components, dot or dot-dot components, trailing separators and unsupported
+non-regular sources are refused. The supported profile bounds the source
+extent to at most 128 MiB and the foreground grant to at most one hour.
+
+### Protected inputs and route selection
+
+- `--profile` selects your [private local owner profile](#copy-one-regular-file).
+  The local signing seed authenticates the job.
+  Supply the same owner profile to resume.
+- `--ssh-profile` selects a protected `exacopy-ssh-profile-v1` JSON file
+  containing the host and account, port, independently approved Ed25519 host
+  key pin, protected known-hosts path, one credential reference, one route,
+  and the extent and grant bounds. The `password-env` method references an
+  environment variable by name. The `openssh-ed25519` method references a
+  protected key file and its public-key SHA-256 fingerprint. Encrypted keys
+  require a named passphrase environment reference and bounded bcrypt
+  parameters. The CLI checks the peer's host key before acquiring SSH
+  credentials. Interactive prompts, SSH agents, ambient OpenSSH
+  configuration and credential fallback are outside this profile.
+- `--destination-qualification` selects a signed destination-only
+  process-crash qualification for the actual destination. Supply
+  the separate `exacopy-remote-qualification-trust-v1` JSON file through
+  `--qualification-trust` to select the attestor identity and key, exact
+  running build digest, route class, and campaign scope and evidence. The
+  attestor key must differ from the local job owner key. The CLI verifies
+  the artifact and current native facts before creating job or staging
+  material. The native profile observes x86-64 or ARM64 Linux. The
+  qualification binds the admitted writable whole ext4 destination,
+  current kernel, boot and mount namespace. Missing, mismatched or stale
+  evidence refuses transfer. Use the reviewed qualification artifacts
+  for the selected deployment.
+
+Run as an unprivileged user. The SSH profile, referenced known-hosts and key
+files, and both qualification files require literal absolute paths on the
+admitted ext4 or XFS filesystem mounted at `/`. Their ancestors must be owned
+by root or the invoking user and exclude group and other writes. Each file
+needs a directory owned by the invoking user with exact mode `0700` and a
+single-link regular file of exact mode `0600` owned by that user. The reader
+refuses symlinks, mount crossings and unstable observations.
+
+A `direct` route uses the profile's fixed literal TCP endpoint. A
+`resolve-authority` route uses the system resolver at initial `get` to select
+one literal endpoint under the profile's address preference. The signed job
+binds that exact endpoint, and resume reconnects only there. For embedded
+WireGuard, build with `--features experimental-ssh-wireguard` and select the
+`embedded-wireguard` profile route with its fixed peer, outer UDP endpoint,
+inner SSH address and protected local key file. The file contains the
+canonical WireGuard private key in standard Base64, optionally followed by
+one LF. The local public key must match the profile. The embedded route has
+no DNS lookup or direct fallback.
+
+### Results, interruption and resume
+
+`--metadata sftp-data-only-v1` is required. The operation copies the unnamed
+data stream, verifies independent local BLAKE3 read-back, and uses mode
+`0600` for the local file. The report lists omissions for additional streams
+and resource forks, source permissions, owner and group, timestamps, ACLs,
+extended attributes and security labels, file flags, hard links, sparse
+layout, and compression or encryption representation. Source observations
+are live. Snapshots and complete metadata fidelity are outside this profile.
+
+Successful publication includes a committed receipt and reports
+`published_with_omissions` with exit 11. `--format json` selects the
+`exacopy.cli.remote_download` 1.0 report. It includes the receipt and
+qualification digests, exact stream length and BLAKE3, and the retained job
+pathname with its original bytes in hex. It distinguishes observed file
+and directory barriers from the required process-crash qualification.
+Power-loss durability remains outside the profile. Human-readable output
+is the default.
+
+Select the reported retained job to resume. The command authenticates its
+signed scope and checks the current authority again. Clean pre-intent
+history can start a fresh attempt with a newly authenticated session,
+reading from byte zero into a new private stage. Prior private attempts
+remain available as evidence. Resume uses the recorded source, route and
+destination. Once publication intent may have been recorded, recovery
+remains a reconciliation case and the command refuses another publish
+attempt. Retain the job when it reports uncertain or confirmed publication.
+
+Ctrl-C revokes the foreground grant and cancels the active session. A
+confirmed cancellation can exit 10. Pending effects or uncertain evidence
+can still require exit 9. The `publication` field may be `not_published`,
+`publication_uncertain` or `published`, including when completed evidence
+needs reconciliation. If writing the final report fails after publication,
+the CLI attempts to report the retained receipt and job on stderr and exits
+4.
+
+| Exit | Outcome |
+| --- | --- |
+| 2 | Invalid arguments or selected configuration |
+| 3 | Destination conflict |
+| 4 | I/O or report output failure |
+| 5 | Integrity failure |
+| 6 | Unsupported operation or profile |
+| 8 | Authorization refused |
+| 9 | Retained state requires reconciliation |
+| 10 | Cooperative cancellation |
+| 11 | Published with a committed receipt and explicit metadata omissions |

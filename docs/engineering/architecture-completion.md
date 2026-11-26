@@ -143,10 +143,14 @@ not qualify the complete CLI, socket route or cryptographic primitive.
   preserve-mode copy and local recovery within stated profiles. macOS offers
   explicit owner-managed APFS comparison and an experimental transfer library.
   NTFS comparison is feature-gated; native Windows qualification and general
-  copy/recovery completion remain open. The resumable SSH/SFTP or
-  SSH-over-WireGuard copy command is pending. Complete route ownership,
-  renewal, restart, native finalization and the qualified filesystem campaign
-  before enabling it. [CLI profiles](../../apps/exacopy-cli/README.md)
+  copy/recovery completion remain open. Linux source builds expose the
+  opt-in SSH/SFTP download and fresh-attempt remote resume commands, with
+  a separate embedded WireGuard feature. The command requires independently
+  signed qualification for the exact running build, route and native
+  destination. It reports explicit metadata omissions and refuses writable
+  restart after publication intent. Current native interruption,
+  reconciliation, filesystem qualification and production acceptance remain
+  open. [Experimental SSH download](../../apps/exacopy-cli/README.md#experimental-ssh-download-on-linux)
   · [Remote acceptance](remote-transfer-readiness.md)
 - **Assurance and release.** Run the current locked workspace and all declared gates
   against the exact pins, with original failed and blocked results retained.
