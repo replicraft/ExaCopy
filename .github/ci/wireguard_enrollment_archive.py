@@ -1,5 +1,6 @@
 """Verify the exact Canonical Noble archive records used for read-only enrollment."""
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -7,6 +8,7 @@ import lzma
 import os
 from pathlib import Path
 import re
+import stat
 
 from remote_commissioning_peer import Blocked
 from native_supervision import logged_command
@@ -161,36 +163,75 @@ def verify_blob(path, expected):
     return original
 
 
+@contextmanager
+def custody_step(evidence, stage, path, owner, maximum):
+    steps = evidence.setdefault("canonical_steps", {})
+    result = steps[stage] = {"status": "started", "limit_bytes": maximum}
+    try:
+        yield
+    except (Blocked, OSError, ValueError, lzma.LZMAError) as error:
+        result["status"] = "blocked"
+        result["failure"] = str(error) if isinstance(error, Blocked) else type(error).__name__
+        try:
+            info = path.lstat()
+            result["file"] = {
+                "regular": stat.S_ISREG(info.st_mode), "owner_matches": info.st_uid == owner,
+                "links": info.st_nlink, "mode": f"{stat.S_IMODE(info.st_mode):04o}", "bytes": info.st_size,
+            }
+        except FileNotFoundError:
+            result["file"] = {"status": "missing"}
+        except OSError:
+            result["file"] = {"status": "inspection-unavailable"}
+        raise
+    else:
+        result["status"] = "observed"
+
+
 def signed_index(work, evidence, expected):
     release = work / "Release"
     signature = work / "Release.gpg"
     release_url = f"{ORIGIN}/dists/{SUITE}/Release"
-    release_identity = fetch(release_url, release, 25, RELEASE_MAX)
-    signature_identity = fetch(release_url + ".gpg", signature, 25, SIGNATURE_MAX)
+    owner = os.geteuid()
+    with custody_step(evidence, "release-download", release, owner, RELEASE_MAX):
+        release_identity = fetch(release_url, release, 25, RELEASE_MAX)
+    with custody_step(evidence, "release-signature-download", signature, owner, SIGNATURE_MAX):
+        signature_identity = fetch(release_url + ".gpg", signature, 25, SIGNATURE_MAX)
     gpg_home = work / "gpg"
     gpg_home.mkdir(mode=0o700)
-    key_digest = checked_hash(KEYRING, 0, RELEASE_MAX)
-    bounded([
-        GPGV, "--homedir", gpg_home, "--keyring", KEYRING, "--status-fd", "1", "--", signature, release,
-    ], work / "gpg-status", 15, RELEASE_MAX)
-    if checked_hash(KEYRING, 0, RELEASE_MAX) != key_digest:
-        raise Blocked("Ubuntu archive keyring custody changed")
-    owner = os.geteuid()
-    if regular(release, owner, RELEASE_MAX) != release_identity or regular(signature, owner, SIGNATURE_MAX) != signature_identity:
-        raise Blocked("Canonical Release or signature changed during verification")
-    index = release_index(release.read_bytes(), datetime.now(timezone.utc))
+    with custody_step(evidence, "ubuntu-archive-keyring", KEYRING, 0, RELEASE_MAX):
+        key_digest = checked_hash(KEYRING, 0, RELEASE_MAX)
+    with custody_step(evidence, "release-signature-verification", signature, owner, SIGNATURE_MAX):
+        bounded([
+            GPGV, "--homedir", gpg_home, "--keyring", KEYRING, "--status-fd", "1", "--", signature, release,
+        ], work / "gpg-status", 15, RELEASE_MAX)
+    with custody_step(evidence, "ubuntu-archive-keyring-recheck", KEYRING, 0, RELEASE_MAX):
+        if checked_hash(KEYRING, 0, RELEASE_MAX) != key_digest:
+            raise Blocked("Ubuntu archive keyring custody changed")
+    with custody_step(evidence, "release-signature-recheck", signature, owner, SIGNATURE_MAX):
+        if regular(signature, owner, SIGNATURE_MAX) != signature_identity:
+            raise Blocked("Canonical Release signature changed during verification")
+    with custody_step(evidence, "release-parse", release, owner, RELEASE_MAX):
+        if regular(release, owner, RELEASE_MAX) != release_identity:
+            raise Blocked("Canonical Release changed during verification")
+        index = release_index(release.read_bytes(), datetime.now(timezone.utc))
     url = f"{ORIGIN}/dists/{SUITE}/main/binary-amd64/by-hash/SHA256/{index.sha256}"
     download = work / "Packages.xz"
-    fetch(url, download, 90, index.size)
-    before = verify_blob(download, index)
-    packages = package_rows(download, expected)
-    if regular(download, os.geteuid(), index.size) != before:
-        raise Blocked("Canonical index changed while reading package records")
+    with custody_step(evidence, "index-download", download, owner, index.size):
+        fetch(url, download, 90, index.size)
+    with custody_step(evidence, "index-verification", download, owner, index.size):
+        before = verify_blob(download, index)
+        packages = package_rows(download, expected)
+        if regular(download, owner, index.size) != before:
+            raise Blocked("Canonical index changed while reading package records")
+    with custody_step(evidence, "release-retention-digest", release, owner, RELEASE_MAX):
+        release_digest = checked_hash(release, owner, RELEASE_MAX)
+    with custody_step(evidence, "signature-retention-digest", signature, owner, SIGNATURE_MAX):
+        signature_digest = checked_hash(signature, owner, SIGNATURE_MAX)
     evidence["canonical"] = {
         "url": ORIGIN, "suite": SUITE, "archive_keyring_sha256": key_digest,
         "index_url": url, "index_size": index.size, "index_sha256": index.sha256,
-        "release_sha256": checked_hash(release, os.geteuid(), RELEASE_MAX),
-        "signature_sha256": checked_hash(signature, os.geteuid(), SIGNATURE_MAX),
+        "release_sha256": release_digest,
+        "signature_sha256": signature_digest,
         "packages": packages,
     }
     return packages, {

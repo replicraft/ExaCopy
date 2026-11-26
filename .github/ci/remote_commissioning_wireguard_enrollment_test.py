@@ -145,6 +145,69 @@ class EnrollmentControls(unittest.TestCase):
                 self.assertEqual(fetch.call_count, 2)
                 parse.assert_not_called()
 
+    def test_signed_catalog_records_exact_file_custody_failure_before_gpgv(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            keyring = root / "keyring"
+            keyring.write_bytes(b"archive-keyring")
+            os.link(keyring, root / "second-link")
+            evidence = {}
+            with (
+                patch.object(archive, "KEYRING", keyring),
+                patch.object(archive, "fetch") as fetch,
+                patch.object(archive, "bounded") as command,
+            ):
+                with self.assertRaises(scanner.Blocked):
+                    archive.signed_index(root, evidence, AWS.expected_packages())
+            self.assertEqual(fetch.call_count, 2)
+            command.assert_not_called()
+            steps = evidence["canonical_steps"]
+            self.assertEqual(steps["release-download"]["status"], "observed")
+            self.assertEqual(steps["release-signature-download"]["status"], "observed")
+            self.assertEqual(steps["ubuntu-archive-keyring"]["status"], "blocked")
+            self.assertEqual(steps["ubuntu-archive-keyring"]["file"]["links"], 2)
+            self.assertEqual(steps["ubuntu-archive-keyring"]["file"]["bytes"], 15)
+            self.assertNotIn("canonical", evidence)
+
+    def test_zero_length_release_has_distinct_archive_phase_evidence(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            evidence = {}
+
+            def empty(_url, path, _seconds, maximum):
+                path.touch()
+                archive.regular(path, os.geteuid(), maximum)
+
+            with patch.object(archive, "fetch", side_effect=empty), patch.object(archive, "bounded") as command:
+                with self.assertRaises(scanner.Blocked):
+                    archive.signed_index(root, evidence, AWS.expected_packages())
+            step = evidence["canonical_steps"]["release-download"]
+            self.assertEqual(step["status"], "blocked")
+            self.assertEqual(step["file"]["bytes"], 0)
+            self.assertTrue(step["file"]["owner_matches"])
+            self.assertEqual(set(evidence["canonical_steps"]), {"release-download"})
+            command.assert_not_called()
+
+    def test_inherited_group_writable_capture_is_recorded_not_admitted(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            fake = root / "synthetic-output-only"
+            fake.write_text("#!/bin/sh\nprintf 'synthetic release'\n", encoding="ascii")
+            fake.chmod(0o700)
+            evidence = {}
+            previous = os.umask(0o002)
+            try:
+                with patch.object(archive, "CURL", str(fake)):
+                    with self.assertRaises(scanner.Blocked):
+                        archive.signed_index(root, evidence, AWS.expected_packages())
+            finally:
+                os.umask(previous)
+            step = evidence["canonical_steps"]["release-download"]
+            self.assertEqual(step["status"], "blocked")
+            self.assertEqual(step["file"]["mode"], "0664")
+            self.assertEqual(step["file"]["bytes"], len("synthetic release"))
+            self.assertNotIn("canonical", evidence)
+
     def test_native_kmod_only_exact_candidate_paths_and_topology(self):
         def module(name, deps):
             return scanner.parsing.Module(name, "a" * 64, tuple(deps), AWS.release + " SMP", "Ubuntu")
