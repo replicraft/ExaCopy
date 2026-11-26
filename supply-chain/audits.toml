@@ -366,6 +366,46 @@ and comparison contracts. Rust 1.100.0 doctest and all-target checks passed.
 This audit identifies the crates.io archive. Upstream Git provenance is unverified.
 """
 
+[[audits.ff]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.14.0"
+notes = """
+2026-11-26. Reviewed the exact locked registry archive SHA-256
+a1f686ab92a9fb0eaf188f6c6c87b89490baa6fdb0db4544ba4dc47f7942489f.
+Reviewed the finite-field traits, exponentiation, square-root helpers,
+batch inversion, and all in-crate feature paths. The library forbids unsafe
+code and has no build script, native linkage or ambient I/O. Optional bits
+and derive expose separately packaged dependencies. Field contracts,
+public exponents for variable-time operations, bounded batch inputs,
+scratch contracts, and downstream implementation timing remain caller
+assumptions. On Rust 1.100.0 macOS ARM64 with defaults disabled and
+alloc enabled, fixed F17 vectors passed both exponentiation methods and
+all three batch-inversion APIs, including zero, empty and aggregate cases.
+The locked rand_core and subtle versions have separate imported audit paths.
+"""
+
+[[audits.fiat-crypto]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+delta = "0.2.9 -> 0.3.0"
+notes = """
+2026-11-26. Compared locked registry archives with SHA-256
+28dea519a9695b9977216879a3ebfddf92f1c08c05d984f8996aecd6ecdc811d
+and 64cd1e32ddd350061ae6edb1b082d7c54915b5c672c389143b9a63403a109f24.
+The pinned ISRG import supplies the safe-to-deploy audit path to 0.2.9.
+Existing arithmetic bodies are unchanged after reversing the const indexing
+rewrite. Safe fixed-array helpers preserve literal indexing. Reviewed all
+default/no_std source and four new SM2 field/scalar modules, including local
+arithmetic calls, literal index bounds and modulus and Montgomery constants.
+The crate has no dependencies, build script, unsafe, FFI, or ambient I/O.
+The review relies on documented caller bounds and the upstream generator for
+mathematical correctness. On Rust 1.100.0 macOS ARM64, the no_std 64-bit
+Curve25519, P-384 and SM2 base-field public APIs each passed eight canonical
+encoding, addition, subtraction and multiplication vectors against an
+independent arbitrary-precision integer oracle.
+"""
+
 [[audits.futures-io]]
 who = "OpenAI Codex (dependency source review)"
 criteria = "safe-to-deploy"
@@ -810,6 +850,29 @@ xtask tests passed on the same host. Native Linux and Windows execution was
 outside this review.
 """
 
+[[audits.serde_bytes]]
+who = "OpenAI Codex (automated dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.11.19"
+notes = """
+2026-11-26. Reviewed locked crates.io archive SHA-256
+a5d440709e79d88e51ac01c4b72fc6cb7314017bb7da9eeff678aa94c10e3ea8.
+Reviewed default/std, alloc-only, combined, and no-default source paths.
+The production library has no build script, proc macro, FFI, or ambient I/O.
+The five unsafe casts preserve transparent byte layout, input lifetimes,
+mutable exclusivity and slice metadata. Box ownership is transferred once
+with identical allocation layout. Borrowed visitors retain only input-lived
+references, temporary input is copied, and owned buffers can be consumed.
+Fixed-array byte and string inputs get an exact length check. Dynamic
+sequence preallocation caps the size hint at 4096 bytes and subsequent
+growth follows actual items. Callers and formats enforce total input and
+work bounds and sequence framing. Wrapper Debug exposes payloads.
+On Rust 1.100.0 macOS ARM64 with default/std and the audited serde_core
+1.0.229, byte deserialization preserved input identity and exact bytes on
+borrowed and temporary-to-owned paths and sequences, including empty inputs
+and fixed-width binary arrays. Mismatched byte widths returned errors.
+"""
+
 [[audits.serde_core]]
 who = "OpenAI Codex (automated dependency source review)"
 criteria = "safe-to-deploy"
@@ -1015,6 +1078,32 @@ Four nightly-only backtrace tests passed. The offline upstream trybuild
 suite and exact diagnostic comparisons were unavailable.
 """
 
+[[audits.tokio-macros]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "2.7.2"
+notes = """
+2026-11-26. Reviewed the complete locked registry archive SHA-256
+78773a2a397f451582ce068015985c33193cf6dea8b74d2a639fe457b2f07b0e.
+Its VCS metadata records 4308c74a65218e8ebea1a84e09c0ba4b0882f881.
+This featureless host procedural macro has no build script, native
+linkage, unsafe code, or ambient file, environment, process or network
+operations. Entry attributes parse caller Rust tokens and emit
+runtime setup and the caller's async body. Invalid configurations
+produce compile errors. Successful generated entrypoints may panic
+if runtime creation fails. The test expansion delegates stack pinning
+to Tokio. Select helpers emit an enum and a mask with capacity for up
+to 64 branches and normalize supported binding patterns. Malformed
+direct helper input and excessive branches can fail compilation via
+a macro panic. Deep token trees and worker counts remain trusted
+caller-source inputs. The locked dependencies have separate local or
+imported safe-to-deploy entries. On Rust 1.100.0 macOS ARM64,
+actual select helper expansion passed three- and nine-branch mask
+and output vectors and a nested borrowed match that retained the
+semantics of the original owned branch pattern. Runtime entry
+attributes and polling are outside this execution evidence.
+"""
+
 [[audits.toml_datetime]]
 who = "OpenAI Codex (dependency source review)"
 criteria = "safe-to-deploy"
@@ -1133,4 +1222,23 @@ ExaCopy uses this only in generic-array's build script to select a conversion
 implementation. Rust 1.100.0 tests, doctests and isolated compiler probes passed.
 The released archive omits the historical sample fixtures. There is no unsafe
 code, native linkage, network access, or direct file mutation.
+"""
+
+[[audits.wasm-bindgen-shared]]
+who = "OpenAI Codex (automated dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.2.130"
+notes = """
+2026-11-26. Reviewed the complete source of the locked crates.io archive
+SHA-256 3b1f9c3798725016c6ee5f2f57869ec0831e8bbc0ab0310a86e787e97f41389e.
+The featureless no_std library uses safe Rust for schema macro tokens,
+descriptor constants, Unicode identifier classification and naming and
+escaping helpers. Its build script reads two packaged schema files,
+normalizes CRLF on Windows and optionally runs git rev-parse HEAD via trusted
+host PATH for the diagnostic version string. It emits no native link
+arguments. On Rust 1.100.0 macOS ARM64 with audited unicode-ident 1.0.27,
+namespace and identifier normalization, symbol identity, string escaping and
+descriptor words matched exact vectors. The build script emitted the exact
+hash accepted by the packaged schema approval test. Downstream macro,
+generated bindings and ABI behavior are separately scoped.
 """
