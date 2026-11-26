@@ -18,6 +18,7 @@ mod running_image;
 mod source;
 mod stage;
 mod staging_capabilities;
+mod sync_preview;
 
 pub use handle::FileIdentity;
 pub use job::{
@@ -60,3 +61,7 @@ pub use stage::{
 };
 
 pub use mount_observation::MountObservations;
+
+pub use sync_preview::{
+	SyncPreviewEntry, SyncPreviewError, SyncPreviewPair, SyncPreviewRoots, SyncPreviewSelection,
+};
