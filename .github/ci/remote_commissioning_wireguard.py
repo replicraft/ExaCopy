@@ -263,7 +263,8 @@ def execute(parent, work, report, evidence, choice=ProviderChoice.EXISTING):
         evidence["provider_before"] = observed
         provider_profile = provider_b.known_profile(observed.get("kernel", {}))
         boot = provider_b.admit(observed, provider_profile)
-        if (choice is ProviderChoice.HOSTED_AWS_B) != (provider_profile.mode is DispatchMode.AWS_1014):
+        aws_profile = provider_profile.mode in (DispatchMode.AWS_1014, DispatchMode.AWS_1018)
+        if (choice is ProviderChoice.HOSTED_AWS_B) != aws_profile:
             raise Blocked("provider B entrypoint differs from the selected profile")
         evidence["dispatch"] = provider_b.verify_dispatch(parent.parent, provider_profile, boot)
     else:

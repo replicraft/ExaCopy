@@ -14,7 +14,7 @@ import remote_commissioning_wireguard as fixture
 from remote_commissioning_wireguard import provider_b as azure
 from native_supervision import CleanupUnconfirmed, ProcessResult
 from remote_commissioning_peer import Blocked
-from remote_commissioning_wireguard_provider_profiles import AWS_1014, AZURE_1017, AZURE_1020, module_paths
+from remote_commissioning_wireguard_provider_profiles import AWS_1014, AWS_1018, AZURE_1017, AZURE_1020, module_paths
 
 
 BOOT = {
@@ -98,8 +98,12 @@ class AzureProviderTests(unittest.TestCase):
             with self.subTest(mutation=mutation), self.assertRaises(Blocked):
                 azure.admit(changed, AZURE_1020)
 
-    def test_azure1020_exact_closure_blocks_every_drift_before_root_staging(self):
-        profile = AZURE_1020
+    def test_reviewed_exact_order_blocks_closure_drift_before_root_staging(self):
+        for profile in (AZURE_1020, AWS_1018):
+            with self.subTest(profile=profile.mode.value):
+                self.check_closure_drift(profile)
+
+    def check_closure_drift(self, profile):
         closure = profile.reviewed_closure
         modules = {
             name: azure.Module(name, digest, closure.wireguard_depends if name == "wireguard" else (),
@@ -128,7 +132,7 @@ class AzureProviderTests(unittest.TestCase):
                 load.assert_not_called()
 
     def test_prepares_only_exact_archive_members_and_passes_reviewed_closure(self):
-        for profile in (AZURE_1020, AWS_1014):
+        for profile in (AZURE_1020, AWS_1014, AWS_1018):
             for fault in (None, "installed-hash", "order", "module-signer"):
                 with self.subTest(profile=profile.mode.value, fault=fault):
                     self.check_prepared_closure(profile, fault)
@@ -218,7 +222,8 @@ class AzureProviderTests(unittest.TestCase):
 
     def test_aws_and_azure_entrypoints_refuse_crossed_profiles_before_host_effects(self):
         for choice, profile in ((fixture.ProviderChoice.HOSTED_AWS_B, AZURE_1017),
-                                (fixture.ProviderChoice.HOSTED_AZURE_B, AWS_1014)):
+                                (fixture.ProviderChoice.HOSTED_AZURE_B, AWS_1014),
+                                (fixture.ProviderChoice.HOSTED_AZURE_B, AWS_1018)):
             with (
                 self.subTest(choice=choice, profile=profile.mode.value),
                 patch.object(azure, "hosted_scope"),
