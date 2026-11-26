@@ -1,0 +1,60 @@
+name: Windows installer owner diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows-installer-owner-diagnostic.yml'
+      - '.github/ci/windows-installer-owner-*'
+      - 'tools/install/windows/paths.ps1'
+      - 'tools/install/windows/lifecycle.ps1'
+      - 'tools/install/windows/launcher-entry.ps1'
+
+permissions:
+  contents: read
+
+jobs:
+  observe:
+    name: Observe the Windows per-user installer ancestry
+    if: github.event_name == 'push' && github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main'
+    runs-on: windows-2025
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Bind source and run read-only observations
+        id: observation
+        shell: pwsh
+        run: |
+          if ($env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or $env:RUNNER_OS -cne 'Windows' -or
+              $env:RUNNER_ARCH -cne 'X64' -or $env:GITHUB_SHA -cnotmatch '\A[0-9a-f]{40}\z' -or
+              $env:GITHUB_SHA -cne $env:GITHUB_WORKFLOW_SHA) {
+            throw 'Unexpected installer diagnostic execution profile.'
+          }
+          $head = git --no-replace-objects rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $head -cne $env:GITHUB_SHA) { throw 'Unexpected diagnostic revision.' }
+          $changes = git status --porcelain=v1 --untracked-files=all --ignored=matching
+          if ($LASTEXITCODE -ne 0 -or $changes) { throw 'The diagnostic checkout must be pristine.' }
+          & ./.github/ci/windows-installer-owner-controls.ps1
+          $data = & ./.github/ci/windows-installer-owner-diagnostic.ps1
+          $name = 'exacopy-windows-installer-owner-' + [Guid]::NewGuid().ToString('N') + '.json'
+          $path = Join-Path $env:RUNNER_TEMP $name
+          $json = $data -join "`n"
+          $output = [IO.File]::Open($path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+          try { $output.Write([Text.Encoding]::UTF8.GetBytes($json)) } finally { $output.Dispose() }
+          $observation = $json | ConvertFrom-Json
+          if ($observation.schema -cne 'exacopy.windows-installer-owner-diagnostic.v1') {
+            throw 'Unexpected diagnostic result schema.'
+          }
+          "report_name=$name" >> $env:GITHUB_OUTPUT
+          if ($observation.status -cne 'observed') { throw 'Installer ancestry observation was blocked. Inspect the bounded artifact.' }
+      - name: Retain bounded diagnostic metadata
+        if: always() && steps.observation.outputs.report_name != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-installer-owner-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/${{ steps.observation.outputs.report_name }}
+          if-no-files-found: error
+          retention-days: 14
