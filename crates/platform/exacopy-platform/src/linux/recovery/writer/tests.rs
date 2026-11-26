@@ -154,7 +154,11 @@ fn receipts_are_exclusive_and_existing_bytes_have_only_read_access() {
 	drop(bootstrap);
 
 	let writer = root.try_recovery_write_lease(name(JOB), identity).unwrap();
-	let receipts = writer.open_receipt_directory().unwrap();
+	let receipts = writer.create_receipt_directory().unwrap();
+	assert!(matches!(
+		writer.create_receipt_directory(),
+		Err(StageError::AlreadyExists)
+	));
 	assert!(receipts.open_receipt().unwrap().is_none());
 	let mut new = receipts.create_receipt().unwrap();
 	new.write_all(b"existing receipt").unwrap();

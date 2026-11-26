@@ -193,6 +193,23 @@ impl RecoveryWriteLease<'_> {
 		self.job.recheck()
 	}
 
+	/// Exclusively creates the fixed receipt directory under the held write lease.
+	/// # Errors
+	/// Refuses an existing name or changed native bindings. A newly created
+	/// directory can remain after a later refusal for explicit reconciliation.
+	pub fn create_receipt_directory(&self) -> Result<RecoveryReceiptDirectory<'_>, StageError> {
+		self.job.recheck()?;
+		let mount = self.job.root.mount;
+		let name = OsStr::new(RECEIPTS);
+		let (file, identity) = create_private_directory(&self.job.directory.file, name, mount)?;
+		let receipts = RecoveryReceiptDirectory {
+			job: &self.job,
+			directory: PrivateDirectory { file, identity },
+		};
+		receipts.recheck()?;
+		Ok(receipts)
+	}
+
 	/// Opens the fixed private receipt directory or exclusively creates it if absent.
 	///
 	/// # Errors
