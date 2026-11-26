@@ -11,7 +11,7 @@ from unittest.mock import patch
 import remote_commissioning_wireguard_enrollment as scanner
 import wireguard_enrollment_archive as archive
 
-AWS, AZURE = scanner.CANDIDATES
+AWS_1014, AWS, AZURE = scanner.CANDIDATES
 REVISION = "a" * 40
 NOW = datetime(2026, 11, 26, 14, 0, tzinfo=timezone.utc)
 
@@ -65,6 +65,27 @@ def observation(candidate):
 
 
 class EnrollmentControls(unittest.TestCase):
+    def test_aws_1014_refuses_drift_in_each_measured_boot_and_package_fact(self):
+        initial = observation(AWS_1014)
+        for parent, record, field, invalid in (
+            ("kernel", None, "architecture", "aarch64"),
+            ("kernel", None, "build", "#15~24.04.1-Ubuntu SMP PREEMPT Fri Sep 18 21:24:59 UTC 2026"),
+            ("kernel", None, "release", "7.0.0-1015-aws"),
+            ("observations", "booted_kernel_package", "package", "linux-image-unsigned-7.0.0-1014-aws"),
+            ("observations", "booted_kernel_package", "version", "7.0.0-1014.14~24.04.2"),
+            ("observations", "config", "status", "built-in"),
+            ("observations", "config", "sha256", "0" * 64),
+            ("observations", "builtin_inventory", "sha256", "0" * 64),
+            ("observations", "module_file", "sha256", "0" * 64),
+            ("observations", "module_file", "version", "7.0.0-1014.14~24.04.2"),
+            ("observations", "module_listing_after", "status", "live"),
+        ):
+            changed = deepcopy(initial)
+            facts = changed[parent] if record is None else changed[parent][record]
+            facts[field] = invalid
+            with self.subTest(record=record, field=field), self.assertRaises(scanner.Blocked):
+                scanner.provider_hashes(changed, AWS_1014, REVISION)
+
     def test_closed_boots_exact_provider_fingerprints_and_no_uname_only_authority(self):
         for candidate in scanner.CANDIDATES:
             report = observation(candidate)

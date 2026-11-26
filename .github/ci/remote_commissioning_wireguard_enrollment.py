@@ -67,6 +67,16 @@ class Candidate:
 
 
 CANDIDATES = (
+    # Hosted provider observation from run 45879217518 at 415f557.
+    Candidate(
+        "aws-1014", "7.0.0-1014-aws", "#14~24.04.1-Ubuntu SMP PREEMPT Fri Sep 18 21:24:59 UTC 2026",
+        "7.0.0-1014.14~24.04.1", "aws",
+        (
+            "5b62bbad5d3b8defbf86f42bcd5851b1ea7305928346263eecc1b975ab07f04d",
+            "e6f4ea792c1576e1408324dcb00b15c7c1bc0c7dd0e9f93fdbe5203f7031b0b0",
+            "e3d9d233acdd46e198473f6f007fb70ee8e1e98fa8da8ef39b871bec14813586",
+        ),
+    ),
     Candidate(
         "aws-1018", "7.0.0-1018-aws", "#19~24.04.1-Ubuntu SMP PREEMPT Thu Nov 12 17:17:32 UTC 2026",
         "7.0.0-1018.19~24.04.1", "aws",
@@ -95,7 +105,7 @@ def selected(observed):
             "release": candidate.release, "build": candidate.build, "architecture": "x86_64", "boot_id": boot,
         }:
             return candidate
-    raise Blocked("hosted boot did not select either fixed enrollment candidate")
+    raise Blocked("hosted boot did not select a fixed enrollment candidate")
 
 
 def provider_hashes(observed, candidate, revision):

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import remote_commissioning_wireguard_dispatch as dispatch
 from remote_commissioning_wireguard_provider_b_test import observed as azure_observation
-from remote_commissioning_wireguard_enrollment_test import AZURE, AWS, observation
+from remote_commissioning_wireguard_enrollment_test import AZURE, AWS, AWS_1014, observation
 from remote_commissioning_wireguard_provider_profiles import AZURE_1017, AZURE_1020, DispatchMode
 
 azure = dispatch.azure
@@ -41,6 +41,8 @@ class DispatcherControls(unittest.TestCase):
             (known, DispatchMode.AZURE_1017, 0, False),
             (known, DispatchMode.BLOCKED, 77, True),
             (observation(AWS), DispatchMode.OBSERVE, 77, False),
+            (observation(AWS_1014), DispatchMode.OBSERVE, 77, False),
+            (observation(AWS_1014), DispatchMode.BLOCKED, 77, True),
             (azure_observation(AZURE_1020) | {"revision": REVISION}, DispatchMode.AZURE_1020, 0, False),
             (azure_observation(AZURE_1020) | {"revision": REVISION}, DispatchMode.BLOCKED, 77, True),
             (observation(AZURE), DispatchMode.BLOCKED, 77, False),
