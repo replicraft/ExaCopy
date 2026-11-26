@@ -1,0 +1,98 @@
+name: ExaCopy v0.1.0 Windows testing interoperability recovery
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: exacopy-v0-1-0-windows-testing-recovery
+  cancel-in-progress: false
+
+jobs:
+  windows-interop:
+    name: Verify the unchanged Windows testing archive on a disposable trusted NTFS parent
+    if: github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main'
+    runs-on: windows-2025
+    timeout-minutes: 15
+    env:
+      RELEASE_TAG: refs/tags/v0.1.0
+      RELEASE_COMMIT: 104451ebfeeb344418ece53ad020e7cbafa72054
+      RECOVERY_COMMIT: b7234ba4cfd67c300260905b12dc701f88604277
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: controller
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/v0.1.0
+          fetch-depth: 0
+          path: source
+          persist-credentials: false
+      - name: Bind the controller, frozen source and exact prior Windows failure
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: source
+        run: |
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$(git -C ../controller rev-parse HEAD)" = "$GITHUB_WORKFLOW_SHA"
+          test "$(git --no-replace-objects rev-parse HEAD)" = "$RELEASE_COMMIT"
+          test "$(git --no-replace-objects rev-parse --verify "$RELEASE_TAG^{commit}")" = "$RELEASE_COMMIT"
+          observed_status=$(git status --porcelain=v1 --untracked-files=all)
+          test -z "$observed_status"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/45890983846" --jq \
+            '.id, .head_sha, .head_branch, .run_attempt, .workflow_id, .event, .status, .conclusion' > "$RUNNER_TEMP/prior"
+          printf '%s\n' 45890983846 "$RECOVERY_COMMIT" main 1 432048248 workflow_dispatch completed failure > "$RUNNER_TEMP/expected"
+          cmp "$RUNNER_TEMP/prior" "$RUNNER_TEMP/expected"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/45890983846/attempts/1/jobs" > "$RUNNER_TEMP/prior-jobs.json"
+          jq -e '
+            .jobs as $jobs |
+            ($jobs | length) == 6 and
+            ($jobs | map(select(.status=="completed" and .conclusion=="success")) | length) == 5 and
+            ([$jobs[] | select(.conclusion=="failure") | .name] == ["Verify recovered fixture archive on x86_64-pc-windows-msvc"]) and
+            ([$jobs[] | select(.conclusion=="failure") | .steps[] | select(.conclusion=="failure") | .name] ==
+                ["Exercise Windows package verification and launcher lifecycle"])
+          ' "$RUNNER_TEMP/prior-jobs.json"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          github-token: ${{ github.token }}
+          run-id: 45890983846
+          name: release-fixture-index-1
+          path: ${{ runner.temp }}/exacopy-fixtures
+          digest-mismatch: error
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          github-token: ${{ github.token }}
+          run-id: 45879576710
+          name: release-fixture-trust-x86_64-pc-windows-msvc-1
+          path: ${{ runner.temp }}/exacopy-fixture-trust
+          digest-mismatch: error
+      - name: Verify unchanged Windows archive and run complete launcher lifecycle
+        shell: bash
+        working-directory: source
+        run: |
+          archive="$RUNNER_TEMP/exacopy-fixtures/exacopy-cli-x86_64-pc-windows-msvc.zip"
+          index="$RUNNER_TEMP/exacopy-fixtures/SHA256SUMS.txt"
+          cert="$RUNNER_TEMP/exacopy-fixture-trust/fixture-publisher.der"
+          pin=98f493d47359309497f19196ecdd8b1bb85a8d4a9f8bcd1625710afd2b2c2e58
+          printf '%s  %s\n' \
+            d4f53b082c5c276f88b92b845adc6c9d30205ac99914dd387ceb4ff6a24fbc98 "$archive" \
+            7dbb8394f7dae40dc31cac71a26c9133994bd804bce4bdac53ddb4f453210ca9 "$index" \
+            "$pin" "$cert" | sha256sum --strict -c
+          source_path=$(pwd -W)
+          bash .github/ci/capture.sh testing-windows-recovery pwsh -NoLogo -NoProfile -NonInteractive \
+            -File ../controller/.github/ci/release_windows_fixture.ps1 -Archive "$archive" -Index "$index" \
+            -Certificate "$cert" -PublisherSha256 "$pin" -Version 0.1.0 \
+            -SourceRoot "$source_path" -FixtureParent "$RUNNER_TEMP"
+      - name: Retain the exact Windows fixture outcome
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-testing-windows-recovery-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-evidence/
+          if-no-files-found: error

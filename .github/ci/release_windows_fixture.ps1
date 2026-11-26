@@ -6,12 +6,18 @@ param(
     [Parameter(Mandatory)][string] $Certificate,
     [Parameter(Mandatory)][string] $PublisherSha256,
     [Parameter(Mandatory)][string] $Version,
-    [string] $NativeSignatureReport
+    [string] $NativeSignatureReport,
+    [string] $SourceRoot,
+    [string] $FixtureParent
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$root = Join-Path $PSScriptRoot '../../tools/install/windows'
+if ([bool] $SourceRoot -ne [bool] $FixtureParent -or ($SourceRoot -and $NativeSignatureReport)) {
+    throw 'A disposable testing source and parent must be paired and cannot select native signing.'
+}
+$root = if ($SourceRoot) { Join-Path $SourceRoot 'tools/install/windows' }
+        else { Join-Path $PSScriptRoot '../../tools/install/windows' }
 foreach ($file in @('paths', 'release', 'lifecycle', 'download', 'archive')) {
     . (Join-Path $root "$file.ps1")
 }
@@ -23,7 +29,22 @@ function Test-ExaCopyPackagedLauncher {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     try { $owner = $identity.User }
     finally { $identity.Dispose() }
-    $local = Resolve-ExaCopyWindowsPath ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData))
+    $local = if ($FixtureParent) { Resolve-ExaCopyWindowsPath $FixtureParent }
+             else { Resolve-ExaCopyWindowsPath ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) }
+    if ($FixtureParent) {
+        [void](Confirm-ExaCopyPath $local)
+        $next = [IO.DirectoryInfo]::new($local)
+        $depth = 0
+        while ($null -ne $next) {
+            $acl = [IO.FileSystemAclExtensions]::GetAccessControl($next)
+            $sid = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
+            Write-Output "Disposable parent depth=$depth owner_sid=$sid"
+            $next = $next.Parent
+            $depth++
+        }
+        Assert-ExaCopyInstallAncestors $local $owner
+        Write-Output 'Disposable fixed NTFS fixture parent passed unchanged ancestry and ACL checks.'
+    }
     $fixture = New-ExaCopyPrivateStage $local $owner
     Write-Output "Disposable Windows launcher fixture: $fixture"
     $programs = Join-Path $fixture 'Programs'
