@@ -54,6 +54,63 @@ class HostedWrapper(unittest.TestCase):
         with self.assertRaises(ValueError):
             commission.fixture_result(valid + valid, commission.ROUTES[0], self.build, self.header, self.build, self.request_blake3)
 
+    def test_witness_projection_separates_seed_and_closeout_evidence(self):
+        seed_request_blake3 = "4" * 64
+        seed_prior_head = "5" * 64
+        witness_terminal_head = "6" * 64
+        qualification = "3" * 64
+        route = commission.ROUTES[0]
+        # The header belongs to the independently supplied witness request.
+        header = self.header | {
+            "stage": self.stage, "source_extent": 1024,
+            "prior_head_blake3": seed_prior_head,
+        }
+        expected = (route, self.build, header, qualification, self.request_blake3)
+        seed_only = {
+            "stage": self.stage, "source_extent": 1024, "prior_offset": 427,
+            "legacy_receipt": "absent",
+        }
+        witness_fields = {
+            "prior_head_blake3": seed_prior_head,
+            "terminal_head_blake3": witness_terminal_head,
+            "qualification_blake3": qualification,
+        }
+
+        valid = self.positive(**(witness_fields | seed_only))
+        report = commission.fixture_result(valid, *expected)
+        self.assertEqual(report["request_blake3"], self.request_blake3)
+        self.assertEqual(report["prior_head_blake3"], seed_prior_head)
+        self.assertEqual(report["terminal_head_blake3"], witness_terminal_head)
+        self.assertIs(report["receipt_absent"], True)
+        self.assertTrue(seed_only.keys().isdisjoint(report))
+
+        for change in (
+            {"request_blake3": seed_request_blake3},
+            {"prior_head_blake3": witness_terminal_head},
+            {"terminal_head_blake3": seed_prior_head},
+            {"route": commission.ROUTES[1]},
+        ):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                commission.fixture_result(self.positive(**(witness_fields | change)), *expected)
+
+        missing_receipt = json.loads(valid[len(commission.MARKER):])
+        del missing_receipt["receipt_absent"]
+        with self.assertRaises(ValueError):
+            commission.fixture_result(
+                commission.MARKER + json.dumps(missing_receipt).encode(), *expected,
+            )
+
+    def test_witness_projection_does_not_fill_omitted_or_unknown_status(self):
+        expected = (commission.ROUTES[0], self.build, self.header, self.build, self.request_blake3)
+        blocked = {"schema_version": 1, "outcome": "blocked", "phase": "preflight"}
+        for report in (blocked, blocked | {"reason": "unrecognized"}):
+            with self.subTest(report=report):
+                marker = commission.MARKER + json.dumps(report).encode()
+                self.assertEqual(commission.fixture_result(marker, *expected), blocked)
+        for outcome in ({"outcome": "unrecognized"}, {}):
+            with self.subTest(outcome=outcome), self.assertRaises(ValueError):
+                report = {"schema_version": 1, "phase": "preflight"} | outcome
+                commission.fixture_result(commission.MARKER + json.dumps(report).encode(), *expected)
 
     def test_libtest_requires_result_on_an_independent_line(self):
         prefix = f"running 1 test\ntest {commission.SELECTOR} ... ".encode()

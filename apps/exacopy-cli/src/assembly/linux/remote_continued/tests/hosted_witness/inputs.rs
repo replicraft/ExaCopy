@@ -152,13 +152,7 @@ impl Attestation {
 	pub(super) fn selected_witness_record(&self) -> Result<(Vec<u8>, [u8; 32]), Stop> {
 		let expected = decode(&std::env::var(OP2_DIGEST).map_err(|_| Stop::Missing)?)?;
 		let record = protected(&self.record)?;
-		let actual = blake3::Hasher::new()
-			.update(OP2_RECORD_DOMAIN)
-			.update(&record)
-			.finalize();
-		if *actual.as_bytes() != expected {
-			return Err(Stop::Request);
-		}
+		check_selected_witness_record(&record, expected)?;
 		Ok((record, expected))
 	}
 
@@ -178,6 +172,17 @@ impl Attestation {
 	pub(super) fn key(&self) -> Result<VerifyingKey, Stop> {
 		VerifyingKey::from_bytes(&decode(&self.attestor_key)?).map_err(|_| Stop::Request)
 	}
+}
+
+fn check_selected_witness_record(record: &[u8], expected: [u8; 32]) -> Result<(), Stop> {
+	let actual = blake3::Hasher::new()
+		.update(OP2_RECORD_DOMAIN)
+		.update(record)
+		.finalize();
+	if *actual.as_bytes() != expected {
+		return Err(Stop::Request);
+	}
+	Ok(())
 }
 
 impl Request {
@@ -285,4 +290,31 @@ impl Stop {
 			Self::Closeout => ("failed", "witness_closeout", "reconciliation_required"),
 		}
 	}
+}
+
+#[test]
+fn selected_operation_two_bytes_refuse_substitution_before_qualification() {
+	let selected = b"selector-two fixture bytes";
+	let expected = *blake3::hash(
+		b"ExaCopy/linux-remote-destination-qualification-record/v2\0selector-two fixture bytes",
+	)
+	.as_bytes();
+	assert!(check_selected_witness_record(selected, expected).is_ok());
+
+	let changed = b"selector-two fixture byte!";
+	let mut wrong_selected_digest = expected;
+	wrong_selected_digest[0] ^= 1;
+	let unscoped_digest = *blake3::hash(selected).as_bytes();
+	assert!(matches!(
+		check_selected_witness_record(changed, expected),
+		Err(Stop::Request)
+	));
+	assert!(matches!(
+		check_selected_witness_record(selected, wrong_selected_digest),
+		Err(Stop::Request)
+	));
+	assert!(matches!(
+		check_selected_witness_record(selected, unscoped_digest),
+		Err(Stop::Request)
+	));
 }
