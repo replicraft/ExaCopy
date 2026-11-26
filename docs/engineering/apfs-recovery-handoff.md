@@ -1,9 +1,10 @@
 # APFS private-stage recovery handoff
 
 The selected mounted APFS companion is public commit
-`0e8331860309c995bd38d73c6ab89c2d489ea56b` (`apfs-mounted` 0.1.0).
-This documentation-only successor leaves the mounted library tree identical
-to `a494df4`; earlier native evidence retains its original revision and scope.
+`f9fc9cb8527ea6af729703232fbb4e6f34be0162` (`apfs-mounted` 0.1.0).
+The update adds container, checksum and kernel verification. The mounted library tree
+remains identical to `0e833186`. Earlier native results retain their revision
+and scope.
 Commit `4fa67b7` adds the owned-name and event-anchor constructor for the
 observation-only `ReopenedStage` API. ExaCopy uses it for restart read-back
 under the existing stage-directory lease.
