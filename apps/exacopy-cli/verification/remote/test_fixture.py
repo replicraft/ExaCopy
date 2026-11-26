@@ -1,6 +1,7 @@
 """Harness controls without a native destination or a network peer."""
 
 from contextlib import ExitStack
+import hashlib
 import ipaddress
 import os
 from pathlib import Path
@@ -9,7 +10,7 @@ from types import SimpleNamespace
 import unittest
 
 from campaign import HeldInputs, absent, command_for, namespace, receipt_absent
-from fixture import Blocked, Failed, PeerLog, checked_read, compare_files
+from fixture import Blocked, Failed, PeerLog, checked_read, compare_files, digest_executable, hash_source, opened
 from qualification_request import (
     PARENT_FIELDS, SUBSTRATE_CASES, checked_native, digest, exact_build, strict_json, substrate_closure,
 )
@@ -67,6 +68,29 @@ class FixtureControls(unittest.TestCase):
         with self.assertRaisesRegex(Blocked, "not a single regular file"):
             checked_read(target, 3)
 
+
+    def test_executable_digests_use_the_entire_held_descriptor_after_header_check(self):
+        contents = b"\x7fELF" + bytes(range(256)) * 4096
+        binary = self.private("executable", contents)
+        child = self.private("digest-child", (
+            b"#!/usr/bin/env python3\n"
+            b"import hashlib, sys\n"
+            b"print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())\n"
+        ))
+        child.chmod(0o700)
+        expected = hashlib.sha256(contents).hexdigest()
+        with ExitStack() as scope:
+            inputs = HeldInputs(scope)
+            raw = inputs.open(binary, len(contents), buffering=0)
+            self.assertEqual(raw.read(4), b"\x7fELF")
+            self.assertEqual(digest_executable(raw, child), (expected, expected))
+            inputs.recheck()
+        self.assertEqual(hash_source(binary, child, len(contents), len(contents))[1], expected)
+        buffered, _ = opened(binary, len(contents))
+        with buffered:
+            self.assertEqual(buffered.read(4), b"\x7fELF")
+            with self.assertRaisesRegex(Failed, "unbuffered held descriptor"):
+                digest_executable(buffered, child)
 
     def test_resume_uses_the_nested_public_subcommand_and_exact_operands(self):
         args = SimpleNamespace(

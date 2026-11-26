@@ -1,6 +1,7 @@
 """Bounded independent observations for the Linux remote CLI campaign."""
 
 import hashlib
+import io
 import ipaddress
 import json
 import os
@@ -67,9 +68,9 @@ def fingerprint(info):
     )
 
 
-def opened(path, maximum):
+def opened(path, maximum, *, buffering=-1):
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
-    file = os.fdopen(descriptor, "rb")
+    file = os.fdopen(descriptor, "rb", buffering=buffering)
     info = os.fstat(descriptor)
     if not stat.S_ISREG(info.st_mode) or info.st_size > maximum or info.st_nlink != 1:
         file.close()
@@ -98,6 +99,8 @@ def b3(b3sum, data, context=None, *, file=None):
     argv = [str(b3sum), "--no-names"]
     if context is not None:
         argv += ["--derive-key", context]
+    if file is not None:
+        require(isinstance(file, io.FileIO), "a child digest requires an unbuffered held descriptor")
     kwargs = {"input": data} if file is None else {"stdin": file}
     output = subprocess.run(argv, **kwargs, capture_output=True, check=True, timeout=20).stdout
     digest = output.strip().decode("ascii")
@@ -105,8 +108,17 @@ def b3(b3sum, data, context=None, *, file=None):
     return digest
 
 
+def digest_executable(binary, b3sum):
+    # The child's stdin and the parent share a kernel file offset. A buffered
+    # reader can rewind only its own cache after the ELF header check.
+    binary.seek(0)
+    build_digest = b3(b3sum, None, BUILD_DOMAIN, file=binary)
+    binary.seek(0)
+    return build_digest, hashlib.file_digest(binary, "sha256").hexdigest()
+
+
 def hash_source(path, b3sum, lower, upper):
-    with_open, info = opened(path, upper)
+    with_open, info = opened(path, upper, buffering=0)
     with with_open as file:
         if info.st_uid != os.geteuid() or not lower <= info.st_size <= upper:
             raise Blocked("source fixture must be owned and within its audited extent")

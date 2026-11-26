@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/linux-remote-commissioning.yml'
       - '.github/ci/remote_commissioning*.py'
+      - 'apps/exacopy-cli/verification/remote/*.py'
 
 permissions:
   contents: read
@@ -52,7 +53,9 @@ jobs:
       - name: Verify exact clean source
         run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA" && test -z "$(git status --porcelain)"
       - name: Run portable commissioning controls
-        run: python3 -B .github/ci/remote_commissioning_test.py -v
+        run: |
+          python3 -B .github/ci/remote_commissioning_test.py -v
+          python3 -B apps/exacopy-cli/verification/remote/test_fixture.py -v
       - name: Prepare pinned source and tools
         run: |
           bash .github/ci/capture.sh apfs-source python3 -B tools/apfs_source.py --fetch

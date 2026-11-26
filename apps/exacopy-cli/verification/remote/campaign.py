@@ -19,9 +19,9 @@ import time
 
 from fixture import (
     Blocked, Failed, JOB_NAME, MAX_QUALIFICATION, MAX_RECEIPT, MAX_REPORT, MAX_SOURCE,
-    MIB, OMISSIONS, QUALIFICATION_DOMAIN, RECEIPT_DOMAIN, BUILD_DOMAIN,
-    PeerLog, b3, canonical, check_held, checked_read, compare_files, file_sha256, fingerprint,
-    hash_source, opened, owned_directory, peer_profile, require,
+    MIB, OMISSIONS, QUALIFICATION_DOMAIN, RECEIPT_DOMAIN,
+    PeerLog, b3, canonical, check_held, checked_read, compare_files, digest_executable,
+    file_sha256, fingerprint, hash_source, opened, owned_directory, peer_profile, require,
 )
 from process import CLEANUP_MARKER, owned_cli_process
 
@@ -56,8 +56,8 @@ class HeldInputs:
         self._scope = scope
         self._held = {}
 
-    def open(self, path, maximum):
-        file, info = opened(path, maximum)
+    def open(self, path, maximum, *, buffering=-1):
+        file, info = opened(path, maximum, buffering=buffering)
         self._scope.enter_context(file)
         self._held[path] = (file, info, None)
         check_held(path, file, info)
@@ -132,13 +132,10 @@ def preflight(args, summary):
         "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
         "mount": mounted,
     }
-    binary = args.inputs.open(args.binary, MAX_BINARY)
+    binary = args.inputs.open(args.binary, MAX_BINARY, buffering=0)
     if not os.access(args.binary, os.X_OK) or binary.read(4) != b"\x7fELF":
         raise Blocked("the selected compiled command is not executable ELF")
-    binary.seek(0)
-    summary["binary_build_digest"] = b3(b3sum, None, BUILD_DOMAIN, file=binary)
-    binary.seek(0)
-    summary["binary_sha256"] = hashlib.file_digest(binary, "sha256").hexdigest()
+    summary["binary_build_digest"], summary["binary_sha256"] = digest_executable(binary, b3sum)
     if args.qualification == args.trust:
         raise Blocked("qualification and independently selected trust must be separate")
     trust = args.inputs.read(args.trust, MAX_REPORT)

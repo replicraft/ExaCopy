@@ -14,7 +14,7 @@ import sys
 
 from campaign import MAX_BINARY, ROUTES, ROOT, git
 from fixture import (
-    BUILD_DOMAIN, Blocked, Failed, MIB, b3, canonical, check_held, checked_read,
+    Blocked, Failed, MIB, canonical, check_held, checked_read, digest_executable,
     file_sha256, opened, owned_directory, require,
 )
 
@@ -138,16 +138,13 @@ def exact_build(args, request, facts, source):
     if not b3sum:
         raise Blocked("the independent b3sum executable is required")
     binary_path = canonical(args.binary)
-    binary_open, info = opened(binary_path, MAX_BINARY)
+    binary_open, info = opened(binary_path, MAX_BINARY, buffering=0)
     with binary_open as binary:
         require(
             os.access(binary_path, os.X_OK) and binary.read(4) == b"\x7fELF",
             "the selected compiled command is not executable ELF",
         )
-        binary.seek(0)
-        measured = b3(b3sum, None, BUILD_DOMAIN, file=binary)
-        binary.seek(0)
-        binary_sha256 = hashlib.file_digest(binary, "sha256").hexdigest()
+        measured, binary_sha256 = digest_executable(binary, b3sum)
         check_held(binary_path, binary, info)
     require(
         facts["build_blake3_derive_key"] == measured
