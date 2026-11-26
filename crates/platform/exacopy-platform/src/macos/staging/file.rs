@@ -1,4 +1,5 @@
 use std::fmt;
+#[cfg(test)]
 use std::fs::File;
 
 use apfs_mounted::identity::ObjectIdentity;
@@ -324,17 +325,6 @@ impl StageLocation<'_> {
 			return Err(StageError::StageChanged);
 		}
 		Ok(identity)
-	}
-
-	pub(super) fn open_metadata_handle(
-		&self,
-		expected: &ObjectIdentity,
-	) -> Result<File, StageError> {
-		self.observe_identity(expected)?;
-		let file = self.directory().open_file(self.mounted_name())?;
-		expected.revalidate_held(&file).map_err(WriterError::from)?;
-		self.observe_identity(expected)?;
-		Ok(file)
 	}
 }
 

@@ -4,16 +4,17 @@ use std::io;
 use std::os::fd::AsFd as _;
 
 use apfs_mounted::EntryName;
+use apfs_mounted::metadata::Metadata as MountedMetadata;
 use apfs_mounted::publication::{
 	RenameAttempt, RenameEvidence, RenamedEntry, attempt_exclusive_rename, sync_directories,
 };
 use exacopy_model::PublishNoClobber;
-use rustix::fs::{self, AtFlags};
+use rustix::fs::{self, AtFlags, Stat};
 
-use super::super::file::same_observation;
 use super::super::staging::MetadataReadyStage;
 use super::super::{
-	ManagedObjectIdentity, ManagedReadError, PhysicalFsid, volume, with_materialization_disabled,
+	BasicMetadata, ManagedObjectIdentity, ManagedReadError, PhysicalFsid, volume,
+	with_materialization_disabled,
 };
 use super::evidence::PublicationObservation;
 use super::{
@@ -137,15 +138,13 @@ impl MetadataReadyStage<'_> {
 		let destination = self.location.destination().as_fd();
 		let target = self.target();
 		let held = self
-			.check_published_descriptor()
+			.check_published_metadata()
 			.map_err(|error| PublishedObservationError::Stage(Box::new(error)))?;
 		let named = fs::statat(destination, target.as_bytes(), AtFlags::SYMLINK_NOFOLLOW)?;
 		let Some(destination_fsid) = PhysicalFsid::held(destination)? else {
 			return Err(PublishedObservationError::NamesChanged);
 		};
-		if !same_observation(&named, &held)
-			|| named.st_atime != held.st_atime
-			|| named.st_atime_nsec != held.st_atime_nsec
+		if !named_metadata_matches(&named, &held, self.metadata())
 			|| PhysicalFsid::named(destination, target)? != Some(destination_fsid)
 		{
 			return Err(PublishedObservationError::NamesChanged);
@@ -161,6 +160,19 @@ impl MetadataReadyStage<'_> {
 			destination_directory,
 		})
 	}
+}
+
+// The mounted held observation already confirms the seal's exact layout and times.
+// Check the public name's corresponding fields and the same live change time.
+pub(super) fn named_metadata_matches(
+	named: &Stat,
+	held: &MountedMetadata,
+	required: BasicMetadata,
+) -> bool {
+	required.matches(named)
+		&& u64::try_from(named.st_size).ok() == Some(held.length)
+		&& named.st_ctime == held.change.seconds()
+		&& named.st_ctime_nsec == held.change.nanoseconds()
 }
 
 #[derive(Debug)]

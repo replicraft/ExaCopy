@@ -186,8 +186,13 @@ fn strict_native_stage_preserves_original_source_times_after_readback() {
 	assert_eq!(ready.identity(), identity);
 	assert_eq!(ready.metadata(), metadata);
 	with_materialization_disabled(|| {
-		let stat = ready.check_published_descriptor()?;
-		assert!(ready.matches_published_stat(&stat));
+		let held = ready.check_published_metadata()?;
+		assert_eq!(held.length, source.length());
+		assert_eq!(held.times.access.seconds(), metadata.atime().seconds());
+		assert_eq!(
+			held.times.modification.seconds(),
+			metadata.mtime().seconds()
+		);
 		Ok::<(), StageError>(())
 	})
 	.unwrap();

@@ -38,7 +38,8 @@ integrate serially, with failure evidence kept by revision.
 
 [APFS](../../specs/dependencies/apfs-source.toml) is an independent companion.
 The reviewed baseline used `fdcc3ea`; `5e936f0` advanced the selected pin to
-`0266afa`. The bounded [companion audit](filesystem-companion-boundary-audit.md)
+`0266afa`; the sealed-handle metadata follow-up selects `fc71ded` and removes
+the duplicate consumer descriptor. The bounded [companion audit](filesystem-companion-boundary-audit.md)
 reviewed APFS and HFS+ source without changing either. At `1660ab3`,
 [BoringTun and Russh](../supply-chain/local-transport-sources.md) became
 locally reconstructed, reviewed dependencies pinned to repair commits

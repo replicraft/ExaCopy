@@ -1,18 +1,15 @@
 use std::fmt;
-use std::fs::File;
-use std::os::fd::AsFd as _;
 
-use apfs_mounted::metadata::{AccessModificationTimes, Timestamp};
+use apfs_mounted::metadata::{AccessModificationTimes, Metadata as MountedMetadata, Timestamp};
 use apfs_mounted::writer::{
 	BirthTimePolicy, LifecycleEffect, MetadataCheckPhase, MetadataReadyFile, WriterError,
 };
 use apfs_mounted::{EventHandle, ObjectIdentity};
 use exacopy_endpoint::UnixComponent;
 use exacopy_model::CopyBinding;
-use rustix::fs::{self, Stat};
 
 use super::super::{
-	BasicMetadata, ManagedObjectIdentity, ManagedRegularFile, file::same_observation, metadata,
+	BasicMetadata, ManagedObjectIdentity, ManagedRegularFile, metadata,
 	with_materialization_disabled,
 };
 use super::error::with_mounted_effect;
@@ -44,7 +41,6 @@ impl<'stage> ClosedStage<'stage> {
 				modification: mounted_timestamp(metadata.mtime())?,
 			};
 			self.closed.with_metadata(check_stage_view_acl)??;
-			let reader = self.location.open_metadata_handle(self.closed.identity())?;
 			let location = self.location;
 			let mounted = self.closed.apply_times_checked(
 				times,
@@ -63,12 +59,9 @@ impl<'stage> ClosedStage<'stage> {
 				},
 			)?;
 			let verified = || {
-				let observed = fs::fstat(&reader)?;
 				let ready = MetadataReadyStage {
 					location,
-					observed,
 					metadata,
-					reader,
 					mounted,
 				};
 				ready.check_current_with_policy()?;
@@ -82,14 +75,12 @@ impl<'stage> ClosedStage<'stage> {
 
 /// Private stage with the sole writer closed and the required metadata synchronized.
 ///
-/// No operation on this capability reads the unnamed stream. The held reader remains
-/// available to the adapter for metadata observations of the same physical inode.
+/// No operation on this capability reads the unnamed stream. The mounted capability
+/// retains its read-only descriptor for metadata observations of the sealed inode.
 pub struct MetadataReadyStage<'stage> {
 	pub(in super::super) location: StageLocation<'stage>,
-	observed: Stat,
 	mounted: MetadataReadyFile<'stage>,
 	metadata: BasicMetadata,
-	reader: File,
 }
 
 impl MetadataReadyStage<'_> {
@@ -151,41 +142,16 @@ impl MetadataReadyStage<'_> {
 		self.location.observe_identity(self.mounted.identity())?;
 		self.mounted
 			.with_metadata(|view| Ok(metadata::check_view_inventory(&view)))??;
-		let observed = self.check_published_descriptor()?;
-		if same_observation(&observed, &self.observed) {
-			Ok(())
-		} else {
-			Err(StageError::StageChanged)
-		}
+		Ok(())
 	}
 
-	// The namespace effect may change ctime while the required timestamps and inode stay fixed.
-	pub(in super::super) fn matches_published_stat(&self, stat: &Stat) -> bool {
-		let mut expected = self.observed;
-		expected.st_ctime = stat.st_ctime;
-		expected.st_ctime_nsec = stat.st_ctime_nsec;
-		same_observation(stat, &expected) && self.metadata.matches(stat)
-	}
-
-	pub(in super::super) fn check_published_descriptor(&self) -> Result<Stat, StageError> {
-		let identity = self.mounted.identity();
-		identity
-			.revalidate_held(&self.reader)
-			.map_err(WriterError::from)?;
-		identity
-			.revalidate_held(self.event_handle())
-			.map_err(WriterError::from)?;
-		let stat = fs::fstat(&self.reader)?;
-		if !self.matches_published_stat(&stat) {
-			return Err(StageError::StageChanged);
-		}
-		metadata::check_inventory(self.reader.as_fd())?;
-		for held in [fs::fstat(&self.reader)?, fs::fstat(self.event_handle())?] {
-			if !same_observation(&held, &stat) || !self.metadata.matches(&held) {
-				return Err(StageError::StageChanged);
-			}
-		}
-		Ok(stat)
+	pub(in super::super) fn check_published_metadata(&self) -> Result<MountedMetadata, StageError> {
+		let (held, inventory) = self.mounted.with_held_metadata(|view| {
+			let held = view.stat()?;
+			Ok((held, metadata::check_view_inventory(&view)))
+		})?;
+		inventory?;
+		Ok(held)
 	}
 }
 

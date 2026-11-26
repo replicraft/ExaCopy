@@ -2,7 +2,13 @@
 
 ## Consumer integration at `d9defab`
 
-ExaCopy now selects companion `0266afa` through its exact source pin. Mounted
+ExaCopy selects companion `fc71ded` through its exact source pin. The follow-up
+uses its sealed-handle metadata view after rename and removes the duplicate
+consumer metadata descriptor. Public-name, physical-FSID and strict metadata
+checks remain required after both directory barriers. Root follow-up verification
+passed 127 platform unit tests, four snapshot tests and one compile-fail doc test
+with 14 existing skips, plus strict Clippy. These checks do not qualify the
+strict copy-through-receipt operation. Mounted
 source admission uses the companion directory, lease, typed mount/object
 facts, pinned reads and bounded same-handle metadata. Caller-owned source
 and stage names keep descriptor/name borrows lexical. Live staging uses
