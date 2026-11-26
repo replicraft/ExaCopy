@@ -14,6 +14,12 @@ use exacopy_transfer::linux::{
 mod crash_tests;
 mod public_plan;
 mod recovery;
+#[cfg(all(test, feature = "experimental-ssh-capture"))]
+#[expect(
+	dead_code,
+	reason = "private application handoff has no live qualification or command dispatch"
+)]
+mod remote_continued;
 #[cfg(feature = "experimental-ssh-capture")]
 pub mod remote_download;
 #[cfg(feature = "experimental-ssh-capture")]
