@@ -2,9 +2,10 @@
 
 ## Current selection and remaining work
 
-The source pin selects public APFS `aa75bcb6d219fdb5c4c0fba39adc3ccdc9a1518f`.
-The update expands container, reader and format verification.
-The mounted library tree is identical to `f9fc9cb8`, `0e833186` and `a494df4`.
+The source pin selects public APFS `88cb85a2d1459e834ef657e09b59036b41b12997`.
+The update expands raw APFS verification and renames its portable core
+package to `libapfs-core`. The mounted library tree and its selected
+dependency declarations match `aa75bcb6`.
 Existing native results keep their recorded source and limits.
 ExaCopy uses `ReopenedStage::open_named` for read-only restart inspection,
 including bounded reads, the EOF probe and coherent live metadata.
