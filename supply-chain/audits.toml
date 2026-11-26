@@ -93,6 +93,26 @@ native execution. Cryptographic timing is outside the scope. ExaCopy selects
 the scalar alloc-only path.
 """
 
+[[audits.bitflags]]
+who = "OpenAI Codex (automated dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.3.2"
+notes = """
+2026-11-26. Reviewed the complete crates.io archive with SHA-256
+bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a against
+Cargo.lock. Packaged metadata reports revision ed185cfb1c447c1b4bd6ac021c9ec3bb02c9e2f2.
+
+Reviewed declarative macro expansion, cfg-filtered masks, pure bitwise
+operations, formatting, optional example generation, and standard-library
+build linkage. The only production unsafe declaration directly stores a
+valid integer representation. Callers own extra-bit and higher-level flag
+invariants. The crate has no build script, procedural macro, native code,
+or ambient runtime I/O. The rustc-dep-of-std dependencies are separate audit inputs. The compile test harness performs fixture I/O.
+
+Selected execution on native macOS ARM64 with Rust 1.100.0 passed.
+A fixture checked named masks, set operations, and validated integer round-trip.
+"""
+
 [[audits.cc]]
 who = "OpenAI Codex (dependency source review)"
 criteria = "safe-to-deploy"
@@ -233,6 +253,25 @@ fails because the test detects runtime hardware independently of the no_std path
 Native ARM64 and translated x86-64 equality checks passed on Rust 1.100.0.
 ExaCopy reaches this version through BLAKE3 digest equality. This audit does not
 qualify side-channel behavior for secret inputs across compilers and hardware.
+"""
+
+[[audits.cpubits]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.1.1"
+notes = """
+2026-11-26. Reviewed all source in the locked registry archive SHA-256
+15b85f9c39137c3a891689859392b1bd49812121d0d61c9caf00d46ed5ce06ae.
+This dependency-free no_std library contains two declarative macros and one
+constant. Reviewed all cpubits! forms, pointer-width and ARMv7/wasm32
+heuristics, explicit overrides, the callable custom predicate, and the
+doc-hidden public cfg_if! frontend and recursive arms. Expansion is limited
+to cfg-gating caller-provided bodies, selecting fixed literals for CPUBITS,
+and emitting a compile-time diagnostic for an unsupported width. No unsafe,
+native code, build script, procedural macro, Cargo feature, or runtime I/O.
+
+Selected execution on native macOS ARM64 with Rust 1.100.0 passed.
+A fixture checked that the default 64-bit constant and macro type selection agree.
 """
 
 [[audits.crc32c]]
@@ -491,6 +530,26 @@ string lifetime. The crate performs no ambient I/O. Native Rust 1.100.0 and
 Miri checks passed against the exact source with ExaCopy's resolved feature set.
 ExaCopy enables only the empty default feature through serde_json. The optional
 no-panic proc macro was outside the resolved build and this evidence.
+"""
+
+[[audits.md5]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.8.1"
+notes = """
+2026-11-26. Reviewed the locked registry archive SHA-256
+7ebb8d8732c6a6df3d8f032a82911cfc747e00efb95cc46e8d0acd5b5b88570c.
+The feature set is default std and no_std with defaults disabled.
+Both share a safe Rust fixed-buffer implementation with bounded indexing
+and explicit modular arithmetic. The std writer only updates digest state.
+No build script, unsafe code, FFI, or dependency edges.
+The package documents MD5's broken collision resistance and legacy
+interoperability purpose. Russh uses MD5 in a legacy private-key decoder.
+ExaCopy selects OpenSSH Ed25519 keys and SHA-256 host fingerprints.
+
+Selected execution on native macOS ARM64 with Rust 1.100.0 passed.
+The std-enabled crate matched its packaged 80-byte legacy example digest in
+one-shot and streamed use. The check concerns legacy interoperability.
 """
 
 [[audits.opaque-debug]]
@@ -834,6 +893,49 @@ ExaCopy selects alloc, serde and std via TOML in xtask. The native TOML
 span and serialization fixture passed on Rust 1.100.0. The exact published
 test lock was blocked by an uncached syn version. There is no unsafe code,
 build script, or ambient I/O.
+"""
+
+[[audits.signature]]
+who = "OpenAI Codex (automated dependency source review)"
+criteria = "safe-to-deploy"
+version = "3.0.0"
+notes = """
+2026-11-26. Reviewed the exact locked registry archive SHA-256
+28d567dcbaf0049cb8ac2608a76cd95ff9e4412e1899d389ee400918ca7537f5.
+Reviewed every source file, including alloc, digest, rand_core, combined
+digest/RNG paths, async forwarding, and low-level prehash traits. The crate
+forbids unsafe code and has no build script, proc macro, ambient I/O or
+concrete signature algorithms. Verification and fallible signing forwards
+preserve the implementor's result. Infallible signing and encoding helpers
+can panic on underlying failure. Allocated error causes are caller-supplied
+and observable through Debug or source(), so callers must supply redacted
+non-cryptographic causes. Correct encoding, signature, digest, secure RNG,
+key and prehash behavior relies on caller and implementor contracts.
+
+Selected execution on native macOS ARM64 with Rust 1.100.0 passed.
+The alloc-only fixture verified that the async adapter forwards an injected
+value and the original synthetic external error source. The optional digest
+and RNG integrations and concrete algorithms were outside the fixture scope.
+"""
+
+[[audits.sponge-cursor]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.1.0"
+notes = """
+2026-11-26. Reviewed the locked registry archive SHA-256
+3a0219bd7d979d58245a4f41f695e1ac9f8befdffadd7f61f1bae9e39abc6620.
+Source review covered private cursor bounds, full and partial absorb/read/XOR,
+both endian branches, unsafe prefix reborrows, and the optional scalar zeroize
+path. There is no build script or ambient I/O. The configured rate is static.
+Unsupported rates can be constructed through new and then panic in raw_pos
+for rates above 255. A callback panic can leave partial logical progress.
+ExaCopy's SHA-3 and SHAKE callers use statically valid rates and the fixed
+Keccak permutation, with no sponge-cursor features.
+
+Selected execution on native macOS ARM64 with Rust 1.100.0 passed.
+A featureless fixture checked chunked absorb/squeeze, cursor positions, and
+output at the documented 136-byte rate with a synthetic permutation marker.
 """
 
 [[audits.syn]]
