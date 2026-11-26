@@ -190,6 +190,9 @@ jobs:
         run: |
           bash .github/ci/capture.sh build-policy-controls python3 -B -m unittest discover \
             -s tools -p '*_test.py'
+      - name: Run Linux remote qualification wrapper controls
+        if: ${{ !cancelled() }}
+        run: bash .github/ci/capture.sh remote-qualification-controls python3 -B .github/ci/remote_qualification_test.py -v
       - name: Check locked production dependency inventory
         if: ${{ !cancelled() && steps.apfs.outcome == 'success' }}
         run: bash .github/ci/capture.sh dependency-inventory python3 -B tools/dependency_review/check.py

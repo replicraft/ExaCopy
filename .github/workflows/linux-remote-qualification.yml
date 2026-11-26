@@ -1,0 +1,140 @@
+name: Linux remote qualification evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Native evidence operation
+        type: choice
+        required: true
+        default: hosted-substrate
+        options:
+          - hosted-substrate
+          - unsigned-request
+          - qualified-cli
+      route:
+        description: Route under separate review for an unsigned request or qualified campaign
+        type: choice
+        required: true
+        default: direct-pinned-tcp-v1
+        options:
+          - direct-pinned-tcp-v1
+          - embedded-wireguard-tcp-v1
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+
+# The deployed fixture owns one destination and a dedicated server log.
+concurrency:
+  group: exacopy-linux-remote-qualification
+  cancel-in-progress: false
+
+jobs:
+  authorize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require protected main for deployed fixtures
+        if: inputs.operation != 'hosted-substrate'
+        env:
+          CHECKED_REF: ${{ github.ref }}
+          PROTECTED_REF: ${{ github.ref_protected }}
+        run: test "$CHECKED_REF" = refs/heads/main && test "$PROTECTED_REF" = true
+
+  hosted-substrate:
+    needs: authorize
+    if: inputs.operation == 'hosted-substrate'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 85
+    env:
+      EXPECTED_RUST_HOST: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify exact clean checkout
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA" && test -z "$(git status --porcelain)"
+      - name: Prepare pinned source and tools
+        run: |
+          bash .github/ci/capture.sh apfs-source python3 -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source python3 -B tools/transport_source.py --fetch
+          bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
+          bash .github/ci/capture.sh locked-fetch cargo +1.100.0 fetch --locked
+      - name: Probe native eligibility and collect kill diagnostics
+        run: |
+          work=$(mktemp -d "$(realpath "$RUNNER_TEMP")/exacopy-remote-substrate.XXXXXX")
+          trap 'rmdir -- "$work"' EXIT
+          bash .github/ci/capture.sh hosted-fixture-filesystem findmnt -T "$work" -o FSTYPE,FSROOT,OPTIONS
+          bash .github/ci/capture.sh native-hosted python3 -B .github/ci/remote_qualification.py hosted \
+            --route direct-pinned-tcp-v1 --destination "$work" \
+            --evidence "$RUNNER_TEMP/exacopy-hosted-native-remote"
+      - name: Retain hosted diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: exacopy-linux-remote-hosted-substrate-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-evidence/
+            ${{ runner.temp }}/exacopy-hosted-native-remote/
+          if-no-files-found: error
+          retention-days: 90
+
+  deployed:
+    needs: authorize
+    if: inputs.operation != 'hosted-substrate'
+    # Restrict this group to this workflow on protected main before registering a runner.
+    runs-on:
+      group: exacopy-remote-qualification
+      labels: [linux]
+    environment: remote-linux-${{ inputs.operation }}-${{ inputs.route }}
+    timeout-minutes: 120
+    env:
+      OPERATION: ${{ inputs.operation }}
+      ROUTE: ${{ inputs.route }}
+      EXACOPY_REMOTE_DEPLOYMENT: ${{ vars.EXACOPY_REMOTE_DEPLOYMENT }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify exact clean checkout
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA" && test -z "$(git status --porcelain)"
+      - name: Prepare pinned source and tools
+        run: |
+          case "$RUNNER_ARCH" in
+            X64) export EXPECTED_RUST_HOST=x86_64-unknown-linux-gnu ;;
+            ARM64) export EXPECTED_RUST_HOST=aarch64-unknown-linux-gnu ;;
+            *) exit 1 ;;
+          esac
+          bash .github/ci/capture.sh apfs-source python3 -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source python3 -B tools/transport_source.py --fetch
+          bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
+          bash .github/ci/capture.sh locked-fetch cargo +1.100.0 fetch --locked
+      - name: Build the exact experimental CLI and execute selected lane
+        run: |
+          case "$OPERATION" in
+            unsigned-request) mode=request ;;
+            qualified-cli) mode=campaign ;;
+            *) exit 1 ;;
+          esac
+          bash .github/ci/capture.sh native-remote python3 -B .github/ci/remote_qualification.py "$mode" \
+            --route "$ROUTE" --evidence "$RUNNER_TEMP/exacopy-native-remote"
+      - name: Retain deployment evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: exacopy-linux-remote-${{ inputs.operation }}-${{ inputs.route }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-evidence/
+            ${{ runner.temp }}/exacopy-native-remote/
+          if-no-files-found: error
+          retention-days: 90
