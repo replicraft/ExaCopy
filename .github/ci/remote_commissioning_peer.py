@@ -21,7 +21,10 @@ import native_supervision
 from native_supervision import CleanupUnconfirmed, write_json
 
 BASE = Path("/var/lib")
-CGROUP = Path("/sys/fs/cgroup/system.slice")
+CGROUP_ROOT = Path("/sys/fs/cgroup")
+CGROUP = CGROUP_ROOT / "system.slice"
+SYSTEMD_RUNTIME = Path("/run/systemd/system")
+PRIVSEP = Path("/run/sshd")
 SSHD = "/usr/sbin/sshd"
 SUDO = "/usr/bin/sudo"
 OPENSSL = "/usr/bin/openssl"
@@ -36,6 +39,7 @@ MKDIR = "/usr/bin/mkdir"
 INSTALL = "/usr/bin/install"
 REMOVE = "/usr/bin/rm"
 FINDMNT = "/usr/bin/findmnt"
+STAT = "/usr/bin/stat"
 DPKG_QUERY = "/usr/bin/dpkg-query"
 SOURCE_BYTES = 128 * 1024 * 1024
 UNIT_SECONDS = 1800
@@ -97,9 +101,34 @@ def directory_identity(path, uid, mode):
     return info.st_dev, info.st_ino
 
 
-def preflight():
+def host_directory_status(path):
+    try:
+        detail = path.lstat()
+        if stat.S_ISLNK(detail.st_mode):
+            return "symlink"
+        if not stat.S_ISDIR(detail.st_mode):
+            return "not-directory"
+        return "canonical-directory" if path.resolve(strict=True) == path else "noncanonical"
+    except FileNotFoundError:
+        return "absent"
+    except OSError:
+        return "unavailable"
+
+
+def observe_host_paths(observations):
+    required_paths = (CGROUP_ROOT, CGROUP, SYSTEMD_RUNTIME)
+    for selected in (*required_paths, PRIVSEP):
+        observations[str(selected)] = host_directory_status(selected)
+    for selected in required_paths:
+        status = observations[str(selected)]
+        if status != "canonical-directory":
+            raise Blocked(f"required hosted directory {selected}: {status}")
+
+
+def preflight(observations):
+    observe_host_paths(observations)
     commands = (SSHD, SSHD_KEYGEN, OPENSSL, SUDO, SYSTEMCTL, SYSTEMD_RUN,
-                USERADD, USERDEL, CHPASSWD, NOLOGIN, MKDIR, INSTALL, REMOVE, FINDMNT, DPKG_QUERY)
+                USERADD, USERDEL, CHPASSWD, NOLOGIN, MKDIR, INSTALL, REMOVE, FINDMNT, STAT, DPKG_QUERY)
     if any(not Path(command).is_file() or not os.access(command, os.X_OK) for command in commands):
         raise Blocked("the admitted runner lacks required OpenSSH or system tools")
     if BASE.resolve(strict=True) != BASE or BASE.stat().st_uid != 0:
@@ -107,14 +136,15 @@ def preflight():
     if any(ancestor.stat().st_uid != 0 or ancestor.stat().st_mode & 0o022
            for ancestor in (BASE, *BASE.parents)):
         raise Blocked("the fixture parent has unsafe chroot ancestry")
-    for path in (CGROUP, Path("/run/systemd/system"), Path("/run/sshd")):
-        if not path.is_dir() or path.resolve(strict=True) != path:
-            raise Blocked("the runner lacks systemd cgroup or OpenSSH privilege separation storage")
-    if not Path("/sys/fs/cgroup/cgroup.controllers").is_file():
-        raise Blocked("cgroup v2 is required")
-    controllers = (CGROUP / "cgroup.controllers").read_text(encoding="ascii").split()
+    controllers_path = CGROUP / "cgroup.controllers"
+    if not (CGROUP_ROOT / "cgroup.controllers").is_file():
+        raise Blocked("cgroup v2 control file is absent at the hosted cgroup root")
+    try:
+        controllers = controllers_path.read_text(encoding="ascii").split()
+    except (OSError, UnicodeError) as error:
+        raise Blocked("hosted system.slice controllers are unavailable") from error
     if "cpu" not in controllers:
-        raise Blocked("the isolated systemd unit requires the CPU controller")
+        raise Blocked("hosted system.slice does not expose the CPU controller")
     run(["/usr/bin/true"], privileged=True, operation="noninteractive hosted privilege")
     run([SYSTEMCTL, "show", "--property=Version", "--value"], operation="systemd manager")
     mounted = json.loads(run(
@@ -181,10 +211,33 @@ def unit_properties(fixture):
         "RuntimeMaxSec": f"{UNIT_SECONDS}s",
         "SendSIGKILL": "yes",
         "CPUQuota": "25%",
-        "BindReadOnlyPaths": f"{fixture.source}:{mirror}:norbind",
+        "BindReadOnlyPaths": f"{fixture.source}:{mirror}:norbind {fixture.runtime}:/run:norbind",
         "StandardOutput": "null",
         "StandardError": "null",
     }
+
+
+def verify_privsep_runtime(leader, fixture):
+    # Only inspect the process after its exact invocation and cgroup are held.
+    # A host-wide /run/sshd cannot satisfy the owned inode checks.
+    runtime = directory_identity(fixture.runtime, 0, 0o755)
+    privsep = directory_identity(fixture.runtime / "sshd", 0, 0o755)
+    view = leader / "root" / PRIVSEP.relative_to("/")
+    observed = run(
+        [STAT, "--dereference", "--format=%d:%i:%u:%a", "--", view.parent, view],
+        privileged=True, operation="namespace runtime and privilege separation inodes",
+    ).decode("ascii").splitlines()
+    if observed != [f"{device}:{inode}:0:755" for device, inode in (runtime, privsep)]:
+        raise Blocked("OpenSSH privilege separation is outside the owned runtime")
+    mounts = json.loads(run(
+        [FINDMNT, "--task", leader.name, "--uniq", "--json", "--mountpoint", "/run",
+         "--output", "TARGET,OPTIONS"],
+        privileged=True, operation="namespace runtime mount",
+    ))["filesystems"]
+    if len(mounts) != 1 or (
+        mounts[0]["target"] != "/run" or "ro" not in mounts[0]["options"].split(",")
+    ):
+        raise Blocked("the OpenSSH namespace runtime is not read-only")
 
 
 def unit_known(name):
@@ -273,6 +326,10 @@ class Fixture:
         return self.root / "private"
 
     @property
+    def runtime(self):
+        return self.root / "runtime"
+
+    @property
     def chroot(self):
         return self.root / "chroot"
 
@@ -311,6 +368,16 @@ class Fixture:
             if ancestor == self.root:
                 break
             directory_identity(ancestor, 0, 0o755)
+
+    def make_runtime(self):
+        checkpoint()
+        privsep = self.runtime / "sshd"
+        run([INSTALL, "-d", "-m", "0755", "--", privsep],
+            privileged=True, operation="owned privilege separation runtime")
+        directory_identity(self.runtime, 0, 0o755)
+        directory_identity(privsep, 0, 0o755)
+        if any(privsep.iterdir()):
+            raise Blocked("the owned privilege separation directory is not empty")
 
     def make_sources(self):
         checkpoint()
@@ -364,7 +431,7 @@ class Fixture:
             data=self.account.encode("ascii") + b":" + password_hash, operation="nonlocked fixture account setup")
 
     def make_peer(self):
-        checkpoint()
+        self.make_runtime()
         host, client = self.private / "host-key", self.private / "client-key"
         for key in (host, client):
             checkpoint()
@@ -398,7 +465,6 @@ class Fixture:
         checkpoint()
         run([INSTALL, "-m", "0600", "--", config_source, config],
             privileged=True, operation="root-owned fixture OpenSSH configuration")
-        run([SSHD, "-t", "-f", config], privileged=True, operation="fixture OpenSSH configuration check")
         profile = self.private / "ssh.json"
         write_json(profile, {
             "schema": "exacopy-ssh-profile-v1", "host": "127.0.0.1",
@@ -442,6 +508,7 @@ class Fixture:
         bounding = [line.split()[1] for line in lines if re.fullmatch(r"CapBnd:\s+[0-9a-f]{16}", line)]
         if len(bounding) != 1 or int(bounding[0], 16) & (1 << CAP_SYS_ADMIN):
             raise Blocked("OpenSSH leader retained a mount administration capability")
+        verify_privsep_runtime(leader, self)
         deadline = time.monotonic() + 12
         expected = f"Server listening on 127.0.0.1 port {port}.".encode("ascii")
         while time.monotonic() < deadline:
@@ -451,13 +518,24 @@ class Fixture:
             if len(raw) > PEER_LOG_LIMIT:
                 raise Blocked("fixture daemon log exceeds its startup bound")
             if expected in raw:
+                self.recheck_listening_leader(current, leader)
                 return profile, log, {
                     "implementation": "OpenSSH", "listener": f"127.0.0.1:{port}",
                     "host_key_sha256": host_hash, "client_key_sha256": client_hash,
                     "invocation_id": self.invocation,
+                    "privsep_runtime": "owned-read-only-mount",
                 }
             time.sleep(0.05)
         raise Blocked("dedicated OpenSSH listener was not observed")
+
+    def recheck_listening_leader(self, registered, leader):
+        if unit_status(self.unit) != registered:
+            raise Blocked("the registered OpenSSH invocation or leader changed before readiness")
+        if not cgroup_present(self.cgroup, self.cgroup_identity):
+            raise Blocked("the OpenSSH cgroup disappeared before readiness")
+        actual = (leader / "cgroup").read_text(encoding="ascii").splitlines()
+        if actual != [f"0::/system.slice/{self.unit}"]:
+            raise Blocked("the registered OpenSSH leader left the owned cgroup before readiness")
 
     def stop_peer(self):
         if self.unit_attempted:

@@ -178,9 +178,12 @@ def run_fixture(fixture, work, binary, manifest, env, b3sum, evidence):
 
 
 def execute(parent, report, work, evidence):
-    gid = preflight()
+    evidence["host_preflight"] = {}
+    gid = preflight(evidence["host_preflight"])
     b3sum = shutil.which("b3sum")
-    selected_b3sum = parent.parent / "exacopy-commissioning-tools/usr/bin/b3sum"
+    tool_root = parent.parent / "exacopy-commissioning-tools"
+    directory_identity(tool_root, os.geteuid(), 0o700)
+    selected_b3sum = tool_root / "unpacked/usr/bin/b3sum"
     if not b3sum or Path(b3sum) != selected_b3sum or selected_b3sum.resolve(strict=True) != selected_b3sum:
         raise Blocked("the job-local independent Ubuntu b3sum is unavailable")
     tool = selected_b3sum.stat()
@@ -280,7 +283,7 @@ def main():
     evidence = {
         "schema": SCHEMA, "status": "blocked", "exit_status": 77, "route": native.DIRECT,
         "fixture_id": secrets.token_hex(10), "production_qualification_issued": False,
-        "source": None, "build": None, "b3sum_sha256": None,
+        "source": None, "build": None, "b3sum_sha256": None, "host_preflight": None,
         "authority": None, "inputs": None, "observations": None,
         "peer": None, "peer_cleanup": None, "cleanup": {"owned_groups": "not-started", "fixture_state": "not-created"},
         "artifacts_sha256": {},

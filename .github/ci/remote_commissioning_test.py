@@ -99,7 +99,98 @@ class PortableCommissioningControls(unittest.TestCase):
         self.assertEqual(unit["CapabilityBoundingSet"], "~CAP_SYS_ADMIN")
         self.assertEqual(unit["Restart"], "no")
         self.assertLessEqual(peer.UNIT_SECONDS, 1800)
-        self.assertEqual(unit["BindReadOnlyPaths"], f"{self.fixture.source}:{self.fixture.chroot / self.fixture.source.relative_to('/')}:" "norbind")
+        self.assertEqual(unit["BindReadOnlyPaths"].split(), [
+            f"{self.fixture.source}:{self.fixture.chroot / self.fixture.source.relative_to('/')}:" "norbind",
+            f"{self.fixture.runtime}:/run:norbind",
+        ])
+
+    def test_host_privsep_absence_is_observed_and_required_host_path_refuses(self):
+        cgroup_root = self.root / "cgroup"
+        cgroup = cgroup_root / "system.slice"
+        cgroup.mkdir(parents=True)
+        systemd_runtime = self.root / "systemd"
+        systemd_runtime.mkdir()
+        host_privsep = self.root / "unused-host-sshd"
+        with (
+            patch.object(peer, "CGROUP_ROOT", cgroup_root),
+            patch.object(peer, "CGROUP", cgroup),
+            patch.object(peer, "SYSTEMD_RUNTIME", systemd_runtime),
+            patch.object(peer, "PRIVSEP", host_privsep),
+        ):
+            observed = {}
+            peer.observe_host_paths(observed)
+            self.assertEqual(observed[str(host_privsep)], "absent")
+            systemd_runtime.rmdir()
+            systemd_runtime.symlink_to(cgroup)
+            with self.assertRaisesRegex(peer.Blocked, "/systemd: symlink"):
+                peer.observe_host_paths(observed)
+            self.assertEqual(observed[str(cgroup)], "canonical-directory")
+
+    def test_runtime_creation_uses_only_the_owned_root(self):
+        with patch.object(peer, "BASE", self.root):
+            owned_privsep = self.fixture.runtime / "sshd"
+            owned_privsep.mkdir(parents=True)
+            with (
+                patch.object(peer, "run") as command,
+                patch.object(peer, "directory_identity", side_effect=[(3, 7), (3, 8)]) as identity,
+            ):
+                self.fixture.make_runtime()
+            self.assertEqual(command.call_args.args[0], [peer.INSTALL, "-d", "-m", "0755", "--", owned_privsep])
+            self.assertEqual([call.args for call in identity.call_args_list], [
+                (self.fixture.runtime, 0, 0o755), (owned_privsep, 0, 0o755),
+            ])
+            self.assertNotIn(peer.PRIVSEP, command.call_args.args[0])
+
+    def test_registered_process_requires_the_exact_read_only_owned_runtime(self):
+        leader = Path("/proc/1234")
+        for identity, options, allowed in (
+            (b"17:18:0:755\n17:19:0:755", "ro,nosuid", True),
+            (b"17:18:0:755\n17:20:0:755", "ro,nosuid", False),
+            (b"17:20:0:755\n17:19:0:755", "ro,nosuid", False),
+            (b"17:18:0:755\n17:19:0:755", "rw,nosuid", False),
+        ):
+            mount = ('{"filesystems":[{"target":"/run","options":"' + options + '"}]}').encode()
+            with (
+                self.subTest(identity=identity, options=options),
+                patch.object(peer, "directory_identity", side_effect=[(17, 18), (17, 19)]),
+                patch.object(peer, "run", side_effect=[identity, mount]) as command,
+            ):
+                if allowed:
+                    peer.verify_privsep_runtime(leader, self.fixture)
+                    self.assertEqual(command.call_args.args[0][1:3], ["--task", "1234"])
+                else:
+                    with self.assertRaises(peer.Blocked):
+                        peer.verify_privsep_runtime(leader, self.fixture)
+                self.assertEqual(command.call_args_list[0].args[0][-2:], [
+                    leader / "root/run", leader / "root/run/sshd",
+                ])
+
+    def test_listener_log_requires_a_current_daemon_and_exact_cgroup(self):
+        leader = self.root / "1234"
+        leader.mkdir()
+        registered = self.registered_fixture() | {"MainPID": leader.name, "ActiveState": "active"}
+        for state, group, membership, allowed in (
+            (registered, True, True, True),
+            (registered | {"MainPID": "5678"}, True, True, False),
+            (registered | {"InvocationID": "b" * 32}, True, True, False),
+            (registered | {"ActiveState": "inactive"}, True, True, False),
+            (registered, False, True, False),
+            (registered, True, False, False),
+        ):
+            line = f"0::/system.slice/{self.fixture.unit}" if membership else "0::/unowned"
+            (leader / "cgroup").write_text(line + "\n", encoding="ascii")
+            with (
+                self.subTest(state=state, cgroup=group, membership=membership),
+                patch.object(peer, "unit_status", return_value=state) as status,
+                patch.object(peer, "cgroup_present", return_value=group) as cgroup,
+            ):
+                if allowed:
+                    self.fixture.recheck_listening_leader(registered, leader)
+                    cgroup.assert_called_once_with(self.fixture.cgroup, self.fixture.cgroup_identity)
+                else:
+                    with self.assertRaises(peer.Blocked):
+                        self.fixture.recheck_listening_leader(registered, leader)
+                status.assert_called_once_with(self.fixture.unit)
 
     def test_password_is_not_a_command_argument_and_account_is_exact(self):
         current = SimpleNamespace(
@@ -239,7 +330,9 @@ class PortableCommissioningControls(unittest.TestCase):
         report, work = parent / "report", parent / "private"
         report.mkdir(parents=True)
         work.mkdir()
-        tool = self.root / "exacopy-commissioning-tools/usr/bin/b3sum"
+        tool_root = self.root / "exacopy-commissioning-tools"
+        tool_root.mkdir(mode=0o700)
+        tool = tool_root / "unpacked/usr/bin/b3sum"
         tool.parent.mkdir(parents=True)
         tool.touch()
         manifest = work / "build.json"
