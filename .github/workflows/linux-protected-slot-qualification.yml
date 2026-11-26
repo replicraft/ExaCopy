@@ -2,6 +2,18 @@ name: Linux protected slot observation qualification
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/linux-protected-slot-qualification.yml"
+      - ".github/ci/capture.sh"
+      - ".github/ci/install.sh"
+      - "crates/platform/exacopy-platform/src/linux/protected_slot*"
+      - "crates/platform/exacopy-platform/src/linux/protected_slot/**"
+      - "crates/platform/exacopy-platform/verification/protected_slot/**"
+      - "specs/verification/owners.toml"
+      - "rust-toolchain.toml"
+      - "Cargo.lock"
 
 permissions:
   contents: read
@@ -17,6 +29,7 @@ env:
 
 jobs:
   protected-slot:
+    if: github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
