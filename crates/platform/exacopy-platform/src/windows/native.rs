@@ -15,8 +15,8 @@ use windows_sys::Win32::Storage::FileSystem::{
 	FILE_ATTRIBUTE_DEVICE, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_OFFLINE,
 	FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS, FILE_ATTRIBUTE_RECALL_ON_OPEN,
 	FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO, FILE_ID_INFO, FILE_INFO_BY_HANDLE_CLASS,
-	FILE_NAME_OPENED, FILE_STANDARD_INFO, FILE_TYPE_DISK, FILE_TYPE_UNKNOWN, FileAttributeTagInfo,
-	FileIdInfo, FileStandardInfo, GetFileInformationByHandleEx, GetFileType,
+	FILE_NAME_NORMALIZED, FILE_NAME_OPENED, FILE_STANDARD_INFO, FILE_TYPE_DISK, FILE_TYPE_UNKNOWN,
+	FileAttributeTagInfo, FileIdInfo, FileStandardInfo, GetFileInformationByHandleEx, GetFileType,
 	GetFinalPathNameByHandleW, GetVolumeInformationByHandleW, VOLUME_NAME_GUID,
 };
 use windows_sys::Win32::System::IO::IO_STATUS_BLOCK;
@@ -37,6 +37,7 @@ pub(crate) enum Refusal {
 	UnidentifiedVolume,
 	UnidentifiedObject,
 	ParentChanged,
+	NameChanged,
 	VolumeChanged,
 	InvalidNameLength,
 	OpenFailed(NTSTATUS),
@@ -181,11 +182,29 @@ pub(super) fn open_relative_entry(
 }
 
 pub(super) fn observe(handle: BorrowedHandle<'_>, kind: Kind) -> Result<ObjectId, Refusal> {
+	observe_entry(handle, kind, None)
+}
+
+pub(super) fn observe_entry(
+	handle: BorrowedHandle<'_>,
+	kind: Kind,
+	name: Option<WindowsComponent<'_>>,
+) -> Result<ObjectId, Refusal> {
+	let spelling = if name.is_some() {
+		FILE_NAME_NORMALIZED
+	} else {
+		FILE_NAME_OPENED
+	};
 	let info = observe_file(handle, kind)?;
 	const MAX_EXTENDED_PATH_UNITS: usize = 32_768;
 	let mut path = [0_u16; MAX_EXTENDED_PATH_UNITS];
-	let count = local_ntfs_path(handle, FILE_NAME_OPENED, &mut path)?;
-	let (volume, _) = parse_volume_guid(&path[..count])?;
+	let count = local_ntfs_path(handle, spelling, &mut path)?;
+	let (volume, relative) = parse_volume_guid(&path[..count])?;
+	if let Some(name) = name
+		&& relative.rsplit(|&unit| unit == u16::from(b'\\')).next() != Some(name.as_units())
+	{
+		return Err(Refusal::NameChanged);
+	}
 	Ok(ObjectId {
 		volume,
 		volume_serial: info.VolumeSerialNumber,

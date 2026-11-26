@@ -10,10 +10,10 @@ use windows_sys::Win32::Storage::FileSystem::{
 
 use super::*;
 
-struct Fixture(PathBuf);
+pub(super) struct Fixture(pub(super) PathBuf);
 
 impl Fixture {
-	fn new() -> Self {
+	pub(super) fn new() -> Self {
 		let root = std::env::var_os("EXACOPY_WINDOWS_NTFS_ROOT")
 			.expect("provision a disposable owner-controlled local NTFS fixture root");
 		static NEXT: AtomicU32 = AtomicU32::new(0);
@@ -30,7 +30,7 @@ impl Fixture {
 		panic!("could not reserve unused test directory");
 	}
 
-	fn open(&self) -> File {
+	pub(super) fn open(&self) -> File {
 		OpenOptions::new()
 			.access_mode(
 				FILE_ADD_FILE
@@ -52,7 +52,7 @@ impl Drop for Fixture {
 	}
 }
 
-fn component(units: &[u16]) -> WindowsComponent<'_> {
+pub(super) fn component(units: &[u16]) -> WindowsComponent<'_> {
 	WindowsComponent::new(units).unwrap()
 }
 

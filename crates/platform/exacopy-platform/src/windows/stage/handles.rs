@@ -3,7 +3,9 @@ use std::io;
 use std::os::windows::io::{BorrowedHandle, IntoRawHandle};
 
 use windows_sys::Win32::Foundation::CloseHandle;
-use windows_sys::Win32::Storage::FileSystem::{FILE_BASIC_INFO, FileBasicInfo, FileStandardInfo};
+use windows_sys::Win32::Storage::FileSystem::{
+	FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_NORMAL, FILE_BASIC_INFO, FileBasicInfo, FileStandardInfo,
+};
 
 use super::WindowsStageError;
 use crate::windows::native::{StandardInformation, query};
@@ -29,6 +31,13 @@ pub(super) fn stamp(handle: BorrowedHandle<'_>, length: u64) -> Result<Stamp, Wi
 		|| standard.link_count != 1
 		|| u64::try_from(standard.end_of_file) != Ok(length)
 	{
+		return Err(WindowsStageError::Changed);
+	}
+	// An admitted stage is an ordinary unnamed data stream on a regular file.
+	// Refuse storage-changing attributes, including new flags this profile
+	// has not qualified. ARCHIVE can be set by ordinary writes.
+	let supported = FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_NORMAL;
+	if basic.FileAttributes == 0 || basic.FileAttributes & !supported != 0 {
 		return Err(WindowsStageError::Changed);
 	}
 	Ok(Stamp {

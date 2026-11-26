@@ -16,8 +16,11 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 
 use super::WindowsComponent;
-use super::native::{Kind, ObjectId, Refusal, RelativeFileOpen, observe, open_relative_file};
+use super::native::{
+	Kind, ObjectId, Refusal, RelativeFileOpen, observe, observe_entry, open_relative_file,
+};
 
+mod capture;
 mod error;
 #[allow(
 	unsafe_code,
@@ -27,6 +30,7 @@ mod handles;
 
 use handles::{Stamp, close_writer, stamp};
 
+pub use capture::{WindowsRetainedStage, WindowsStagePrefix, WindowsStageView};
 pub use error::{NativeStageError, WindowsStageError};
 
 /// Maximum bytes admitted for one synchronous stage read or write.
@@ -138,7 +142,8 @@ struct Location<'stage> {
 impl Location<'_> {
 	fn check(&self, file: BorrowedHandle<'_>, length: u64) -> Result<Stamp, WindowsStageError> {
 		self.parent.check()?;
-		let found = observe(file, Kind::RegularFile).map_err(WindowsStageError::native)?;
+		let found = observe_entry(file, Kind::RegularFile, Some(self.name))
+			.map_err(WindowsStageError::native)?;
 		if found.volume != self.parent.identity.volume
 			|| found.volume_serial != self.parent.identity.volume_serial
 		{
@@ -261,19 +266,24 @@ impl<'stage> WindowsStageWriter<'stage> {
 		if location.check(pin.as_handle(), length)? != observed {
 			return Err(WindowsStageError::Changed);
 		}
-		let mut reader = WindowsStageReadBack {
+		let observation = ObservedStage {
 			location,
 			file: reader,
 			observed,
 			length,
 		};
-		reader.recheck()?;
-		Ok(reader)
+		observation.check_eof()?;
+		Ok(WindowsStageReadBack { observation })
 	}
 }
 
 /// Independently reopened read-only stage after a confirmed file flush and writer close.
 pub struct WindowsStageReadBack<'stage> {
+	observation: ObservedStage<'stage>,
+}
+
+/// A live read-only observation that carries no writer closure or barrier provenance.
+struct ObservedStage<'stage> {
 	location: Location<'stage>,
 	file: File,
 	observed: Stamp,
@@ -284,7 +294,7 @@ impl WindowsStageReadBack<'_> {
 	/// Returns the physical identity checked on the independent read handle.
 	#[must_use]
 	pub const fn identity(&self) -> ObjectId {
-		self.location.identity
+		self.observation.location.identity
 	}
 
 	/// Reads a bounded exact range and revalidates the stage around it.
@@ -297,13 +307,7 @@ impl WindowsStageReadBack<'_> {
 		offset: u64,
 		bytes: &mut [u8],
 	) -> Result<(), WindowsStageError> {
-		range_end(offset, bytes.len(), self.length)?;
-		self.recheck()?;
-		read_exact_at(offset, bytes, |position, remaining| {
-			self.file.seek_read(remaining, position)
-		})
-		.map_err(WindowsStageError::Read)?;
-		self.recheck()
+		self.observation.read_checked(offset, bytes)
 	}
 
 	/// Checks the live held and named observations and logical EOF.
@@ -311,11 +315,40 @@ impl WindowsStageReadBack<'_> {
 	/// # Errors
 	/// Rejects a changed or unavailable stage observation.
 	pub fn recheck(&mut self) -> Result<(), WindowsStageError> {
-		let named = self.location.open_read(FILE_SHARE_READ)?;
-		self.check_stamps(&named)?;
+		self.observation.check_eof()
+	}
+}
+
+impl ObservedStage<'_> {
+	fn read_checked(&self, offset: u64, bytes: &mut [u8]) -> Result<(), WindowsStageError> {
+		range_end(offset, bytes.len(), self.length)?;
+		let reader = self.open_checked_view()?;
+		self.check_view_eof(&reader)?;
+		read_exact_at(offset, bytes, |position, remaining| {
+			reader.seek_read(remaining, position)
+		})
+		.map_err(WindowsStageError::Read)?;
+		self.check_view_eof(&reader)?;
+		self.open_checked_view()?;
+		Ok(())
+	}
+
+	fn check_eof(&self) -> Result<(), WindowsStageError> {
+		let reader = self.open_checked_view()?;
+		self.check_view_eof(&reader)?;
+		self.open_checked_view()?;
+		Ok(())
+	}
+
+	fn open_checked_view(&self) -> Result<File, WindowsStageError> {
+		let reader = self.location.open_read(FILE_SHARE_READ)?;
+		self.check_stamps(&reader)?;
+		Ok(reader)
+	}
+
+	fn check_view_eof(&self, reader: &File) -> Result<(), WindowsStageError> {
 		let mut extra = [0];
-		if self
-			.file
+		if reader
 			.seek_read(&mut extra, self.length)
 			.map_err(|source| {
 				WindowsStageError::Read(IoError::System {
@@ -327,7 +360,7 @@ impl WindowsStageReadBack<'_> {
 		{
 			return Err(WindowsStageError::Changed);
 		}
-		self.check_stamps(&named)
+		self.check_stamps(reader)
 	}
 
 	fn check_stamps(&self, named: &File) -> Result<(), WindowsStageError> {
