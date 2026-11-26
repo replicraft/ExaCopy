@@ -14,7 +14,7 @@ from remote_commissioning_peer import (
     Blocked, CGROUP, INSTALL, STAT, SUDO, SYSTEMCTL, SYSTEMD_RUN, cgroup_drained,
     cgroup_present, checkpoint, directory_identity, unit_known, unit_status,
 )
-from remote_commissioning_wireguard_progress import CommandRefused, Progress, Role, Step
+from remote_commissioning_wireguard_progress import CommandRefused, LinkPredicate, LinkUnconfirmed, Progress, Role, Step
 
 NSENTER = "/usr/bin/nsenter"
 IP = "/usr/sbin/ip"
@@ -27,6 +27,8 @@ SERVER = "198.18.0.1"
 CLIENT = "198.18.0.2"
 SSH_PORT = 2222
 OUTER_MTU = 1500
+# This index is reserved only inside the two freshly owned fixture namespaces.
+LINK_IFINDEX = 4242
 
 
 def command(work, operation, args, *, elevated=True, cleanup=False):
@@ -213,15 +215,49 @@ def public_key(raw):
     return key.hex()
 
 
-def exact_link(rows, name, alias):
-    matches = [row for row in rows if row.get("ifname") == name]
+def check_inventory(rows):
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise LinkUnconfirmed(LinkPredicate.INVENTORY)
+
+
+def only_loopback(rows):
+    check_inventory(rows)
     if (
-        len(matches) != 1 or matches[0].get("ifalias") != alias
-        or matches[0].get("linkinfo", {}).get("info_kind") != "wireguard"
-        or type(matches[0].get("ifindex")) is not int or matches[0]["ifindex"] <= 0
+        len(rows) != 1 or rows[0].get("ifname") != "lo"
+        or rows[0].get("link_type") != "loopback"
+        or type(rows[0].get("ifindex")) is not int or rows[0]["ifindex"] != 1
     ):
-        raise CleanupUnconfirmed("WireGuard link ownership unavailable")
-    return matches[0]["ifindex"]
+        raise LinkUnconfirmed(LinkPredicate.VACANCY)
+
+
+def link_row(rows, name, index):
+    check_inventory(rows)
+    matches = [row for row in rows if row.get("ifname") == name]
+    if len(matches) != 1:
+        raise LinkUnconfirmed(LinkPredicate.NAME)
+    row = matches[0]
+    if (
+        type(index) is not int or index <= 0
+        or type(row.get("ifindex")) is not int or row["ifindex"] != index
+        or sum(entry.get("ifindex") == index for entry in rows) != 1
+    ):
+        raise LinkUnconfirmed(LinkPredicate.INDEX)
+    info = row.get("linkinfo")
+    if not isinstance(info, dict) or info.get("info_kind") != "wireguard":
+        raise LinkUnconfirmed(LinkPredicate.KIND)
+    return row
+
+
+def exact_birth(rows, name, index):
+    row = link_row(rows, name, index)
+    only_loopback([entry for entry in rows if entry is not row])
+    if "ifalias" in row:
+        raise LinkUnconfirmed(LinkPredicate.ALIAS_UNSET)
+
+
+def exact_link(rows, name, index, alias):
+    if link_row(rows, name, index).get("ifalias") != alias:
+        raise LinkUnconfirmed(LinkPredicate.ALIAS_MATCH)
 
 
 class KernelPeer:
@@ -241,14 +277,59 @@ class KernelPeer:
         self.link_attempted = False
 
     def call(self, keeper, operation, *argv, cleanup=False):
-        return command(self.work, operation, keeper.enter(*argv, cleanup=cleanup), cleanup=cleanup)
+        try:
+            command_args = keeper.enter(*argv, cleanup=cleanup)
+        except CleanupUnconfirmed as error:
+            raise LinkUnconfirmed(LinkPredicate.KEEPER) from error
+        return command(self.work, operation, command_args, cleanup=cleanup)
 
     def links(self, keeper, *, cleanup=False):
-        return json.loads(self.call(keeper, "private link inventory", IP, "-j", "-d", "link", "show", cleanup=cleanup))
+        try:
+            rows = json.loads(self.call(keeper, "private link inventory", IP, "-j", "-d", "link", "show", cleanup=cleanup))
+        except (Blocked, OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise LinkUnconfirmed(LinkPredicate.INVENTORY) from error
+        check_inventory(rows)
+        return rows
 
     def recheck_link(self, *, cleanup=False):
-        if exact_link(self.links(self.location, cleanup=cleanup), self.name, self.alias) != self.ifindex:
-            raise CleanupUnconfirmed("WireGuard interface identity changed")
+        exact_link(self.links(self.location, cleanup=cleanup), self.name, self.ifindex, self.alias)
+
+    def link_effect(self, operation, *args):
+        try:
+            self.call(self.client, operation, IP, "link", *args)
+        except (Blocked, OSError) as error:
+            raise LinkUnconfirmed(LinkPredicate.EFFECT) from error
+
+    def create_link(self):
+        self.setup.advance(Step.LINK_VACANCY, Role.CLIENT)
+        only_loopback(self.links(self.client))
+        self.setup.advance(Step.LINK_CREATE, Role.CLIENT)
+        self.link_attempted = True
+        # ip link add requests NLM_F_EXCL with the fixed namespace-local index.
+        self.link_effect(Step.LINK_CREATE, "add", "name", self.name, "index", str(LINK_IFINDEX), "type", "wireguard")
+        self.setup.advance(Step.LINK_BIRTH_IDENTITY, Role.CLIENT)
+        exact_birth(self.links(self.client), self.name, LINK_IFINDEX)
+
+        # Linux applies IFLA_IFALIAS on link change. Re-enter the same checked
+        # keeper for the separate alias mutation, and admit no teardown or move
+        # from the intermediate, unmarked birth identity.
+        self.setup.advance(Step.LINK_ALIAS, Role.CLIENT)
+        self.link_effect(Step.LINK_ALIAS, "set", "dev", self.name, "alias", self.alias)
+        self.setup.advance(Step.LINK_FULL_IDENTITY, Role.CLIENT)
+        exact_link(self.links(self.client), self.name, LINK_IFINDEX, self.alias)
+        self.location, self.ifindex = self.client, LINK_IFINDEX
+
+    def move_link(self):
+        self.setup.advance(Step.LINK_VACANCY, Role.PEER)
+        only_loopback(self.links(self.peer))
+        self.setup.advance(Step.LINK_MOVE, Role.CLIENT)
+        self.recheck_link()
+        self.peer.recheck()
+        self.location = None
+        self.link_effect(Step.LINK_MOVE, "set", "dev", self.name, "netns", self.peer.pin, "index", str(self.ifindex))
+        self.setup.advance(Step.LINK_PEER_IDENTITY, Role.PEER)
+        exact_link(self.links(self.peer), self.name, self.ifindex, self.alias)
+        self.location = self.peer
 
     def prepare(self, admit_provider):
         self.client.start()
@@ -259,8 +340,7 @@ class KernelPeer:
         for keeper in (self.client, self.peer):
             role = Role(keeper.role)
             self.setup.advance(Step.LOOPBACK_INVENTORY, role)
-            if [row["ifname"] for row in self.links(keeper)] != ["lo"]:
-                raise Blocked("isolated network has an unexpected link")
+            only_loopback(self.links(keeper))
             self.setup.advance(Step.LOOPBACK_UP, role)
             self.call(keeper, "bring up isolated loopback", IP, "link", "set", "dev", "lo", "up")
         for role in ("client", "peer"):
@@ -284,18 +364,8 @@ class KernelPeer:
         checkpoint()
         self.setup.advance(Step.PROVIDER_RECHECK)
         admit_provider()
-        self.setup.advance(Step.LINK_CREATE, Role.CLIENT)
-        self.link_attempted = True
-        self.call(self.client, "create exact WireGuard link", IP, "link", "add", self.name, "alias", self.alias, "type", "wireguard")
-        self.location = self.client
-        self.setup.advance(Step.LINK_BIRTH_IDENTITY, Role.CLIENT)
-        self.ifindex = exact_link(self.links(self.client), self.name, self.alias)
-        self.setup.advance(Step.LINK_MOVE, Role.CLIENT)
-        self.peer.recheck()
-        self.call(self.client, "move exact WireGuard link", IP, "link", "set", "dev", self.name, "netns", self.peer.pin)
-        self.location = self.peer
-        self.setup.advance(Step.LINK_PEER_IDENTITY, Role.PEER)
-        self.ifindex = exact_link(self.links(self.peer), self.name, self.alias)
+        self.create_link()
+        self.move_link()
         self.setup.advance(Step.LINK_CONFIGURE, Role.PEER)
         self.call(
             self.peer, "configure closed synthetic peer", self.wg, "set", self.name,
@@ -378,7 +448,10 @@ class KernelPeer:
             self.cleanup.advance(Step.LINK_REMOVE, role)
             self.call(self.location, "remove exact owned WireGuard link", IP, "link", "delete", "dev", self.name, cleanup=True)
             self.cleanup.advance(Step.LINK_ABSENCE)
-            if any(row.get("ifname") == self.name for keeper in (self.client, self.peer) for row in self.links(keeper, cleanup=True)):
+            if any(
+                row.get("ifname") == self.name or row.get("ifindex") == self.ifindex
+                for keeper in (self.client, self.peer) for row in self.links(keeper, cleanup=True)
+            ):
                 raise CleanupUnconfirmed("WireGuard link remains after teardown")
             self.cleanup.advance(Step.ROUTE_ABSENCE, Role.PEER)
             routes = json.loads(self.call(self.peer, "confirm return route absence", IP, "-j", "-4", "route", "show", cleanup=True))

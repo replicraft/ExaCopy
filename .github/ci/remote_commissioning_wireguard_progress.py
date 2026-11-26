@@ -29,8 +29,11 @@ class Step(Enum):
     LOOPBACK_UP = "loopback-up"
     SYNTHETIC_KEYS = "synthetic-keys"
     PROVIDER_RECHECK = "provider-recheck"
+    LINK_VACANCY = "link-vacancy"
     LINK_CREATE = "link-create"
     LINK_BIRTH_IDENTITY = "link-birth-identity"
+    LINK_ALIAS = "link-alias"
+    LINK_FULL_IDENTITY = "link-full-identity"
     LINK_MOVE = "link-move"
     LINK_PEER_IDENTITY = "link-peer-identity"
     LINK_CONFIGURE = "link-configure"
@@ -62,6 +65,24 @@ class Role(Enum):
     PEER = "peer"
 
 
+class LinkPredicate(Enum):
+    VACANCY = "namespace-vacancy"
+    INVENTORY = "link-inventory"
+    KEEPER = "namespace-keeper"
+    NAME = "link-name"
+    INDEX = "link-index"
+    KIND = "link-kind"
+    ALIAS_UNSET = "link-alias-unset"
+    ALIAS_MATCH = "link-alias-match"
+    EFFECT = "link-effect-unconfirmed"
+
+
+class LinkUnconfirmed(CleanupUnconfirmed):
+    def __init__(self, predicate):
+        super().__init__("WireGuard link ownership unavailable")
+        self.predicate = predicate
+
+
 class CommandRefused(Blocked):
     def __init__(self, operation, result):
         self.operation = operation if isinstance(operation, Step) else None
@@ -71,6 +92,11 @@ class CommandRefused(Blocked):
 
 
 def failure(error):
+    if isinstance(error, LinkUnconfirmed):
+        result = {"kind": "ownership-unconfirmed", "predicate": error.predicate.value}
+        if isinstance(error.__cause__, CommandRefused):
+            result["command"] = failure(error.__cause__)
+        return result
     if isinstance(error, CommandRefused):
         status = error.result.status
         allowed = {"exited", "interrupted", "startup-failed", "output-limit", "timeout", "stray-descendant"}

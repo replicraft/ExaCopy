@@ -19,6 +19,7 @@ from remote_retry_commissioning import COMMAND, RetryFixture
 import remote_commissioning_wireguard_net as network
 import remote_commissioning_wireguard_lane as lane
 import remote_commissioning_wireguard_observations as observations
+from remote_commissioning_wireguard_progress import failure
 from remote_commissioning_peer import Blocked, Fixture
 from native_supervision import CleanupUnconfirmed
 
@@ -128,13 +129,122 @@ class KernelFixtureTests(unittest.TestCase):
 
     def test_link_selection_refuses_same_name_with_foreign_identity(self):
         row = {"ifname": "owned", "ifalias": "anchor", "linkinfo": {"info_kind": "wireguard"}, "ifindex": 42}
-        self.assertEqual(network.exact_link([row], "owned", "anchor"), 42)
-        for rows in (
-            [row | {"ifalias": "foreign"}], [row | {"linkinfo": {"info_kind": "dummy"}}], [row, row],
-            [row | {"ifindex": True}], [],
+        network.exact_link([row], "owned", 42, "anchor")
+        for rows, predicate in (
+            ([row | {"ifalias": "foreign"}], "link-alias-match"),
+            ([row | {"linkinfo": {"info_kind": "dummy"}}], "link-kind"),
+            ([row, row], "link-name"), ([row | {"ifindex": True}], "link-index"), ([], "link-name"),
+            ([row, row | {"ifname": "duplicate-index"}], "link-index"),
         ):
-            with self.assertRaises(CleanupUnconfirmed):
-                network.exact_link(rows, "owned", "anchor")
+            with self.assertRaises(CleanupUnconfirmed) as error:
+                network.exact_link(rows, "owned", 42, "anchor")
+            self.assertEqual(failure(error.exception)["predicate"], predicate)
+
+    def test_link_birth_proves_exclusive_index_before_alias_and_never_removes_ambiguity(self):
+        for condition, predicate, create, alias in (
+            ("created", None, True, True),
+            ("occupied", "namespace-vacancy", False, False),
+            ("wrong-name", "link-name", True, False),
+            ("wrong-kind", "link-kind", True, False),
+            ("wrong-index", "link-index", True, False),
+            ("foreign-alias", "link-alias-unset", True, False),
+            ("keeper-lost", "namespace-keeper", True, False),
+            ("alias-error", "link-effect-unconfirmed", True, True),
+            ("alias-missing", "link-alias-match", True, True),
+        ):
+            with self.subTest(condition=condition):
+                self.check_birth(condition, predicate, create, alias)
+
+    def check_birth(self, condition, predicate, create, alias):
+        kernel = network.KernelPeer(Fixture("0" * 20, 1), Path("/invalid"), Path("/invalid"))
+        kernel.client.identity, kernel.client.mount_id = (1, 2), 30
+        kernel.client.group, kernel.client.invocation = (4, 5), "a" * 32
+        loopback = {"ifname": "lo", "ifindex": 1, "link_type": "loopback"}
+        birth = {"ifname": kernel.name, "ifindex": network.LINK_IFINDEX, "linkinfo": {"info_kind": "wireguard"}}
+        altered = {
+            "wrong-name": {"ifname": "foreign"}, "wrong-kind": {"linkinfo": {"info_kind": "dummy"}},
+            "wrong-index": {"ifindex": 43}, "foreign-alias": {"ifalias": "foreign"},
+        }
+        first = [loopback, birth] if condition == "occupied" else [loopback]
+        full = birth if condition == "alias-missing" else birth | {"ifalias": kernel.alias}
+        inventories = iter((first, [loopback, birth | altered.get(condition, {})], [loopback, full]))
+        effects = []
+
+        def command(_work, operation, argv, **_options):
+            self.assertEqual(argv[:3], [network.NSENTER, f"--net={kernel.client.pin}", "--"])
+            if operation == "private link inventory":
+                return json.dumps(next(inventories)).encode()
+            effects.append((operation, argv[3:]))
+            if operation is network.Step.LINK_ALIAS and condition == "alias-error":
+                raise network.CommandRefused(operation, supervision.ProcessResult("exited", 2))
+            return b""
+
+        current = {"InvocationID": kernel.client.invocation, "ActiveState": "active"}
+        checks = [current] * 3 + [{"InvocationID": "replacement", "ActiveState": "active"}]
+        with (
+            patch.object(network, "command", side_effect=command),
+            patch.object(network, "cgroup_present", return_value=True),
+            patch.object(network, "unit_status", side_effect=checks if condition == "keeper-lost" else None,
+                         return_value=current),
+            patch.object(kernel.client, "measure_pin", return_value=((1, 2), 30)),
+        ):
+            if condition == "created":
+                kernel.create_link()
+                self.assertIs(kernel.location, kernel.client)
+                self.assertEqual(kernel.ifindex, network.LINK_IFINDEX)
+            else:
+                with self.assertRaises(CleanupUnconfirmed) as error:
+                    kernel.create_link()
+                observed = failure(error.exception)
+                self.assertEqual(observed["predicate"], predicate)
+                if condition == "alias-error":
+                    self.assertEqual(observed["command"], {
+                        "kind": "command", "operation": "link-alias", "status": "exited", "exit_status": 2,
+                    })
+                self.assertIsNone(kernel.location)
+                self.assertIsNone(kernel.ifindex)
+                if create:
+                    with patch.object(kernel, "call") as remove, patch.object(kernel.peer, "stop") as stop_peer:
+                        with self.assertRaises(CleanupUnconfirmed):
+                            kernel.stop()
+                        remove.assert_not_called()
+                        stop_peer.assert_not_called()
+        expected = []
+        if create:
+            expected.append((network.Step.LINK_CREATE, [network.IP, "link", "add", "name", kernel.name,
+                                                       "index", str(network.LINK_IFINDEX), "type", "wireguard"]))
+        if alias:
+            expected.append((network.Step.LINK_ALIAS, [network.IP, "link", "set", "dev", kernel.name, "alias", kernel.alias]))
+        self.assertEqual(effects, expected)
+
+    def test_namespace_move_requires_full_identity_and_same_pinned_destination_index(self):
+        for fault in (None, "source-alias", "destination-index"):
+            with self.subTest(fault=fault):
+                kernel = network.KernelPeer(Fixture("0" * 20, 1), Path("/invalid"), Path("/invalid"))
+                kernel.location, kernel.ifindex = kernel.client, network.LINK_IFINDEX
+                loopback = {"ifname": "lo", "ifindex": 1, "link_type": "loopback"}
+                full = {"ifname": kernel.name, "ifindex": kernel.ifindex, "ifalias": kernel.alias,
+                        "linkinfo": {"info_kind": "wireguard"}}
+                original = full | {"ifalias": "different"} if fault == "source-alias" else full
+                moved = full | {"ifindex": 43} if fault == "destination-index" else full
+                with (
+                    patch.object(kernel.peer, "recheck"),
+                    patch.object(kernel, "links", side_effect=([loopback], [loopback, original], [loopback, moved])),
+                    patch.object(kernel, "call") as effect,
+                ):
+                    if fault is None:
+                        kernel.move_link()
+                        self.assertIs(kernel.location, kernel.peer)
+                        self.assertEqual(kernel.ifindex, network.LINK_IFINDEX)
+                    else:
+                        with self.assertRaises(CleanupUnconfirmed):
+                            kernel.move_link()
+                        self.assertIs(kernel.location, kernel.client if fault == "source-alias" else None)
+                    if fault == "source-alias":
+                        effect.assert_not_called()
+                    else:
+                        effect.assert_called_once_with(kernel.client, network.Step.LINK_MOVE, network.IP, "link", "set",
+                                                       "dev", kernel.name, "netns", kernel.peer.pin, "index", str(kernel.ifindex))
 
     def test_pin_drift_refuses_net_enter_before_dispatch(self):
         keeper = network.Keeper(Fixture("0" * 20, 1), "client", Path("/invalid"))
