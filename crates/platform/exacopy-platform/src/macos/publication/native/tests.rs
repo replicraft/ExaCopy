@@ -1,5 +1,5 @@
 use apfs_mounted::publication::{
-	RenameAttempt, RenameEvidence, attempt_exclusive_rename, sync_directories,
+	EntrySpelling, RenameAttempt, attempt_exclusive_rename, sync_directories,
 };
 use apfs_mounted::{Directory, EntryName, ObjectIdentity};
 use std::ffi::CStr;
@@ -26,9 +26,10 @@ fn rename_exclusively(stage: &File, from: &CStr, destination: &File, to: &CStr) 
 			let barriers = sync_directories(&stage, &destination);
 			barriers.source.map_err(io::Error::other)?;
 			barriers.destination.map_err(io::Error::other)?;
-			assert!(
-				matches!(renamed.observe(), RenameEvidence::Confirmed { target } if target == expected)
-			);
+			let (snapshot, ()) = renamed
+				.with_observation(EntrySpelling::Lookup, |_, _| Ok(()))
+				.map_err(io::Error::other)?;
+			assert_eq!(snapshot.identity, expected);
 			Ok(())
 		}
 		result => panic!("unexpected companion rename result {result:?}"),
@@ -202,4 +203,58 @@ fn native_exclusive_rename_refuses_to_traverse_a_symbolic_link() {
 	assert_eq!(identity(&alias), original_link);
 	assert_eq!(fs::read_link(alias).unwrap(), Path::new("source-parent"));
 	assert!(matches!(target.symlink_metadata(), Err(error) if error.kind() == ErrorKind::NotFound));
+}
+
+#[test]
+fn coherent_renamed_snapshot_checks_names_around_sealed_descriptor_queries() {
+	use apfs_mounted::metadata;
+	use apfs_mounted::publication::EntrySnapshotError;
+
+	let stage = Scratch::new();
+	let destination = Scratch::new();
+	let stage_path = stage.path("stage");
+	let public = destination.path("target");
+	let retained = destination.path("retained");
+	write_new(&stage_path, STAGE_BYTES);
+	let identity_before = identity(&stage_path);
+	let sealed = File::open(&stage_path).unwrap();
+	let stage = Directory::from_file(stage.open()).unwrap();
+	let destination_dir = Directory::from_file(destination.open()).unwrap();
+	let stage_name = EntryName::new(b"stage").unwrap();
+	let target_name = EntryName::new(b"target").unwrap();
+	let anchor = stage.open_event(&stage_name).unwrap();
+	let expected = ObjectIdentity::held(&anchor).unwrap();
+	let RenameAttempt::Renamed(renamed) = attempt_exclusive_rename(
+		&stage,
+		&stage_name,
+		&destination_dir,
+		&target_name,
+		&anchor,
+		&expected,
+	) else {
+		panic!("exclusive fixture rename did not succeed");
+	};
+	let barriers = sync_directories(&stage, &destination_dir);
+	barriers.source.unwrap();
+	barriers.destination.unwrap();
+	let (snapshot, ()) = renamed
+		.with_observation(EntrySpelling::Lookup, |snapshot, _| {
+			assert_eq!(snapshot.metadata, metadata::stat(&sealed)?);
+			Ok(())
+		})
+		.unwrap();
+	assert_eq!(snapshot.identity, expected);
+	assert_eq!(snapshot.extent(), u64::try_from(STAGE_BYTES.len()).unwrap());
+	assert!(matches!(
+		renamed.with_observation(EntrySpelling::Lookup, |snapshot, _| {
+			assert_eq!(snapshot.metadata, metadata::stat(&sealed)?);
+			fs::rename(&public, &retained).unwrap();
+			write_new(&public, INCUMBENT_BYTES);
+			Ok(())
+		}),
+		Err(EntrySnapshotError::Changed)
+	));
+	assert_eq!(identity(&retained), identity_before);
+	assert_eq!(fs::read(retained).unwrap(), STAGE_BYTES);
+	assert_eq!(fs::read(public).unwrap(), INCUMBENT_BYTES);
 }

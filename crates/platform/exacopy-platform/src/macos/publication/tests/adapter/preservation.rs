@@ -4,8 +4,8 @@ use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
 
 use super::{
-	Fixture, INCUMBENT, PAYLOAD, PublishError, PublishRejection, STAGE_DIRECTORY, STAGE_NAME,
-	TARGET_NAME, identity, name, write_new,
+	Fixture, INCUMBENT, PAYLOAD, PublishError, PublishRejection, PublishedObservationError,
+	STAGE_DIRECTORY, STAGE_NAME, TARGET_NAME, identity, name, write_new,
 };
 
 #[test]
@@ -146,4 +146,39 @@ fn assert_absent(path: &Path) {
 	assert!(
 		matches!(path.symlink_metadata(), Err(error) if error.kind() == io::ErrorKind::NotFound)
 	);
+}
+
+#[test]
+#[ignore = "requires managed APFS fixtures without visible extended attributes"]
+fn post_rename_stable_observation_cannot_replace_the_original_sealed_metadata() {
+	let fixture = Fixture::new();
+	let root = fixture.bind();
+	let directory = root
+		.open_stage_directory(name(STAGE_DIRECTORY))
+		.expect("open provisioned fixture directory");
+	let ready = fixture.standard_stage(&directory);
+	let target = fixture.destination.path(TARGET_NAME);
+	let original = identity(&fixture.destination.path(STAGE_DIRECTORY).join(STAGE_NAME));
+	let authorization = fixture.authorize(ready.binding());
+	let mut barriers = 0;
+	let result = ready.publish_with_barriers(authorization, |directory| {
+		if barriers == 0 {
+			fs::set_permissions(&target, fs::Permissions::from_mode(0o700))
+				.expect("change fixture permissions after rename");
+		}
+		barriers += 1;
+		rustix::fs::fsync(directory).map_err(Into::into)
+	});
+	assert!(matches!(
+		result,
+		Err(PublishError::Renamed {
+			barriers: None,
+			observation: Some(PublishedObservationError::Stage(_)),
+			observed_target: None,
+			policy_error: None,
+		})
+	));
+	assert_eq!(barriers, 2);
+	assert_eq!(identity(&target), original);
+	assert_eq!(fs::read(target).unwrap(), PAYLOAD);
 }

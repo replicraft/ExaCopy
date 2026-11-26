@@ -4,17 +4,14 @@ use std::io;
 use std::os::fd::AsFd as _;
 
 use apfs_mounted::EntryName;
-use apfs_mounted::metadata::Metadata as MountedMetadata;
 use apfs_mounted::publication::{
-	RenameAttempt, RenameEvidence, RenamedEntry, attempt_exclusive_rename, sync_directories,
+	EntrySpelling, RenameAttempt, RenamedEntry, attempt_exclusive_rename, sync_directories,
 };
 use exacopy_model::PublishNoClobber;
-use rustix::fs::{self, AtFlags, Stat};
 
 use super::super::staging::MetadataReadyStage;
 use super::super::{
-	BasicMetadata, ManagedObjectIdentity, ManagedReadError, PhysicalFsid, volume,
-	with_materialization_disabled,
+	ManagedObjectIdentity, ManagedReadError, volume, with_materialization_disabled,
 };
 use super::evidence::PublicationObservation;
 use super::{
@@ -127,52 +124,33 @@ impl MetadataReadyStage<'_> {
 		&self,
 		renamed: &RenamedEntry<'_>,
 	) -> Result<PublicationObservation, PublishedObservationError> {
-		let target_identity = match renamed.observe() {
-			RenameEvidence::Confirmed { target } => ManagedObjectIdentity::from_mounted(&target),
-			evidence => return Err(PublishedObservationError::MountedNames(Box::new(evidence))),
-		};
+		let directories_before = self
+			.location
+			.observe_directories()
+			.map_err(|error| PublishedObservationError::Directories(Box::new(error)))?;
+		// Keep strict ACL, fork and xattr queries on the original sealed read-only
+		// descriptor, with both names checked around the held metadata observation.
+		let (snapshot, held) = renamed
+			.with_observation(EntrySpelling::Lookup, |_, _| {
+				Ok(self.check_published_metadata())
+			})
+			.map_err(|error| PublishedObservationError::MountedSnapshot(Box::new(error)))?;
+		let held = held.map_err(|error| PublishedObservationError::Stage(Box::new(error)))?;
 		let (stage_directory, destination_directory) = self
 			.location
 			.observe_directories()
 			.map_err(|error| PublishedObservationError::Directories(Box::new(error)))?;
-		let destination = self.location.destination().as_fd();
-		let target = self.target();
-		let held = self
-			.check_published_metadata()
-			.map_err(|error| PublishedObservationError::Stage(Box::new(error)))?;
-		let named = fs::statat(destination, target.as_bytes(), AtFlags::SYMLINK_NOFOLLOW)?;
-		let Some(destination_fsid) = PhysicalFsid::held(destination)? else {
-			return Err(PublishedObservationError::NamesChanged);
-		};
-		if !named_metadata_matches(&named, &held, self.metadata())
-			|| PhysicalFsid::named(destination, target)? != Some(destination_fsid)
+		if directories_before != (stage_directory, destination_directory)
+			|| snapshot.metadata != held
 		{
 			return Err(PublishedObservationError::NamesChanged);
 		}
-		let target = ManagedObjectIdentity::from_stat(&named, destination_fsid)
-			.ok_or(PublishedObservationError::NamesChanged)?;
-		if target != target_identity {
-			return Err(PublishedObservationError::NamesChanged);
-		}
 		Ok(PublicationObservation {
-			target,
+			target: ManagedObjectIdentity::from_mounted(&snapshot.identity),
 			stage_directory,
 			destination_directory,
 		})
 	}
-}
-
-// The mounted held observation already confirms the seal's exact layout and times.
-// Check the public name's corresponding fields and the same live change time.
-pub(super) fn named_metadata_matches(
-	named: &Stat,
-	held: &MountedMetadata,
-	required: BasicMetadata,
-) -> bool {
-	required.matches(named)
-		&& u64::try_from(named.st_size).ok() == Some(held.length)
-		&& named.st_ctime == held.change.seconds()
-		&& named.st_ctime_nsec == held.change.nanoseconds()
 }
 
 #[derive(Debug)]

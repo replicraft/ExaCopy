@@ -473,7 +473,7 @@ fn post_rename_rebinding_reports_observation_failure_after_both_barriers() {
 		result,
 		Err(PublishError::Renamed {
 			barriers: None,
-			observation: Some(PublishedObservationError::MountedNames(_)),
+			observation: Some(PublishedObservationError::MountedSnapshot(_)),
 			observed_target: None,
 			policy_error: None,
 		})

@@ -4,7 +4,7 @@ use std::io;
 
 use apfs_mounted::{
 	InvalidEntryName,
-	publication::{RenameEvidence, RenameRejection},
+	publication::{EntrySnapshotError, RenameEvidence, RenameRejection},
 };
 use rustix::io::Errno;
 
@@ -199,8 +199,10 @@ pub enum PublishedObservationError {
 	Stage(Box<StageError>),
 	/// The private name, target name or held inode disagreed with the rename.
 	NamesChanged,
-	/// Incomplete post-barrier observations from the companion.
+	/// Incomplete post-barrier identity-only observations from the companion.
 	MountedNames(Box<RenameEvidence>),
+	/// The companion could not establish a coherent post-barrier snapshot.
+	MountedSnapshot(Box<EntrySnapshotError>),
 	/// A native identity or namespace query failed.
 	System(io::Error),
 }
@@ -216,6 +218,9 @@ impl fmt::Display for PublishedObservationError {
 			Self::NamesChanged | Self::MountedNames(_) => {
 				f.write_str("published names or stage identity changed")
 			}
+			Self::MountedSnapshot(error) => {
+				write!(f, "published entry observation failed ({error})")
+			}
 			Self::System(error) => write!(f, "published identity query failed ({error})"),
 		}
 	}
@@ -225,6 +230,7 @@ impl Error for PublishedObservationError {
 	fn source(&self) -> Option<&(dyn Error + 'static)> {
 		match self {
 			Self::Directories(error) | Self::Stage(error) => Some(error.as_ref()),
+			Self::MountedSnapshot(error) => Some(error.as_ref()),
 			Self::System(error) => Some(error),
 			Self::NamesChanged | Self::MountedNames(_) => None,
 		}

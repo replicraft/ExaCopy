@@ -8,7 +8,9 @@ use apfs_mounted::metadata::{
 	self as mounted, MetadataView, ObservationError, ResourceFork, XattrVisibility,
 };
 use apfs_mounted::source::SourceMetadata;
-use rustix::fs::{FileType, Mode, Stat};
+use rustix::fs::FileType;
+#[cfg(test)]
+use rustix::fs::{Mode, Stat};
 
 use super::{FILE_MODE, ManagedTimestamp, acl};
 
@@ -32,6 +34,7 @@ pub struct BasicMetadata {
 }
 
 impl BasicMetadata {
+	#[cfg(test)]
 	pub(super) fn from_stat(observed: &Stat) -> Result<Self, BasicMetadataError> {
 		if FileType::from_raw_mode(observed.st_mode) != FileType::RegularFile
 			|| Mode::from_raw_mode(observed.st_mode) != FILE_MODE
@@ -116,6 +119,7 @@ impl BasicMetadata {
 		self.mtime
 	}
 
+	#[cfg(test)]
 	pub(super) fn matches(self, observed: &Stat) -> bool {
 		Self::from_stat(observed).is_ok_and(|metadata| metadata == self)
 	}
