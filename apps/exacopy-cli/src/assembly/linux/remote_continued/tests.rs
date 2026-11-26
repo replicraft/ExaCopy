@@ -320,3 +320,5 @@ fn check_exact_live_witness_vector(
 		.is_err()
 	);
 }
+
+mod hosted_witness;

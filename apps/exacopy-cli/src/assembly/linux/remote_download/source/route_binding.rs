@@ -103,7 +103,6 @@ impl Drop for BoundRouteRetirement {
 	}
 }
 
-#[expect(dead_code, reason = "witnessed route assembly remains private")]
 impl SourceOwner<'_> {
 	pub(in crate::assembly::linux) fn prepare_retirement(
 		&mut self,
