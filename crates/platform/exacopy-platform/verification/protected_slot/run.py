@@ -276,7 +276,7 @@ def run(revision, evidence, report):
     with private_work(evidence.parent, report) as work:
         target = work / "target"
         env = {**os.environ, "CARGO_TARGET_DIR": str(target),
-               "CARGO_BUILD_BUILD_DIR": str(work / "build"), "TMPDIR": str(work)}
+               "CARGO_BUILD_BUILD_DIR": str(target), "TMPDIR": str(work)}
         command = [
             "cargo", f"+{TOOLCHAIN}", "test", "--locked", "--offline", "--jobs", "2",
             "--target", TARGET, "-p", "exacopy-platform", "--lib", "--no-run",

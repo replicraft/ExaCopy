@@ -78,7 +78,8 @@ class RunnerControls(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "target"
             target.mkdir()
-            binary = target / "candidate"
+            binary = target / run.TARGET / "debug/build/exacopy-platform/fixture/out/candidate"
+            binary.parent.mkdir(parents=True)
             binary.touch(mode=0o700)
             outside = target.parent / "outside"
             outside.touch(mode=0o700)
