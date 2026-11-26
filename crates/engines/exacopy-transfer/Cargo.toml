@@ -8,7 +8,6 @@ publish = false
 
 [features]
 experimental-apfs-copy = [
-	"dep:ed25519-dalek",
 	"dep:exacopy-model",
 	"dep:minicbor",
 ]
@@ -18,20 +17,16 @@ blake3.workspace = true
 exacopy-content.workspace = true
 exacopy-endpoint.workspace = true
 exacopy-journal.workspace = true
-
-[target.'cfg(target_os = "linux")'.dependencies]
 exacopy-manifest.workspace = true
 exacopy-plan.workspace = true
 ed25519-dalek.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
 exacopy-model.workspace = true
 minicbor.workspace = true
 uuid.workspace = true
 
-[dev-dependencies]
-ed25519-dalek.workspace = true
-
 [target.'cfg(target_os = "macos")'.dependencies]
-ed25519-dalek = { workspace = true, optional = true }
 exacopy-model = { workspace = true, optional = true }
 minicbor = { workspace = true, optional = true }
 

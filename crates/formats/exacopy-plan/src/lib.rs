@@ -20,3 +20,6 @@ pub use plan::{
 };
 pub use plan_entries::{PlanEntriesPage, PlanEntry, PlanPath};
 pub use plan_identity::{MAX_PLAN_IDENTITY_BYTES, PlanIdentityPlatform, PlanSourceIdentity};
+
+/// Canonical workflow records for synchronization genesis.
+pub mod workflow_sync;

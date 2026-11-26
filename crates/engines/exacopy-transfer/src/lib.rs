@@ -31,3 +31,5 @@ pub mod remote_metadata;
 	all(target_os = "macos", feature = "experimental-apfs-copy")
 ))]
 pub mod remote_finalization;
+
+pub mod sync_genesis;

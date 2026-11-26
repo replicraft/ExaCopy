@@ -27,6 +27,7 @@ enum Kind {
 	Repository,
 	Manifest,
 	DocumentPage,
+	WorkflowRecord,
 	Plan,
 	Ipc,
 	Mcp,

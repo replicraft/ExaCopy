@@ -1,12 +1,12 @@
 # Signed synchronization genesis root and closure
 
-**Status** Proposed. This profile covers read-only admission of one explicit
-generation-one seed for R-269, R-270 and R-276 under INV-025/026. It uses the
-existing [paired baseline leaf](../../crates/formats/exacopy-manifest/verification/sync_baseline/README.md)
-and [genesis admission](sync-baseline-genesis.md). Registry allocation,
-implementation, independent wire vectors and review are required before
-enabling a reader. A writer, current pointer, successor and sync effects
-require separate authority and qualification.
+**Status:** implemented for read-only historical admission. This profile
+covers one explicit generation-one seed for R-269, R-270 and R-276 under
+INV-025/026. It uses the existing [paired baseline leaf](../../crates/formats/exacopy-manifest/verification/sync_baseline/README.md)
+and [genesis admission](sync-baseline-genesis.md). The private root and
+endpoint codecs and portable transfer closure reader have independently
+signed vectors. Native readmission, a writer, current pointer, successor
+and sync effects require separate authority and qualification.
 
 ## Closure and trust
 
@@ -277,9 +277,9 @@ history result has no signer, file descriptor, publication permit, live
 copy grant or baseline-pointer capability. This division needs no new
 lockfile dependency. Keep ordinary Plan and Manifest wire bytes unchanged.
 
-Before implementation, review the workflow registry allocations and freeze
-deterministic independent vectors. A separate Python canonical-CBOR
-generator should use the pinned portable C BLAKE3 oracle and OpenSSL
+The private workflow profiles are registered in the contract inventory.
+The [independent generator](../../crates/engines/exacopy-transfer/verification/sync_genesis/reference.py)
+uses canonical CBOR, the pinned portable C BLAKE3 oracle and OpenSSL
 Ed25519 with fixed synthetic fixture keys. Publish exact member bytes,
 signing-input digests, reference lengths, selected root digest, all
 derived digests and expected decoded selection. Keep valid vectors for

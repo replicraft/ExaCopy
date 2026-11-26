@@ -1,3 +1,5 @@
+mod workflow;
+
 use std::path::Path;
 
 use super::{Contract, INVENTORY, check, check_record, check_text};

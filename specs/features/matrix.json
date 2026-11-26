@@ -327,7 +327,7 @@
       "experimental-apfs-copy": {
         "status": "experimental",
         "targets": ["aarch64-apple-darwin"],
-        "enables": ["dep:ed25519-dalek", "dep:exacopy-model", "dep:minicbor"],
+        "enables": ["dep:exacopy-model", "dep:minicbor"],
         "resolution_probe": [],
         "purpose": "Enable the managed APFS operation policies, canonical records, and recovery decisions."
       }
@@ -452,10 +452,7 @@
     "ed25519-dalek": {
       "default_features": false,
       "features": ["zeroize"],
-      "optional_targets": {
-        "exacopy-transfer": ["cfg(target_os = \"macos\")"]
-      },
-      "purpose": "Sign and verify transaction journal records and receipts."
+      "purpose": "Sign and verify transaction records and verify historical workflow closure."
     },
     "getrandom": {
       "default_features": false,

@@ -21,6 +21,9 @@ enum Marker {
 	DocumentPage,
 	PlanBody,
 	PlanJson,
+	Workflow {
+		features: &'static str,
+	},
 	Scalar {
 		version: &'static str,
 		magic: Option<&'static str>,
@@ -37,6 +40,20 @@ enum Marker {
 }
 
 pub(super) const BINDINGS: &[Binding] = &[
+	Binding::new(
+		"workflow-local-sync-endpoint",
+		"crates/formats/exacopy-plan/src/workflow_sync/wire.rs",
+		Marker::Workflow {
+			features: "ENDPOINT_REQUIRED_FEATURES",
+		},
+	),
+	Binding::new(
+		"workflow-sync-genesis-root",
+		"crates/formats/exacopy-plan/src/workflow_sync/wire.rs",
+		Marker::Workflow {
+			features: "ROOT_REQUIRED_FEATURES",
+		},
+	),
 	Binding::new(
 		"exacopy.cli.verify",
 		"apps/exacopy-cli/src/manifest_report.rs",
@@ -239,6 +256,7 @@ impl Binding {
 			Marker::Report => (Kind::CliOutput, Status::Implemented),
 			Marker::Manifest => (Kind::Manifest, Status::Implemented),
 			Marker::DocumentPage => (Kind::DocumentPage, Status::Implemented),
+			Marker::Workflow { .. } => (Kind::WorkflowRecord, Status::ImplementedPrivate),
 			Marker::PlanBody | Marker::PlanJson => (Kind::Plan, Status::Implemented),
 			_ => (Kind::TransferJournal, Status::ImplementedPrivate),
 		};
@@ -311,6 +329,11 @@ impl Marker {
 					return Err("expected two entries in VERSION".into());
 				};
 				(format!("{major}.{minor}"), None, None)
+			}
+			Self::Workflow { features } => {
+				let mut markers = Self::array("VERSION", 2).read(file, id)?;
+				markers.features = Some(number(constant(file, features)?)?);
+				return Ok(markers);
 			}
 			Self::Scalar { version, magic } => (
 				number(constant(file, version)?)?.to_string(),
