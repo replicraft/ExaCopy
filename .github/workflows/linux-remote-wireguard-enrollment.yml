@@ -1,0 +1,42 @@
+name: Observe fixed hosted WireGuard ABI candidates
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/linux-remote-wireguard-enrollment.yml'
+      - '.github/ci/remote_commissioning_wireguard_enrollment.py'
+      - '.github/ci/remote_commissioning_wireguard_enrollment_test.py'
+      - '.github/ci/wireguard_enrollment_archive.py'
+
+permissions:
+  contents: read
+
+jobs:
+  observe:
+    if: github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Exercise portable schema and archive controls
+        run: python3 -B -Werror .github/ci/remote_commissioning_wireguard_enrollment_test.py -v
+      - name: Observe candidate kernel package and dependency plan
+        run: python3 -B -Werror .github/ci/remote_commissioning_wireguard_enrollment.py
+      - name: Retain canonical package evidence and collector status
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: exacopy-wireguard-abi-enrollment-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-wireguard-enrollment/report/provider.json
+            ${{ runner.temp }}/exacopy-wireguard-enrollment/report/Release
+            ${{ runner.temp }}/exacopy-wireguard-enrollment/report/Release.gpg
+            ${{ runner.temp }}/exacopy-wireguard-enrollment/report/Packages.xz
+            ${{ runner.temp }}/exacopy-wireguard-enrollment/report/cleanup-unconfirmed.json
+            ${{ runner.temp }}/exacopy-wireguard-enrollment.pending
+          if-no-files-found: error
+          retention-days: 90
