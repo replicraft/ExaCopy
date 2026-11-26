@@ -6,6 +6,9 @@ use syn::{Expr, ExprStruct, File, Item, Lit};
 
 use super::{Contract, Kind, Status};
 
+#[cfg(test)]
+mod tests;
+
 pub(super) struct Binding {
 	pub(super) id: &'static str,
 	owner: &'static str,
@@ -28,6 +31,7 @@ enum Marker {
 		features: &'static str,
 	},
 	Array {
+		version: &'static str,
 		width: usize,
 	},
 }
@@ -94,7 +98,7 @@ pub(super) const BINDINGS: &[Binding] = &[
 	Binding::new(
 		"linux-copy-plan",
 		"crates/engines/exacopy-transfer/src/linux/plan/wire.rs",
-		Marker::Array { width: 2 },
+		Marker::array("VERSION", 2),
 	),
 	Binding::new(
 		"linux-prepared",
@@ -109,7 +113,7 @@ pub(super) const BINDINGS: &[Binding] = &[
 	Binding::new(
 		"linux-public-apply-intent",
 		"crates/storage/exacopy-journal/src/intent/public_apply.rs",
-		Marker::Array { width: 3 },
+		Marker::array("VERSION", 3),
 	),
 	Binding::new(
 		"linux-range-page",
@@ -127,27 +131,32 @@ pub(super) const BINDINGS: &[Binding] = &[
 	Binding::new(
 		"linux-public-apply-receipt",
 		"crates/engines/exacopy-transfer/src/linux/receipt/public_apply.rs",
-		Marker::Array { width: 3 },
+		Marker::array("VERSION", 3),
 	),
 	Binding::new(
 		"linux-remote-download-owner",
 		"crates/storage/exacopy-journal/src/remote_download/owner.rs",
-		Marker::Array { width: 3 },
+		Marker::array("VERSION", 3),
+	),
+	Binding::new(
+		"linux-remote-download-resolved-direct-owner",
+		"crates/storage/exacopy-journal/src/remote_download/owner.rs",
+		Marker::array("RESOLVED_DIRECT_VERSION", 3),
 	),
 	Binding::new(
 		"linux-remote-download-records",
 		"crates/storage/exacopy-journal/src/remote_download/records/wire.rs",
-		Marker::Array { width: 3 },
+		Marker::array("VERSION", 3),
 	),
 	Binding::new(
 		"linux-remote-download-finalization",
 		"crates/storage/exacopy-journal/src/remote_download/finalization/wire.rs",
-		Marker::Array { width: 3 },
+		Marker::array("VERSION", 3),
 	),
 	Binding::new(
 		"linux-remote-capture-retirement",
 		"crates/storage/exacopy-journal/src/remote_download/retirement/wire.rs",
-		Marker::Array { width: 3 },
+		Marker::array("VERSION", 3),
 	),
 	Binding::new(
 		"linux-remote-destination-qualification",
@@ -160,7 +169,7 @@ pub(super) const BINDINGS: &[Binding] = &[
 	Binding::new(
 		"linux-remote-download-receipt",
 		"crates/storage/exacopy-journal/src/remote_download/finalization/wire.rs",
-		Marker::Array { width: 3 },
+		Marker::array("VERSION", 3),
 	),
 	Binding::new(
 		"linux-remote-stage-directory-bootstrap",
@@ -178,7 +187,7 @@ pub(super) const BINDINGS: &[Binding] = &[
 	Binding::new(
 		"darwin-managed-apfs-copy-plan",
 		"crates/engines/exacopy-transfer/src/macos/plan/wire.rs",
-		Marker::Array { width: 3 },
+		Marker::array("VERSION", 3),
 	),
 	Binding::new(
 		"darwin-managed-apfs-prepared",
@@ -188,7 +197,7 @@ pub(super) const BINDINGS: &[Binding] = &[
 	Binding::new(
 		"darwin-managed-apfs-copy-receipt",
 		"crates/engines/exacopy-transfer/src/macos/receipt/wire.rs",
-		Marker::Array { width: 3 },
+		Marker::array("VERSION", 3),
 	),
 ];
 
@@ -240,6 +249,10 @@ struct Markers {
 }
 
 impl Marker {
+	const fn array(version: &'static str, width: usize) -> Self {
+		Self::Array { version, width }
+	}
+
 	const fn pair(major: &'static str, minor: &'static str, features: &'static str) -> Self {
 		Self::Pair {
 			major,
@@ -289,9 +302,9 @@ impl Marker {
 				Some(number(constant(file, features)?)?),
 				None,
 			),
-			Self::Array { width } => {
-				let Expr::Array(values) = constant(file, "VERSION")? else {
-					return Err("expected a VERSION array".into());
+			Self::Array { version, width } => {
+				let Expr::Array(values) = constant(file, version)? else {
+					return Err(format!("expected a {version} array"));
 				};
 				let values = values
 					.elems
@@ -303,7 +316,7 @@ impl Marker {
 					[major, minor, features] if width == 3 => {
 						(format!("{major}.{minor}"), Some(*features), None)
 					}
-					_ => return Err(format!("expected {width} entries in VERSION")),
+					_ => return Err(format!("expected {width} entries in {version}")),
 				}
 			}
 		};

@@ -60,7 +60,7 @@ def record(kind, preceding, fields):
     return encode({0: VERSION, 1: CONTEXT, 2: preceding, 3: kind, 4: fields})
 
 
-def signed_owner(openssl, directory, scope):
+def signed_owner(openssl, directory, scope, *, version=VERSION):
     key = directory / "key.der"
     key.write_bytes(PKCS8_PREFIX + SEED)
     spki = subprocess.check_output(
@@ -69,7 +69,7 @@ def signed_owner(openssl, directory, scope):
     assert spki.startswith(SPKI_PREFIX) and len(spki) == len(SPKI_PREFIX) + 32
     public = spki[len(SPKI_PREFIX):]
     body = encode({
-        0: VERSION,
+        0: version,
         1: bytes([0x11]) * 16,
         2: JOB,
         3: bytes([0x22]) * 16,

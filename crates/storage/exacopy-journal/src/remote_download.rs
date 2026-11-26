@@ -24,6 +24,6 @@ pub use records::{
 	RemoteSourceObservation, RemoteUncertainBoundary,
 };
 pub use scope::{
-	MAX_REMOTE_PATH_BYTES, RemoteDownloadDestination, RemoteDownloadDurability,
+	DirectPeerRefusal, MAX_REMOTE_PATH_BYTES, RemoteDownloadDestination, RemoteDownloadDurability,
 	RemoteDownloadRoute, RemoteDownloadScope, RemoteDownloadSource, RemoteScopeDigest,
 };

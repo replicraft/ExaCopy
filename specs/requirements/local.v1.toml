@@ -1239,6 +1239,49 @@ path = "crates/storage/exacopy-journal/tests/remote_download.rs"
 target = "exact_predecessor_sequence_digest_and_kind_are_required"
 
 [[coverage]]
+id = "linux-remote-download-resolved-direct-owner"
+status = "implemented"
+requirement_ids = ["R-013", "R-140", "R-216", "R-229"]
+acceptance_ids = ["A-013", "A-140", "A-216", "A-229"]
+invariant_ids = ["INV-013", "INV-014", "INV-019", "INV-021"]
+scope = "Canonical bounded signed resolved-direct SFTP ownership binds the SSH authority and host-key pin to the exact peer socket. Explicit profile admission and strict bootstrap retain the same signed scope."
+limits = "The gate exercises historical authenticated bytes and checked peer equality. Live DNS resolution, socket identity, source trust, destination qualification and native effects require separate evidence."
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "obligation"
+state = "defined"
+path = "crates/storage/exacopy-journal/verification/obligations.toml"
+target = "P-048"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "fixture"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/remote_download/resolved-direct.hex"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/remote_download/resolved_direct.rs"
+target = "resolved_direct_owner_refuses_mixed_profile_and_invalid_socket_even_when_signed"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/remote_download/resolved_direct.rs"
+target = "resolved_direct_retry_refuses_different_authentic_peers_and_ports"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/remote_download/resolved_direct.rs"
+target = "resolved_direct_bootstrap_requires_selected_profile_and_exact_scope"
+
+[[coverage]]
 id = "remote-download-journal-replay"
 status = "implemented"
 requirement_ids = ["R-013", "R-017", "R-140"]

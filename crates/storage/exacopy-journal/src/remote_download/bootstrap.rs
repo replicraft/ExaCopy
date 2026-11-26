@@ -70,6 +70,18 @@ impl<'owner> RemoteBootstrapTrust<'owner> {
 		Ok(Self { owner, key })
 	}
 
+	/// Binds independently selected owner trust in the required resolved-direct profile.
+	/// # Errors
+	/// Refuses a different owner format, mismatched profile or untrusted key.
+	pub fn new_resolved_direct(
+		owner: &'owner RemoteDownloadOwnerRecord,
+		expected_profile: OwnerProfileId,
+		key: &'owner VerifyingKey,
+	) -> Result<Self, Error> {
+		RemoteDownloadOwnerRecord::decode_resolved_direct(owner.as_bytes(), expected_profile, key)?;
+		Ok(Self { owner, key })
+	}
+
 	/// Signs the checked stage directory observation for the actual first job frame.
 	///
 	/// The caller supplies the directory identity after its own native checks and

@@ -6,8 +6,8 @@ use crate::frame::{ChainHead, FrameKind, FrameReadError};
 use crate::{LinuxFileIdentity, MAX_FIRST_SEGMENT_BYTES};
 
 use super::{
-	RemoteBootstrapTrust, RemoteDownloadError, RemoteDownloadOwnerRecord, RemoteEpochs,
-	RemoteStageDirectoryPrepared, RemoteUncertainBoundary,
+	RemoteBootstrapTrust, RemoteDownloadError, RemoteDownloadOwnerRecord, RemoteDownloadRoute,
+	RemoteEpochs, RemoteStageDirectoryPrepared, RemoteUncertainBoundary,
 };
 
 use super::finalization_replay::FinalizationHistory;
@@ -204,11 +204,17 @@ impl RemoteDownloadReplay {
 /// a time. Each allocation allows at most 4,096 contiguous checkpoints.
 ///
 /// # Errors
-/// Fails if the owner's immutable canonical scope digest cannot be computed.
+/// Refuses a required resolved-direct owner and a scope digest that cannot be computed.
 pub fn replay_remote_download(
 	input: impl Read,
 	owner: &RemoteDownloadOwnerRecord,
 ) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
+	if matches!(
+		owner.manifest().scope.source.route(),
+		RemoteDownloadRoute::ResolvedDirect { .. }
+	) {
+		return Err(RemoteDownloadError::UnsupportedVersion);
+	}
 	reader::replay(
 		input,
 		owner,

@@ -12,14 +12,41 @@ use crate::{
 	OwnerToken,
 };
 
-use super::RemoteDownloadError as Error;
 use super::scope::{MAX_BODY_BYTES, RemoteDownloadScope};
 use super::wire::{
 	array, fixed, key, map, read_identity, read_version, write_identity, write_version,
 };
+use super::{RemoteDownloadError as Error, RemoteDownloadRoute};
 
 const DOMAIN: OwnerDomain = OwnerDomain::LinuxRemoteDownload;
 const VERSION: [u64; 3] = [1, 0, 1];
+const RESOLVED_DIRECT_VERSION: [u64; 3] = [1, 1, 3];
+
+#[derive(Clone, Copy)]
+enum OwnerFormat {
+	V1,
+	ResolvedDirect,
+}
+
+impl OwnerFormat {
+	const fn version(self) -> [u64; 3] {
+		match self {
+			Self::V1 => VERSION,
+			Self::ResolvedDirect => RESOLVED_DIRECT_VERSION,
+		}
+	}
+
+	fn require_route(self, route: RemoteDownloadRoute) -> Result<(), Error> {
+		match (self, route) {
+			(
+				Self::V1,
+				RemoteDownloadRoute::Direct | RemoteDownloadRoute::EmbeddedWireGuard { .. },
+			)
+			| (Self::ResolvedDirect, RemoteDownloadRoute::ResolvedDirect { .. }) => Ok(()),
+			_ => Err(Error::Scope),
+		}
+	}
+}
 
 /// Bound for the complete authenticated Linux remote-download owner envelope.
 pub const MAX_REMOTE_DOWNLOAD_OWNER_BYTES: usize = 6272;
@@ -94,13 +121,32 @@ impl RemoteDownloadOwnerRecord {
 	/// # Errors
 	/// Refuses invalid scope, weak signing keys, and unsupported encoding.
 	pub fn sign(manifest: RemoteDownloadOwner, signer: &SigningKey) -> Result<Self, Error> {
+		Self::sign_in(manifest, signer, OwnerFormat::V1)
+	}
+
+	/// Signs the explicitly selected required resolved-direct profile.
+	/// # Errors
+	/// Refuses a different route profile, invalid scope or unusable signer.
+	pub fn sign_resolved_direct(
+		manifest: RemoteDownloadOwner,
+		signer: &SigningKey,
+	) -> Result<Self, Error> {
+		Self::sign_in(manifest, signer, OwnerFormat::ResolvedDirect)
+	}
+
+	fn sign_in(
+		manifest: RemoteDownloadOwner,
+		signer: &SigningKey,
+		format: OwnerFormat,
+	) -> Result<Self, Error> {
 		manifest.validate()?;
+		format.require_route(manifest.scope.source.route())?;
 		let key = signer.verifying_key();
 		if key.is_weak() {
 			return Err(OwnerError::InvalidSignature.into());
 		}
 		let public_key = key.to_bytes();
-		let encoded = encode_body(&manifest, &public_key)?;
+		let encoded = encode_body(&manifest, &public_key, format)?;
 		let body = encoded_bytes(&encoded);
 		let signature = signer
 			.try_sign(&DOMAIN.signature_input(body))
@@ -126,6 +172,26 @@ impl RemoteDownloadOwnerRecord {
 		profile: OwnerProfileId,
 		key: &VerifyingKey,
 	) -> Result<Self, Error> {
+		Self::decode_in(bytes, profile, key, OwnerFormat::V1)
+	}
+
+	/// Authenticates the explicitly selected required resolved-direct profile.
+	/// # Errors
+	/// Refuses a different owner format or route profile, invalid key, signature or bytes.
+	pub fn decode_resolved_direct(
+		bytes: &[u8],
+		profile: OwnerProfileId,
+		key: &VerifyingKey,
+	) -> Result<Self, Error> {
+		Self::decode_in(bytes, profile, key, OwnerFormat::ResolvedDirect)
+	}
+
+	fn decode_in(
+		bytes: &[u8],
+		profile: OwnerProfileId,
+		key: &VerifyingKey,
+		format: OwnerFormat,
+	) -> Result<Self, Error> {
 		if bytes.len() > MAX_REMOTE_DOWNLOAD_OWNER_BYTES {
 			return Err(Error::Length);
 		}
@@ -144,7 +210,7 @@ impl RemoteDownloadOwnerRecord {
 			&Signature::from_bytes(&envelope.signature),
 		)
 		.map_err(|_| OwnerError::InvalidSignature)?;
-		let manifest = decode_body(envelope.body, &public_key)?;
+		let manifest = decode_body(envelope.body, &public_key, format)?;
 		if manifest.profile != profile {
 			return Err(OwnerError::UntrustedProfile.into());
 		}
@@ -181,10 +247,14 @@ impl fmt::Debug for RemoteDownloadOwnerRecord {
 	}
 }
 
-fn encode_body(manifest: &RemoteDownloadOwner, public_key: &[u8; 32]) -> Result<Body, Error> {
+fn encode_body(
+	manifest: &RemoteDownloadOwner,
+	public_key: &[u8; 32],
+	format: OwnerFormat,
+) -> Result<Body, Error> {
 	let mut out = Encoder::new(Body::new([0; MAX_BODY_BYTES]));
 	out.map(8)?.u8(0)?;
-	write_version(&mut out, VERSION)?;
+	write_version(&mut out, format.version())?;
 	out.u8(1)?
 		.bytes(manifest.token.as_bytes())?
 		.u8(2)?
@@ -204,11 +274,15 @@ fn encode_body(manifest: &RemoteDownloadOwner, public_key: &[u8; 32]) -> Result<
 	Ok(out.into_writer())
 }
 
-fn decode_body(bytes: &[u8], public_key: &[u8; 32]) -> Result<RemoteDownloadOwner, Error> {
+fn decode_body(
+	bytes: &[u8],
+	public_key: &[u8; 32],
+	format: OwnerFormat,
+) -> Result<RemoteDownloadOwner, Error> {
 	let mut decoder = Decoder::new(bytes);
 	map(&mut decoder, 8)?;
 	key(&mut decoder, 0)?;
-	read_version(&mut decoder, VERSION)?;
+	read_version(&mut decoder, format.version())?;
 	key(&mut decoder, 1)?;
 	let token = OwnerToken::from_bytes(fixed(&mut decoder)?)?;
 	key(&mut decoder, 2)?;
@@ -226,8 +300,9 @@ fn decode_body(bytes: &[u8], public_key: &[u8; 32]) -> Result<RemoteDownloadOwne
 	let job_directory = read_identity(&mut decoder)?;
 	key(&mut decoder, 7)?;
 	let scope = RemoteDownloadScope::read(&mut decoder)?;
+	format.require_route(scope.source.route())?;
 	let manifest = RemoteDownloadOwner::new(token, job, profile, created, job_directory, scope)?;
-	if encoded_bytes(&encode_body(&manifest, public_key)?) != bytes {
+	if encoded_bytes(&encode_body(&manifest, public_key, format)?) != bytes {
 		return Err(Error::NonCanonical);
 	}
 	Ok(manifest)

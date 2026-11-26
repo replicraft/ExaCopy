@@ -110,3 +110,15 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/remote_destination_qualification.rs", test = "independent_signed_records_project_matching_current_destination_facts", oracle = "Independent canonical CBOR and Ed25519 records authenticate both exact transport profile classes and project only matching destination facts with the distinct complete-record digest." }
+
+[[obligation]]
+id = "P-048"
+requirement_ids = ["R-013", "R-140", "R-216", "R-229"]
+source = "src/remote_download/owner.rs"
+symbols = ["RemoteDownloadOwnerRecord::decode_resolved_direct", "RESOLVED_DIRECT_VERSION"]
+assumptions = [
+    "The caller independently selects the required owner profile and local signing key, and establishes the authorized peer and SSH authority.",
+    "Ed25519 and BLAKE3 follow their selected profiles. Native resolution, dialing and remote or local durability require separate evidence.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_download/resolved_direct.rs", test = "resolved_direct::resolved_direct_owner_binds_hostname_pin_and_literal_socket_to_new_profile", oracle = "The independent signed vector binds the canonical hostname and host-key pin to the exact IPv4 socket. The resolved-direct owner matches the distinct scope projection and the legacy reader refuses it." }
