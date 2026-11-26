@@ -63,6 +63,12 @@ impl<'held, R: CapturedReadAt, L> LentRetainedSuffix<'held, '_, R, L> {
 		self.reader
 	}
 
+	/// Borrows the same held source to compare its adapter-specific admission.
+	#[must_use]
+	pub const fn source(&self) -> &R {
+		self.prefix.source
+	}
+
 	/// Returns the exact compared prefix only before the first suffix read.
 	#[must_use]
 	pub fn initial_prefix(&self) -> Option<&VerifiedRetainedPrefix<'_, R>> {

@@ -84,6 +84,20 @@ pub struct SftpSource<'session, Check> {
 	check: Check,
 }
 
+impl<Check> SftpSource<'_, Check> {
+	/// Returns the exact admitted connection binding on this held source.
+	#[must_use]
+	pub const fn binding(&self) -> ConnectionBinding {
+		self.binding
+	}
+
+	/// Returns the observation originally obtained from this exact held source.
+	#[must_use]
+	pub const fn observation(&self) -> FileObservation {
+		self.observation
+	}
+}
+
 impl<'session, Check> SftpSource<'session, Check>
 where
 	Check: FnMut(ConnectionBinding) -> Result<(), RetryError>,
