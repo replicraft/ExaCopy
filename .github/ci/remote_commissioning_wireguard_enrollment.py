@@ -2,6 +2,7 @@
 """Collect fixed hosted kernel evidence for review without loading modules."""
 
 from dataclasses import asdict, dataclass
+from enum import Enum
 from lzma import LZMAError
 import os
 from pathlib import Path
@@ -217,8 +218,9 @@ def check_selected_archive(work, candidate, signed, fingerprints, evidence):
     evidence["kmod_plan"] = plan.decode("ascii").splitlines()
 
 
-def collect(work, report, source, evidence):
-    observed = provider.report()
+def collect(work, report, source, evidence, observed=None):
+    if observed is None:
+        observed = provider.report()
     evidence["provider_observation"] = observed
     candidate = selected(observed)
     evidence["candidate"] = candidate.tag
@@ -247,13 +249,24 @@ def collect(work, report, source, evidence):
     same_boot(kernel)
 
 
-def main():
+class EnrollmentContext(Enum):
+    STANDALONE = "standalone"
+    PROVIDER_B_OBSERVATION = "provider-b-observation"
+
+
+def main(context=EnrollmentContext.STANDALONE, observed=None):
+    program, workflow = {
+        EnrollmentContext.STANDALONE: (PROGRAM, WORKFLOW_REF),
+        EnrollmentContext.PROVIDER_B_OBSERVATION: (parsing.DISPATCH_PROGRAM, parsing.WORKFLOW_REF),
+    }[context]
     parent = provider.hosted_admission()
-    if direct.hosted_parent(PROGRAM, ("push",)) != parent or (
-        os.environ.get("GITHUB_WORKFLOW_REF") != WORKFLOW_REF
+    if direct.hosted_parent(program, ("push",)) != parent or (
+        os.environ.get("GITHUB_WORKFLOW_REF") != workflow
         or os.environ.get("GITHUB_WORKFLOW_SHA") != os.environ["GITHUB_SHA"]
     ):
         raise Blocked("candidate collection requires its exact canonical main push workflow")
+    if (context is EnrollmentContext.PROVIDER_B_OBSERVATION) != (observed is not None):
+        raise Blocked("enrollment context requires its exact observation origin")
     source = direct.native.source_identity(direct.native.REPO)
     if source["revision"] != os.environ["GITHUB_SHA"]:
         raise Blocked("candidate collection checkout differs from its hosted revision")
@@ -271,11 +284,15 @@ def main():
     work.mkdir(mode=0o700)
     evidence = {
         "schema": "exacopy.hosted-wireguard-abi-enrollment-observation.v1",
-        "source": source, "commissioned": False, "qualified": False, "load_attempted": False,
+        "source": source, "context": context.value,
+        "commissioned": False, "qualified": False, "load_attempted": False,
     }
     uncertain = False
     try:
-        collect(work, report, source, evidence)
+        if context is EnrollmentContext.STANDALONE:
+            collect(work, report, source, evidence)
+        else:
+            collect(work, report, source, evidence, observed)
         checkpoint()
         evidence["status"] = "observed"
     except CleanupUnconfirmed:

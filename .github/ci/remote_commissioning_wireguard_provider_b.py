@@ -1,5 +1,7 @@
 """Explicitly load the fixed verified Azure WireGuard provider in a disposable hosted job."""
 from dataclasses import dataclass
+from enum import Enum
+import json
 import os
 from pathlib import Path
 import re
@@ -61,6 +63,54 @@ def hosted_scope():
         or not re.fullmatch(r"[0-9a-f]{40}", revision) or "EXACOPY_REMOTE_DEPLOYMENT" in env
     ):
         raise Blocked("fixed Azure B requires its exact canonical main push workflow")
+
+
+
+class DispatchMode(Enum):
+    AZURE_1017 = "commission-azure-1017"
+    OBSERVE = "observe-candidate"
+    BLOCKED = "blocked"
+
+
+DISPATCH_SCHEMA = "exacopy.hosted-wireguard-provider-dispatch.v1"
+DISPATCH_PROGRAM = "remote_commissioning_wireguard_dispatch.py"
+DISPATCH_RECORD = "dispatch.json"
+
+
+def dispatch_run():
+    run = os.environ["GITHUB_RUN_ID"]
+    attempt = os.environ["GITHUB_RUN_ATTEMPT"]
+    if not all(re.fullmatch(r"[1-9][0-9]{0,19}", value) for value in (run, attempt)):
+        raise Blocked("invalid hosted provider dispatch run identity")
+    return {"run_id": run, "attempt": attempt}
+
+
+def verify_dispatch(parent, expected):
+    # The dispatcher output gates workflow steps, while this record also binds
+    # actual activation to the same run, revision and boot observed at selection.
+    directory = parent / provider.REPORT
+    directory_identity(directory, os.geteuid(), 0o700)
+    path = directory / DISPATCH_RECORD
+    identity = regular(path, os.geteuid(), 8192)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    with os.fdopen(fd, "rb") as source:
+        data = source.read(8193)
+        opened = os.fstat(source.fileno())
+        if (opened.st_dev, opened.st_ino, opened.st_size, opened.st_ctime_ns, opened.st_mtime_ns) != identity:
+            raise Blocked("hosted provider dispatch record changed")
+    if len(data) != identity[2] or regular(path, os.geteuid(), 8192) != identity:
+        raise Blocked("hosted provider dispatch record changed")
+    record = json.loads(data)
+    if (
+        not isinstance(record, dict) or record.get("schema") != DISPATCH_SCHEMA
+        or record.get("mode") != DispatchMode.AZURE_1017.value
+        or record.get("revision") != os.environ["GITHUB_SHA"] or record.get("run") != dispatch_run()
+        or record.get("kernel") != expected
+    ):
+        raise Blocked("provider B selection does not bind this run and boot")
+    if record.get("provider_observation_sha256") != checked_hash(directory / "provider.json", os.geteuid(), 64 * 1024):
+        raise Blocked("hosted provider dispatch observation changed")
+    return record
 
 
 def package_record(name):

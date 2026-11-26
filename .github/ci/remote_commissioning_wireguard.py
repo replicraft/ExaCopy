@@ -259,6 +259,7 @@ def execute(parent, work, report, evidence, choice=ProviderChoice.EXISTING):
         observed = provider.report()
         evidence["provider_before"] = observed
         boot = provider_b.admit(observed)
+        evidence["dispatch"] = provider_b.verify_dispatch(parent.parent, boot)
     else:
         raise ValueError("unexpected provider choice")
     evidence["provider_choice"] = choice.value
