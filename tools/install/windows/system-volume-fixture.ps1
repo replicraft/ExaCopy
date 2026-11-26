@@ -68,3 +68,33 @@ foreach ($shape in @{ Identity = 24; StandardInfo = 24; AttributeTag = 8 }.GetEn
     }
 }
 Write-Output 'Actual native helper compiles and its response layout sizes match the Win32 ABI.'
+
+# On Windows also exercise the real held chain before the package fixture
+# creates anything. The public installer retains its non-elevation gate.
+if ($IsWindows) {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    try {
+        $owner = $identity.User
+        $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+        $administratorEnabled = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    }
+    finally { $identity.Dispose() }
+    $local = Resolve-ExaCopyWindowsPath ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData))
+    $ancestry = Open-ExaCopyProductAncestry $local $owner
+    try {
+        Assert-ExaCopyInstallAncestors $local $owner $ancestry
+        $root = $ancestry.Inspect($local)[0]
+        $rootSecurity = [Security.AccessControl.RawSecurityDescriptor]::new($root.Security, 0)
+        $usedSystemRootRole = $rootSecurity.Owner.Value -ceq $trustedInstaller
+        if ($usedSystemRootRole -and !$ancestry.IsSystemVolumeRoot()) {
+            throw 'The held root owner exception lacks native system-volume proof.'
+        }
+        $other = Join-Path $local 'ExaCopy-unadmitted-fixture-parent'
+        Assert-Refused { $ancestry.Inspect($other) } 'Invalid installer mutation parent'
+        Write-Output "Native read-only ancestry admitted (administrator-enabled=$administratorEnabled, system-root-owner-role=$usedSystemRootRole)."
+    }
+    finally { $ancestry.Dispose() }
+}
+else {
+    Write-Output 'Native held-ancestry smoke applies on Windows.'
+}

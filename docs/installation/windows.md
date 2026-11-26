@@ -80,9 +80,12 @@ the executable against write or deletion through child exit. It forwards
 arguments and the child exit status. Its locally installed script requires
 PowerShell 7.4+ and an execution policy that admits it. The direct executable
 path remains available for Command Prompt and restricted script policies.
-The launcher itself makes no Authenticode claim. Install and uninstall
-must use the same trusted launcher-generation support files; a changed
-generation needs a separately specified migration.
+The launcher itself makes no Authenticode claim. Its authenticated bytes
+bind it to the trusted launcher-generation files from the installer
+revision that created it. Use the matching installer and uninstaller for
+that installation. A different generation refuses and preserves the
+existing launcher. Migration between generations requires a separate
+procedure.
 
 ## Reinstall and uninstall
 
@@ -128,8 +131,11 @@ uninstall in the presence of concurrent launches.
 
 Run `pwsh -NoProfile -NonInteractive -File tools/install/windows/test.ps1`.
 Also run `pwsh -NoProfile -NonInteractive -File tools/install/windows/launcher-fixture.ps1`.
-The fixture tests PowerShell syntax, ephemeral signed metadata, PE header
-admission, and failure controls in disposable directories. On Windows,
+The fixture tests PowerShell syntax, installer ancestor owner and DACL
+controls, ephemeral signed metadata, PE header admission, and failures in
+disposable directories. On Windows it also observes the native held
+LocalAppData ancestor chain before it creates a fixture. That observation
+is read-only and may run on an admin-enabled runner. On Windows,
 `-Artifact PATH` adds validation of a built native CLI binary without
 executing it. Passing those checks does not qualify installation and
 uninstallation on native Windows. The native ACL, rename, stream,

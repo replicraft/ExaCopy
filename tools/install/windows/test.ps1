@@ -9,13 +9,15 @@ $production = @('install.ps1', 'uninstall.ps1', 'tools/install/windows/paths.ps1
     'tools/install/windows/release.ps1', 'tools/install/windows/lifecycle.ps1',
     'tools/install/windows/download.ps1', 'tools/install/windows/archive.ps1',
     'tools/install/windows/online.ps1', 'tools/install/windows/online-fixtures.ps1',
-    'tools/install/windows/fixture-tools.ps1', 'tools/install/windows/Lifecycle.Tests.ps1')
+    'tools/install/windows/fixture-tools.ps1', 'tools/install/windows/Lifecycle.Tests.ps1',
+    'tools/install/windows/system-volume-fixture.ps1')
 foreach ($relative in $production) {
     $tokens = $null
     $errors = $null
     [void][Management.Automation.Language.Parser]::ParseFile((Join-Path $root $relative), [ref]$tokens, [ref]$errors)
     if ($errors.Count -ne 0) { throw ("Parse error in ${relative}: " + $errors[0].Message) }
 }
+& (Join-Path $PSScriptRoot 'system-volume-fixture.ps1')
 . (Join-Path $PSScriptRoot 'paths.ps1')
 . (Join-Path $PSScriptRoot 'release.ps1')
 . (Join-Path $PSScriptRoot 'lifecycle.ps1')
