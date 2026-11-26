@@ -111,7 +111,7 @@ jobs:
         run: |
           bash .github/ci/capture.sh experimental-sftp cargo +1.100.0 nextest run --locked \
             -p exacopy-sftp --features experimental-sftp --profile ci-experimental-sftp --no-tests fail \
-            -E 'test(/^source::tests::/)'
+            -E 'test(/^source::/)'
           test -s target/nextest/ci-experimental-sftp/junit.xml
       - name: Run opt-in held SFTP CLI capture tests
         if: ${{ !cancelled() && steps.nextest.outcome == 'success' && (runner.os == 'Linux' || runner.os == 'macOS') }}

@@ -18,6 +18,8 @@ pub enum SftpSourceError {
 		/// Wire failure observed during the refused read, for diagnostics.
 		wire: Box<exacopy_ssh::Error>,
 	},
+	/// A held data-read operation timed out and its post-I/O binding was current.
+	ReadTimeout,
 	/// The adapter no longer holds a source for this pass.
 	Closed,
 	/// The observed file exceeds the destination's signed offset profile.
@@ -41,6 +43,7 @@ impl fmt::Display for SftpSourceError {
 					"{binding}. The refused read also failed ({wire})"
 				)
 			}
+			Self::ReadTimeout => formatter.write_str("held SFTP data read timed out"),
 			Self::Closed => formatter.write_str("SFTP capture pass is closed"),
 			Self::Extent => formatter.write_str("SFTP file exceeds the capture offset limit"),
 			Self::Window => formatter.write_str("SFTP read window exceeds the capture bounds"),

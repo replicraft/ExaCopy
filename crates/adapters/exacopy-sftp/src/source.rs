@@ -162,7 +162,7 @@ where
 		while !remaining.is_empty() {
 			let limit = remaining.len().min(MAX_READ_CHUNK_BYTES);
 			let read = window.read_next(&mut remaining[..limit]).await;
-			let count = confirm_read((self.check)(self.binding), read)?;
+			let count = confirm_data_read((self.check)(self.binding), read)?;
 			if !(1..=limit).contains(&count) {
 				return Err(SftpSourceError::Observation);
 			}
@@ -207,6 +207,41 @@ fn confirm_read<T>(
 			wire: Box::new(wire),
 		}),
 	}
+}
+
+fn confirm_data_read(
+	binding: Result<(), RetryError>,
+	read: Result<usize, exacopy_ssh::Error>,
+) -> Result<usize, SftpSourceError> {
+	match confirm_read(binding, read) {
+		Err(SftpSourceError::Sftp(exacopy_ssh::Error::Timeout)) => {
+			Err(SftpSourceError::ReadTimeout)
+		}
+		result => result,
+	}
+}
+
+#[test]
+fn only_an_authorized_held_data_read_exposes_the_distinct_timeout() {
+	assert!(matches!(
+		confirm_data_read(Ok(()), Err(exacopy_ssh::Error::Timeout)),
+		Err(SftpSourceError::ReadTimeout)
+	));
+	assert!(matches!(
+		confirm_data_read(Err(RetryError::StaleWork), Err(exacopy_ssh::Error::Timeout)),
+		Err(SftpSourceError::ReadBinding {
+			binding: RetryError::StaleWork,
+			..
+		})
+	));
+	assert!(matches!(
+		confirm_data_read(Ok(()), Err(exacopy_ssh::Error::Closed)),
+		Err(SftpSourceError::Sftp(exacopy_ssh::Error::Closed))
+	));
+	assert!(matches!(
+		confirm_read::<()>(Ok(()), Err(exacopy_ssh::Error::Timeout)),
+		Err(SftpSourceError::Sftp(exacopy_ssh::Error::Timeout))
+	));
 }
 
 #[test]
