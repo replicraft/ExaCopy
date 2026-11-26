@@ -417,3 +417,28 @@ fn authorization(binding: CopyBinding) -> PublishNoClobber {
 fn component(name: &str) -> UnixComponent<'_> {
 	UnixComponent::new(name.as_bytes()).unwrap()
 }
+
+#[test]
+#[ignore = "requires native Linux and a disposable writable ext4 TMPDIR"]
+fn expired_prepublication_barrier_cannot_reach_the_rename_gate() {
+	with_fresh(|scratch, root, ready| {
+		let qualification = projection(root);
+		let eligible = RemoteDestinationEligibility::admit(root, Some(&qualification)).unwrap();
+		let result = ready.publish_no_clobber_admitted(
+			&eligible,
+			AUTHORITY,
+			authorization(binding(1)),
+			|| Err::<(), _>(GateFailure::Expired),
+			|_| -> Result<(), GateFailure> { panic!("expired barrier admitted rename") },
+		);
+		assert!(matches!(
+			result,
+			Err(SelectedStreamPublishError::Gate(GateFailure::Expired))
+		));
+		assert!(!scratch.path(TARGET).exists());
+		assert_eq!(
+			fs::read(scratch.path(JOB).join("stage").join(STAGE)).unwrap(),
+			PAYLOAD
+		);
+	});
+}

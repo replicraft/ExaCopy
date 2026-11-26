@@ -77,12 +77,35 @@ impl FreshRecoveryStage<'_> {
 	/// creation or directory synchronization. Each call spends the allocation.
 	/// A file created before a later failure remains private for reconciliation.
 	pub fn create_writer(&mut self, binding: CopyBinding) -> Result<WriteStage<'_>, StageError> {
-		self.create_with(binding, |directory| directory.sync_directory())
+		self.create_writer_admitted(binding, || Ok(()))
 	}
 
+	/// Admits the exclusive creation after inventory and directory checks.
+	/// The subsequent directory barrier completes the same creation.
+	///
+	/// # Errors
+	/// Refusal creates no file. A failed observation after creation retains the file.
+	pub fn create_writer_admitted<G>(
+		&mut self,
+		binding: CopyBinding,
+		enter: impl FnOnce() -> std::io::Result<G>,
+	) -> Result<WriteStage<'_>, StageError> {
+		self.create_admitted_with(binding, enter, |directory| directory.sync_directory())
+	}
+
+	#[cfg(test)]
 	fn create_with(
 		&mut self,
 		binding: CopyBinding,
+		sync: impl FnOnce(&StageDirectory<'_>) -> Result<(), StageError>,
+	) -> Result<WriteStage<'_>, StageError> {
+		self.create_admitted_with(binding, || Ok(()), sync)
+	}
+
+	fn create_admitted_with<G>(
+		&mut self,
+		binding: CopyBinding,
+		enter: impl FnOnce() -> std::io::Result<G>,
 		sync: impl FnOnce(&StageDirectory<'_>) -> Result<(), StageError>,
 	) -> Result<WriteStage<'_>, StageError> {
 		let inventory = self.inventory.take().ok_or(StageError::IdentityChanged)?;
@@ -91,7 +114,9 @@ impl FreshRecoveryStage<'_> {
 			.map_err(|_| StageError::IdentityChanged)?;
 		let target = UnixComponent::new(inventory.target_name.as_bytes())
 			.map_err(|_| StageError::IdentityChanged)?;
-		let writer = self.directory.create_file(stage, target, binding)?;
+		let writer = self
+			.directory
+			.create_file_admitted(stage, target, binding, enter)?;
 		sync(&self.directory)?;
 		let observed = inventory.job.inventory(stage, target)?;
 		if observed.stage_directory_identity() != Some(self.directory.identity())

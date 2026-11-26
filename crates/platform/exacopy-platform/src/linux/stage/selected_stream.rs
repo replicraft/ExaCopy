@@ -137,8 +137,21 @@ impl<'stage> ClosedStage<'stage> {
 		self,
 		expected_length: u64,
 	) -> Result<SelectedStreamMetadataReady<'stage>, StageError> {
-		prepare(StageHandle::Closed(self), expected_length, |file| {
-			fs::fsync(file)
+		self.prepare_selected_stream_metadata_admitted(expected_length, || Ok(()))
+	}
+
+	/// Checks selected metadata and enters the caller's authority before the file barrier.
+	///
+	/// # Errors
+	/// Refuses stale metadata, failed admission or a failed file barrier.
+	pub fn prepare_selected_stream_metadata_admitted<G>(
+		self,
+		expected_length: u64,
+		enter: impl FnOnce() -> std::io::Result<G>,
+	) -> Result<SelectedStreamMetadataReady<'stage>, StageError> {
+		prepare_with(StageHandle::Closed(self), expected_length, |file| {
+			let _guard = enter().map_err(StageError::Admission)?;
+			sync_metadata(file)
 		})
 	}
 }
@@ -156,9 +169,7 @@ impl<'stage> RetainedStage<'stage> {
 		self,
 		expected_length: u64,
 	) -> Result<SelectedStreamMetadataReady<'stage>, StageError> {
-		prepare(StageHandle::Retained(self), expected_length, |file| {
-			fs::fsync(file)
-		})
+		prepare_with(StageHandle::Retained(self), expected_length, sync_metadata)
 	}
 }
 
@@ -229,14 +240,29 @@ fn check_metadata(stat: &fs::Stat, current: SourceObservation) -> Result<(), Sta
 	Ok(())
 }
 
+fn sync_metadata(file: &File) -> Result<(), StageError> {
+	fs::fsync(file).map_err(|source| StageError::BarrierFailed(source.into()))
+}
+
+#[cfg(test)]
 fn prepare<'stage>(
 	stage: StageHandle<'stage>,
 	expected_length: u64,
 	sync: impl FnOnce(&File) -> rustix::io::Result<()>,
 ) -> Result<SelectedStreamMetadataReady<'stage>, StageError> {
+	prepare_with(stage, expected_length, |file| {
+		sync(file).map_err(|source| StageError::BarrierFailed(source.into()))
+	})
+}
+
+fn prepare_with<'stage>(
+	stage: StageHandle<'stage>,
+	expected_length: u64,
+	sync: impl FnOnce(&File) -> Result<(), StageError>,
+) -> Result<SelectedStreamMetadataReady<'stage>, StageError> {
 	let view = stage.view()?;
 	let before = view.observe(expected_length)?;
-	sync(view.file).map_err(|source| StageError::BarrierFailed(source.into()))?;
+	sync(view.file)?;
 	let view = stage.view()?;
 	let file = view.observe(expected_length)?;
 	before.recheck(file).map_err(StageError::ReadBack)?;

@@ -24,16 +24,38 @@ impl WriteStage<'_> {
 	/// # Errors
 	/// Refuses a changed observation, invalid extent or failed barrier.
 	pub fn sync_prefix(&mut self, end: u64) -> Result<FileIdentity, StageError> {
-		self.sync_prefix_with(end, |file| fs::fsync(file))
+		self.sync_prefix_admitted(end, || Ok(()))
 	}
 
+	/// Checks the complete prefix and admits its file barrier immediately before sync.
+	///
+	/// # Errors
+	/// Refuses a changed observation, failed admission or a failed barrier.
+	pub fn sync_prefix_admitted<G>(
+		&mut self,
+		end: u64,
+		enter: impl FnOnce() -> std::io::Result<G>,
+	) -> Result<FileIdentity, StageError> {
+		self.sync_prefix_admitted_with(end, enter, |file| fs::fsync(file))
+	}
+
+	#[cfg(test)]
 	pub(super) fn sync_prefix_with(
 		&mut self,
 		end: u64,
 		sync: impl FnOnce(&File) -> io::Result<()>,
 	) -> Result<FileIdentity, StageError> {
+		self.sync_prefix_admitted_with(end, || Ok(()), sync)
+	}
+
+	fn sync_prefix_admitted_with<G>(
+		&mut self,
+		end: u64,
+		enter: impl FnOnce() -> std::io::Result<G>,
+		sync: impl FnOnce(&File) -> io::Result<()>,
+	) -> Result<FileIdentity, StageError> {
 		let before = self.check_prefix(end)?;
-		self.flush_with(sync)?;
+		self.flush_admitted_with(enter, sync)?;
 		let result = self
 			.check_prefix(end)
 			.and_then(|after| check_content_stamp(&before, &after).map(|()| after));

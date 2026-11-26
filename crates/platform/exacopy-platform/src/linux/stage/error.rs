@@ -14,6 +14,8 @@ mod tests;
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum StageError {
+	/// The requested effect was refused before its syscall.
+	Admission(io::Error),
 	/// Exclusive creation found an existing entry and left it untouched.
 	AlreadyExists,
 	/// A cooperating reader or writer already holds an incompatible job lease.
@@ -40,6 +42,8 @@ pub enum StageError {
 	PriorBarrierFailure,
 	/// Exact positional writing failed.
 	Write(IoError),
+	/// A submitted positional write could not be confirmed through the requested range.
+	WriteOutcomeUnknown(IoError),
 	/// The source requests special permission bits outside the metadata baseline.
 	UnsupportedMode,
 	/// Source UID/GID cannot be represented by this new file's existing ownership.
@@ -74,6 +78,7 @@ impl From<Errno> for StageError {
 impl fmt::Display for StageError {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
+			Self::Admission(source) => write!(f, "staging effect was refused: {source}"),
 			Self::AlreadyExists => f.write_str("exclusive staging name already exists"),
 			Self::JobBusy => f.write_str("the job is in use"),
 			Self::UnsafeDirectory => f.write_str("directory failed the managed staging policy"),
@@ -93,6 +98,12 @@ impl fmt::Display for StageError {
 			}
 			Self::PriorBarrierFailure => f.write_str("stage file barrier previously failed"),
 			Self::Write(source) => write!(f, "could not write the private stage: {source}"),
+			Self::WriteOutcomeUnknown(source) => {
+				write!(
+					f,
+					"could not confirm a submitted write to the private stage: {source}"
+				)
+			}
 			Self::UnsupportedMode => f.write_str("stage cannot restore special permission bits"),
 			Self::DifferentOwnership => f.write_str("source and stage ownership do not match"),
 			Self::UnexpectedExtendedAttributes => {
@@ -114,8 +125,9 @@ impl Error for StageError {
 	fn source(&self) -> Option<&(dyn Error + 'static)> {
 		match self {
 			Self::ReadBack(source) => Some(source),
-			Self::Write(source) => Some(source),
-			Self::BarrierFailed(source)
+			Self::Write(source) | Self::WriteOutcomeUnknown(source) => Some(source),
+			Self::Admission(source)
+			| Self::BarrierFailed(source)
 			| Self::DirectoryBarrierFailed(source)
 			| Self::ExtendedAttributesUnavailable(source)
 			| Self::System(source) => Some(source),

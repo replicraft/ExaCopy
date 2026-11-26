@@ -193,16 +193,37 @@ impl SelectedStreamMetadataReady<'_> {
 		permit: PublishNoClobber,
 		enter_gate: impl FnOnce(SelectedStreamGateRequest<'_>) -> Result<G, E>,
 	) -> Result<SelectedStreamPublication, SelectedStreamPublishError<E>> {
-		self.publish_with_barriers(
+		self.publish_no_clobber_admitted(eligibility, authority, permit, || Ok(()), enter_gate)
+	}
+
+	/// Separately admits the pre-rename file barrier and the checked no-replace rename.
+	///
+	/// # Errors
+	/// Refuses a failed admission, stale observations or a failed native operation.
+	/// Once started, the rename's bounded observation and directory barriers still run.
+	pub fn publish_no_clobber_admitted<G, H, E>(
+		self,
+		eligibility: &RemoteDestinationEligibility<'_>,
+		authority: SelectedStreamPublicationAuthority,
+		permit: PublishNoClobber,
+		enter_barrier: impl FnOnce() -> Result<H, E>,
+		enter_gate: impl FnOnce(SelectedStreamGateRequest<'_>) -> Result<G, E>,
+	) -> Result<SelectedStreamPublication, SelectedStreamPublishError<E>> {
+		self.publish_with_effects(
 			eligibility,
 			authority,
 			permit,
 			enter_gate,
-			|file| fs::fsync(file),
+			|file| {
+				let _guard = enter_barrier().map_err(SelectedStreamPublishError::Gate)?;
+				fs::fsync(file)
+					.map_err(|source| before_rename(StageError::BarrierFailed(source.into())))
+			},
 			|directory| fs::fsync(directory),
 		)
 	}
 
+	#[cfg(test)]
 	fn publish_with_barriers<G, E>(
 		self,
 		eligibility: &RemoteDestinationEligibility<'_>,
@@ -210,6 +231,28 @@ impl SelectedStreamMetadataReady<'_> {
 		permit: PublishNoClobber,
 		enter_gate: impl FnOnce(SelectedStreamGateRequest<'_>) -> Result<G, E>,
 		sync_file: impl FnOnce(&File) -> rustix::io::Result<()>,
+		sync_directories: impl FnMut(&File) -> rustix::io::Result<()>,
+	) -> Result<SelectedStreamPublication, SelectedStreamPublishError<E>> {
+		self.publish_with_effects(
+			eligibility,
+			authority,
+			permit,
+			enter_gate,
+			|file| {
+				sync_file(file)
+					.map_err(|source| before_rename(StageError::BarrierFailed(source.into())))
+			},
+			sync_directories,
+		)
+	}
+
+	fn publish_with_effects<G, E>(
+		self,
+		eligibility: &RemoteDestinationEligibility<'_>,
+		authority: SelectedStreamPublicationAuthority,
+		permit: PublishNoClobber,
+		enter_gate: impl FnOnce(SelectedStreamGateRequest<'_>) -> Result<G, E>,
+		sync_file: impl FnOnce(&File) -> Result<(), SelectedStreamPublishError<E>>,
 		sync_directories: impl FnMut(&File) -> rustix::io::Result<()>,
 	) -> Result<SelectedStreamPublication, SelectedStreamPublishError<E>> {
 		use SelectedStreamPublishError as Failure;
@@ -226,8 +269,7 @@ impl SelectedStreamMetadataReady<'_> {
 			.map_err(Failure::Eligibility)?;
 		let before = self.stage.view().map_err(before_rename)?;
 		self.recheck_view(&before).map_err(before_rename)?;
-		sync_file(before.file)
-			.map_err(|source| before_rename(StageError::BarrierFailed(source.into())))?;
+		sync_file(before.file)?;
 
 		eligibility
 			.recheck_for(names.destination)

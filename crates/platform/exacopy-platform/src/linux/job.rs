@@ -10,9 +10,11 @@ use super::handle::FileIdentity;
 use super::journal_segment::LinuxJournalSegment;
 use super::stage::{
 	DestinationRoot, StageDirectory, StageError, check_private_child, component,
-	create_private_directory, create_private_file, sync_directory,
+	create_private_file, sync_directory,
 };
 
+mod admission;
+pub use admission::JobDirectoryCreationError;
 mod capabilities;
 mod checkpoint;
 
@@ -61,16 +63,8 @@ impl DestinationRoot {
 		&self,
 		name: UnixComponent<'_>,
 	) -> Result<JobDirectory<'_>, StageError> {
-		self.check_current()?;
-		let name = component(name);
-		let (directory, identity) = create_private_directory(&self.directory, name, self.mount)?;
-		try_lock_job(&directory, FlockOperation::NonBlockingLockExclusive)?;
-		Ok(JobDirectory {
-			root: self,
-			directory,
-			name: name.into(),
-			identity,
-		})
+		self.create_job_directory_admitted(name, || Ok(()))
+			.map_err(JobDirectoryCreationError::into_stage_error)
 	}
 }
 
@@ -107,8 +101,7 @@ impl JobDirectory<'_> {
 	///
 	/// Rejects a changed job binding or a failed directory barrier.
 	pub fn sync_directory(&self) -> Result<(), StageError> {
-		self.check_current()?;
-		sync_directory(&self.directory)
+		self.sync_directory_admitted(|| Ok(()))
 	}
 
 	/// Exclusively creates the private `owner.cbor` record.
@@ -148,8 +141,7 @@ impl JobDirectory<'_> {
 	///
 	/// Rejects a changed job binding, a name collision or a syscall failure.
 	pub fn create_stage_directory(&self) -> Result<StageDirectory<'_>, StageError> {
-		self.check_current()?;
-		StageDirectory::create(self.root, Some(self), OsStr::new(STAGE))
+		self.create_stage_directory_admitted(|| Ok(()))
 	}
 
 	/// Exclusively creates the fixed private `journal/` child.
@@ -174,15 +166,7 @@ impl JobDirectory<'_> {
 		&self,
 		name: &'static str,
 	) -> Result<RecordDirectory<'_>, StageError> {
-		self.check_current()?;
-		let (directory, identity) =
-			create_private_directory(&self.directory, OsStr::new(name), self.root.mount)?;
-		Ok(RecordDirectory {
-			job: self,
-			directory,
-			identity,
-			name,
-		})
+		self.create_record_directory_admitted(name, || Ok(()))
 	}
 
 	pub(super) fn check_current(&self) -> Result<(), StageError> {
@@ -227,15 +211,7 @@ impl JournalDirectory<'_> {
 	/// Rejects a changed directory binding, a name collision or a syscall failure.
 	/// The segment writer owns file barriers and reconciliation.
 	pub fn create_first_segment(&self) -> Result<LinuxJournalSegment<'static>, StageError> {
-		let lock = self
-			.0
-			.job
-			.directory
-			.try_clone()
-			.map_err(StageError::System)?;
-		self.0
-			.create_file(FIRST_SEGMENT)
-			.map(|file| LinuxJournalSegment::fresh(file, lock))
+		self.create_first_segment_admitted(|| Ok(()))
 	}
 }
 
@@ -278,14 +254,7 @@ impl RecordDirectory<'_> {
 	}
 
 	fn create_file(&self, name: &str) -> Result<File, StageError> {
-		self.check_current()?;
-		let (file, _) = create_private_file(
-			&self.directory,
-			self.job.root.mount,
-			OsStr::new(name),
-			OFlags::RDWR,
-		)?;
-		Ok(file)
+		self.create_file_admitted(name, || Ok(()))
 	}
 
 	fn check_current(&self) -> Result<(), StageError> {

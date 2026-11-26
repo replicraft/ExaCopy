@@ -21,7 +21,8 @@ mod staging_capabilities;
 
 pub use handle::FileIdentity;
 pub use job::{
-	CheckpointDirectory, JobDirectory, JournalDirectory, ReceiptDirectory, TargetStatus,
+	CheckpointDirectory, JobDirectory, JobDirectoryCreationError, JournalDirectory,
+	ReceiptDirectory, TargetStatus,
 };
 pub use journal_segment::LinuxJournalSegment;
 pub use named_read::NamedReadView;
@@ -39,9 +40,9 @@ pub use process_crash::{
 };
 pub use recovery::{
 	FreshRecoveryStage, PendingWitnessReservation, RecoveryFile, RecoveryInventory, RecoveryJob,
-	RecoveryReadLease, RecoveryReceiptDirectory, RecoveryStageDirectory, RecoveryWriteLease,
-	ReservedJournalRead, RetainedPrefixRead, RetainedPrefixSelection, RetainedStage,
-	WitnessReservationAuthority, WitnessReservationEffect, WitnessReservationError,
+	RecoveryReadLease, RecoveryReceiptDirectory, RecoveryStageAnchor, RecoveryStageDirectory,
+	RecoveryWriteLease, ReservedJournalRead, RetainedPrefixRead, RetainedPrefixSelection,
+	RetainedStage, WitnessReservationAuthority, WitnessReservationEffect, WitnessReservationError,
 	WitnessReservationGateRequest, WitnessReservationObservationError, WitnessReservationPlan,
 };
 pub use running_image::RunningExecutable;

@@ -18,6 +18,28 @@ const NEW: &[u8] = b"fresh data";
 const INCUMBENT: &[u8] = b"incumbent";
 
 #[test]
+fn refused_creation_gate_does_not_create_or_barrier_a_namespace_entry() {
+	let fixture = Fixture::new();
+	let lease = fixture.lease();
+	let inventory = fixture.inventory(&lease, FRESH);
+	let mut prepared = lease
+		.prepare_fresh_stage(&inventory, fixture.directory)
+		.unwrap();
+	let result = prepared.create_admitted_with(
+		binding(2),
+		|| {
+			assert!(!fixture.stage(FRESH).exists());
+			Err::<(), _>(std::io::Error::other("deadline expired before create"))
+		},
+		|_| panic!("refused creation cannot start a directory barrier"),
+	);
+	assert!(matches!(result, Err(StageError::Admission(_))));
+	assert!(!fixture.stage(FRESH).exists());
+	assert_eq!(fs::read(fixture.stage(OLD)).unwrap(), ORIGINAL);
+	assert!(!fixture.scratch.path(TARGET).exists());
+}
+
+#[test]
 fn creates_a_fresh_sibling_once_and_retains_the_old_stage() {
 	let fixture = Fixture::new();
 	let lease = fixture.lease();

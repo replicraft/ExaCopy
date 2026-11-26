@@ -3,7 +3,7 @@ use std::fmt;
 use std::fs::File;
 use std::os::unix::fs::FileExt;
 
-use exacopy_endpoint::{IoError, MAX_FILE_LENGTH, UnixComponent, read_exact_at, write_all_at};
+use exacopy_endpoint::{IoError, MAX_FILE_LENGTH, UnixComponent, read_exact_at};
 use exacopy_model::CopyBinding;
 use rustix::fs::{self, FileType, Mode, OFlags, Stat};
 use rustix::io;
@@ -39,18 +39,22 @@ pub struct WriteStage<'stage> {
 	barrier: WriteBarrier,
 }
 
+pub(super) mod effect;
+
 impl<'stage> WriteStage<'stage> {
-	pub(super) fn create(
+	pub(super) fn create_admitted<G>(
 		directory: &'stage StageDirectory<'stage>,
 		name: UnixComponent<'_>,
 		target: UnixComponent<'_>,
 		binding: CopyBinding,
+		enter: impl FnOnce() -> std::io::Result<G>,
 	) -> Result<Self, StageError> {
-		let (file, stat) = create_private_file(
+		let (file, stat) = create_private_file_admitted(
 			&directory.directory,
 			directory.root.mount,
 			component(name),
 			OFlags::WRONLY,
+			enter,
 		)?;
 		let identity = FileIdentity::from_stat(&stat);
 		let location = StageLocation {
@@ -127,12 +131,11 @@ impl<'stage> WriteStage<'stage> {
 	/// include bounded-range, incomplete-transfer, and system errors. An error
 	/// can leave partially written data in the private stage.
 	pub fn write_all_at(&mut self, offset: u64, bytes: &[u8]) -> Result<(), StageError> {
-		self.barrier.require_usable()?;
-		self.barrier = WriteBarrier::Pending;
-		write_all_at(offset, bytes, |position, remaining| {
-			self.file.write_at(remaining, position)
-		})
-		.map_err(StageError::Write)
+		self.write_all_at_admitted(offset, bytes, || Ok(()))
+			.map_err(|error| match error {
+				StageError::WriteOutcomeUnknown(cause) => StageError::Write(cause),
+				error => error,
+			})
 	}
 
 	/// Sets the private file's exact logical length.
@@ -159,14 +162,27 @@ impl<'stage> WriteStage<'stage> {
 	/// failed file sync. A file sync failure permanently blocks this stage and
 	/// leaves its private entry for reconciliation.
 	pub fn flush(&mut self) -> Result<(), StageError> {
-		self.flush_with(|file| fs::fsync(file))
+		self.flush_admitted(|| Ok(()))
 	}
 
+	#[cfg(test)]
 	fn flush_with(&mut self, sync: impl FnOnce(&File) -> io::Result<()>) -> Result<(), StageError> {
+		self.flush_admitted_with(|| Ok(()), sync)
+	}
+
+	fn flush_admitted_with<G>(
+		&mut self,
+		enter: impl FnOnce() -> std::io::Result<G>,
+		sync: impl FnOnce(&File) -> io::Result<()>,
+	) -> Result<(), StageError> {
 		self.barrier.require_usable()?;
 		self.barrier = WriteBarrier::Pending;
 		let before = self.location.check_named_file(FILE_MODE)?;
-		if let Err(source) = sync(&self.file) {
+		let synced = {
+			let _guard = enter().map_err(StageError::Admission)?;
+			sync(&self.file)
+		};
+		if let Err(source) = synced {
 			// Linux can report a writeback error only once for this open file.
 			self.barrier = WriteBarrier::Failed;
 			return Err(StageError::BarrierFailed(source.into()));
@@ -408,6 +424,17 @@ pub(in crate::linux) fn create_private_file(
 	name: &OsStr,
 	access: OFlags,
 ) -> Result<(File, Stat), StageError> {
+	create_private_file_admitted(directory, mount, name, access, || Ok(()))
+}
+
+pub(in crate::linux) fn create_private_file_admitted<G>(
+	directory: &File,
+	mount: u64,
+	name: &OsStr,
+	access: OFlags,
+	enter: impl FnOnce() -> std::io::Result<G>,
+) -> Result<(File, Stat), StageError> {
+	let guard = enter().map_err(StageError::Admission)?;
 	let file = fs::openat2(
 		directory,
 		name,
@@ -416,6 +443,7 @@ pub(in crate::linux) fn create_private_file(
 		CHILD_RESOLVE,
 	)
 	.map_err(StageError::on_create)?;
+	drop(guard);
 	let stat = fs::fstat(&file)?;
 	check_stage_file(&stat, FILE_MODE)?;
 	if mount_id(&file)? != mount {

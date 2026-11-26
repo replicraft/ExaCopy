@@ -78,8 +78,19 @@ impl DestinationRoot {
 	///
 	/// A failed barrier prevents any dependent publication attempt.
 	pub fn sync_directory(&self) -> Result<(), StageError> {
+		self.sync_directory_admitted(|| Ok(()))
+	}
+
+	/// Checks the held parent and admits its barrier immediately before fsync.
+	///
+	/// # Errors
+	/// Refuses an unsafe parent, failed admission or failed barrier.
+	pub fn sync_directory_admitted<G>(
+		&self,
+		enter: impl FnOnce() -> std::io::Result<G>,
+	) -> Result<(), StageError> {
 		check_managed_parent(&self.directory)?;
-		sync_directory(&self.directory)
+		sync_directory_admitted(&self.directory, enter)
 	}
 
 	/// Exclusively creates and holds an owner-private staging directory.
@@ -128,8 +139,18 @@ impl<'root> StageDirectory<'root> {
 		job: Option<&'root JobDirectory<'root>>,
 		name: &OsStr,
 	) -> Result<Self, StageError> {
+		Self::create_admitted(root, job, name, || Ok(()))
+	}
+
+	pub(in crate::linux) fn create_admitted<G>(
+		root: &'root DestinationRoot,
+		job: Option<&'root JobDirectory<'root>>,
+		name: &OsStr,
+		enter: impl FnOnce() -> std::io::Result<G>,
+	) -> Result<Self, StageError> {
 		let parent = job.map_or(&root.directory, JobDirectory::directory);
-		let (directory, identity) = create_private_directory(parent, name, root.mount)?;
+		let (directory, identity) =
+			create_private_directory_admitted(parent, name, root.mount, enter)?;
 		Ok(Self {
 			root,
 			directory,
@@ -167,8 +188,19 @@ impl<'root> StageDirectory<'root> {
 	/// Fails if the held directory became unsafe or detached, or if the
 	/// directory barrier fails. A failed barrier prevents dependent effects.
 	pub fn sync_directory(&self) -> Result<(), StageError> {
+		self.sync_directory_admitted(|| Ok(()))
+	}
+
+	/// Checks the private staging directory and admits its barrier before fsync.
+	///
+	/// # Errors
+	/// Refuses a changed directory, failed admission or failed barrier.
+	pub fn sync_directory_admitted<G>(
+		&self,
+		enter: impl FnOnce() -> std::io::Result<G>,
+	) -> Result<(), StageError> {
 		self.check_current()?;
-		sync_directory(&self.directory)
+		sync_directory_admitted(&self.directory, enter)
 	}
 
 	/// Exclusively creates a private file for application-owned transaction records.
@@ -206,8 +238,18 @@ impl<'root> StageDirectory<'root> {
 		target: UnixComponent<'_>,
 		binding: CopyBinding,
 	) -> Result<WriteStage<'_>, StageError> {
+		self.create_file_admitted(name, target, binding, || Ok(()))
+	}
+
+	pub(in crate::linux) fn create_file_admitted<G>(
+		&self,
+		name: UnixComponent<'_>,
+		target: UnixComponent<'_>,
+		binding: CopyBinding,
+		enter: impl FnOnce() -> std::io::Result<G>,
+	) -> Result<WriteStage<'_>, StageError> {
 		self.check_current()?;
-		WriteStage::create(self, name, target, binding)
+		WriteStage::create_admitted(self, name, target, binding, enter)
 	}
 
 	pub(super) fn check_current(&self) -> Result<(), StageError> {
@@ -237,7 +279,53 @@ pub(in crate::linux) fn create_private_directory(
 	name: &OsStr,
 	mount: u64,
 ) -> Result<(File, FileIdentity), StageError> {
-	fs::mkdirat(parent, name, DIRECTORY_MODE).map_err(StageError::on_create)?;
+	create_private_directory_admitted(parent, name, mount, || Ok(()))
+}
+
+pub(in crate::linux) fn create_private_directory_admitted<G>(
+	parent: &File,
+	name: &OsStr,
+	mount: u64,
+	enter: impl FnOnce() -> std::io::Result<G>,
+) -> Result<(File, FileIdentity), StageError> {
+	create_private_directory_observed(parent, name, mount, enter)
+		.map_err(DirectoryCreateFailure::into_stage_error)
+}
+
+pub(in crate::linux) enum DirectoryCreateFailure {
+	Refused(StageError),
+	Syscall(rustix::io::Errno),
+	Created(StageError),
+}
+
+impl DirectoryCreateFailure {
+	fn into_stage_error(self) -> StageError {
+		match self {
+			Self::Refused(cause) | Self::Created(cause) => cause,
+			Self::Syscall(cause) => StageError::on_create(cause),
+		}
+	}
+}
+
+pub(in crate::linux) fn create_private_directory_observed<G>(
+	parent: &File,
+	name: &OsStr,
+	mount: u64,
+	enter: impl FnOnce() -> std::io::Result<G>,
+) -> Result<(File, FileIdentity), DirectoryCreateFailure> {
+	let guard =
+		enter().map_err(|cause| DirectoryCreateFailure::Refused(StageError::Admission(cause)))?;
+	let created = fs::mkdirat(parent, name, DIRECTORY_MODE);
+	drop(guard);
+	created.map_err(DirectoryCreateFailure::Syscall)?;
+	observe_created_directory(parent, name, mount).map_err(DirectoryCreateFailure::Created)
+}
+
+fn observe_created_directory(
+	parent: &File,
+	name: &OsStr,
+	mount: u64,
+) -> Result<(File, FileIdentity), StageError> {
 	let directory =
 		fs::openat2(parent, name, DIRECTORY_FLAGS, Mode::empty(), CHILD_RESOLVE)?.into();
 	check_private_directory(&directory)?;
@@ -270,6 +358,14 @@ pub(in crate::linux) fn check_private_child(
 }
 
 pub(in crate::linux) fn sync_directory(directory: &File) -> Result<(), StageError> {
+	sync_directory_admitted(directory, || Ok(()))
+}
+
+pub(in crate::linux) fn sync_directory_admitted<G>(
+	directory: &File,
+	enter: impl FnOnce() -> std::io::Result<G>,
+) -> Result<(), StageError> {
+	let _guard = enter().map_err(StageError::Admission)?;
 	fs::fsync(directory).map_err(|source| StageError::DirectoryBarrierFailed(source.into()))
 }
 

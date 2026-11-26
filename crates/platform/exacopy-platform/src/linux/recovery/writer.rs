@@ -14,8 +14,8 @@ use super::super::stage::{create_private_directory, create_private_file, sync_di
 use super::lease::{lock_job, reopen_directory};
 use super::{
 	DestinationRoot, FIRST_SEGMENT, FileIdentity, FilePolicy, JOURNAL, PrivateDirectory, RECEIPT,
-	RECEIPTS, RecoveryFile, RecoveryInventory, RecoveryJob, SourceObservation, StageError,
-	mount_id, open_checked_record, open_path, recheck_regular,
+	RECEIPTS, RecoveryFile, RecoveryInventory, RecoveryJob, RecoveryStageAnchor, SourceObservation,
+	StageError, mount_id, open_checked_record, open_path, recheck_regular,
 };
 
 mod fresh;
@@ -91,6 +91,22 @@ impl RecoveryWriteLease<'_> {
 	#[must_use]
 	pub fn job(&self) -> &RecoveryJob<'_> {
 		&self.job
+	}
+
+	/// Retains read-only pins for a private stage after its writer scope ends.
+	///
+	/// # Errors
+	/// Refuses a foreign inventory, active stage capability, missing stage,
+	/// occupied target, changed namespace or descriptor failure.
+	pub fn pin_stopped_stage(
+		&self,
+		inventory: RecoveryInventory<'_>,
+	) -> Result<RecoveryStageAnchor, StageError> {
+		if !std::ptr::eq(inventory.job, self.job()) {
+			return Err(StageError::IdentityChanged);
+		}
+		let _access = self.try_stage_access()?;
+		inventory.into_stage_anchor()
 	}
 
 	/// Opens the exact inspected first segment for appending at its captured end.

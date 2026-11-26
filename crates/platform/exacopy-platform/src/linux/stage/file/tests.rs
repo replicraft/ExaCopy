@@ -126,3 +126,41 @@ fn a_prefix_barrier_requires_matching_lengths_and_preserves_a_failed_writeback()
 fn component(name: &str) -> UnixComponent<'_> {
 	UnixComponent::new(name.as_bytes()).expect("valid fixture component")
 }
+
+#[test]
+fn guarded_prefix_refuses_before_sync_and_never_uses_authority_for_invalid_extent() {
+	let fixture = Scratch::new();
+	let root = DestinationRoot::from_directory(fixture.open()).unwrap();
+	let directory = root.create_stage_directory(component("prefix")).unwrap();
+	let job =
+		JobId::try_from_bytes([0, 0, 0, 0, 0, 0, 0x70, 0, 0x80, 0, 0, 0, 0, 0, 0, 1]).unwrap();
+	let binding = CopyBinding::new(
+		job,
+		EntryId::new(1),
+		RunEpoch::new(1),
+		StageId::from_bytes([1; 16]),
+	);
+	let mut stage = directory
+		.create_file(component("part"), component("target"), binding)
+		.unwrap();
+	stage.write_all_at(0, b"prefix").unwrap();
+	assert!(matches!(
+		stage.sync_prefix_admitted(2, || -> std::io::Result<()> {
+			panic!("invalid extent must fail before admission")
+		}),
+		Err(StageError::IdentityChanged)
+	));
+	assert!(matches!(
+		stage.flush_admitted_with(
+			|| Err::<(), _>(std::io::Error::other("expired after the named observation")),
+			|_| panic!("refused authority must not start fsync"),
+		),
+		Err(StageError::Admission(_))
+	));
+	assert!(matches!(stage.close_writes(), Err(StageError::Unflushed)));
+	assert_eq!(
+		fs::read(fixture.path("prefix").join("part")).unwrap(),
+		b"prefix"
+	);
+	assert!(!fixture.path("target").exists());
+}

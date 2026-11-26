@@ -17,10 +17,12 @@ use super::source::{
 };
 use super::stage::{CHILD_RESOLVE, DestinationRoot, StageError, check_private_child, component};
 
+mod anchor;
 mod artifacts;
 mod lease;
 mod writer;
 
+pub use anchor::RecoveryStageAnchor;
 pub use lease::RecoveryReadLease;
 pub use writer::{
 	FreshRecoveryStage, PendingWitnessReservation, RecoveryReceiptDirectory,
