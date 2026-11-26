@@ -48,6 +48,29 @@ fixed input. On Rust 1.100.0 the rustflags test passed with the test binary next
 to its rlib, as the test expects. Cargo's test layout placed them separately.
 """
 
+[[audits.base16ct]]
+who = "OpenAI Codex (automated dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.0.0"
+notes = """
+2026-11-26. Reviewed the exact locked registry archive SHA-256
+fd307490d624467aa6f74b0eabb77633d1f758a7b25f12bceb0b22e08d9726f6.
+Reviewed all source paths with and without alloc. The four unchecked UTF-8
+conversions receive only the fully written output of the lower and upper
+encoders. Valid byte-slice lengths can be doubled in usize. The encoders
+check destination capacity and write two ASCII hex digits per input byte.
+Decoders check even length and output capacity, scan all pairs, and return
+an error for invalid digits after writing the output prefix. Allocating
+helpers scale with the caller's input length and need caller input limits.
+Formatting uses the supplied formatter. There is no build script, native
+code, dependency, or ambient runtime I/O. Intended timing behavior is best effort. Machine timing
+was outside the review.
+
+Selected execution on native macOS ARM64 with Rust 1.100.0 passed.
+An alloc-enabled control covered lower and upper round-trips across all 256
+byte values, output canaries, and the allocating lowercase encoder.
+"""
+
 [[audits.base64]]
 who = "OpenAI Codex (dependency source review)"
 criteria = "safe-to-deploy"
@@ -109,6 +132,35 @@ caller tokens unchanged. There is no unsafe code, runtime I/O, proc macro, or
 build script. Rust 1.100.0 unit, cross-crate, doctest, and eight-branch matrix
 checks passed. Cargo's optional rustc workspace dependency is outside the locked
 workspace's enabled feature graph and outside this crate's source review.
+"""
+
+[[audits.cfg_aliases]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.2.2"
+notes = """
+2026-11-26. Reviewed the complete locked registry archive SHA-256
+f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527.
+The edition-2018 crate declares no features, dependencies or build script.
+Its declarative macro reads Cargo cfg and feature variables and the PROFILE
+fallback for debug assertions, with no environment writes, filesystem
+access, network access, subprocesses, unsafe code or native linkage. It
+prints only rustc-check-cfg and conditional rustc-cfg instructions with
+alias names drawn from caller-source identifiers. Environment values affect
+boolean selection and are never printed. Non-feature option operands are
+caller expressions and may be evaluated once per visited value.
+
+Callers must trust their build environment and supply valid, acyclic
+configuration. Invalid or cyclic input can exhaust the compiler's macro
+recursion limit. The PROFILE fallback is a heuristic, and missing or
+non-Unicode options are treated as empty in the equality path. Nix 0.31.4
+is the sole locked consumer, using build-time literal target_os checks
+and finite OR combinations. The packaged test and doctest paths were
+reviewed by inspection.
+
+Selected execution on native macOS ARM64 with Rust 1.100.0 passed.
+A build-script-shaped fixture checked declared aliases and their exact emitted
+Boolean selections with synthetic Linux, macOS, and Windows Cargo environments.
 """
 
 [[audits.clap]]
@@ -275,6 +327,48 @@ and comparison contracts. Rust 1.100.0 doctest and all-target checks passed.
 This audit identifies the crates.io archive. Upstream Git provenance is unverified.
 """
 
+[[audits.futures-io]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.3.34"
+notes = """
+2026-11-26. Reviewed the exact locked crates.io archive SHA-256
+53c0fa8157de1303bfffdaa1cc2a673bfffb60102f76b0ef4441659124373fed.
+The archive's single Rust source defines async I/O traits, bounded
+vectored fallback, safe Pin forwarding, and in-memory slice/Vec adapters.
+No unsafe operations, ambient I/O, dependencies, build scripts, or
+proc macros. The default std feature gates all implementation code and
+the unstable feature adds no paths. Concrete adapters rely on std for
+in-memory operations and on the documented BufRead consumption bound.
+Trait implementors remain responsible for their I/O and wakeups.
+
+Selected execution on native macOS ARM64 with Rust 1.100.0 passed.
+The std-enabled control exercised pinned forwarding for vectored reads from a
+slice and writes and flush to a Vec, checking the byte outputs.
+"""
+
+[[audits.futures-sink]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.3.34"
+notes = """
+2026-11-26. Reviewed the whole locked registry archive SHA-256
+1944426bf7d03f1d14f708785e4b33efd750b36d48a157b836b3efc15ede8e1d.
+The package has one Rust library, no dependencies or build script, and
+three source states covering no features, alloc, and default/std. Core
+and boxed forwarding use safe pin APIs and delegate to the supplied sink.
+The two unsafe collection appends keep the pinned Vec or VecDeque in
+place and move only elements without structural pinning. The mutable
+collection borrow stays within the append. Collection storage grows
+with caller-supplied items and offers no backpressure, so applications
+must bound untrusted streams they collect. There is no direct ambient
+I/O.
+
+Selected execution on native macOS ARM64 with Rust 1.100.0 passed.
+The default/std/alloc control checked pinned VecDeque forwarding through
+readiness, two ordered sends, flush, and close.
+"""
+
 [[audits.hax-lib]]
 who = "OpenAI Codex (dependency source review)"
 criteria = "safe-to-deploy"
@@ -333,6 +427,28 @@ The pinned Hax nightly fixture exercised the same metadata paths
 during attribute expansion.
 """
 
+[[audits.hex-literal]]
+who = "OpenAI Codex (automated dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.1.0"
+notes = """
+Reviewed the complete crates.io archive matching Cargo.lock SHA-256
+e712f64ec3850b98572bffac52e2c6f282b29fe6c5fa6d42334b30be438d95c1.
+The no_std library has no dependencies, feature variants, build script,
+procedural macro, unsafe code, FFI or runtime ambient access. The hex! macro
+uses const evaluation to count and decode the same immutable literal bytes.
+The two passes agree on separators and byte boundaries. Invalid literals fail
+during compilation. The public, doc-hidden helpers are macro internals and can
+panic if called at runtime with invalid bytes or an undersized output length.
+Russh uses the macro for compile-time constants. Its cryptographic construction
+and constants are separate review subjects. Packaged tests and doctests were
+source-reviewed.
+
+Selected execution on native macOS ARM64 with Rust 1.100.0 passed.
+A const fixture checked output bytes from mixed-case hexadecimal digits,
+whitespace, and adjacent literals.
+"""
+
 [[audits.indexmap]]
 who = "OpenAI Codex (dependency source review)"
 criteria = "safe-to-deploy"
@@ -375,6 +491,31 @@ string lifetime. The crate performs no ambient I/O. Native Rust 1.100.0 and
 Miri checks passed against the exact source with ExaCopy's resolved feature set.
 ExaCopy enables only the empty default feature through serde_json. The optional
 no-panic proc macro was outside the resolved build and this evidence.
+"""
+
+[[audits.opaque-debug]]
+who = "OpenAI Codex (automated dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.3.1"
+notes = """
+2026-11-26. Reviewed the complete crates.io archive with SHA-256
+c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381 against
+Cargo.lock. Package VCS metadata reports RustCrypto/utils revision
+dd4adddf8b716bb51eb8ccb8c73e47bff1e358aa in opaque-debug.
+
+The no_std crate has no dependencies, features, build script, native
+linkage or unsafe code. Both declarative Debug expansions ignore the
+receiver and omit state values. The generic expansion also prints compiler
+type names. Treat type names and const-generic metadata as printable. The
+formatter destination and formatting macro scope are supplied by the
+caller. ExaCopy's locked poly1305 0.8.0 uses the plain expansion.
+
+Static review covered both manifests, all shipped Rust source and examples,
+including the integration tests and doctests.
+
+Selected execution on native macOS ARM64 with Rust 1.100.0 passed.
+The plain macro fixture checked exact regular and alternate Debug output for
+a struct holding a synthetic field.
 """
 
 [[audits.pin-project-lite]]
@@ -555,6 +696,27 @@ or emits a boolean or diagnostic. Compile-time date diagnostics consult the
 host clock and package name. Rust 1.100.0 macro expansion and version parser
 checks passed. The upstream trybuild UI suite was blocked by an uncached
 dependency. The lockfile includes this crate through wasm-bindgen.
+"""
+
+[[audits.scopeguard]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.2.0"
+notes = """
+2026-11-26. Reviewed the locked registry archive SHA-256
+94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49.
+Reviewed all features, including core-only and the default use_std unwind
+strategies. The crate has no dependencies or build script. The defer macros
+bind caller-supplied closures with the selected RAII strategy. Guard drop
+takes ownership of both initialized ManuallyDrop fields before invoking
+caller code. Defusing suppresses guard drop and owns the returned value
+before dropping the closure capture. The Sync impl exposes only the
+guarded T, which must be Sync. Cleanup is conditional on destructors
+running, and caller strategies, closures and destructors may panic.
+
+Selected execution on native macOS ARM64 with Rust 1.100.0 passed.
+The core-only fixture counted cleanup and value destruction during guard drop
+and exercised into_inner ownership transfer with callback suppression.
 """
 
 [[audits.serde]]
