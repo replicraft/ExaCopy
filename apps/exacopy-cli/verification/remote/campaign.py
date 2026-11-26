@@ -176,7 +176,7 @@ def command_for(args, subcommand, operands, qualification):
         "--destination-qualification", qualification or args.qualification,
         "--qualification-trust", args.trust, "--metadata", METADATA, "--format", "json",
     ]
-    return [args.binary, *subcommand, *options, "--", *operands]
+    return [args.binary, *subcommand, "--", *operands, *options]
 
 
 def run_case(args, name, subcommand, operands, expected, *, cut=None, qualification=None):

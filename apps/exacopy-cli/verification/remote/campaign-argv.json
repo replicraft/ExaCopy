@@ -1,0 +1,38 @@
+{
+  "options": {
+    "owner_profile": "/fixture/owner",
+    "ssh_profile": "/fixture/ssh.json",
+    "qualification": "/fixture/signed",
+    "trust": "/fixture/trust"
+  },
+  "cases": [
+    {
+      "subcommand": ["get"],
+      "operands": ["operator@host:/nested/source", "--literal-target"],
+      "qualification_override": "/fixture/signature-control",
+      "argv": [
+        "get", "--", "operator@host:/nested/source", "--literal-target",
+        "--profile", "/fixture/owner",
+        "--ssh-profile", "/fixture/ssh.json",
+        "--destination-qualification", "/fixture/signature-control",
+        "--qualification-trust", "/fixture/trust",
+        "--metadata", "sftp-data-only-v1",
+        "--format", "json"
+      ]
+    },
+    {
+      "subcommand": ["recover", "remote-resume"],
+      "operands": ["--literal-job"],
+      "qualification_override": null,
+      "argv": [
+        "recover", "remote-resume", "--", "--literal-job",
+        "--profile", "/fixture/owner",
+        "--ssh-profile", "/fixture/ssh.json",
+        "--destination-qualification", "/fixture/signed",
+        "--qualification-trust", "/fixture/trust",
+        "--metadata", "sftp-data-only-v1",
+        "--format", "json"
+      ]
+    }
+  ]
+}

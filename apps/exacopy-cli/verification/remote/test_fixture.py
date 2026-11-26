@@ -3,6 +3,7 @@
 from contextlib import ExitStack
 import hashlib
 import ipaddress
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -92,17 +93,21 @@ class FixtureControls(unittest.TestCase):
             with self.assertRaisesRegex(Failed, "unbuffered held descriptor"):
                 digest_executable(buffered, child)
 
-    def test_resume_uses_the_nested_public_subcommand_and_exact_operands(self):
-        args = SimpleNamespace(
-            binary=Path("/fixture/exacopy"), owner_profile=Path("/fixture/owner"),
-            ssh_profile=Path("/fixture/ssh.json"), qualification=Path("/fixture/signed"),
-            trust=Path("/fixture/trust"),
-        )
-        job = self.root / ".exacopy-00000000-0000-7000-8000-000000000001"
-        command = command_for(args, ("recover", "remote-resume"), (job,), None)
-        self.assertEqual(command[:3], [args.binary, "recover", "remote-resume"])
-        self.assertEqual(command[-2:], ["--", job])
-        self.assertEqual(command.count(job), 1)
+    def test_campaign_argv_matches_the_public_parser_vectors(self):
+        fixture = Path(__file__).with_name("campaign-argv.json")
+        vectors = json.loads(fixture.read_text(encoding="utf-8"))
+        args = SimpleNamespace(binary=Path("/fixture/exacopy"), **{
+            name: Path(value) for name, value in vectors["options"].items()
+        })
+        for case in vectors["cases"]:
+            with self.subTest(subcommand=case["subcommand"]):
+                override = case["qualification_override"]
+                command = command_for(
+                    args, case["subcommand"], case["operands"],
+                    Path(override) if override is not None else None,
+                )
+                self.assertEqual(command[0], args.binary)
+                self.assertEqual(list(map(os.fspath, command[1:])), case["argv"])
 
     def test_unsigned_facts_expect_exact_bounded_value_shapes(self):
         observation = {

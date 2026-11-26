@@ -8,6 +8,7 @@ on:
       - '.github/workflows/linux-remote-commissioning.yml'
       - '.github/ci/remote_commissioning*.py'
       - 'apps/exacopy-cli/verification/remote/*.py'
+      - 'apps/exacopy-cli/verification/remote/campaign-argv.json'
 
 permissions:
   contents: read

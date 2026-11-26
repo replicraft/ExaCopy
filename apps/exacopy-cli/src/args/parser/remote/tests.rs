@@ -1,5 +1,5 @@
 use std::os::unix::ffi::OsStringExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::*;
 use crate::args::{Format, parse};
@@ -16,6 +16,75 @@ const GRANTS: [&str; 10] = [
 	"--metadata",
 	"sftp-data-only-v1",
 ];
+
+#[derive(serde::Deserialize)]
+struct CampaignVectors {
+	options: CampaignPaths,
+	cases: Vec<CampaignCase>,
+}
+
+#[derive(serde::Deserialize)]
+struct CampaignPaths {
+	owner_profile: PathBuf,
+	ssh_profile: PathBuf,
+	qualification: PathBuf,
+	trust: PathBuf,
+}
+
+#[derive(serde::Deserialize)]
+struct CampaignCase {
+	subcommand: Vec<String>,
+	operands: Vec<String>,
+	qualification_override: Option<PathBuf>,
+	argv: Vec<String>,
+}
+
+#[test]
+fn campaign_vectors_parse_exact_operands_and_grants() {
+	let CampaignVectors { options, cases } = serde_json::from_str(include_str!(
+		"../../../../verification/remote/campaign-argv.json"
+	))
+	.expect("campaign argv vectors");
+	for case in cases {
+		let subcommand_end = case.subcommand.len();
+		let operands_end = subcommand_end + 1 + case.operands.len();
+		let invalid = case.argv[..subcommand_end]
+			.iter()
+			.chain(&case.argv[operands_end..])
+			.chain(&case.argv[subcommand_end..operands_end])
+			.map(OsString::from);
+		let Err(error) = parse(invalid) else {
+			panic!("accepted options before operands for {:?}", case.subcommand);
+		};
+		assert!(error.starts_with("exacopy: use -- before a path that starts with a dash\n"));
+
+		let parsed = remote(case.argv.into_iter().map(OsString::from));
+		match (parsed.request, case.operands.as_slice()) {
+			(RemoteRequest::Get { source, target }, [expected_source, expected_target]) => {
+				assert_eq!(source, OsStr::new(expected_source));
+				assert_eq!(target, Path::new(expected_target));
+			}
+			(RemoteRequest::Resume { job }, [expected_job]) => {
+				assert_eq!(job, Path::new(expected_job));
+			}
+			_ => panic!("wrong typed request for {:?}", case.subcommand),
+		}
+		assert_eq!(parsed.options.profile, options.owner_profile);
+		assert_eq!(parsed.options.ssh_profile, options.ssh_profile);
+		assert_eq!(parsed.options.qualification_trust, options.trust);
+		assert_eq!(
+			&parsed.options.destination_qualification,
+			case.qualification_override
+				.as_ref()
+				.unwrap_or(&options.qualification),
+		);
+		assert!(matches!(parsed.options.format, Format::Json));
+		assert!(matches!(
+			parsed.options.metadata,
+			RemoteMetadata::SftpDataOnlyV1
+		));
+	}
+}
 
 fn args(operands: &[&str]) -> impl Iterator<Item = OsString> {
 	operands.iter().chain(&GRANTS).map(OsString::from)
