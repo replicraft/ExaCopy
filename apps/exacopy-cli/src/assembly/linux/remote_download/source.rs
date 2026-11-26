@@ -28,6 +28,7 @@ mod route_lifetime;
 pub(crate) use direct::DirectConnectError;
 #[cfg(feature = "experimental-ssh-wireguard")]
 pub(crate) use embedded::EmbeddedConnectError;
+pub use route_lifetime::RemoteRouteCloseError;
 use route_lifetime::RouteTask;
 
 /// Current observation of the original approved embedded TCP stream.
@@ -64,6 +65,7 @@ pub enum RemoteRoutePeer<'route> {
 pub struct ConnectingRemoteSource<'authorization> {
 	scope: &'authorization RemoteDownloadScope,
 	supervisor: Supervisor,
+	attempt_started: Instant,
 }
 
 impl<'authorization> ConnectingRemoteSource<'authorization> {
@@ -101,6 +103,7 @@ impl<'authorization> ConnectingRemoteSource<'authorization> {
 		};
 		Ok(Self {
 			scope,
+			attempt_started: Instant::now(),
 			supervisor: Supervisor {
 				grant: Arc::clone(grant),
 				digest,
@@ -115,6 +118,10 @@ impl<'authorization> ConnectingRemoteSource<'authorization> {
 	#[must_use]
 	pub const fn attempt(&self) -> ConnectionAttempt {
 		self.supervisor.attempt
+	}
+
+	fn connect_deadline(&self) -> Option<Instant> {
+		connection_deadline(self.attempt_started, self.supervisor.grant.deadline())
 	}
 
 	/// Rechecks the exact connecting attempt and shared active authorization.
@@ -262,6 +269,19 @@ impl Supervisor {
 	}
 }
 
+fn connection_deadline(attempt_started: Instant, grant_deadline: Instant) -> Option<Instant> {
+	Some(
+		attempt_started
+			.checked_add(authentication::CONNECTION_BUDGET)?
+			.min(grant_deadline),
+	)
+}
+
+pub(super) struct SourceRetirement {
+	pub(super) binding: Result<(), RetryError>,
+	pub(super) route: Result<(), RemoteRouteCloseError>,
+}
+
 pub(super) struct SourceOwner<'authorization> {
 	supervisor: Supervisor,
 	route: BoundRoute<'authorization>,
@@ -303,15 +323,15 @@ impl SourceOwner<'_> {
 		mut self,
 		binding: ConnectionBinding,
 		session: ReadOnlySftp,
-	) -> Result<(), RetryError> {
-		let terminal = self.check_binding(binding);
+	) -> SourceRetirement {
+		let binding = self.check_binding(binding);
 		let task = &self.transport;
 		task.stop();
 		drop(session);
-		if !task.join().await {
-			return Err(route_refusal());
+		SourceRetirement {
+			binding,
+			route: task.join().await,
 		}
-		terminal
 	}
 
 	fn check_transport(&self) -> Result<(), RetryError> {
@@ -339,8 +359,21 @@ impl PendingSourceOwner for SourceOwner<'_> {
 #[cfg(test)]
 mod tests {
 	use std::cell::Cell;
+	use std::time::Duration;
 
 	use super::*;
+
+	#[test]
+	fn a_later_attempt_has_its_own_budget_within_the_original_grant() {
+		let invocation = Instant::now();
+		let grant = invocation + Duration::from_secs(32);
+		let next_attempt = invocation + Duration::from_secs(25);
+		assert_eq!(
+			connection_deadline(invocation, grant),
+			Some(invocation + authentication::CONNECTION_BUDGET)
+		);
+		assert_eq!(connection_deadline(next_attempt, grant), Some(grant));
+	}
 
 	#[test]
 	fn direct_peer_must_be_the_exact_signed_endpoint() {

@@ -157,22 +157,19 @@ where
 			return Err(SftpSourceError::Window);
 		}
 		let opened = reader.begin_window(offset, length).await;
-		self.check_binding()?;
-		let mut window = opened?;
+		let mut window = confirm_read((self.check)(self.binding), opened)?;
 		let mut remaining = bytes;
 		while !remaining.is_empty() {
 			let limit = remaining.len().min(MAX_READ_CHUNK_BYTES);
 			let read = window.read_next(&mut remaining[..limit]).await;
-			self.check_binding()?;
-			let count = read?;
+			let count = confirm_read((self.check)(self.binding), read)?;
 			if !(1..=limit).contains(&count) {
 				return Err(SftpSourceError::Observation);
 			}
 			remaining = &mut remaining[count..];
 		}
 		let finished = window.finish().await;
-		self.check_binding()?;
-		let matched = finished?;
+		let matched = confirm_read((self.check)(self.binding), finished)?;
 		self.match_observation(matched.file())?;
 		if matched.offset() != offset || matched.length() != length {
 			return Err(SftpSourceError::Observation);
@@ -196,4 +193,46 @@ where
 		self.check_binding()?;
 		self.match_observation(finished?)
 	}
+}
+
+fn confirm_read<T>(
+	binding: Result<(), RetryError>,
+	wire: Result<T, exacopy_ssh::Error>,
+) -> Result<T, SftpSourceError> {
+	match (binding, wire) {
+		(Ok(()), result) => result.map_err(SftpSourceError::Sftp),
+		(Err(binding), Ok(_)) => Err(SftpSourceError::Binding(binding)),
+		(Err(binding), Err(wire)) => Err(SftpSourceError::ReadBinding {
+			binding,
+			wire: Box::new(wire),
+		}),
+	}
+}
+
+#[test]
+fn refused_read_keeps_wire_failure_as_detail_under_the_binding_error() {
+	use exacopy_endpoint::connection_retry::{PermanentFailure, RetryBlock};
+	use std::error::Error as _;
+
+	let revoked = RetryError::Blocked(RetryBlock::Permanent(PermanentFailure::GrantRevoked));
+	let refused = confirm_read::<()>(Err(revoked), Err(exacopy_ssh::Error::Timeout)).unwrap_err();
+	assert_eq!(
+		refused
+			.source()
+			.and_then(|cause| cause.downcast_ref::<RetryError>()),
+		Some(&revoked)
+	);
+	assert!(matches!(
+		refused,
+		SftpSourceError::ReadBinding { binding, wire }
+			if binding == revoked && matches!(*wire, exacopy_ssh::Error::Timeout)
+	));
+	assert!(matches!(
+		confirm_read(Err(revoked), Ok(1)),
+		Err(SftpSourceError::Binding(reason)) if reason == revoked
+	));
+	assert!(matches!(
+		confirm_read::<()>(Ok(()), Err(exacopy_ssh::Error::Timeout)),
+		Err(SftpSourceError::Sftp(exacopy_ssh::Error::Timeout))
+	));
 }

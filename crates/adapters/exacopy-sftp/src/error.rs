@@ -11,6 +11,13 @@ pub enum SftpSourceError {
 	Epoch,
 	/// The current application owner refused this connection binding.
 	Binding(RetryError),
+	/// The owner refused an in-flight read that also failed on the wire.
+	ReadBinding {
+		/// Authoritative reason the returned read could not be admitted.
+		binding: RetryError,
+		/// Wire failure observed during the refused read, for diagnostics.
+		wire: Box<exacopy_ssh::Error>,
+	},
 	/// The adapter no longer holds a source for this pass.
 	Closed,
 	/// The observed file exceeds the destination's signed offset profile.
@@ -28,6 +35,12 @@ impl fmt::Display for SftpSourceError {
 		match self {
 			Self::Epoch => formatter.write_str("SFTP source epoch and connection binding disagree"),
 			Self::Binding(error) => error.fmt(formatter),
+			Self::ReadBinding { binding, wire } => {
+				write!(
+					formatter,
+					"{binding}. The refused read also failed ({wire})"
+				)
+			}
 			Self::Closed => formatter.write_str("SFTP capture pass is closed"),
 			Self::Extent => formatter.write_str("SFTP file exceeds the capture offset limit"),
 			Self::Window => formatter.write_str("SFTP read window exceeds the capture bounds"),
@@ -43,6 +56,7 @@ impl Error for SftpSourceError {
 	fn source(&self) -> Option<&(dyn Error + 'static)> {
 		match self {
 			Self::Binding(error) => Some(error),
+			Self::ReadBinding { binding, .. } => Some(binding),
 			Self::Sftp(error) => Some(error),
 			_ => None,
 		}

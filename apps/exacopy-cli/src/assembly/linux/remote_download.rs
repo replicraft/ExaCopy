@@ -51,7 +51,7 @@ pub(crate) use source::DirectConnectError;
 pub(crate) use source::EmbeddedConnectError;
 pub use source::{
 	ConnectedRemoteSource, ConnectingRemoteSource, CurrentEmbeddedStream,
-	EmbeddedStreamObservation, RemoteRoutePeer,
+	EmbeddedStreamObservation, RemoteRouteCloseError, RemoteRoutePeer,
 };
 
 /// Explicit selection of a fresh or retained private job.
@@ -117,6 +117,15 @@ pub enum RemoteDownloadFailure {
 		cause: Box<CaptureError<SftpSourceError, NativeCaptureStageError, Error>>,
 		/// Failed attempt to record a required uncertainty marker, if any.
 		record_failure: Option<Error>,
+		/// Independent failure to observe the original route's physical retirement.
+		route_failure: Option<RemoteRouteCloseError>,
+	},
+	/// Capture completed but transport retirement was not confirmed.
+	SourceRetirement {
+		/// Exact transport retirement boundary.
+		cause: RemoteRouteCloseError,
+		/// Failed attempt to record a required uncertainty marker, if any.
+		record_failure: Option<Error>,
 	},
 	/// Engine finalization returned an exact last confirmed head and reason.
 	Finalization(Box<FinalizationFailure<Error, Error, StageFinalizationError, Error>>),
@@ -138,17 +147,25 @@ impl fmt::Display for RemoteDownloadFailure {
 			Self::Source(error) => error.fmt(out),
 			Self::Capture {
 				cause,
-				record_failure: Some(error),
+				record_failure,
+				route_failure,
 			} => {
-				write!(
-					out,
-					"{cause}. The private failure record also failed ({error})"
-				)
+				cause.fmt(out)?;
+				if let Some(error) = route_failure {
+					write!(
+						out,
+						". The original route's retirement was unconfirmed ({error})"
+					)?;
+				}
+				write_record_failure(out, record_failure.as_ref())
 			}
-			Self::Capture {
+			Self::SourceRetirement {
 				cause,
-				record_failure: None,
-			} => cause.fmt(out),
+				record_failure,
+			} => {
+				cause.fmt(out)?;
+				write_record_failure(out, record_failure.as_ref())
+			}
 			Self::Finalization(error) => error.fmt(out),
 			Self::CommittedReceiptReadback { cause, .. } => {
 				write!(
@@ -158,6 +175,13 @@ impl fmt::Display for RemoteDownloadFailure {
 			}
 		}
 	}
+}
+
+fn write_record_failure(out: &mut fmt::Formatter<'_>, error: Option<&Error>) -> fmt::Result {
+	if let Some(error) = error {
+		write!(out, ". The private failure record also failed ({error})")?;
+	}
+	Ok(())
 }
 
 impl std::error::Error for RemoteDownloadFailure {}
@@ -317,16 +341,25 @@ pub(crate) async fn download_remote(
 	)
 	.await;
 	drop(source);
-	let late = owner.retire(source_binding, session).await;
-	let captured = match (captured, late) {
-		(Ok(value), Ok(())) => value,
-		(Ok(_), Err(cause)) => {
+	let retirement = owner.retire(source_binding, session).await;
+	let captured = match (captured, retirement.binding, retirement.route) {
+		(Ok(value), Ok(()), Ok(())) => value,
+		(Ok(_), Err(cause), route) => {
 			return Err(capture_failure(
 				&mut ledger,
 				CaptureError::SourceFinish(SftpSourceError::Binding(cause)),
+				route.err(),
 			));
 		}
-		(Err(cause), _) => return Err(capture_failure(&mut ledger, cause)),
+		(Ok(_), Ok(()), Err(cause)) => {
+			return Err(RemoteDownloadFailure::SourceRetirement {
+				cause,
+				record_failure: ledger
+					.record_failure(RemoteUncertainBoundary::TerminalSource)
+					.err(),
+			});
+		}
+		(Err(cause), _, route) => return Err(capture_failure(&mut ledger, cause, route.err())),
 	};
 	let history = lease.finalization_history(&ledger)?;
 	let mut journal = ledger.finalization(&intent)?;
@@ -360,18 +393,54 @@ pub(crate) async fn download_remote(
 fn capture_failure(
 	ledger: &mut super::remote_journal::RemoteJobJournal<'_>,
 	cause: CaptureError<SftpSourceError, NativeCaptureStageError, Error>,
+	route_failure: Option<RemoteRouteCloseError>,
 ) -> RemoteDownloadFailure {
-	let boundary = match &cause {
+	let boundary = capture_uncertainty(&cause, route_failure);
+	let record_failure = boundary.and_then(|boundary| ledger.record_failure(boundary).err());
+	RemoteDownloadFailure::Capture {
+		cause: Box::new(cause),
+		record_failure,
+		route_failure,
+	}
+}
+
+fn capture_uncertainty<R, W, C>(
+	cause: &CaptureError<R, W, C>,
+	route_failure: Option<RemoteRouteCloseError>,
+) -> Option<RemoteUncertainBoundary> {
+	match cause {
 		CaptureError::SourceFinish(_) => Some(RemoteUncertainBoundary::TerminalSource),
 		CaptureError::Stage {
 			step: StageStep::SyncPrefix { .. } | StageStep::Close,
 			..
 		} => Some(RemoteUncertainBoundary::StageBarrier),
+		_ if route_failure.is_some() => Some(RemoteUncertainBoundary::TerminalSource),
 		_ => None,
-	};
-	let record_failure = boundary.and_then(|boundary| ledger.record_failure(boundary).err());
-	RemoteDownloadFailure::Capture {
-		cause: Box::new(cause),
-		record_failure,
 	}
+}
+
+#[test]
+fn unconfirmed_route_retirement_records_terminal_source_unless_the_stage_barrier_failed() {
+	let read: CaptureError<(), (), ()> = CaptureError::Read {
+		offset: 4096,
+		cause: (),
+	};
+	let route_failure = Some(RemoteRouteCloseError::SocketTimeout);
+	assert_eq!(capture_uncertainty(&read, None), None);
+	assert_eq!(
+		capture_uncertainty(&read, route_failure),
+		Some(RemoteUncertainBoundary::TerminalSource)
+	);
+	assert_eq!(
+		capture_uncertainty(&CaptureError::<(), (), ()>::SourceFinish(()), None),
+		Some(RemoteUncertainBoundary::TerminalSource)
+	);
+	let barrier: CaptureError<(), (), ()> = CaptureError::Stage {
+		step: StageStep::Close,
+		cause: (),
+	};
+	assert_eq!(
+		capture_uncertainty(&barrier, route_failure),
+		Some(RemoteUncertainBoundary::StageBarrier)
+	);
 }

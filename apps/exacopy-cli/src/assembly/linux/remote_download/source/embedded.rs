@@ -22,7 +22,7 @@ use tokio::net::UdpSocket;
 
 use crate::remote_frontdoor::{ApprovedRoute, FrontdoorError, SshProfile, WireGuardRoute};
 
-use super::authentication::{CONNECTION_BUDGET, OfferLease, authenticate};
+use super::authentication::{OfferLease, authenticate};
 use super::route_lifetime::{RouteLease, RouteTask, RouteWake};
 use super::{
 	ConnectedRemoteSource, ConnectingRemoteSource, CurrentEmbeddedStream,
@@ -48,11 +48,8 @@ impl ConnectingRemoteSource<'_> {
 		let approved = self.selected_embedded_route(profile)?;
 		let grant = Arc::clone(&self.supervisor.grant);
 		let deadline = self
-			.supervisor
-			.start
-			.checked_add(CONNECTION_BUDGET)
-			.ok_or(EmbeddedConnectError::Timeout)?
-			.min(grant.deadline());
+			.connect_deadline()
+			.ok_or(EmbeddedConnectError::Timeout)?;
 		let scope = self.supervisor.digest;
 		check(&mut self, deadline)?;
 		let trust = profile

@@ -13,7 +13,7 @@ use tokio::net::TcpStream;
 
 use crate::remote_frontdoor::{ApprovedRoute, FrontdoorError, SshProfile};
 
-use super::authentication::{CONNECTION_BUDGET, OfferLease, authenticate};
+use super::authentication::{OfferLease, authenticate};
 use super::route_lifetime::{RouteLease, RouteTask, RouteWake};
 use super::{ConnectedRemoteSource, ConnectingRemoteSource, RemoteRoutePeer};
 
@@ -29,12 +29,7 @@ impl<'authorization> ConnectingRemoteSource<'authorization> {
 	) -> Result<ConnectedRemoteSource<'authorization>, DirectConnectError> {
 		let endpoint = self.selected_direct_endpoint(profile)?;
 		let grant = Arc::clone(&self.supervisor.grant);
-		let deadline = self
-			.supervisor
-			.start
-			.checked_add(CONNECTION_BUDGET)
-			.ok_or(DirectConnectError::Timeout)?
-			.min(grant.deadline());
+		let deadline = self.connect_deadline().ok_or(DirectConnectError::Timeout)?;
 		self.check_deadline(deadline)?;
 		let trust = profile.read_trust().map_err(DirectConnectError::Profile)?;
 		self.check_deadline(deadline)?;

@@ -103,8 +103,9 @@ fn download_error(
 		RemoteDownloadFailure::Capture {
 			cause,
 			record_failure,
+			route_failure,
 		} => {
-			if record_failure.is_some() {
+			if record_failure.is_some() || route_failure.is_some() {
 				return RemoteOutcome::recovery_required(RemotePublication::NotPublished, job);
 			}
 			match *cause {
@@ -119,6 +120,9 @@ fn download_error(
 				CaptureError::Stage { .. } => failed(Failure::Io, job),
 				_ => failed(Failure::Integrity, job),
 			}
+		}
+		RemoteDownloadFailure::SourceRetirement { .. } => {
+			RemoteOutcome::recovery_required(RemotePublication::NotPublished, job)
 		}
 		RemoteDownloadFailure::Finalization(error) => {
 			if matches!(
@@ -197,7 +201,7 @@ fn source_error(error: &SftpSourceError, cancelled: bool) -> Failure {
 	match error {
 		SftpSourceError::Sftp(error) => ssh_error(error),
 		SftpSourceError::Closed => Failure::Io,
-		SftpSourceError::Binding(_) => Failure::Authorization,
+		SftpSourceError::Binding(_) | SftpSourceError::ReadBinding { .. } => Failure::Authorization,
 		_ => Failure::Integrity,
 	}
 }
