@@ -1,5 +1,10 @@
 # Offline Windows CLI installation
 
+Cargo is the primary recommended installation method. See the
+[source installation instructions](../../README.md#installation).
+Use `install.ps1` for a prebuilt executable when you do not want to install
+Rust. The script does not compile ExaCopy or require Cargo.
+
 The root PowerShell scripts implement the first user-scope offline profile
 for a pinned raw CLI artifact. Run them in PowerShell 7.4 or newer on native
 x64 or ARM64 Windows 11 or Windows Server 2022 and newer, using a local fixed

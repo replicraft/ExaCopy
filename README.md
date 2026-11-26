@@ -2,6 +2,31 @@
 
 ExaCopy is a Rust project for file transfers, comparison, and backup. The Linux CLI compares regular files byte for byte, creates single-file content manifests, verifies against a selected baseline, and copies one regular file into an absent name. It verifies the private stage by independent BLAKE3 read-back, synchronizes publication intent before an exclusive rename, and commits a receipt. Recovery can inspect a retained job, resume an interrupted copy, retry publication of a verified stage, or complete the journal and receipt for an already-published copy.
 
+## Installation
+
+Cargo is the recommended way to build and install the CLI. From a checkout
+with the pinned dependencies prepared as described below, run:
+
+```sh
+cargo install --locked --path apps/exacopy-cli
+exacopy --help
+```
+
+Cargo installs `exacopy` into its executable directory, normally
+`$HOME/.cargo/bin` (`%USERPROFILE%\.cargo\bin` on Windows). Add that directory
+to `PATH` if your Rust installation has not already done so. The crates.io
+command `cargo install --locked exacopy` is the intended registry entrypoint;
+registry publication is still pending.
+
+For a prebuilt installation without installing Rust, use
+[`install.sh`](docs/architecture/posix-offline-install.md) on macOS/Linux or
+[`install.ps1`](docs/installation/windows.md) on Windows. These installers
+select the platform archive, verify its checksum and publisher identity,
+and install an owned launcher. Official signed release provisioning remains
+pending; the installation guides state the required trust inputs.
+
+## Usage
+
 ```sh
 cargo run --locked -p exacopy-cli -- diff LEFT RIGHT --format json
 cargo run --locked -p exacopy-cli -- manifest create SOURCE > baseline.json

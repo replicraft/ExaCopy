@@ -1,5 +1,10 @@
 # CLI installation on macOS and Linux
 
+Cargo is the primary recommended installation method. See the
+[source installation instructions](../../README.md#installation).
+Use `install.sh` for a prebuilt executable when you do not want to install
+Rust. The script does not compile ExaCopy or require Cargo.
+
 The root shell scripts install a user-scoped CLI release from GitHub's latest stable release or an exact offline bundle. Use the scripts from a trusted source tree, with their companion shell files in `tools/installer`. ExaCopy has yet to provision an official publisher certificate or signed distributable bundle for this profile.
 
 ## Install the latest stable release
