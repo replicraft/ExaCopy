@@ -13,6 +13,7 @@ use tokio::net::TcpStream;
 
 use crate::remote_frontdoor::{ApprovedRoute, FrontdoorError, SshProfile};
 
+use super::super::{AttemptAdmission, Error};
 use super::authentication::{OfferLease, authenticate};
 use super::route_lifetime::{RouteLease, RouteTask, RouteWake};
 use super::{ConnectedRemoteSource, ConnectingRemoteSource, RemoteRoutePeer};
@@ -26,6 +27,7 @@ impl<'authorization> ConnectingRemoteSource<'authorization> {
 	pub(crate) async fn connect_direct(
 		mut self,
 		profile: &SshProfile,
+		admission: &AttemptAdmission<'_>,
 	) -> Result<ConnectedRemoteSource<'authorization>, DirectConnectError> {
 		let endpoint = self.selected_direct_endpoint(profile)?;
 		let grant = Arc::clone(&self.supervisor.grant);
@@ -36,7 +38,7 @@ impl<'authorization> ConnectingRemoteSource<'authorization> {
 		let scope = self.supervisor.digest;
 		let offer = OfferLease::new(Arc::clone(&grant), scope, deadline);
 
-		let connect = self.establish_direct(profile, endpoint, trust, deadline, &offer);
+		let connect = self.establish_direct(profile, endpoint, trust, deadline, &offer, admission);
 		let result = tokio::select! {
 			biased;
 			() = grant.wait_revoked() => Err(DirectConnectError::Retry(RetryError::Blocked(
@@ -94,9 +96,13 @@ impl<'authorization> ConnectingRemoteSource<'authorization> {
 		trust: KnownHostTrust,
 		deadline: Instant,
 		offer: &OfferLease,
+		admission: &AttemptAdmission<'_>,
 	) -> Result<ConnectedRemoteSource<'authorization>, DirectConnectError> {
 		self.check_deadline(deadline)?;
-		let lease = RouteLease::new();
+		admission
+			.check_before_dial()
+			.map_err(DirectConnectError::Native)?;
+		let lease = RouteLease::connecting(deadline);
 		let route = lease.activity();
 		let grant = Arc::clone(&self.supervisor.grant);
 		let scope = self.supervisor.digest;
@@ -144,6 +150,7 @@ pub(crate) enum DirectConnectError {
 	Authority,
 	Profile(FrontdoorError),
 	Retry(RetryError),
+	Native(Error),
 	Timeout,
 	Dial(io::Error),
 	Ssh(SshError),
@@ -155,6 +162,7 @@ impl fmt::Display for DirectConnectError {
 			Self::Authority => out.write_str("the exact approved direct SSH route changed"),
 			Self::Profile(cause) => cause.fmt(out),
 			Self::Retry(cause) => cause.fmt(out),
+			Self::Native(cause) => cause.fmt(out),
 			Self::Timeout => out.write_str("the direct SSH connection deadline elapsed"),
 			Self::Dial(cause) => write!(out, "direct TCP connection failed ({cause})"),
 			Self::Ssh(cause) => cause.fmt(out),

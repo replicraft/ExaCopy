@@ -1,11 +1,12 @@
 use std::net::SocketAddr;
 use std::num::NonZeroU128;
-use std::sync::Arc;
-use std::time::Instant;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use exacopy_endpoint::connection_retry::{
-	ConnectionAttempt, ConnectionBinding, PermanentFailure, ReconnectEvidence, RetryBlock,
-	RetryDecision, RetryError, RetryOwner, RetrySupervisor,
+	ConnectionAttempt, ConnectionBinding, ConnectionFailure, FailureDecision, FailureSubject,
+	PermanentFailure, ReconnectEvidence, RetryBlock, RetryDecision, RetryError, RetryOwner,
+	RetrySupervisor, TransientFailure,
 };
 use exacopy_endpoint::ssh_sftp::HostKeyFingerprint;
 use exacopy_journal::remote_download::{
@@ -61,19 +62,14 @@ pub enum RemoteRoutePeer<'route> {
 	Embedded(&'route dyn CurrentEmbeddedStream),
 }
 
-/// A unique grant-checked attempt before its actual transport and SSH admission.
-pub struct ConnectingRemoteSource<'authorization> {
-	scope: &'authorization RemoteDownloadScope,
-	supervisor: Supervisor,
-	attempt_started: Instant,
+pub(crate) struct SourceInvocation<'scope> {
+	scope: &'scope RemoteDownloadScope,
+	supervisor: Arc<Supervisor>,
 }
 
-impl<'authorization> ConnectingRemoteSource<'authorization> {
-	/// Claims the initial attempt with a fresh local supervisor identity under this grant.
-	/// # Errors
-	/// Refuses unsupported routing, an expired or foreign grant, or an unavailable identity.
-	pub fn begin(
-		scope: &'authorization RemoteDownloadScope,
+impl<'scope> SourceInvocation<'scope> {
+	pub(crate) fn new(
+		scope: &'scope RemoteDownloadScope,
 		grant: &Arc<RemoteGrant>,
 	) -> Result<Self, RemoteDownloadFailure> {
 		if !matches!(
@@ -84,40 +80,103 @@ impl<'authorization> ConnectingRemoteSource<'authorization> {
 			return Err(Error::UnsupportedRoute.into());
 		}
 		let digest = scope.digest().map_err(Error::from)?;
-		grant
-			.check_source(digest)
-			.map_err(SftpSourceError::Binding)?;
+		grant.check_source(digest).map_err(Error::Grant)?;
 		let mut random = [0; 16];
 		kernel_random(&mut random).map_err(Error::from)?;
 		let id = NonZeroU128::new(u128::from_ne_bytes(random)).ok_or(Error::Binding)?;
 		let start = Instant::now();
-		let remaining = grant
-			.remaining_from(start)
-			.map_err(SftpSourceError::Binding)?;
-		let mut retry = RetrySupervisor::new(RetryOwner::new(id), remaining);
-		let RetryDecision::Start(attempt) = retry
-			.poll(start.elapsed())
-			.map_err(SftpSourceError::Binding)?
-		else {
-			return Err(Error::Binding.into());
-		};
+		let remaining = grant.remaining_from(start).map_err(Error::Grant)?;
 		Ok(Self {
 			scope,
-			attempt_started: Instant::now(),
-			supervisor: Supervisor {
+			supervisor: Arc::new(Supervisor {
 				grant: Arc::clone(grant),
 				digest,
 				start,
-				retry,
-				attempt,
-			},
+				retry: Mutex::new(RetrySupervisor::new(RetryOwner::new(id), remaining)),
+			}),
 		})
+	}
+
+	pub(crate) fn claim(&self) -> Result<ConnectingRemoteSource<'scope>, RemoteDownloadFailure> {
+		let RetryDecision::Start(attempt) = self
+			.supervisor
+			.observe(RetrySupervisor::poll)
+			.map_err(Error::Grant)?
+		else {
+			return Err(Error::Binding.into());
+		};
+		Ok(ConnectingRemoteSource {
+			scope: self.scope,
+			supervisor: Arc::clone(&self.supervisor),
+			attempt,
+			attempt_started: Instant::now(),
+		})
+	}
+
+	pub(crate) async fn backoff(
+		&self,
+		binding: ConnectionBinding,
+	) -> Result<(), RemoteDownloadFailure> {
+		let control = &self.supervisor;
+		let mut sample = [0; 4];
+		kernel_random(&mut sample).map_err(Error::from)?;
+		let failed = control
+			.observe(|retry, now| {
+				retry.failure(
+					now,
+					FailureSubject::Connection(binding),
+					ConnectionFailure::Transient {
+						cause: TransientFailure::NonMutatingTimeout,
+						jitter_sample: u32::from_ne_bytes(sample),
+					},
+				)
+			})
+			.map_err(Error::Grant)?;
+		let wake = match failed {
+			FailureDecision::WaitUntil { wake_at, .. } => {
+				control.start.checked_add(wake_at).ok_or(Error::Binding)?
+			}
+			FailureDecision::Blocked(reason) => {
+				return Err(Error::Grant(RetryError::Blocked(reason)).into());
+			}
+		};
+		tokio::select! {
+			biased;
+			() = control.grant.wait_revoked() => {}
+			() = tokio::time::sleep_until(tokio::time::Instant::from_std(wake)) => {}
+		}
+		control
+			.grant
+			.check_source(control.digest)
+			.map_err(Error::Grant)?;
+		Ok(())
+	}
+}
+
+/// A unique grant-checked attempt before its actual transport and SSH admission.
+pub struct ConnectingRemoteSource<'authorization> {
+	scope: &'authorization RemoteDownloadScope,
+	supervisor: Arc<Supervisor>,
+	attempt: ConnectionAttempt,
+	attempt_started: Instant,
+}
+
+impl<'authorization> ConnectingRemoteSource<'authorization> {
+	/// Claims the initial attempt with a fresh local supervisor.
+	///
+	/// # Errors
+	/// Refuses invalid scope, unavailable entropy or invalid authorization.
+	pub fn begin(
+		scope: &'authorization RemoteDownloadScope,
+		grant: &Arc<RemoteGrant>,
+	) -> Result<Self, RemoteDownloadFailure> {
+		SourceInvocation::new(scope, grant)?.claim()
 	}
 
 	/// The exact generation reserved before opening the actual transport.
 	#[must_use]
 	pub const fn attempt(&self) -> ConnectionAttempt {
-		self.supervisor.attempt
+		self.attempt
 	}
 
 	fn connect_deadline(&self) -> Option<Instant> {
@@ -128,8 +187,7 @@ impl<'authorization> ConnectingRemoteSource<'authorization> {
 	/// # Errors
 	/// Refuses expired, revoked or obsolete work before or after a transport await.
 	pub fn check_current(&mut self) -> Result<(), RetryError> {
-		let attempt = self.supervisor.attempt;
-		self.supervisor.check_connecting(attempt)
+		self.supervisor.check_connecting(self.attempt)
 	}
 
 	/// Consumes the session opened by the trusted connector for this exact attempt.
@@ -157,13 +215,14 @@ impl<'authorization> ConnectingRemoteSource<'authorization> {
 		}
 		let route = BoundRoute::admit(self.scope.source.route(), peer)?;
 		self.check_current()?;
-		if !transport.is_active() {
+		if !transport.finish_connection() {
 			return Err(route_refusal());
 		}
 		Ok(ConnectedRemoteSource {
 			session,
 			owner: SourceOwner {
 				supervisor: self.supervisor,
+				attempt: self.attempt,
 				route,
 				transport,
 			},
@@ -258,14 +317,21 @@ struct Supervisor {
 	grant: Arc<RemoteGrant>,
 	digest: RemoteScopeDigest,
 	start: Instant,
-	retry: RetrySupervisor,
-	attempt: ConnectionAttempt,
+	retry: Mutex<RetrySupervisor>,
 }
 
 impl Supervisor {
-	fn check_connecting(&mut self, attempt: ConnectionAttempt) -> Result<(), RetryError> {
+	fn observe<T>(
+		&self,
+		operation: impl FnOnce(&mut RetrySupervisor, Duration) -> Result<T, RetryError>,
+	) -> Result<T, RetryError> {
 		self.grant.check_source(self.digest)?;
-		self.retry.check_connecting(self.start.elapsed(), attempt)
+		let mut retry = self.retry.lock().map_err(|_| RetryError::StaleWork)?;
+		operation(&mut retry, self.start.elapsed())
+	}
+
+	fn check_connecting(&self, attempt: ConnectionAttempt) -> Result<(), RetryError> {
+		self.observe(|retry, now| retry.check_connecting(now, attempt))
 	}
 }
 
@@ -283,14 +349,19 @@ pub(super) struct SourceRetirement {
 }
 
 pub(super) struct SourceOwner<'authorization> {
-	supervisor: Supervisor,
+	supervisor: Arc<Supervisor>,
+	attempt: ConnectionAttempt,
 	route: BoundRoute<'authorization>,
 	transport: Arc<RouteTask>,
 }
 
 impl SourceOwner<'_> {
+	pub(super) fn retry_grant(&self) -> Arc<RemoteGrant> {
+		Arc::clone(&self.supervisor.grant)
+	}
+
 	pub(super) const fn attempt(&self) -> ConnectionAttempt {
-		self.supervisor.attempt
+		self.attempt
 	}
 
 	pub(super) fn admit_pending(
@@ -300,23 +371,24 @@ impl SourceOwner<'_> {
 		let attempt = pending.attempt();
 		self.check_connecting(attempt)?;
 		let routed = self.attempt();
-		self.supervisor.retry.admit(
-			self.supervisor.start.elapsed(),
-			attempt,
-			ReconnectEvidence {
-				route_checked_for: routed,
-				ssh_authenticated_for: routed,
-				source_checked_for: pending.attempt(),
-				source_epoch: pending.epoch(),
-			},
-		)
+		self.supervisor.observe(|retry, now| {
+			retry.admit(
+				now,
+				attempt,
+				ReconnectEvidence {
+					route_checked_for: routed,
+					ssh_authenticated_for: routed,
+					source_checked_for: pending.attempt(),
+					source_epoch: pending.epoch(),
+				},
+			)
+		})
 	}
 
 	pub(super) fn check_binding(&mut self, binding: ConnectionBinding) -> Result<(), RetryError> {
 		self.check_transport()?;
-		let state = &mut self.supervisor;
-		state.grant.check_source(state.digest)?;
-		state.retry.check_completion(state.start.elapsed(), binding)
+		self.supervisor
+			.observe(|retry, now| retry.check_completion(now, binding))
 	}
 
 	pub(super) async fn retire(
@@ -350,88 +422,10 @@ impl PendingSourceOwner for SourceOwner<'_> {
 
 	fn check_attempt(&mut self, attempt: ConnectionAttempt) -> Result<(), RetryError> {
 		self.check_transport()?;
-		let state = &mut self.supervisor;
-		state.grant.check_source(state.digest)?;
-		state.retry.check_attempt(state.start.elapsed(), attempt)
+		self.supervisor
+			.observe(|retry, now| retry.check_attempt(now, attempt))
 	}
 }
 
 #[cfg(test)]
-mod tests {
-	use std::cell::Cell;
-	use std::time::Duration;
-
-	use super::*;
-
-	#[test]
-	fn a_later_attempt_has_its_own_budget_within_the_original_grant() {
-		let invocation = Instant::now();
-		let grant = invocation + Duration::from_secs(32);
-		let next_attempt = invocation + Duration::from_secs(25);
-		assert_eq!(
-			connection_deadline(invocation, grant),
-			Some(invocation + authentication::CONNECTION_BUDGET)
-		);
-		assert_eq!(connection_deadline(next_attempt, grant), Some(grant));
-	}
-
-	#[test]
-	fn direct_peer_must_be_the_exact_signed_endpoint() {
-		let endpoint = "192.0.2.8:22".parse().unwrap();
-		let other = "192.0.2.8:2222".parse().unwrap();
-		let route = RemoteDownloadRoute::ResolvedDirect { endpoint };
-		assert!(BoundRoute::admit(route, RemoteRoutePeer::Direct(endpoint)).is_ok());
-		assert!(matches!(
-			BoundRoute::admit(route, RemoteRoutePeer::Direct(other)),
-			Err(RetryError::Blocked(RetryBlock::Permanent(
-				PermanentFailure::RouteAuthorityRefused
-			)))
-		));
-	}
-
-	struct Embedded(Cell<Option<EmbeddedStreamObservation>>);
-
-	impl CurrentEmbeddedStream for Embedded {
-		fn observe(&self) -> Option<EmbeddedStreamObservation> {
-			self.0.get()
-		}
-	}
-
-	#[test]
-	fn embedded_observations_refuse_peer_revision_and_transport_generation_changes() {
-		let inner = "192.0.2.83:22".parse().unwrap();
-		let original = EmbeddedStreamObservation {
-			stream: NonZeroU128::MIN,
-			peer: [4; 32],
-			revision: [5; 32],
-			inner,
-		};
-		let route = RemoteDownloadRoute::EmbeddedWireGuard {
-			peer: original.peer,
-			revision: original.revision,
-			inner,
-		};
-		let observed = Embedded(Cell::new(Some(original)));
-		let bound = BoundRoute::admit(route, RemoteRoutePeer::Embedded(&observed)).unwrap();
-		bound.check().unwrap();
-		for changed in [
-			EmbeddedStreamObservation {
-				peer: [9; 32],
-				..original
-			},
-			EmbeddedStreamObservation {
-				revision: [7; 32],
-				..original
-			},
-			EmbeddedStreamObservation {
-				stream: NonZeroU128::new(2).unwrap(),
-				..original
-			},
-		] {
-			observed.0.set(Some(changed));
-			assert!(bound.check().is_err());
-		}
-		observed.0.set(None);
-		assert!(bound.check().is_err());
-	}
-}
+mod tests;

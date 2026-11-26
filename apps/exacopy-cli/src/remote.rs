@@ -9,18 +9,18 @@ use tokio::runtime::Builder;
 
 use crate::args::{RemoteCommand, RemoteMetadata, RemoteRequest};
 use crate::assembly::linux::remote_download::{
-	ConnectedRemoteSource, ConnectingRemoteSource, RemoteDownloadRequest, RemoteGrant,
-	RemoteJobAction, download_remote,
+	AttemptAdmission, RemoteDownloadRequest, RemoteGrant, RemoteJobAction, SourceInvocation,
 };
 use crate::linux_path::{open_destination, split};
 use crate::profile::LocalProfile;
-use crate::remote_frontdoor::{ApprovedRoute, GetRequest, SshProfile, require_metadata};
+use crate::remote_frontdoor::{GetRequest, SshProfile, require_metadata};
 use crate::remote_report::{RemoteFailureKind as Failure, RemoteJob, RemoteOutcome};
 
 mod interrupt;
 mod outcome;
 mod qualification;
 mod resume;
+mod retry;
 mod selection;
 
 use interrupt::Interrupt;
@@ -135,7 +135,7 @@ async fn run(
 		.grant(&grant)
 		.map_err(|code| RemoteOutcome::failed(code, retained()))?;
 
-	let connecting = ConnectingRemoteSource::begin(&scope, &grant).map_err(|error| {
+	let invocation = SourceInvocation::new(&scope, &grant).map_err(|error| {
 		RemoteOutcome::failed(
 			outcome::start_error(&error, interrupted.cancelled()),
 			retained(),
@@ -151,37 +151,21 @@ async fn run(
 		grant: &grant,
 		qualification: qualification.attestation(),
 	};
-	let transfer = async move |connected: ConnectedRemoteSource<'_>| {
-		interrupted.route(connected.cancellation_handle())?;
-		let startup_lease = startup.map(resume::Startup::into_lease);
-		Ok(download_remote(request, connected, startup_lease).await)
-	};
-	let connecting_result = match &ssh.route {
-		ApprovedRoute::EmbeddedWireGuard(_) => {
-			#[cfg(feature = "experimental-ssh-wireguard")]
-			{
-				connecting
-					.with_embedded(&ssh, transfer)
-					.await
-					.map_err(|error| outcome::embedded_error(error, interrupted.cancelled()))
-			}
-			#[cfg(not(feature = "experimental-ssh-wireguard"))]
-			{
-				Err(Failure::Unsupported)
-			}
-		}
-		_ => match connecting.connect_direct(&ssh).await {
-			Ok(connected) => Ok(transfer(connected).await),
-			Err(error) => Err(outcome::connect_error(error, interrupted.cancelled())),
-		},
-	};
-	let transfer = connecting_result
-		.and_then(std::convert::identity)
-		.map_err(|code| RemoteOutcome::failed(code, retained()))?;
-	Ok(outcome::finish(
-		transfer,
-		job,
-		interrupted.cancelled(),
-		had_job,
-	))
+	let connecting = invocation.claim().map_err(|error| {
+		RemoteOutcome::failed(
+			outcome::start_error(&error, interrupted.cancelled()),
+			retained(),
+		)
+	})?;
+	let first = retry::attempt(
+		connecting,
+		&ssh,
+		&request,
+		interrupted,
+		AttemptAdmission::Initial(startup.map(resume::Startup::into_lease)),
+	)
+	.await;
+	let attempts =
+		retry::continue_capture(first, had_job, &invocation, &ssh, &request, interrupted).await;
+	Ok(attempts.finish(job, interrupted.cancelled()))
 }

@@ -14,8 +14,8 @@ use exacopy_transfer::remote_finalization::{
 	RemoteStageNames,
 };
 
-use super::super::remote_download::{RemoteGrant, native_authority};
-use super::super::remote_journal::{Error, IntentReadback, record_identity};
+use super::super::remote_download::native_authority;
+use super::super::remote_journal::{Error, IntentReadback, RemoteActivation, record_identity};
 use super::{
 	CheckpointStage, ClosedStage, FileIdentity, FreshStage, NativeCaptureStage,
 	NativeCaptureStageError, NativeClosedStage, ReadView, StageError,
@@ -25,7 +25,7 @@ use super::{
 pub(in crate::assembly::linux) struct PublicationContext<'held> {
 	pub(in crate::assembly::linux) job: RemoteDownloadContext,
 	pub(in crate::assembly::linux) authority: RemotePublicationAuthority,
-	pub(in crate::assembly::linux) grant: &'held RemoteGrant,
+	pub(in crate::assembly::linux) activation: RemoteActivation<'held>,
 	pub(in crate::assembly::linux) eligibility: &'held RemoteDestinationEligibility<'held>,
 	pub(in crate::assembly::linux) intent: &'held IntentReadback,
 }
@@ -46,13 +46,25 @@ impl<'stage> FreshStage for FinalizingCaptureStage<'stage> {
 	}
 
 	fn write_next(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
-		self.0.write_next(bytes)
+		let publication = self.1;
+		self.0.write_next_admitted(bytes, || {
+			publication
+				.activation
+				.enter_effect()
+				.map_err(std::io::Error::other)
+		})
 	}
 
 	fn sync_and_close(self) -> Result<Self::Closed, Self::Error> {
+		let publication = self.1;
 		Ok(FinishStage {
-			stage: self.0.sync_and_close()?,
-			publication: self.1,
+			stage: self.0.sync_and_close_admitted(|| {
+				publication
+					.activation
+					.enter_effect()
+					.map_err(std::io::Error::other)
+			})?,
+			publication,
 		})
 	}
 }
@@ -61,7 +73,13 @@ impl CheckpointStage for FinalizingCaptureStage<'_> {
 	type Binding = FileIdentity;
 
 	fn sync_prefix(&mut self, end: u64) -> Result<Self::Binding, Self::Error> {
-		self.0.sync_prefix(end)
+		let publication = self.1;
+		self.0.sync_prefix_admitted(end, || {
+			publication
+				.activation
+				.enter_effect()
+				.map_err(std::io::Error::other)
+		})
 	}
 }
 
@@ -109,7 +127,16 @@ impl<'stage> RemoteFinalizationStage for FinishStage<'stage> {
 			names,
 		};
 		// Hold independently bound raw component slices while consuming the same original stage.
-		let native = self.stage.closed.prepare_selected_stream_metadata(length)?;
+		let publication = self.publication;
+		let native = self
+			.stage
+			.closed
+			.prepare_selected_stream_metadata_admitted(length, || {
+				publication
+					.activation
+					.enter_effect()
+					.map_err(std::io::Error::other)
+			})?;
 		Ok(ReadyStage {
 			native,
 			expected,
@@ -180,18 +207,22 @@ impl RemoteReadyStage for ReadyStage<'_> {
 		let selected = native_authority(fence)
 			.map_err(|cause| PublicationFailure::Uncertain(StageFinalizationError::Gate(cause)))?;
 		let expected = self.expected;
-		let outcome =
-			self.native
-				.publish_no_clobber(publication.eligibility, selected, permit, |request| {
-					if request.authority != selected || project(request.location) != expected {
-						return Err(Error::Binding);
-					}
-					let intent = publication.intent.consume(fence)?;
-					if intent.stage != expected.stage {
-						return Err(Error::Binding);
-					}
-					publication.grant.enter(authority.scope, authority.grant)
-				});
+		let outcome = self.native.publish_no_clobber_admitted(
+			publication.eligibility,
+			selected,
+			permit,
+			|| publication.activation.enter_effect(),
+			|request| {
+				if request.authority != selected || project(request.location) != expected {
+					return Err(Error::Binding);
+				}
+				let intent = publication.intent.consume(fence)?;
+				if intent.stage != expected.stage {
+					return Err(Error::Binding);
+				}
+				publication.activation.enter_effect()
+			},
+		);
 		let facts = match outcome {
 			Ok(facts) => facts,
 			Err(cause @ SelectedStreamPublishError::Native(PublishError::Conflict)) => {

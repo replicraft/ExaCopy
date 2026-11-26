@@ -22,6 +22,7 @@ use tokio::net::UdpSocket;
 
 use crate::remote_frontdoor::{ApprovedRoute, FrontdoorError, SshProfile, WireGuardRoute};
 
+use super::super::{AttemptAdmission, Error};
 use super::authentication::{OfferLease, authenticate};
 use super::route_lifetime::{RouteLease, RouteTask, RouteWake};
 use super::{
@@ -40,10 +41,14 @@ const IPV6_INNER_MIN: usize = 1280;
 
 impl ConnectingRemoteSource<'_> {
 	/// Consumes this attempt and runs the caller with the exact carrier's live route lent to SSH.
-	pub(crate) async fn with_embedded<T>(
+	pub(crate) async fn with_embedded<'held, T>(
 		mut self,
 		profile: &SshProfile,
-		consume: impl for<'route> AsyncFnOnce(ConnectedRemoteSource<'route>) -> T,
+		admission: AttemptAdmission<'held>,
+		consume: impl for<'route> AsyncFnOnce(
+			ConnectedRemoteSource<'route>,
+			AttemptAdmission<'held>,
+		) -> T,
 	) -> Result<T, EmbeddedConnectError> {
 		let approved = self.selected_embedded_route(profile)?;
 		let grant = Arc::clone(&self.supervisor.grant);
@@ -58,7 +63,7 @@ impl ConnectingRemoteSource<'_> {
 		check(&mut self, deadline)?;
 
 		let (binding, settings) = reserve_transport(self.attempt().generation(), approved)?;
-		let lease = RouteLease::new();
+		let lease = RouteLease::connecting(deadline);
 		let revocation = RouteRevocation::new(binding);
 		let owner = EmbeddedOwner::new(
 			Arc::clone(&grant),
@@ -71,7 +76,9 @@ impl ConnectingRemoteSource<'_> {
 			&grant,
 			scope,
 			deadline,
-			prepare_carrier(&mut self, approved, binding, settings, owner, deadline),
+			prepare_carrier(
+				&mut self, approved, binding, settings, owner, deadline, &admission,
+			),
 		)
 		.await?;
 		carrier
@@ -106,7 +113,7 @@ impl ConnectingRemoteSource<'_> {
 				})
 				.await?;
 				drop(offer);
-				let outcome = consume(connected).await;
+				let outcome = consume(connected, admission).await;
 				guard.stop();
 				let _ = guard.join().await;
 				Ok(outcome)
@@ -208,6 +215,7 @@ async fn prepare_carrier(
 	settings: TcpDialSettings,
 	owner: EmbeddedOwner,
 	deadline: Instant,
+	admission: &AttemptAdmission<'_>,
 ) -> Result<UdpTcpAdmission<EmbeddedOwner>, EmbeddedConnectError> {
 	let mtu = InnerMtu::from_outer(approved.outer, approved.outer_mtu)
 		.map_err(|_| EmbeddedConnectError::Mtu)?;
@@ -244,6 +252,10 @@ async fn prepare_carrier(
 	let mut peer =
 		UdpPeer::from_connected(owner, socket, protocol).map_err(EmbeddedConnectError::Peer)?;
 	let mut packets = [0; MAX_DATAGRAM_BYTES];
+	admission
+		.check_before_dial()
+		.map_err(EmbeddedConnectError::Native)?;
+	check(source, deadline)?;
 	let _ = peer
 		.initiate(&mut packets)
 		.map_err(EmbeddedConnectError::Peer)?;
@@ -327,6 +339,7 @@ pub(crate) enum EmbeddedConnectError {
 	Entropy,
 	Mtu,
 	Retry(RetryError),
+	Native(Error),
 	Timeout,
 	HandshakeBudget,
 	Udp(io::Error),
@@ -346,6 +359,7 @@ impl fmt::Display for EmbeddedConnectError {
 				"the approved outer path MTU cannot carry the selected inner address family",
 			),
 			Self::Retry(cause) => cause.fmt(out),
+			Self::Native(cause) => cause.fmt(out),
 			Self::Timeout => out.write_str("the embedded SSH connection deadline elapsed"),
 			Self::HandshakeBudget => {
 				out.write_str("the embedded WireGuard handshake exceeded its operation limit")

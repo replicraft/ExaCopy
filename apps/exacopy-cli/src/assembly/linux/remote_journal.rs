@@ -24,10 +24,13 @@ mod admission;
 mod lease;
 mod ledger;
 mod receipt;
+mod retry;
 
 pub(super) use admission::{CurrentGrant, RemoteActivation};
+pub use lease::RemoteRetryLease;
 pub(super) use lease::{RemoteJobLease, bootstrap};
-pub(super) use ledger::{IntentReadback, RemoteJobJournal};
+pub(super) use ledger::IntentReadback;
+pub(super) use retry::RetryCaptureStamp;
 
 #[cfg(test)]
 mod tests;
@@ -77,6 +80,9 @@ pub enum Error {
 	UnknownStage,
 	Stopped,
 	Grant(RetryError),
+	BootstrapNotCreated(Box<Error>),
+	BootstrapCreateUncertain(Box<Error>),
+	BootstrapIncomplete(Box<Error>),
 	UnsupportedRoute,
 	Metadata(RemoteMetadataRefusal),
 	Qualification(RemoteDestinationEligibilityError),
@@ -113,6 +119,16 @@ impl fmt::Display for Error {
 				formatter.write_str("private stage provenance needs reconciliation")
 			}
 			Self::Grant(cause) => cause.fmt(formatter),
+			Self::BootstrapNotCreated(cause) => {
+				write!(formatter, "remote job creation refused ({cause})")
+			}
+			Self::BootstrapCreateUncertain(cause) => {
+				write!(formatter, "remote job creation is uncertain ({cause})")
+			}
+			Self::BootstrapIncomplete(cause) => write!(
+				formatter,
+				"remote private job bootstrap is incomplete ({cause})"
+			),
 			Self::Stopped => formatter.write_str("remote job writer requires reconciliation"),
 			Self::UnsupportedRoute => {
 				formatter.write_str("remote job route lacks a writable owner profile")
@@ -143,7 +159,13 @@ impl std::error::Error for Error {}
 
 impl From<StageError> for Error {
 	fn from(cause: StageError) -> Self {
-		Self::Native(cause)
+		match cause {
+			StageError::Admission(cause) => match cause.downcast::<Self>() {
+				Ok(refusal) => refusal,
+				Err(cause) => Self::Native(StageError::Admission(cause)),
+			},
+			cause => Self::Native(cause),
+		}
 	}
 }
 
@@ -173,7 +195,13 @@ impl From<RemoteDownloadError> for Error {
 
 impl From<DurableJournalError> for Error {
 	fn from(cause: DurableJournalError) -> Self {
-		Self::Journal(cause)
+		match cause {
+			DurableJournalError::Admission(cause) => match cause.downcast::<Self>() {
+				Ok(refusal) => refusal,
+				Err(cause) => Self::Journal(DurableJournalError::Admission(cause)),
+			},
+			cause => Self::Journal(cause),
+		}
 	}
 }
 

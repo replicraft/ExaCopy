@@ -7,6 +7,7 @@ use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _};
 use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Mutex, MutexGuard};
 
 use exacopy_endpoint::ssh_sftp::SshAuthority;
 use exacopy_journal::remote_download::qualification::RemoteQualificationRouteClass;
@@ -364,12 +365,17 @@ impl Drop for TempRoot {
 mod bootstrap_fixtures;
 mod capture;
 mod finalization;
+mod reconcile;
+mod retry;
 
 const QUALIFICATION: [u8; 32] = [0x66; 32];
 
 struct FixtureGrant {
 	scope: RemoteScopeDigest,
 	digest: Cell<[u8; 32]>,
+	active: Mutex<bool>,
+	effect_entries: Cell<usize>,
+	refuse_effect: Cell<Option<usize>>,
 }
 
 impl FixtureGrant {
@@ -377,7 +383,22 @@ impl FixtureGrant {
 		Self {
 			scope: scope.digest().unwrap(),
 			digest: Cell::new([0x13; 32]),
+			active: Mutex::new(true),
+			effect_entries: Cell::new(0),
+			refuse_effect: Cell::new(None),
 		}
+	}
+	fn refuse_after(&self, allowed: usize) {
+		self.refuse_effect
+			.set(Some(self.effect_entries.get() + allowed + 1));
+	}
+
+	fn refuse() -> Error {
+		use exacopy_endpoint::connection_retry::{PermanentFailure, RetryBlock, RetryError};
+
+		Error::Grant(RetryError::Blocked(RetryBlock::Permanent(
+			PermanentFailure::GrantRevoked,
+		)))
 	}
 }
 
@@ -386,7 +407,29 @@ impl CurrentGrant for FixtureGrant {
 		if scope != self.scope {
 			return Err(Error::Binding);
 		}
+		if !*self.active.lock().unwrap() {
+			return Err(Self::refuse());
+		}
 		Ok(self.digest.get())
+	}
+	fn enter_effect(
+		&self,
+		scope: RemoteScopeDigest,
+		digest: [u8; 32],
+	) -> Result<MutexGuard<'_, bool>, Error> {
+		if (scope, digest) != (self.scope, self.digest.get()) {
+			return Err(Error::Binding);
+		}
+		let mut active = self.active.lock().unwrap();
+		let entry = self.effect_entries.get() + 1;
+		self.effect_entries.set(entry);
+		if self.refuse_effect.get() == Some(entry) {
+			*active = false;
+		}
+		if !*active {
+			return Err(Self::refuse());
+		}
+		Ok(active)
 	}
 }
 

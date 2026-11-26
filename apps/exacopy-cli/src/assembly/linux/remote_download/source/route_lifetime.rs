@@ -16,8 +16,19 @@ const TRANSPORT_CLOSE_LIMIT: Duration = Duration::from_secs(2);
 
 /// Serializes retirement with the actual nonblocking transport operation.
 pub(super) struct RouteActivity {
-	active: Mutex<bool>,
+	active: Mutex<RouteState>,
 	stopped: Notify,
+}
+
+struct RouteState {
+	active: bool,
+	connect_deadline: Option<Instant>,
+}
+
+impl RouteState {
+	fn current(&self, now: Instant) -> bool {
+		self.active && self.connect_deadline.is_none_or(|deadline| now < deadline)
+	}
 }
 
 impl RouteActivity {
@@ -33,17 +44,31 @@ impl RouteActivity {
 		let Ok(active) = self.active.lock() else {
 			return operation(false);
 		};
-		operation(*active && Instant::now() < grant.deadline())
+		let now = Instant::now();
+		operation(active.current(now) && now < grant.deadline())
 	}
 
 	pub(super) fn is_active(&self) -> bool {
-		self.active.lock().is_ok_and(|active| *active)
+		self.active
+			.lock()
+			.is_ok_and(|state| state.current(Instant::now()))
+	}
+
+	fn finish_connection(&self) -> bool {
+		let Ok(mut state) = self.active.lock() else {
+			return false;
+		};
+		if !state.current(Instant::now()) {
+			return false;
+		}
+		state.connect_deadline = None;
+		true
 	}
 
 	pub(super) fn stop(&self) {
 		{
 			let mut active = self.active.lock().unwrap_or_else(PoisonError::into_inner);
-			*active = false;
+			active.active = false;
 		}
 		self.stopped.notify_waiters();
 	}
@@ -64,10 +89,22 @@ pub(super) struct RouteLease {
 }
 
 impl RouteLease {
+	#[cfg(test)]
 	pub(super) fn new() -> Self {
+		Self::with_deadline(None)
+	}
+
+	pub(super) fn connecting(deadline: Instant) -> Self {
+		Self::with_deadline(Some(deadline))
+	}
+
+	fn with_deadline(connect_deadline: Option<Instant>) -> Self {
 		Self {
 			activity: Arc::new(RouteActivity {
-				active: Mutex::new(true),
+				active: Mutex::new(RouteState {
+					active: true,
+					connect_deadline,
+				}),
 				stopped: Notify::new(),
 			}),
 		}
@@ -237,6 +274,10 @@ impl RouteTask {
 
 	pub(super) fn is_active(&self) -> bool {
 		self.lease.activity.is_active()
+	}
+
+	pub(super) fn finish_connection(&self) -> bool {
+		self.lease.activity.finish_connection()
 	}
 
 	pub(super) fn stop(&self) {

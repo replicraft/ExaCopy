@@ -306,6 +306,16 @@ destination. Once publication intent may have been recorded, recovery
 remains a reconciliation case and the command refuses another publish
 attempt. Retain the job when it reports uncertain or confirmed publication.
 
+A current held SFTP data-read timeout can start another authenticated
+attempt automatically after confirmed session retirement. The command
+keeps the original finite grant and retry supervisor, releases the job
+lease during backoff, and rechecks the exact retained files and journal
+under a fresh lease before dialing. Each attempt starts at byte zero in a
+distinct stage; prior bytes remain retained. Authentication, host-key and
+route refusals, uncertain storage outcomes, and prior publication intent
+stop automatic retries. Native timeout-to-redial commissioning remains
+open; the earlier hosted interruption campaign exercised explicit restart.
+
 Ctrl-C revokes the foreground grant and cancels the active session. A
 confirmed cancellation can exit 10. Pending effects or uncertain evidence
 can still require exit 9. The `publication` field may be `not_published`,

@@ -1,14 +1,13 @@
 use std::num::NonZeroU64;
 
-use exacopy_endpoint::{JournalFileBarrier, JournalSegment};
-use exacopy_journal::frame::{ChainHead, FRAME_OVERHEAD_BYTES, Frame, FrameKind, FrameReader};
+use exacopy_journal::DurableJournal;
+use exacopy_journal::frame::{ChainHead, FRAME_OVERHEAD_BYTES, Frame, FrameReader};
 use exacopy_journal::remote_download::finalization_replay::RemoteFinalizationReplay;
 use exacopy_journal::remote_download::replay::{MAX_REMOTE_REPLAY_ATTEMPTS, RemoteReplayBoundary};
 use exacopy_journal::remote_download::{
 	RemoteDownloadBody as Body, RemoteDownloadContext, RemoteDownloadOwnerRecord,
 	RemoteDownloadRecord, RemoteEpochs, RemoteSourceObservation, RemoteUncertainBoundary,
 };
-use exacopy_journal::{DurableJournal, SyncedFrame};
 use exacopy_platform::linux::{
 	FileIdentity, FreshRecoveryStage, LinuxJournalSegment, RecoveryFile, RecoveryWriteLease,
 	WriteStage,
@@ -16,12 +15,16 @@ use exacopy_platform::linux::{
 
 use super::super::remote_stage::{PrefixBarrier, PrefixScope};
 use super::admission::RemoteActivation;
-use super::lease::{CheckedCandidate, check_current};
+use super::lease::{CheckedCandidate, PreservedCapture, check_current};
 use super::{Error, binding, component, next_epochs, record_identity};
 
+mod append;
 mod checkpoints;
 mod finalization;
+mod retry;
 
+pub(super) use append::{append_payload_admitted, append_record_admitted};
+use append::{check_frame, make_record};
 pub(in crate::assembly::linux) use finalization::IntentReadback;
 
 use checkpoints::CheckpointLedger;
@@ -47,6 +50,7 @@ pub(in crate::assembly::linux) struct RemoteJobJournal<'lease> {
 	stages: Vec<exacopy_journal::LinuxFileIdentity>,
 	active: Option<Attempt>,
 	activation: RemoteActivation<'lease>,
+	preserved_capture: &'lease [PreservedCapture],
 }
 
 struct SpentAllocation {
@@ -96,6 +100,7 @@ pub(super) struct WriterStart<'lease> {
 	pub(super) segment: RecoveryFile,
 	pub(in crate::assembly::linux) directory: FileIdentity,
 	pub(super) activation: RemoteActivation<'lease>,
+	pub(super) preserved_capture: &'lease [PreservedCapture],
 }
 
 impl<'lease> RemoteJobJournal<'lease> {
@@ -134,6 +139,7 @@ impl<'lease> RemoteJobJournal<'lease> {
 			// A recovered attempt is never reopened for writing.
 			active: None,
 			activation: start.activation,
+			preserved_capture: start.preserved_capture,
 		}
 	}
 
@@ -165,6 +171,7 @@ impl<'lease> RemoteJobJournal<'lease> {
 		{
 			return Err(Error::Attempt);
 		}
+		self.check_preserved_capture()?;
 		let factory = self
 			.lease
 			.prepare_fresh_stage(&candidate.inventory, self.directory)?;
@@ -189,6 +196,15 @@ impl<'lease> RemoteJobJournal<'lease> {
 			target: component(scope.destination.target())?,
 			context: context(self.owner),
 		})
+	}
+
+	fn check_preserved_capture(&self) -> Result<(), Error> {
+		PreservedCapture::check_all(
+			self.preserved_capture,
+			self.lease.job(),
+			component(self.owner.manifest().scope.destination.target())?,
+			record_identity(self.directory),
+		)
 	}
 
 	fn prepared(&mut self, allocation: Allocation, file: FileIdentity) -> Result<ChainHead, Error> {
@@ -233,7 +249,17 @@ impl<'lease> RemoteJobJournal<'lease> {
 		)?;
 		self.segment.recheck_observation()?;
 		let previous = self.boundary;
-		let candidate = append_record(&mut writer, previous, context(self.owner), body)?;
+		let candidate =
+			append_record_admitted(&mut writer, previous, context(self.owner), body, || {
+				if matches!(body, Body::FailureRecorded { .. }) {
+					Ok(None)
+				} else {
+					self.activation
+						.enter_effect()
+						.map(Some)
+						.map_err(std::io::Error::other)
+				}
+			})?;
 		let current = check_current(
 			self.lease.job(),
 			self.owner_file,
@@ -309,6 +335,7 @@ impl AllocatedStage<'_> {
 		}
 		let copy_binding = binding(self.context, self.allocation.epochs, self.allocation.nonce)?;
 		journal.activation.recheck()?;
+		journal.check_preserved_capture()?;
 		let result = self.create_bound(journal, copy_binding, after_create);
 		if result.is_err() {
 			// Once native creation starts, a failed observation can leave an orphan.
@@ -323,9 +350,15 @@ impl AllocatedStage<'_> {
 		copy_binding: exacopy_model::CopyBinding,
 		after_create: impl FnOnce(),
 	) -> Result<BoundWriter<'stage>, Error> {
-		let mut writer = self.factory.create_writer(copy_binding)?;
+		let enter = || {
+			journal
+				.activation
+				.enter_effect()
+				.map_err(std::io::Error::other)
+		};
+		let mut writer = self.factory.create_writer_admitted(copy_binding, enter)?;
 		after_create();
-		writer.flush()?;
+		writer.flush_admitted(enter)?;
 		let observed = journal.lease.job().inventory(self.name, self.target)?;
 		let file = observed.stage().ok_or(Error::UnknownStage)?;
 		if observed.stage_directory_identity() != Some(journal.directory)
@@ -361,73 +394,6 @@ pub(in crate::assembly::linux) struct BoundWriter<'stage> {
 	pub(in crate::assembly::linux) target: exacopy_endpoint::UnixComponent<'stage>,
 	pub(in crate::assembly::linux) directory: FileIdentity,
 	pub(in crate::assembly::linux) length: u64,
-}
-
-pub(super) fn append_record<S: JournalSegment>(
-	writer: &mut DurableJournal<S>,
-	previous: RemoteReplayBoundary,
-	context: RemoteDownloadContext,
-	body: Body<'_>,
-) -> Result<RemoteReplayBoundary, Error> {
-	let record = make_record(previous.head, context, body)?;
-	let (frame, _, bound) = append_payload(writer, previous, body.kind(), record.encode()?)?;
-	check_frame(&frame, previous.head, record)?;
-	Ok(bound)
-}
-
-pub(super) fn append_payload<S: JournalSegment>(
-	writer: &mut DurableJournal<S>,
-	previous: RemoteReplayBoundary,
-	kind: FrameKind,
-	payload: Vec<u8>,
-) -> Result<(Frame, SyncedFrame, RemoteReplayBoundary), Error> {
-	let offset = FRAME_OVERHEAD_BYTES
-		.checked_add(payload.len())
-		.and_then(|bytes| u64::try_from(bytes).ok())
-		.and_then(|bytes| previous.offset.checked_add(bytes))
-		.ok_or(Error::Binding)?;
-	let (frame, synced) = writer.append_frame(kind, payload)?;
-	if synced.barrier() != JournalFileBarrier::SyncAll
-		|| synced.kind() != kind
-		|| synced.head() != frame.head()
-		|| frame.kind() != kind
-		|| previous.head.sequence().checked_add(1) != Some(frame.head().sequence())
-		|| previous.head.digest() != frame.previous_digest()
-	{
-		return Err(Error::Binding);
-	}
-	let boundary = RemoteReplayBoundary {
-		head: frame.head(),
-		offset,
-	};
-	Ok((frame, synced, boundary))
-}
-
-fn make_record<'name>(
-	previous: ChainHead,
-	context: RemoteDownloadContext,
-	body: Body<'name>,
-) -> Result<RemoteDownloadRecord<'name>, Error> {
-	Ok(RemoteDownloadRecord::new(
-		context,
-		(previous != ChainHead::start()).then_some(previous),
-		body,
-	)?)
-}
-
-fn check_frame(
-	frame: &Frame,
-	previous: ChainHead,
-	expected: RemoteDownloadRecord<'_>,
-) -> Result<(), Error> {
-	if previous.sequence().checked_add(1) != Some(frame.head().sequence())
-		|| previous.digest() != frame.previous_digest()
-		|| RemoteDownloadRecord::from_frame(frame)? != expected
-		|| expected.encode()?.as_slice() != frame.payload()
-	{
-		return Err(Error::Binding);
-	}
-	Ok(())
 }
 
 pub(super) fn verify_readback(

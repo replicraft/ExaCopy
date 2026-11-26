@@ -6,8 +6,10 @@ use exacopy_journal::remote_download::retirement::{
 	RemoteCaptureRetired, RemoteRetirementObservation,
 };
 
+use super::super::ledger::append_payload_admitted;
+
 use super::{
-	CheckedCandidate, Error, RemoteJobJournal, RemoteJobLease, append_payload, check_current,
+	CheckedCandidate, Error, PreservedCapture, RemoteJobJournal, RemoteJobLease, check_current,
 	component, readback_frame, record_identity, require_live_phase,
 };
 
@@ -72,12 +74,23 @@ impl RemoteJobLease<'_> {
 		inventory.recheck()?;
 		candidate.inventory.recheck()?;
 		current.recheck_observation()?;
+		PreservedCapture::check_all(
+			&self.preserved_capture,
+			self.job(),
+			target,
+			self.stage_directory,
+		)?;
 		self.activation.recheck()?;
-		let (declared, synced, boundary) = append_payload(
+		let (declared, synced, boundary) = append_payload_admitted(
 			&mut writer,
 			self.boundary,
 			FrameKind::RemoteCaptureRetired,
 			expected.encode()?,
+			|| {
+				self.activation
+					.enter_effect()
+					.map_err(std::io::Error::other)
+			},
 		)?;
 		let mut updated = check_current(
 			self.job(),

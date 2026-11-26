@@ -66,7 +66,7 @@ fn unsupported_route_grant_and_policy_refuse_before_a_job_exists() {
 			super::OwnerToken::from_bytes([0x51; 16]).unwrap(),
 			activation,
 		),
-		Err(Error::Binding)
+		Err(Error::BootstrapNotCreated(cause)) if matches!(*cause, Error::Binding)
 	));
 	assert!(!fixture.job_path().exists());
 	assert!(!fixture.target().exists());
@@ -279,4 +279,46 @@ fn prepare(fixture: &Fixture, intent: bool) -> ChainHead {
 	};
 	writer.into_inner().sync_all().unwrap();
 	end
+}
+
+#[test]
+fn initial_and_explicit_resume_recheck_grant_at_stage_allocation() {
+	for initial in [true, false] {
+		let fixture = Fixture::new();
+		let created = fixture.bootstrap();
+		let lease = if initial {
+			fixture.open_bootstrap(created)
+		} else {
+			reopen(&fixture).unwrap()
+		};
+		let candidate = lease.candidate(component(FRESH).unwrap()).unwrap();
+		let mut writer = lease.open_writer(&candidate).unwrap();
+		let before = fs::read(fixture.segment()).unwrap();
+		fixture.grant.refuse_after(0);
+		assert!(matches!(
+			writer.allocate(&candidate, epoch(1), observation(), NONCE),
+			Err(Error::Grant(_))
+		));
+		assert_eq!(fs::read(fixture.segment()).unwrap(), before);
+		assert!(!fixture.stage("capture-next").exists());
+		assert!(!fixture.target().exists());
+	}
+}
+
+#[test]
+fn explicit_retirement_checks_grant_after_the_resume_barrier() {
+	let fixture = Fixture::new();
+	let _ = prepare(&fixture, false);
+	let lease = reopen(&fixture).unwrap();
+	let candidate = lease.candidate(component(FRESH).unwrap()).unwrap();
+	let before = fs::read(fixture.segment()).unwrap();
+	fixture.grant.refuse_after(1);
+	assert!(matches!(
+		lease.retire_and_open_writer(&candidate),
+		Err(Error::Grant(_))
+	));
+	assert_eq!(fs::read(fixture.segment()).unwrap(), before);
+	assert_eq!(fs::read(fixture.stage("capture-1")).unwrap(), DATA);
+	assert!(!fixture.stage("capture-next").exists());
+	assert!(!fixture.target().exists());
 }

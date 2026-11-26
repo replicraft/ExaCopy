@@ -1,3 +1,5 @@
+use std::sync::MutexGuard;
+
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use exacopy_endpoint::remote_source::SftpPathRoot;
 use exacopy_journal::OwnerProfileId;
@@ -100,6 +102,12 @@ impl OwnerDialect {
 /// App-owned, independently authenticated current grant for an exact scoped request.
 pub(in crate::assembly::linux) trait CurrentGrant {
 	fn recheck(&self, scope: RemoteScopeDigest) -> Result<[u8; 32], Error>;
+
+	fn enter_effect(
+		&self,
+		scope: RemoteScopeDigest,
+		digest: [u8; 32],
+	) -> Result<MutexGuard<'_, bool>, Error>;
 }
 
 pub(in crate::assembly::linux) trait CurrentQualification {
@@ -174,6 +182,11 @@ impl<'root> RemoteActivation<'root> {
 			grant_digest,
 			qualification_digest,
 		})
+	}
+
+	pub(in crate::assembly::linux) fn enter_effect(self) -> Result<MutexGuard<'root, bool>, Error> {
+		self.grant
+			.enter_effect(self.scope_digest, self.grant_digest)
 	}
 
 	pub(in crate::assembly::linux) fn publication_authority(self) -> RemotePublicationAuthority {

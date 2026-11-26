@@ -1,54 +1,44 @@
 //! Application-only execution of one explicitly admitted agentless SFTP attempt.
 
 use std::fmt;
-use std::num::NonZeroU64;
 use std::path::Path;
 
-use exacopy_endpoint::remote_source::{SftpPath, SftpPathRoot, SourceEpoch};
+use exacopy_endpoint::linux_remote_qualification::RemoteDestinationQualification;
 use exacopy_journal::remote_download::qualification::{
 	RemoteQualificationError, RemoteQualificationScope, RemoteQualificationTrust,
 	verify_remote_destination_qualification,
 };
-use exacopy_journal::remote_download::{
-	RemoteDownloadScope, RemoteSourceObservation, RemoteUncertainBoundary,
-};
-use exacopy_journal::{JournalJobId, OwnerTimestamp, OwnerToken, StreamLength};
-use exacopy_platform::linux::{
-	DestinationRoot, RecoveryReadLease, RemoteDestinationEligibility, observe_remote_destination,
-};
-use exacopy_sftp::{
-	PendingSftpPathRequest, PendingSourceOwner, SftpSourceError, open_pending_path_source,
-};
-use exacopy_transfer::remote_capture::{CaptureError, StageStep, capture_live};
-use exacopy_transfer::remote_finalization::{
-	CommittedRemoteReceipt, FinalizationFailure, RemoteFinalizationOutcome,
-	RemoteFinalizationRequest, finalize_capture,
-};
+use exacopy_journal::remote_download::{RemoteDownloadScope, RemoteUncertainBoundary};
+use exacopy_journal::{JournalJobId, OwnerTimestamp, OwnerToken};
+use exacopy_platform::linux::{DestinationRoot, RecoveryReadLease, observe_remote_destination};
+use exacopy_sftp::SftpSourceError;
+use exacopy_transfer::remote_capture::{CaptureError, StageStep};
+use exacopy_transfer::remote_finalization::{CommittedRemoteReceipt, FinalizationFailure};
 use exacopy_transfer::remote_metadata::ApprovedSftpMetadata;
-use uuid::Uuid;
 
-use crate::profile::{LocalProfile, kernel_random};
+use crate::profile::LocalProfile;
 
 pub(crate) use super::remote_journal::Error as RemoteJobError;
-use super::remote_journal::{
-	Error, IntentReadback, RemoteActivation, RemoteJobLease, bootstrap, component,
-};
-use super::remote_stage::{
-	FinalizingCaptureStage, NativeCaptureStage, NativeCaptureStageError, PrefixBarrier,
-	PublicationContext, StageFinalizationError,
-};
+use super::remote_journal::Error;
+use super::remote_stage::{NativeCaptureStageError, StageFinalizationError};
 
 mod authority;
 mod build;
+mod capture;
+pub(crate) use capture::{download_remote, download_retry};
+mod retry;
 mod source;
 use authority::EffectAuthority;
 pub use authority::RemoteGrant;
 pub(super) use authority::native_authority;
 pub use build::measure_running_executable;
+pub(crate) use retry::ReadyRetry;
+pub use retry::{RemoteRetryLease, RemoteRetryStamp};
 
 pub(crate) use source::DirectConnectError;
 #[cfg(feature = "experimental-ssh-wireguard")]
 pub(crate) use source::EmbeddedConnectError;
+pub(crate) use source::SourceInvocation;
 pub use source::{
 	ConnectedRemoteSource, ConnectingRemoteSource, CurrentEmbeddedStream,
 	EmbeddedStreamObservation, RemoteRouteCloseError, RemoteRoutePeer,
@@ -66,6 +56,20 @@ pub enum RemoteJobAction {
 	},
 	/// Authenticates and replays the selected existing job under a new lease.
 	Resume,
+}
+
+pub(crate) enum AttemptAdmission<'held> {
+	Initial(Option<RecoveryReadLease<'held>>),
+	Retry(ReadyRetry<'held>),
+}
+
+impl AttemptAdmission<'_> {
+	fn check_before_dial(&self) -> Result<(), Error> {
+		match self {
+			Self::Initial(_) => Ok(()),
+			Self::Retry(ready) => ready.lease.recheck(),
+		}
+	}
 }
 
 /// Independently selected trust for one provisioned destination attestation.
@@ -119,6 +123,8 @@ pub enum RemoteDownloadFailure {
 		record_failure: Option<Error>,
 		/// Independent failure to observe the original route's physical retirement.
 		route_failure: Option<RemoteRouteCloseError>,
+		/// Retained native observations or a separate failure to obtain them.
+		retry: Option<Result<Box<RemoteRetryStamp>, Error>>,
 	},
 	/// Capture completed but transport retirement was not confirmed.
 	SourceRetirement {
@@ -149,12 +155,19 @@ impl fmt::Display for RemoteDownloadFailure {
 				cause,
 				record_failure,
 				route_failure,
+				retry,
 			} => {
 				cause.fmt(out)?;
 				if let Some(error) = route_failure {
 					write!(
 						out,
 						". The original route's retirement was unconfirmed ({error})"
+					)?;
+				}
+				if let Some(Err(error)) = retry {
+					write!(
+						out,
+						". The retained retry observations were refused ({error})"
 					)?;
 				}
 				write_record_failure(out, record_failure.as_ref())
@@ -198,15 +211,9 @@ impl From<SftpSourceError> for RemoteDownloadFailure {
 	}
 }
 
-/// Executes one fresh-source attempt and its native finalization under the checked job lease.
-/// The supplied session belongs to the route owner and retires before public effects.
-/// # Errors
-/// Refuses unauthorized, stale or unsupported state and preserves all prior artifacts.
-pub(crate) async fn download_remote(
-	request: RemoteDownloadRequest<'_>,
-	connection: ConnectedRemoteSource<'_>,
-	startup_read: Option<RecoveryReadLease<'_>>,
-) -> Result<RemoteFinalizationOutcome, RemoteDownloadFailure> {
+fn qualify_destination(
+	request: &RemoteDownloadRequest<'_>,
+) -> Result<(LocalProfile, RemoteDestinationQualification), RemoteDownloadFailure> {
 	let profile = LocalProfile::open(request.profile).map_err(Error::from)?;
 	let qualification = &request.qualification;
 	if measure_running_executable().map_err(Error::from)? != qualification.scope.build {
@@ -224,183 +231,23 @@ pub(crate) async fn download_remote(
 	let facts = observe_remote_destination(request.root).map_err(Error::Qualification)?;
 	let verified = verify_remote_destination_qualification(qualification.record, &trust, &facts)
 		.map_err(RemoteDownloadFailure::Attestation)?;
-	let native = RemoteDestinationEligibility::admit(request.root, Some(&verified))
-		.map_err(Error::Qualification)?;
-	let qualified = (qualification.scope.route, native);
-	let activation = RemoteActivation::admit(
-		request.root,
-		request.scope,
-		request.metadata,
-		request.grant,
-		&qualified,
-	)?;
-	let authority = activation.publication_authority();
-	let (mut session, mut owner) = connection.into_current(authority.scope, request.grant)?;
-	let attempt = owner.attempt();
-	let existing = match (request.action, startup_read) {
-		(RemoteJobAction::Resume, Some(lease)) => {
-			// The cooperative lock has covered replay, authentication and qualification.
-			// Reopening under the exclusive lock rechecks the full held history.
-			drop(lease);
-			Some(
-				RemoteJobLease::open_existing(&profile, request.job, activation)
-					.map_err(RemoteDownloadFailure::ResumeAdmission)?,
-			)
-		}
-		(RemoteJobAction::Create { .. }, None) => None,
-		_ => return Err(Error::Binding.into()),
-	};
-	let epoch = SourceEpoch::new(match &existing {
-		Some(held) => held.next_source_epoch()?,
-		None => NonZeroU64::MIN,
-	});
-	let raw = request.scope.source.path();
-	let rooted = request.scope.source.path_root();
-	let names = raw
-		.strip_prefix(b"/")
-		.unwrap_or(raw)
-		.split(|byte| *byte == b'/')
-		.map(component)
-		.collect::<Result<Vec<_>, _>>()?;
-	let path = match rooted {
-		SftpPathRoot::AccountRelative => SftpPath::AccountRelative(&names),
-		SftpPathRoot::Absolute => SftpPath::Absolute(&names),
-	};
-	let pending = open_pending_path_source(
-		&mut session,
-		PendingSftpPathRequest {
-			path,
-			attempt,
-			epoch,
-		},
-		&mut owner,
-	)
-	.await?;
-	activation.recheck()?;
-	owner
-		.check_connecting(attempt)
-		.map_err(SftpSourceError::Binding)?;
-	let observed = pending.observation();
-	let length = StreamLength::new(observed.length).map_err(|_| Error::Attempt)?;
-	if length.get() > request.scope.maximum_extent.get() {
-		return Err(Error::Attempt.into());
-	}
-	let observation = RemoteSourceObservation::new(length, observed.mode, observed.modified)
-		.map_err(Error::from)?;
-	let source_binding = owner
-		.admit_pending(&pending)
-		.map_err(SftpSourceError::Binding)?;
-	let mut source = pending.activate(source_binding, |binding| owner.check_binding(binding))?;
-	let lease = match (existing, request.action) {
-		(Some(held), RemoteJobAction::Resume) => held,
-		(None, RemoteJobAction::Create { token, created }) => {
-			let held = bootstrap(&profile, request.job, created, token, activation)?;
-			RemoteJobLease::open_bootstrap(&profile, request.job, activation, held)?
-		}
-		_ => return Err(Error::Binding.into()),
-	};
-	let intent = IntentReadback::default();
-	let publication = PublicationContext {
-		job: lease.context(),
-		authority,
-		grant: request.grant,
-		eligibility: &qualified.1,
-		intent: &intent,
-	};
-	let mut nonce = [0; 16];
-	kernel_random(&mut nonce).map_err(Error::from)?;
-	let name = format!("capture-{}", Uuid::from_bytes(nonce));
-	let candidate = lease.candidate(component(name.as_bytes())?)?;
-	let mut ledger = lease.open_fresh_capture(&candidate)?;
-	let mut allocation = ledger.allocate(
-		&candidate,
-		NonZeroU64::new(epoch.get()).ok_or(Error::Binding)?,
-		observation,
-		nonce,
-	)?;
-	let bound = allocation.create(&mut ledger)?;
-	let barrier = PrefixBarrier::new(bound.prefix_scope);
-	let native = NativeCaptureStage::new(
-		bound.writer,
-		lease.job(),
-		bound.name,
-		bound.target,
-		bound.directory,
-		bound.length,
-		&barrier,
-	)
-	.map_err(Error::from)?;
-	let stage = FinalizingCaptureStage(native, publication);
-	let mut scratch = vec![0; 64 * 1024];
-	let captured = capture_live(
-		&mut source,
-		epoch,
-		stage,
-		&mut ledger.checkpoints(&barrier),
-		&mut scratch,
-	)
-	.await;
-	drop(source);
-	let retirement = owner.retire(source_binding, session).await;
-	let captured = match (captured, retirement.binding, retirement.route) {
-		(Ok(value), Ok(()), Ok(())) => value,
-		(Ok(_), Err(cause), route) => {
-			return Err(capture_failure(
-				&mut ledger,
-				CaptureError::SourceFinish(SftpSourceError::Binding(cause)),
-				route.err(),
-			));
-		}
-		(Ok(_), Ok(()), Err(cause)) => {
-			return Err(RemoteDownloadFailure::SourceRetirement {
-				cause,
-				record_failure: ledger
-					.record_failure(RemoteUncertainBoundary::TerminalSource)
-					.err(),
-			});
-		}
-		(Err(cause), _, route) => return Err(capture_failure(&mut ledger, cause, route.err())),
-	};
-	let history = lease.finalization_history(&ledger)?;
-	let mut journal = ledger.finalization(&intent)?;
-	let result = finalize_capture(
-		RemoteFinalizationRequest {
-			owner: history.owner,
-			replay: &history.replay,
-			allocation: &history.allocation,
-			prepared: &history.prepared,
-			policy: request.metadata,
-			authority,
-		},
-		captured,
-		&mut journal,
-		&mut EffectAuthority(activation),
-		&lease.receipts(),
-	)
-	.map_err(|cause| RemoteDownloadFailure::Finalization(Box::new(cause)))?;
-	if let RemoteFinalizationOutcome::PublishedWithOmissions(receipt) = &result
-		&& let Err(cause) = lease.check_committed_receipt(&ledger, receipt)
-		&& let RemoteFinalizationOutcome::PublishedWithOmissions(result) = result
-	{
-		return Err(RemoteDownloadFailure::CommittedReceiptReadback {
-			result: Box::new(result),
-			cause,
-		});
-	}
-	Ok(result)
+	Ok((profile, verified))
 }
 
 fn capture_failure(
-	ledger: &mut super::remote_journal::RemoteJobJournal<'_>,
 	cause: CaptureError<SftpSourceError, NativeCaptureStageError, Error>,
 	route_failure: Option<RemoteRouteCloseError>,
+	record: impl FnOnce(RemoteUncertainBoundary) -> Result<(), Error>,
 ) -> RemoteDownloadFailure {
+	// V1 records no stage-write uncertainty. Preserve the actual cause for
+	// the foreground result and record independent route uncertainty only.
 	let boundary = capture_uncertainty(&cause, route_failure);
-	let record_failure = boundary.and_then(|boundary| ledger.record_failure(boundary).err());
+	let record_failure = boundary.and_then(|boundary| record(boundary).err());
 	RemoteDownloadFailure::Capture {
 		cause: Box::new(cause),
 		record_failure,
 		route_failure,
+		retry: None,
 	}
 }
 
@@ -443,4 +290,52 @@ fn unconfirmed_route_retirement_records_terminal_source_unless_the_stage_barrier
 		capture_uncertainty(&barrier, route_failure),
 		Some(RemoteUncertainBoundary::StageBarrier)
 	);
+}
+
+#[test]
+fn write_failure_records_only_an_independent_unconfirmed_route() {
+	use exacopy_endpoint::IoError;
+	use exacopy_platform::linux::StageError;
+	use std::cell::Cell;
+
+	let preflight = || StageError::Admission(std::io::Error::other("deadline"));
+	let after_count = || {
+		StageError::WriteOutcomeUnknown(IoError::System {
+			offset: 4098,
+			source: std::io::Error::other("deadline after short write"),
+		})
+	};
+	for cause in [preflight(), StageError::IdentityChanged, after_count()] {
+		let result = capture_failure(
+			CaptureError::Stage {
+				step: StageStep::Write { offset: 4096 },
+				cause: cause.into(),
+			},
+			None,
+			|boundary| panic!("write failure emitted {boundary:?}"),
+		);
+		assert!(matches!(
+			result,
+			RemoteDownloadFailure::Capture {
+				retry: None,
+				record_failure: None,
+				route_failure: None,
+				..
+			}
+		));
+	}
+	let records = Cell::new(0);
+	let _ = capture_failure(
+		CaptureError::Stage {
+			step: StageStep::Write { offset: 4096 },
+			cause: after_count().into(),
+		},
+		Some(RemoteRouteCloseError::WorkerTimeout),
+		|boundary| {
+			assert_eq!(boundary, RemoteUncertainBoundary::TerminalSource);
+			records.set(records.get() + 1);
+			Ok(())
+		},
+	);
+	assert_eq!(records.get(), 1);
 }

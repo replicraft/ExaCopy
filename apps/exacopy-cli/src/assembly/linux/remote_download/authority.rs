@@ -15,7 +15,7 @@ use super::super::remote_journal::{CurrentGrant, Error, RemoteActivation, compon
 
 /// Foreground invoker authorization for a fixed request and monotonic lease.
 /// The issuer checks the protected profile before constructing this capability.
-/// Revocation and the one synchronous native rename use the same lock.
+/// Revocation and each admitted synchronous native effect use the same lock.
 pub struct RemoteGrant {
 	scope: RemoteScopeDigest,
 	digest: [u8; 32],
@@ -38,7 +38,7 @@ impl RemoteGrant {
 		})
 	}
 
-	/// Retires this lease. Waits for any immediate in-flight rename to return.
+	/// Retires this lease. Waits for an already admitted synchronous effect to return.
 	pub fn revoke(&self) {
 		match self.active.lock() {
 			Ok(mut active) => *active = false,
@@ -108,6 +108,13 @@ impl CurrentGrant for RemoteGrant {
 	fn recheck(&self, scope: RemoteScopeDigest) -> Result<[u8; 32], Error> {
 		drop(self.enter(scope, self.digest)?);
 		Ok(self.digest)
+	}
+	fn enter_effect(
+		&self,
+		scope: RemoteScopeDigest,
+		digest: [u8; 32],
+	) -> Result<MutexGuard<'_, bool>, Error> {
+		self.enter(scope, digest)
 	}
 }
 

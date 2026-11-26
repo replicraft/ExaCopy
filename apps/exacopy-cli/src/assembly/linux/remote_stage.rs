@@ -183,6 +183,35 @@ impl<'stage> FreshStage for NativeCaptureStage<'stage> {
 	}
 
 	fn write_next(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
+		self.write_next_admitted(bytes, || Ok(()))
+			.map_err(|error| match error {
+				NativeCaptureStageError::Native(StageError::WriteOutcomeUnknown(cause)) => {
+					StageError::Write(cause).into()
+				}
+				NativeCaptureStageError::AfterWriteObservation { cause, .. } => cause.into(),
+				error => error,
+			})
+	}
+
+	fn sync_and_close(self) -> Result<Self::Closed, Self::Error> {
+		self.sync_and_close_admitted(|| Ok(()))
+	}
+}
+
+impl CheckpointStage for NativeCaptureStage<'_> {
+	type Binding = FileIdentity;
+
+	fn sync_prefix(&mut self, end: u64) -> Result<Self::Binding, Self::Error> {
+		self.sync_prefix_admitted(end, || Ok(()))
+	}
+}
+
+impl<'stage> NativeCaptureStage<'stage> {
+	fn write_next_admitted<G>(
+		&mut self,
+		bytes: &[u8],
+		enter: impl FnMut() -> std::io::Result<G>,
+	) -> Result<(), NativeCaptureStageError> {
 		let start = self.begin_effect()?;
 		if bytes.is_empty() || bytes.len() > Self::MAX_CHUNK_BYTES {
 			return Err(NativeCaptureStageError::Extent);
@@ -193,17 +222,25 @@ impl<'stage> FreshStage for NativeCaptureStage<'stage> {
 			.filter(|end| *end <= self.length)
 			.ok_or(NativeCaptureStageError::Extent)?;
 		self.writer.observe_prefix(start)?;
-		self.writer.write_all_at(start, bytes)?;
-		self.writer.observe_prefix(end)?;
+		self.writer.write_all_at_admitted(start, bytes, enter)?;
+		self.writer.observe_prefix(end).map_err(|cause| {
+			NativeCaptureStageError::AfterWriteObservation {
+				written_end: end,
+				cause,
+			}
+		})?;
 		self.written.set(Some(end));
 		Ok(())
 	}
 
-	fn sync_and_close(mut self) -> Result<Self::Closed, Self::Error> {
+	fn sync_and_close_admitted<G>(
+		mut self,
+		enter: impl FnOnce() -> std::io::Result<G>,
+	) -> Result<NativeClosedStage<'stage>, NativeCaptureStageError> {
 		if self.begin_effect()? != self.length {
 			return Err(NativeCaptureStageError::Extent);
 		}
-		let identity = self.writer.sync_prefix(self.length)?;
+		let identity = self.writer.sync_prefix_admitted(self.length, enter)?;
 		let closed = self.writer.close_writes()?;
 		if closed.identity() != identity || closed.length() != self.length {
 			return Err(StageError::IdentityChanged.into());
@@ -217,16 +254,15 @@ impl<'stage> FreshStage for NativeCaptureStage<'stage> {
 		result.open_read_back()?.recheck_observation()?;
 		Ok(result)
 	}
-}
-
-impl CheckpointStage for NativeCaptureStage<'_> {
-	type Binding = FileIdentity;
-
-	fn sync_prefix(&mut self, end: u64) -> Result<Self::Binding, Self::Error> {
+	fn sync_prefix_admitted<G>(
+		&mut self,
+		end: u64,
+		enter: impl FnOnce() -> std::io::Result<G>,
+	) -> Result<FileIdentity, NativeCaptureStageError> {
 		if self.begin_effect()? != end || end == 0 {
 			return Err(NativeCaptureStageError::Extent);
 		}
-		let identity = self.writer.sync_prefix(end)?;
+		let identity = self.writer.sync_prefix_admitted(end, enter)?;
 		self.barrier.confirm(identity, end)?;
 		self.written.set(Some(end));
 		Ok(identity)
@@ -302,9 +338,23 @@ impl ReadView for NativeReadBack<'_, '_> {
 
 #[derive(Debug)]
 pub enum NativeCaptureStageError {
+	AfterWriteObservation { written_end: u64, cause: StageError },
 	Extent,
 	Uncertain,
 	Native(StageError),
+}
+
+impl NativeCaptureStageError {
+	pub(crate) fn has_uncertain_write(&self) -> bool {
+		matches!(
+			self,
+			Self::Native(StageError::WriteOutcomeUnknown(_)) | Self::AfterWriteObservation { .. }
+		)
+	}
+
+	pub(crate) fn write_admission_refused(&self) -> bool {
+		matches!(self, Self::Native(StageError::Admission(_)))
+	}
 }
 
 impl fmt::Display for NativeCaptureStageError {
@@ -314,6 +364,12 @@ impl fmt::Display for NativeCaptureStageError {
 				f.write_str("remote stage extent or IO range does not match its capture")
 			}
 			Self::Uncertain => f.write_str("remote stage has unconfirmed progress"),
+			Self::AfterWriteObservation { written_end, cause } => {
+				write!(
+					f,
+					"stage observation failed after writing through byte offset {written_end}: {cause}"
+				)
+			}
 			Self::Native(error) => error.fmt(f),
 		}
 	}
@@ -322,7 +378,7 @@ impl fmt::Display for NativeCaptureStageError {
 impl Error for NativeCaptureStageError {
 	fn source(&self) -> Option<&(dyn Error + 'static)> {
 		match self {
-			Self::Native(error) => Some(error),
+			Self::AfterWriteObservation { cause, .. } | Self::Native(cause) => Some(cause),
 			Self::Extent | Self::Uncertain => None,
 		}
 	}

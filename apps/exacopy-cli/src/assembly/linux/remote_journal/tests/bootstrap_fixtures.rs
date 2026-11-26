@@ -155,3 +155,81 @@ fn post_create_rebind_retires_writer_and_retains_the_unbound_artifacts() {
 fn reopen(fixture: &Fixture) -> Result<RemoteJobLease<'_>, Error> {
 	RemoteJobLease::open_existing(&fixture.profile, fixture.job, fixture.activation())
 }
+
+#[test]
+fn initial_bootstrap_checks_the_effect_gate_at_job_creation_and_owner_write() {
+	for allowed in [0, 2] {
+		let fixture = super::Fixture::new();
+		let activation = fixture.activation();
+		fixture.grant.refuse_after(allowed);
+		let outcome = super::bootstrap(
+			&fixture.profile,
+			fixture.job,
+			super::OwnerTimestamp::new(1, 0).unwrap(),
+			super::OwnerToken::from_bytes([0x51; 16]).unwrap(),
+			activation,
+		);
+		match (allowed, outcome) {
+			(0, Err(super::Error::BootstrapNotCreated(cause)))
+			| (2, Err(super::Error::BootstrapIncomplete(cause))) => {
+				assert!(matches!(*cause, super::Error::Grant(_)));
+			}
+			_ => panic!("bootstrap disposition did not match the physical boundary"),
+		}
+		assert_eq!(fixture.job_path().exists(), allowed != 0);
+		if allowed != 0 {
+			assert!(
+				std::fs::read(fixture.job_path().join("owner.cbor"))
+					.unwrap()
+					.is_empty()
+			);
+		}
+		assert!(!fixture.segment().exists());
+		assert!(!fixture.target().exists());
+	}
+}
+
+#[test]
+fn bootstrap_never_adopts_an_incumbent_job_path() {
+	let fixture = super::Fixture::new();
+	let occupied = fixture.job_path();
+	std::fs::create_dir(&occupied).unwrap();
+	std::fs::write(occupied.join("incumbent"), b"existing owner").unwrap();
+	let outcome = super::bootstrap(
+		&fixture.profile,
+		fixture.job,
+		super::OwnerTimestamp::new(1, 0).unwrap(),
+		super::OwnerToken::from_bytes([0x51; 16]).unwrap(),
+		fixture.activation(),
+	);
+	assert!(
+		matches!(outcome, Err(super::Error::BootstrapNotCreated(cause))
+		if matches!(*cause, super::Error::Native(exacopy_platform::linux::StageError::AlreadyExists)))
+	);
+	assert_eq!(
+		std::fs::read(occupied.join("incumbent")).unwrap(),
+		b"existing owner"
+	);
+	assert!(!occupied.join("owner.cbor").exists());
+	assert!(!fixture.segment().exists());
+}
+
+#[test]
+fn revoked_preflight_cannot_report_a_created_job() {
+	let fixture = super::Fixture::new();
+	let activation = fixture.activation();
+	*fixture.grant.active.lock().unwrap() = false;
+	let outcome = super::bootstrap(
+		&fixture.profile,
+		fixture.job,
+		super::OwnerTimestamp::new(1, 0).unwrap(),
+		super::OwnerToken::from_bytes([0x51; 16]).unwrap(),
+		activation,
+	);
+	assert!(
+		matches!(outcome, Err(super::Error::BootstrapNotCreated(cause))
+		if matches!(*cause, super::Error::Grant(_)))
+	);
+	assert_eq!(fixture.grant.effect_entries.get(), 0);
+	assert!(!fixture.job_path().exists());
+}

@@ -12,8 +12,8 @@ use exacopy_transfer::remote_finalization::{RemoteFinalizationJournal, RemotePub
 
 use super::super::receipt::read_receipt;
 use super::{
-	Error, RemoteJobJournal, append_payload, check_current, component, context, readback_frame,
-	record_identity,
+	Error, RemoteJobJournal, append::append_payload_admitted, check_current, component, context,
+	readback_frame, record_identity,
 };
 
 #[derive(Default)]
@@ -161,7 +161,20 @@ impl RemoteFinalizationJournal for FinalizationJournal<'_, '_> {
 			}
 		};
 		let mut writer = self.journal.writer.take().ok_or(Error::Stopped)?;
-		let (appended, synced, boundary) = append_payload(&mut writer, expected, kind, payload)?;
+
+		let (appended, synced, boundary) =
+			append_payload_admitted(&mut writer, expected, kind, payload, || match kind {
+				FrameKind::StageSealed
+				| FrameKind::VerificationRecorded
+				| FrameKind::MetadataRecorded
+				| FrameKind::PublishIntent => self
+					.journal
+					.activation
+					.enter_effect()
+					.map(Some)
+					.map_err(std::io::Error::other),
+				_ => Ok(None),
+			})?;
 		let current = check_current(
 			self.journal.lease.job(),
 			self.journal.owner_file,

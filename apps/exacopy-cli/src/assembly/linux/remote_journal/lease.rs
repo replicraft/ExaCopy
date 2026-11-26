@@ -1,143 +1,35 @@
-use std::io::Write as _;
 use std::num::NonZeroU64;
 
 use ed25519_dalek::VerifyingKey;
-use exacopy_endpoint::JournalSegment;
-use exacopy_endpoint::linux_job::{JobRecord, JobWorkspace};
-use exacopy_journal::frame::{ChainHead, FrameKind};
 use exacopy_journal::remote_download::finalization_replay::{
 	RemoteFinalizationPhase, RemoteFinalizationReplay, replay_remote_finalization,
 };
 use exacopy_journal::remote_download::replay::{RemoteReplayBoundary, RemoteReplayIssue};
 use exacopy_journal::remote_download::{
-	MAX_REMOTE_DOWNLOAD_OWNER_BYTES, RemoteDownloadBody, RemoteDownloadOwner,
-	RemoteDownloadOwnerRecord, RemoteDownloadScope,
+	MAX_REMOTE_DOWNLOAD_OWNER_BYTES, RemoteDownloadOwnerRecord, RemoteDownloadScope,
 };
-use exacopy_journal::{
-	DurableJournal, JournalJobId, LinuxFileIdentity, OwnerTimestamp, OwnerToken,
-};
+use exacopy_journal::{DurableJournal, JournalJobId, LinuxFileIdentity};
 use exacopy_platform::linux::{
 	DestinationRoot, FileIdentity, LinuxJournalSegment, RecoveryFile, RecoveryInventory,
-	RecoveryJob, RecoveryWriteLease, TargetStatus,
+	RecoveryJob, RecoveryWriteLease,
 };
 
 use crate::profile::LocalProfile;
 
 use super::admission::{OwnerDialect, RemoteActivation};
-use super::ledger::{
-	RemoteJobJournal, WriterStart, append_payload, append_record, context, readback_frame,
-	verify_readback,
-};
+use super::ledger::{RemoteJobJournal, WriterStart, context, readback_frame};
 use super::{BootstrapIdentity, Error, ReplayIssue, component, job_name, record_identity};
 
+mod bootstrap;
 mod finish;
+mod reconcile;
 mod retire;
+pub(super) mod retry;
 
-pub(in crate::assembly::linux) fn bootstrap(
-	profile: &LocalProfile,
-	job: JournalJobId,
-	created: OwnerTimestamp,
-	owner_token: OwnerToken,
-	activation: RemoteActivation<'_>,
-) -> Result<BootstrapIdentity, Error> {
-	activation.recheck()?;
-	let root = activation.root;
-	let approved_scope = activation.scope;
-	if profile.verification_key().is_weak()
-		|| owner_token.as_bytes() == job.as_bytes()
-		|| owner_token.as_bytes() == profile.id().as_bytes()
-		|| owner_token.as_bytes() == approved_scope.entry.as_bytes()
-	{
-		return Err(Error::Binding);
-	}
-	let name = job_name(job);
-	check_root(root, profile, approved_scope, name.as_bytes())?;
-	if root.target_status(component(approved_scope.destination.target())?)? != TargetStatus::Absent
-	{
-		return Err(Error::Conflict);
-	}
-	let name = component(name.as_bytes())?;
-	let workspace = root.create_job_directory(name)?;
-	let identity = workspace.identity();
-	let manifest = RemoteDownloadOwner::new(
-		owner_token,
-		job,
-		profile.id(),
-		created,
-		record_identity(identity),
-		approved_scope.clone(),
-	)?;
-	let owner = activation.dialect.sign(manifest, profile.signer())?;
-	{
-		let mut record = JobWorkspace::create_owner_record(&workspace)?;
-		record.write_all(owner.as_bytes())?;
-		record.sync_all()?;
-	}
-	let stage = workspace.create_stage_directory()?;
-	stage.sync_directory()?;
-	let journal = workspace.create_journal_directory()?;
-	let segment = journal.create_first_segment()?;
-	segment.sync()?;
-	journal.sync_directory()?;
-	workspace.sync_directory()?;
-	root.sync_directory()?;
-	// The fresh writer and workspace still hold the original exclusive job lock.
-	let held = root.open_recovery_job(name)?;
-	if held.identity() != identity {
-		return Err(Error::Binding);
-	}
-	let owner_file = held.open_owner()?;
-	if read_owner(&owner_file, profile, activation.dialect)? != owner {
-		return Err(Error::Binding);
-	}
-	let first_segment = held.open_first_segment()?;
-	if !first_segment.is_empty() {
-		return Err(Error::Binding);
-	}
-	let segment_identity = first_segment.identity();
-	let mut writer = DurableJournal::from_new_segment(segment)?;
-	let start = RemoteReplayBoundary {
-		head: ChainHead::start(),
-		offset: 0,
-	};
-	let job_body = RemoteDownloadBody::JobPrepared {
-		scope: approved_scope.digest()?,
-	};
-	let job_boundary = append_record(&mut writer, start, context(&owner), job_body)?;
-	let job_current = check_current(&held, &owner_file, segment_identity, job_boundary.offset)?;
-	let job_frame = verify_readback(&job_current, start, job_boundary, context(&owner), job_body)?;
+pub(in crate::assembly::linux) use bootstrap::bootstrap;
 
-	let keys = profile.verification_key();
-	let trust = activation.dialect.trust(&owner, profile.id(), &keys)?;
-	let directory = record_identity(stage.identity());
-	stage.sync_directory()?;
-	let payload = trust.sign(&job_frame, directory, profile.signer())?;
-	let (appended, _, boundary) = append_payload(
-		&mut writer,
-		job_boundary,
-		FrameKind::StageDirectoryPrepared,
-		payload,
-	)?;
-	let bootstrap_current = check_current(&held, &owner_file, segment_identity, boundary.offset)?;
-	let observed = readback_frame(
-		&bootstrap_current,
-		job_boundary,
-		boundary,
-		exacopy_journal::remote_download::MAX_REMOTE_BOOTSTRAP_PAYLOAD_BYTES,
-	)?;
-	let signed = trust.from_frame(&observed, &job_frame)?;
-	if observed.payload() != appended.payload()
-		|| signed.head() != boundary.head
-		|| signed.directory() != directory
-	{
-		return Err(Error::Binding);
-	}
-	stage.sync_directory()?;
-	Ok(BootstrapIdentity {
-		job: identity,
-		boundary,
-	})
-}
+pub(super) use reconcile::PreservedCapture;
+pub use retry::RemoteRetryLease;
 
 pub(in crate::assembly::linux) struct RemoteJobLease<'root> {
 	lease: RecoveryWriteLease<'root>,
@@ -147,6 +39,7 @@ pub(in crate::assembly::linux) struct RemoteJobLease<'root> {
 	boundary: RemoteReplayBoundary,
 	phase: RemoteFinalizationPhase,
 	stage_directory: LinuxFileIdentity,
+	preserved_capture: Vec<PreservedCapture>,
 	last_source_epoch: Option<NonZeroU64>,
 	activation: RemoteActivation<'root>,
 	key: VerifyingKey,
@@ -226,6 +119,7 @@ impl<'root> RemoteJobLease<'root> {
 			.stage_directory_prepared()
 			.ok_or(Error::Binding)?
 			.directory();
+		let mut preserved_capture = Vec::new();
 		for attempt in replay.attempts() {
 			let inventory = held.inventory(component(attempt.name())?, target)?;
 			if inventory.target().is_some() {
@@ -243,7 +137,12 @@ impl<'root> RemoteJobLease<'root> {
 				(None, None, Some(directory)) if stage_directory == record_identity(directory) => {}
 				_ => return Err(Error::UnknownStage),
 			}
+			preserved_capture.push(PreservedCapture::admit(&lease, attempt, inventory)?);
 		}
+		PreservedCapture::check_all(&preserved_capture, held, target, stage_directory)?;
+		segment.check_logical_eof()?;
+		segment.recheck_observation()?;
+		activation.recheck()?;
 		let boundary = replay.boundary();
 		let phase = replay.phase();
 		let last_source_epoch = replay
@@ -258,6 +157,7 @@ impl<'root> RemoteJobLease<'root> {
 			boundary,
 			phase,
 			stage_directory,
+			preserved_capture,
 			last_source_epoch,
 			activation,
 			key,
@@ -353,10 +253,15 @@ impl<'root> RemoteJobLease<'root> {
 	fn resume_writer(&self) -> Result<DurableJournal<LinuxJournalSegment<'_>>, Error> {
 		self.activation.recheck()?;
 		let segment = self.lease.open_first_segment_for_append(&self.segment)?;
-		Ok(DurableJournal::resume_first_segment(
+		Ok(DurableJournal::resume_first_segment_admitted(
 			segment,
 			self.boundary.head,
 			self.boundary.offset,
+			|| {
+				self.activation
+					.enter_effect()
+					.map_err(std::io::Error::other)
+			},
 		)?)
 	}
 
@@ -377,6 +282,7 @@ impl<'root> RemoteJobLease<'root> {
 				segment: current,
 				directory,
 				activation: self.activation,
+				preserved_capture: &self.preserved_capture,
 			},
 		)
 	}

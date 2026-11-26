@@ -59,7 +59,9 @@ pub(super) fn connect_error(error: DirectConnectError, cancelled: bool) -> Failu
 		DirectConnectError::Timeout | DirectConnectError::Dial(_) if cancelled => {
 			Failure::Cancelled
 		}
-		DirectConnectError::Timeout | DirectConnectError::Dial(_) => Failure::Io,
+		DirectConnectError::Timeout
+		| DirectConnectError::Dial(_)
+		| DirectConnectError::Native(_) => Failure::Io,
 	}
 }
 
@@ -81,7 +83,8 @@ pub(super) fn embedded_error(
 		| Error::HandshakeBudget
 		| Error::Udp(_)
 		| Error::Peer(_)
-		| Error::Tcp(_) => Failure::Io,
+		| Error::Tcp(_)
+		| Error::Native(_) => Failure::Io,
 	}
 }
 
@@ -104,11 +107,17 @@ fn download_error(
 			cause,
 			record_failure,
 			route_failure,
+			..
 		} => {
 			if record_failure.is_some() || route_failure.is_some() {
 				return RemoteOutcome::recovery_required(RemotePublication::NotPublished, job);
 			}
 			match *cause {
+				CaptureError::Stage {
+					cause: ref stage, ..
+				} if stage.has_uncertain_write() => {
+					RemoteOutcome::recovery_required(RemotePublication::NotPublished, job)
+				}
 				CaptureError::SourceFinish(_)
 				| CaptureError::Checkpoint { .. }
 				| CaptureError::Stage {
@@ -117,6 +126,17 @@ fn download_error(
 				} => RemoteOutcome::recovery_required(RemotePublication::NotPublished, job),
 				CaptureError::SourceObservation(error)
 				| CaptureError::Read { cause: error, .. } => failed(source_error(&error, cancelled), job),
+				CaptureError::Stage {
+					step: StageStep::Write { .. },
+					cause: ref stage,
+				} if stage.write_admission_refused() => failed(
+					if cancelled {
+						Failure::Cancelled
+					} else {
+						Failure::Authorization
+					},
+					job,
+				),
 				CaptureError::Stage { .. } => failed(Failure::Io, job),
 				_ => failed(Failure::Integrity, job),
 			}
@@ -177,6 +197,32 @@ fn job_error(error: RemoteJobError, job: RemoteJob, cancelled: bool) -> RemoteOu
 	use RemoteJobError as JobError;
 	match error {
 		JobError::Conflict => failed(Failure::Conflict, job),
+		JobError::BootstrapNotCreated(cause) => {
+			use exacopy_platform::linux::StageError;
+
+			let code = match *cause {
+				JobError::Conflict | JobError::Native(StageError::AlreadyExists) => {
+					Failure::Conflict
+				}
+				JobError::Binding | JobError::Qualification(_) | JobError::Profile(_) => {
+					Failure::Authorization
+				}
+				JobError::Attempt | JobError::Read(_) | JobError::Format(_) => Failure::Integrity,
+				JobError::UnsupportedRoute | JobError::Metadata(_) => Failure::Unsupported,
+				JobError::Grant(_) | JobError::Native(StageError::Admission(_)) => {
+					if cancelled {
+						Failure::Cancelled
+					} else {
+						Failure::Authorization
+					}
+				}
+				_ => Failure::Io,
+			};
+			RemoteOutcome::failed(code, None)
+		}
+		JobError::BootstrapCreateUncertain(_) | JobError::BootstrapIncomplete(_) => {
+			RemoteOutcome::recovery_required(RemotePublication::NotPublished, job)
+		}
 		JobError::Lifecycle { phase, issue, .. } => startup_outcome(phase, issue.is_none(), &job)
 			.unwrap_or_else(|| {
 				RemoteOutcome::recovery_required(RemotePublication::NotPublished, job)
@@ -200,7 +246,7 @@ fn source_error(error: &SftpSourceError, cancelled: bool) -> Failure {
 	}
 	match error {
 		SftpSourceError::Sftp(error) => ssh_error(error),
-		SftpSourceError::Closed => Failure::Io,
+		SftpSourceError::Closed | SftpSourceError::ReadTimeout => Failure::Io,
 		SftpSourceError::Binding(_) | SftpSourceError::ReadBinding { .. } => Failure::Authorization,
 		_ => Failure::Integrity,
 	}
@@ -259,6 +305,66 @@ mod tests {
 	}
 
 	#[test]
+	fn prewrite_refusal_and_submitted_unknown_progress_have_distinct_public_results() {
+		use std::{io, path::PathBuf};
+
+		use exacopy_endpoint::IoError;
+		use exacopy_journal::JournalJobId;
+		use exacopy_platform::linux::StageError;
+		use uuid::Uuid;
+
+		let id = Uuid::parse_str("018d0454-2082-7444-8f45-7c4617e17ea2").unwrap();
+		for (stage, cancelled, expected) in [
+			(
+				StageError::Admission(io::Error::other("expired before pwrite")),
+				false,
+				"E_AUTHORIZATION",
+			),
+			(
+				StageError::Admission(io::Error::other("revoked before pwrite")),
+				true,
+				"E_CANCELLED",
+			),
+			(StageError::IdentityChanged, false, "E_IO"),
+			(
+				StageError::WriteOutcomeUnknown(IoError::System {
+					offset: 4098,
+					source: io::Error::other("failed after two bytes"),
+				}),
+				true,
+				"E_RECOVERY_REQUIRED",
+			),
+		] {
+			let job = RemoteJob {
+				id: JournalJobId::from_bytes(id.into_bytes()).unwrap(),
+				directory: PathBuf::from(".exacopy-018d0454-2082-7444-8f45-7c4617e17ea2"),
+			};
+			let result = finish(
+				Err(RemoteDownloadFailure::Capture {
+					cause: Box::new(CaptureError::Stage {
+						step: StageStep::Write { offset: 4096 },
+						cause: stage.into(),
+					}),
+					record_failure: None,
+					route_failure: None,
+					retry: None,
+				}),
+				job,
+				cancelled,
+				true,
+			);
+			let mut stdout = Vec::new();
+			result
+				.write(crate::args::Format::Json, &mut stdout, &mut Vec::new())
+				.unwrap();
+			let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+			assert_eq!(report["error"]["code"], expected);
+			assert_eq!(report["publication"], "not_published");
+			assert_eq!(report["error"]["job_id"], id.to_string());
+		}
+	}
+
+	#[test]
 	fn late_interrupt_never_suppresses_unconfirmed_publication_or_confirmed_publish() {
 		assert!(unresolved(Progress::BeforeIntent, true).is_none());
 		assert!(matches!(
@@ -277,5 +383,76 @@ mod tests {
 			unresolved(Progress::PrivateJournalUncertain, true),
 			Some(RemotePublication::NotPublished)
 		));
+	}
+}
+
+#[test]
+fn bootstrap_reports_only_real_or_uncertain_job_custody() {
+	use std::{io, path::PathBuf};
+
+	use exacopy_endpoint::connection_retry::{RetryBlock, RetryError};
+	use exacopy_journal::JournalJobId;
+	use exacopy_platform::linux::StageError;
+	use uuid::Uuid;
+
+	let id = Uuid::parse_str("018d0454-2082-7444-8f45-7c4617e17ea2").unwrap();
+	let cases = [
+		(
+			RemoteJobError::BootstrapNotCreated(Box::new(RemoteJobError::Grant(
+				RetryError::Blocked(RetryBlock::GrantExpired),
+			))),
+			"E_AUTHORIZATION",
+			false,
+		),
+		(
+			RemoteJobError::BootstrapNotCreated(Box::new(RemoteJobError::Native(
+				StageError::AlreadyExists,
+			))),
+			"E_CONFLICT",
+			false,
+		),
+		(
+			RemoteJobError::BootstrapNotCreated(Box::new(RemoteJobError::Native(
+				StageError::System(io::Error::from(io::ErrorKind::StorageFull)),
+			))),
+			"E_IO",
+			false,
+		),
+		(
+			RemoteJobError::BootstrapNotCreated(Box::new(RemoteJobError::Native(
+				StageError::UnsafeDirectory,
+			))),
+			"E_IO",
+			false,
+		),
+		(
+			RemoteJobError::BootstrapCreateUncertain(Box::new(RemoteJobError::Binding)),
+			"E_RECOVERY_REQUIRED",
+			true,
+		),
+		(
+			RemoteJobError::BootstrapIncomplete(Box::new(RemoteJobError::Binding)),
+			"E_RECOVERY_REQUIRED",
+			true,
+		),
+	];
+	for (error, code, has_job) in cases {
+		let job = RemoteJob {
+			id: JournalJobId::from_bytes(id.into_bytes()).unwrap(),
+			directory: PathBuf::from(".exacopy-018d0454-2082-7444-8f45-7c4617e17ea2"),
+		};
+		let outcome = finish(Err(RemoteDownloadFailure::Job(error)), job, false, false);
+		let mut stdout = Vec::new();
+		outcome
+			.write(crate::args::Format::Json, &mut stdout, &mut Vec::new())
+			.unwrap();
+		let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+		assert_eq!(report["publication"], "not_published");
+		assert_eq!(report["error"]["code"], code);
+		if has_job {
+			assert_eq!(report["error"]["job_id"], id.to_string());
+		} else {
+			assert!(report["error"]["job_id"].is_null());
+		}
 	}
 }
