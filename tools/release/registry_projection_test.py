@@ -77,6 +77,15 @@ class RegistryProjectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "policy needs review for changed"):
             projection.render(updated, self.commit, self.policy)
 
+    def test_omits_experimental_mount_feature_and_its_optional_native_dependency(self):
+        manifest = projection.toml(self.files["exacopy-platform/Cargo.toml"])
+        self.assertNotIn("features", manifest)
+        self.assertNotIn("test", manifest)
+        linux = manifest["target"]['cfg(target_os = "linux")']["dependencies"]
+        self.assertNotIn("libc", linux)
+        self.assertFalse(any("target_pointer_width" in target for target in manifest["target"]))
+        self.assertIn("experimental-linux-managed-sync", json.dumps(manifest["lints"]))
+
     def test_refuses_missing_cli_library_and_inverted_package_order(self):
         incomplete = self.source.copy()
         del incomplete["apps/exacopy-cli/src/lib.rs"]

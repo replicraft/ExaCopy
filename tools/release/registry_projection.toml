@@ -49,7 +49,7 @@ name = "exacopy-platform"
 source_name = "exacopy-platform"
 path = "crates/platform/exacopy-platform"
 description = "Native endpoint implementations for ExaCopy"
-manifest_sha256 = "d9c9ad609bbadaa3355e3df7cbe861b7b63ab66786dba396c554f4da7f9882c0"
+manifest_sha256 = "7cc103c7e9c26ca6346427119ce96ca8bf6c1e5eeacc8ba49d1e51bb18bc5c56"
 
 [[packages]]
 name = "exacopy-content"
