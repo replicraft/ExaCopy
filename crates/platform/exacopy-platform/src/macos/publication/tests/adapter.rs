@@ -12,9 +12,10 @@ use exacopy_model::{
 use crate::scratch::Scratch;
 
 use super::super::super::staging::{
-	ManagedStageGrant, ManagedStageRoot, MetadataReadyStage, StageBindingContext, StageDirectory,
+	ManagedStageGrant, ManagedStageName, ManagedStageRoot, MetadataReadyStage, StageBindingContext,
+	StageDirectory,
 };
-use super::super::super::{ManagedReadGrant, ManagedReadRoot, acl};
+use super::super::super::{ManagedReadGrant, ManagedReadRoot, ManagedSourceName, acl};
 use super::super::{PublishError, PublishRejection, PublishedObservationError};
 
 const PAYLOAD: &[u8] = b"source bytes\0\xff";
@@ -65,12 +66,12 @@ impl Fixture {
 	fn ready_stage<'stage>(
 		&self,
 		directory: &'stage StageDirectory<'_>,
-		stage_name: &'stage str,
+		stage_name: &'stage ManagedStageName<'stage>,
 		target_name: &'stage str,
 	) -> MetadataReadyStage<'stage> {
 		let mut stage = directory
 			.create_file(
-				name(stage_name),
+				stage_name,
 				name(target_name),
 				context(),
 				u64::try_from(PAYLOAD.len()).expect("fixture extent fits u64"),
@@ -81,8 +82,10 @@ impl Fixture {
 			ManagedReadGrant::trusted_owner_authorizes_provisioned_root(),
 		)
 		.expect("hold source lease");
+		let selected =
+			ManagedSourceName::new(name(SOURCE_NAME)).expect("prepare fixture source name");
 		let source = source_root
-			.open_regular(name(SOURCE_NAME))
+			.open_regular(&selected)
 			.expect("hold original fixture read-only");
 		source
 			.check_basic_metadata()
@@ -121,7 +124,9 @@ impl Fixture {
 		&self,
 		directory: &'stage StageDirectory<'_>,
 	) -> MetadataReadyStage<'stage> {
-		self.ready_stage(directory, STAGE_NAME, TARGET_NAME)
+		static NAME: std::sync::LazyLock<ManagedStageName<'static>> =
+			std::sync::LazyLock::new(|| ManagedStageName::new(name(STAGE_NAME)).unwrap());
+		self.ready_stage(directory, &NAME, TARGET_NAME)
 	}
 
 	fn authorize(&self, binding: CopyBinding) -> PublishNoClobber {
@@ -468,7 +473,7 @@ fn post_rename_rebinding_reports_observation_failure_after_both_barriers() {
 		result,
 		Err(PublishError::Renamed {
 			barriers: None,
-			observation: Some(PublishedObservationError::NamesChanged),
+			observation: Some(PublishedObservationError::MountedNames(_)),
 			observed_target: None,
 			policy_error: None,
 		})

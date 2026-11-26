@@ -72,11 +72,8 @@ fn projects_native_stat_and_detects_independent_timestamp_changes() {
 	assert_eq!(metadata.uid(), stat.st_uid);
 	assert_eq!(metadata.gid(), stat.st_gid);
 	assert_eq!(metadata.mode(), MODE);
-	assert_eq!(metadata.times().last_access, original.last_access);
-	assert_eq!(
-		metadata.times().last_modification,
-		original.last_modification
-	);
+	assert_timestamp(metadata.atime(), &original.last_access);
+	assert_timestamp(metadata.mtime(), &original.last_modification);
 	assert!(metadata.matches(&stat));
 
 	let mut changed_access = original.clone();
@@ -91,13 +88,15 @@ fn projects_native_stat_and_detects_independent_timestamp_changes() {
 			"a one-nanosecond timestamp change must invalidate the original projection"
 		);
 		let observed = BasicMetadata::from_stat(&stat).unwrap();
-		assert_eq!(observed.times().last_access, changed.last_access);
-		assert_eq!(
-			observed.times().last_modification,
-			changed.last_modification
-		);
+		assert_timestamp(observed.atime(), &changed.last_access);
+		assert_timestamp(observed.mtime(), &changed.last_modification);
 	}
 	fs::remove_file(path).expect("remove the private stat projection fixture");
+}
+
+fn assert_timestamp(observed: super::super::ManagedTimestamp, expected: &Timespec) {
+	assert_eq!(observed.seconds(), expected.tv_sec);
+	assert_eq!(i64::from(observed.nanoseconds()), expected.tv_nsec);
 }
 
 #[test]

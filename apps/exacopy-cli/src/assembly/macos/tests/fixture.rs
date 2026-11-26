@@ -8,9 +8,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use exacopy_endpoint::UnixComponent;
 use exacopy_model::{EntryId, JobId, RunEpoch};
 use exacopy_platform::macos::staging::{
-	ManagedStageGrant, ManagedStageRoot, StageBindingContext, StageDirectory, WriteStage,
+	ManagedStageGrant, ManagedStageName, ManagedStageRoot, StageBindingContext, StageDirectory,
+	WriteStage,
 };
-use exacopy_platform::macos::{ManagedReadGrant, ManagedReadRoot, ManagedRegularFile};
+use exacopy_platform::macos::{
+	ManagedReadGrant, ManagedReadRoot, ManagedRegularFile, ManagedSourceName,
+};
 
 const PRIVATE: &str = "private-stage";
 const STAGE: &str = "candidate";
@@ -24,6 +27,8 @@ pub(super) struct Fixture {
 	pub(super) destination: PathBuf,
 	pub(super) independent: PathBuf,
 	pub(super) stage: PathBuf,
+	stage_name: ManagedStageName<'static>,
+	source_name: ManagedSourceName<'static>,
 }
 
 impl Fixture {
@@ -37,6 +42,8 @@ impl Fixture {
 			destination,
 			independent,
 			stage: private.join(STAGE),
+			stage_name: ManagedStageName::new(component(STAGE)).unwrap(),
+			source_name: ManagedSourceName::new(component(SOURCE)).unwrap(),
 		};
 		let helper = fixture.path.join("empty-acl");
 		compile_acl_helper(&helper);
@@ -74,23 +81,23 @@ impl Fixture {
 	}
 
 	pub(super) fn same_parent_source<'root>(
-		&self,
+		&'root self,
 		root: &'root ManagedStageRoot,
 	) -> ManagedRegularFile<'root> {
-		root.open_regular_source(&self.destination, component(SOURCE), read_grant())
+		root.open_regular_source(&self.destination, &self.source_name, read_grant())
 			.expect("select source under the destination lease")
 	}
 
 	pub(super) fn independent_source<'root>(
-		&self,
+		&'root self,
 		root: &'root ManagedReadRoot,
 	) -> ManagedRegularFile<'root> {
-		root.open_regular(component(SOURCE))
+		root.open_regular(&self.source_name)
 			.expect("select source under the independent lease")
 	}
 
 	pub(super) fn writer<'stage>(
-		&self,
+		&'stage self,
 		directory: &'stage StageDirectory<'stage>,
 		length: u64,
 	) -> WriteStage<'stage> {
@@ -103,7 +110,7 @@ impl Fixture {
 			RunEpoch::new(1),
 		);
 		directory
-			.create_file(component(STAGE), component(TARGET), context, length)
+			.create_file(&self.stage_name, component(TARGET), context, length)
 			.expect("create private stage")
 	}
 

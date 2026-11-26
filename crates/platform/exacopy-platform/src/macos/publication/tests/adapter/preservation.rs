@@ -19,7 +19,8 @@ fn same_job_entry_and_epoch_cannot_authorize_another_physical_stage() {
 	// Both stages have the same job, entry and epoch, and target the same absent name.
 	let first = fixture.standard_stage(&directory);
 	let other_name = "other-stage";
-	let second = fixture.ready_stage(&directory, other_name, TARGET_NAME);
+	let selected = super::ManagedStageName::new(name(other_name)).unwrap();
+	let second = fixture.ready_stage(&directory, &selected, TARGET_NAME);
 	assert_ne!(first.identity(), second.identity());
 	let stage_directory = fixture.destination.path(STAGE_DIRECTORY);
 	let first_path = stage_directory.join(STAGE_NAME);

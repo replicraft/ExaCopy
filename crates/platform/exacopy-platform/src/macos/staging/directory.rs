@@ -5,18 +5,23 @@ use std::os::fd::AsFd as _;
 use std::path::Path;
 use std::process;
 
+use apfs_mounted::Directory;
+use apfs_mounted::lease::{Lease, LeaseAttempt, LeaseError, LeaseMode};
+use apfs_mounted::writer::LifecycleEffect;
 use exacopy_endpoint::{MAX_FILE_LENGTH, UnixComponent};
-use rustix::fs::{self, AtFlags, FileType, FlockOperation, Mode, Stat};
+use rustix::fs::{self, AtFlags, FileType, Mode, Stat};
 use rustix::io::Errno;
 
 use super::super::{
 	DIRECTORY_OPEN, DirectoryIdentity, ManagedObjectIdentity, ManagedReadError, ManagedReadGrant,
-	ManagedRegularFile, PhysicalFsid, ReadDirectory, capture_directory, check_directory_authority,
-	open_provisioned_directory, provisioned_path_components, volume, with_materialization_disabled,
+	ManagedRegularFile, ManagedSourceName, PhysicalFsid, ReadDirectory, capture_directory,
+	check_directory_authority, open_provisioned_directory, provisioned_path_components, volume,
+	with_materialization_disabled,
 };
 use super::entropy::fill_stage_entropy;
+use super::error::with_mounted_effect;
 use super::identity::RANDOM_STAGE_ID_BYTES;
-use super::{StageBindingContext, StageError, WriteStage};
+use super::{ManagedStageName, StageBindingContext, StageError, WriteStage};
 
 pub mod jobs;
 
@@ -94,16 +99,18 @@ impl ManagedStageRoot {
 	pub fn open_regular_source<'root>(
 		&'root self,
 		source_parent: &Path,
-		name: UnixComponent<'root>,
+		name: &'root ManagedSourceName<'root>,
 		_grant: ManagedReadGrant,
 	) -> Result<ManagedRegularFile<'root>, ManagedReadError> {
 		let directory = ReadDirectory {
-			directory: &self.lease.file,
+			directory: &self.lease.directory,
 			owner: self.lease.owner,
 			identity: self.lease.identity,
-			lease_process: self.lease.lease_process,
+			lease: &self.lease.lease,
 		};
-		directory.check_process()?;
+		self.lease
+			.check_process()
+			.map_err(|_| ManagedReadError::UnsupportedNamespace)?;
 		let relative = provisioned_path_components(source_parent)?;
 		with_materialization_disabled(|| {
 			let source = open_provisioned_directory(relative)?;
@@ -193,7 +200,7 @@ impl StageDirectory<'_> {
 	/// allocated identity is returned for reconciliation.
 	pub fn create_file<'stage>(
 		&'stage self,
-		name: UnixComponent<'stage>,
+		name: &'stage ManagedStageName<'stage>,
 		target: UnixComponent<'stage>,
 		context: StageBindingContext,
 		length: u64,
@@ -203,7 +210,7 @@ impl StageDirectory<'_> {
 
 	fn create_file_with_entropy<'stage>(
 		&'stage self,
-		name: UnixComponent<'stage>,
+		name: &'stage ManagedStageName<'stage>,
 		target: UnixComponent<'stage>,
 		context: StageBindingContext,
 		length: u64,
@@ -220,7 +227,7 @@ impl StageDirectory<'_> {
 			return Err(StageError::InvalidLength);
 		}
 		let mut attempted = None;
-		let result = with_materialization_disabled(|| {
+		let result = with_mounted_effect(LifecycleEffect::Created, || {
 			self.check_current()?;
 			self.check_target_absent(target)?;
 			let identity = context.allocate(entropy)?;
@@ -283,20 +290,21 @@ impl StageDirectory<'_> {
 		&self.root.lease.file
 	}
 
+	#[cfg(test)]
 	pub(super) fn descriptor(&self) -> &File {
 		&self.lease.file
 	}
 
-	pub(super) fn owner(&self) -> u32 {
-		self.lease.owner
+	pub(super) fn mounted_stage(&self) -> &Directory {
+		&self.lease.directory
+	}
+
+	pub(super) fn mounted_destination(&self) -> &Directory {
+		&self.root.lease.directory
 	}
 
 	pub(super) fn physical_fsid(&self) -> PhysicalFsid {
 		self.lease.identity.physical_fsid
-	}
-
-	pub(super) fn named_stat(&self, name: UnixComponent<'_>) -> Result<Stat, StageError> {
-		self.lease.named_stat(name)
 	}
 }
 
@@ -310,6 +318,8 @@ impl fmt::Debug for StageDirectory<'_> {
 
 struct DirectoryLease {
 	file: File,
+	directory: Directory,
+	lease: Lease,
 	owner: u32,
 	identity: DirectoryIdentity,
 	lease_process: u32,
@@ -332,13 +342,19 @@ impl DirectoryLease {
 	}
 
 	fn lock(file: File, owner: u32, identity: DirectoryIdentity) -> Result<Self, StageError> {
-		match fs::flock(&file, FlockOperation::NonBlockingLockExclusive) {
-			Ok(()) => {}
-			Err(Errno::AGAIN) => return Err(StageError::DirectoryBusy),
-			Err(error) => return Err(error.into()),
+		let directory = Directory::from_file(file.try_clone()?)?;
+		let lease =
+			match Lease::try_acquire(&directory, LeaseMode::Exclusive).map_err(lease_error)? {
+				LeaseAttempt::Acquired(lease) => lease,
+				LeaseAttempt::Busy => return Err(StageError::DirectoryBusy),
+			};
+		if ManagedObjectIdentity::from_mounted(lease.identity()) != identity.observe(&file)? {
+			return Err(StageError::DirectoryChanged);
 		}
 		Ok(Self {
 			file,
+			directory,
+			lease,
 			owner,
 			identity,
 			lease_process: process::id(),
@@ -354,6 +370,7 @@ impl DirectoryLease {
 
 	fn check_current(&self) -> Result<(), StageError> {
 		self.check_process()?;
+		self.lease.revalidate().map_err(lease_error)?;
 		Ok(check_directory_authority(
 			&self.file,
 			self.owner,
@@ -377,12 +394,10 @@ impl DirectoryLease {
 	}
 }
 
-impl Drop for DirectoryLease {
-	fn drop(&mut self) {
-		// Closing our descriptor may leave the open description alive after fork.
-		// Only the acquiring process may explicitly release the lock on it.
-		if self.lease_process == process::id() {
-			let _ = fs::flock(&self.file, FlockOperation::Unlock);
-		}
+fn lease_error(error: LeaseError) -> StageError {
+	match error {
+		LeaseError::WrongProcess => StageError::WrongProcess,
+		LeaseError::Identity(_) => StageError::DirectoryChanged,
+		error => StageError::System(io::Error::other(error)),
 	}
 }

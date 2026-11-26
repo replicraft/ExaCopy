@@ -17,9 +17,10 @@ fn stage_fixture(fixture: &Fixture, bytes: &[u8]) -> PathBuf {
 	let container = open_staging(&root);
 	let job = container.create_job_directory(job_name()).unwrap();
 	let stage = job.create_stage_directory().unwrap();
+	let selected = crate::macos::staging::ManagedStageName::new(name(DATA.as_bytes())).unwrap();
 	let mut writer = stage
 		.create_file(
-			name(DATA.as_bytes()),
+			&selected,
 			name(TARGET.as_bytes()),
 			job_context(),
 			bytes.len() as u64,

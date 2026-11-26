@@ -94,12 +94,18 @@ pub(super) fn open_staging(root: &ManagedStageRoot) -> StageDirectory<'_> {
 		.expect("select the provisioned private child")
 }
 
+pub(super) fn fixture_stage_name() -> &'static super::ManagedStageName<'static> {
+	static NAME: std::sync::LazyLock<super::ManagedStageName<'static>> =
+		std::sync::LazyLock::new(|| super::ManagedStageName::new(name(STAGE.as_bytes())).unwrap());
+	&NAME
+}
+
 pub(super) fn make_stage<'a>(
 	directory: &'a StageDirectory<'a>,
 	length: u64,
 ) -> Result<super::WriteStage<'a>, StageError> {
 	directory.create_file(
-		name(STAGE.as_bytes()),
+		fixture_stage_name(),
 		name(TARGET.as_bytes()),
 		context(),
 		length,
@@ -376,18 +382,12 @@ fn existing_staging_directory_reserves_its_public_name_and_apfs_aliases() {
 	let root = fixture.bind();
 	let directory = open_staging(&root);
 	assert!(matches!(
-		directory.create_file(
-			name(STAGE.as_bytes()),
-			name(PRIVATE.as_bytes()),
-			context(),
-			1
-		),
+		directory.create_file(fixture_stage_name(), name(PRIVATE.as_bytes()), context(), 1),
 		Err(StageError::NameCollision)
 	));
 	assert!(!fixture.stage_path().exists());
 	let alias = "PRIVATE-STAGE";
-	let result =
-		directory.create_file(name(STAGE.as_bytes()), name(alias.as_bytes()), context(), 1);
+	let result = directory.create_file(fixture_stage_name(), name(alias.as_bytes()), context(), 1);
 	if fixture.path(alias).exists() {
 		assert!(matches!(result, Err(StageError::NameCollision)));
 		assert!(!fixture.stage_path().exists());

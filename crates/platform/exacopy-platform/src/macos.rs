@@ -32,7 +32,8 @@ mod tests;
 
 pub use managed::{
 	BasicMetadata, BasicMetadataError, ManagedObjectIdentity, ManagedReadError, ManagedReadGrant,
-	ManagedReadRoot, ManagedRegularFile, ManagedSourceIdentities, ManagedTimestamp,
+	ManagedReadRoot, ManagedRegularFile, ManagedSourceIdentities, ManagedSourceName,
+	ManagedTimestamp,
 };
 pub use managed::{publication, staging};
 

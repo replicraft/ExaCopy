@@ -12,6 +12,10 @@ impl PhysicalFsid {
 		self.0
 	}
 
+	pub(super) fn from_mounted(identity: &ObjectIdentity) -> Self {
+		Self(identity.physical_fsid())
+	}
+
 	pub(super) fn held(fd: BorrowedFd<'_>) -> io::Result<Option<Self>> {
 		project(ObjectIdentity::held(fd).map(Some))
 	}
@@ -37,7 +41,7 @@ fn project(
 	observation: Result<Option<ObjectIdentity>, IdentityError>,
 ) -> io::Result<Option<PhysicalFsid>> {
 	match observation {
-		Ok(observed) => Ok(observed.map(|identity| PhysicalFsid(identity.physical_fsid()))),
+		Ok(observed) => Ok(observed.as_ref().map(PhysicalFsid::from_mounted)),
 		Err(IdentityError::Unavailable | IdentityError::Changed) => Ok(None),
 		Err(IdentityError::Io(error)) => Err(error),
 		Err(error) => Err(io::Error::other(error)),

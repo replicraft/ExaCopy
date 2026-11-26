@@ -1,22 +1,19 @@
+use std::ffi::CString;
 use std::fmt;
 use std::io;
 use std::os::fd::BorrowedFd;
 
-use apfs_mounted::metadata::{self as mounted, ObservationError, XattrVisibility};
-use rustix::fs::{FileType, Mode, Stat, Timespec, Timestamps};
+use apfs_mounted::metadata::{
+	self as mounted, MetadataView, ObservationError, ResourceFork, XattrVisibility,
+};
+use apfs_mounted::source::SourceMetadata;
+use rustix::fs::{FileType, Mode, Stat};
 
 use super::{FILE_MODE, ManagedTimestamp, acl};
 
 // Admission needs presence only. A positive kernel size exceeds this budget
 // and the mounted library returns it before allocating or reading attribute data.
 const PRESENCE_ONLY: usize = 0;
-
-fn timespec(timestamp: ManagedTimestamp) -> Timespec {
-	Timespec {
-		tv_sec: timestamp.seconds(),
-		tv_nsec: timestamp.nanoseconds().into(),
-	}
-}
 
 /// Required basic metadata for a strict managed transfer of one unnamed APFS stream.
 ///
@@ -52,6 +49,20 @@ impl BasicMetadata {
 		})
 	}
 
+	pub(super) fn from_mounted_source(
+		observed: SourceMetadata,
+	) -> Result<Self, BasicMetadataError> {
+		if observed.mode != FILE_MODE.bits() || observed.link_count != 1 || observed.flags != 0 {
+			return Err(BasicMetadataError::UnsupportedStat);
+		}
+		Ok(Self {
+			uid: observed.owner,
+			gid: observed.group,
+			atime: ManagedTimestamp::from_mounted_source(observed.accessed),
+			mtime: ManagedTimestamp::from_mounted_source(observed.modified),
+		})
+	}
+
 	/// Returns the source owner's numeric UID.
 	#[must_use]
 	pub const fn uid(self) -> u32 {
@@ -80,13 +91,6 @@ impl BasicMetadata {
 	#[must_use]
 	pub const fn mtime(self) -> ManagedTimestamp {
 		self.mtime
-	}
-
-	pub(super) fn times(self) -> Timestamps {
-		Timestamps {
-			last_access: timespec(self.atime),
-			last_modification: timespec(self.mtime),
-		}
 	}
 
 	pub(super) fn matches(self, observed: &Stat) -> bool {
@@ -137,15 +141,46 @@ impl std::error::Error for BasicMetadataError {
 }
 
 pub(super) fn check_inventory(fd: BorrowedFd<'_>) -> Result<(), BasicMetadataError> {
-	if !acl::has_basic_acl(fd).map_err(BasicMetadataError::Inventory)? {
+	check_inventory_using(
+		|| acl::has_basic_acl(fd),
+		|| mounted::read_resource_fork(fd, PRESENCE_ONLY),
+		|| mounted::resource_fork(fd),
+		|visibility| mounted::list_xattrs(fd, visibility, PRESENCE_ONLY),
+	)
+}
+
+pub(super) fn check_view_inventory(view: &MetadataView<'_>) -> Result<(), BasicMetadataError> {
+	check_inventory_using(
+		|| acl::basic_security(view.extended_security(mounted::MAX_EXTENDED_SECURITY_BYTES)),
+		|| view.read_resource_fork(PRESENCE_ONLY),
+		|| view.resource_fork(),
+		|visibility| view.list_xattrs(visibility, PRESENCE_ONLY),
+	)
+}
+
+fn check_inventory_using(
+	basic_acl: impl FnOnce() -> io::Result<bool>,
+	fork_attribute: impl FnOnce() -> Result<Option<Vec<u8>>, ObservationError>,
+	fork: impl FnOnce() -> Result<ResourceFork, ObservationError>,
+	list_attributes: impl Fn(XattrVisibility) -> Result<Vec<CString>, ObservationError>,
+) -> Result<(), BasicMetadataError> {
+	if !basic_acl().map_err(BasicMetadataError::Inventory)? {
 		return Err(BasicMetadataError::AccessControl);
 	}
-	check_fork(fd)?;
+	// A named fork is ineligible even when empty, before a length query.
+	require_absent_fork_attribute(fork_attribute())?;
+	match fork() {
+		Ok(fork) if fork.confirmed_absent() => {}
+		Ok(_) | Err(ObservationError::Malformed(_) | ObservationError::Limit { .. }) => {
+			return Err(BasicMetadataError::ResourceFork);
+		}
+		Err(error) => return Err(BasicMetadataError::Inventory(observation_io_error(error))),
+	}
 	for visibility in [
 		XattrVisibility::Visible,
 		XattrVisibility::IncludingCompression,
 	] {
-		match mounted::list_xattrs(fd, visibility, PRESENCE_ONLY) {
+		match list_attributes(visibility) {
 			Ok(names) if names.is_empty() => {}
 			Ok(_)
 			| Err(ObservationError::Limit {
@@ -158,20 +193,6 @@ pub(super) fn check_inventory(fd: BorrowedFd<'_>) -> Result<(), BasicMetadataErr
 		}
 	}
 	Ok(())
-}
-
-fn check_fork(fd: BorrowedFd<'_>) -> Result<(), BasicMetadataError> {
-	// A named attribute is ineligible by itself, including a zero-byte fork.
-	// Check it before consulting the reported fork length so already-observed
-	// presence remains a resource-fork refusal even if the length query fails.
-	require_absent_fork_attribute(mounted::read_resource_fork(fd, PRESENCE_ONLY))?;
-	match mounted::resource_fork(fd) {
-		Ok(fork) if fork.confirmed_absent() => Ok(()),
-		Ok(_) | Err(ObservationError::Malformed(_) | ObservationError::Limit { .. }) => {
-			Err(BasicMetadataError::ResourceFork)
-		}
-		Err(error) => Err(BasicMetadataError::Inventory(observation_io_error(error))),
-	}
 }
 
 fn require_absent_fork_attribute(

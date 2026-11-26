@@ -4,13 +4,14 @@ use std::io;
 use std::os::fd::AsFd as _;
 use std::os::unix::fs::FileExt as _;
 
+use apfs_mounted::publication::{RenameAttempt, RenameEvidence, attempt_exclusive_rename};
+use apfs_mounted::writer::{full_file_sync, sync_directory};
+use apfs_mounted::{EntryName, ObjectIdentity};
 use exacopy_endpoint::{UnixComponent, read_exact_at, write_all_at};
 use rustix::fs::{self, AtFlags, Mode, OFlags};
 use rustix::io::Errno;
 
-use super::super::super::super::{
-	ManagedReadError, file::same_observation, publication::rename_exclusively, volume,
-};
+use super::super::super::super::{ManagedReadError, file::same_observation, volume};
 use super::super::super::close::close_writer;
 use super::record::{check_record, create_empty, record_length};
 use super::{
@@ -39,24 +40,42 @@ impl ReceiptDirectory<'_> {
 	/// read-back, close, publication or barrier checks. Any affected artifacts
 	/// remain in place for reconciliation.
 	pub fn write_receipt(&self, bytes: &[u8]) -> Result<ManagedObjectIdentity, JobError> {
-		self.write_receipt_with(
+		self.write_receipt_impl(
 			bytes,
 			|file, offset, remaining| file.write_at(remaining, offset),
-			|file| fs::fcntl_fullfsync(file),
-			|directory| fs::fsync(directory),
+			|file| full_file_sync(file).map_err(|error| error.error),
+			|lease| sync_directory(&lease.directory).map_err(|error| error.error),
 		)
 	}
 
+	#[cfg(test)]
 	pub(super) fn write_receipt_with(
 		&self,
 		bytes: &[u8],
-		mut write: impl FnMut(&File, u64, &[u8]) -> io::Result<usize>,
+		write: impl FnMut(&File, u64, &[u8]) -> io::Result<usize>,
 		file_barrier: impl FnOnce(&File) -> rustix::io::Result<()>,
 		directory_barrier: impl FnOnce(&File) -> rustix::io::Result<()>,
+	) -> Result<ManagedObjectIdentity, JobError> {
+		self.write_receipt_impl(
+			bytes,
+			write,
+			|file| file_barrier(file).map_err(Into::into),
+			|lease| directory_barrier(&lease.file).map_err(Into::into),
+		)
+	}
+
+	fn write_receipt_impl(
+		&self,
+		bytes: &[u8],
+		mut write: impl FnMut(&File, u64, &[u8]) -> io::Result<usize>,
+		file_barrier: impl FnOnce(&File) -> io::Result<()>,
+		directory_barrier: impl FnOnce(&DirectoryLease) -> io::Result<()>,
 	) -> Result<ManagedObjectIdentity, JobError> {
 		let length = record_length(bytes)?;
 		let pending = checked_component(RECEIPT_PENDING.to_bytes())?;
 		let final_name = checked_component(RECEIPT.to_bytes())?;
+		let pending_native = EntryName::new(pending.as_bytes()).map_err(StageError::Name)?;
+		let final_native = EntryName::new(final_name.as_bytes()).map_err(StageError::Name)?;
 		let lease = &self.directory.lease;
 		Creation::new(self.job.name, JobArtifact::ReceiptPending).run(|creation| {
 			self.check_current()?;
@@ -98,23 +117,33 @@ impl ReceiptDirectory<'_> {
 				return Err(JobError::IdentityChanged);
 			}
 
+			let expected = ObjectIdentity::held(&reader).map_err(io::Error::other)?;
+			if ManagedObjectIdentity::from_mounted(&expected) != identity {
+				return Err(JobError::IdentityChanged);
+			}
 			creation.artifact = JobArtifact::Receipt;
 			creation.step = Some(JobStep::Publish);
-			// The private lease protects the verified source binding. The native
-			// syscall decides whether the final name can be exclusively acquired.
-			let directory = lease.file.as_fd();
-			match rename_exclusively(directory, RECEIPT_PENDING, directory, RECEIPT) {
-				Ok(()) => {}
-				Err(error) if error.raw_os_error() == Some(libc::EEXIST) => {
-					return Err(self.final_occupied());
-				}
-				Err(error) => return Err(error.into()),
-			}
+			let renamed = match attempt_exclusive_rename(
+				&lease.directory,
+				&pending_native,
+				&lease.directory,
+				&final_native,
+				&reader,
+				&expected,
+			) {
+				RenameAttempt::Renamed(renamed) => renamed,
+				RenameAttempt::Conflict => return Err(self.final_occupied()),
+				RenameAttempt::NotAttempted(error) => return Err(io::Error::other(error).into()),
+				RenameAttempt::Uncertain(error) => return Err(error.into()),
+				_ => return Err(io::Error::other("unknown mounted receipt rename result").into()),
+			};
 			creation.step = Some(JobStep::NamespaceBarrier);
-			directory_barrier(&lease.file)?;
+			let barrier = directory_barrier(lease);
+			let observation = renamed.observe();
+			barrier?;
 			creation.step = Some(JobStep::Revalidate);
 			self.check_current()?;
-			if name_is_occupied(lease, pending)? {
+			if !matches!(observation, RenameEvidence::Confirmed { target } if target == expected) {
 				return Err(JobError::IdentityChanged);
 			}
 			check_record(lease, final_name, &reader, length, Some(identity))

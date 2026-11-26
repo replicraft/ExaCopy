@@ -2,8 +2,9 @@ use std::num::NonZeroUsize;
 use std::path::{self, Path};
 
 use exacopy_diff::Side;
-use exacopy_endpoint::UnixComponent;
-use exacopy_platform::macos::{ManagedReadGrant, ManagedReadRoot, ManagedRegularFile};
+use exacopy_platform::macos::{
+	ManagedReadGrant, ManagedReadRoot, ManagedRegularFile, ManagedSourceName,
+};
 
 use crate::diff;
 use crate::report::{ErrorCode, Failure, Outcome};
@@ -23,12 +24,15 @@ fn compare_files(
 ) -> Result<Outcome, Failure> {
 	let (left_root, left_name) = open_parent(left, Side::Left)?;
 	let (right_root, right_name) = open_parent(right, Side::Right)?;
-	let left = open_file(&left_root, left_name, Side::Left)?;
-	let right = open_file(&right_root, right_name, Side::Right)?;
+	let left = open_file(&left_root, &left_name, Side::Left)?;
+	let right = open_file(&right_root, &right_name, Side::Right)?;
 	diff::compare(&left, &right, workers)
 }
 
-fn open_parent(path: &Path, side: Side) -> Result<(ManagedReadRoot, UnixComponent<'_>), Failure> {
+fn open_parent(
+	path: &Path,
+	side: Side,
+) -> Result<(ManagedReadRoot, ManagedSourceName<'_>), Failure> {
 	let (parent, name) = split(path).map_err(|error| Failure {
 		code: ErrorCode::InvalidPath,
 		message: format!("{side} input path is invalid ({error})"),
@@ -43,12 +47,16 @@ fn open_parent(path: &Path, side: Side) -> Result<(ManagedReadRoot, UnixComponen
 		code: ErrorCode::OpenInput,
 		message: format!("could not bind the {side} input directory ({error})"),
 	})?;
+	let name = ManagedSourceName::new(name).map_err(|error| Failure {
+		code: ErrorCode::OpenInput,
+		message: format!("could not open the {side} input file ({error})"),
+	})?;
 	Ok((root, name))
 }
 
 fn open_file<'root>(
 	root: &'root ManagedReadRoot,
-	name: UnixComponent<'root>,
+	name: &'root ManagedSourceName<'_>,
 	side: Side,
 ) -> Result<ManagedRegularFile<'root>, Failure> {
 	root.open_regular(name).map_err(|error| Failure {

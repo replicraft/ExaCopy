@@ -1,7 +1,17 @@
 use std::io;
 use std::os::fd::BorrowedFd;
 
-use apfs_mounted::volume::{self, Capability, VolumeCapabilities};
+use apfs_mounted::volume::{self, Capability, Locality, OwnershipMode, VolumeCapabilities};
+
+pub(super) fn is_managed_mount(directory: BorrowedFd<'_>) -> io::Result<bool> {
+	match volume::observe_mount(directory) {
+		Ok(mount) => Ok(mount.is_apfs()
+			&& mount.locality == Locality::Local
+			&& mount.ownership_mode() == OwnershipMode::Native),
+		Err(error) if insufficient_evidence(&error) => Ok(false),
+		Err(error) => Err(error),
+	}
+}
 
 pub(super) fn supports_managed_root(directory: BorrowedFd<'_>) -> io::Result<bool> {
 	check_reported(directory, |capabilities| {
@@ -26,13 +36,13 @@ fn check_reported(
 	match volume::observe(directory) {
 		Ok(volume) => Ok(supported(volume.capabilities)),
 		// The native profile refuses a malformed response as insufficient evidence.
-		Err(error)
-			if error.kind() == io::ErrorKind::InvalidData && error.raw_os_error().is_none() =>
-		{
-			Ok(false)
-		}
+		Err(error) if insufficient_evidence(&error) => Ok(false),
 		Err(error) => Err(error),
 	}
+}
+
+fn insufficient_evidence(error: &io::Error) -> bool {
+	error.kind() == io::ErrorKind::InvalidData && error.raw_os_error().is_none()
 }
 
 fn rename_is_supported(exclusive_rename: Capability) -> bool {

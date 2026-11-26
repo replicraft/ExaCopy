@@ -1,12 +1,39 @@
+use apfs_mounted::publication::{
+	RenameAttempt, RenameEvidence, attempt_exclusive_rename, sync_directories,
+};
+use apfs_mounted::{Directory, EntryName, ObjectIdentity};
+use std::ffi::CStr;
 use std::fs::{self, File};
+use std::io;
 use std::io::ErrorKind;
-use std::os::fd::AsFd as _;
 use std::os::unix::fs::{MetadataExt as _, symlink};
 use std::path::Path;
 
 use crate::scratch::Scratch;
 
-use super::rename_exclusively;
+fn rename_exclusively(stage: &File, from: &CStr, destination: &File, to: &CStr) -> io::Result<()> {
+	let stage = Directory::from_file(stage.try_clone()?)?;
+	let destination = Directory::from_file(destination.try_clone()?)?;
+	let from = EntryName::new(from.to_bytes())
+		.map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?;
+	let to = EntryName::new(to.to_bytes()).map_err(io::Error::other)?;
+	let held = stage.open_event(&from)?;
+	let expected = ObjectIdentity::held(&held).map_err(io::Error::other)?;
+	match attempt_exclusive_rename(&stage, &from, &destination, &to, &held, &expected) {
+		RenameAttempt::Conflict => Err(io::Error::from_raw_os_error(libc::EEXIST)),
+		RenameAttempt::Uncertain(error) => Err(error),
+		RenameAttempt::Renamed(renamed) => {
+			let barriers = sync_directories(&stage, &destination);
+			barriers.source.map_err(io::Error::other)?;
+			barriers.destination.map_err(io::Error::other)?;
+			assert!(
+				matches!(renamed.observe(), RenameEvidence::Confirmed { target } if target == expected)
+			);
+			Ok(())
+		}
+		result => panic!("unexpected companion rename result {result:?}"),
+	}
+}
 
 const STAGE_BYTES: &[u8] = b"verified bytes\0\xff";
 const INCUMBENT_BYTES: &[u8] = b"incumbent bytes";
@@ -36,15 +63,8 @@ fn native_exclusive_rename_moves_the_exact_stage() {
 	write_new(&stage_path, STAGE_BYTES);
 	let before = identity(&stage_path);
 
-	rename_exclusively(
-		stage_dir.as_fd(),
-		c"stage",
-		destination_dir.as_fd(),
-		c"target",
-	)
-	.expect("rename exclusive into absent name");
-	rustix::fs::fsync(stage_dir).expect("synchronize prior stage directory");
-	rustix::fs::fsync(destination_dir).expect("synchronize destination directory");
+	rename_exclusively(&stage_dir, c"stage", &destination_dir, c"target")
+		.expect("rename exclusive into absent name");
 
 	assert!(
 		matches!(stage_path.symlink_metadata(), Err(error) if error.kind() == ErrorKind::NotFound)
@@ -84,13 +104,8 @@ fn native_exclusive_rename_preserves_late_regular_and_symlink_incumbents() {
 		});
 		let target_before = identity(&target);
 
-		let error = rename_exclusively(
-			stage_dir.as_fd(),
-			c"stage",
-			destination_dir.as_fd(),
-			c"target",
-		)
-		.expect_err("refuse generated late incumbent");
+		let error = rename_exclusively(&stage_dir, c"stage", &destination_dir, c"target")
+			.expect_err("refuse generated late incumbent");
 		match error.raw_os_error() {
 			Some(libc::EEXIST) => {}
 			Some(libc::ELOOP) if is_symlink => {}
@@ -144,13 +159,8 @@ fn native_exclusive_rename_preserves_an_incumbent_addressed_through_an_alias() {
 		}
 		Err(error) => panic!("could not observe fixture target: {error}"),
 	}
-	let error = rename_exclusively(
-		stage_dir.as_fd(),
-		c"stage",
-		destination_dir.as_fd(),
-		c"target",
-	)
-	.expect_err("refuse the existing alias");
+	let error = rename_exclusively(&stage_dir, c"stage", &destination_dir, c"target")
+		.expect_err("refuse the existing alias");
 	assert_eq!(error.raw_os_error(), Some(libc::EEXIST));
 	assert_eq!(identity(&stage_path), stage_before);
 	assert_eq!(identity(&target), incumbent_before);
@@ -177,17 +187,16 @@ fn native_exclusive_rename_refuses_to_traverse_a_symbolic_link() {
 	let original_file = identity(&source);
 	let original_link = identity(&alias);
 
-	// The product accepts only one checked component. An intermediate link
-	// here distinguishes the native no-follow flag from no-clobber alone.
+	// The mounted boundary will never accept an intermediate component.
 	let error = rename_exclusively(
-		fixture_dir.as_fd(),
+		&fixture_dir,
 		c"parent-link/stage",
-		destination_dir.as_fd(),
+		&destination_dir,
 		c"target",
 	)
 	.expect_err("the native call must not traverse a source parent link");
 
-	assert_eq!(error.raw_os_error(), Some(libc::ELOOP));
+	assert_eq!(error.kind(), ErrorKind::InvalidInput);
 	assert_eq!(identity(&source), original_file);
 	assert_eq!(fs::read(source).unwrap(), STAGE_BYTES);
 	assert_eq!(identity(&alias), original_link);

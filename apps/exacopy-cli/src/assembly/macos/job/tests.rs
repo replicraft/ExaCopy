@@ -13,7 +13,9 @@ use exacopy_journal::{
 };
 use exacopy_platform::macos::staging::jobs::{JobArtifact, JobError};
 use exacopy_platform::macos::staging::{ManagedStageGrant, ManagedStageRoot, StageError};
-use exacopy_platform::macos::{BasicMetadataError, ManagedReadError, ManagedReadGrant};
+use exacopy_platform::macos::{
+	BasicMetadataError, ManagedReadError, ManagedReadGrant, ManagedSourceName,
+};
 
 use super::*;
 use crate::assembly::macos::plan::{
@@ -327,7 +329,7 @@ pub(super) fn with_publication_fixture(
 	.unwrap();
 }
 
-struct Fixture(PathBuf);
+struct Fixture(PathBuf, ManagedSourceName<'static>);
 
 impl Fixture {
 	fn new() -> Self {
@@ -338,7 +340,7 @@ impl Fixture {
 			NEXT.fetch_add(1, Ordering::Relaxed)
 		));
 		DirBuilder::new().mode(0o700).create(&path).unwrap();
-		let fixture = Self(path);
+		let fixture = Self(path, ManagedSourceName::new(component(SOURCE)).unwrap());
 		let helper = fixture.0.join("empty-acl");
 		let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/macos/empty_acl.c");
 		assert!(
@@ -378,10 +380,10 @@ impl Fixture {
 		open_root(&self.0).unwrap()
 	}
 
-	fn source<'root>(&self, root: &'root ManagedStageRoot) -> ManagedRegularFile<'root> {
+	fn source<'root>(&'root self, root: &'root ManagedStageRoot) -> ManagedRegularFile<'root> {
 		root.open_regular_source(
 			&self.0,
-			component(SOURCE),
+			&self.1,
 			ManagedReadGrant::trusted_owner_authorizes_provisioned_root(),
 		)
 		.unwrap()

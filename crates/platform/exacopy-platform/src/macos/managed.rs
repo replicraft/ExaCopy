@@ -1,14 +1,15 @@
 use std::fmt;
 use std::fs::File;
-use std::io;
-use std::os::fd::AsFd as _;
+use std::os::fd::AsFd;
 use std::os::unix::ffi::OsStrExt as _;
 use std::path::Path;
-use std::process;
 
+use apfs_mounted::lease::{Lease, LeaseAttempt, LeaseMode};
+use apfs_mounted::metadata::ObjectFlags;
+use apfs_mounted::source::{PinnedSource, SourceError};
+use apfs_mounted::{Directory, EntryName, ObjectIdentity};
 use exacopy_endpoint::UnixComponent;
-use rustix::fs::{self, AtFlags, FileType, FlockOperation, Mode, OFlags, Stat};
-use rustix::io::Errno;
+use rustix::fs::{self, FileType, Mode, OFlags, Stat};
 
 mod acl;
 mod error;
@@ -35,7 +36,6 @@ use self::thread_policy::with_materialization_disabled;
 
 const DIRECTORY_MODE: Mode = Mode::RUSR.union(Mode::WUSR).union(Mode::XUSR);
 const FILE_MODE: Mode = Mode::RUSR.union(Mode::WUSR);
-const APFS_NAME: [libc::c_char; 5] = [b'a' as _, b'p' as _, b'f' as _, b's' as _, 0];
 const EVENT_ONLY: OFlags = OFlags::from_bits_retain(libc::O_EVTONLY as u32);
 const DIRECTORY_OPEN: OFlags = OFlags::RDONLY
 	.union(OFlags::DIRECTORY)
@@ -85,15 +85,33 @@ impl ManagedReadGrant {
 	}
 }
 
+/// A validated raw component held by the caller while a pinned source borrows it.
+pub struct ManagedSourceName<'raw> {
+	component: UnixComponent<'raw>,
+	entry: EntryName,
+}
+
+impl<'raw> ManagedSourceName<'raw> {
+	/// Prepares the exact selected bytes for descriptor-relative Darwin lookup.
+	///
+	/// # Errors
+	/// Refuses a name outside the mounted directory component contract.
+	pub fn new(component: UnixComponent<'raw>) -> Result<Self, ManagedReadError> {
+		let entry =
+			EntryName::new(component.as_bytes()).map_err(|_| ManagedReadError::UnsupportedChild)?;
+		Ok(Self { component, entry })
+	}
+}
+
 /// A held, explicitly authorized owner-private local APFS directory.
 ///
 /// Concurrent readers may hold independent shared advisory locks on the same
 /// directory. The shared lock is released when the capability is dropped.
 pub struct ManagedReadRoot {
-	directory: File,
+	directory: Directory,
 	owner: u32,
 	identity: DirectoryIdentity,
-	lease_process: u32,
+	lease: Lease,
 }
 
 impl fmt::Debug for ManagedReadRoot {
@@ -155,6 +173,7 @@ impl ManagedReadRoot {
 		imported: Option<DirectoryIdentity>,
 	) -> Result<Self, ManagedReadError> {
 		let identity = capture_directory(&directory)?;
+		let directory = Directory::from_file(directory)?;
 		if imported.is_some_and(|imported| imported != identity) {
 			return Err(ManagedReadError::UnsupportedNamespace);
 		}
@@ -163,16 +182,16 @@ impl ManagedReadRoot {
 		if !volume::supports_managed_root(directory.as_fd())? {
 			return Err(ManagedReadError::UnsupportedNamespace);
 		}
-		match fs::flock(&directory, FlockOperation::NonBlockingLockShared) {
-			Ok(()) => {}
-			Err(Errno::AGAIN) => return Err(ManagedReadError::DirectoryBusy),
-			Err(error) => return Err(error.into()),
-		}
+		let LeaseAttempt::Acquired(lease) =
+			Lease::try_acquire(&directory, LeaseMode::Shared).map_err(error::lease_error)?
+		else {
+			return Err(ManagedReadError::DirectoryBusy);
+		};
 		let root = Self {
 			directory,
 			owner,
 			identity,
-			lease_process: process::id(),
+			lease,
 		};
 		root.read_directory().check_root()?;
 		Ok(root)
@@ -191,7 +210,7 @@ impl ManagedReadRoot {
 	/// observation changes, or the required I/O policy cannot be established.
 	pub fn open_regular<'root>(
 		&'root self,
-		name: UnixComponent<'root>,
+		name: &'root ManagedSourceName<'_>,
 	) -> Result<ManagedRegularFile<'root>, ManagedReadError> {
 		with_materialization_disabled(|| self.read_directory().open_with_policy(name))
 	}
@@ -201,89 +220,52 @@ impl ManagedReadRoot {
 			directory: &self.directory,
 			owner: self.owner,
 			identity: self.identity,
-			lease_process: self.lease_process,
+			lease: &self.lease,
 		}
 	}
 }
 
 struct ReadDirectory<'root> {
-	directory: &'root File,
+	directory: &'root Directory,
 	owner: u32,
 	identity: DirectoryIdentity,
-	lease_process: u32,
+	lease: &'root Lease,
 }
 
 impl<'root> ReadDirectory<'root> {
-	fn check_process(&self) -> Result<(), ManagedReadError> {
-		if self.lease_process != process::id() {
+	fn check_root(&self) -> Result<(), ManagedReadError> {
+		self.lease.revalidate().map_err(error::lease_error)?;
+		if DirectoryIdentity::from_mounted(self.lease.identity()) != self.identity {
 			return Err(ManagedReadError::UnsupportedNamespace);
 		}
-		Ok(())
-	}
-
-	fn check_root(&self) -> Result<(), ManagedReadError> {
-		self.check_process()?;
 		check_directory_authority(self.directory, self.owner, self.identity)
 	}
 
 	fn open_with_policy(
 		self,
-		name: UnixComponent<'root>,
+		name: &'root ManagedSourceName<'_>,
 	) -> Result<ManagedRegularFile<'root>, ManagedReadError> {
 		self.check_root()?;
-		let before = match fs::statat(self.directory, name.as_bytes(), AtFlags::SYMLINK_NOFOLLOW) {
-			Ok(stat) => stat,
-			Err(Errno::NOENT) => return Err(ManagedReadError::Missing),
-			Err(error) => return Err(error.into()),
-		};
-		if FileType::from_raw_mode(before.st_mode) != FileType::RegularFile
-			|| before.st_dev != self.identity.device
-			|| before.st_uid != self.owner
-			|| before.st_nlink != 1
-			|| Mode::from_raw_mode(before.st_mode) != FILE_MODE
-			|| before.st_flags & UNSUPPORTED_OBJECT_FLAGS != 0
-			|| self.named_fsid(name)? != Some(self.identity.physical_fsid)
-		{
-			return Err(ManagedReadError::UnsupportedChild);
-		}
-		let length =
-			u64::try_from(before.st_size).map_err(|_| ManagedReadError::UnsupportedChild)?;
-		let descriptor = fs::openat(
+		let source = PinnedSource::open_leased(
 			self.directory,
-			name.as_bytes(),
-			OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
-			Mode::empty(),
-		)?;
-		let descriptor = File::from(descriptor);
-		let initial = fs::fstat(&descriptor)?;
-		if !file::same_observation(&initial, &before) {
-			return Err(ManagedReadError::SourceChanged);
-		}
-		let file = ManagedRegularFile::new(self, name, descriptor, initial, length);
-		file.check_file()?;
-		Ok(file)
-	}
-
-	fn named_fsid(
-		&self,
-		name: UnixComponent<'_>,
-	) -> Result<Option<PhysicalFsid>, ManagedReadError> {
-		match PhysicalFsid::named(self.directory.as_fd(), name) {
-			Ok(fsid) => Ok(fsid),
-			Err(error) if error.kind() == io::ErrorKind::NotFound => {
-				Err(ManagedReadError::SourceChanged)
-			}
-			Err(error) => Err(error.into()),
-		}
-	}
-}
-
-impl Drop for ManagedReadRoot {
-	fn drop(&mut self) {
-		// A fork can briefly retain the open description even with CLOEXEC.
-		if self.lease_process == process::id() {
-			let _ = fs::flock(&self.directory, FlockOperation::Unlock);
-		}
+			&name.entry,
+			self.lease,
+			|identity, metadata| {
+				if identity.device() != self.identity.device
+					|| identity.physical_fsid() != self.identity.physical_fsid.words()
+					|| metadata.owner != self.owner
+					|| metadata.link_count != 1
+					|| metadata.mode != FILE_MODE.bits()
+					|| !materialized(metadata.object_flags())
+				{
+					return Err(SourceError::AdmissionRefused);
+				}
+				Ok(())
+			},
+		)
+		.map_err(error::source_open_error)?;
+		self.check_root()?;
+		Ok(ManagedRegularFile::new(self, name.component, source))
 	}
 }
 
@@ -309,43 +291,60 @@ impl DirectoryIdentity {
 		})
 	}
 
+	fn from_mounted(identity: &ObjectIdentity) -> Self {
+		let observation = ManagedObjectIdentity::from_mounted(identity);
+		Self {
+			device: observation.device(),
+			inode: observation.inode().get(),
+			generation: observation
+				.generation()
+				.map_or(0, std::num::NonZeroU32::get),
+			physical_fsid: PhysicalFsid::from_mounted(identity),
+			birth: observation.birth(),
+		}
+	}
+
 	fn matches_stat(self, stat: &Stat) -> bool {
 		Self::from_stat(stat, self.physical_fsid).is_ok_and(|identity| self == identity)
 	}
 
-	fn observe(self, directory: &File) -> Result<ManagedObjectIdentity, ManagedReadError> {
-		let stat = fs::fstat(directory)?;
-		if !self.matches_stat(&stat) {
+	fn observe(self, directory: impl AsFd) -> Result<ManagedObjectIdentity, ManagedReadError> {
+		let observed = ObjectIdentity::held(directory).map_err(error::root_identity_error)?;
+		if self != Self::from_mounted(&observed) {
 			return Err(ManagedReadError::UnsupportedNamespace);
 		}
-		ManagedObjectIdentity::from_stat(&stat, self.physical_fsid)
-			.ok_or(ManagedReadError::UnsupportedNamespace)
+		Ok(ManagedObjectIdentity::from_mounted(&observed))
 	}
 }
 
 fn check_directory_authority(
-	directory: &File,
+	directory: impl AsFd,
 	owner: u32,
 	identity: DirectoryIdentity,
 ) -> Result<(), ManagedReadError> {
+	let directory = directory.as_fd();
 	let stat = fs::fstat(directory)?;
-	let mount = fs::fstatfs(directory)?;
+	let managed_mount = volume::is_managed_mount(directory)?;
 	if owner == 0
 		|| rustix::process::geteuid().as_raw() != owner
 		|| stat.st_uid != owner
 		|| !identity.matches_stat(&stat)
 		|| FileType::from_raw_mode(stat.st_mode) != FileType::Directory
 		|| Mode::from_raw_mode(stat.st_mode) != DIRECTORY_MODE
-		|| stat.st_flags & UNSUPPORTED_OBJECT_FLAGS != 0
-		|| !mount.f_fstypename.starts_with(&APFS_NAME)
-		|| mount.f_flags & libc::MNT_LOCAL as u32 == 0
-		|| mount.f_flags & libc::MNT_IGNORE_OWNERSHIP as u32 != 0
-		|| PhysicalFsid::held(directory.as_fd())? != Some(identity.physical_fsid)
-		|| !acl::has_explicit_empty_acl(directory.as_fd())?
+		|| !materialized(ObjectFlags::from_raw(stat.st_flags))
+		|| !managed_mount
 	{
 		return Err(ManagedReadError::UnsupportedNamespace);
 	}
+	identity.observe(directory)?;
+	if !acl::has_explicit_empty_acl(directory)? {
+		return Err(ManagedReadError::UnsupportedNamespace);
+	}
 	Ok(())
+}
+
+fn materialized(flags: ObjectFlags) -> bool {
+	!flags.is_firmlink() && !flags.is_dataless()
 }
 
 fn provisioned_path_components(path: &Path) -> Result<&[u8], ManagedReadError> {
@@ -372,17 +371,22 @@ fn open_provisioned_directory(relative: &[u8]) -> Result<File, ManagedReadError>
 	Ok(directory.into())
 }
 
-fn capture_directory(directory: &File) -> Result<DirectoryIdentity, ManagedReadError> {
+fn capture_directory(directory: impl AsFd) -> Result<DirectoryIdentity, ManagedReadError> {
+	let directory = directory.as_fd();
 	let flags = fs::fcntl_getfl(directory)?;
 	let stat = fs::fstat(directory)?;
 	if flags.intersection(OFlags::ACCMODE) != OFlags::RDONLY
 		|| flags.contains(EVENT_ONLY)
 		|| FileType::from_raw_mode(stat.st_mode) != FileType::Directory
-		|| stat.st_flags & UNSUPPORTED_OBJECT_FLAGS != 0
+		|| !materialized(ObjectFlags::from_raw(stat.st_flags))
 	{
 		return Err(ManagedReadError::UnsupportedNamespace);
 	}
-	let physical_fsid =
-		PhysicalFsid::held(directory.as_fd())?.ok_or(ManagedReadError::UnsupportedNamespace)?;
-	DirectoryIdentity::from_stat(&stat, physical_fsid)
+	// Keep the original access/type observations tied to the companion identity.
+	let observed = ObjectIdentity::held(directory).map_err(error::root_identity_error)?;
+	let identity = DirectoryIdentity::from_mounted(&observed);
+	if !identity.matches_stat(&stat) {
+		return Err(ManagedReadError::UnsupportedNamespace);
+	}
+	Ok(identity)
 }

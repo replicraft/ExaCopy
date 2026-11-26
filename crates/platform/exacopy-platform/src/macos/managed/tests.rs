@@ -11,7 +11,7 @@ use rustix::fs::{FlockOperation, flock};
 use rustix::io::Errno;
 
 use super::acl;
-use crate::macos::{ManagedReadError, ManagedReadGrant, ManagedReadRoot};
+use crate::macos::{ManagedReadError, ManagedReadGrant, ManagedReadRoot, ManagedSourceName};
 
 mod native_read_view;
 
@@ -73,6 +73,10 @@ fn name(bytes: &[u8]) -> UnixComponent<'_> {
 	UnixComponent::new(bytes).expect("valid one-component fixture name")
 }
 
+fn source_name(bytes: &[u8]) -> ManagedSourceName<'_> {
+	ManagedSourceName::new(name(bytes)).expect("prepare managed source name")
+}
+
 #[test]
 fn reads_exact_bounded_ranges_from_positively_admitted_apfs_fixture() {
 	let fixture = Fixture::new();
@@ -80,9 +84,8 @@ fn reads_exact_bounded_ranges_from_positively_admitted_apfs_fixture() {
 	fixture.make_file("data", b"prefix suffix");
 	fixture.make_file("empty", b"");
 	let root = fixture.bind().expect("admit isolated local APFS fixture");
-	let file = root
-		.open_regular(name(b"data"))
-		.expect("open private regular file");
+	let name = source_name(b"data");
+	let file = root.open_regular(&name).expect("open private regular file");
 	let mut bytes = [0; 13];
 	file.read_exact_at(0, &mut bytes)
 		.expect("read exact whole file");
@@ -102,7 +105,7 @@ fn reads_exact_bounded_ranges_from_positively_admitted_apfs_fixture() {
 		));
 		assert_eq!(buffer, [0xab; 6]);
 	}
-	root.open_regular(name(b"empty"))
+	root.open_regular(&source_name(b"empty"))
 		.expect("open empty file")
 		.read_exact_at(0, &mut [])
 		.expect("read zero-byte file");
@@ -170,14 +173,14 @@ fn refuses_links_nonregular_entries_and_inexact_names() {
 	] {
 		assert!(
 			matches!(
-				root.open_regular(name(child)),
+				root.open_regular(&source_name(child)),
 				Err(ManagedReadError::UnsupportedChild)
 			),
 			"{child:?}"
 		);
 	}
 	assert!(matches!(
-		root.open_regular(name(b"missing")),
+		root.open_regular(&source_name(b"missing")),
 		Err(ManagedReadError::Missing)
 	));
 	for rejected in [b"../data".as_slice(), b".", b"..", b"/data", b"data\0"] {
@@ -191,9 +194,8 @@ fn revalidates_root_privacy_and_source_metadata_before_read() {
 	fixture.install_empty_acl();
 	fixture.make_file("private", b"source");
 	let root = fixture.bind().expect("admit isolated local APFS fixture");
-	let file = root
-		.open_regular(name(b"private"))
-		.expect("open private regular file");
+	let name = source_name(b"private");
+	let file = root.open_regular(&name).expect("open private regular file");
 	fs::set_permissions(&fixture.0, fs::Permissions::from_mode(0o750))
 		.expect("change synthetic root mode");
 	let mut bytes = [0; 6];
@@ -234,8 +236,9 @@ fn held_parent_pins_lookup_after_its_path_is_replaced() {
 		.create(&original)
 		.expect("create replacement directory");
 	symlink("missing", original.join("child")).expect("install replacement symlink");
+	let name = source_name(b"child");
 	let file = root
-		.open_regular(name(b"child"))
+		.open_regular(&name)
 		.expect("open beneath held original directory");
 	let mut bytes = [0; 8];
 	file.read_exact_at(0, &mut bytes)
@@ -249,9 +252,8 @@ fn revalidation_rejects_selected_child_rebind() {
 	fixture.install_empty_acl();
 	fixture.make_file("data", b"original");
 	let root = fixture.bind().expect("admit isolated local APFS fixture");
-	let file = root
-		.open_regular(name(b"data"))
-		.expect("open private regular file");
+	let name = source_name(b"data");
+	let file = root.open_regular(&name).expect("open private regular file");
 	fs::rename(fixture.0.join("data"), fixture.0.join("old-data"))
 		.expect("move synthetic original aside");
 	fixture.make_file("data", b"new file");
@@ -271,9 +273,8 @@ fn outside_principal_mutation_grant_revokes_managed_admission() {
 	let root = fixture
 		.bind()
 		.expect("admit private directory before granting rights");
-	let file = root
-		.open_regular(name(b"source"))
-		.expect("hold synthetic source");
+	let name = source_name(b"source");
+	let file = root.open_regular(&name).expect("hold synthetic source");
 
 	assert!(
 		Command::new("/bin/chmod")
@@ -334,7 +335,7 @@ fn outside_principal_mutation_grant_revokes_managed_admission() {
 		Err(ManagedReadError::UnsupportedNamespace)
 	));
 	assert!(matches!(
-		root.open_regular(name(b"source")),
+		root.open_regular(&source_name(b"source")),
 		Err(ManagedReadError::UnsupportedNamespace)
 	));
 	let mut bytes = [0xab; 6];
@@ -371,7 +372,8 @@ fn shared_root_leases_allow_parallel_readers_and_exclude_cooperating_writers() {
 		flock(&writer, FlockOperation::NonBlockingLockExclusive),
 		Err(Errno::AGAIN)
 	);
-	let read = first.open_regular(name(b"file")).expect("open held source");
+	let name = source_name(b"file");
+	let read = first.open_regular(&name).expect("open held source");
 	std::thread::scope(|scope| {
 		let left = scope.spawn(|| {
 			let mut bytes = [0; 4];
@@ -389,7 +391,7 @@ fn shared_root_leases_allow_parallel_readers_and_exclude_cooperating_writers() {
 		assert_eq!(right.join().expect("join right"), *b"right");
 	});
 	second
-		.open_regular(name(b"file"))
+		.open_regular(&source_name(b"file"))
 		.expect("open under second shared lease");
 	drop(first);
 	assert_eq!(
@@ -444,9 +446,8 @@ fn logical_eof_revalidation_refuses_observed_appends() {
 	fixture.install_empty_acl();
 	fixture.make_file("empty", b"");
 	let root = fixture.bind().expect("admit valid managed root");
-	let file = root
-		.open_regular(name(b"empty"))
-		.expect("open empty source");
+	let name = source_name(b"empty");
+	let file = root.open_regular(&name).expect("open empty source");
 	assert!(file.is_empty());
 	file.revalidate().expect("observe EOF at offset zero");
 	// Intentional same-principal cooperation violation to exercise detection.

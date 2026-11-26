@@ -1,12 +1,13 @@
 use std::error::Error as _;
 use std::fs::{self, File};
+use std::os::fd::AsFd as _;
 use std::os::unix::fs::MetadataExt as _;
 use std::process::Command;
 
 use exacopy_endpoint::ReadView;
 use rustix::fs::{FlockOperation, flock};
 
-use super::{Fixture, grant, name};
+use super::{Fixture, grant, name, source_name};
 use crate::macos::{BasicMetadataError, ManagedReadError, ManagedReadRoot};
 
 #[test]
@@ -18,8 +19,19 @@ fn positioned_view_binds_ranges_and_reports_a_displaced_name() {
 	let independent = fs::metadata(&path).expect("inspect synthetic file");
 	let root = fixture.bind().expect("admit isolated APFS fixture");
 	let requested = name(b"source");
-	let file = root.open_regular(requested).expect("open managed source");
+	let selected = source_name(b"source");
+	let file = root.open_regular(&selected).expect("open managed source");
 	let identities = file.observe_identities().expect("observe held identities");
+	// Check the unchanged signed-identity projection against the legacy
+	// native stat projection on this independently opened fixture.
+	let descriptor = File::open(&path).expect("open identity oracle");
+	let stat = rustix::fs::fstat(&descriptor).expect("observe stat identity");
+	let fsid = super::super::PhysicalFsid::held(descriptor.as_fd())
+		.expect("observe real FSID")
+		.expect("physical identity available");
+	let legacy = super::super::ManagedObjectIdentity::from_stat(&stat, fsid)
+		.expect("project legacy signed identity fields");
+	assert_eq!(identities.file, legacy);
 	assert_eq!(identities.file.inode().get(), independent.ino());
 	assert_eq!(
 		identities.parent.inode().get(),
@@ -67,8 +79,9 @@ fn strict_metadata_entry_points_refuse_a_visible_user_attribute() {
 			.success()
 	);
 	let root = fixture.bind().expect("admit isolated APFS fixture");
+	let selected = source_name(b"source");
 	let file = root
-		.open_regular(name(b"source"))
+		.open_regular(&selected)
 		.expect("observe data stream under the managed read contract");
 
 	for result in [
@@ -117,7 +130,7 @@ fn refuses_a_nondirectory_import_and_preserves_the_native_child_open_error() {
 	let native_error = File::open(&path).expect_err("the native ACL must deny reads");
 	assert_eq!(native_error.raw_os_error(), Some(libc::EACCES));
 	let error = root
-		.open_regular(name(b"source"))
+		.open_regular(&source_name(b"source"))
 		.expect_err("managed read must preserve an OS denial");
 	assert!(matches!(error, ManagedReadError::System(_)));
 	let source = error.source().expect("preserve the native error");
@@ -128,14 +141,37 @@ fn refuses_a_nondirectory_import_and_preserves_the_native_child_open_error() {
 }
 
 #[test]
-fn dropping_a_reader_releases_its_lease_with_a_transient_descriptor_alias() {
+fn dropping_a_reader_releases_its_lease_with_a_root_descriptor_alias() {
 	let fixture = Fixture::new();
 	fixture.install_empty_acl();
 	let writer = fixture.open();
 	let root = fixture.bind().expect("hold the shared root lease");
-	// A concurrent fork can retain the open description briefly before CLOEXEC.
-	let alias = root.directory.try_clone().expect("duplicate lease fd");
+	// The companion lease has an independent descriptor. An alias of the
+	// observed root retains neither ownership nor the advisory lock.
+	let alias = root
+		.directory
+		.as_fd()
+		.try_clone_to_owned()
+		.expect("duplicate root fd");
 	drop(root);
 	flock(&writer, FlockOperation::NonBlockingLockExclusive).expect("reader released its lease");
 	drop(alias);
+}
+
+#[test]
+fn a_large_request_crosses_native_chunks_without_changing_the_read_contract() {
+	let fixture = Fixture::new();
+	fixture.install_empty_acl();
+	let boundary = apfs_mounted::source::MAX_READ_BYTES;
+	let mut expected = vec![0x27; boundary + 17];
+	expected[boundary - 1..].fill(0x84);
+	fixture.make_file("source", &expected);
+	let root = fixture.bind().expect("admit isolated APFS fixture");
+	let requested = source_name(b"source");
+	let file = root.open_regular(&requested).expect("open pinned source");
+	let mut observed = vec![0; expected.len()];
+	file.read_exact_at(0, &mut observed)
+		.expect("cross the native request boundary");
+	assert_eq!(observed, expected);
+	file.revalidate().expect("observe exact EOF");
 }

@@ -11,14 +11,32 @@ pub(super) fn has_explicit_empty_acl(fd: BorrowedFd<'_>) -> io::Result<bool> {
 
 // Use only for an exclusively created child on the positively admitted APFS volume.
 pub(super) fn has_no_stage_acl_entries(fd: BorrowedFd<'_>) -> io::Result<bool> {
+	stage_security(metadata::extended_security(
+		fd,
+		metadata::MAX_EXTENDED_SECURITY_BYTES,
+	))
+}
+
+pub(super) fn stage_security(
+	security: Result<ExtendedSecurity, ObservationError>,
+) -> io::Result<bool> {
 	Ok(matches!(
-		descriptor_security(fd)?,
+		classify_security(security)?,
 		AclObservation::Absent | AclObservation::ExplicitEmpty { .. }
 	))
 }
 
 pub(super) fn has_basic_acl(fd: BorrowedFd<'_>) -> io::Result<bool> {
-	Ok(descriptor_security(fd)?.is_basic_acl())
+	basic_security(metadata::extended_security(
+		fd,
+		metadata::MAX_EXTENDED_SECURITY_BYTES,
+	))
+}
+
+pub(super) fn basic_security(
+	security: Result<ExtendedSecurity, ObservationError>,
+) -> io::Result<bool> {
+	Ok(classify_security(security)?.is_basic_acl())
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -67,7 +85,16 @@ impl AclObservation {
 }
 
 fn descriptor_security(fd: BorrowedFd<'_>) -> io::Result<AclObservation> {
-	match metadata::extended_security(fd, metadata::MAX_EXTENDED_SECURITY_BYTES) {
+	classify_security(metadata::extended_security(
+		fd,
+		metadata::MAX_EXTENDED_SECURITY_BYTES,
+	))
+}
+
+fn classify_security(
+	observation: Result<ExtendedSecurity, ObservationError>,
+) -> io::Result<AclObservation> {
+	match observation {
 		Ok(security) => Ok(AclObservation::from_security(security)),
 		Err(ObservationError::Malformed(_) | ObservationError::Limit { .. }) => {
 			Ok(AclObservation::Ineligible)

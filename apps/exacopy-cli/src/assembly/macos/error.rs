@@ -152,6 +152,10 @@ impl fmt::Display for StageTransferFailure {
 			}
 			Self::AdmitMetadata(error) => write!(formatter, "source metadata refused ({error})"),
 			Self::ApplyMetadata(error) => write!(formatter, "stage metadata failed ({error})"),
+			Self::Copy(CopyMeasureError::Read { offset, source }) => write!(
+				formatter,
+				"source range beginning at byte {offset} could not be read: {source}"
+			),
 			Self::Copy(error) => error.fmt(formatter),
 			Self::CloseStage(error) => {
 				write!(formatter, "stage barrier or closure failed ({error})")
@@ -185,4 +189,16 @@ impl Error for StageTransferFailure {
 			| Self::DigestMismatch { .. } => None,
 		}
 	}
+}
+
+#[test]
+fn source_copy_diagnostic_names_the_start_of_the_requested_range() {
+	let failure = StageTransferFailure::Copy(CopyMeasureError::Read {
+		offset: 4096,
+		source: ManagedReadError::SourceChanged,
+	});
+	assert_eq!(
+		failure.to_string(),
+		"source range beginning at byte 4096 could not be read: selected child's identity or metadata changed"
+	);
 }

@@ -1,5 +1,9 @@
 use std::{fmt, io};
 
+use apfs_mounted::InvalidEntryName;
+use apfs_mounted::dataless::{ScopeError, with_materialization_disabled};
+use apfs_mounted::identity::IdentityError;
+use apfs_mounted::writer::{LifecycleEffect, WriterError};
 use exacopy_endpoint::IoError;
 use rustix::io::Errno;
 
@@ -22,6 +26,8 @@ pub enum StageError {
 	JobBindingMismatch,
 	/// The stage name or public target already has an occupant.
 	NameCollision,
+	/// The name could not be admitted to the mounted namespace.
+	Name(InvalidEntryName),
 	/// A creation may have occurred. Reconcile the retained private name before retrying.
 	CreateUncertain {
 		/// The attempt identity allocated before the create syscall.
@@ -61,6 +67,14 @@ pub enum StageError {
 	FileBarrier(io::Error),
 	/// Closing the write descriptor failed. The private stage requires reconciliation.
 	CloseWriter(io::Error),
+	/// The new stage was created, but the adapter's ACL or identity recheck failed.
+	CreatedUnverified(Box<StageError>),
+	/// The writer closed, but the adapter's lease or identity recheck failed.
+	ClosedUnverified(Box<StageError>),
+	/// Final timestamps were installed, but required metadata could not be confirmed.
+	MetadataUnverified(Box<StageError>),
+	/// A mounted operation failed with retained lifecycle and effect evidence.
+	Mounted(WriterError),
 	/// A descriptor-relative filesystem operation failed.
 	System(io::Error),
 }
@@ -76,6 +90,7 @@ impl fmt::Display for StageError {
 			}
 			Self::JobBindingMismatch => formatter.write_str("stage context names a different job"),
 			Self::NameCollision => formatter.write_str("stage or target name is occupied"),
+			Self::Name(error) => write!(formatter, "stage name is invalid ({error})"),
 			Self::CreateUncertain { source, .. } => {
 				write!(
 					formatter,
@@ -111,6 +126,17 @@ impl fmt::Display for StageError {
 				formatter,
 				"could not confirm stage writer closure ({error})"
 			),
+			Self::CreatedUnverified(error) => {
+				write!(formatter, "created stage could not be confirmed ({error})")
+			}
+			Self::ClosedUnverified(error) => {
+				write!(formatter, "closed stage could not be confirmed ({error})")
+			}
+			Self::MetadataUnverified(error) => write!(
+				formatter,
+				"stage final metadata could not be confirmed ({error})"
+			),
+			Self::Mounted(error) => write!(formatter, "mounted stage operation failed ({error})"),
 			Self::System(error) => write!(formatter, "stage descriptor operation failed ({error})"),
 		}
 	}
@@ -120,6 +146,11 @@ impl std::error::Error for StageError {
 	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
 		match self {
 			Self::Managed(error) => Some(error),
+			Self::Name(error) => Some(error),
+			Self::Mounted(error) => Some(error),
+			Self::CreatedUnverified(error)
+			| Self::ClosedUnverified(error)
+			| Self::MetadataUnverified(error) => Some(error.as_ref()),
 			Self::BasicMetadata(error) => Some(error),
 			Self::CreateUncertain { source, .. } => Some(source.as_ref()),
 			Self::Write(error) | Self::Read(error) => Some(error),
@@ -130,6 +161,49 @@ impl std::error::Error for StageError {
 			| Self::System(error) => Some(error),
 			_ => None,
 		}
+	}
+}
+
+impl From<WriterError> for StageError {
+	fn from(error: WriterError) -> Self {
+		match error {
+			WriterError::Occupied => Self::NameCollision,
+			WriterError::Changed
+			| WriterError::NotPrivate
+			| WriterError::Identity(IdentityError::Changed) => Self::StageChanged,
+			WriterError::WrongProcess => Self::WrongProcess,
+			WriterError::InvalidRange => Self::InvalidRange,
+			WriterError::Retired => Self::WriterRetired,
+			WriterError::Incomplete => Self::Incomplete,
+			WriterError::UnexpectedDataAfterEnd => Self::UnexpectedDataAfterEnd,
+			WriterError::Barrier(error) => Self::FileBarrier(error.error),
+			WriterError::Close(error) => Self::CloseWriter(error),
+			error => Self::Mounted(error),
+		}
+	}
+}
+
+pub(super) fn with_mounted_effect<T>(
+	effect: LifecycleEffect,
+	operation: impl FnOnce() -> Result<T, StageError>,
+) -> Result<T, StageError> {
+	match with_materialization_disabled(operation) {
+		Ok(outcome) => outcome,
+		Err(ScopeError::Configure { error, restoration }) => {
+			Err(StageError::Mounted(WriterError::Configure {
+				error,
+				restoration,
+			}))
+		}
+		Err(ScopeError::Restore { error, outcome }) => {
+			Err(StageError::Mounted(WriterError::Restore {
+				error,
+				outcome: outcome
+					.map(|_| effect)
+					.map_err(|error| Box::new(WriterError::MetadataRefused(Box::new(error)))),
+			}))
+		}
+		Err(error) => Err(StageError::System(io::Error::other(error.to_string()))),
 	}
 }
 

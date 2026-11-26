@@ -2,15 +2,21 @@ use std::fmt;
 use std::fs::File;
 use std::os::fd::AsFd as _;
 
+use apfs_mounted::metadata::{AccessModificationTimes, Timestamp};
+use apfs_mounted::writer::{
+	BirthTimePolicy, LifecycleEffect, MetadataCheckPhase, MetadataReadyFile, WriterError,
+};
+use apfs_mounted::{EventHandle, ObjectIdentity};
 use exacopy_endpoint::UnixComponent;
 use exacopy_model::CopyBinding;
-use rustix::fs::{self, OFlags, Stat};
+use rustix::fs::{self, Stat};
 
 use super::super::{
-	BasicMetadata, EVENT_ONLY, ManagedObjectIdentity, ManagedRegularFile, file::same_observation,
-	metadata, with_materialization_disabled,
+	BasicMetadata, ManagedObjectIdentity, ManagedRegularFile, file::same_observation, metadata,
+	with_materialization_disabled,
 };
-use super::file::StageLocation;
+use super::error::with_mounted_effect;
+use super::file::{StageLocation, check_stage_view_acl};
 use super::{ClosedStage, StageError, StageIdentity};
 
 impl<'stage> ClosedStage<'stage> {
@@ -28,49 +34,48 @@ impl<'stage> ClosedStage<'stage> {
 		self,
 		source: &ManagedRegularFile<'_>,
 	) -> Result<MetadataReadyStage<'stage>, StageError> {
-		with_materialization_disabled(|| {
+		with_mounted_effect(LifecycleEffect::TimesApplied, || {
 			let metadata = source.check_basic_metadata_with_policy()?;
-			self.location.check_observation(&self.observed)?;
-			if self.length() != source.length()
-				|| metadata.uid() != self.observed.st_uid
-				|| metadata.gid() != self.observed.st_gid
-			{
+			if self.length() != source.length() {
 				return Err(StageError::MetadataMismatch);
 			}
-
-			let reader = self.location.reopen_read_only()?;
-			let flags = fs::fcntl_getfl(&reader)?;
-			if flags.intersection(OFlags::ACCMODE) != OFlags::RDONLY || flags.contains(EVENT_ONLY) {
-				return Err(StageError::StageChanged);
-			}
-			self.location.check_descriptor(&reader, &self.observed)?;
-			metadata::check_inventory(reader.as_fd())?;
-			self.location.check_observation(&self.observed)?;
-
-			fs::futimens(&reader, &metadata.times())
-				.map_err(|error| StageError::SetMetadata(error.into()))?;
-
-			let observed = fs::fstat(&reader)?;
-			let mut expected = self.observed;
-			expected.st_ctime = observed.st_ctime;
-			expected.st_ctime_nsec = observed.st_ctime_nsec;
-			expected.st_mtime = observed.st_mtime;
-			expected.st_mtime_nsec = observed.st_mtime_nsec;
-			if !same_observation(&observed, &expected) || !metadata.matches(&observed) {
-				return Err(StageError::StageChanged);
-			}
-			let ready = MetadataReadyStage {
-				location: self.location,
-				observed,
-				metadata,
-				reader,
+			let times = AccessModificationTimes {
+				access: mounted_timestamp(metadata.atime())?,
+				modification: mounted_timestamp(metadata.mtime())?,
 			};
-			ready.check_current_with_policy()?;
-			fs::fcntl_fullfsync(&ready.reader)
-				.map_err(|error| StageError::FileBarrier(error.into()))?;
-			ready.check_current_with_policy()?;
-			source.check_basic_metadata_with_policy()?;
-			Ok(ready)
+			self.closed.with_metadata(check_stage_view_acl)??;
+			let reader = self.location.open_metadata_handle(self.closed.identity())?;
+			let location = self.location;
+			let mounted = self.closed.apply_times_checked(
+				times,
+				BirthTimePolicy::Preserve,
+				|phase, view| {
+					location.check_current().map_err(refuse_metadata)?;
+					let stat = view.stat()?;
+					if stat.uid != metadata.uid() || stat.gid != metadata.gid() {
+						return Err(refuse_metadata(StageError::MetadataMismatch));
+					}
+					if phase != MetadataCheckPhase::BeforeUpdate && stat.times != times {
+						return Err(WriterError::TimesMismatch);
+					}
+					metadata::check_view_inventory(&view)
+						.map_err(|error| refuse_metadata(error.into()))
+				},
+			)?;
+			let verified = || {
+				let observed = fs::fstat(&reader)?;
+				let ready = MetadataReadyStage {
+					location,
+					observed,
+					metadata,
+					reader,
+					mounted,
+				};
+				ready.check_current_with_policy()?;
+				source.check_basic_metadata_with_policy()?;
+				Ok(ready)
+			};
+			verified().map_err(|error| StageError::MetadataUnverified(Box::new(error)))
 		})
 	}
 }
@@ -81,7 +86,8 @@ impl<'stage> ClosedStage<'stage> {
 /// available to the adapter for metadata observations of the same physical inode.
 pub struct MetadataReadyStage<'stage> {
 	pub(in super::super) location: StageLocation<'stage>,
-	pub(in super::super) observed: Stat,
+	observed: Stat,
+	mounted: MetadataReadyFile<'stage>,
 	metadata: BasicMetadata,
 	reader: File,
 }
@@ -96,13 +102,13 @@ impl MetadataReadyStage<'_> {
 	/// Returns the private stage identity.
 	#[must_use]
 	pub fn identity(&self) -> StageIdentity {
-		self.location.identity()
+		self.location.identity
 	}
 
 	/// Returns the declared unnamed-stream extent in bytes.
 	#[must_use]
 	pub fn length(&self) -> u64 {
-		self.location.length()
+		self.location.length
 	}
 
 	/// Reports whether the declared unnamed stream was empty.
@@ -114,7 +120,7 @@ impl MetadataReadyStage<'_> {
 	/// Returns the checked public target component fixed at creation.
 	#[must_use]
 	pub fn target(&self) -> UnixComponent<'_> {
-		self.location.target()
+		self.location.target
 	}
 
 	/// Returns the required metadata confirmed through held and named observations.
@@ -127,25 +133,30 @@ impl MetadataReadyStage<'_> {
 	/// # Errors
 	/// Refuses changed or unavailable observations.
 	pub fn observe_identity(&self) -> Result<ManagedObjectIdentity, StageError> {
-		with_materialization_disabled(|| self.check_current_with_policy())?;
-		self.location.observe_identity(&self.observed)
+		with_materialization_disabled(|| {
+			self.check_current_with_policy()?;
+			self.location.observe_identity(self.mounted.identity())
+		})
+	}
+
+	pub(in super::super) fn mounted_identity(&self) -> &ObjectIdentity {
+		self.mounted.identity()
+	}
+
+	pub(in super::super) fn event_handle(&self) -> &EventHandle {
+		self.mounted.event_handle()
 	}
 
 	pub(in super::super) fn check_current_with_policy(&self) -> Result<(), StageError> {
-		self.location.check_observation(&self.observed)?;
-		self.location
-			.check_descriptor(&self.reader, &self.observed)?;
-		metadata::check_inventory(self.reader.as_fd())?;
-		for stat in [
-			fs::fstat(&self.reader)?,
-			self.location.held_stat()?,
-			self.location.named_stat()?,
-		] {
-			if !same_observation(&stat, &self.observed) || !self.metadata.matches(&stat) {
-				return Err(StageError::StageChanged);
-			}
+		self.location.observe_identity(self.mounted.identity())?;
+		self.mounted
+			.with_metadata(|view| Ok(metadata::check_view_inventory(&view)))??;
+		let observed = self.check_published_descriptor()?;
+		if same_observation(&observed, &self.observed) {
+			Ok(())
+		} else {
+			Err(StageError::StageChanged)
 		}
-		Ok(())
 	}
 
 	// The namespace effect may change ctime while the required timestamps and inode stay fixed.
@@ -157,19 +168,35 @@ impl MetadataReadyStage<'_> {
 	}
 
 	pub(in super::super) fn check_published_descriptor(&self) -> Result<Stat, StageError> {
+		let identity = self.mounted.identity();
+		identity
+			.revalidate_held(&self.reader)
+			.map_err(WriterError::from)?;
+		identity
+			.revalidate_held(self.event_handle())
+			.map_err(WriterError::from)?;
 		let stat = fs::fstat(&self.reader)?;
 		if !self.matches_published_stat(&stat) {
 			return Err(StageError::StageChanged);
 		}
-		self.location.check_descriptor(&self.reader, &stat)?;
 		metadata::check_inventory(self.reader.as_fd())?;
-		for held in [fs::fstat(&self.reader)?, self.location.held_stat()?] {
+		for held in [fs::fstat(&self.reader)?, fs::fstat(self.event_handle())?] {
 			if !same_observation(&held, &stat) || !self.metadata.matches(&held) {
 				return Err(StageError::StageChanged);
 			}
 		}
 		Ok(stat)
 	}
+}
+
+fn refuse_metadata(error: StageError) -> WriterError {
+	WriterError::MetadataRefused(Box::new(error))
+}
+
+fn mounted_timestamp(value: super::super::ManagedTimestamp) -> Result<Timestamp, StageError> {
+	Timestamp::new(value.seconds(), value.nanoseconds().into()).ok_or(StageError::BasicMetadata(
+		super::super::BasicMetadataError::Timestamp,
+	))
 }
 
 impl fmt::Debug for MetadataReadyStage<'_> {

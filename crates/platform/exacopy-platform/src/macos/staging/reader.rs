@@ -3,10 +3,11 @@ use std::fs::File;
 use std::io;
 use std::os::unix::fs::FileExt as _;
 
-use exacopy_endpoint::{MAX_INTERRUPTED_RETRIES, ReadView, read_exact_at};
+use apfs_mounted::writer::ReadBack;
+use exacopy_endpoint::{MAX_INTERRUPTED_RETRIES, ReadView};
 
 use super::super::with_materialization_disabled;
-use super::file::bounded_end;
+use super::file::{bounded_end, check_stage_view_acl};
 use super::{ClosedStage, StageError};
 
 impl ClosedStage<'_> {
@@ -15,15 +16,15 @@ impl ClosedStage<'_> {
 	/// # Errors
 	/// Refuses an unsafe or changed name, stage or root and reports failed opens or policy checks.
 	pub fn open_read_back(&self) -> Result<StageReader<'_>, StageError> {
-		self.location.check_process()?;
 		with_materialization_disabled(|| {
-			self.location.check_observation(&self.observed)?;
-			let reader = StageReader {
+			self.location.check_current()?;
+			let read_back = self.closed.open_read_back()?;
+			read_back.with_metadata(check_stage_view_acl)??;
+			self.location.check_current()?;
+			Ok(StageReader {
 				stage: self,
-				file: self.location.reopen_read_only()?,
-			};
-			reader.check_current()?;
-			Ok(reader)
+				read_back,
+			})
 		})
 	}
 }
@@ -31,7 +32,7 @@ impl ClosedStage<'_> {
 /// Independent, read-only handle for positioned read-back of the closed stage.
 pub struct StageReader<'stage> {
 	stage: &'stage ClosedStage<'stage>,
-	file: File,
+	read_back: ReadBack<'stage>,
 }
 
 impl StageReader<'_> {
@@ -40,15 +41,13 @@ impl StageReader<'_> {
 	/// # Errors
 	/// A failed check or read may leave a partially updated buffer, which the caller must discard.
 	pub fn read_exact_at(&self, offset: u64, buffer: &mut [u8]) -> Result<(), StageError> {
-		self.stage.location.check_process()?;
 		bounded_end(offset, buffer.len(), self.stage.length())?;
 		with_materialization_disabled(|| {
-			self.check_current()?;
-			read_exact_at(offset, buffer, |position, remaining| {
-				self.file.read_at(remaining, position)
-			})
-			.map_err(StageError::Read)?;
-			self.check_current()
+			self.stage.location.check_current()?;
+			self.read_back.with_metadata(check_stage_view_acl)??;
+			self.read_back.read_exact_at(offset, buffer)?;
+			self.read_back.with_metadata(check_stage_view_acl)??;
+			self.stage.location.check_current()
 		})
 	}
 
@@ -57,23 +56,17 @@ impl StageReader<'_> {
 	/// # Errors
 	/// Rejects changed identity or metadata, unexpected extra data, and I/O or policy failures.
 	pub fn revalidate(&self) -> Result<(), StageError> {
-		self.stage.location.check_process()?;
 		with_materialization_disabled(|| {
-			self.check_current()?;
-			check_logical_eof(&self.file, self.stage.length())?;
-			self.check_current()
+			self.stage.location.check_current()?;
+			self.read_back.with_metadata(check_stage_view_acl)??;
+			self.read_back.revalidate()?;
+			self.read_back.with_metadata(check_stage_view_acl)??;
+			self.stage.location.check_current()
 		})
 	}
-
-	fn check_current(&self) -> Result<(), StageError> {
-		self.stage
-			.location
-			.check_observation(&self.stage.observed)?;
-		self.stage
-			.location
-			.check_descriptor(&self.file, &self.stage.observed)
-	}
 }
+
+// Restart recovery has no live ClosedFile capability to reopen through.
 
 pub(super) fn check_logical_eof(file: &File, length: u64) -> Result<(), StageError> {
 	let mut retries = MAX_INTERRUPTED_RETRIES;

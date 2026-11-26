@@ -1,5 +1,7 @@
 use std::num::{NonZeroU32, NonZeroU64};
 
+use apfs_mounted::ObjectIdentity;
+use apfs_mounted::source::SourceTimestamp;
 use rustix::fs::Stat;
 
 use super::PhysicalFsid;
@@ -18,6 +20,13 @@ impl ManagedTimestamp {
 			seconds,
 			nanoseconds,
 		})
+	}
+
+	pub(super) const fn from_mounted_source(timestamp: SourceTimestamp) -> Self {
+		Self {
+			seconds: timestamp.seconds,
+			nanoseconds: timestamp.nanoseconds,
+		}
 	}
 
 	/// Returns the whole seconds relative to the Unix epoch.
@@ -59,6 +68,20 @@ impl ManagedObjectIdentity {
 			generation: NonZeroU32::new(stat.st_gen),
 			birth: ManagedTimestamp::from_stat_parts(stat.st_birthtime, stat.st_birthtime_nsec)?,
 		})
+	}
+
+	pub(super) fn from_mounted(identity: &ObjectIdentity) -> Self {
+		let birth = identity.birth();
+		Self {
+			device: identity.device(),
+			physical_fsid: PhysicalFsid::from_mounted(identity),
+			inode: identity.inode(),
+			generation: identity.generation(),
+			birth: ManagedTimestamp {
+				seconds: birth.seconds(),
+				nanoseconds: birth.nanoseconds(),
+			},
+		}
 	}
 
 	/// Returns the signed native device value for the held object.

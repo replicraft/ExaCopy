@@ -87,9 +87,10 @@ fn stage_and_target_distinguish_held_regular_inodes_with_separate_identities() {
 	let (directory_identity, staged_identity) = {
 		let job = container.create_job_directory(job_name()).unwrap();
 		let stage = job.create_stage_directory().unwrap();
+		let selected = crate::macos::staging::ManagedStageName::new(staged_name).unwrap();
 		let mut writer = stage
 			.create_file(
-				staged_name,
+				&selected,
 				target_name,
 				job_context(),
 				STAGE_BYTES.len() as u64,

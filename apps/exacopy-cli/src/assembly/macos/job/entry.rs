@@ -7,7 +7,7 @@ use exacopy_journal::{
 use exacopy_platform::macos::ManagedRegularFile;
 use exacopy_platform::macos::staging::jobs::{JobDirectory, JobName};
 use exacopy_platform::macos::staging::{
-	StageBindingContext, StageDirectory, StageError, WriteStage,
+	ManagedStageName, StageBindingContext, StageDirectory, StageError, WriteStage,
 };
 use exacopy_transfer::macos::job::entry::publish::{PublicationAttempt, PublicationJournal};
 use exacopy_transfer::macos::job::entry::{
@@ -116,7 +116,9 @@ impl PreparedDarwinJob<'_> {
 			check,
 			|| self.job.create_stage_directory(),
 		)?;
-		let held = HeldStageDirectory(&stage);
+		let name = ManagedStageName::new(request.stage_component())
+			.map_err(EntryPreparationFailure::Stage)?;
+		let held = HeldStageDirectory(&stage, name);
 		let prepared = entry::prepare(request, &self.preparation, &held, &mut self.journal)?;
 		let mut entry = PreparedDarwinEntry {
 			attempt: PublicationAttempt::new(publish::NativePreparedCopy::new(
@@ -134,7 +136,7 @@ impl PreparedDarwinJob<'_> {
 	}
 }
 
-struct HeldStageDirectory<'stage>(&'stage StageDirectory<'stage>);
+struct HeldStageDirectory<'stage>(&'stage StageDirectory<'stage>, ManagedStageName<'stage>);
 
 impl PrivateStage for HeldStageDirectory<'_> {
 	type Error = StageError;
@@ -147,10 +149,13 @@ impl PrivateStage for HeldStageDirectory<'_> {
 		&'stage self,
 		request: &StageRequest<'stage>,
 	) -> Result<ObservedStage<Self::Writer<'stage>>, StageAdmissionFailure<Self::Error>> {
+		if self.1.component() != request.component {
+			return Err(StageAdmissionFailure::Adapter(StageError::StageChanged));
+		}
 		let context = StageBindingContext::new(request.job, request.entry, request.epoch);
 		let writer = self
 			.0
-			.create_file(request.component, request.target, context, request.length)
+			.create_file(&self.1, request.target, context, request.length)
 			.map_err(StageAdmissionFailure::Adapter)?;
 		let observed_file = writer
 			.observe_identity()

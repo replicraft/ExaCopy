@@ -1,11 +1,14 @@
-use std::ffi::CString;
+#[cfg(test)]
 use std::fs::File;
 use std::io;
 use std::os::fd::AsFd as _;
 
+use apfs_mounted::EntryName;
+use apfs_mounted::publication::{
+	RenameAttempt, RenameEvidence, RenamedEntry, attempt_exclusive_rename, sync_directories,
+};
 use exacopy_model::PublishNoClobber;
 use rustix::fs::{self, AtFlags};
-use rustix::io::Errno;
 
 use super::super::file::same_observation;
 use super::super::staging::MetadataReadyStage;
@@ -15,7 +18,7 @@ use super::super::{
 use super::evidence::PublicationObservation;
 use super::{
 	DirectoryBarrierFailures, PublishError, PublishRejection, PublishedFile,
-	PublishedObservationError, native,
+	PublishedObservationError,
 };
 
 impl MetadataReadyStage<'_> {
@@ -36,15 +39,32 @@ impl MetadataReadyStage<'_> {
 		self,
 		authorization: PublishNoClobber,
 	) -> Result<PublishedFile, PublishError> {
-		self.publish_with_barriers(authorization, |directory| {
-			fs::fsync(directory).map_err(Into::into)
+		self.publish_with(authorization, |location| {
+			let barriers = sync_directories(location.directory(), location.destination());
+			DirectoryBarrierFailures::from_results(
+				barriers.source.map_err(|error| error.error),
+				barriers.destination.map_err(|error| error.error),
+			)
 		})
 	}
 
+	#[cfg(test)]
 	pub(super) fn publish_with_barriers(
 		self,
 		authorization: PublishNoClobber,
 		mut sync: impl FnMut(&File) -> io::Result<()>,
+	) -> Result<PublishedFile, PublishError> {
+		self.publish_with(authorization, |location| {
+			let stage = sync(location.stage_file());
+			let destination = sync(location.destination_file());
+			DirectoryBarrierFailures::from_results(stage, destination)
+		})
+	}
+
+	fn publish_with(
+		self,
+		authorization: PublishNoClobber,
+		sync: impl FnOnce(&super::super::staging::StageLocation<'_>) -> Option<DirectoryBarrierFailures>,
 	) -> Result<PublishedFile, PublishError> {
 		if authorization.binding() != self.binding() {
 			return Err(PublishError::Rejected {
@@ -54,7 +74,7 @@ impl MetadataReadyStage<'_> {
 		}
 		let mut attempt = None;
 		let policy = with_materialization_disabled(|| {
-			attempt = Some(self.attempt_rename(&mut sync));
+			attempt = Some(self.attempt_rename(sync));
 			Ok::<(), ManagedReadError>(())
 		});
 		finish_attempt(attempt, policy)
@@ -62,54 +82,58 @@ impl MetadataReadyStage<'_> {
 
 	fn attempt_rename(
 		&self,
-		sync: &mut impl FnMut(&File) -> io::Result<()>,
+		sync: impl FnOnce(&super::super::staging::StageLocation<'_>) -> Option<DirectoryBarrierFailures>,
 	) -> Result<RenameOutcome, PublishRejection> {
-		let stage =
-			CString::new(self.location.stage_name().as_bytes()).map_err(PublishRejection::Name)?;
-		let target = CString::new(self.target().as_bytes()).map_err(PublishRejection::Name)?;
-		let stage_dir = self.location.directory().as_fd();
-		let destination_dir = self.location.destination().as_fd();
-		if !volume::supports_exclusive_rename(stage_dir).map_err(PublishRejection::Volume)?
-			|| !volume::supports_exclusive_rename(destination_dir)
+		let target = EntryName::new(self.target().as_bytes()).map_err(PublishRejection::Name)?;
+		let stage_dir = self.location.directory();
+		let destination_dir = self.location.destination();
+		if !volume::supports_exclusive_rename(stage_dir.as_fd())
+			.map_err(PublishRejection::Volume)?
+			|| !volume::supports_exclusive_rename(destination_dir.as_fd())
 				.map_err(PublishRejection::Volume)?
 		{
 			return Err(PublishRejection::ExclusiveRenameUnavailable);
 		}
-		// Leases protect the stage name from cooperating writers between
-		// the final check and rename. Only the syscall checks target absence.
+		// The coordinator has synchronized intent and the leases protect our
+		// source binding. The kernel makes the final occupancy decision.
 		self.check_current_with_policy()
 			.map_err(PublishRejection::Stage)?;
-		match native::rename_exclusively(stage_dir, &stage, destination_dir, &target) {
-			Ok(()) => {
-				let stage_barrier = sync(self.location.directory());
-				let destination_barrier = sync(self.location.destination());
+		match attempt_exclusive_rename(
+			stage_dir,
+			self.location.mounted_name(),
+			destination_dir,
+			&target,
+			self.event_handle(),
+			self.mounted_identity(),
+		) {
+			RenameAttempt::NotAttempted(rejection) => Err(PublishRejection::Mounted(rejection)),
+			RenameAttempt::Conflict => Ok(RenameOutcome::Conflict),
+			RenameAttempt::Uncertain(error) => Ok(RenameOutcome::Uncertain(error)),
+			RenameAttempt::Renamed(renamed) => {
+				let barriers = sync(&self.location);
 				Ok(RenameOutcome::Renamed {
-					barriers: DirectoryBarrierFailures::from_results(
-						stage_barrier,
-						destination_barrier,
-					),
-					observation: self.observe_publication(),
+					barriers,
+					observation: self.observe_publication(&renamed),
 				})
 			}
-			Err(error) if error.raw_os_error() == Some(libc::EEXIST) => Ok(RenameOutcome::Conflict),
-			Err(error) => Ok(RenameOutcome::Uncertain(error)),
+			_ => Ok(RenameOutcome::Uncertain(io::Error::other(
+				"unknown mounted rename result",
+			))),
 		}
 	}
 
-	fn observe_publication(&self) -> Result<PublicationObservation, PublishedObservationError> {
+	fn observe_publication(
+		&self,
+		renamed: &RenamedEntry<'_>,
+	) -> Result<PublicationObservation, PublishedObservationError> {
+		let target_identity = match renamed.observe() {
+			RenameEvidence::Confirmed { target } => ManagedObjectIdentity::from_mounted(&target),
+			evidence => return Err(PublishedObservationError::MountedNames(Box::new(evidence))),
+		};
 		let (stage_directory, destination_directory) = self
 			.location
 			.observe_directories()
 			.map_err(|error| PublishedObservationError::Directories(Box::new(error)))?;
-		match fs::statat(
-			self.location.directory(),
-			self.location.stage_name().as_bytes(),
-			AtFlags::SYMLINK_NOFOLLOW,
-		) {
-			Err(Errno::NOENT) => {}
-			Ok(_) => return Err(PublishedObservationError::NamesChanged),
-			Err(error) => return Err(PublishedObservationError::System(error.into())),
-		}
 		let destination = self.location.destination().as_fd();
 		let target = self.target();
 		let held = self
@@ -128,6 +152,9 @@ impl MetadataReadyStage<'_> {
 		}
 		let target = ManagedObjectIdentity::from_stat(&named, destination_fsid)
 			.ok_or(PublishedObservationError::NamesChanged)?;
+		if target != target_identity {
+			return Err(PublishedObservationError::NamesChanged);
+		}
 		Ok(PublicationObservation {
 			target,
 			stage_directory,

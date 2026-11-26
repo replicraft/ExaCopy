@@ -1,25 +1,46 @@
 use std::fmt;
 use std::fs::File;
-use std::os::fd::AsFd as _;
-use std::os::unix::fs::FileExt as _;
 
-use exacopy_endpoint::{UnixComponent, write_all_at};
-use exacopy_model::CopyBinding;
-use rustix::fs::{self, FileType, Mode, OFlags, Stat};
-use rustix::io::Errno;
-
-use super::super::{
-	EVENT_ONLY, FILE_MODE, ManagedObjectIdentity, PhysicalFsid, acl, file::same_observation,
-	with_materialization_disabled,
+use apfs_mounted::identity::ObjectIdentity;
+use apfs_mounted::metadata::{
+	ExtendedSecurity, MAX_EXTENDED_SECURITY_BYTES, MetadataView, ObservationError,
 };
-use super::close::close_writer;
+use apfs_mounted::writer::{
+	ClosedFile, InitialFlags, LifecycleEffect, MAX_PRIVATE_IO_BYTES, PrivateWriter, WriterError,
+};
+use apfs_mounted::{Directory, EntryName};
+use exacopy_endpoint::UnixComponent;
+use exacopy_model::CopyBinding;
+
+use super::super::{ManagedObjectIdentity, acl, with_materialization_disabled};
+use super::error::with_mounted_effect;
 use super::{StageDirectory, StageError, StageIdentity};
 
-const PRIVATE_OPEN: OFlags = OFlags::CLOEXEC
-	.union(OFlags::NONBLOCK)
-	.union(OFlags::NOFOLLOW);
 /// Maximum byte count accepted by one private stage read or write.
-pub const MAX_STAGE_IO_BYTES: usize = 1024 * 1024;
+pub const MAX_STAGE_IO_BYTES: usize = MAX_PRIVATE_IO_BYTES;
+
+/// A checked raw private name and its caller-owned mounted adapter representation.
+#[derive(Debug)]
+pub struct ManagedStageName<'raw> {
+	component: UnixComponent<'raw>,
+	mounted: EntryName,
+}
+
+impl<'raw> ManagedStageName<'raw> {
+	/// Validate the component against the mounted namespace before allocating a stage.
+	/// # Errors
+	/// Returns the native error if the component cannot be represented.
+	pub fn new(component: UnixComponent<'raw>) -> Result<Self, StageError> {
+		let mounted = EntryName::new(component.as_bytes()).map_err(StageError::Name)?;
+		Ok(Self { component, mounted })
+	}
+
+	/// Returns the original validated bytes without normalization.
+	#[must_use]
+	pub const fn component(&self) -> UnixComponent<'raw> {
+		self.component
+	}
+}
 
 /// Sole synchronous writer for a newly created private file and declared logical extent.
 ///
@@ -27,9 +48,7 @@ pub const MAX_STAGE_IO_BYTES: usize = 1024 * 1024;
 /// offset zero. Any uncertain attempted write retires the handle and retains its private entry.
 pub struct WriteStage<'stage> {
 	location: StageLocation<'stage>,
-	file: Option<File>,
-	position: u64,
-	observed: Stat,
+	writer: Option<PrivateWriter<'stage>>,
 }
 
 impl<'stage> WriteStage<'stage> {
@@ -37,66 +56,49 @@ impl<'stage> WriteStage<'stage> {
 	/// # Errors
 	/// Refuses a retired writer or a changed or unavailable stage observation.
 	pub fn observe_identity(&self) -> Result<ManagedObjectIdentity, StageError> {
-		self.file.as_ref().ok_or(StageError::WriterRetired)?;
-		self.location.observe_identity(&self.observed)
+		let writer = self.writer.as_ref().ok_or(StageError::WriterRetired)?;
+		with_materialization_disabled(|| {
+			self.location.check_current()?;
+			writer.with_metadata(check_stage_view_acl)??;
+			self.location.observe_identity(writer.identity())
+		})
 	}
 
 	pub(super) fn create(
 		directory: &'stage StageDirectory<'stage>,
-		name: UnixComponent<'stage>,
+		name: &'stage ManagedStageName<'stage>,
 		target: UnixComponent<'stage>,
 		identity: StageIdentity,
 		length: u64,
 	) -> Result<Self, StageError> {
-		let file = match fs::openat(
-			directory.descriptor(),
-			name.as_bytes(),
-			PRIVATE_OPEN | OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL,
-			FILE_MODE,
-		) {
-			Ok(descriptor) => File::from(descriptor),
-			Err(Errno::EXIST) => return Err(StageError::NameCollision),
-			Err(error) => return Err(error.into()),
-		};
-		let observed = fs::fstat(&file)?;
-		check_private(directory, &file, &observed)?;
-		check_length(&observed, 0)?;
-		directory.check_current()?;
-		if !same_observation(&directory.named_stat(name)?, &observed) {
-			return Err(StageError::StageChanged);
-		}
-		// Keep the inode pinned independently from the sole writer and the later
-		// reader. This descriptor has neither content-read nor write authority.
-		let anchor = File::from(fs::openat(
-			directory.descriptor(),
-			name.as_bytes(),
-			PRIVATE_OPEN | EVENT_ONLY,
-			Mode::empty(),
-		)?);
-		if !fs::fcntl_getfl(&anchor)?.contains(EVENT_ONLY) {
-			return Err(StageError::StageChanged);
-		}
+		let writer = PrivateWriter::create_with_initial_flags(
+			directory.mounted_stage(),
+			&name.mounted,
+			length,
+			InitialFlags::RequireZero,
+		)?;
 		let location = StageLocation {
 			directory,
 			name,
 			target,
 			identity,
 			length,
-			anchor,
 		};
-		location.check_observation(&observed)?;
+		let verify = || {
+			writer.with_metadata(check_stage_view_acl)??;
+			location.observe_identity(writer.identity())
+		};
+		verify().map_err(|error| StageError::CreatedUnverified(Box::new(error)))?;
 		Ok(Self {
 			location,
-			file: Some(file),
-			position: 0,
-			observed,
+			writer: Some(writer),
 		})
 	}
 
 	/// Returns the identity allocated before this private file was created.
 	#[must_use]
 	pub fn identity(&self) -> StageIdentity {
-		self.location.identity()
+		self.location.identity
 	}
 
 	/// Returns the transaction binding this writer will report to the model.
@@ -111,11 +113,9 @@ impl<'stage> WriteStage<'stage> {
 	/// Refuses retired writers, writers from another process, and writers that have
 	/// already completed a nonempty write.
 	pub fn unwritten_length(&self) -> Result<u64, StageError> {
-		self.location.check_process()?;
-		if self.file.is_none() {
-			return Err(StageError::WriterRetired);
-		}
-		if self.position != 0 {
+		self.location.directory.check_process()?;
+		let writer = self.writer.as_ref().ok_or(StageError::WriterRetired)?;
+		if writer.position() != 0 {
 			return Err(StageError::AlreadyWritten);
 		}
 		Ok(self.location.length)
@@ -127,76 +127,79 @@ impl<'stage> WriteStage<'stage> {
 	/// Rejected ranges leave the writer unchanged. A failure after accepting a range
 	/// retires this writer and retains its entry, which may contain a partial transfer.
 	pub fn write_next(&mut self, bytes: &[u8]) -> Result<(), StageError> {
-		self.write_next_with(bytes, |file, position, remaining| {
-			file.write_at(remaining, position)
-		})
+		self.write_next_with(bytes, PrivateWriter::write_next)
 	}
 
 	fn write_next_with(
 		&mut self,
 		bytes: &[u8],
-		mut write: impl FnMut(&File, u64, &[u8]) -> std::io::Result<usize>,
+		write: impl FnOnce(&mut PrivateWriter<'stage>, &[u8]) -> Result<(), WriterError>,
 	) -> Result<(), StageError> {
-		self.location.check_process()?;
-		if self.file.is_none() {
-			return Err(StageError::WriterRetired);
-		}
-		let end = bounded_end(self.position, bytes.len(), self.location.length)?;
+		self.write_next_with_security(bytes, stage_view_security, write)
+	}
+
+	fn write_next_with_security(
+		&mut self,
+		bytes: &[u8],
+		observe: impl Fn(&MetadataView<'_>) -> Result<ExtendedSecurity, ObservationError>,
+		write: impl FnOnce(&mut PrivateWriter<'stage>, &[u8]) -> Result<(), WriterError>,
+	) -> Result<(), StageError> {
+		self.location.directory.check_process()?;
+		let writer = self.writer.as_ref().ok_or(StageError::WriterRetired)?;
+		let end = bounded_end(writer.position(), bytes.len(), self.location.length)?;
 		if bytes.is_empty() {
 			return Err(StageError::InvalidRange);
 		}
-		let file = self.file.take().ok_or(StageError::WriterRetired)?;
-		let observed = with_materialization_disabled(|| {
-			self.location.check_observation(&self.observed)?;
-			self.location.check_descriptor(&file, &self.observed)?;
-			write_all_at(self.position, bytes, |position, remaining| {
-				write(&file, position, remaining)
-			})
-			.map_err(StageError::Write)?;
-			let observed = fs::fstat(&file)?;
-			check_length(&observed, end)?;
-			self.location.check_observation(&observed)?;
-			Ok::<_, StageError>(observed)
+		let mut writer = self.writer.take().ok_or(StageError::WriterRetired)?;
+		with_mounted_effect(LifecycleEffect::Written { end }, || {
+			self.location.check_current()?;
+			writer.with_metadata(|view| Ok(check_stage_security(observe(&view))))??;
+			write(&mut writer, bytes)?;
+			if writer.position() != end {
+				return Err(StageError::StageChanged);
+			}
+			writer.with_metadata(check_stage_view_acl)??;
+			self.location.observe_identity(writer.identity())?;
+			Ok::<_, StageError>(())
 		})?;
-		self.file = Some(file);
-		self.observed = observed;
-		self.position = end;
+		self.writer = Some(writer);
 		Ok(())
 	}
 
 	/// Consumes the sole writer after the full declared extent and a Darwin file barrier.
 	///
-	/// The successful result permits independent read-back. The barrier records a
-	/// successful F_FULLFSYNC call on this descriptor.
+	/// The successful result permits independent read-back and records a successful
+	/// F_FULLFSYNC call and checked descriptor closure.
 	///
 	/// # Errors
-	/// Returns an error for incomplete data, a failed identity check, a retired writer,
-	/// or a failed barrier or close. Every failure consumes the writer and retains the
-	/// stage for reconciliation.
+	/// Returns an error for incomplete data, failed revalidation, a retired writer,
+	/// or unconfirmed synchronization or close. Every failure retains a private stage.
 	pub fn flush_and_close(self) -> Result<ClosedStage<'stage>, StageError> {
-		self.finish_with(|file| fs::fcntl_fullfsync(file), close_writer)
+		self.finish_with(PrivateWriter::flush_and_close)
 	}
 
 	fn finish_with(
 		self,
-		sync: impl FnOnce(&File) -> rustix::io::Result<()>,
-		close: impl FnOnce(File) -> Result<(), StageError>,
+		finish: impl FnOnce(PrivateWriter<'stage>) -> Result<ClosedFile<'stage>, WriterError>,
 	) -> Result<ClosedStage<'stage>, StageError> {
-		self.location.check_process()?;
-		let file = self.file.ok_or(StageError::WriterRetired)?;
-		if self.position != self.location.length {
+		self.location.directory.check_process()?;
+		let writer = self.writer.ok_or(StageError::WriterRetired)?;
+		if writer.position() != self.location.length {
 			return Err(StageError::Incomplete);
 		}
-		with_materialization_disabled(|| {
-			self.location.check_observation(&self.observed)?;
-			self.location.check_descriptor(&file, &self.observed)?;
-			sync(&file).map_err(|error| StageError::FileBarrier(error.into()))?;
-			self.location.check_descriptor(&file, &self.observed)?;
-			close(file)?;
-			self.location.check_observation(&self.observed)?;
+		with_mounted_effect(LifecycleEffect::Closed, || {
+			self.location.check_current()?;
+			writer.with_metadata(check_stage_view_acl)??;
+			let closed = finish(writer)?;
+			let verify = || {
+				self.location.observe_identity(closed.identity())?;
+				closed.with_metadata(check_stage_view_acl)??;
+				Ok(())
+			};
+			verify().map_err(|error| StageError::ClosedUnverified(Box::new(error)))?;
 			Ok(ClosedStage {
 				location: self.location,
-				observed: self.observed,
+				closed,
 			})
 		})
 	}
@@ -210,12 +213,10 @@ impl fmt::Debug for WriteStage<'_> {
 
 /// A private inode with a fully written extent and a closed write descriptor.
 ///
-/// The acquiring process confirmed closure of its sole writable descriptor under the
-/// managed staging grant. An event-only descriptor retains the inode identity for a
-/// separate readable open and independent comparison against the source stream.
+/// The adapter retains the companion's event anchor for separate read-back.
 pub struct ClosedStage<'stage> {
 	pub(super) location: StageLocation<'stage>,
-	pub(super) observed: Stat,
+	pub(super) closed: ClosedFile<'stage>,
 }
 
 impl ClosedStage<'_> {
@@ -223,13 +224,17 @@ impl ClosedStage<'_> {
 	/// # Errors
 	/// Refuses a changed or unavailable stage observation.
 	pub fn observe_identity(&self) -> Result<ManagedObjectIdentity, StageError> {
-		self.location.observe_identity(&self.observed)
+		with_materialization_disabled(|| {
+			self.location.check_current()?;
+			self.closed.with_metadata(check_stage_view_acl)??;
+			self.location.observe_identity(self.closed.identity())
+		})
 	}
 
 	/// Returns the logical extent fixed before staging began.
 	#[must_use]
 	pub fn length(&self) -> u64 {
-		self.location.length()
+		self.location.length
 	}
 
 	/// Reports whether the declared extent was empty.
@@ -241,7 +246,7 @@ impl ClosedStage<'_> {
 	/// Returns the identity allocated for this stage before exclusive creation.
 	#[must_use]
 	pub fn identity(&self) -> StageIdentity {
-		self.location.identity()
+		self.location.identity
 	}
 
 	/// Returns the transaction binding fixed at exclusive creation.
@@ -253,7 +258,7 @@ impl ClosedStage<'_> {
 	/// Returns the checked public target component fixed at exclusive creation.
 	#[must_use]
 	pub fn target(&self) -> UnixComponent<'_> {
-		self.location.target()
+		self.location.target
 	}
 }
 
@@ -267,35 +272,32 @@ impl fmt::Debug for ClosedStage<'_> {
 
 pub(in super::super) struct StageLocation<'stage> {
 	directory: &'stage StageDirectory<'stage>,
-	name: UnixComponent<'stage>,
-	target: UnixComponent<'stage>,
-	identity: StageIdentity,
-	length: u64,
-	anchor: File,
+	name: &'stage ManagedStageName<'stage>,
+	pub(super) target: UnixComponent<'stage>,
+	pub(super) identity: StageIdentity,
+	pub(super) length: u64,
 }
 
 impl StageLocation<'_> {
-	pub(super) fn identity(&self) -> StageIdentity {
-		self.identity
+	pub(in super::super) fn mounted_name(&self) -> &EntryName {
+		&self.name.mounted
 	}
 
-	pub(super) fn length(&self) -> u64 {
-		self.length
+	pub(in super::super) fn directory(&self) -> &Directory {
+		self.directory.mounted_stage()
 	}
 
-	pub(super) fn target(&self) -> UnixComponent<'_> {
-		self.target
+	pub(in super::super) fn destination(&self) -> &Directory {
+		self.directory.mounted_destination()
 	}
 
-	pub(in super::super) fn stage_name(&self) -> UnixComponent<'_> {
-		self.name
-	}
-
-	pub(in super::super) fn directory(&self) -> &File {
+	#[cfg(test)]
+	pub(in super::super) fn stage_file(&self) -> &File {
 		self.directory.descriptor()
 	}
 
-	pub(in super::super) fn destination(&self) -> &File {
+	#[cfg(test)]
+	pub(in super::super) fn destination_file(&self) -> &File {
 		self.directory.destination()
 	}
 
@@ -305,56 +307,55 @@ impl StageLocation<'_> {
 		self.directory.observe_directories()
 	}
 
-	pub(super) fn named_stat(&self) -> Result<Stat, StageError> {
-		self.directory.named_stat(self.name)
-	}
-
-	pub(super) fn held_stat(&self) -> Result<Stat, StageError> {
-		Ok(fs::fstat(&self.anchor)?)
+	pub(super) fn check_current(&self) -> Result<(), StageError> {
+		self.directory.check_current()
 	}
 
 	pub(super) fn observe_identity(
 		&self,
-		expected: &Stat,
+		expected: &ObjectIdentity,
 	) -> Result<ManagedObjectIdentity, StageError> {
-		with_materialization_disabled(|| {
-			self.check_observation(expected)?;
-			ManagedObjectIdentity::from_stat(expected, self.directory.physical_fsid())
-				.ok_or(StageError::StageChanged)
-		})
-	}
-
-	pub(super) fn check_process(&self) -> Result<(), StageError> {
-		self.directory.check_process()
-	}
-
-	pub(super) fn check_observation(&self, expected: &Stat) -> Result<(), StageError> {
-		self.directory.check_current()?;
-		self.check_descriptor(&self.anchor, expected)?;
-		let named = self.named_stat()?;
-		if !same_observation(&named, expected) {
+		self.check_current()?;
+		expected
+			.revalidate_named(self.directory(), self.mounted_name())
+			.map_err(WriterError::from)?;
+		let identity = ManagedObjectIdentity::from_mounted(expected);
+		if identity.physical_fsid() != self.directory.physical_fsid().words() {
 			return Err(StageError::StageChanged);
 		}
+		Ok(identity)
+	}
+
+	pub(super) fn open_metadata_handle(
+		&self,
+		expected: &ObjectIdentity,
+	) -> Result<File, StageError> {
+		self.observe_identity(expected)?;
+		let file = self.directory().open_file(self.mounted_name())?;
+		expected.revalidate_held(&file).map_err(WriterError::from)?;
+		self.observe_identity(expected)?;
+		Ok(file)
+	}
+}
+
+fn stage_view_security(view: &MetadataView<'_>) -> Result<ExtendedSecurity, ObservationError> {
+	view.extended_security(MAX_EXTENDED_SECURITY_BYTES)
+}
+
+fn check_stage_security(
+	observed: Result<ExtendedSecurity, ObservationError>,
+) -> Result<(), StageError> {
+	if acl::stage_security(observed)? {
 		Ok(())
+	} else {
+		Err(StageError::StageChanged)
 	}
+}
 
-	pub(super) fn check_descriptor(&self, file: &File, expected: &Stat) -> Result<(), StageError> {
-		let observed = fs::fstat(file)?;
-		if !same_observation(&observed, expected) {
-			return Err(StageError::StageChanged);
-		}
-		check_private(self.directory, file, &observed)
-	}
-
-	pub(super) fn reopen_read_only(&self) -> Result<File, StageError> {
-		let descriptor = fs::openat(
-			self.directory.descriptor(),
-			self.name.as_bytes(),
-			PRIVATE_OPEN | OFlags::RDONLY,
-			Mode::empty(),
-		)?;
-		Ok(descriptor.into())
-	}
+pub(super) fn check_stage_view_acl(
+	view: MetadataView<'_>,
+) -> Result<Result<(), StageError>, ObservationError> {
+	Ok(check_stage_security(stage_view_security(&view)))
 }
 
 pub(super) fn bounded_end(offset: u64, length: usize, extent: u64) -> Result<u64, StageError> {
@@ -362,36 +363,10 @@ pub(super) fn bounded_end(offset: u64, length: usize, extent: u64) -> Result<u64
 		return Err(StageError::InvalidRange);
 	}
 	let length = u64::try_from(length).map_err(|_| StageError::InvalidRange)?;
-	match offset.checked_add(length) {
-		Some(end) if end <= extent => Ok(end),
-		_ => Err(StageError::InvalidRange),
-	}
-}
-
-fn check_private(
-	directory: &StageDirectory<'_>,
-	file: &File,
-	observed: &Stat,
-) -> Result<(), StageError> {
-	if FileType::from_raw_mode(observed.st_mode) != FileType::RegularFile
-		|| observed.st_uid != directory.owner()
-		|| observed.st_nlink != 1
-		|| Mode::from_raw_mode(observed.st_mode) != FILE_MODE
-		|| observed.st_flags != 0
-		|| PhysicalFsid::held(file.as_fd())? != Some(directory.physical_fsid())
-		|| !acl::has_no_stage_acl_entries(file.as_fd())?
-	{
-		return Err(StageError::StageChanged);
-	}
-	Ok(())
-}
-
-fn check_length(observed: &Stat, expected: u64) -> Result<(), StageError> {
-	if u64::try_from(observed.st_size).ok() == Some(expected) {
-		Ok(())
-	} else {
-		Err(StageError::StageChanged)
-	}
+	offset
+		.checked_add(length)
+		.filter(|end| *end <= extent)
+		.ok_or(StageError::InvalidRange)
 }
 
 #[cfg(test)]

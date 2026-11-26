@@ -1,8 +1,11 @@
 use std::error::Error;
-use std::ffi::NulError;
 use std::fmt;
 use std::io;
 
+use apfs_mounted::{
+	InvalidEntryName,
+	publication::{RenameEvidence, RenameRejection},
+};
 use rustix::io::Errno;
 
 use super::super::staging::StageError;
@@ -98,7 +101,9 @@ pub enum PublishRejection {
 	/// Root or stage evidence changed before the rename.
 	Stage(StageError),
 	/// The checked name could not be represented in the Darwin ABI.
-	Name(NulError),
+	Name(InvalidEntryName),
+	/// The companion refused the held or named source before calling Darwin.
+	Mounted(RenameRejection),
 	/// Both directories did not positively report exclusive rename support.
 	ExclusiveRenameUnavailable,
 	/// A volume capability query failed.
@@ -112,6 +117,7 @@ impl fmt::Display for PublishRejection {
 		match self {
 			Self::BindingMismatch => f.write_str("stage does not match authorization"),
 			Self::Stage(error) => write!(f, "stage cannot be published ({error})"),
+			Self::Mounted(error) => write!(f, "mounted publication refused ({error})"),
 			Self::Name(_) => f.write_str("stage or target name could not enter the native call"),
 			Self::ExclusiveRenameUnavailable => {
 				f.write_str("required exclusive rename capability is unavailable")
@@ -127,6 +133,7 @@ impl Error for PublishRejection {
 		match self {
 			Self::Stage(error) => Some(error),
 			Self::Name(error) => Some(error),
+			Self::Mounted(error) => Some(error),
 			Self::Volume(error) => Some(error),
 			_ => None,
 		}
@@ -192,6 +199,8 @@ pub enum PublishedObservationError {
 	Stage(Box<StageError>),
 	/// The private name, target name or held inode disagreed with the rename.
 	NamesChanged,
+	/// Incomplete post-barrier observations from the companion.
+	MountedNames(Box<RenameEvidence>),
 	/// A native identity or namespace query failed.
 	System(io::Error),
 }
@@ -204,7 +213,9 @@ impl fmt::Display for PublishedObservationError {
 				"published directory binding could not be confirmed ({error})"
 			),
 			Self::Stage(error) => write!(f, "published stage could not be confirmed ({error})"),
-			Self::NamesChanged => f.write_str("published names or stage identity changed"),
+			Self::NamesChanged | Self::MountedNames(_) => {
+				f.write_str("published names or stage identity changed")
+			}
 			Self::System(error) => write!(f, "published identity query failed ({error})"),
 		}
 	}
@@ -215,7 +226,7 @@ impl Error for PublishedObservationError {
 		match self {
 			Self::Directories(error) | Self::Stage(error) => Some(error.as_ref()),
 			Self::System(error) => Some(error),
-			Self::NamesChanged => None,
+			Self::NamesChanged | Self::MountedNames(_) => None,
 		}
 	}
 }

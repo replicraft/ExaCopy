@@ -33,8 +33,9 @@ fn authorized_source_and_private_stage_share_an_exclusive_destination_lease() {
 	create_source(&source_path, PAYLOAD);
 	let parent = source_path.parent().expect("source fixture parent");
 	let root = fixture.bind();
+	let source_name = mounted_source(b"source");
 	let source = root
-		.open_regular_source(parent, name(b"source"), grant())
+		.open_regular_source(parent, &source_name, grant())
 		.expect("borrow the destination lease for an independently authorized source");
 	let source_ids = source.observe_identities().expect("observe held source");
 	let destination = root.observe_identity().expect("observe held destination");
@@ -115,7 +116,7 @@ fn source_parent_requires_positive_identity_and_no_symlink() {
 	let root = destination.bind();
 	let other_parent = source_path.parent().expect("source fixture parent");
 	assert!(matches!(
-		root.open_regular_source(other_parent, name(b"source"), grant()),
+		root.open_regular_source(other_parent, &mounted_source(b"source"), grant()),
 		Err(ManagedReadError::UnsupportedNamespace)
 	));
 
@@ -126,7 +127,7 @@ fn source_parent_requires_positive_identity_and_no_symlink() {
 	let alias = source.path("parent-link");
 	symlink(destination_parent, &alias).expect("make alias to exact destination parent");
 	assert!(matches!(
-		root.open_regular_source(&alias, name(b"source"), grant()),
+		root.open_regular_source(&alias, &mounted_source(b"source"), grant()),
 		Err(ManagedReadError::System(_))
 	));
 }
@@ -142,7 +143,7 @@ fn borrowed_read_refuses_symbolic_and_hard_links() {
 	let root = fixture.bind();
 	for name_bytes in [b"source-link".as_slice(), b"source", b"other-link"] {
 		assert!(matches!(
-			root.open_regular_source(parent, name(name_bytes), grant()),
+			root.open_regular_source(parent, &mounted_source(name_bytes), grant()),
 			Err(ManagedReadError::UnsupportedChild)
 		));
 	}
@@ -159,13 +160,14 @@ fn borrowed_reader_rechecks_the_acquiring_process_and_directory_authority() {
 	// Darwin reserves PID zero for the kernel. Exercise process refusal without forking.
 	root.lease.lease_process = 0;
 	assert!(matches!(
-		root.open_regular_source(parent, name(b"source"), grant()),
+		root.open_regular_source(parent, &mounted_source(b"source"), grant()),
 		Err(ManagedReadError::UnsupportedNamespace)
 	));
 	root.lease.lease_process = acquired;
 
+	let source_name = mounted_source(b"source");
 	let source = root
-		.open_regular_source(parent, name(b"source"), grant())
+		.open_regular_source(parent, &source_name, grant())
 		.unwrap();
 	// Deliberately violate the fixture's managed-root contract to test read-time revalidation.
 	fs::set_permissions(parent, fs::Permissions::from_mode(0o750)).unwrap();
@@ -215,29 +217,21 @@ fn dropping_either_owned_lease_unlocks_its_open_description_despite_a_duplicate(
 }
 
 #[test]
-fn foreign_process_cannot_use_the_lease_or_unlock_a_retained_description() {
+fn foreign_process_cannot_use_the_stage_capability_while_native_lease_is_held() {
 	let fixture = Fixture::new();
 	let mut root = fixture.bind();
-	let alias = root
-		.lease
-		.file
-		.try_clone()
-		.expect("retain the creator's open description");
-	// Darwin reserves PID zero for the kernel. Set a different recorded PID
-	// without running non-async-signal-safe Rust in a post-fork test child.
+	// Exercise process refusal without running Rust after a fork.
 	root.lease.lease_process = 0;
 	assert!(matches!(
 		root.open_stage_directory(name(b"private-stage")),
 		Err(StageError::WrongProcess)
 	));
-	drop(root);
-
 	let contender = File::open(fixture.path(".")).expect("open independent destination contender");
 	assert_eq!(
 		flock(&contender, FlockOperation::NonBlockingLockExclusive),
 		Err(Errno::AGAIN)
 	);
-	flock(&alias, FlockOperation::Unlock).expect("release retained lease as the test owner");
+	drop(root); // The true acquiring process drops the companion lease here.
 	fixture.bind();
 }
 
@@ -250,11 +244,13 @@ fn native_attempts_for_one_job_entry_epoch_and_target_have_distinct_bindings() {
 	let directory = open_staging(&root);
 	let target = name(b"unpublished");
 	let context = context();
+	let first_name = mounted_stage(b"native-attempt-one");
+	let second_name = mounted_stage(b"native-attempt-two");
 	let first = directory
-		.create_file(name(b"native-attempt-one"), target, context, 0)
+		.create_file(&first_name, target, context, 0)
 		.unwrap();
 	let second = directory
-		.create_file(name(b"native-attempt-two"), target, context, 0)
+		.create_file(&second_name, target, context, 0)
 		.unwrap();
 	assert_ne!(
 		first.identity().stage_id_bytes(),
@@ -282,7 +278,7 @@ fn entropy_failure_has_no_private_create_effect() {
 	let directory = open_staging(&root);
 	let error = directory
 		.create_file_with_entropy(
-			name(b"no-entropy"),
+			&mounted_stage(b"no-entropy"),
 			name(b"unpublished"),
 			context(),
 			0,
@@ -317,7 +313,7 @@ fn uncertain_native_create_error_keeps_the_allocated_identity() {
 	let private = fixture.path("private-stage");
 	let error = directory
 		.create_file_with_entropy(
-			name(b"uncertain-create"),
+			&mounted_stage(b"uncertain-create"),
 			name(b"unpublished"),
 			context(),
 			0,
@@ -337,7 +333,16 @@ fn uncertain_native_create_error_keeps_the_allocated_identity() {
 		&INJECTED_ENTROPY
 	);
 	assert!(
-		matches!(*source, StageError::System(error) if error.kind() == std::io::ErrorKind::PermissionDenied)
+		matches!(*source, StageError::Mounted(apfs_mounted::writer::WriterError::CreateUncertain(error)) if error.kind() == std::io::ErrorKind::PermissionDenied)
 	);
+	assert!(!private.join("uncertain-create").exists());
 	assert!(!fixture.path("unpublished").exists());
+}
+
+fn mounted_source(raw: &[u8]) -> crate::macos::ManagedSourceName<'_> {
+	crate::macos::ManagedSourceName::new(name(raw)).unwrap()
+}
+
+fn mounted_stage(raw: &[u8]) -> super::ManagedStageName<'_> {
+	super::ManagedStageName::new(name(raw)).unwrap()
 }

@@ -31,10 +31,11 @@ fn visible_source_attribute_refuses_metadata_application_and_preserves_private_s
 	drop(initial);
 
 	let root = fixture.bind();
+	let selected = crate::macos::ManagedSourceName::new(name(SOURCE.as_bytes())).unwrap();
 	let source = root
 		.open_regular_source(
 			source_path.parent().unwrap(),
-			name(SOURCE.as_bytes()),
+			&selected,
 			ManagedReadGrant::trusted_owner_authorizes_provisioned_root(),
 		)
 		.expect("obtain the read-only source before strict metadata admission");
@@ -149,10 +150,11 @@ fn strict_native_stage_preserves_original_source_times_after_readback() {
 	drop(initial);
 
 	let root = fixture.bind();
+	let selected = crate::macos::ManagedSourceName::new(name(SOURCE.as_bytes())).unwrap();
 	let source = root
 		.open_regular_source(
 			source_path.parent().unwrap(),
-			name(SOURCE.as_bytes()),
+			&selected,
 			ManagedReadGrant::trusted_owner_authorizes_provisioned_root(),
 		)
 		.unwrap();

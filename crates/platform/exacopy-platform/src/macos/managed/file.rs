@@ -1,16 +1,12 @@
 use std::fmt;
-use std::fs::File;
-use std::io;
-use std::os::fd::AsFd as _;
-use std::os::unix::fs::FileExt as _;
 
-use exacopy_endpoint::{MAX_INTERRUPTED_RETRIES, ReadView, UnixComponent, read_exact_at};
-use rustix::fs::{self, AtFlags, Stat};
-use rustix::io::Errno;
+use apfs_mounted::source::{MAX_READ_BYTES, PinnedSource};
+use exacopy_endpoint::{ReadView, UnixComponent};
+use rustix::fs::Stat;
 
 use super::{
-	BasicMetadata, ManagedObjectIdentity, ManagedReadError, ManagedTimestamp, PhysicalFsid,
-	ReadDirectory, metadata, with_materialization_disabled,
+	BasicMetadata, ManagedObjectIdentity, ManagedReadError, ManagedTimestamp, ReadDirectory, error,
+	metadata, with_materialization_disabled,
 };
 
 /// Held native identities of a managed source and its independently admitted parent.
@@ -30,9 +26,7 @@ pub struct ManagedSourceIdentities {
 pub struct ManagedRegularFile<'root> {
 	root: ReadDirectory<'root>,
 	name: UnixComponent<'root>,
-	file: File,
-	initial: Stat,
-	length: u64,
+	source: PinnedSource<'root>,
 }
 
 impl fmt::Debug for ManagedRegularFile<'_> {
@@ -47,29 +41,21 @@ impl<'root> ManagedRegularFile<'root> {
 	pub(super) fn new(
 		root: ReadDirectory<'root>,
 		name: UnixComponent<'root>,
-		file: File,
-		initial: Stat,
-		length: u64,
+		source: PinnedSource<'root>,
 	) -> Self {
-		Self {
-			root,
-			name,
-			file,
-			initial,
-			length,
-		}
+		Self { root, name, source }
 	}
 
 	/// Logical length of the unnamed byte stream at admission.
 	#[must_use]
 	pub fn length(&self) -> u64 {
-		self.length
+		self.source.len()
 	}
 
 	/// Whether the captured logical length was zero.
 	#[must_use]
 	pub fn is_empty(&self) -> bool {
-		self.length == 0
+		self.source.is_empty()
 	}
 
 	/// Revalidates the native identities of the selected file and its held parent.
@@ -79,11 +65,9 @@ impl<'root> ManagedRegularFile<'root> {
 	pub fn observe_identities(&self) -> Result<ManagedSourceIdentities, ManagedReadError> {
 		with_materialization_disabled(|| {
 			self.root.check_root()?;
-			self.check_file()?;
-			let parent = self.root.identity.observe(self.root.directory)?;
-			let file =
-				ManagedObjectIdentity::from_stat(&self.initial, self.root.identity.physical_fsid)
-					.ok_or(ManagedReadError::UnsupportedChild)?;
+			self.source.validate().map_err(error::source_error)?;
+			let parent = ManagedObjectIdentity::from_mounted(self.source.parent_identity());
+			let file = ManagedObjectIdentity::from_mounted(self.source.identity());
 			Ok(ManagedSourceIdentities { parent, file })
 		})
 	}
@@ -98,8 +82,9 @@ impl<'root> ManagedRegularFile<'root> {
 	/// # Errors
 	/// Refuses an unavailable or malformed timestamp.
 	pub fn change_time(&self) -> Result<ManagedTimestamp, ManagedReadError> {
-		ManagedTimestamp::from_stat_parts(self.initial.st_ctime, self.initial.st_ctime_nsec)
-			.ok_or(ManagedReadError::UnsupportedChild)
+		Ok(ManagedTimestamp::from_mounted_source(
+			self.source.metadata().changed,
+		))
 	}
 
 	/// Rechecks strict basic metadata and returns timestamps captured at admission.
@@ -120,10 +105,12 @@ impl<'root> ManagedRegularFile<'root> {
 	pub fn check_pre_read_basic_metadata(&self) -> Result<BasicMetadata, ManagedReadError> {
 		with_materialization_disabled(|| {
 			let metadata = self.check_basic_metadata_with_policy()?;
-			let held = fs::fstat(&self.file)?;
-			if !same_observation(&held, &self.initial)
-				|| ManagedTimestamp::from_stat_parts(held.st_atime, held.st_atime_nsec)
-					!= Some(metadata.atime())
+			let access_time = self
+				.source
+				.with_metadata(|view| Ok(view.stat()?.times.access))
+				.map_err(error::source_error)?;
+			if access_time.seconds() != metadata.atime().seconds()
+				|| access_time.nanoseconds() != i64::from(metadata.atime().nanoseconds())
 			{
 				return Err(ManagedReadError::SourceChanged);
 			}
@@ -135,11 +122,12 @@ impl<'root> ManagedRegularFile<'root> {
 		&self,
 	) -> Result<BasicMetadata, ManagedReadError> {
 		self.root.check_root()?;
-		self.check_file()?;
-		let metadata = BasicMetadata::from_stat(&self.initial)?;
-		metadata::check_inventory(self.file.as_fd())?;
+		self.source.validate().map_err(error::source_error)?;
+		let metadata = BasicMetadata::from_mounted_source(self.source.metadata())?;
+		self.source
+			.with_metadata(|view| Ok(metadata::check_view_inventory(&view)))
+			.map_err(error::source_error)??;
 		self.root.check_root()?;
-		self.check_file()?;
 		Ok(metadata)
 	}
 
@@ -149,23 +137,31 @@ impl<'root> ManagedRegularFile<'root> {
 	///
 	/// Returns a typed bounds, evidence, I/O or policy error. On error, the
 	/// buffer may have changed and must be discarded.
-	pub fn read_exact_at(&self, offset: u64, buffer: &mut [u8]) -> Result<(), ManagedReadError> {
+	pub fn read_exact_at(
+		&self,
+		mut offset: u64,
+		buffer: &mut [u8],
+	) -> Result<(), ManagedReadError> {
 		let count = u64::try_from(buffer.len()).map_err(|_| ManagedReadError::RangeOutsideFile)?;
 		if offset
 			.checked_add(count)
-			.is_none_or(|end| end > self.length)
+			.is_none_or(|end| end > self.length())
 		{
 			return Err(ManagedReadError::RangeOutsideFile);
 		}
 		with_materialization_disabled(|| {
 			self.root.check_root()?;
-			self.check_file()?;
-			read_exact_at(offset, buffer, |position, unread| {
-				self.file.read_at(unread, position)
-			})
-			.map_err(ManagedReadError::Read)?;
-			self.root.check_root()?;
-			self.check_file()
+			if buffer.is_empty() {
+				self.source.validate().map_err(error::source_error)?;
+			}
+			for request in buffer.chunks_mut(MAX_READ_BYTES) {
+				self.source
+					.read_exact_at(offset, request)
+					.map_err(|error| error::source_read_error(error, offset, request.len()))?;
+				// The full range was checked above. Each chunk ends within it.
+				offset += request.len() as u64;
+			}
+			self.root.check_root()
 		})
 	}
 
@@ -181,48 +177,9 @@ impl<'root> ManagedRegularFile<'root> {
 	pub fn revalidate(&self) -> Result<(), ManagedReadError> {
 		with_materialization_disabled(|| {
 			self.root.check_root()?;
-			self.check_file()?;
-			self.check_logical_eof()?;
-			self.root.check_root()?;
-			self.check_file()
+			self.source.revalidate().map_err(error::source_error)?;
+			self.root.check_root()
 		})
-	}
-
-	pub(super) fn check_file(&self) -> Result<(), ManagedReadError> {
-		let held = fs::fstat(&self.file)?;
-		let named = match fs::statat(
-			self.root.directory,
-			self.name.as_bytes(),
-			AtFlags::SYMLINK_NOFOLLOW,
-		) {
-			Ok(stat) => stat,
-			Err(Errno::NOENT) => return Err(ManagedReadError::SourceChanged),
-			Err(error) => return Err(error.into()),
-		};
-		if !same_observation(&held, &self.initial)
-			|| !same_observation(&named, &self.initial)
-			|| PhysicalFsid::held(self.file.as_fd())? != Some(self.root.identity.physical_fsid)
-			|| self.root.named_fsid(self.name)? != Some(self.root.identity.physical_fsid)
-		{
-			return Err(ManagedReadError::SourceChanged);
-		}
-		Ok(())
-	}
-
-	fn check_logical_eof(&self) -> Result<(), ManagedReadError> {
-		let mut remaining_retries = MAX_INTERRUPTED_RETRIES;
-		loop {
-			match self.file.read_at(&mut [0], self.length) {
-				Ok(0) => return Ok(()),
-				Ok(_) => return Err(ManagedReadError::UnexpectedDataAfterEnd),
-				Err(error)
-					if error.kind() == io::ErrorKind::Interrupted && remaining_retries > 0 =>
-				{
-					remaining_retries -= 1;
-				}
-				Err(error) => return Err(error.into()),
-			}
-		}
 	}
 }
 

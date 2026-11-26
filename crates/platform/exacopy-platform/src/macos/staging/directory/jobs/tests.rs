@@ -151,18 +151,19 @@ fn fixed_job_artifacts_are_private_and_stage_revalidates_under_the_job() {
 		Err(JobError::NestedJob)
 	));
 	assert!(matches!(
-		stage.create_file(name(DATA.as_bytes()), name(TARGET.as_bytes()), context(), 0),
+		stage.create_file(
+			&crate::macos::staging::ManagedStageName::new(name(DATA.as_bytes())).unwrap(),
+			name(TARGET.as_bytes()),
+			context(),
+			0
+		),
 		Err(super::StageError::JobBindingMismatch)
 	));
 	assert!(!job_path.join(STAGE).join(DATA).exists());
 	let length = u64::try_from(STAGED_BYTES.len()).expect("fixture extent fits");
+	let selected = crate::macos::staging::ManagedStageName::new(name(DATA.as_bytes())).unwrap();
 	let mut writer = stage
-		.create_file(
-			name(DATA.as_bytes()),
-			name(TARGET.as_bytes()),
-			job_context(),
-			length,
-		)
+		.create_file(&selected, name(TARGET.as_bytes()), job_context(), length)
 		.expect("nested stage writer is bound to a public target");
 	writer.write_next(STAGED_BYTES).expect("write nested stage");
 	let closed = writer
@@ -374,7 +375,7 @@ fn lost_job_and_child_bindings_do_not_grant_mutation_to_replacements() {
 	));
 	assert!(matches!(
 		stage.create_file(
-			name(DATA.as_bytes()),
+			&crate::macos::staging::ManagedStageName::new(name(DATA.as_bytes())).unwrap(),
 			name(TARGET.as_bytes()),
 			job_context(),
 			0

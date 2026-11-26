@@ -86,6 +86,14 @@ pub struct EntryRequest<'name> {
 	entry: JournalEntryId,
 }
 
+impl<'name> EntryRequest<'name> {
+	/// Returns the checked private component fixed by this preparation request.
+	#[must_use]
+	pub const fn stage_component(&self) -> UnixComponent<'name> {
+		self.stage.component
+	}
+}
+
 /// An unwritten stage and fresh identity evidence supplied by the adapter.
 #[derive(Debug)]
 pub struct ObservedStage<W> {
