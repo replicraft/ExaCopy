@@ -131,9 +131,10 @@ not qualify the complete CLI, socket route or cryptographic primitive.
   post-barrier observations. The companion exercised its native publication
   fixture. ExaCopy pinned its exact commit, tree and archive at `5e936f0`;
   the existing platform suite passed against that pin before migration.
-  Consumer source and staging migrations are under independent review,
-  including preservation of the stricter stage ACL predicate and honest
-  partial-read diagnostics. Its strict copy-through-receipt profile still
+  `d9defab` integrated source and live staging/publication migration after
+  native consumer checks, including the stricter stage ACL predicate and
+  honest partial-read diagnostics. Restart recovery retains its existing
+  adapter until the companion supplies reopened-stage authority. The strict copy-through-receipt profile still
   needs qualification. Keep ExaCopy authorization, metadata
   policy and receipts at their present boundary. The bounded audit found no
   tracked HFS+/HFSX production implementation.

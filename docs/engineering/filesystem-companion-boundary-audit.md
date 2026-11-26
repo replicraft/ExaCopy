@@ -1,5 +1,35 @@
 # Filesystem companion ownership audit
 
+## Consumer integration at `d9defab`
+
+ExaCopy now selects companion `0266afa` through its exact source pin. Mounted
+source admission uses the companion directory, lease, typed mount/object
+facts, pinned reads and bounded same-handle metadata. Caller-owned source
+and stage names keep descriptor/name borrows lexical. Live staging uses
+the companion writer, checked close, independent read-back and strict
+timestamp callbacks. Publication and receipt promotion use the companion's
+no-prelookup exclusive rename and caller-ordered barriers and observations.
+ExaCopy retains authorization, metadata policy, digest verification, signed
+identity bytes, intent, receipts and recovery decisions.
+
+Review preserved the stricter existing stage ACL rule before writes: a
+present payload with an unknown entry count does not substitute for an
+explicit empty ACL. Companion read failures now retain their cause and
+requested range without inventing an exact partial-read failure offset.
+Its aggregate changed-source result still prevents publication.
+
+The composed consumer snapshot passed 271 cases with 16 existing skips,
+strict Clippy and the workspace checker on native macOS against an isolated,
+clean pinned companion. The strict copy-through-receipt fixture remains
+unqualified: the host exposes source xattrs and the fixture refuses them
+before copying. Restart recovery still uses its existing adapter pending a
+companion capability for freshly reopened stages. The generic receipt
+record writer also remains in ExaCopy. Neither process-crash nor power-loss
+qualification follows from this ownership migration. No mounted HFS+
+adapter was added.
+
+## Initial source inventory
+
 Reviewed the tracked ExaCopy tree at
 `f0825715c9860e7e578b1137a2f2965972c40a74`. The ExaCopy manifest
 selects `apfs-mounted` only through the macOS platform package
