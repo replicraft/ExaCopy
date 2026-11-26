@@ -76,7 +76,8 @@ fn retry_stamp_holds_pins_without_retaining_the_old_flock() {
 		.unwrap();
 	let lease = inspect.try_read_lease().unwrap();
 	drop(lease);
-	let before = fs::read(fixture.segment()).unwrap();
+	let mut before = vec![0; usize::try_from(stamp.segment.len()).unwrap()];
+	stamp.segment.read_exact_at(0, &mut before).unwrap();
 	let retry = reopen(&fixture, stamp).unwrap();
 	assert_eq!(retry.previous_source_observation(), observation());
 	assert!(matches!(inspect.try_read_lease(), Err(StageError::JobBusy)));
@@ -298,8 +299,12 @@ fn retry_refuses_wrong_epoch_or_fresh_source_before_a_new_allocation() {
 	for (source, next_epoch) in [
 		(observation(), epoch(3)),
 		(
-			RemoteSourceObservation::new(exacopy_journal::StreamLength::new(19).unwrap(), 0o600, 1)
-				.unwrap(),
+			RemoteSourceObservation::new(
+				exacopy_journal::StreamLength::new(19).unwrap(),
+				0o100600,
+				1,
+			)
+			.unwrap(),
 			epoch(2),
 		),
 	] {

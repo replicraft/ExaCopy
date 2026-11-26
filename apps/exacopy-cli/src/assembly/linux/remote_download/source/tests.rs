@@ -191,7 +191,12 @@ fn retry_scope() -> RemoteDownloadScope {
 	)
 	.unwrap();
 	let destination = RemoteDownloadDestination::new(
-		RootCapabilityId::from_bytes([4; 16]).unwrap(),
+		RootCapabilityId::from_bytes(
+			uuid::Builder::from_random_bytes([4; 16])
+				.into_uuid()
+				.into_bytes(),
+		)
+		.unwrap(),
 		LinuxFileIdentity::new(1, 2),
 		UnixComponent::new(b"target").unwrap(),
 	);

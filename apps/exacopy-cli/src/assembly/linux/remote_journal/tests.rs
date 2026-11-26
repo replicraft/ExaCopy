@@ -301,12 +301,23 @@ impl Fixture {
 	}
 
 	fn replay(&self) -> RemoteDownloadReplay {
-		let owner = fs::read(self.job_path().join("owner.cbor")).unwrap();
+		let name = job_name(self.job);
+		let job = self
+			.root
+			.open_recovery_job(component(name.as_bytes()).unwrap())
+			.unwrap();
+		let read = |record: exacopy_platform::linux::RecoveryFile| {
+			let mut bytes = vec![0; usize::try_from(record.len()).unwrap()];
+			record.read_exact_at(0, &mut bytes).unwrap();
+			record.check_logical_eof().unwrap();
+			bytes
+		};
+		let owner = read(job.open_owner().unwrap());
 		let key = self.profile.verification_key();
 		let dialect = self.activation().dialect;
 		let owner = dialect.decode(&owner, self.profile.id(), &key).unwrap();
 		let trust = dialect.trust(&owner, self.profile.id(), &key).unwrap();
-		let journal = fs::read(self.segment()).unwrap();
+		let journal = read(job.open_first_segment().unwrap());
 		replay_remote_download_with_bootstrap(journal.as_slice(), &trust).unwrap()
 	}
 
