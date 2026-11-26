@@ -25,11 +25,13 @@ mod writer;
 pub use anchor::RecoveryStageAnchor;
 pub use lease::RecoveryReadLease;
 pub use writer::{
-	FreshRecoveryStage, PendingWitnessReservation, RecoveryReceiptDirectory,
-	RecoveryStageDirectory, RecoveryWriteLease, ReservedJournalRead, RetainedPrefixRead,
-	RetainedPrefixSelection, RetainedStage, WitnessReservationAuthority, WitnessReservationEffect,
-	WitnessReservationError, WitnessReservationGateRequest, WitnessReservationObservationError,
-	WitnessReservationPlan,
+	ActiveWitnessReservation, ContinuationReservationError, FreshRecoveryStage,
+	PendingWitnessReservation, RecoveryReceiptDirectory, RecoveryStageDirectory,
+	RecoveryWriteLease, ReservedContinuationRequest, ReservedJournalRead, RetainedPrefixRead,
+	RetainedPrefixSelection, RetainedStage, RetainedSuffixReadback, RetainedSuffixWriter,
+	SuffixEffect, SuffixError, SyncedRetainedPrefix, SyncedSuffixRange,
+	WitnessReservationAuthority, WitnessReservationEffect, WitnessReservationError,
+	WitnessReservationGateRequest, WitnessReservationObservationError, WitnessReservationPlan,
 };
 
 #[cfg(test)]

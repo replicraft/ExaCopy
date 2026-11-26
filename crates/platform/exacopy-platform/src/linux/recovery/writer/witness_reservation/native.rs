@@ -11,7 +11,7 @@ use crate::linux::{FileIdentity, SourceObservation, StageError};
 use super::{HeldReservation, mount_id};
 
 // The protocol reserves the entire admitted sealed-receipt envelope.
-const RECEIPT_CAPACITY: u64 = 6_144;
+pub(super) const RECEIPT_CAPACITY: u64 = 6_144;
 
 pub(super) struct AnonymousReceipt {
 	file: File,

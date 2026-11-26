@@ -212,3 +212,6 @@ fn selection(inventory: &RecoveryInventory<'_>) -> RetainedPrefixSelection<'stat
 fn component(bytes: &[u8]) -> UnixComponent<'_> {
 	UnixComponent::new(bytes).unwrap()
 }
+
+#[path = "suffix_tests.rs"]
+mod suffix_tests;

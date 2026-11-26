@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::os::unix::ffi::OsStrExt as _;
 use std::sync::MutexGuard;
 
@@ -7,8 +8,14 @@ use exacopy_endpoint::{ReadView, UnixComponent};
 use super::{RecoveryFile, RecoveryInventory, RecoveryWriteLease, StageError};
 use crate::linux::stage::{FILE_MODE, check_no_visible_attributes};
 
+mod suffix;
 #[cfg(test)]
 mod tests;
+
+pub use suffix::{
+	RetainedSuffixReadback, RetainedSuffixWriter, SuffixEffect, SuffixError, SyncedRetainedPrefix,
+	SyncedSuffixRange,
+};
 
 /// Expected names and identities from the selected prepared-stage history.
 ///
@@ -58,9 +65,11 @@ impl RecoveryWriteLease<'_> {
 		}
 		let reader = RetainedPrefixRead {
 			_access: self.try_stage_access()?,
+			lease: self,
 			inventory,
 			stage,
 			selection: actual,
+			suffix_spent: Cell::new(false),
 		};
 		reader.recheck_observation()?;
 		Ok(reader)
@@ -80,9 +89,11 @@ fn inventory_component(name: &std::ffi::OsStr) -> Result<UnixComponent<'_>, Stag
 #[must_use]
 pub struct RetainedPrefixRead<'lease> {
 	_access: MutexGuard<'lease, ()>,
+	lease: &'lease RecoveryWriteLease<'lease>,
 	inventory: &'lease RecoveryInventory<'lease>,
 	stage: &'lease RecoveryFile,
 	selection: RetainedPrefixSelection<'lease>,
+	suffix_spent: Cell<bool>,
 }
 
 impl RetainedPrefixRead<'_> {

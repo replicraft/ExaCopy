@@ -25,11 +25,15 @@ mod retained;
 mod witness_reservation;
 
 pub use fresh::FreshRecoveryStage;
-pub use prefix::{RetainedPrefixRead, RetainedPrefixSelection};
+pub use prefix::{
+	RetainedPrefixRead, RetainedPrefixSelection, RetainedSuffixReadback, RetainedSuffixWriter,
+	SuffixEffect, SuffixError, SyncedRetainedPrefix, SyncedSuffixRange,
+};
 pub use resume::RecoveryStageDirectory;
 pub use retained::RetainedStage;
 pub use witness_reservation::{
-	PendingWitnessReservation, ReservedJournalRead, WitnessReservationAuthority,
+	ActiveWitnessReservation, ContinuationReservationError, PendingWitnessReservation,
+	ReservedContinuationRequest, ReservedJournalRead, WitnessReservationAuthority,
 	WitnessReservationEffect, WitnessReservationError, WitnessReservationGateRequest,
 	WitnessReservationObservationError, WitnessReservationPlan,
 };
@@ -59,6 +63,7 @@ impl DestinationRoot {
 			job,
 			lock,
 			stage_access: Mutex::new(()),
+			suffix_barrier_started: AtomicBool::new(false),
 			journal_access: Mutex::new(()),
 			journal_reservation_started: AtomicBool::new(false),
 		})
@@ -76,15 +81,21 @@ pub struct RecoveryWriteLease<'root> {
 	job: RecoveryJob<'root>,
 	lock: File,
 	stage_access: Mutex<()>,
+	suffix_barrier_started: AtomicBool,
 	journal_access: Mutex<()>,
 	journal_reservation_started: AtomicBool,
 }
 
 impl RecoveryWriteLease<'_> {
 	fn try_stage_access(&self) -> Result<MutexGuard<'_, ()>, StageError> {
-		self.stage_access
+		let access = self
+			.stage_access
 			.try_lock()
-			.map_err(|_| StageError::JobBusy)
+			.map_err(|_| StageError::JobBusy)?;
+		if self.suffix_barrier_started.load(Ordering::Relaxed) {
+			return Err(StageError::JobBusy);
+		}
+		Ok(access)
 	}
 
 	/// Returns the held inspection capability protected by the exclusive lease.

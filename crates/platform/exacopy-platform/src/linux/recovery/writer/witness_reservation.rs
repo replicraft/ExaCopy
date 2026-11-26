@@ -16,9 +16,13 @@ use super::{
 	recheck_regular,
 };
 
+mod continuation;
 mod native;
 mod types;
 
+pub use continuation::{
+	ActiveWitnessReservation, ContinuationReservationError, ReservedContinuationRequest,
+};
 pub use types::{
 	WitnessReservationAuthority, WitnessReservationEffect, WitnessReservationError,
 	WitnessReservationGateRequest, WitnessReservationObservationError, WitnessReservationPlan,
