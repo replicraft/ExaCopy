@@ -136,7 +136,7 @@ def build_environment(target: Path) -> dict[str, str]:
     return env
 
 
-def binary_observation(path: Path) -> tuple[int, str]:
+def executable_observation(path: Path, output=None):
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
     with os.fdopen(fd, "rb") as source:
         before = os.fstat(source.fileno())
@@ -153,13 +153,62 @@ def binary_observation(path: Path) -> tuple[int, str]:
             if not chunk:
                 raise ValueError("selected ELF ended before its held extent")
             hasher.update(chunk)
+            if output is not None and output.write(chunk) != len(chunk):
+                raise ValueError("the private executable copy write was incomplete")
             remaining -= len(chunk)
         if (
             source.read(1) or file_observation(before) != file_observation(os.fstat(source.fileno()))
             or file_observation(before) != file_observation(path.lstat())
         ):
             raise ValueError("selected ELF changed while measured")
-    return before.st_size, hasher.hexdigest()
+    return {
+        "path": os.fspath(path), "size": before.st_size, "sha256": hasher.hexdigest(),
+        "device": before.st_dev, "inode": before.st_ino, "link_count": before.st_nlink,
+        "mode": stat.S_IMODE(before.st_mode), "uid": before.st_uid,
+        "modified_ns": before.st_mtime_ns, "changed_ns": before.st_ctime_ns,
+    }
+
+
+def binary_observation(path: Path) -> tuple[int, str]:
+    observed = executable_observation(path)
+    return observed["size"], observed["sha256"]
+
+
+def stage_built_executable(original, selected, expected):
+    if expected["uid"] != os.geteuid():
+        raise ValueError("the compiler-reported executable is outside the fixture owner scope")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
+    fd = os.open(selected, flags, 0o600)
+    with os.fdopen(fd, "wb") as output:
+        if executable_observation(original, output) != expected:
+            raise ValueError("the compiler-reported executable changed before fixture selection")
+        output.flush()
+        os.fchmod(output.fileno(), 0o700)
+        created = os.fstat(output.fileno())
+        if (
+            created.st_nlink != 1 or created.st_uid != os.geteuid()
+            or file_observation(created) != file_observation(selected.lstat())
+        ):
+            raise ValueError("fixture executable copy lost exclusive custody")
+    observed = executable_observation(selected)
+    if (
+        observed["device"] != created.st_dev or observed["inode"] != created.st_ino
+        or observed["modified_ns"] != created.st_mtime_ns or observed["changed_ns"] != created.st_ctime_ns
+        or observed["link_count"] != 1 or observed["mode"] != 0o700
+        or observed["uid"] != os.geteuid()
+        or (observed["device"], observed["inode"]) == (expected["device"], expected["inode"])
+        or (observed["size"], observed["sha256"]) != (expected["size"], expected["sha256"])
+    ):
+        raise ValueError("the independently reopened fixture executable differs from the recorded copy")
+    return observed
+
+
+def verify_executable_custody(original, selected, build):
+    if (
+        executable_observation(original) != build["compiler_reported_executable"]
+        or executable_observation(selected) != build["checked_executable_copy"]
+    ):
+        raise ValueError("the compiler artifact or checked executable copy changed")
 
 
 def verified_pins(stage: str, evidence: Path, env: dict[str, str]) -> dict[str, str]:
@@ -201,7 +250,10 @@ def verify_cargo_artifact(log: Path, expected: Path, feature: str) -> list[str]:
     return sorted(unit["features"])
 
 
-def build_cli(route: str, evidence: Path, target: Path, env: dict[str, str]) -> tuple[Path, Path]:
+def build_cli(
+    route: str, evidence: Path, target: Path, env: dict[str, str], *,
+    staged_executable: Path | None = None,
+) -> tuple[Path, Path]:
     evidence.mkdir(mode=0o700)
     feature = FEATURES[route]
     command = [
@@ -240,7 +292,19 @@ def build_cli(route: str, evidence: Path, target: Path, env: dict[str, str]) -> 
             raise ValueError(f"native CLI build did not succeed ({result.status})")
         binary = target / "release" / "exacopy"
         report["compiled_features"] = verify_cargo_artifact(log, binary, feature)
-        size, digest = binary_observation(binary)
+        if staged_executable is None:
+            size, digest = binary_observation(binary)
+        else:
+            if staged_executable.parent != target:
+                raise ValueError("the fixture executable must be staged in the owned build root")
+            original = executable_observation(binary)
+            report["compiler_reported_executable"] = original
+            report["checked_executable_copy"] = stage_built_executable(binary, staged_executable, original)
+            verify_executable_custody(binary, staged_executable, report)
+            if source_identity(REPO) != report["source_after"]:
+                raise ValueError("source changed while staging the fixture executable")
+            size, digest = original["size"], original["sha256"]
+            binary = staged_executable
         report.update(status="built", build_sha256=digest, build_size=size)
         return binary, manifest
     finally:

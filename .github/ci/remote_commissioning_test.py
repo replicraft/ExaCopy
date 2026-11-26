@@ -3,6 +3,7 @@
 import contextlib
 import hashlib
 import io
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -15,6 +16,7 @@ import remote_commissioning as commission
 import remote_commissioning_authority as authority
 import remote_commissioning_peer as peer
 from native_supervision import CleanupUnconfirmed
+from fixture import opened as campaign_opened
 
 NONCE = "4601714801c0e1a535bf"
 
@@ -325,6 +327,46 @@ class PortableCommissioningControls(unittest.TestCase):
             self.fixture.stop()
         command.assert_not_called()
 
+    def test_campaign_keeps_its_single_link_gate_for_selected_executable(self):
+        original = self.root / "cargo-elf"
+        payload = b"\x7fELF" + b"synthetic bytes for a descriptor test"
+        original.write_bytes(payload)
+        original.chmod(0o700)
+        os.link(original, self.root / "cargo-alias")
+        with self.assertRaisesRegex(commission.EvidenceBlocked, "single regular file"):
+            campaign_opened(original, commission.native.MAX_BINARY)
+
+        selected = self.root / "selected"
+        measurement = commission.native.executable_observation(original)
+        commission.native.stage_built_executable(original, selected, measurement)
+        held, details = campaign_opened(selected, commission.native.MAX_BINARY)
+        with held:
+            self.assertEqual(details.st_nlink, 1)
+            self.assertEqual(held.read(), payload)
+
+    def test_rebound_copy_and_manifest_cannot_replace_the_original_build_snapshot(self):
+        original = self.root / "release/exacopy"
+        original.parent.mkdir()
+        original.write_bytes(b"\x7fELF" + b"unchanged test executable content")
+        original.chmod(0o700)
+        compiler_artifact = commission.native.executable_observation(original)
+        selected = self.root / "exacopy"
+        report = self.root / "build.json"
+        report.write_text(json.dumps({
+            "compiler_reported_executable": compiler_artifact,
+            "checked_executable_copy": commission.native.stage_built_executable(
+                original, selected, compiler_artifact,
+            ),
+        }))
+        snapshot, digest = commission.read_build_manifest(report)
+        commission.verify_build_custody(report, selected, snapshot, digest)
+
+        selected.rename(self.root / "prior-selected")
+        rebound = commission.native.stage_built_executable(original, selected, compiler_artifact)
+        report.write_text(json.dumps(snapshot | {"checked_executable_copy": rebound}))
+        with self.assertRaisesRegex(commission.EvidenceFailed, "build evidence changed"):
+            commission.verify_build_custody(report, selected, snapshot, digest)
+
     def test_nested_cleanup_failure_fences_known_peer_without_removing_fixture(self):
         parent = self.root / "commissioning"
         report, work = parent / "report", parent / "private"
@@ -358,6 +400,7 @@ class PortableCommissioningControls(unittest.TestCase):
         ):
             commission.execute(parent, report, work, evidence)
         self.assertEqual(build.call_args.args[-1]["CARGO_BUILD_JOBS"], "2")
+        self.assertEqual(build.call_args.kwargs["staged_executable"], parent / "private-build/exacopy")
         stop_peer.assert_called_once_with()
         stop.assert_not_called()
         self.assertEqual(evidence["peer_cleanup"], "confirmed-drained")

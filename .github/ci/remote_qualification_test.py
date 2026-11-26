@@ -114,6 +114,64 @@ class ImmutableEvidenceControls(unittest.TestCase):
         with self.assertRaises(ValueError):
             ci.verify_cargo_artifact(log, self.binary, ci.FEATURES[ci.EMBEDDED])
 
+    def test_staged_executable_preserves_bytes_but_not_cargo_link_identity(self):
+        alias = self.root / "cargo-artifact-alias"
+        selected = self.root / "selected"
+        os.link(self.binary, alias)
+        original = ci.executable_observation(self.binary)
+        copy = ci.stage_built_executable(self.binary, selected, original)
+        self.assertEqual(original["link_count"], 2)
+        self.assertEqual(copy["link_count"], 1)
+        self.assertEqual(copy["sha256"], original["sha256"])
+        self.assertEqual(copy["size"], original["size"])
+        self.assertEqual(copy["mode"], 0o700)
+        self.assertNotEqual((copy["device"], copy["inode"]), (original["device"], original["inode"]))
+        custody = {"compiler_reported_executable": original, "checked_executable_copy": copy}
+        ci.verify_executable_custody(self.binary, selected, custody)
+        os.link(selected, self.root / "unexpected-copy-alias")
+        with self.assertRaisesRegex(ValueError, "custody|changed"):
+            ci.verify_executable_custody(self.binary, selected, custody)
+
+    def test_staging_refuses_occupied_copy_and_replaced_original(self):
+        selected = self.root / "selected"
+        selected.write_bytes(b"retain incumbent")
+        original = ci.executable_observation(self.binary)
+        with self.assertRaises(FileExistsError):
+            ci.stage_built_executable(self.binary, selected, original)
+        self.assertEqual(selected.read_bytes(), b"retain incumbent")
+        replacement = self.root / "replacement"
+        replacement.write_bytes(self.binary.read_bytes())
+        replacement.chmod(0o700)
+        replacement.replace(self.binary)
+        pending = self.root / "pending"
+        with self.assertRaisesRegex(ValueError, "compiler-reported executable changed"):
+            ci.stage_built_executable(self.binary, pending, original)
+        self.assertEqual(pending.stat().st_mode & 0o111, 0)
+
+    def test_held_original_is_rechecked_during_copy(self):
+        replacement = self.root / "replacement"
+        replacement.write_bytes(self.binary.read_bytes())
+        replacement.chmod(0o700)
+
+        class ReplaceDuringWrite:
+            def write(_self, data):
+                replacement.replace(self.binary)
+                return len(data)
+
+        with self.assertRaisesRegex(ValueError, "selected ELF changed while measured"):
+            ci.executable_observation(self.binary, ReplaceDuringWrite())
+
+    def test_staging_follows_no_source_symlink(self):
+        report = ci.executable_observation(self.binary)
+        source_alias = self.root / "source-alias"
+        source_alias.symlink_to(self.binary)
+        with self.assertRaises(OSError):
+            ci.stage_built_executable(source_alias, self.root / "unused", report)
+        selected = self.root / "foreign"
+        with self.assertRaisesRegex(ValueError, "fixture owner scope"):
+            ci.stage_built_executable(self.binary, selected, report | {"uid": os.geteuid() + 1})
+        self.assertFalse(selected.exists())
+
     def test_timeout_reaps_owned_group_and_preserves_log(self):
         log = self.root / "process.log"
         command = [

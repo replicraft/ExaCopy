@@ -109,26 +109,45 @@ def export(work, output):
     return hashes
 
 
-def observations(fixture, build, binary, env, work):
+def read_build_manifest(manifest):
+    with manifest.open("rb") as stream:
+        contents = stream.read(MAX_SUMMARY + 1)
+    if not 0 < len(contents) <= MAX_SUMMARY:
+        raise Blocked("the generated build manifest exceeds its input bound")
+    return json.loads(contents), hashlib.sha256(contents).hexdigest()
+
+
+def verify_build_custody(manifest, binary, build, digest):
+    if read_build_manifest(manifest) != (build, digest):
+        raise EvidenceFailed("build evidence changed during commissioning")
+    native.verify_executable_custody(binary.parent / "release/exacopy", binary, build)
+
+
+def observations(fixture, build, binary, env, work, verify_build):
+    verify_build()
     first = native.collect_facts(fixture.destination, binary, work / "native-facts", env=env, manifest=build)
     if first != 0:
         raise Blocked("exact fixture native facts were unavailable")
     result = native.linux_remote_substrate.run(fixture.destination, work / "substrate", environment=env)
     if result != 0:
         raise Blocked("exact-root substrate diagnostics did not pass")
+    verify_build()
     second = native.collect_facts(fixture.destination, binary, work / "native-facts-recheck", env=env, manifest=build)
     if second != 0 or (
         work.joinpath("native-facts/facts.json").read_bytes()
         != work.joinpath("native-facts-recheck/facts.json").read_bytes()
     ):
         raise Blocked("commissioning native facts changed")
+    verify_build()
 
 
-def run_fixture(fixture, work, binary, manifest, env, b3sum, evidence):
+def run_fixture(fixture, work, binary, manifest, env, b3sum, evidence, verify_build):
+    verify_build()
     fixture.make_root()
-    observations(fixture, manifest, binary, env, work)
+    observations(fixture, manifest, binary, env, work, verify_build)
     checkpoint()
     record, trust, authority = make_authority(fixture, work, manifest, b3sum)
+    verify_build()
     evidence["authority"] = authority
     evidence["inputs"] = {
         "native_facts_sha256": file_digest(work / "native-facts/facts.json"),
@@ -151,6 +170,7 @@ def run_fixture(fixture, work, binary, manifest, env, b3sum, evidence):
     profile, peer_log, peer = fixture.make_peer()
     evidence["peer"] = peer
     checkpoint()
+    verify_build()
     result = native.run_campaign({
         "destination": fixture.destination, "owner_profile": owner, "ssh_profile": profile,
         "qualification": record, "trust": trust, "source_small": small,
@@ -167,13 +187,11 @@ def run_fixture(fixture, work, binary, manifest, env, b3sum, evidence):
     if result == 0:
         if evidence["observations"] is None:
             raise EvidenceFailed("native campaign pass is missing its observations")
-        build = read_json(manifest, MAX_SUMMARY)
         native.verified_pins("campaign-post", work, env)
-        if (
-            native.source_identity(native.REPO) != build["source_after"]
-            or native.binary_observation(binary) != (build["build_size"], build["build_sha256"])
-        ):
-            raise EvidenceFailed("source or executable changed during commissioning")
+        try:
+            verify_build()
+        except (OSError, ValueError) as error:
+            raise EvidenceFailed("executable custody changed during commissioning") from error
     return result
 
 
@@ -212,13 +230,21 @@ def execute(parent, report, work, evidence):
     with native.fresh_target(target):
         unresolved_child = False
         try:
-            binary, manifest = native.build_cli(native.DIRECT, work / "build", target, env)
-            build = read_json(manifest, MAX_SUMMARY)
+            binary, manifest = native.build_cli(
+                native.DIRECT, work / "build", target, env, staged_executable=target / "exacopy",
+            )
+            build, digest = read_build_manifest(manifest)
             evidence["build"] = {
                 "elf_sha256": build["build_sha256"], "compiled_features": build["compiled_features"],
-                "build_manifest_sha256": file_digest(manifest), "build_blake3_derive_key": None,
+                "build_manifest_sha256": digest, "build_blake3_derive_key": None,
             }
-            outcome = run_fixture(fixture, work, binary, manifest, env, b3sum, evidence)
+
+            def verify_build():
+                if native.source_identity(native.REPO) != build["source_after"]:
+                    raise EvidenceFailed("source changed during commissioning")
+                verify_build_custody(manifest, binary, build, digest)
+
+            outcome = run_fixture(fixture, work, binary, manifest, env, b3sum, evidence, verify_build)
             if evidence["peer"] is not None:
                 if file_digest(Path(SSHD)) != sshd_digest:
                     raise EvidenceFailed("independent OpenSSH executable changed during commissioning")
