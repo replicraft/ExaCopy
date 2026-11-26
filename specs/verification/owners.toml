@@ -20,4 +20,5 @@ exacopy-cli = ["verification/sync_preview/fixture.toml"]
 exacopy-platform = [
 	"verification/protected_slot/fixture.toml",
 	"verification/protected_root_setup/fixture.toml",
+	"verification/sync_history_ext4/fixture.toml",
 ]

@@ -1,0 +1,16 @@
+schema_version = 1
+id = "linux-sync-history-ext4"
+target = "x86_64-unknown-linux-gnu"
+profile = "linux-unprivileged-whole-ext4-sync-history-v1"
+rust_toolchain = "1.100.0"
+runner = "verification/sync_history_ext4/run.py"
+controls = "verification/sync_history_ext4/test_runner.py"
+workflow = ".github/workflows/linux-sync-history-ext4-qualification.yml"
+result = "result.json"
+
+[[case]]
+kind = "rust-integration"
+test_target = "linux_sync_history_ext4"
+selector = "held_ext4_history_scope_and_named_members_refuse_aliases_and_swaps"
+source = "tests/linux_sync_history_ext4.rs"
+ignored = true

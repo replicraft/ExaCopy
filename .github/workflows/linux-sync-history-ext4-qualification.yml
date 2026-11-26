@@ -1,0 +1,120 @@
+name: Linux sync history ext4 qualification
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/linux-sync-history-ext4-qualification.yml'
+      - '.github/ci/common.sh'
+      - '.github/ci/capture.sh'
+      - '.github/ci/install.sh'
+      - '.cargo/config.toml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'crates/platform/exacopy-platform/Cargo.toml'
+      - 'crates/platform/exacopy-platform/src/lib.rs'
+      - 'crates/platform/exacopy-platform/src/linux.rs'
+      - 'crates/platform/exacopy-platform/src/linux/process_crash.rs'
+      - 'crates/platform/exacopy-platform/src/linux/handle.rs'
+      - 'crates/platform/exacopy-platform/src/linux/mount_observation.rs'
+      - 'crates/platform/exacopy-platform/src/linux/named_read.rs'
+      - 'crates/platform/exacopy-platform/src/linux/source.rs'
+      - 'crates/platform/exacopy-platform/src/linux/source/**'
+      - 'crates/platform/exacopy-platform/src/linux/sync_preview.rs'
+      - 'crates/platform/exacopy-platform/src/linux/sync_preview/**'
+      - 'crates/platform/exacopy-platform/tests/linux_sync_history_ext4.rs'
+      - 'crates/platform/exacopy-platform/verification/sync_history_ext4/**'
+      - 'crates/foundation/exacopy-core/src/component.rs'
+      - 'crates/interfaces/exacopy-endpoint/src/linux_staging.rs'
+      - 'crates/interfaces/exacopy-endpoint/src/positioned.rs'
+      - 'crates/interfaces/exacopy-endpoint/src/read_view.rs'
+      - 'specs/dependencies/**'
+      - 'specs/verification/owners.toml'
+      - 'tools/apfs_source.py'
+      - 'tools/qualification/native_supervision.py'
+      - 'tools/transport_source.py'
+      - 'xtask/src/verification/native.rs'
+      - 'xtask/src/verification/native/**'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  EXPECTED_RUST_HOST: x86_64-unknown-linux-gnu
+  CARGO_BUILD_JOBS: "2"
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: never
+
+jobs:
+  qualify:
+    if: github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Confirm exact canonical hosted input
+        id: admission
+        run: |
+          test "$GITHUB_SERVER_URL" = https://github.com
+          test "${GITHUB_REPOSITORY,,}" = replicraft/exacopy
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_EVENT_NAME" = push
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = Linux
+          test "$RUNNER_ARCH" = X64
+          head=$(git rev-parse HEAD)
+          status=$(git status --porcelain)
+          test "$head" = "$GITHUB_SHA"
+          test -z "$status"
+          (umask 077; mkdir -- "$RUNNER_TEMP/exacopy-evidence")
+      - name: Validate portable evidence controls
+        run: |
+          bash .github/ci/capture.sh sync-history-controls python3 -B -Werror \
+            crates/platform/exacopy-platform/verification/sync_history_ext4/test_runner.py -v
+      - name: Prepare pinned build inputs
+        run: |
+          bash .github/ci/capture.sh sync-history-apfs python3 -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh sync-history-transport python3 -B tools/transport_source.py --fetch
+          bash .github/ci/capture.sh sync-history-rust bash .github/ci/install.sh rust
+          bash .github/ci/capture.sh sync-history-lock cargo +1.100.0 fetch --locked \
+            --target "$EXPECTED_RUST_HOST"
+      - name: Observe held ext4 history location and members
+        id: native
+        run: |
+          bash .github/ci/capture.sh sync-history-ext4 python3 -B -Werror \
+            crates/platform/exacopy-platform/verification/sync_history_ext4/run.py --revision "$GITHUB_SHA"
+      - name: Retain exact native evidence
+        if: always() && steps.native.outputs.evidence_path != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-sync-history-ext4-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.native.outputs.evidence_path }}
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain workflow capture logs
+        if: always() && steps.admission.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-sync-history-ext4-capture-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-evidence/sync-history-controls.log
+            ${{ runner.temp }}/exacopy-evidence/sync-history-controls.txt
+            ${{ runner.temp }}/exacopy-evidence/sync-history-apfs.log
+            ${{ runner.temp }}/exacopy-evidence/sync-history-apfs.txt
+            ${{ runner.temp }}/exacopy-evidence/sync-history-transport.log
+            ${{ runner.temp }}/exacopy-evidence/sync-history-transport.txt
+            ${{ runner.temp }}/exacopy-evidence/sync-history-rust.log
+            ${{ runner.temp }}/exacopy-evidence/sync-history-rust.txt
+            ${{ runner.temp }}/exacopy-evidence/sync-history-lock.log
+            ${{ runner.temp }}/exacopy-evidence/sync-history-lock.txt
+            ${{ runner.temp }}/exacopy-evidence/sync-history-ext4.log
+            ${{ runner.temp }}/exacopy-evidence/sync-history-ext4.txt
+          if-no-files-found: ignore
+          retention-days: 90
