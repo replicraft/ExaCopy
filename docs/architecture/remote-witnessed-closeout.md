@@ -164,10 +164,23 @@ positive segment and sequence bounds, exact plan and authority projections
 under the submission guard, preservation of old journal bytes and EOF,
 zero-length unnamed receipt allocation, and the sticky lease after a
 submitted journal allocation returns an error. The CI fixture selects all
-four tests, including two normally ignored because they require native
+five tests, including two normally ignored because they require native
 capabilities. Read the exact run's filesystem and kernel metadata before
 using its result. The combined adapter candidate's earlier native run passed
 all four with an unprivileged ARM64 Linux tmpfs fixture.
+
+The first integrated Ubuntu Linux 7.0 fixture rejected an anonymous
+allocation after the syscall succeeded. Its predicate incorrectly required
+unchanged mtime. Linux's [tmpfs allocation path](https://github.com/torvalds/linux/blob/v7.0/mm/shmem.c#L3591-L3601)
+calls `file_modified`, whose [VFS implementation](https://github.com/torvalds/linux/blob/v7.0/fs/inode.c#L2263-L2346)
+can refresh both mtime and ctime. The adapter now permits those two fields
+to change across its own held allocation and captures a new observation.
+Identity, owner, group, mode, links, access time and EOF remain checked.
+Complete old-prefix byte comparison and subsequent strict observation
+rechecks, with the existing read-atime allowance, remain required.
+The added fifth fixture exercises that timestamp
+transition and rejects changes to the eight other selected native fields.
+The original failed hosted result remains evidence for its revision.
 
 These tests exercise the adapter projection and isolated native primitives.
 Complete invocation with an eligible, qualified operation-2 destination,

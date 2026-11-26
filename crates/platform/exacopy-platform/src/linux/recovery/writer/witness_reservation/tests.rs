@@ -24,6 +24,40 @@ const HEAD: Head = Head {
 };
 
 #[test]
+fn allocation_may_refresh_write_times_but_not_other_selected_fields() {
+	let scratch = Scratch::new();
+	let file = std::fs::File::create(scratch.path("metadata-transition")).unwrap();
+	let original = rustix::fs::fstat(&file).unwrap();
+	let before = crate::linux::SourceObservation::capture(&original).unwrap();
+	let mut refreshed = original;
+	refreshed.st_mtime = original.st_mtime.checked_add(1).unwrap();
+	refreshed.st_ctime = original.st_ctime.checked_add(1).unwrap();
+	let after = crate::linux::SourceObservation::capture(&refreshed).unwrap();
+	assert_ne!(before.modified_at(), after.modified_at());
+	assert_ne!(before.changed_at(), after.changed_at());
+	native::check_after_allocation(before, after).unwrap();
+	let changes: [fn(&mut rustix::fs::Stat); 8] = [
+		|stat| stat.st_ino ^= 1,
+		|stat| stat.st_dev ^= 1,
+		|stat| stat.st_size = 1,
+		|stat| stat.st_mode ^= 0o100,
+		|stat| stat.st_uid ^= 1,
+		|stat| stat.st_gid ^= 1,
+		|stat| stat.st_nlink ^= 1,
+		|stat| stat.st_atime = stat.st_atime.checked_add(1).unwrap(),
+	];
+	for change in changes {
+		let mut changed = refreshed;
+		change(&mut changed);
+		let changed = crate::linux::SourceObservation::capture(&changed).unwrap();
+		assert!(matches!(
+			native::check_after_allocation(before, changed),
+			Err(StageError::IdentityChanged)
+		));
+	}
+}
+
+#[test]
 fn native_plan_checks_the_positive_byte_and_sequence_bounds() {
 	let frames = NonZeroU64::new(10).unwrap();
 	let exact = WitnessReservationPlan::new(HEAD, LIMIT, frames).unwrap();
@@ -224,6 +258,7 @@ fn native_allocation_preserves_the_named_segment_and_anonymous_eof() {
 	let before = native::inspect_anonymous(&receipt, root.mount).unwrap();
 	native::allocate(&receipt, 0, 6_144).unwrap();
 	let after = native::inspect_anonymous(&receipt, root.mount).unwrap();
+	eprintln!("anonymous allocation before={before:?} after={after:?}");
 	native::check_after_allocation(before, after).unwrap();
 	assert_eq!(
 		fs::read_dir(scratch.path("fixture-job")).unwrap().count(),

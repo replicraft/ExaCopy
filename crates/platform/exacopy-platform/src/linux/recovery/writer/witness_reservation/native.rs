@@ -99,8 +99,10 @@ pub(super) fn check_after_allocation(
 	before: SourceObservation,
 	after: SourceObservation,
 ) -> Result<(), StageError> {
-	// KEEP_SIZE can advance ctime when the inode's allocation changes. The
-	// caller will compare the complete old journal against its accepted head.
+	// KEEP_SIZE may refresh both mtime and ctime through file_modified, even
+	// without extending EOF. Accept that transition only across our own held
+	// allocation; the caller still compares every old journal byte and adopts
+	// a complete new observation for subsequent rechecks.
 	if before.identity() != after.identity()
 		|| before.len() != after.len()
 		|| before.mode() != after.mode()
@@ -108,7 +110,6 @@ pub(super) fn check_after_allocation(
 		|| before.group() != after.group()
 		|| before.link_count() != after.link_count()
 		|| before.accessed_at() != after.accessed_at()
-		|| before.modified_at() != after.modified_at()
 	{
 		return Err(StageError::IdentityChanged);
 	}

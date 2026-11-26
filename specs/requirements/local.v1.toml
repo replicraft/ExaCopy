@@ -1724,3 +1724,10 @@ state = "defined"
 owner = "exacopy-platform"
 path = "crates/platform/exacopy-platform/src/linux/recovery/writer/witness_reservation/tests.rs"
 target = "only_a_submitted_journal_allocation_latches_the_lease_even_on_syscall_error"
+
+[[coverage.evidence]]
+level = "native"
+state = "defined"
+owner = "exacopy-platform"
+path = "crates/platform/exacopy-platform/src/linux/recovery/writer/witness_reservation/tests.rs"
+target = "allocation_may_refresh_write_times_but_not_other_selected_fields"
