@@ -17,6 +17,8 @@ COPY = "exacopy.cli.copy"
 RECOVERY = "exacopy.local_recovery_inspection"
 VERIFY = "exacopy.cli.verify"
 JSON_FLAGS = ("--format", "json")
+VERSION_DIAGNOSTIC = "exacopy.cli.version"
+JSON_REPORTS = frozenset((DIFF, COPY, RECOVERY, VERIFY))
 
 
 def run(cli, directory, *args):
@@ -75,6 +77,26 @@ def probe(cli, versions):
             raise ValueError("source or copy bytes differ from the fixture")
 
 
+def report_versions(inventory):
+    """Select JSON report markers without inventing a version for text diagnostics."""
+    versions = {}
+    for contract in inventory["contract"]:
+        if contract["kind"] != "cli_output" or contract["status"] != "implemented":
+            continue
+        identity = contract["id"]
+        if identity == VERSION_DIAGNOSTIC:
+            continue
+        if identity not in JSON_REPORTS or identity in versions:
+            raise ValueError(f"unexpected or duplicate CLI report contract: {identity}")
+        version = contract["version"]
+        if not isinstance(version, str) or not version:
+            raise ValueError(f"missing version for CLI report: {identity}")
+        versions[identity] = version
+    if versions.keys() != JSON_REPORTS:
+        raise ValueError("CLI JSON report contract inventory is incomplete")
+    return versions
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("binary", type=Path)
@@ -84,11 +106,7 @@ def main():
     try:
         with (ROOT / "specs/contracts/versions.toml").open("rb") as stream:
             inventory = tomllib.load(stream)
-        versions = {
-            contract["id"]: contract["version"]
-            for contract in inventory["contract"]
-            if contract["kind"] == "cli_output" and contract["status"] == "implemented"
-        }
+        versions = report_versions(inventory)
         probe(args.binary.resolve(strict=True), versions)
     except (KeyError, OSError, TypeError, ValueError, subprocess.TimeoutExpired) as error:
         parser.exit(1, f"CLI contract probe failed: {error}\n")
