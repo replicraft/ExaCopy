@@ -15,13 +15,64 @@ param(
 
     [switch] $IncludeSymlink,
 
+    [switch] $HostedReadDiff,
+
     [ValidateSet('Read', 'Stage', 'Diff')]
     [string] $Mode = 'Read'
 )
 
 $ErrorActionPreference = 'Stop'
-$evidence = New-Item -ItemType Directory -Path $EvidenceDirectory
+
+function New-HostedReadDiffDirectory {
+    param([string] $Path)
+    # Windows os.mkdir uses exclusive creation with the inherited ACL.
+    & python -B -c 'import os, sys; os.mkdir(sys.argv[1])' $Path
+    if ($LASTEXITCODE -ne 0) { throw 'Exclusive Read/Diff directory creation was refused.' }
+    Get-Item -LiteralPath $Path
+}
+
+if ($HostedReadDiff) {
+    . (Join-Path $PSScriptRoot '../../tools/install/windows/paths.ps1')
+    . (Join-Path $PSScriptRoot 'windows-ntfs-custody.ps1')
+    . (Join-Path $PSScriptRoot 'windows-ntfs-read-diff.ps1')
+    Add-Type -Path (Join-Path $PSScriptRoot 'windows-ntfs-custody.cs')
+    [void](Get-ReadDiffHostedSystemVolume $LocalNtfsRoot)
+    $evidenceRoot = [IO.DirectoryInfo]::new($env:EXACOPY_READ_DIFF_EVIDENCE_ROOT)
+    $candidate = [IO.DirectoryInfo]::new($EvidenceDirectory)
+    if ($evidenceRoot.Parent.FullName -ine $env:USERPROFILE -or
+        $evidenceRoot.Name -cnotmatch '^exacopy-windows-read-diff-evidence-[0-9a-f]{32}$' -or
+        $candidate.FullName -cne $EvidenceDirectory -or $candidate.Parent.FullName -ine $evidenceRoot.FullName -or
+        $candidate.Name -cnotmatch '^exacopy-windows-read-diff-native-[0-9a-f]{32}$') {
+        throw 'Use a new per-run native evidence path under the admitted evidence root.'
+    }
+    [void](Confirm-ExaCopyPath $evidenceRoot.FullName)
+    [void](Confirm-ExaCopyPath $env:GITHUB_OUTPUT -File)
+    $evidenceIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    try {
+        $evidenceOwner = $evidenceIdentity.User
+        $evidencePin = [ExaCopyQualification.DirectoryCustody]::HoldAncestor($evidenceRoot.FullName)
+        try {
+            $actual = [ExaCopyQualification.DirectoryCustody]::Observe($evidencePin)
+            Assert-StageSameIdentity $env:EXACOPY_READ_DIFF_EVIDENCE_ID $actual
+            Assert-ReadDiffTreeSecurity $evidenceRoot.FullName $evidenceOwner
+            $evidence = New-HostedReadDiffDirectory $EvidenceDirectory
+            [void](Confirm-ExaCopyPath $evidence.FullName)
+            Assert-ReadDiffTreeSecurity $evidence.FullName $evidenceOwner
+            $artifactPath = $evidence.FullName.Replace([char]92, [char]47)
+            Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8 -Value "evidence_path=$artifactPath"
+        } finally {
+            $evidencePin.Dispose()
+        }
+    } finally {
+        $evidenceIdentity.Dispose()
+    }
+} else {
+    $evidence = New-Item -ItemType Directory -Path $EvidenceDirectory
+}
 try {
+    if ($HostedReadDiff -and ($Mode -eq 'Stage' -or $UncRoot -or $SecondNtfsRoot -or !$IncludeSymlink)) {
+        throw 'Hosted Read/Diff requires its fixed NTFS inputs and the native reparse controls.'
+    }
     if ($Mode -ne 'Read' -and ($UncRoot -or $SecondNtfsRoot)) {
         throw 'The selected lane requires only a fixed local NTFS root.'
     }
@@ -51,6 +102,12 @@ $oldRoot = $env:EXACOPY_WINDOWS_NTFS_ROOT
 $oldUnc = $env:EXACOPY_WINDOWS_UNC_ROOT
 $oldSecond = $env:EXACOPY_WINDOWS_SECOND_NTFS_ROOT
 $oldTarget = $env:CARGO_TARGET_DIR
+$oldBuild = $env:CARGO_BUILD_BUILD_DIR
+$oldCli = $env:EXACOPY_WINDOWS_QUALIFIED_CLI
+$readDiffGuard = $null
+$readDiffBuildPin = $null
+$readDiffBuildIdentity = $null
+$readDiffBuild = $null
 $scratch = $null
 $stageOwner = $null
 $stageAncestors = $null
@@ -59,7 +116,7 @@ $stageFixtureIdentity = $null
 $stageAdmitted = $false
 
 function Invoke-Lane {
-    param([string] $Name, [string] $Program, [string[]] $Arguments)
+    param([string] $Name, [string] $Program, [string[]] $Arguments, [switch] $QuietStdout)
     $out = Join-Path $evidence.FullName ($Name + '.stdout.log')
     $err = Join-Path $evidence.FullName ($Name + '.stderr.log')
     # All program arguments are fixed tokens with no spaces. Start-Process stores
@@ -76,7 +133,7 @@ function Invoke-Lane {
     }
     $process = Start-Process @launch
     Add-Content -LiteralPath (Join-Path $evidence.FullName 'lanes.tsv') -Value (@($Name, $process.ExitCode) -join [char]9)
-    Get-Content -LiteralPath $out | Write-Host
+    if (!$QuietStdout) { Get-Content -LiteralPath $out | Write-Host }
     Get-Content -LiteralPath $err | Write-Host
     return $process.ExitCode
 }
@@ -253,12 +310,66 @@ try {
             authority = 'synthetic runner user, SYSTEM and local Administrators'
             ancestor_delete_open_control = 'sharing-violation'
         } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence.FullName 'stage-custody.json')
+    } elseif ($HostedReadDiff) {
+        Add-Type -Path (Join-Path $repo '.github/ci/windows-ntfs-read-diff-custody.cs')
+        $systemVolume = Get-ReadDiffHostedSystemVolume $rootInfo.FullName
+        $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+        try {
+            $stageOwner = $identity.User
+            if (![Security.Principal.WindowsPrincipal]::new($identity).IsInRole(
+                [Security.Principal.WindowsBuiltInRole]::Administrator)) {
+                throw 'The hosted Read/Diff fixture requires its runner administrator token.'
+            }
+        } finally {
+            $identity.Dispose()
+        }
+        $ancestorAdmission = @{
+            HostedSystemVolume = $systemVolume
+            BeforeAdmission = {
+                param($Held)
+                @($Held | ForEach-Object { @{ path = $_.Path; identity = $_.Identity } }) |
+                    ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence.FullName 'read-diff-ancestor-admission.json')
+            }
+        }
+        $stageAncestors = New-StageAncestorCustody $rootInfo.FullName $stageOwner @ancestorAdmission
+        $readDiffVolume = [ExaCopyQualification.ReadDiffCustody]::PhysicalNtfsRoot($stageAncestors.Held[0].Handle)
+        Assert-ReadDiffTreeSecurity $rootInfo.FullName $stageOwner
+        $scratch = New-HostedReadDiffDirectory (Join-Path $rootInfo.FullName ('exacopy-read-diff-' + [Guid]::NewGuid().ToString('N')))
+        $stagePin = [ExaCopyQualification.DirectoryCustody]::HoldFixture($scratch.FullName)
+        $stageFixtureIdentity = [ExaCopyQualification.DirectoryCustody]::Observe($stagePin)
+        $readDiffGuard = [ExaCopyQualification.DirectoryCustody]::HoldAncestor($scratch.FullName)
+        Assert-StageSameIdentity $stageFixtureIdentity ([ExaCopyQualification.DirectoryCustody]::Observe($readDiffGuard))
+        Assert-StageSameVolume $stageAncestors.Held[0].Identity $stageFixtureIdentity
+        Assert-ReadDiffTreeSecurity $scratch.FullName $stageOwner
+        Confirm-StageNoResidue $scratch.FullName
+        Confirm-StageAncestorCustody $stageAncestors
+        $build = New-HostedReadDiffDirectory (Join-Path $scratch.FullName 'cargo-target')
+        $readDiffBuild = $build.FullName
+        $readDiffBuildPin = [ExaCopyQualification.DirectoryCustody]::HoldFixture($readDiffBuild)
+        $readDiffBuildIdentity = [ExaCopyQualification.DirectoryCustody]::Observe($readDiffBuildPin)
+        Assert-StageSameVolume $stageFixtureIdentity $readDiffBuildIdentity
+        Assert-ReadDiffTreeSecurity $readDiffBuild $stageOwner
+        Assert-ExaCopyNoNamedStreams $readDiffBuild
+        [ordered]@{
+            physical_ntfs_root = $readDiffVolume
+            fixture = $stageFixtureIdentity
+            build = $readDiffBuildIdentity
+            caller_sid = $stageOwner.Value
+            fixture_owner_sid = (Get-Acl -LiteralPath $scratch.FullName).GetOwner(
+                [Security.Principal.SecurityIdentifier]).Value
+            authority = 'canonical hosted user, SYSTEM and local Administrators; inherited ACL'
+        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence.FullName 'read-diff-custody.json')
     } else {
         $scratch = New-Item -ItemType Directory -Path (Join-Path $rootInfo.FullName ('exacopy-native-' + [guid]::NewGuid()))
     }
 
     $env:EXACOPY_WINDOWS_NTFS_ROOT = $scratch.FullName
-    $env:CARGO_TARGET_DIR = Join-Path $repo 'target/windows-ntfs-qualification'
+    if ($HostedReadDiff) {
+        $env:CARGO_TARGET_DIR = $readDiffBuild
+        $env:CARGO_BUILD_BUILD_DIR = $readDiffBuild
+    } else {
+        $env:CARGO_TARGET_DIR = Join-Path $repo 'target/windows-ntfs-qualification'
+    }
     $env:EXACOPY_WINDOWS_UNC_ROOT = $UncRoot
     $env:EXACOPY_WINDOWS_SECOND_NTFS_ROOT = $SecondNtfsRoot
 
@@ -272,6 +383,7 @@ try {
         runner_image_version = $env:ImageVersion
         test_target = 'x86_64-pc-windows-msvc'
         qualification = $Mode
+        exact_hosted_read_diff = [bool]$HostedReadDiff
         fixture_filesystem = $drive.DriveFormat
         fixture_drive_type = $drive.DriveType.ToString()
         fixture_drive = $drive.Name
@@ -335,6 +447,17 @@ try {
             $failures += Run-TestLane -Name 'stage_symlinks' -ExpectedTests 2 `
                 -HarnessArgs @('--ignored', 'windows::stage::tests::stage_symlink_')
         }
+    } elseif ($HostedReadDiff) {
+        $failures = Invoke-ExactReadDiff $Mode $readDiffBuild $evidence.FullName $repo
+        $checkedHead = Invoke-Lane -Name 'final_revision' -Program 'git' -Arguments @('rev-parse', 'HEAD')
+        $checkedStatus = Invoke-Lane -Name 'final_status' -Program 'git' -Arguments @('status', '--porcelain=v1', '--untracked-files=all')
+        $headOutput = Get-Content -Raw -LiteralPath (Join-Path $evidence.FullName 'final_revision.stdout.log')
+        $statusOutput = Get-Content -Raw -LiteralPath (Join-Path $evidence.FullName 'final_status.stdout.log')
+        if ($checkedHead -ne 0 -or $checkedStatus -ne 0 -or $headOutput.Trim() -cne $revision.Trim() -or
+            ![string]::IsNullOrWhiteSpace($statusOutput) -or
+            (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $repo 'Cargo.lock')).Hash -cne $profile.lockfile_sha256) {
+            throw 'The exact Read/Diff source or lockfile changed during qualification.'
+        }
     } elseif ($Mode -eq 'Diff') {
         $failures = Run-TestLane -Name 'diff_path_refusal' -ExpectedTests 1 `
             -HarnessArgs @('ntfs_profile_refuses_unavailable_or_unadmitted_input')
@@ -368,6 +491,10 @@ try {
     $env:EXACOPY_WINDOWS_UNC_ROOT = $oldUnc
     $env:EXACOPY_WINDOWS_SECOND_NTFS_ROOT = $oldSecond
     $env:CARGO_TARGET_DIR = $oldTarget
+    if ($HostedReadDiff) {
+        $env:CARGO_BUILD_BUILD_DIR = $oldBuild
+        $env:EXACOPY_WINDOWS_QUALIFIED_CLI = $oldCli
+    }
     try {
         if ($null -ne $scratch) {
             try {
@@ -377,11 +504,19 @@ try {
                     }
                     Remove-HeldStageFixture $scratch.FullName $stageFixtureIdentity $stagePin $stageAncestors
                     $stagePin.Dispose()
+                } elseif ($HostedReadDiff) {
+                    $cleanupCustody = @{
+                        Fixture = $scratch.FullName; Build = $readDiffBuild; Pin = $stagePin
+                        Guard = $readDiffGuard; Identity = $stageFixtureIdentity
+                        BuildPin = $readDiffBuildPin; BuildIdentity = $readDiffBuildIdentity
+                        Ancestors = $stageAncestors; Volume = $readDiffVolume
+                    }
+                    Remove-HeldReadDiffFixture @cleanupCustody
                 } else {
-                    # Existing Read/Diff behavior. This profile is outside Stage custody.
+                    # Existing manual Read/Diff compatibility.
                     [IO.Directory]::Delete($scratch.FullName, $false)
                 }
-                $stillPresent = if ($Mode -eq 'Stage') {
+                $stillPresent = if ($Mode -eq 'Stage' -or $HostedReadDiff) {
                     Get-ExaCopyNodeExists $scratch.FullName
                 } else {
                     Test-Path -LiteralPath $scratch.FullName
@@ -398,11 +533,13 @@ try {
                     identity = $stageFixtureIdentity
                     message = $_.Exception.Message
                 } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence.FullName 'fixture-cleanup.json')
-                if ($Mode -eq 'Stage') { throw }
+                if ($Mode -eq 'Stage' -or $HostedReadDiff) { throw }
                 Write-Warning "Synthetic scratch preserved at $($scratch.FullName): $_"
             }
         }
     } finally {
+        if ($null -ne $readDiffBuildPin) { $readDiffBuildPin.Dispose() }
+        if ($null -ne $readDiffGuard) { $readDiffGuard.Dispose() }
         if ($null -ne $stagePin) { $stagePin.Dispose() }
         if ($null -ne $stageAncestors) { Close-StageAncestorCustody $stageAncestors.Held }
     }

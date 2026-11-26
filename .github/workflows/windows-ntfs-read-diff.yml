@@ -1,0 +1,216 @@
+name: Windows fixed NTFS read and diff qualification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows-ntfs-read-diff.yml'
+      - '.github/ci/windows-ntfs*.ps1'
+      - '.github/ci/windows-ntfs-custody.cs'
+      - '.github/ci/windows-ntfs-read-diff-custody.cs'
+      - '.github/ci/install.sh'
+      - '.github/ci/capture.sh'
+      - '.github/ci/common.sh'
+      - 'tools/install/windows/paths.ps1'
+      - 'tools/apfs_source.py'
+      - 'tools/transport_source.py'
+      - 'specs/dependencies/apfs-source.toml'
+      - 'specs/dependencies/transport-source*'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'apps/exacopy-cli/**'
+      - 'crates/engines/exacopy-diff/**'
+      - 'crates/interfaces/exacopy-endpoint/**'
+      - 'crates/platform/exacopy-platform/Cargo.toml'
+      - 'crates/platform/exacopy-platform/src/windows.rs'
+      - 'crates/platform/exacopy-platform/src/windows/**'
+      - 'crates/platform/exacopy-platform/tests/windows_read*'
+      - 'crates/platform/exacopy-platform/tests/windows_read/**'
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+  EXPECTED_RUST_HOST: x86_64-pc-windows-msvc
+
+jobs:
+  qualify:
+    if: github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+    name: Fixed NTFS ${{ matrix.mode }} (Windows x64)
+    runs-on: windows-2025
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [Read, Diff]
+    env:
+      NTFS_MODE: ${{ matrix.mode }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Admit the exact canonical checkout and acquire setup evidence
+        id: admission
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $head = @(& git rev-parse --verify HEAD)
+          if ($LASTEXITCODE -ne 0 -or $head.Count -ne 1 -or $head[0] -cne $env:GITHUB_SHA) {
+            throw 'The selected workflow checkout is not the exact event commit.'
+          }
+          $status = @(& git status --porcelain=v1 --untracked-files=all)
+          if ($LASTEXITCODE -ne 0 -or $status.Count -ne 0) {
+            throw 'The exact checkout must be clean before provisioning.'
+          }
+          . ./.github/ci/windows-ntfs-read-diff.ps1
+          . ./.github/ci/windows-ntfs-custody.ps1
+          . ./tools/install/windows/paths.ps1
+          Add-Type -Path ./.github/ci/windows-ntfs-custody.cs
+          Add-Type -Path ./.github/ci/windows-ntfs-read-diff-custody.cs
+          $systemVolume = Get-ReadDiffHostedSystemVolume $env:USERPROFILE
+          [void](Confirm-ExaCopyPath $env:GITHUB_OUTPUT -File)
+          $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+          try {
+            if (![Security.Principal.WindowsPrincipal]::new($identity).IsInRole(
+                [Security.Principal.WindowsBuiltInRole]::Administrator)) {
+              throw 'The hosted Read/Diff evidence profile requires its runner administrator token.'
+            }
+            $authority = @{ HostedSystemVolume = $systemVolume; BeforeAdmission = { param($Held) } }
+            $ancestors = New-StageAncestorCustody $env:USERPROFILE $identity.User @authority
+            try {
+              [void][ExaCopyQualification.ReadDiffCustody]::PhysicalNtfsRoot($ancestors.Held[0].Handle)
+              Assert-ReadDiffTreeSecurity $env:USERPROFILE $identity.User
+              $leaf = 'exacopy-windows-read-diff-evidence-' + [Guid]::NewGuid().ToString('N')
+              $root = Join-Path $env:USERPROFILE $leaf
+              & python -B -c 'import os, sys; os.mkdir(sys.argv[1])' $root
+              if ($LASTEXITCODE -ne 0) { throw 'Exclusive evidence root creation was refused.' }
+              $pin = [ExaCopyQualification.DirectoryCustody]::HoldAncestor($root)
+              try {
+                $rootId = [ExaCopyQualification.DirectoryCustody]::Observe($pin)
+                Assert-StageSameVolume $ancestors.Held[0].Identity $rootId
+                Assert-ReadDiffTreeSecurity $root $identity.User
+                $capture = Join-Path $root 'exacopy-evidence'
+                & python -B -c 'import os, sys; os.mkdir(sys.argv[1])' $capture
+                if ($LASTEXITCODE -ne 0) { throw 'Exclusive setup capture creation was refused.' }
+                [void](Confirm-ExaCopyPath $capture)
+                Assert-ReadDiffTreeSecurity $capture $identity.User
+                Confirm-StageAncestorCustody $ancestors
+              } finally {
+                $pin.Dispose()
+              }
+            } finally {
+              Close-StageAncestorCustody $ancestors.Held
+            }
+          } finally {
+            $identity.Dispose()
+          }
+          $artifactPath = $capture.Replace([char]92, [char]47)
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8 -Value @(
+            "capture_path=$artifactPath", "evidence_root=$root", "evidence_id=$rootId"
+          )
+      - name: Provision pinned sources and tools
+        shell: bash
+        env:
+          EXACOPY_READ_DIFF_EVIDENCE_ROOT: ${{ steps.admission.outputs.evidence_root }}
+        run: |
+          export RUNNER_TEMP="$EXACOPY_READ_DIFF_EVIDENCE_ROOT"
+          capture_dir="$(cygpath -u "$RUNNER_TEMP")/exacopy-evidence"
+          test -d "$capture_dir"
+          test ! -L "$capture_dir"
+          bash .github/ci/capture.sh apfs-source python -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source python -B tools/transport_source.py --fetch
+          bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
+          bash .github/ci/capture.sh locked-fetch cargo +1.100.0 fetch --locked --target x86_64-pc-windows-msvc
+      - name: Validate exact selector and dirty-source controls
+        id: controls
+        shell: pwsh
+        env:
+          EXACOPY_READ_DIFF_EVIDENCE_ROOT: ${{ steps.admission.outputs.evidence_root }}
+          EXACOPY_READ_DIFF_EVIDENCE_ID: ${{ steps.admission.outputs.evidence_id }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . ./.github/ci/windows-ntfs-read-diff.ps1
+          . ./.github/ci/windows-ntfs-custody.ps1
+          . ./tools/install/windows/paths.ps1
+          Add-Type -Path ./.github/ci/windows-ntfs-custody.cs
+          $root = $env:EXACOPY_READ_DIFF_EVIDENCE_ROOT
+          [void](Confirm-ExaCopyPath $root)
+          [void](Confirm-ExaCopyPath $env:GITHUB_OUTPUT -File)
+          $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+          try {
+            $pin = [ExaCopyQualification.DirectoryCustody]::HoldAncestor($root)
+            try {
+              $actual = [ExaCopyQualification.DirectoryCustody]::Observe($pin)
+              Assert-StageSameIdentity $env:EXACOPY_READ_DIFF_EVIDENCE_ID $actual
+              Assert-ReadDiffTreeSecurity $root $identity.User
+              $leaf = 'exacopy-windows-read-diff-controls-' + [Guid]::NewGuid().ToString('N')
+              $controls = Join-Path $root $leaf
+              & python -B -c 'import os, sys; os.mkdir(sys.argv[1])' $controls
+              if ($LASTEXITCODE -ne 0) { throw 'Exclusive control evidence creation was refused.' }
+              [void](Confirm-ExaCopyPath $controls)
+              Assert-ReadDiffTreeSecurity $controls $identity.User
+            } finally {
+              $pin.Dispose()
+            }
+          } finally {
+            $identity.Dispose()
+          }
+          $artifactPath = $controls.Replace([char]92, [char]47)
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8 -Value "evidence_path=$artifactPath"
+          $dirty = Join-Path $controls 'source-controls'
+          & ./.github/ci/windows-ntfs-tests.ps1 -LocalNtfsRoot $env:USERPROFILE -Mode $env:NTFS_MODE -EvidenceDirectory $dirty
+          & ./.github/ci/windows-ntfs-read-diff-controls.ps1 |
+            Tee-Object -FilePath (Join-Path $controls 'exact-attendance.log')
+      - name: Run exactly selected fixed NTFS tests
+        id: native
+        shell: pwsh
+        env:
+          EXACOPY_READ_DIFF_EVIDENCE_ROOT: ${{ steps.admission.outputs.evidence_root }}
+          EXACOPY_READ_DIFF_EVIDENCE_ID: ${{ steps.admission.outputs.evidence_id }}
+        run: |
+          $leaf = 'exacopy-windows-read-diff-native-' + [Guid]::NewGuid().ToString('N')
+          $arguments = @{
+            Repository = $env:GITHUB_WORKSPACE
+            LocalNtfsRoot = $env:USERPROFILE
+            Mode = $env:NTFS_MODE
+            IncludeSymlink = $true
+            HostedReadDiff = $true
+            EvidenceDirectory = (Join-Path $env:EXACOPY_READ_DIFF_EVIDENCE_ROOT $leaf)
+          }
+          & ./.github/ci/windows-ntfs.ps1 @arguments
+      - name: Retain exact native NTFS evidence
+        if: always() && steps.native.outputs.evidence_path != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-ntfs-native-${{ matrix.mode }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.native.outputs.evidence_path }}
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain owned control evidence
+        if: always() && steps.controls.outputs.evidence_path != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-ntfs-controls-${{ matrix.mode }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.controls.outputs.evidence_path }}
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain the exact setup logs
+        if: always() && steps.admission.outcome == 'success' && steps.admission.outputs.capture_path != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-ntfs-setup-${{ matrix.mode }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.admission.outputs.capture_path }}/apfs-source.log
+            ${{ steps.admission.outputs.capture_path }}/apfs-source.txt
+            ${{ steps.admission.outputs.capture_path }}/transport-source.log
+            ${{ steps.admission.outputs.capture_path }}/transport-source.txt
+            ${{ steps.admission.outputs.capture_path }}/rust-setup.log
+            ${{ steps.admission.outputs.capture_path }}/rust-setup.txt
+            ${{ steps.admission.outputs.capture_path }}/locked-fetch.log
+            ${{ steps.admission.outputs.capture_path }}/locked-fetch.txt
+          if-no-files-found: error
+          retention-days: 90

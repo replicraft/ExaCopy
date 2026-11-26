@@ -115,6 +115,26 @@ fixture directories. A distributable release has separate publishing gates.
 
 ## Windows held-directory NTFS qualification
 
+The [hosted Read/Diff workflow](../.github/workflows/windows-ntfs-read-diff.yml)
+selects separate jobs on canonical main pushes. It builds the pinned MSVC
+test executables with the explicit candidate features and fingerprints
+both the harness and the CLI exercised by the Diff tests. The fixture
+checks actual fixed NTFS, the original held ancestor and scratch identities,
+and the scratch's inherited trusted ownership and ACL. It makes no ACL or
+ownership changes. Each declared selector must pass once, the reparse
+controls are required, and cleanup must verify absence of the original
+owned fixture. This profile qualifies only the executed controls under
+the hosted runner's token and filesystem.
+
+Read includes the existing held-directory candidate cases and a separate
+production `WindowsReadFile` control. The latter confirms an equal result
+first, then changes only a synthetic source timestamp through a distinct
+attribute-only handle. The held comparison must report an inconclusive
+left observation and preserve both byte streams. Diff invokes the actual
+CLI for exact equal and differing bytes, raw-path refusals, file and
+directory reparse refusals and an equal hard-link alias. The results make
+only the live-observation claim.
+
 The manual workflow's `Diff` mode exercises the opt-in CLI with absolute paths
 on the verified NTFS fixture. It checks path refusal, equal bytes, first
 difference, unequal lengths, worker selection, and preserved input bytes. The
