@@ -1,6 +1,6 @@
 from copy import deepcopy
 from datetime import datetime, timezone
-from hashlib import sha256
+from hashlib import sha1, sha256
 import lzma
 import os
 from pathlib import Path
@@ -132,7 +132,6 @@ class EnrollmentControls(unittest.TestCase):
             root = Path(scratch)
             with (
                 patch.object(archive, "fetch") as fetch,
-                patch.object(archive, "checked_hash", return_value="a" * 64),
                 patch.object(archive, "bounded", side_effect=scanner.Blocked("signature-refused")) as bounded,
                 patch.object(archive, "release_index") as parse,
             ):
@@ -140,34 +139,65 @@ class EnrollmentControls(unittest.TestCase):
                     archive.signed_index(root, {}, AWS.expected_packages())
                 command = bounded.call_args.args[0]
                 self.assertEqual(command[0], archive.GPGV)
-                self.assertIn(archive.KEYRING, command)
+                ring = root / "gpg/ubuntu-archive-2018.gpg"
+                self.assertIn(ring, command)
+                self.assertEqual(ring.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(sha256(ring.read_bytes()).hexdigest(), archive.ARCHIVE_KEY_SHA256)
                 self.assertEqual(command[-2:], [root / "Release.gpg", root / "Release"])
                 self.assertEqual(fetch.call_count, 2)
                 parse.assert_not_called()
 
-    def test_signed_catalog_records_exact_file_custody_failure_before_gpgv(self):
+    def test_canonical_single_key_matches_the_published_fingerprint_and_digest(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            key = Path(scratch) / "pinned.gpg"
+            archive.stage_archive_key(key)
+            data = key.read_bytes()
+            primary_length = int.from_bytes(data[1:3], "big")
+            self.assertEqual(data[0], 0x99)
+            self.assertEqual(data[3], 4)
+            self.assertEqual(data[8], 1)
+            self.assertEqual(int.from_bytes(data[9:11], "big"), 4096)
+            self.assertEqual(len(data), 1167)
+            self.assertEqual(sha1(data[:primary_length + 3], usedforsecurity=False).hexdigest().upper(),
+                             "F6ECB3762474EDA9D21B7022871920D1991BC93C")
+            self.assertEqual(sha256(data).hexdigest(),
+                             "5ebbeeb474034b1fa7e50abbe6f136e177fc826219e01f314b3623f7b3097e96")
+            with self.assertRaises(FileExistsError):
+                archive.stage_archive_key(key)
+            key.chmod(0o777)
+            with self.assertRaises(scanner.Blocked):
+                archive.verify_archive_key(key)
+
+    def test_changed_pin_stops_before_creating_key_or_launching_gpgv(self):
         with tempfile.TemporaryDirectory() as scratch:
             root = Path(scratch)
-            keyring = root / "keyring"
-            keyring.write_bytes(b"archive-keyring")
-            os.link(keyring, root / "second-link")
             evidence = {}
+            changed = b"A" + archive.ARCHIVE_KEY_BASE64[1:]
             with (
-                patch.object(archive, "KEYRING", keyring),
+                patch.object(archive, "ARCHIVE_KEY_BASE64", changed),
                 patch.object(archive, "fetch") as fetch,
                 patch.object(archive, "bounded") as command,
             ):
-                with self.assertRaises(scanner.Blocked):
+                with self.assertRaisesRegex(scanner.Blocked, "reviewed Ubuntu archive key bytes differ"):
                     archive.signed_index(root, evidence, AWS.expected_packages())
             self.assertEqual(fetch.call_count, 2)
             command.assert_not_called()
-            steps = evidence["canonical_steps"]
-            self.assertEqual(steps["release-download"]["status"], "observed")
-            self.assertEqual(steps["release-signature-download"]["status"], "observed")
-            self.assertEqual(steps["ubuntu-archive-keyring"]["status"], "blocked")
-            self.assertEqual(steps["ubuntu-archive-keyring"]["file"]["links"], 2)
-            self.assertEqual(steps["ubuntu-archive-keyring"]["file"]["bytes"], 15)
+            self.assertEqual(evidence["canonical_steps"]["pinned-ubuntu-archive-key"]["file"], {"status": "missing"})
             self.assertNotIn("canonical", evidence)
+
+    def test_only_one_exact_archive_signature_with_strong_digest_is_accepted(self):
+        fp = archive.ARCHIVE_KEY_FINGERPRINT.encode()
+        valid = b"[GNUPG:] VALIDSIG " + fp + b" 2026-11-26 1795698000 0 4 0 1 8 00 " + fp + b"\n"
+        archive.verify_archive_signer(valid)
+        for status in (
+            b"", valid + valid, valid.replace(fp, b"0" * 40, 1),
+            valid.replace(b" 1 8 00 ", b" 1 2 00 "),
+            valid.replace(b" 00 " + fp, b" 00 " + b"B" * 40),
+            valid + b"[GNUPG:] REVKEYSIG 871920D1991BC93C\n",
+            valid + b"[GNUPG:] NO_PUBKEY 0000000000000000\n",
+        ):
+            with self.subTest(status=status), self.assertRaises(scanner.Blocked):
+                archive.verify_archive_signer(status)
 
     def test_zero_length_release_has_distinct_archive_phase_evidence(self):
         with tempfile.TemporaryDirectory() as scratch:
