@@ -67,6 +67,57 @@ class ReleaseControls(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "clean source"):
                 candidate.check_source(self.ref, self.commit)
 
+    def test_signing_requires_exact_apfs_build_provenance(self):
+        pin = self.root / "specs/dependencies/apfs-source.toml"
+        pin.parent.mkdir(parents=True)
+        identity = {"commit": "b" * 40, "tree": "c" * 40, "archive_sha256": "d" * 64}
+        pin.write_text("".join(f'{key} = "{value}"\n' for key, value in identity.items()), encoding="utf-8")
+        target, tag, version = signed.APPLE, "v0.1.0", "0.1.0"
+        repository = "replicraft/ExaCopy"
+        build = self.root / "artifact"
+        binary = build / "unsigned-cli/exacopy"
+        sbom = build / "build/exacopy.cdx.json"
+        binary.parent.mkdir(parents=True)
+        sbom.parent.mkdir(parents=True)
+        binary.write_bytes(b"test CLI")
+        sbom.write_bytes(b"{}")
+        apfs_source = {"repository": "https://github.com/pomologie/apfs", **identity}
+        provenance = {
+            "schema": "exacopy-ci-candidate-build-v1",
+            "repository": repository,
+            "tag": tag,
+            "commit": self.commit,
+            "version": version,
+            "dirty": False,
+            "target": target,
+            "profile": "release",
+            "features": [],
+            "tree": self.commit,
+            "lockfile_sha256": signed.sha256(self.root / "Cargo.lock"),
+            "apfs_source": apfs_source,
+            "transport_sources": {},
+            "runner": {"run_id": "12", "run_attempt": "1"},
+            "binary": {"name": binary.name, "size": binary.stat().st_size, "sha256": signed.sha256(binary)},
+            "sbom_sha256": signed.sha256(sbom),
+        }
+        record = sbom.parent / "build-provenance.json"
+        with patch.dict(os.environ, {
+            "GITHUB_REPOSITORY": repository, "GITHUB_RUN_ID": "12", "GITHUB_RUN_ATTEMPT": "1",
+        }), patch.object(candidate, "git", self.clean_git), patch.object(signed.transport_source, "read_pins", return_value={}):
+            record.write_text(json.dumps(provenance))
+            self.assertEqual(signed.verified_build(build, target, self.commit, tag, version), (binary, sbom, provenance))
+            for field, expected in apfs_source.items():
+                with self.subTest(field=field):
+                    other = ("e" * len(expected)) if field != "repository" else "https://example.invalid/apfs"
+                    altered = provenance | {"apfs_source": apfs_source | {field: other}}
+                    record.write_text(json.dumps(altered))
+                    with self.assertRaisesRegex(ValueError, "does not match the admitted release source"):
+                        signed.verified_build(build, target, self.commit, tag, version)
+            del provenance["apfs_source"]
+            record.write_text(json.dumps(provenance))
+            with self.assertRaisesRegex(ValueError, "does not match the admitted release source"):
+                signed.verified_build(build, target, self.commit, tag, version)
+
     def test_production_key_requires_material_and_exact_trust_pin(self):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaisesRegex(ValueError, "production signing requires"):

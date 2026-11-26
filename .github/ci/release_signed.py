@@ -14,6 +14,7 @@ import tempfile
 import time
 
 import release_candidate as candidate
+import apfs_source
 import transport_source
 
 from installer_fixture import TARGETS, bundle, encoded
@@ -56,6 +57,10 @@ def verified_build(directory, target, commit, tag, version):
         "features": [],
         "tree": candidate.git("rev-parse", "HEAD^{tree}"),
         "lockfile_sha256": sha256(candidate.ROOT / "Cargo.lock"),
+        "apfs_source": {
+            "repository": apfs_source.REPOSITORY,
+            **apfs_source.read_pin((candidate.ROOT / apfs_source.PIN).read_text(encoding="utf-8")),
+        },
         "transport_sources": transport_source.read_pins(candidate.ROOT),
     }
     if any(provenance.get(name) != value for name, value in expected.items()):
