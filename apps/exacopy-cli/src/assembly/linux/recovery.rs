@@ -8,7 +8,10 @@ use exacopy_transfer::linux::{
 };
 
 mod lease;
+
 use lease::NativeLease;
+#[cfg(feature = "experimental-ssh-capture")]
+pub(super) use lease::NewReceipt;
 
 /// The native Linux errors from read-only job inspection.
 pub type RecoveryInspectError = InspectionError<ReadError, StageError>;

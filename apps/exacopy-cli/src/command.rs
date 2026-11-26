@@ -57,6 +57,15 @@ pub fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
 			&mut stderr,
 		)),
 		Command::InitProfile(path) => ExitCode::from(init_profile(&path, &mut stderr)),
+		#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
+		Command::Remote(remote) => {
+			let outcome = crate::remote::execute(&remote);
+			let code = match outcome.write(remote.options.format, &mut stdout, &mut stderr) {
+				Ok(()) => outcome.exit_code(),
+				Err(_) => outcome.failed_output(&mut stderr),
+			};
+			ExitCode::from(code)
+		}
 		Command::Recover(recovery) => {
 			let outcome = execute_recovery(&recovery);
 			match outcome.write(recovery.format, &mut stdout, &mut stderr) {

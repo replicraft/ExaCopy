@@ -86,7 +86,7 @@ pub(crate) fn kernel_random(output: &mut [u8]) -> Result<(), ProfileError> {
 }
 
 #[derive(Debug)]
-pub(crate) enum ProfileError {
+pub enum ProfileError {
 	InvalidPath,
 	Identifier,
 	Native(OwnerSeedError),

@@ -2,8 +2,12 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 mod parser;
+#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
+mod remote;
 
 pub(crate) use parser::parse;
+#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
+pub(crate) use remote::{RemoteCommand, RemoteMetadata, RemoteOptions, RemoteRequest};
 
 pub(crate) enum Command {
 	Help(String),
@@ -11,9 +15,13 @@ pub(crate) enum Command {
 	Diff(DiffCommand),
 	Copy(CopyCommand),
 	Plan(PlanCommand),
-	ManifestCreate { path: PathBuf },
+	ManifestCreate {
+		path: PathBuf,
+	},
 	Verify(VerifyCommand),
 	Recover(RecoveryCommand),
+	#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
+	Remote(RemoteCommand),
 	InitProfile(PathBuf),
 }
 

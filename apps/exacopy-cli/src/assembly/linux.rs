@@ -14,6 +14,12 @@ use exacopy_transfer::linux::{
 mod crash_tests;
 mod public_plan;
 mod recovery;
+#[cfg(feature = "experimental-ssh-capture")]
+pub mod remote_download;
+#[cfg(feature = "experimental-ssh-capture")]
+mod remote_journal;
+#[cfg(feature = "experimental-ssh-capture")]
+mod remote_stage;
 
 pub use public_plan::{NativePlanningError, plan_public_new_file};
 

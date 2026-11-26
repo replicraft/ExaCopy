@@ -28,6 +28,12 @@ mod profile;
 #[cfg(target_os = "linux")]
 mod recovery;
 mod recovery_report;
+#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
+mod remote;
+#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
+mod remote_frontdoor;
+#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
+mod remote_report;
 mod report;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod unix_path;

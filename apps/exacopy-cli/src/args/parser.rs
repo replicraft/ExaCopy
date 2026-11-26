@@ -30,6 +30,8 @@ const SOURCE_ROOT: &str = "source-root";
 const WORKERS: &str = "workers";
 const MANAGED_MACOS: &str = "managed-macos";
 const LOCAL_NTFS: &str = "local-ntfs";
+#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
+mod remote;
 #[cfg(test)]
 mod tests;
 
@@ -84,7 +86,7 @@ pub(crate) fn parse(args: impl Iterator<Item = OsString>) -> Result<Command, Str
 }
 
 fn definition() -> Cli {
-	Cli::new("exacopy")
+	let cli = Cli::new("exacopy")
 		.bin_name("exacopy")
 		.version(env!("CARGO_PKG_VERSION"))
 		.about("Compare, verify, or copy regular files and recover retained copies.")
@@ -181,22 +183,7 @@ fn definition() -> Cli {
 				))
 				.arg(output_format()),
 		)
-		.subcommand(
-			Cli::new(RECOVER)
-				.about("Inspect or recover a retained Linux copy.")
-				.disable_help_subcommand(true)
-				.subcommand_required(true)
-				.subcommand(recovery(INSPECT, "Inspect the current retained copy."))
-				.subcommand(recovery(
-					FINISH,
-					"Finish a copy whose target was already published.",
-				))
-				.subcommand(source_recovery(
-					RETRY,
-					"Retry publication of a verified stage.",
-				))
-				.subcommand(source_recovery(RESUME, "Resume an interrupted copy.")),
-		)
+		.subcommand(recovery_commands())
 		.subcommand(
 			Cli::new(PROFILE)
 				.about("Manage private Linux signing profiles.")
@@ -207,7 +194,30 @@ fn definition() -> Cli {
 						.about("Create a private signing profile.")
 						.arg(operand("DIR", 1)),
 				),
-		)
+		);
+	#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
+	let cli = cli.subcommand(remote::get_subcommand());
+	cli
+}
+
+fn recovery_commands() -> Cli {
+	let cli = Cli::new(RECOVER)
+		.about("Inspect or recover a retained Linux copy.")
+		.disable_help_subcommand(true)
+		.subcommand_required(true)
+		.subcommand(recovery(INSPECT, "Inspect the current retained copy."))
+		.subcommand(recovery(
+			FINISH,
+			"Finish a copy whose target was already published.",
+		))
+		.subcommand(source_recovery(
+			RETRY,
+			"Retry publication of a verified stage.",
+		))
+		.subcommand(source_recovery(RESUME, "Resume an interrupted copy."));
+	#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
+	let cli = cli.subcommand(remote::resume_subcommand());
+	cli
 }
 
 fn operand(name: &'static str, position: usize) -> Arg {
@@ -305,14 +315,11 @@ fn frame_operands(
 		if is_help(&option) {
 			return Err("request help by itself or use -- before a path named like a help flag");
 		}
-		if (option == "--profile"
-			|| option == "--source-root"
-			|| option == "--manifest"
-			|| option == "--output")
+		if is_path_option(scope.get_name(), &option)
 			&& let Some(value) = options.next_if(|value| {
 				let bytes = value.as_encoded_bytes();
 				let legacy_profile =
-					option == "--profile" && !matches!(scope.get_name(), RESUME | PLAN);
+					option == "--profile" && legacy_profile_framing(scope.get_name());
 				bytes.starts_with(b"-") && (legacy_profile || !bytes.starts_with(b"--"))
 			}) {
 			// Bind a literal dash-prefixed path without allowing the injected
@@ -325,6 +332,22 @@ fn frame_operands(
 	args.push("--".into());
 	args.extend(operands);
 	Ok(())
+}
+
+fn is_path_option(_command: &str, arg: &OsStr) -> bool {
+	#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
+	if remote::is_remote(_command) {
+		return remote::is_path_option(arg);
+	}
+	arg == "--profile" || arg == "--source-root" || arg == "--manifest" || arg == "--output"
+}
+
+fn legacy_profile_framing(command: &str) -> bool {
+	#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
+	if remote::is_remote(command) {
+		return false;
+	}
+	!matches!(command, RESUME | PLAN)
 }
 
 fn is_help(arg: &OsStr) -> bool {
@@ -397,6 +420,8 @@ fn typed_command(mut args: ArgMatches) -> Option<Command> {
 			manifest: path(&mut command, MANIFEST)?,
 			format: selected_format(&command),
 		})),
+		#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
+		remote::GET => remote::get(&mut command),
 		RECOVER => recovery_command(command),
 		PROFILE => {
 			let (action, mut args) = command.remove_subcommand()?;
@@ -412,6 +437,8 @@ fn typed_command(mut args: ArgMatches) -> Option<Command> {
 fn recovery_command(mut command: ArgMatches) -> Option<Command> {
 	let (name, mut args) = command.remove_subcommand()?;
 	let action = match name.as_str() {
+		#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
+		remote::REMOTE_RESUME => return remote::resume(&mut args),
 		INSPECT => RecoveryAction::Inspect,
 		FINISH => RecoveryAction::Finish,
 		RETRY | RESUME => RecoveryAction::FromSource {

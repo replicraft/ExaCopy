@@ -206,7 +206,7 @@ impl FinishReceiptDirectory for HeldReceipts<'_> {
 	}
 }
 
-pub(super) struct NewReceipt(File);
+pub(in crate::assembly::linux) struct NewReceipt(pub(in crate::assembly::linux) File);
 
 impl Write for NewReceipt {
 	fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
