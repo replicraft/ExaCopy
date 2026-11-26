@@ -443,7 +443,7 @@ jobs:
         run: bash .github/ci/capture.sh gitleaks-setup bash .github/ci/install.sh gitleaks
       - name: Scan repository history for secrets
         if: ${{ !cancelled() && steps.gitleaks.outcome == 'success' }}
-        run: bash .github/ci/capture.sh gitleaks gitleaks git --redact=100 --no-banner .
+        run: bash .github/ci/capture.sh gitleaks gitleaks git --redact=100 --no-banner --gitleaks-ignore-path .github/gitleaksignore .
       - name: Install Trivy
         id: trivy
         if: ${{ !cancelled() && steps.source.outcome == 'success' }}
