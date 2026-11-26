@@ -1,4 +1,4 @@
-name: Linux kernel WireGuard commissioning with Azure provider B
+name: Linux kernel WireGuard commissioning with provider B
 
 on:
   push:
@@ -69,14 +69,14 @@ jobs:
         id: provider
         run: python3 -B -Werror .github/ci/remote_commissioning_wireguard_dispatch.py
       - name: Prepare pinned sources and Rust
-        if: (steps.provider.outputs.mode == 'commission-azure-1017' || steps.provider.outputs.mode == 'commission-azure-1020')
+        if: (steps.provider.outputs.mode == 'commission-azure-1017' || steps.provider.outputs.mode == 'commission-azure-1020' || steps.provider.outputs.mode == 'commission-aws-1014')
         run: |
           python3 -B tools/apfs_source.py --fetch
           python3 -B tools/transport_source.py --fetch
           bash .github/ci/install.sh rust
           cargo +1.100.0 fetch --locked
       - name: Stage bounded independent fixture tools
-        if: (steps.provider.outputs.mode == 'commission-azure-1017' || steps.provider.outputs.mode == 'commission-azure-1020')
+        if: (steps.provider.outputs.mode == 'commission-azure-1017' || steps.provider.outputs.mode == 'commission-azure-1020' || steps.provider.outputs.mode == 'commission-aws-1014')
         env:
           PROVIDER_MODE: ${{ steps.provider.outputs.mode }}
         run: |
@@ -94,6 +94,7 @@ jobs:
           case "$PROVIDER_MODE" in
             commission-azure-1017) module_package='linux-modules-7.0.0-1017-azure=7.0.0-1017.17~24.04.1' ;;
             commission-azure-1020) module_package='linux-modules-7.0.0-1020-azure=7.0.0-1020.21~24.04.2' ;;
+            commission-aws-1014) module_package='linux-modules-7.0.0-1014-aws=7.0.0-1014.14~24.04.1' ;;
             *) exit 1 ;;
           esac
           timeout --kill-after=5s 180s apt-get -o APT::Get::AllowUnauthenticated=false download \
@@ -111,11 +112,18 @@ jobs:
           test "$(stat -c '%d:%i:%u:%a' -- .)" = "$tool_identity"
           test -x unpacked/usr/bin/b3sum
           test -x unpacked/usr/bin/wg
-      - name: Verify the Azure module closure and commission the ordinary embedded CLI
-        if: (steps.provider.outputs.mode == 'commission-azure-1017' || steps.provider.outputs.mode == 'commission-azure-1020')
-        run: python3 -B .github/ci/remote_commissioning_wireguard_azure.py
+      - name: Verify the selected module closure and commission the ordinary embedded CLI
+        if: (steps.provider.outputs.mode == 'commission-azure-1017' || steps.provider.outputs.mode == 'commission-azure-1020' || steps.provider.outputs.mode == 'commission-aws-1014')
+        env:
+          PROVIDER_MODE: ${{ steps.provider.outputs.mode }}
+        run: |
+          case "$PROVIDER_MODE" in
+            commission-azure-1017|commission-azure-1020) python3 -B .github/ci/remote_commissioning_wireguard_azure.py ;;
+            commission-aws-1014) python3 -B .github/ci/remote_commissioning_wireguard_aws.py ;;
+            *) exit 1 ;;
+          esac
       - name: Remove the owned tool staging
-        if: always() && (steps.provider.outputs.mode == 'commission-azure-1017' || steps.provider.outputs.mode == 'commission-azure-1020')
+        if: always() && (steps.provider.outputs.mode == 'commission-azure-1017' || steps.provider.outputs.mode == 'commission-azure-1020' || steps.provider.outputs.mode == 'commission-aws-1014')
         run: |
           tool_dir="$RUNNER_TEMP/exacopy-commissioning-tools"
           tool_marker="$RUNNER_TEMP/exacopy-wireguard-provider-b-tools.pending"
@@ -149,7 +157,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: exacopy-kernel-wireguard-azure-b-${{ github.run_attempt }}
+          name: exacopy-kernel-wireguard-${{ steps.provider.outputs.mode == 'commission-aws-1014' && 'aws-b' || 'azure-b' }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/exacopy-kernel-wireguard-provider/provider.json
             ${{ runner.temp }}/exacopy-kernel-wireguard-provider/dispatch.json

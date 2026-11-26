@@ -108,6 +108,7 @@ class KernelFixtureTests(unittest.TestCase):
         for choice, program, events in (
             (fixture.ProviderChoice.EXISTING, "remote_commissioning_wireguard.py", ("workflow_dispatch",)),
             (fixture.ProviderChoice.HOSTED_AZURE_B, "remote_commissioning_wireguard_azure.py", ("push",)),
+            (fixture.ProviderChoice.HOSTED_AWS_B, "remote_commissioning_wireguard_aws.py", ("push",)),
         ):
             with (
                 self.subTest(choice=choice),

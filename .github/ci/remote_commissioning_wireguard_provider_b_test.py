@@ -14,7 +14,7 @@ import remote_commissioning_wireguard as fixture
 from remote_commissioning_wireguard import provider_b as azure
 from native_supervision import CleanupUnconfirmed, ProcessResult
 from remote_commissioning_peer import Blocked
-from remote_commissioning_wireguard_provider_profiles import AZURE_1017, AZURE_1020, module_paths
+from remote_commissioning_wireguard_provider_profiles import AWS_1014, AZURE_1017, AZURE_1020, module_paths
 
 
 BOOT = {
@@ -100,7 +100,7 @@ class AzureProviderTests(unittest.TestCase):
 
     def test_azure1020_exact_closure_blocks_every_drift_before_root_staging(self):
         profile = AZURE_1020
-        closure = profile.observed_closure
+        closure = profile.reviewed_closure
         modules = {
             name: azure.Module(name, digest, closure.wireguard_depends if name == "wireguard" else (),
                                closure.vermagic, closure.signer)
@@ -127,56 +127,71 @@ class AzureProviderTests(unittest.TestCase):
                 mutation.assert_not_called()
                 load.assert_not_called()
 
-    def test_azure1020_prepares_only_exact_archive_members_and_passes_reviewed_closure(self):
-        profile = AZURE_1020
+    def test_prepares_only_exact_archive_members_and_passes_reviewed_closure(self):
+        for profile in (AZURE_1020, AWS_1014):
+            for fault in (None, "installed-hash", "order", "module-signer"):
+                with self.subTest(profile=profile.mode.value, fault=fault):
+                    self.check_prepared_closure(profile, fault)
+
+    def check_prepared_closure(self, profile, fault):
         boot = observed(profile)["kernel"]
-        closure = profile.observed_closure
+        closure = profile.reviewed_closure
         files = profile.expected_members()
         paths = module_paths(profile.release)
-        plan_bytes = "".join(f"insmod {paths[name]} \n" for name in closure.order).encode()
-        for mismatch in (None, paths["libcurve25519"]):
-            with self.subTest(mismatch=mismatch), TemporaryDirectory() as scratch:
-                root = Path(scratch)
-                selected = {path: root / path.name for path in files}
-                digests = {path: sha if path != mismatch else "a" * 64 for path, sha in files.items()}
-                local = {selected[path]: digest for path, digest in digests.items()}
+        order = closure.order or (*closure.wireguard_depends, "wireguard")
+        proposed = order if fault != "order" else (order[-1], *order[:-1])
+        plan_bytes = "".join(f"insmod {paths[name]} \n" for name in proposed).encode()
+        with TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            selected = {path: root / path.name for path in files}
+            digests = files.copy()
+            if fault == "installed-hash":
+                digests[paths["libcurve25519"]] = "a" * 64
+            local = {selected[path]: digest for path, digest in files.items()}
 
-                def observe_metadata(_work, name, _path, sha, release):
-                    self.assertEqual(release, profile.release)
-                    return azure.Module(name, sha, closure.wireguard_depends if name == "wireguard" else (),
-                                        closure.vermagic, closure.signer)
+            def observe_metadata(_work, name, _path, sha, release):
+                self.assertEqual(release, profile.release)
+                signer = "different signer" if fault == "module-signer" else closure.signer
+                return azure.Module(name, sha, closure.wireguard_depends if name == "wireguard" else (),
+                                    closure.vermagic, signer)
 
-                fixture = SimpleNamespace(root=root, root_identity=(1, 2))
-                evidence = {}
-                with (
-                    patch.object(azure, "hosted_scope"),
-                    patch.object(azure, "recheck_boot") as recheck,
-                    patch.object(azure, "directory_identity"),
-                    patch.object(azure, "archived_sources", return_value=selected) as unpack,
-                    patch.object(Path, "resolve", side_effect=lambda **_: Path("/synthetic-tool")),
-                    patch.object(azure, "checked_hash", side_effect=lambda path, *_: local.get(path, "b" * 64)),
-                    patch.object(azure, "installed_hash", side_effect=lambda path, _: digests[path]),
-                    patch.object(azure, "module_metadata", side_effect=observe_metadata),
-                    patch.object(azure, "read_command", return_value=plan_bytes) as plan,
-                    patch.object(azure, "stage_load") as stage,
-                ):
-                    if mismatch is None:
+            def stage_only_after_review(_work, _report, _root, _identity, _selected, modules, actual_order,
+                                        selected_profile, _boot, _evidence):
+                azure.verify_profile_closure(selected_profile, modules, actual_order)
+
+            fixture = SimpleNamespace(root=root, root_identity=(1, 2))
+            evidence = {}
+            with (
+                patch.object(azure, "hosted_scope"),
+                patch.object(azure, "recheck_boot") as recheck,
+                patch.object(azure, "directory_identity"),
+                patch.object(azure, "archived_sources", return_value=selected) as unpack,
+                patch.object(Path, "resolve", side_effect=lambda **_: Path("/synthetic-tool")),
+                patch.object(azure, "checked_hash", side_effect=lambda path, *_: local.get(path, "b" * 64)),
+                patch.object(azure, "installed_hash", side_effect=lambda path, _: digests[path]),
+                patch.object(azure, "module_metadata", side_effect=observe_metadata),
+                patch.object(azure, "read_command", return_value=plan_bytes) as plan,
+                patch.object(azure, "stage_load", side_effect=stage_only_after_review) as stage,
+            ):
+                if fault is None:
+                    azure.prepare(root, root, root, fixture, profile, boot, evidence)
+                    stage.assert_called_once()
+                    args = stage.call_args.args
+                    self.assertEqual(args[6], list(order))
+                    self.assertIs(args[7], profile)
+                    self.assertEqual(args[8], boot)
+                    self.assertEqual(evidence["module_archive_sha256"], profile.archive_sha256)
+                    self.assertEqual(evidence["profile"], profile.mode.value)
+                    self.assertIn("--show-depends", plan.call_args.args[2])
+                else:
+                    with self.assertRaises(Blocked):
                         azure.prepare(root, root, root, fixture, profile, boot, evidence)
-                        stage.assert_called_once()
-                        args = stage.call_args.args
-                        self.assertEqual(args[6], list(closure.order))
-                        self.assertIs(args[7], profile)
-                        self.assertEqual(args[8], boot)
-                        self.assertEqual(evidence["module_archive_sha256"], profile.archive_sha256)
-                        self.assertEqual(evidence["profile"], profile.mode.value)
-                        self.assertIn("--show-depends", plan.call_args.args[2])
-                    else:
-                        with self.assertRaisesRegex(Blocked, "package members"):
-                            azure.prepare(root, root, root, fixture, profile, boot, evidence)
+                    if fault == "installed-hash":
                         plan.assert_not_called()
+                    if fault != "module-signer":
                         stage.assert_not_called()
-                    unpack.assert_called_once_with(root / profile.archive, root / "provider-b-private", profile)
-                    recheck.assert_called_once_with(profile, boot)
+                unpack.assert_called_once_with(root / profile.archive, root / "provider-b-private", profile)
+                recheck.assert_called_once_with(profile, boot)
 
     def test_default_and_unbound_push_never_enter_provider_b(self):
         for event, workflow in (("workflow_dispatch", azure.WORKFLOW_REF), ("push", "foreign")):
@@ -200,6 +215,21 @@ class AzureProviderTests(unittest.TestCase):
             with self.assertRaises(Blocked):
                 fixture.execute(Path("/invalid"), Path("/invalid"), Path("/invalid"), {})
             prepare.assert_not_called()
+
+    def test_aws_and_azure_entrypoints_refuse_crossed_profiles_before_host_effects(self):
+        for choice, profile in ((fixture.ProviderChoice.HOSTED_AWS_B, AZURE_1017),
+                                (fixture.ProviderChoice.HOSTED_AZURE_B, AWS_1014)):
+            with (
+                self.subTest(choice=choice, profile=profile.mode.value),
+                patch.object(azure, "hosted_scope"),
+                patch.object(fixture.provider, "report", return_value=observed(profile)),
+                patch.object(azure, "verify_dispatch") as dispatch,
+                patch.object(fixture.direct, "preflight") as preflight,
+                self.assertRaisesRegex(Blocked, "entrypoint differs"),
+            ):
+                fixture.execute(Path("/invalid"), Path("/invalid"), Path("/invalid"), {}, choice)
+            dispatch.assert_not_called()
+            preflight.assert_not_called()
 
     def test_verified_kmod_order_matches_exact_elf_closure(self):
         good = {

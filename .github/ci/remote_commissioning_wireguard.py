@@ -25,6 +25,7 @@ from remote_commissioning_wireguard_net import CLIENT, SERVER, SSH_PORT, SET_PRI
 from remote_commissioning_wireguard_observations import CASES, Counters, check_delta, file_signal, snapshot, wait_file
 import remote_commissioning_wireguard_provider as provider
 import remote_commissioning_wireguard_provider_b as provider_b
+from remote_commissioning_wireguard_provider_profiles import DispatchMode
 
 SCHEMA = "exacopy.linux-kernel-wireguard-commissioning.v1"
 JOB = "exacopy-wireguard-commissioning"
@@ -246,6 +247,7 @@ def carrier_down(fixture, kernel, work, b3sum, evidence):
 class ProviderChoice(Enum):
     EXISTING = "existing"
     HOSTED_AZURE_B = "hosted-azure-b"
+    HOSTED_AWS_B = "hosted-aws-b"
 
 
 def execute(parent, work, report, evidence, choice=ProviderChoice.EXISTING):
@@ -255,12 +257,14 @@ def execute(parent, work, report, evidence, choice=ProviderChoice.EXISTING):
         if os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch" or os.environ.get("GITHUB_REF_PROTECTED") != "true":
             raise Blocked("embedded fixture requires manual commissioning")
         expected_provider = check_provider(evidence)
-    elif choice is ProviderChoice.HOSTED_AZURE_B:
+    elif choice in (ProviderChoice.HOSTED_AZURE_B, ProviderChoice.HOSTED_AWS_B):
         provider_b.hosted_scope()
         observed = provider.report()
         evidence["provider_before"] = observed
         provider_profile = provider_b.known_profile(observed.get("kernel", {}))
         boot = provider_b.admit(observed, provider_profile)
+        if (choice is ProviderChoice.HOSTED_AWS_B) != (provider_profile.mode is DispatchMode.AWS_1014):
+            raise Blocked("provider B entrypoint differs from the selected profile")
         evidence["dispatch"] = provider_b.verify_dispatch(parent.parent, provider_profile, boot)
     else:
         raise ValueError("unexpected provider choice")
@@ -371,6 +375,7 @@ def main(choice=ProviderChoice.EXISTING):
     program = {
         ProviderChoice.EXISTING: "remote_commissioning_wireguard.py",
         ProviderChoice.HOSTED_AZURE_B: "remote_commissioning_wireguard_azure.py",
+        ProviderChoice.HOSTED_AWS_B: "remote_commissioning_wireguard_aws.py",
     }[choice]
     try:
         events = ("workflow_dispatch",) if choice is ProviderChoice.EXISTING else ("push",)

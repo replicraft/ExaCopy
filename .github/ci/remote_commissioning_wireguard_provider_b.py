@@ -1,4 +1,4 @@
-"""Explicitly load the fixed verified Azure WireGuard provider in a disposable hosted job."""
+"""Explicitly load a fixed verified WireGuard provider in a disposable hosted job."""
 from dataclasses import dataclass
 import json
 import os
@@ -40,7 +40,7 @@ def hosted_scope():
         or env.get("GITHUB_WORKFLOW_REF") != WORKFLOW_REF or env.get("GITHUB_WORKFLOW_SHA") != revision
         or not re.fullmatch(r"[0-9a-f]{40}", revision) or "EXACOPY_REMOTE_DEPLOYMENT" in env
     ):
-        raise Blocked("fixed Azure B requires its exact canonical main push workflow")
+        raise Blocked("provider B requires its exact canonical main push workflow")
 
 
 
@@ -107,7 +107,7 @@ def admit(observed, profile):
         or facts.get("module_listing_after", {}).get("status") != "absent"
         or facts.get("module_initstate", {}).get("status") != "missing"
     ):
-        raise Blocked("fixed Azure provider B did not match the exact unloaded boot")
+        raise Blocked("provider B did not match the exact unloaded boot")
     expected = profile.expected_members()
     for field, path, selection in (
         ("config", profile.config, "module"),
@@ -118,7 +118,7 @@ def admit(observed, profile):
         if fact.get("status") != selection or fact.get("sha256") != expected[path] or any(
             fact.get(key) != value for key, value in profile.package_record(profile.package).items()
         ):
-            raise Blocked("fixed Azure provider B source observation differs")
+            raise Blocked("provider B source observation differs")
     return kernel
 
 
@@ -316,11 +316,14 @@ def load_once(path, report, number, name, sha, budget):
 
 
 def verify_profile_closure(profile, modules, order):
-    closure = profile.observed_closure
+    closure = profile.reviewed_closure
     if closure is None:
         return
     digests = dict(profile.module_sha256)
-    if tuple(order) != closure.order or set(modules) != set(digests):
+    if (
+        set(modules) != set(digests) or set(order) != set(digests) or len(order) != len(digests)
+        or order[-1] != "wireguard" or (closure.order is not None and tuple(order) != closure.order)
+    ):
         raise Blocked("provider B closure does not match the reviewed profile")
     for name, module in modules.items():
         depends = closure.wireguard_depends if name == "wireguard" else ()

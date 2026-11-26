@@ -9,7 +9,7 @@ import remote_commissioning as direct
 from remote_commissioning_peer import Blocked
 import remote_commissioning_wireguard_enrollment as enrollment
 import remote_commissioning_wireguard_provider as provider
-import remote_commissioning_wireguard_provider_b as azure
+import remote_commissioning_wireguard_provider_b as provider_b
 from native_supervision import file_digest, write_json
 from remote_commissioning_wireguard_provider_profiles import DispatchMode, known_profile
 
@@ -20,10 +20,10 @@ def select(observed, revision):
     profile = known_profile(observed.get("kernel", {}))
     if profile is not None:
         try:
-            azure.admit(observed, profile)
+            provider_b.admit(observed, profile)
         except Blocked:
             return DispatchMode.BLOCKED, "known profile lacks exact packaged-unloaded admission"
-        return profile.mode, "exact packaged-unloaded Azure provider"
+        return profile.mode, "exact packaged-unloaded provider B"
     try:
         candidate = enrollment.selected(observed)
     except Blocked:
@@ -45,15 +45,15 @@ def write_mode(parent, mode):
 
 
 def main():
-    azure.hosted_scope()
+    provider_b.hosted_scope()
     parent = provider.hosted_admission()
-    if direct.hosted_parent(azure.DISPATCH_PROGRAM, ("push",)) != parent:
+    if direct.hosted_parent(provider_b.DISPATCH_PROGRAM, ("push",)) != parent:
         raise Blocked("hosted provider dispatch parent differs")
     source = direct.native.source_identity(direct.native.REPO)
     revision = os.environ["GITHUB_SHA"]
     if source["revision"] != revision:
         raise Blocked("hosted provider dispatch checkout differs")
-    run = azure.dispatch_run()
+    run = provider_b.dispatch_run()
     directory = parent / provider.REPORT
     directory.mkdir(mode=0o700)
     observed = provider.report()
@@ -62,13 +62,13 @@ def main():
     profile = known_profile(observed.get("kernel", {}))
     try:
         if profile is not None and mode is profile.mode:
-            azure.recheck_boot(profile, observed["kernel"])
+            provider_b.recheck_boot(profile, observed["kernel"])
         elif mode is DispatchMode.OBSERVE:
             enrollment.same_boot(observed["kernel"])
     except Blocked:
         mode, reason = DispatchMode.BLOCKED, "boot no longer matches provider selection"
-    write_json(directory / azure.DISPATCH_RECORD, {
-        "schema": azure.DISPATCH_SCHEMA, "mode": mode.value, "reason": reason, "revision": revision,
+    write_json(directory / provider_b.DISPATCH_RECORD, {
+        "schema": provider_b.DISPATCH_SCHEMA, "mode": mode.value, "reason": reason, "revision": revision,
         "source": source, "run": run, "kernel": observed["kernel"],
         "provider_observation_sha256": file_digest(directory / "provider.json"),
         "qualified": False, "load_attempted": False,

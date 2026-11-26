@@ -67,9 +67,13 @@ carrier-down and retained-namespace evidence, plus confirmed fixture cleanup.
 
 The manual provider-A workflow requires a positively observed existing
 kernel provider. A separate canonical-main provider-B workflow can load
-only its fixed, hash-pinned Azure kernel module closure on a disposable
-hosted VM, after package, ABI, dependency and same-boot checks. Other kernels,
-missing tools, drift or uncertainty remain blocked. Previously live
+only fixed, hash-pinned module closures on a disposable hosted VM. It admits
+the reviewed Azure 1017 and 1020 or AWS 1014 boot after package, ABI,
+dependency and same-boot checks. The AWS pins came from the installed
+provider observation and the independently authenticated Canonical Noble
+security archive. [Hosted observation](https://github.com/replicraft/ExaCopy/actions/runs/45879217518)
+
+Other kernels, missing tools, drift or uncertainty remain blocked. Previously live
 dependencies have name-only attribution; they do not inherit archive-byte
 provenance. The runner VM owns loaded module lifetime.
 

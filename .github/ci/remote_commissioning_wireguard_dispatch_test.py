@@ -10,9 +10,9 @@ from unittest.mock import patch
 import remote_commissioning_wireguard_dispatch as dispatch
 from remote_commissioning_wireguard_provider_b_test import observed as azure_observation
 from remote_commissioning_wireguard_enrollment_test import AZURE, AWS, AWS_1014, observation
-from remote_commissioning_wireguard_provider_profiles import AZURE_1017, AZURE_1020, DispatchMode
+from remote_commissioning_wireguard_provider_profiles import AWS_1014 as AWS_PROFILE, AZURE_1017, AZURE_1020, DispatchMode
 
-azure = dispatch.azure
+provider_b = dispatch.provider_b
 REVISION = "a" * 40
 
 
@@ -28,6 +28,11 @@ class DispatcherControls(unittest.TestCase):
         reviewed = azure_observation(AZURE_1020) | {"revision": REVISION}
         self.assertIs(dispatch.select(reviewed, REVISION)[0], DispatchMode.AZURE_1020)
         self.assertIs(dispatch.select(observation(AZURE), REVISION)[0], DispatchMode.BLOCKED)
+        aws = observation(AWS_1014)
+        self.assertIs(dispatch.select(aws, REVISION)[0], DispatchMode.AWS_1014)
+        self.assertIs(dispatch.select(aws | {"provider": "already-live"}, REVISION)[0], DispatchMode.BLOCKED)
+        aws["observations"]["config"]["sha256"] = "0" * 64
+        self.assertIs(dispatch.select(aws, REVISION)[0], DispatchMode.BLOCKED)
         for status in ("packaged-but-unloaded", "unknown"):
             selected = observation(AWS) | {"provider": status}
             self.assertIs(dispatch.select(selected, REVISION)[0], DispatchMode.OBSERVE)
@@ -41,7 +46,7 @@ class DispatcherControls(unittest.TestCase):
             (known, DispatchMode.AZURE_1017, 0, False),
             (known, DispatchMode.BLOCKED, 77, True),
             (observation(AWS), DispatchMode.OBSERVE, 77, False),
-            (observation(AWS_1014), DispatchMode.OBSERVE, 77, False),
+            (observation(AWS_1014), DispatchMode.AWS_1014, 0, False),
             (observation(AWS_1014), DispatchMode.BLOCKED, 77, True),
             (azure_observation(AZURE_1020) | {"revision": REVISION}, DispatchMode.AZURE_1020, 0, False),
             (azure_observation(AZURE_1020) | {"revision": REVISION}, DispatchMode.BLOCKED, 77, True),
@@ -56,12 +61,12 @@ class DispatcherControls(unittest.TestCase):
                 with (
                     patch.dict(os.environ, {"GITHUB_SHA": REVISION, "GITHUB_RUN_ID": "123",
                                             "GITHUB_RUN_ATTEMPT": "1", "GITHUB_OUTPUT": str(output)}),
-                    patch.object(azure, "hosted_scope"),
+                    patch.object(provider_b, "hosted_scope"),
                     patch.object(dispatch.provider, "hosted_admission", return_value=parent),
                     patch.object(dispatch.direct, "hosted_parent", return_value=parent),
                     patch.object(dispatch.direct.native, "source_identity", return_value={"revision": REVISION}),
                     patch.object(dispatch.provider, "report", return_value=selected) as observe,
-                    patch.object(azure, "recheck_boot", side_effect=refusal),
+                    patch.object(provider_b, "recheck_boot", side_effect=refusal),
                     patch.object(dispatch.enrollment, "same_boot", side_effect=refusal),
                     patch.object(dispatch.enrollment, "main", return_value=0) as enrollment,
                 ):
@@ -73,27 +78,27 @@ class DispatcherControls(unittest.TestCase):
                         enrollment.assert_not_called()
                     self.assertEqual(output.read_text(), f"mode={expected.value}\n")
                     directory = parent / dispatch.provider.REPORT
-                    record = json.loads((directory / azure.DISPATCH_RECORD).read_text())
+                    record = json.loads((directory / provider_b.DISPATCH_RECORD).read_text())
                     self.assertEqual(record["kernel"], selected["kernel"])
                     self.assertEqual(record["provider_observation_sha256"], sha256((directory / "provider.json").read_bytes()).hexdigest())
                     self.assertFalse(record["qualified"])
                     self.assertFalse(record["load_attempted"])
-                    profile = azure.known_profile(selected["kernel"])
-                    if expected in (DispatchMode.AZURE_1017, DispatchMode.AZURE_1020):
-                        self.assertEqual(azure.verify_dispatch(parent, profile, selected["kernel"]), record)
+                    profile = provider_b.known_profile(selected["kernel"])
+                    if expected in (DispatchMode.AZURE_1017, DispatchMode.AZURE_1020, DispatchMode.AWS_1014):
+                        self.assertEqual(provider_b.verify_dispatch(parent, profile, selected["kernel"]), record)
                         with self.assertRaises(dispatch.Blocked):
                             foreign = AZURE_1020 if profile is AZURE_1017 else AZURE_1017
-                            azure.verify_dispatch(parent, foreign, selected["kernel"])
+                            provider_b.verify_dispatch(parent, foreign, selected["kernel"])
                         with self.assertRaises(dispatch.Blocked):
-                            azure.verify_dispatch(parent, profile, selected["kernel"] | {"boot_id": "different"})
+                            provider_b.verify_dispatch(parent, profile, selected["kernel"] | {"boot_id": "different"})
                         with patch.dict(os.environ, {"GITHUB_RUN_ATTEMPT": "2"}), self.assertRaises(dispatch.Blocked):
-                            azure.verify_dispatch(parent, profile, selected["kernel"])
+                            provider_b.verify_dispatch(parent, profile, selected["kernel"])
                         (directory / "provider.json").write_text("altered evidence")
                         with self.assertRaises(dispatch.Blocked):
-                            azure.verify_dispatch(parent, profile, selected["kernel"])
+                            provider_b.verify_dispatch(parent, profile, selected["kernel"])
                     else:
                         with self.assertRaises(dispatch.Blocked):
-                            azure.verify_dispatch(parent, profile, selected["kernel"])
+                            provider_b.verify_dispatch(parent, profile, selected["kernel"])
 
     def test_observation_context_requires_closed_launch_and_matched_snapshot(self):
         enrollment = dispatch.enrollment
@@ -103,7 +108,7 @@ class DispatcherControls(unittest.TestCase):
             parent = Path(scratch)
             with (
                 patch.dict(os.environ, {"GITHUB_SHA": REVISION, "GITHUB_WORKFLOW_SHA": REVISION,
-                                        "GITHUB_WORKFLOW_REF": azure.WORKFLOW_REF}),
+                                        "GITHUB_WORKFLOW_REF": provider_b.WORKFLOW_REF}),
                 patch.object(dispatch.provider, "hosted_admission", return_value=parent),
                 patch.object(dispatch.direct, "hosted_parent", return_value=parent) as hosted,
                 patch.object(dispatch.direct.native, "source_identity", return_value={"revision": REVISION}),
@@ -115,7 +120,7 @@ class DispatcherControls(unittest.TestCase):
                 with self.assertRaises(dispatch.Blocked):
                     enrollment.main(context)
                 self.assertEqual(enrollment.main(context, snapshot), 0)
-                self.assertEqual(hosted.call_args.args, (azure.DISPATCH_PROGRAM, ("push",)))
+                self.assertEqual(hosted.call_args.args, (provider_b.DISPATCH_PROGRAM, ("push",)))
                 self.assertEqual(collect.call_args.args[4], snapshot)
                 collect.assert_called_once()
                 record = json.loads((parent / enrollment.JOB / "report/provider.json").read_text())
@@ -138,13 +143,15 @@ class DispatcherControls(unittest.TestCase):
         path = Path(__file__).resolve().parent.parent / "workflows/linux-remote-wireguard-provider-b.yml"
         workflow = path.read_text()
         literal = ("if: (steps.provider.outputs.mode == 'commission-azure-1017' || "
-                   "steps.provider.outputs.mode == 'commission-azure-1020')")
+                   "steps.provider.outputs.mode == 'commission-azure-1020' || "
+                   "steps.provider.outputs.mode == 'commission-aws-1014')")
         for name in ("Prepare pinned sources and Rust", "Stage bounded independent fixture tools",
-                     "Verify the Azure module closure and commission the ordinary embedded CLI"):
+                     "Verify the selected module closure and commission the ordinary embedded CLI"):
             self.assertIn(f"      - name: {name}\n        {literal}\n", workflow)
         self.assertIn(f"if: always() && {literal.removeprefix('if: ')}", workflow)
-        for pin in (AZURE_1017, AZURE_1020):
+        for pin in (AZURE_1017, AZURE_1020, AWS_PROFILE):
             self.assertIn(f"{pin.mode.value}) module_package='{pin.package}={pin.version}' ;;", workflow)
+        self.assertIn("commission-aws-1014) python3 -B .github/ci/remote_commissioning_wireguard_aws.py ;;", workflow)
         for artifact in ("dispatch.json", "Release.gpg", "Packages.xz", "exacopy-wireguard-enrollment.pending",
                          "exacopy-wireguard-provider-b-tools.pending"):
             self.assertIn(artifact, workflow)
