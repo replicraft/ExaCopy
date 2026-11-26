@@ -1,11 +1,17 @@
 # APFS private-stage recovery handoff
 
-The mounted APFS companion at `fc71ded0c7b6d5d433317edf90490b3dcef9a2c0`
-provides independent read-back from a live `ClosedFile` and metadata queries on
-a live `MetadataReadyFile`. Its held metadata view can check the original
-sealed inode after publication. Both capabilities originate from the original
-private writer. A restarted process has fresh directory and entry observations
-instead. It needs a separate read-only stage reader. [Mounted APFS requirements](../architecture/apfs-library-requirements.md)
+The selected mounted APFS companion is public commit
+`af97d38523881265c037b91b0504242eec84e392` (`apfs-mounted` 0.1.0).
+A fresh exact-commit Git fetch and the pinned canonical archive digest were
+verified on 2026-11-26. Commit `52f8b79` supplies the requested observation-only
+`ReopenedStage`: leased pre-open admission, an anchored read-only descriptor,
+bounded reads, live metadata and a real EOF check. This supersedes the earlier
+request to add that basic capability. ExaCopy has updated the source pin;
+its recovery adapter has not yet migrated to this API.
+
+The companion also provides independent read-back from a live `ClosedFile`
+and metadata queries on a live `MetadataReadyFile`, including after rename.
+[Mounted APFS requirements](../architecture/apfs-library-requirements.md)
 
 ## Current ExaCopy recovery
 
@@ -24,13 +30,14 @@ declared extent. The inspection coordinator compares the measured stream
 digest and, when the journal carries a metadata record, both initial and
 final metadata with their exact expected values. [Recovery stage reader](../../crates/platform/exacopy-platform/src/macos/staging/directory/jobs/recovery/inventory/readback.rs) · [Inspection read-back](../../crates/engines/exacopy-transfer/src/macos/inspection/readback.rs)
 
-## Companion API requirement
+## Recovery adoption contract
 
-Add an observation-only reopen capable of borrowing a freshly authorized
-stage directory, its currently held matching lease, the exact raw component
-and an event anchor obtained from fresh inventory. The expected identity and
-logical extent are comparison inputs. ExaCopy will keep its current exclusive
-stage-directory lease and protected ancestry checks.
+Use `ReopenedStage` with a freshly authorized stage directory, its currently
+held exclusive lease, the exact raw component and an event anchor obtained
+from fresh inventory. The expected identity and logical extent are comparison
+inputs. ExaCopy keeps its exclusive stage-directory lease and protected
+ancestry checks. The following are integration requirements, not a claim
+that these capabilities are absent from the latest companion.
 
 - Before opening, confirm that the caller's lease covers the live directory
   and that it belongs to the acquiring process. Confirm the relative no-follow
@@ -60,6 +67,51 @@ about recovery. A journal record supplies an expectation to check against
 fresh observations. This reader grants observation authority only. It
 cannot establish live writer closure, a new durability barrier, permission
 to mutate, or publication authority.
+
+## Remaining upstream boundaries
+
+The recovery API currently borrows an `EventEntry`, which itself borrows a
+`Directory` and `EntryName`. ExaCopy's returned reader cannot borrow an anchor
+created inside its open method. Adoption can use a scoped callback with the
+name and anchor kept outside the read scope. An upstream ownership-oriented
+reader constructor, such as `open_named(&Directory, EntryName, &Lease,
+expected_length, admit)`, is an alternative, provided it owns the necessary
+name and anchor without a self-reference; merely consuming the borrowed
+`EventEntry` does not remove its name lifetime. This is an integration
+choice, not a missing read primitive.
+
+A coherent, observation-only event API would remove remaining consumer
+`stat` plus physical-FSID joins. It should return initial and revalidated
+native identity, extent, change stamp and bounded metadata from the same
+held anchor; support exact stored spelling for private stages and ordinary
+lookup spelling for public occupancy; and permit reuse by `ReopenedStage`.
+ExaCopy must still compare the original inventory baseline throughout
+recovery, including the public name and protected ancestry. The reader's
+fresh baseline alone cannot replace that history check. Its initial metadata
+is pre-open; preserve ExaCopy's post-open initial access-time comparison using
+the live metadata view. Ordinary reads may advance access time.
+
+Typed `ObjectFlags` already exist upstream. Remaining consumer firmlink and
+dataless bit interpretation should use those APIs. Post-publication named
+identity/metadata observation belongs to the same reusable native boundary;
+ExaCopy keeps the comparison with its recorded publication expectation.
+Existing `Directory::create_private_directory` can also replace consumer
+`mkdirat`/open/barrier scaffolding, while preserving separate created,
+existing and created-but-unconfirmed outcomes and ExaCopy's strict 0700/ACL
+admission. A reusable checked private-artifact lifecycle (exclusive create,
+held/name observation, barrier, checked close and read-only reopen) could
+serve immutable job records and receipts. It must not absorb their names,
+formats, journal cursor, resource reservations or publication ordering.
+The existing stage writer is not a replacement for an append-only journal.
+
+A checked protected ancestor walk and final read would be reusable upstream
+if macOS protected snapshot support is added. That path currently refuses
+on macOS; this is a future capability request rather than active duplication.
+ExaCopy retains protected-operation authorization and content verification.
+
+Generic descriptor barriers and checked close may be shared upstream when
+their error phases match, but journal framing, allocation limits and signed
+record semantics remain ExaCopy responsibilities.
 
 ## Earlier modification times on Darwin
 

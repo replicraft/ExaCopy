@@ -11,7 +11,7 @@ changes comments and dependency ordering in four Cargo manifests. Their
 parsed contents and the mounted implementation are identical.
 
 The current [source pin](../../specs/dependencies/apfs-source.toml) selects
-`fdcc3ea51e4cdc694453b7bfeb626f4d03367e1a`. The
+`af97d38523881265c037b91b0504242eec84e392` (`apfs-mounted` remains version 0.1.0). The
 [filesystem companion audit](../engineering/filesystem-companion-boundary-audit.md)
 records the current consumers, remaining duplication and API gaps. The unsafe
 counts below describe the original checkpoint rather than the current tree.

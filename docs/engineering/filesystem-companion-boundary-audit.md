@@ -1,5 +1,19 @@
 # Filesystem companion ownership audit
 
+## Current selection and remaining work
+
+The source pin now selects public APFS `af97d38523881265c037b91b0504242eec84e392`.
+Its additive `ReopenedStage` API supplies observation-only private-stage
+reopening. ExaCopy's existing recovery reader still performs its native open,
+range reads and EOF checks; adoption must preserve the original inventory
+baseline and use a lifetime-safe anchor scope. The
+[updated handoff](apfs-recovery-handoff.md) distinguishes supplied APIs from
+remaining requests: mutation-free closed-stage sealing, coherent event and
+post-publication observations, and reuse of existing typed object flags.
+Authorization, metadata policy, hashes, journal/receipt formats, durable
+intent and reconciliation remain in ExaCopy. No HFS+ implementation was found
+to move. The historical findings below retain their original revision scope.
+
 ## Consumer integration at `d9defab`
 
 ExaCopy selects companion `fc71ded` through its exact source pin. The follow-up
@@ -28,8 +42,9 @@ The composed consumer snapshot passed 271 cases with 16 existing skips,
 strict Clippy and the workspace checker on native macOS against an isolated,
 clean pinned companion. The strict copy-through-receipt fixture remains
 unqualified: the host exposes source xattrs and the fixture refuses them
-before copying. Restart recovery still uses its existing adapter pending a
-companion capability for freshly reopened stages. The generic receipt
+before copying. At that revision, restart recovery still used its existing adapter pending a
+companion capability for freshly reopened stages. The latest companion now
+supplies that capability; consumer adoption is pending. The generic receipt
 record writer also remains in ExaCopy. Neither process-crash nor power-loss
 qualification follows from this ownership migration. No mounted HFS+
 adapter was added.
