@@ -1,22 +1,16 @@
 use std::fmt;
-use std::fs::File;
-use std::os::fd::AsFd as _;
-use std::os::unix::fs::FileExt as _;
 
-use exacopy_endpoint::read_exact_at;
-use rustix::fs::{self, Mode, OFlags, Stat};
+use apfs_mounted::EntryName;
+use apfs_mounted::metadata::MAX_EXTENDED_SECURITY_BYTES;
+use apfs_mounted::recovery::{ReopenedStage, StageAdmission};
+use apfs_mounted::source::SourceError;
 
-use super::super::super::super::super::super::{BasicMetadata, metadata};
-use super::super::super::super::super::{StageError, file::bounded_end, reader::check_logical_eof};
+use super::super::super::super::super::super::{BasicMetadata, FILE_MODE, metadata};
+use super::super::super::super::super::{StageError, file::bounded_end};
 use super::{
-	DirectoryLease, EVENT_ONLY, HeldEntry, PhysicalFsid, RecoveryError, RecoveryFileObservation,
-	RecoveryInventory, RecoveryName, same_observation, with_materialization_disabled,
+	HeldEntry, ManagedObjectIdentity, RecoveryError, RecoveryFileObservation, RecoveryInventory,
+	RecoveryName, acl,
 };
-
-const READ_STAGE: OFlags = OFlags::RDONLY
-	.union(OFlags::NOFOLLOW)
-	.union(OFlags::NONBLOCK)
-	.union(OFlags::CLOEXEC);
 
 impl RecoveryInventory<'_> {
 	/// Independently opens the selected private stage for fresh read-back.
@@ -32,48 +26,49 @@ impl RecoveryInventory<'_> {
 		&self,
 		expected: RecoveryFileObservation,
 	) -> Result<RecoveryStageReader<'_>, RecoveryError> {
-		let invalid = || RecoveryError::InvalidEntry(RecoveryName::Stage);
-		let parent = &self.directory.as_ref().ok_or_else(invalid)?.lease;
-		let stage = self.stage.as_ref().ok_or_else(invalid)?;
+		let parent = &self.directory.as_ref().ok_or_else(invalid_stage)?.lease;
+		let stage = self.stage.as_ref().ok_or_else(invalid_stage)?;
 		if stage.observation != expected {
-			return Err(invalid());
+			return Err(invalid_stage());
 		}
-		with_materialization_disabled(|| {
-			self.check_current()?;
-			let file = File::from(fs::openat(
-				&parent.file,
-				self.stage_name.as_bytes(),
-				READ_STAGE,
-				Mode::empty(),
-			)?);
-			let flags = fs::fcntl_getfl(&file)?;
-			if flags.intersection(OFlags::ACCMODE) != OFlags::RDONLY || flags.contains(EVENT_ONLY) {
-				return Err(invalid());
-			}
-			let initial = fs::fstat(&file)?;
-			let initial_metadata =
-				BasicMetadata::from_stat(&initial).map_err(StageError::BasicMetadata)?;
-			let reader = RecoveryStageReader {
-				inventory: self,
-				stage,
-				parent,
-				file,
-				initial_metadata,
-			};
-			if reader.observe_strict_metadata()? != initial_metadata {
-				return Err(invalid());
-			}
-			Ok(reader)
+		let name = EntryName::new(self.stage_name.as_bytes()).map_err(|_| invalid_stage())?;
+		let mounted = self.observe_stage_operation(|| {
+			ReopenedStage::open_named(
+				&parent.directory,
+				name,
+				&parent.lease,
+				expected.length(),
+				|admission| admit_stage(admission, stage, parent.owner),
+			)
+			.map_err(|cause| RecoveryError::mounted_stage(None, cause))
+		})?;
+		// Capture live access time after opening the data descriptor, before
+		// reading. The event anchor's earlier access time is not equivalent.
+		let initial_metadata = observe_strict_metadata(self, &mounted)?;
+		Ok(RecoveryStageReader {
+			inventory: self,
+			observation: expected,
+			mounted,
+			initial_metadata,
 		})
+	}
+
+	fn observe_stage_operation<T>(
+		&self,
+		operation: impl FnOnce() -> Result<T, RecoveryError>,
+	) -> Result<T, RecoveryError> {
+		self.revalidate()?;
+		let result = operation();
+		let checked_after = self.revalidate();
+		result.and_then(|value| checked_after.map(|()| value))
 	}
 }
 
 /// Leased positioned read-back of one independently reopened private stage.
 pub struct RecoveryStageReader<'inventory> {
 	inventory: &'inventory RecoveryInventory<'inventory>,
-	stage: &'inventory HeldEntry,
-	parent: &'inventory DirectoryLease,
-	file: File,
+	observation: RecoveryFileObservation,
+	mounted: ReopenedStage<'inventory>,
 	initial_metadata: BasicMetadata,
 }
 
@@ -81,7 +76,7 @@ impl RecoveryStageReader<'_> {
 	/// Returns the stage identity and extent bound to this reader.
 	#[must_use]
 	pub const fn observation(&self) -> RecoveryFileObservation {
-		self.stage.observation
+		self.observation
 	}
 
 	/// Returns strict basic metadata observed before the first content read.
@@ -96,15 +91,12 @@ impl RecoveryStageReader<'_> {
 	/// Rejects out-of-range reads, changed observations and I/O failures. Discard the
 	/// buffer on error, since a failed check can follow a partial or completed read.
 	pub fn read_exact_at(&self, offset: u64, buffer: &mut [u8]) -> Result<(), RecoveryError> {
-		bounded_end(offset, buffer.len(), self.stage.observation.length())?;
-		with_materialization_disabled(|| {
-			self.check_current()?;
-			read_exact_at(offset, buffer, |position, remaining| {
-				self.file.read_at(remaining, position)
-			})
-			.map_err(StageError::Read)?;
-			self.check_current()?;
-			Ok(())
+		let count = buffer.len();
+		bounded_end(offset, count, self.observation.length())?;
+		self.inventory.observe_stage_operation(|| {
+			self.mounted
+				.read_exact_at(offset, buffer)
+				.map_err(|cause| RecoveryError::mounted_stage(Some((offset, count)), cause))
 		})
 	}
 
@@ -116,29 +108,61 @@ impl RecoveryStageReader<'_> {
 	/// # Errors
 	/// Rejects changed bindings, failed strict metadata checks, and unexpected logical EOF.
 	pub fn revalidate(&self) -> Result<BasicMetadata, RecoveryError> {
-		with_materialization_disabled(|| {
-			self.check_current()?;
-			check_logical_eof(&self.file, self.stage.observation.length())?;
-			self.observe_strict_metadata()
-		})
+		self.inventory.observe_stage_operation(|| {
+			self.mounted
+				.confirm_eof()
+				.map_err(|cause| RecoveryError::mounted_stage(None, cause))
+		})?;
+		observe_strict_metadata(self.inventory, &self.mounted)
 	}
+}
 
-	fn check_current(&self) -> Result<Stat, RecoveryError> {
-		self.inventory.check_current()?;
-		let held = fs::fstat(&self.file)?;
-		if !same_observation(&held, &self.stage.initial)
-			|| PhysicalFsid::held(self.file.as_fd())? != Some(self.parent.identity.physical_fsid)
-		{
-			return Err(RecoveryError::InvalidEntry(RecoveryName::Stage));
-		}
-		Ok(held)
+fn admit_stage(
+	admission: StageAdmission<'_>,
+	stage: &HeldEntry,
+	owner: u32,
+) -> Result<(), SourceError> {
+	let observed = admission.metadata();
+	let initial = &stage.initial;
+	if ManagedObjectIdentity::from_mounted(admission.identity()) != stage.observation.identity()
+		|| observed.length != stage.observation.length()
+		|| observed.owner != owner
+		|| observed.group != initial.st_gid
+		|| observed.mode != FILE_MODE.bits()
+		|| observed.link_count != 1
+		|| observed.flags != 0
+		|| observed.modified.seconds != initial.st_mtime
+		|| i64::from(observed.modified.nanoseconds) != initial.st_mtime_nsec
+		|| observed.changed.seconds != initial.st_ctime
+		|| i64::from(observed.changed.nanoseconds) != initial.st_ctime_nsec
+	{
+		return Err(SourceError::AdmissionRefused);
 	}
+	let security = admission
+		.extended_security(MAX_EXTENDED_SECURITY_BYTES)
+		.map_err(SourceError::Metadata)?;
+	if !acl::basic_security(Ok(security)).map_err(SourceError::Io)? {
+		return Err(SourceError::AdmissionRefused);
+	}
+	Ok(())
+}
 
-	fn observe_strict_metadata(&self) -> Result<BasicMetadata, RecoveryError> {
-		self.check_current()?;
-		metadata::check_inventory(self.file.as_fd()).map_err(StageError::BasicMetadata)?;
-		Ok(BasicMetadata::from_stat(&self.check_current()?).map_err(StageError::BasicMetadata)?)
-	}
+fn observe_strict_metadata(
+	inventory: &RecoveryInventory<'_>,
+	mounted: &ReopenedStage<'_>,
+) -> Result<BasicMetadata, RecoveryError> {
+	inventory.observe_stage_operation(|| {
+		let (snapshot, strict) = mounted
+			.with_observation(|_, view| Ok(metadata::check_view_inventory(&view)))
+			.map_err(|cause| RecoveryError::mounted_stage(None, cause))?;
+		strict.map_err(StageError::BasicMetadata)?;
+		Ok(BasicMetadata::from_mounted_observation(snapshot.metadata)
+			.map_err(StageError::BasicMetadata)?)
+	})
+}
+
+fn invalid_stage() -> RecoveryError {
+	RecoveryError::InvalidEntry(RecoveryName::Stage)
 }
 
 impl fmt::Debug for RecoveryStageReader<'_> {

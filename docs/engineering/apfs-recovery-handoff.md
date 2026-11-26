@@ -1,13 +1,10 @@
 # APFS private-stage recovery handoff
 
 The selected mounted APFS companion is public commit
-`af97d38523881265c037b91b0504242eec84e392` (`apfs-mounted` 0.1.0).
-A fresh exact-commit Git fetch and the pinned canonical archive digest were
-verified on 2026-11-26. Commit `52f8b79` supplies the requested observation-only
-`ReopenedStage`: leased pre-open admission, an anchored read-only descriptor,
-bounded reads, live metadata and a real EOF check. This supersedes the earlier
-request to add that basic capability. ExaCopy has updated the source pin;
-its recovery adapter has not yet migrated to this API.
+`827f94821a59d1bd99745414476aa04716c9429d` (`apfs-mounted` 0.1.0).
+Commit `4fa67b7` adds the owned-name and event-anchor constructor for the
+observation-only `ReopenedStage` API. ExaCopy uses it for restart read-back
+under the existing stage-directory lease.
 
 The companion also provides independent read-back from a live `ClosedFile`
 and metadata queries on a live `MetadataReadyFile`, including after rename.
@@ -24,20 +21,20 @@ observed without opening its payload. [Recovery inventory](../../crates/platform
 
 Before read-back, inspection compares the newly observed stage directory,
 stage identity and length with the accepted journal evidence. The recovery
-adapter opens only that private entry read-only, preserves the live name and
-identity checks across bounded positioned reads, and probes EOF at the
-declared extent. The inspection coordinator compares the measured stream
+adapter opens only that private entry read-only and rechecks the complete
+original inventory around open, each positioned read, the EOF probe and
+strict metadata observations. The metadata samples use the live data handle.
+The inspection coordinator compares the measured stream
 digest and, when the journal carries a metadata record, both initial and
 final metadata with their exact expected values. [Recovery stage reader](../../crates/platform/exacopy-platform/src/macos/staging/directory/jobs/recovery/inventory/readback.rs) · [Inspection read-back](../../crates/engines/exacopy-transfer/src/macos/inspection/readback.rs)
 
-## Recovery adoption contract
+## Recovery contract
 
-Use `ReopenedStage` with a freshly authorized stage directory, its currently
-held exclusive lease, the exact raw component and an event anchor obtained
-from fresh inventory. The expected identity and logical extent are comparison
-inputs. ExaCopy keeps its exclusive stage-directory lease and protected
-ancestry checks. The following are integration requirements, not a claim
-that these capabilities are absent from the latest companion.
+`ReopenedStage::open_named` owns the exact raw component and its fresh
+event-only anchor. It borrows the admitted stage directory and its
+currently held exclusive lease. The original ExaCopy inventory supplies
+comparison inputs for identity, extent and stability. ExaCopy keeps its
+protected-ancestry and both-name checks.
 
 - Before opening, confirm that the caller's lease covers the live directory
   and that it belongs to the acquiring process. Confirm the relative no-follow
@@ -70,26 +67,13 @@ to mutate, or publication authority.
 
 ## Remaining upstream boundaries
 
-The recovery API currently borrows an `EventEntry`, which itself borrows a
-`Directory` and `EntryName`. ExaCopy's returned reader cannot borrow an anchor
-created inside its open method. Adoption can use a scoped callback with the
-name and anchor kept outside the read scope. An upstream ownership-oriented
-reader constructor, such as `open_named(&Directory, EntryName, &Lease,
-expected_length, admit)`, is an alternative, provided it owns the necessary
-name and anchor without a self-reference; merely consuming the borrowed
-`EventEntry` does not remove its name lifetime. This is an integration
-choice, not a missing read primitive.
-
-A coherent, observation-only event API would remove remaining consumer
-`stat` plus physical-FSID joins. It should return initial and revalidated
-native identity, extent, change stamp and bounded metadata from the same
-held anchor; support exact stored spelling for private stages and ordinary
-lookup spelling for public occupancy; and permit reuse by `ReopenedStage`.
-ExaCopy must still compare the original inventory baseline throughout
-recovery, including the public name and protected ancestry. The reader's
-fresh baseline alone cannot replace that history check. Its initial metadata
-is pre-open; preserve ExaCopy's post-open initial access-time comparison using
-the live metadata view. Ordinary reads may advance access time.
+The companion supplies coherent event and post-publication observations of
+native identity, extent, change stamp and bounded held metadata. These support
+exact stored spelling for private stages and lookup spelling for public
+occupancy. ExaCopy's recovery read-back uses a coherent data-handle observation
+for initial and final metadata. Other recovery inventory and post-publication
+callers can adopt the separate mounted observation APIs while retaining
+their original binding checks.
 
 Typed `ObjectFlags` already exist upstream. Remaining consumer firmlink and
 dataless bit interpretation should use those APIs. Post-publication named
@@ -142,11 +126,9 @@ replay contract and requires separate review.
 ## Mutation-free seal for fresh selected streams
 
 The independently read-back stage for an SFTP data-only capture does not
-need source timestamps installed. The companion currently creates a
-`MetadataReadyFile` through its checked timestamp operation. Add a separate
-checked transition from the live `ClosedFile` that seals its current local
-metadata without applying timestamps. An illustrative API name is
-`seal_existing_metadata_checked`; it remains an upstream request.
+need source timestamps installed. The companion supplies
+`ClosedFile::seal_checked` to seal current local metadata without applying
+timestamps. This is a separate integration from restart read-back.
 
 Use the original closed-writer capability, private name, lease and event
 anchor. Obtain and retain the companion's own checked read-only descriptor,

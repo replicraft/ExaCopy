@@ -1,11 +1,8 @@
 use std::fmt;
-use std::fs::File;
-use std::io;
-use std::os::unix::fs::FileExt as _;
 
 use apfs_mounted::metadata::Metadata;
 use apfs_mounted::writer::ReadBack;
-use exacopy_endpoint::{MAX_INTERRUPTED_RETRIES, ReadView};
+use exacopy_endpoint::ReadView;
 
 use super::super::{metadata, with_materialization_disabled};
 use super::file::{bounded_end, check_stage_view_acl};
@@ -74,22 +71,6 @@ impl StageReader<'_> {
 			self.read_back.with_metadata(check_stage_view_acl)??;
 			self.stage.location.check_current()
 		})
-	}
-}
-
-// Restart recovery has no live ClosedFile capability to reopen through.
-
-pub(super) fn check_logical_eof(file: &File, length: u64) -> Result<(), StageError> {
-	let mut retries = MAX_INTERRUPTED_RETRIES;
-	loop {
-		match file.read_at(&mut [0], length) {
-			Ok(0) => return Ok(()),
-			Ok(_) => return Err(StageError::UnexpectedDataAfterEnd),
-			Err(error) if error.kind() == io::ErrorKind::Interrupted && retries > 0 => {
-				retries -= 1;
-			}
-			Err(error) => return Err(error.into()),
-		}
 	}
 }
 

@@ -1,5 +1,6 @@
 use std::{fmt, io};
 
+use apfs_mounted::source::SourceError;
 use rustix::io::Errno;
 
 use super::super::super::super::super::ManagedReadError;
@@ -32,6 +33,13 @@ pub enum RecoveryError {
 		length: u64,
 		/// The supported upper bound.
 		limit: u64,
+	},
+	/// An independently reopened stage operation failed.
+	MountedStage {
+		/// The requested offset and byte count for a positioned read.
+		requested: Option<(u64, usize)>,
+		/// The underlying read-only APFS observation failure.
+		cause: Box<SourceError>,
 	},
 	/// A read interrupted the attempted observation.
 	System(io::Error),
@@ -71,9 +79,31 @@ impl fmt::Display for RecoveryError {
 				formatter,
 				"private recovery {artifact:?} length {length} is outside its bounds (limit {limit})"
 			),
+			Self::MountedStage {
+				requested: Some((offset, count)),
+				cause,
+			} => write!(
+				formatter,
+				"private stage read requested {count} bytes at offset {offset} ({cause})"
+			),
+			Self::MountedStage {
+				requested: None,
+				cause,
+			} => {
+				write!(formatter, "private stage observation failed ({cause})")
+			}
 			Self::System(error) => {
 				write!(formatter, "private recovery descriptor failed ({error})")
 			}
+		}
+	}
+}
+
+impl RecoveryError {
+	pub(super) fn mounted_stage(requested: Option<(u64, usize)>, cause: SourceError) -> Self {
+		Self::MountedStage {
+			requested,
+			cause: Box::new(cause),
 		}
 	}
 }
@@ -83,6 +113,7 @@ impl std::error::Error for RecoveryError {
 		match self {
 			Self::Managed(error) => Some(error),
 			Self::System(error) => Some(error),
+			Self::MountedStage { cause, .. } => Some(cause.as_ref()),
 			_ => None,
 		}
 	}
@@ -116,4 +147,24 @@ impl From<Errno> for RecoveryError {
 	fn from(error: Errno) -> Self {
 		Self::System(error.into())
 	}
+}
+
+#[test]
+fn mounted_read_failure_keeps_request_range_and_original_errno() {
+	use std::error::Error as _;
+
+	let error = RecoveryError::mounted_stage(
+		Some((4096, 32)),
+		SourceError::Io(io::Error::from_raw_os_error(libc::EIO)),
+	);
+	assert!(
+		error
+			.to_string()
+			.contains("requested 32 bytes at offset 4096")
+	);
+	let cause = error.source().unwrap().downcast_ref::<SourceError>();
+	assert!(matches!(
+		cause,
+		Some(SourceError::Io(error)) if error.raw_os_error() == Some(libc::EIO)
+	));
 }

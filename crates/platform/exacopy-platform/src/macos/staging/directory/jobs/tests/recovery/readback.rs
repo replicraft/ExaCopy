@@ -217,3 +217,41 @@ fn empty_private_stage_is_read_back_with_a_checked_eof() {
 	reader.read_exact_at(0, &mut []).unwrap();
 	reader.revalidate().unwrap();
 }
+
+#[test]
+#[ignore = "requires a native APFS stage with zero visible xattrs"]
+fn private_read_back_refuses_a_new_public_occupant_without_reading_it() {
+	let fixture = Fixture::new();
+	let stage = stage_fixture(&fixture, b"data");
+	let target = fixture.path(TARGET);
+	let root = fixture.bind();
+	let container = open_staging(&root);
+	let job = container.open_recovery_job(job_name()).unwrap();
+	let inventory = job
+		.inventory(name(DATA.as_bytes()), name(TARGET.as_bytes()))
+		.unwrap();
+	assert!(inventory.target().is_none());
+	let reader = inventory
+		.open_stage_read_back(inventory.stage().unwrap())
+		.unwrap();
+
+	fs::write(&target, OUTSIDE_BYTES).unwrap();
+	let before = fs::metadata(&target).unwrap();
+	let mut received = [0; 4];
+	assert!(matches!(
+		reader.read_exact_at(0, &mut received),
+		Err(RecoveryError::InvalidEntry(RecoveryName::Target))
+	));
+	assert_eq!(received, [0; 4]);
+	assert!(matches!(
+		reader.revalidate(),
+		Err(RecoveryError::InvalidEntry(RecoveryName::Target))
+	));
+	let after = fs::metadata(&target).unwrap();
+	assert_eq!(
+		(before.atime(), before.atime_nsec()),
+		(after.atime(), after.atime_nsec())
+	);
+	assert_eq!(fs::read(target).unwrap(), OUTSIDE_BYTES);
+	assert_eq!(fs::read(stage).unwrap(), b"data");
+}

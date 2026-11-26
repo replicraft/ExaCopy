@@ -1,6 +1,7 @@
 use std::ffi::CString;
 use std::fmt;
 use std::io;
+#[cfg(test)]
 use std::os::fd::BorrowedFd;
 
 use apfs_mounted::metadata::{
@@ -60,6 +61,28 @@ impl BasicMetadata {
 			gid: observed.group,
 			atime: ManagedTimestamp::from_mounted_source(observed.accessed),
 			mtime: ManagedTimestamp::from_mounted_source(observed.modified),
+		})
+	}
+
+	pub(super) fn from_mounted_observation(
+		observed: mounted::Metadata,
+	) -> Result<Self, BasicMetadataError> {
+		if observed.file_type != FileType::RegularFile
+			|| observed.mode != FILE_MODE
+			|| observed.link_count != 1
+			|| observed.bsd_flags != 0
+		{
+			return Err(BasicMetadataError::UnsupportedStat);
+		}
+		let timestamp = |time: mounted::Timestamp| {
+			ManagedTimestamp::from_stat_parts(time.seconds(), time.nanoseconds())
+				.ok_or(BasicMetadataError::Timestamp)
+		};
+		Ok(Self {
+			uid: observed.uid,
+			gid: observed.gid,
+			atime: timestamp(observed.times.access)?,
+			mtime: timestamp(observed.times.modification)?,
 		})
 	}
 
@@ -140,7 +163,8 @@ impl std::error::Error for BasicMetadataError {
 	}
 }
 
-pub(super) fn check_inventory(fd: BorrowedFd<'_>) -> Result<(), BasicMetadataError> {
+#[cfg(test)]
+fn check_inventory(fd: BorrowedFd<'_>) -> Result<(), BasicMetadataError> {
 	check_inventory_using(
 		|| acl::has_basic_acl(fd),
 		|| mounted::read_resource_fork(fd, PRESENCE_ONLY),

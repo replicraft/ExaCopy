@@ -2,14 +2,13 @@
 
 ## Current selection and remaining work
 
-The source pin now selects public APFS `af97d38523881265c037b91b0504242eec84e392`.
-Its additive `ReopenedStage` API supplies observation-only private-stage
-reopening. ExaCopy's existing recovery reader still performs its native open,
-range reads and EOF checks; adoption must preserve the original inventory
-baseline and use a lifetime-safe anchor scope. The
-[updated handoff](apfs-recovery-handoff.md) distinguishes supplied APIs from
-remaining requests: mutation-free closed-stage sealing, coherent event and
-post-publication observations, and reuse of existing typed object flags.
+The source pin selects public APFS `827f94821a59d1bd99745414476aa04716c9429d`.
+ExaCopy uses `ReopenedStage::open_named` for read-only restart inspection,
+including bounded reads, the EOF probe and coherent live metadata.
+The reader owns its name and anchor while ExaCopy rechecks the complete
+original inventory. The [handoff](apfs-recovery-handoff.md) records the
+companion's separate mutation-free sealing and coherent event and
+post-publication observations.
 Authorization, metadata policy, hashes, journal/receipt formats, durable
 intent and reconciliation remain in ExaCopy. No HFS+ implementation was found
 to move. The historical findings below retain their original revision scope.
@@ -43,9 +42,9 @@ strict Clippy and the workspace checker on native macOS against an isolated,
 clean pinned companion. The strict copy-through-receipt fixture remains
 unqualified: the host exposes source xattrs and the fixture refuses them
 before copying. At that revision, restart recovery still used its existing adapter pending a
-companion capability for freshly reopened stages. The latest companion now
-supplies that capability; consumer adoption is pending. The generic receipt
-record writer also remains in ExaCopy. Neither process-crash nor power-loss
+companion capability for freshly reopened stages. ExaCopy now uses that
+capability for read-only restart inspection. The generic receipt record
+writer remains in ExaCopy. Neither process-crash nor power-loss
 qualification follows from this ownership migration. No mounted HFS+
 adapter was added.
 
