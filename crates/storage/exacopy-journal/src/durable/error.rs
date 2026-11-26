@@ -9,6 +9,8 @@ use crate::frame::{FrameReadError, FrameWriteError};
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum DurableJournalError {
+	/// Admission refused before the first write of the selected frame.
+	Admission(io::Error),
 	/// Handle metadata or cursor inspection failed.
 	Inspect(io::Error),
 	/// The handle did not refer to a regular file.
@@ -60,6 +62,7 @@ pub enum DurableJournalError {
 impl fmt::Display for DurableJournalError {
 	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
+			Self::Admission(source) => write!(formatter, "journal effect was refused: {source}"),
 			Self::Inspect(source) => write!(formatter, "journal file inspection failed: {source}"),
 			Self::NotRegularFile => formatter.write_str("journal requires a regular file"),
 			Self::EmptyPrefix => formatter.write_str("journal resume requires an existing frame"),
@@ -104,7 +107,7 @@ impl fmt::Display for DurableJournalError {
 impl std::error::Error for DurableJournalError {
 	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
 		match self {
-			Self::Inspect(source) | Self::Sync(source) => Some(source),
+			Self::Admission(source) | Self::Inspect(source) | Self::Sync(source) => Some(source),
 			Self::ReadFrame(source) => Some(source),
 			Self::Frame(source) => Some(source),
 			_ => None,

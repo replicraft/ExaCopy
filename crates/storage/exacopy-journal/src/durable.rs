@@ -1,3 +1,4 @@
+use crate::frame::AppendStartError;
 mod error;
 
 #[cfg(test)]
@@ -54,9 +55,22 @@ impl<S: JournalSegment> DurableJournal<S> {
 	/// Fails for an empty prefix, a segment above 64 MiB, a nonregular object, a length or
 	/// chain-head mismatch, a damaged or incomplete frame, or failed I/O. Segment bytes are preserved.
 	pub fn resume_first_segment(
+		segment: S,
+		expected_head: ChainHead,
+		expected_end: u64,
+	) -> Result<Self, DurableJournalError> {
+		Self::resume_first_segment_admitted(segment, expected_head, expected_end, || Ok(()))
+	}
+
+	/// Rechecks the exact accepted segment and enters authority before its file barrier.
+	///
+	/// # Errors
+	/// Refuses the same invalid state as [Self::resume_first_segment], or refused admission.
+	pub fn resume_first_segment_admitted<G>(
 		mut segment: S,
 		expected_head: ChainHead,
 		expected_end: u64,
+		enter: impl FnOnce() -> std::io::Result<G>,
 	) -> Result<Self, DurableJournalError> {
 		if expected_head == ChainHead::start() || expected_end == 0 {
 			return Err(DurableJournalError::EmptyPrefix);
@@ -93,7 +107,9 @@ impl<S: JournalSegment> DurableJournal<S> {
 			.seek(SeekFrom::Start(end))
 			.map_err(DurableJournalError::Inspect)?;
 		check_segment(&mut segment, end)?;
+		let guard = enter().map_err(DurableJournalError::Admission)?;
 		segment.sync().map_err(DurableJournalError::Sync)?;
+		drop(guard);
 		Ok(Self {
 			writer: Some(FrameWriter::new(segment, head)),
 			end,
@@ -116,6 +132,15 @@ impl<S: JournalSegment> DurableJournal<S> {
 		kind: FrameKind,
 		payload: &[u8],
 	) -> Result<SyncedFrame, DurableJournalError> {
+		self.append_admitted(kind, payload, || Ok(()))
+	}
+
+	fn append_admitted<G>(
+		&mut self,
+		kind: FrameKind,
+		payload: &[u8],
+		enter: impl FnOnce() -> std::io::Result<G>,
+	) -> Result<SyncedFrame, DurableJournalError> {
 		let mut writer = self.writer.take().ok_or(DurableJournalError::Retired)?;
 		let Some(end) = frame_end(self.end, payload.len()) else {
 			self.writer = Some(writer);
@@ -135,9 +160,13 @@ impl<S: JournalSegment> DurableJournal<S> {
 				limit: MAX_FIRST_SEGMENT_BYTES,
 			});
 		}
-		let head = match writer.append(kind, payload) {
-			Ok(head) => head,
-			Err(error) => {
+		let (head, guard) = match writer.append_admitted(kind, payload, enter) {
+			Ok(admitted) => admitted,
+			Err(AppendStartError::Admission(error)) => {
+				self.writer = Some(writer);
+				return Err(DurableJournalError::Admission(error));
+			}
+			Err(AppendStartError::Frame(error)) => {
 				if matches!(
 					error,
 					FrameWriteError::PayloadTooLarge(_)
@@ -155,6 +184,7 @@ impl<S: JournalSegment> DurableJournal<S> {
 			.sink_mut()
 			.sync()
 			.map_err(DurableJournalError::Sync)?;
+		drop(guard);
 		self.end = end;
 		self.writer = Some(writer);
 		Ok(SyncedFrame {
@@ -176,12 +206,28 @@ impl<S: JournalSegment> DurableJournal<S> {
 		kind: FrameKind,
 		payload: Vec<u8>,
 	) -> Result<(Frame, SyncedFrame), DurableJournalError> {
+		self.append_frame_admitted(kind, payload, || Ok(()))
+	}
+
+	/// Appends one frame under a caller-held effect guard.
+	///
+	/// Admission runs after physical segment checks and frame preparation, immediately
+	/// before writing. The guard covers the started frame and its file barrier.
+	///
+	/// # Errors
+	/// A refused admission writes no bytes. All ordinary append failures remain possible.
+	pub fn append_frame_admitted<G>(
+		&mut self,
+		kind: FrameKind,
+		payload: Vec<u8>,
+		enter: impl FnOnce() -> std::io::Result<G>,
+	) -> Result<(Frame, SyncedFrame), DurableJournalError> {
 		let previous = self
 			.writer
 			.as_ref()
 			.ok_or(DurableJournalError::Retired)?
 			.head();
-		let synced = self.append(kind, &payload)?;
+		let synced = self.append_admitted(kind, &payload, enter)?;
 		let frame = Frame::from_verified_parts(kind, payload, synced.head(), previous.digest());
 		Ok((frame, synced))
 	}

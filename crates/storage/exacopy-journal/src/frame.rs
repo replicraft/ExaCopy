@@ -401,8 +401,22 @@ impl<W: Write> FrameWriter<W> {
 		kind: FrameKind,
 		payload: &[u8],
 	) -> Result<ChainHead, FrameWriteError> {
+		self.append_admitted(kind, payload, || Ok(()))
+			.map(|(head, ())| head)
+			.map_err(|failure| match failure {
+				AppendStartError::Frame(error) => error,
+				AppendStartError::Admission(error) => FrameWriteError::Io(error),
+			})
+	}
+
+	pub(crate) fn append_admitted<G>(
+		&mut self,
+		kind: FrameKind,
+		payload: &[u8],
+		enter: impl FnOnce() -> std::io::Result<G>,
+	) -> Result<(ChainHead, G), AppendStartError> {
 		if self.stopped {
-			return Err(FrameWriteError::Stopped);
+			return Err(FrameWriteError::Stopped.into());
 		}
 		let length = u32::try_from(payload.len())
 			.ok()
@@ -424,17 +438,29 @@ impl<W: Write> FrameWriter<W> {
 		let crc = checksum(&header, payload);
 		let digest = record_digest(&header, payload, &crc);
 		if digest == ZERO_DIGEST {
-			return Err(FrameWriteError::ReservedDigest);
+			return Err(FrameWriteError::ReservedDigest.into());
 		}
 
+		let guard = enter().map_err(AppendStartError::Admission)?;
 		for part in [&header[..], payload, &crc, &digest] {
 			if let Err(error) = self.writer.write_all(part) {
 				self.stopped = true;
-				return Err(FrameWriteError::Io(error));
+				return Err(FrameWriteError::Io(error).into());
 			}
 		}
 		self.head = ChainHead { sequence, digest };
-		Ok(self.head)
+		Ok((self.head, guard))
+	}
+}
+
+pub(crate) enum AppendStartError {
+	Admission(std::io::Error),
+	Frame(FrameWriteError),
+}
+
+impl From<FrameWriteError> for AppendStartError {
+	fn from(error: FrameWriteError) -> Self {
+		Self::Frame(error)
 	}
 }
 
