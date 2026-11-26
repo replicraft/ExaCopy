@@ -18,6 +18,12 @@ to `PATH` if your Rust installation has not already done so. The crates.io
 command `cargo install --locked exacopy` is the intended registry entrypoint;
 registry publication is still pending.
 
+Unsigned archives for Linux, Apple Silicon macOS and Windows are available
+in the [v0.1.0 testing prerelease](https://github.com/replicraft/ExaCopy/releases/tag/v0.1.0).
+Verify the archive checksum, extract it into a fresh test directory, and
+run the executable directly. The release notes describe its tested scope
+and current limitations.
+
 For a prebuilt installation without installing Rust, use
 [`install.sh`](docs/architecture/posix-offline-install.md) on macOS/Linux or
 [`install.ps1`](docs/installation/windows.md) on Windows. These installers
