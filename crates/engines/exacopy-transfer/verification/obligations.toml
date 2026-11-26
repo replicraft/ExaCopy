@@ -1,0 +1,14 @@
+schema_version = 1
+
+[[obligation]]
+id = "P-056"
+requirement_ids = ["R-253", "R-255"]
+source = "src/remote_resume/prefix.rs"
+symbols = ["verify_retained_prefix"]
+assumptions = [
+    "The caller independently binds the current authenticated peer, rooted source path, route, grant and qualification to the exact journal scope, and supplies the exact retained stage under the exclusive lease.",
+    "Held adapter identity, epoch, extent and recheck operations report truthful current observations. Source attributes alone supply no persistent identity.",
+    "This gate covers read-only prefix evidence and fresh incremental hashing. A native append capability, prefix barrier, synchronized continuation, finalization and receipt remain separate requirements.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_resume/allocations/prefix.rs", test = "allocations::prefix::verified_prefix_matches_current_and_historical_failure_oracles", oracle = "Freshly compare every reused byte and independently hash historical ranges; vary every source/stage byte and check epochs, identity, extents, scratch bounds, dirty failed reads and cancellation without leaking partial evidence. Equal new bytes beyond the original writer extent must refuse before I/O." }

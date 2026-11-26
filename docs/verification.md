@@ -13,6 +13,7 @@ assumptions and owners before enabling new safety-relevant behavior.
 | Manifest | [Obligations](../crates/formats/exacopy-manifest/verification/obligations.toml), [dispatcher](../crates/formats/exacopy-manifest/verification/check.sh) |
 | Plan | [Obligations](../crates/formats/exacopy-plan/verification/obligations.toml), [dispatcher](../crates/formats/exacopy-plan/verification/check.sh) |
 | Journal | [Obligations](../crates/storage/exacopy-journal/verification/obligations.toml), [dispatcher](../crates/storage/exacopy-journal/verification/check.sh) |
+| Transfer | [Obligations](../crates/engines/exacopy-transfer/verification/obligations.toml), [dispatcher](../crates/engines/exacopy-transfer/verification/check.sh) |
 | WireGuard | [Obligations](../crates/net/exacopy-wireguard/verification/obligations.toml), [dispatcher](../crates/net/exacopy-wireguard/verification/check.sh) |
 
 The [verification owner inventory](../specs/verification/owners.toml) declares

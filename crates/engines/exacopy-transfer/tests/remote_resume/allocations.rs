@@ -29,7 +29,14 @@ use super::ready;
 const DEVICE: u64 = 7;
 const STAGING: u64 = 12;
 
+#[path = "allocations/prefix.rs"]
+mod prefix;
+
 fn owner() -> RemoteDownloadOwnerRecord {
+	owner_with_policy([0x56; 32])
+}
+
+fn owner_with_policy(policy: [u8; 32]) -> RemoteDownloadOwnerRecord {
 	let scope = history().scope;
 	let remote = RemoteDownloadSource::new(
 		SshAuthority::new("transfer.example", NonZeroU16::new(22).unwrap(), "reader").unwrap(),
@@ -50,7 +57,7 @@ fn owner() -> RemoteDownloadOwnerRecord {
 		remote,
 		destination,
 		StreamLength::new(scope.maximum_length).unwrap(),
-		[0x56; 32],
+		policy,
 		RemoteDownloadDurability::ProcessCrash,
 	)
 	.unwrap();

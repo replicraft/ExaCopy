@@ -14,6 +14,7 @@ use crate::remote_capture::{
 use exacopy_content::validate_stream_input;
 
 mod error;
+pub mod prefix;
 mod replay;
 
 const LEGACY_JOB_PREPARED_SEQUENCE: u64 = 1;
