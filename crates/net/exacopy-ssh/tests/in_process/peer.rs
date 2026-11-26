@@ -181,7 +181,10 @@ impl Files {
 fn file_attrs() -> sftp::FileAttributes {
 	sftp::FileAttributes {
 		size: Some(CONTENT.len() as u64),
+		uid: Some(1234),
+		gid: Some(5678),
 		permissions: Some(0o100600),
+		atime: Some(21),
 		mtime: Some(22),
 		..sftp::FileAttributes::empty()
 	}
@@ -248,7 +251,11 @@ impl sftp_server::Handler for Files {
 			files: vec![
 				sftp::File::dummy("."),
 				sftp::File::dummy(".."),
-				sftp::File::dummy(sftp::SftpString::from(NAME)),
+				sftp::File {
+					filename: sftp::SftpString::from(NAME),
+					longname: String::new(),
+					attrs: file_attrs(),
+				},
 			],
 		})
 	}

@@ -51,11 +51,14 @@ async fn raw_listing_and_short_reads_use_a_pinned_authenticated_connection() {
 	let path = [UnixComponent::new(NAME).unwrap()];
 	let before = session.stat(&path).await.unwrap();
 	assert_eq!(before.length, CONTENT.len() as u64);
+	assert_eq!(before.mode, 0o100600);
+	assert_eq!(before.modified, 22);
 	let mut bytes = [0; CONTENT.len()];
 	assert_eq!(session.read_file(&path, &mut bytes).await.unwrap(), before);
 	assert_eq!(&bytes, CONTENT);
 	assert_eq!(calls.auth.load(Ordering::Relaxed), 1);
 	assert_eq!(calls.subsystem.load(Ordering::Relaxed), 1);
+	assert_eq!(calls.read.load(Ordering::Relaxed), 4);
 	assert_eq!(calls.close.load(Ordering::Relaxed), 2);
 	assert_eq!(calls.unsupported.load(Ordering::Relaxed), 0);
 }
