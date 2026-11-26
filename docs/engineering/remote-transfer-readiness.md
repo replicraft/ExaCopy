@@ -19,6 +19,30 @@ Hosted native timeout recovery is pending. This direct-route campaign does
 not qualify embedded WireGuard, efficient prefix reuse, production
 destination authority or power-loss behavior.
 
+## Independent kernel WireGuard campaign
+
+The commissioning harness can run the unchanged embedded BoringTun CLI
+against a Linux kernel WireGuard peer and stock OpenSSH in two owned network
+namespaces. The client has no kernel route to the inner SSH address. The
+kernel peer's UDP socket remains in its birth namespace when its interface
+moves, so the embedded userspace route must carry the traffic. Per-case
+kernel counters, OpenSSH logs and a carrier-down refusal supplement the
+ordinary byte and receipt checks. A passing report requires all bounded
+carrier-down and retained-namespace evidence, plus confirmed fixture cleanup.
+
+The manual provider-A workflow requires a positively observed existing
+kernel provider. A separate canonical-main provider-B workflow can load
+only its fixed, hash-pinned Azure kernel module closure on a disposable
+hosted VM, after package, ABI, dependency and same-boot checks. Other kernels,
+missing tools, drift or uncertainty remain blocked. Previously live
+dependencies have name-only attribution; they do not inherit archive-byte
+provenance. The runner VM owns loaded module lifetime.
+
+Portable controls and source review cover this harness. Actual module
+loading, kernel peer interoperability, no-fallback behavior and complete
+embedded transfer qualification remain pending native execution. Its
+one-use synthetic qualification record is not production authority.
+
 ## Hosted direct OpenSSH commissioning
 
 The ordinary main-push commissioning run at `69aecff` passed all seven

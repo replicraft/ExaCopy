@@ -1,0 +1,115 @@
+name: Linux kernel WireGuard commissioning
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+  CARGO_BUILD_JOBS: "2"
+  EXPECTED_RUST_HOST: x86_64-unknown-linux-gnu
+
+jobs:
+  embedded:
+    if: github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main' && github.ref_protected
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify admitted hosted source
+        run: |
+          [[ "$GITHUB_ACTIONS" == true && "$RUNNER_ENVIRONMENT" == github-hosted &&
+             "$RUNNER_OS" == Linux && "$RUNNER_ARCH" == X64 && "$GITHUB_SERVER_URL" == https://github.com &&
+             "$GITHUB_REF_PROTECTED" == true && ! -v EXACOPY_REMOTE_DEPLOYMENT ]]
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain)"
+      - name: Exercise portable fixture checks
+        run: |
+          python3 -B -Werror .github/ci/remote_commissioning_wireguard_test.py -v
+          python3 -B -Werror .github/ci/remote_commissioning_wireguard_provider_test.py -v
+      - name: Prepare pinned sources and Rust
+        run: |
+          python3 -B tools/apfs_source.py --fetch
+          python3 -B tools/transport_source.py --fetch
+          bash .github/ci/install.sh rust
+          cargo +1.100.0 fetch --locked
+      - name: Stage bounded independent fixture tools
+        run: |
+          tool_dir="$RUNNER_TEMP/exacopy-commissioning-tools"
+          tool_marker="$RUNNER_TEMP/exacopy-wireguard-provider-a-tools.pending"
+          (
+            set -o noclobber
+            printf '%s/%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > "$tool_marker"
+          )
+          mkdir -m 700 -- "$tool_dir"
+          cd "$tool_dir"
+          tool_identity="$(stat -c '%d:%i:%u:%a' -- .)"
+          [[ "$tool_identity" == *:"$(id -u)":700 ]]
+          printf '%s/%s\n%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$tool_identity" > fixture-owner
+          timeout --kill-after=5s 180s apt-get -o APT::Get::AllowUnauthenticated=false download b3sum wireguard-tools=1.0.20210914-1ubuntu4
+          b3=(b3sum_*_amd64.deb)
+          wg=wireguard-tools_1.0.20210914-1ubuntu4_amd64.deb
+          test "${#b3[@]}" -eq 1
+          test "$(dpkg-deb --field "${b3[0]}" Package)" = b3sum
+          test "$(dpkg-deb --field "${b3[0]}" Architecture)" = amd64
+          test "$(stat -c '%s' -- "$wg")" = 89106
+          printf '%s  %s\n' 19790a3203a12791bfaf622ea000780a7558de858766100d52f802079d44c400 "$wg" | sha256sum --check -
+          mkdir -m 700 -- unpacked
+          dpkg-deb --extract "${b3[0]}" unpacked
+          dpkg-deb --extract "$wg" unpacked
+          test "$(stat -c '%d:%i:%u:%a' -- .)" = "$tool_identity"
+          test -x unpacked/usr/bin/b3sum
+          test -x unpacked/usr/bin/wg
+      - name: Commission the ordinary embedded CLI on the pre-existing kernel provider
+        run: python3 -B .github/ci/remote_commissioning_wireguard.py
+      - name: Remove the owned tool staging
+        if: always()
+        run: |
+          tool_dir="$RUNNER_TEMP/exacopy-commissioning-tools"
+          tool_marker="$RUNNER_TEMP/exacopy-wireguard-provider-a-tools.pending"
+          uncertain="$RUNNER_TEMP/exacopy-wireguard-commissioning/report/cleanup-unconfirmed.json"
+          if [[ -e "$uncertain" || -L "$uncertain" ]]; then
+            exit 1
+          fi
+          if [[ ! -e "$tool_marker" && ! -L "$tool_marker" ]]; then
+            test ! -e "$tool_dir"
+            test ! -L "$tool_dir"
+            exit 0
+          fi
+          test -f "$tool_marker"
+          test ! -L "$tool_marker"
+          test "$(cat -- "$tool_marker")" = "$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT"
+          if [[ -e "$tool_dir" || -L "$tool_dir" ]]; then
+            test -d "$tool_dir"
+            test ! -L "$tool_dir"
+            tool_identity="$(stat -c '%d:%i:%u:%a' -- "$tool_dir")"
+            [[ "$tool_identity" == *:"$(id -u)":700 ]]
+            test -f "$tool_dir/fixture-owner"
+            test ! -L "$tool_dir/fixture-owner"
+            expected="$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT"$'\n'"$tool_identity"
+            test "$(cat -- "$tool_dir/fixture-owner")" = "$expected"
+            rm -r --one-file-system -- "$tool_dir"
+            test ! -e "$tool_dir"
+            test ! -L "$tool_dir"
+          fi
+          rm -- "$tool_marker"
+      - name: Retain allowlisted fixture evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: exacopy-kernel-wireguard-commissioning-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-wireguard-provider-a-tools.pending
+            ${{ runner.temp }}/exacopy-wireguard-commissioning/report/
+          if-no-files-found: error
+          retention-days: 90
