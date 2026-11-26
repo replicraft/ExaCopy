@@ -109,15 +109,20 @@ class FeatureMatrixTests(unittest.TestCase):
         standalone = "experimental-wireguard-protocol"
         udp = "exacopy-wireguard/experimental-udp"
         udp_profile = "experimental-wireguard-udp"
+        tcp = "exacopy-wireguard/experimental-tcp"
+        tcp_profile = "experimental-wireguard-tcp"
+        combined = "experimental-wireguard-tcp-udp"
         for target in POLICY["targets"]:
             with self.subTest(target=target):
                 for profile, config in profiles.items():
                     flags = profile_flags(POLICY, config, target)
                     selectors = ",".join(flags).split(",")
-                    if profile not in {standalone, udp_profile, "development-all"}:
+                    if profile not in {standalone, udp_profile, tcp_profile, combined, "development-all"}:
                         self.assertNotIn(feature, selectors)
-                    if profile not in {udp_profile, "development-all"}:
+                    if profile not in {udp_profile, combined, "development-all"}:
                         self.assertNotIn(udp, selectors)
+                    if profile not in {tcp_profile, combined, "development-all"}:
+                        self.assertNotIn(tcp, selectors)
                 self.assertEqual(
                     profile_flags(POLICY, profiles[standalone], target),
                     ["--no-default-features", "--features", feature],
@@ -126,11 +131,20 @@ class FeatureMatrixTests(unittest.TestCase):
                     profile_flags(POLICY, profiles[udp_profile], target),
                     ["--no-default-features", "--features", f"{feature},{udp}"],
                 )
+                self.assertEqual(
+                    profile_flags(POLICY, profiles[tcp_profile], target),
+                    ["--no-default-features", "--features", f"{feature},{tcp}"],
+                )
+                self.assertEqual(
+                    profile_flags(POLICY, profiles[combined], target),
+                    ["--no-default-features", "--features", f"{feature},{tcp},{udp}"],
+                )
                 development = ",".join(
                     profile_flags(POLICY, profiles["development-all"], target)
                 ).split(",")
                 self.assertIn(feature, development)
                 self.assertIn(udp, development)
+                self.assertIn(tcp, development)
 
     def test_sftp_profiles_are_explicit_and_app_capture_is_independent_of_apfs(self):
         profiles = POLICY["profiles"]
