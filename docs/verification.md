@@ -41,6 +41,17 @@ trees, and verified removal of the fixture and private build. This is
 single-subject, no-history preview evidence. Ext4 casefold, persistent
 baselines and sync mutation remain outside that result.
 
+The [`9ce3dce` protected-slot run](https://github.com/replicraft/ExaCopy/actions/runs/45876406930)
+passed six ordinary observations and the same-device bind-mount refusal
+under the separate `linux-hosted-root-setup-unprivileged-observer-v1`
+profile. Independent review verified the exact source and helper, distinct
+private mount namespace, observer UID/GID 1001 with empty supplementary
+groups, all five capability sets zero, and no-new-privileges. The same
+service invocation preserved the covered inode and sentinels after unmount,
+and confirmed fixture and service cleanup. The original unprivileged
+user-namespace profile still refused its UID-map setup. Neither result
+authorizes protected replacement, retirement or reclamation.
+
 Keep proofs, extraction, models, harnesses and obligation ownership in
 `<crate>/verification/`. Root tooling [captures](../tools/record_evidence.py)
 and validates scoped results. Preserve the original log and minimized
