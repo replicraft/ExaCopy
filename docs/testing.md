@@ -132,18 +132,45 @@ Windows filesystem test is ignored by the ordinary workspace test run,
 including with `--all-features`. The manual workflow selects eleven tests
 for the ordinary NTFS profile and requires all eleven to pass.
 
-The same manual workflow's Stage selection builds the default-off
-`experimental-windows-copy` platform library. It runs the three stage
-contract controls and five ordinary fixed-NTFS stage tests. Enable
-`include_symlink` to select the two additional symbolic-link cases on a
-runner with permission to create links. These cases cover both an existing
-referent and a dangling link whose referent must stay absent. The local
-runner selects this suite with `-Mode Stage` and optionally
-`-IncludeSymlink`. The workflow's default Read selection continues to run
-the existing read qualification. See the
-[private staging contract](architecture/windows-private-staging.md) for its
-caller assumptions and implemented boundary. The PowerShell scripts pass
-syntax parsing on macOS; native Windows execution remains pending.
+The same workflow's Stage selection builds the default-off
+`experimental-windows-copy` platform library. It runs three existing stage
+contract controls, five existing native checks and five named native capture
+checks. The capture cases cover exact data-prefix sync, independent read-back
+and EOF, failure retirement, retained-stage identity and sharing, and attribute
+refusal. Relevant pushes to `main` select Stage on the `windows-2025` runner.
+Manual runs can select Read, Stage or Diff and request the optional links.
+
+Stage admits a disposable fixed-NTFS parent under the existing trusted
+ancestor ACL profile and holds every ancestor without delete sharing. It
+exclusively creates a synthetic fixture with a protected, inheritable
+owner-only DACL. A native non-mutating control proves that the ancestor
+handle mode blocks a competing DELETE open on the controlled fixture.
+The original fixture remains held throughout the native tests. Cleanup
+requires the same volume serial and full file ID on the live original and
+the selected disposition handle, trusted ancestor and owner ACLs, no
+directory entries and no named streams. It marks the selected directory
+for nonrecursive removal by handle and confirms absence after close.
+Uncertain custody or unexpected content fails the lane and retains the
+fixture for inspection.
+
+Artifacts include exact source and lockfile, OS and volume facts, the
+inherited runner token, ancestor and fixture identities, root ACL before
+and after tests, native stage observations, raw case logs and cleanup.
+GitHub-hosted Windows jobs use an administrative token. The synthetic
+qualification trusts the selected user, SYSTEM and local Administrators,
+including a controlled fixture and no prior untrusted mutation handles.
+Ordinary-user product qualification and publication durability require
+separate evidence.
+[GitHub-hosted runner privileges](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#administrative-privileges).
+
+When requested, the Stage wrapper probes symbolic-link creation inside the
+same private fixture. A confirmed capability runs two existing symlink checks
+and the captured identity refusal case separately. A refused privilege or
+unsupported operation is retained as blocked evidence. Automatic Stage
+requests the probe. Native qualification requires actual named passes and
+verified fixture cleanup. See the
+[private staging contract](architecture/windows-private-staging.md) for the
+caller assumptions and implemented boundary.
 
 The candidate starts with a directory handle supplied by the synthetic
 fixture. It checks the NTFS volume and parent, searches for the exact counted

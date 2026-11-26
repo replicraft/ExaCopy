@@ -43,7 +43,6 @@ try {
     if ($drive.DriveFormat -ne 'NTFS') {
         throw "Expected NTFS. Found $($drive.DriveFormat) at $($drive.Name)."
     }
-    $scratch = New-Item -ItemType Directory -Path (Join-Path $rootInfo.FullName ('exacopy-native-' + [guid]::NewGuid()))
 } catch {
     $_ | Out-String | Set-Content -LiteralPath (Join-Path $evidence.FullName 'preflight-failure.log')
     throw
@@ -52,6 +51,12 @@ $oldRoot = $env:EXACOPY_WINDOWS_NTFS_ROOT
 $oldUnc = $env:EXACOPY_WINDOWS_UNC_ROOT
 $oldSecond = $env:EXACOPY_WINDOWS_SECOND_NTFS_ROOT
 $oldTarget = $env:CARGO_TARGET_DIR
+$scratch = $null
+$stageOwner = $null
+$stageAncestors = $null
+$stagePin = $null
+$stageFixtureIdentity = $null
+$stageAdmitted = $false
 
 function Invoke-Lane {
     param([string] $Name, [string] $Program, [string[]] $Arguments)
@@ -77,7 +82,7 @@ function Invoke-Lane {
 }
 
 function Run-TestLane {
-    param([string] $Name, [int] $ExpectedTests, [string[]] $HarnessArgs)
+    param([string] $Name, [int] $ExpectedTests, [string[]] $HarnessArgs, [string[]] $ExactNames)
     $cargoArgs = @('+1.100.0', 'test', '--locked')
     switch ($Mode) {
         'Read' {
@@ -95,19 +100,92 @@ function Run-TestLane {
     $output = Get-Content -Raw -LiteralPath (Join-Path $evidence.FullName ($Name + '.stdout.log'))
     # Libtest succeeds when zero tests match. Require the expected number of passes.
     $result = "(?m)^test result: ok\. $ExpectedTests passed; 0 failed;"
-    if ($exitCode -ne 0 -or $output -notmatch $result) {
+    $missing = @()
+    if ($ExactNames) {
+        $result += ' 0 ignored;'
+        foreach ($testName in $ExactNames) {
+            $escaped = [regex]::Escape($testName)
+            if ([regex]::Matches($output, "(?m)^test $escaped \.\.\. ok\r?$").Count -ne 1) {
+                $missing += $testName
+            }
+        }
+        if ($missing.Count -ne 0) {
+            $missing | Set-Content -LiteralPath (Join-Path $evidence.FullName ($Name + '-missing-tests.txt'))
+        }
+    }
+    if ($exitCode -ne 0 -or $output -notmatch $result -or $missing.Count -ne 0) {
         Add-Content -LiteralPath (Join-Path $evidence.FullName 'qualification-failures.txt') -Value $Name
         return 1
     }
     return 0
 }
 
-try {
-    $env:EXACOPY_WINDOWS_NTFS_ROOT = $scratch.FullName
-    $env:CARGO_TARGET_DIR = Join-Path $repo 'target/windows-ntfs-qualification'
-    $env:EXACOPY_WINDOWS_UNC_ROOT = $UncRoot
-    $env:EXACOPY_WINDOWS_SECOND_NTFS_ROOT = $SecondNtfsRoot
+function Write-StageAclEvidence {
+    param([string] $Path, [Security.Principal.SecurityIdentifier] $Owner, [string] $Phase)
 
+    Confirm-ExaCopyOwnerAcl $Path $Owner -Root
+    $acl = Get-Acl -LiteralPath $Path
+    Assert-StagePlainAcl $acl
+    $inheritance = [Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
+        [Security.AccessControl.InheritanceFlags]::ObjectInherit
+    $access = $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])
+    if ($access[0].InheritanceFlags -ne $inheritance -or
+        $access[0].PropagationFlags -ne [Security.AccessControl.PropagationFlags]::None) {
+        throw 'The private Stage owner rule does not apply to the root and both descendant kinds.'
+    }
+    [ordered]@{
+        path = $Path
+        owner_sid = $Owner.Value
+        protected = $acl.AreAccessRulesProtected
+        sddl = $acl.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]'Owner, Access')
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence.FullName ("stage-acl-$Phase.json"))
+}
+
+function Test-StageSymlink {
+    param([string] $Path)
+
+    $log = Join-Path $evidence.FullName 'stage-symlink-capability.json'
+    if (!$IncludeSymlink) {
+        @{ status = 'not-requested' } | ConvertTo-Json | Set-Content -LiteralPath $log
+        return $false
+    }
+    $target = Join-Path $Path 'symlink-capability-target'
+    $alias = Join-Path $Path 'symlink-capability-link'
+    [IO.File]::Open($target, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None).Dispose()
+    try {
+        try {
+            $link = [IO.File]::CreateSymbolicLink($alias, $target)
+        } catch {
+            $failure = $_.Exception.GetBaseException()
+            $nativeCode = $failure.HResult -band 0xffff
+            $reason = switch ($nativeCode) {
+                50 { 'operation-not-supported' }
+                1314 { 'privilege-not-held' }
+            }
+            if ($failure -isnot [IO.IOException] -or ($failure.HResult -band 0xffff0000) -ne 0x80070000 -or !$reason) {
+                throw
+            }
+            Write-Warning "Optional Stage symlink cases blocked ($reason)."
+            [ordered]@{
+                status = 'blocked'
+                reason = $reason
+                win32_error = $nativeCode
+                message = $failure.Message
+            } | ConvertTo-Json | Set-Content -LiteralPath $log
+            return $false
+        }
+        if ($link.LinkTarget -cne $target -or !$link.Attributes.HasFlag([IO.FileAttributes]::ReparsePoint)) {
+            throw 'The optional capability probe did not observe the selected native symbolic link.'
+        }
+        [IO.File]::Delete($alias)
+        @{ status = 'supported' } | ConvertTo-Json | Set-Content -LiteralPath $log
+        return $true
+    } finally {
+        [IO.File]::Delete($target)
+    }
+}
+
+try {
     $sourceStatus = Invoke-Lane -Name 'revision' -Program 'git' -Arguments @('rev-parse', 'HEAD')
     $revision = Get-Content -LiteralPath (Join-Path $evidence.FullName 'revision.stdout.log') -Raw
     if ($sourceStatus -ne 0 -or $revision -notmatch '^\s*[0-9a-f]{40}\s*$') {
@@ -123,6 +201,57 @@ try {
     if (-not [string]::IsNullOrWhiteSpace($status) -or -not [string]::IsNullOrWhiteSpace($diff)) {
         throw 'Qualification requires a clean Git checkout. The candidate diff and status have been retained.'
     }
+
+    if ($env:GITHUB_ACTIONS -ceq 'true' -and $revision.Trim() -cne $env:GITHUB_SHA) {
+        throw 'Qualification requires the selected GitHub source revision.'
+    }
+
+    if ($Mode -eq 'Stage') {
+        . (Join-Path $repo 'tools/install/windows/paths.ps1')
+        Add-Type -Path (Join-Path $repo '.github/ci/windows-ntfs-custody.cs')
+        . (Join-Path $repo '.github/ci/windows-ntfs-custody.ps1')
+        $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+        try {
+            $stageOwner = $identity.User
+            $token = [ordered]@{
+                scope = 'synthetic-owner-private-stage'
+                user_sid = $stageOwner.Value
+                administrator_enabled = [Security.Principal.WindowsPrincipal]::new($identity).IsInRole(
+                    [Security.Principal.WindowsBuiltInRole]::Administrator)
+                child_launch = 'inherits-runner-token'
+            }
+        } finally {
+            $identity.Dispose()
+        }
+        $token | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence.FullName 'stage-token.json')
+        if ((Invoke-Lane -Name 'stage-token-groups-privileges' -Program 'whoami.exe' -Arguments @('/all')) -ne 0) {
+            throw 'Could not record the native Stage caller token.'
+        }
+        $stageAncestors = New-StageAncestorCustody $rootInfo.FullName $stageOwner
+        $scratch = [IO.DirectoryInfo]::new((Join-Path $rootInfo.FullName ('exacopy-native-' + [Guid]::NewGuid().ToString('N'))))
+        New-StagePrivateFixture $scratch.FullName $stageOwner
+        $stagePin = [ExaCopyQualification.DirectoryCustody]::HoldFixture($scratch.FullName)
+        $stageFixtureIdentity = [ExaCopyQualification.DirectoryCustody]::Observe($stagePin)
+        Confirm-StageAncestorCustody $stageAncestors
+        Assert-StageSameVolume $stageAncestors.Held[0].Identity $stageFixtureIdentity
+        Write-StageAclEvidence $scratch.FullName $stageOwner 'before'
+        Confirm-StageNoResidue $scratch.FullName
+        [ExaCopyQualification.DirectoryCustody]::ControlAncestorDeleteSharing($scratch.FullName)
+        $stageAdmitted = $true
+        [ordered]@{
+            fixture = $stageFixtureIdentity
+            ancestors = @($stageAncestors.Held | ForEach-Object { $_.Identity })
+            authority = 'synthetic runner user, SYSTEM and local Administrators'
+            ancestor_delete_open_control = 'sharing-violation'
+        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence.FullName 'stage-custody.json')
+    } else {
+        $scratch = New-Item -ItemType Directory -Path (Join-Path $rootInfo.FullName ('exacopy-native-' + [guid]::NewGuid()))
+    }
+
+    $env:EXACOPY_WINDOWS_NTFS_ROOT = $scratch.FullName
+    $env:CARGO_TARGET_DIR = Join-Path $repo 'target/windows-ntfs-qualification'
+    $env:EXACOPY_WINDOWS_UNC_ROOT = $UncRoot
+    $env:EXACOPY_WINDOWS_SECOND_NTFS_ROOT = $SecondNtfsRoot
 
     $os = Get-CimInstance Win32_OperatingSystem
     $profile = [ordered]@{
@@ -171,7 +300,29 @@ try {
             -HarnessArgs @('windows::stage::')
         $failures += Run-TestLane -Name 'ordinary_ntfs_stage' -ExpectedTests 5 `
             -HarnessArgs @('--ignored', 'windows::stage::tests::', '--skip', 'stage_symlink_')
-        if ($IncludeSymlink) {
+        $capture = 'windows::stage::capture::tests::'
+        $cases = @(
+            $capture + 'capture_syncs_exact_prefix_and_reads_two_independent_views'
+            $capture + 'failed_prefix_barrier_retires_writer_and_preserves_bytes_for_inspection'
+            $capture + 'prefix_postflush_extent_change_retires_writer_without_reset'
+            $capture + 'retained_checks_exact_name_identity_extent_and_denies_writer_sharing'
+            $capture + 'retained_refuses_unsupported_file_attributes'
+        )
+        $captureFailures = Run-TestLane -Name 'ordinary_ntfs_capture' -ExpectedTests 5 `
+            -HarnessArgs @('--ignored', $capture, '--skip', 'capture_symlink_') -ExactNames $cases
+        $failures += $captureFailures
+        if ($captureFailures -eq 0) {
+            $observed = Get-Content -Raw -LiteralPath (Join-Path $evidence.FullName 'ordinary_ntfs_capture.stderr.log')
+            foreach ($marker in @('ntfs-capture prefix_observations=', 'ntfs-capture held_parent=', 'ntfs-inspection held_parent=')) {
+                if (!$observed.Contains($marker)) {
+                    throw "Missing native handle evidence '$marker'."
+                }
+            }
+        }
+        if (Test-StageSymlink $scratch.FullName) {
+            $symlink = $capture + 'capture_symlink_cannot_select_the_referent_identity'
+            $failures += Run-TestLane -Name 'capture_symlink' -ExpectedTests 1 `
+                -HarnessArgs @('--ignored', '--exact', $symlink) -ExactNames @($symlink)
             $failures += Run-TestLane -Name 'stage_symlinks' -ExpectedTests 2 `
                 -HarnessArgs @('--ignored', 'windows::stage::tests::stage_symlink_')
         }
@@ -208,10 +359,42 @@ try {
     $env:EXACOPY_WINDOWS_UNC_ROOT = $oldUnc
     $env:EXACOPY_WINDOWS_SECOND_NTFS_ROOT = $oldSecond
     $env:CARGO_TARGET_DIR = $oldTarget
-    # Leave unexpected residue for diagnosis. A non-recursive removal cannot traverse a tag.
     try {
-        [IO.Directory]::Delete($scratch.FullName, $false)
-    } catch {
-        Write-Warning "Synthetic scratch preserved at $($scratch.FullName): $_"
+        if ($null -ne $scratch) {
+            try {
+                if ($Mode -eq 'Stage') {
+                    if (!$stageAdmitted) {
+                        throw 'Original NTFS fixture custody was not fully admitted.'
+                    }
+                    Remove-HeldStageFixture $scratch.FullName $stageFixtureIdentity $stagePin $stageAncestors
+                    $stagePin.Dispose()
+                } else {
+                    # Existing Read/Diff behavior. This profile is outside Stage custody.
+                    [IO.Directory]::Delete($scratch.FullName, $false)
+                }
+                $stillPresent = if ($Mode -eq 'Stage') {
+                    Get-ExaCopyNodeExists $scratch.FullName
+                } else {
+                    Test-Path -LiteralPath $scratch.FullName
+                }
+                if ($stillPresent) {
+                    throw 'The fixture path is present after nonrecursive disposal.'
+                }
+                [ordered]@{ status = 'deleted'; path = $scratch.FullName; identity = $stageFixtureIdentity } |
+                    ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence.FullName 'fixture-cleanup.json')
+            } catch {
+                [ordered]@{
+                    status = 'retained-or-unconfirmed'
+                    path = $scratch.FullName
+                    identity = $stageFixtureIdentity
+                    message = $_.Exception.Message
+                } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence.FullName 'fixture-cleanup.json')
+                if ($Mode -eq 'Stage') { throw }
+                Write-Warning "Synthetic scratch preserved at $($scratch.FullName): $_"
+            }
+        }
+    } finally {
+        if ($null -ne $stagePin) { $stagePin.Dispose() }
+        if ($null -ne $stageAncestors) { Close-StageAncestorCustody $stageAncestors.Held }
     }
 }
