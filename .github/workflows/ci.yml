@@ -122,6 +122,16 @@ jobs:
             -p exacopy-cli --features experimental-ssh-capture --profile ci-experimental-ssh-capture --no-tests fail \
             -E 'test(/^assembly::remote_ssh::tests::/)'
           test -s target/nextest/ci-experimental-ssh-capture/junit.xml
+      - name: Run opt-in Linux CLI remote command and resume tests
+        if: ${{ !cancelled() && steps.nextest.outcome == 'success' && runner.os == 'Linux' }}
+        env:
+          CARGO_TARGET_DIR: target/experimental-ssh-wireguard
+        run: |
+          bash .github/ci/capture.sh experimental-ssh-wireguard-cli cargo +1.100.0 nextest run --locked \
+            -p exacopy-cli --lib --no-default-features --features experimental-ssh-wireguard \
+            --profile ci-experimental-ssh-wireguard --no-tests fail \
+            -E 'test(/^(args::parser::remote::|remote::|remote_(frontdoor|report)::|assembly::(remote_ssh::|linux::remote_(download|journal|stage)::))/)'
+          test -s target/nextest/ci-experimental-ssh-wireguard/junit.xml
       - name: Run opt-in managed APFS transfer tests
         if: ${{ !cancelled() && steps.nextest.outcome == 'success' && runner.os == 'macOS' }}
         env:
@@ -145,6 +155,7 @@ jobs:
             target/nextest/ci-experimental-wireguard/junit.xml
             target/nextest/ci-experimental-sftp/junit.xml
             target/nextest/ci-experimental-ssh-capture/junit.xml
+            target/nextest/ci-experimental-ssh-wireguard/junit.xml
             target/nextest/ci-experimental-apfs-copy/junit.xml
           if-no-files-found: error
           retention-days: 30

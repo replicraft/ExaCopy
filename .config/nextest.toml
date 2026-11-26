@@ -24,6 +24,12 @@ inherits = "ci"
 [profile.ci-experimental-ssh-capture]
 inherits = "ci"
 
+[profile.ci-experimental-ssh-wireguard]
+inherits = "ci"
+test-threads = 2
+slow-timeout = { period = "30s", terminate-after = 2 }
+global-timeout = "5m"
+
 [profile.ci-experimental-apfs-copy]
 inherits = "ci"
 
