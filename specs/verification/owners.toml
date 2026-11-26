@@ -4,6 +4,7 @@ schema_version = 1
 # These are the minimum gate kinds for that owner. The crate-local ledger
 # owns individual obligations and their source, harness and oracle links.
 [owners]
+exacopy-cli = ["rust"]
 exacopy-core = ["kani"]
 exacopy-diff = ["rust", "tlc"]
 exacopy-journal = ["rust"]

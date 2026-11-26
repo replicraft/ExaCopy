@@ -1,0 +1,13 @@
+schema_version = 1
+
+[[obligation]]
+id = "P-059"
+requirement_ids = ["R-155"]
+source = "src/args/parser.rs"
+symbols = ["parse"]
+assumptions = [
+    "This gate checks command syntax and redacted refusal only. Parsing does not authenticate profiles or confer native mutation authority.",
+    "The independently recorded native campaigns, signed route and filesystem qualifications, live grant and lease checks remain mandatory for effects.",
+]
+gates = ["rust"]
+rust = { file = "src/args/parser/tests.rs", test = "args::parser::tests::plan_accepts_one_explicit_profile_and_output_and_refuses_unknown_policy", oracle = "Require an explicit owner profile and output for a typed plan command and reject missing selections, overwrite and unknown options. This covers syntax admission only, not semantic plan approval, native transfers or qualification." }
