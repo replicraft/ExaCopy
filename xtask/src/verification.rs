@@ -8,12 +8,10 @@ use serde::Deserialize;
 use crate::finding::Findings;
 
 mod artifact;
-
-const REQUIRED_CRATE: &str = "exacopy-model";
+mod ownership;
 const VERIFICATION_DIR: &str = "verification";
 const OBLIGATIONS: &str = "obligations.toml";
 const VERIFICATION_SCHEMA: u32 = 1;
-const REQUIRED_MODEL_GATES: [Gate; 4] = [Gate::Rust, Gate::Lean, Gate::Kani, Gate::Tlc];
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
@@ -122,6 +120,10 @@ pub(crate) fn check(
 	let mut projects = Vec::new();
 	let mut ids = BTreeSet::new();
 	let mut verification_roots = Vec::new();
+	let root = metadata.workspace_root.as_std_path();
+	let Some(mut inventory) = ownership::Inventory::load(root, findings) else {
+		return projects;
+	};
 	for package in metadata.workspace_packages() {
 		let Some(root) = package.manifest_path.as_std_path().parent() else {
 			findings.add(
@@ -131,30 +133,36 @@ pub(crate) fn check(
 			continue;
 		};
 		let verification = root.join(VERIFICATION_DIR);
-		if !verification.exists() && package.name.as_str() != REQUIRED_CRATE {
-			continue;
-		}
-		let ledger = verification.join(OBLIGATIONS);
-		let Some(manifest) = load_manifest(&ledger, findings) else {
+		let Some(required_gates) = inventory.owners.remove(package.name.as_str()) else {
+			match fs::symlink_metadata(&verification) {
+				Ok(_) => findings.add(
+					&verification,
+					format_args!("{} must register its verification ownership", package.name),
+				),
+				Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+				Err(error) => findings.add(&verification, error),
+			}
 			continue;
 		};
-		if package.name.as_str() == REQUIRED_CRATE {
-			for gate in REQUIRED_MODEL_GATES {
-				if !manifest
-					.obligations
-					.iter()
-					.any(|entry| entry.gates.contains(&gate))
-				{
-					findings.add(
-						&ledger,
-						format_args!("{REQUIRED_CRATE} must declare the {gate} gate"),
-					);
-				}
+		let ledger = verification.join(OBLIGATIONS);
+		let script = Path::new("verification/check.sh");
+		check_script(root, script, findings);
+		let Some(manifest) = load_manifest(root, findings) else {
+			continue;
+		};
+		for gate in required_gates {
+			if !manifest
+				.obligations
+				.iter()
+				.any(|entry| entry.gates.contains(&gate))
+			{
+				findings.add(
+					&ledger,
+					format_args!("{} must declare the {gate} gate", package.name),
+				);
 			}
 		}
 		verification_roots.push(verification);
-		let script = Path::new("verification/check.sh");
-		check_script(root, script, findings);
 		for entry in &manifest.obligations {
 			if !ids.insert(entry.id.clone()) {
 				findings.add(
@@ -170,15 +178,10 @@ pub(crate) fn check(
 			obligations: manifest.obligations,
 		});
 	}
-	let root = metadata.workspace_root.as_std_path();
-	if !metadata
-		.workspace_packages()
-		.iter()
-		.any(|package| package.name.as_str() == REQUIRED_CRATE)
-	{
+	for owner in inventory.owners.keys() {
 		findings.add(
 			root,
-			format_args!("missing the required {REQUIRED_CRATE} workspace member"),
+			format_args!("missing verification owner workspace member {owner}"),
 		);
 	}
 	if root.join("proofs").exists() || root.join(VERIFICATION_DIR).exists() {
@@ -219,26 +222,22 @@ fn is_formal_asset(path: &Path) -> bool {
 		})
 }
 
-fn load_manifest(path: &Path, findings: &mut Findings) -> Option<Manifest> {
-	let contents = match fs::read_to_string(path) {
-		Ok(contents) => contents,
-		Err(error) => {
-			findings.add(path, error);
-			return None;
-		}
-	};
+fn load_manifest(root: &Path, findings: &mut Findings) -> Option<Manifest> {
+	let relative = Path::new(VERIFICATION_DIR).join(OBLIGATIONS);
+	let path = root.join(&relative);
+	let contents = artifact_text(root, &relative, findings)?;
 	match toml::from_str::<Manifest>(&contents) {
 		Ok(manifest) => {
 			if manifest.schema_version != VERIFICATION_SCHEMA || manifest.obligations.is_empty() {
 				findings.add(
-					path,
+					&path,
 					"expected schema_version 1 and at least one obligation",
 				);
 			}
 			Some(manifest)
 		}
 		Err(error) => {
-			findings.add(path, error);
+			findings.add(&path, error);
 			None
 		}
 	}

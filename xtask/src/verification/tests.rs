@@ -65,7 +65,7 @@ fn linked_fixture() -> Fixture {
 fn check(fixture: &Fixture, manifest: &str) -> Findings {
 	let ledger = fixture.write("verification/obligations.toml", manifest);
 	let mut findings = Findings::default();
-	if let Some(manifest) = load_manifest(&ledger, &mut findings) {
+	if let Some(manifest) = load_manifest(fixture.root(), &mut findings) {
 		for entry in manifest.obligations {
 			check_obligation(fixture.root(), &ledger, &entry, &mut findings);
 		}

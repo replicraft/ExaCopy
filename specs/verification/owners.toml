@@ -1,0 +1,12 @@
+schema_version = 1
+
+# Each package owns verification/obligations.toml and verification/check.sh.
+# These are the minimum gate kinds for that owner. The crate-local ledger
+# owns individual obligations and their source, harness and oracle links.
+[owners]
+exacopy-core = ["kani"]
+exacopy-diff = ["rust", "tlc"]
+exacopy-journal = ["rust"]
+exacopy-manifest = ["rust"]
+exacopy-model = ["rust", "lean", "kani", "tlc"]
+exacopy-plan = ["rust"]
