@@ -21,3 +21,6 @@ inherits = "ci"
 
 [profile.ci-experimental-apfs-copy]
 inherits = "ci"
+
+[profile.ci-release]
+inherits = "ci"

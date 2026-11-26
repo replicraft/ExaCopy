@@ -67,8 +67,8 @@ jobs:
           CARGO_TARGET_DIR: ${{ runner.temp }}/exacopy-release-tests
         run: |
           bash .github/ci/capture.sh release-nextest cargo +1.100.0 nextest run \
-            --locked --release --workspace --no-default-features --profile ci --no-tests fail
-          test -s "$CARGO_TARGET_DIR/nextest/ci/junit.xml"
+            --locked --release --workspace --no-default-features --profile ci-release --no-tests fail
+          test -s target/nextest/ci-release/junit.xml
       - name: Build archived source, inventory compiled crates and test the fixture archive
         env:
           RELEASE_PUBLISH: ${{ inputs.publish }}
@@ -86,7 +86,7 @@ jobs:
             ${{ runner.temp }}/exacopy-evidence/
             ${{ runner.temp }}/exacopy-release/build/
             ${{ runner.temp }}/exacopy-release/rebuild/
-            ${{ runner.temp }}/exacopy-release-tests/nextest/ci/junit.xml
+            target/nextest/ci-release/junit.xml
           if-no-files-found: error
           retention-days: 90
       - name: Upload fixture archive for checksum review
