@@ -249,6 +249,7 @@ class ProviderTests(unittest.TestCase):
 
     def test_inconsistent_observed_module_history_is_unknown(self):
         with (
+            patch.object(provider, "image_path_observation", return_value={"status": "observed"}),
             patch.object(provider, "read_observation", side_effect=[
                 {"status": "live"}, {"status": "live"}, {"status": "absent"},
             ]),
