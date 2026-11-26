@@ -11,6 +11,7 @@ use std::thread;
 use std::time::Duration;
 
 use exacopy_endpoint::UnixComponent;
+use exacopy_endpoint::linux_remote_qualification::RemoteDestinationIds;
 use exacopy_model::{
 	CopyBinding, CopyEffect, CopyEvent, CopySession, EntryId, JobId, PublishNoClobber, RunEpoch,
 	StageId,
@@ -19,6 +20,8 @@ use rustix::process::Signal;
 
 use super::{DestinationRoot, Scratch, observe_remote_destination};
 
+const PARENT_ENV: &str = "EXACOPY_REMOTE_SUBSTRATE_PARENT";
+const PARENT_MARKER: &str = "EXACOPY_REMOTE_SUBSTRATE_PARENT";
 const FIXTURE_ENV: &str = "EXACOPY_REMOTE_CRASH_DIAGNOSTIC_FIXTURE";
 const WORKER: &str = "linux::process_crash::remote_destination::tests::campaign::native_worker";
 const MARKER: &str = "EXACOPY_REMOTE_NATIVE_CUT ";
@@ -37,10 +40,23 @@ const DATA: &[u8] = b"fixture logical bytes\x00\xff\n";
 #[test]
 #[ignore = "requires native Linux and a disposable writable ext4 TMPDIR"]
 fn destination_substrate_preserves_bytes_at_each_native_process_cut() {
+	let parent_path = env::var_os(PARENT_ENV).expect("select the actual disposable fixture parent");
+	let parent_path = Path::new(&parent_path);
+	assert!(parent_path.is_absolute());
+	assert_eq!(parent_path.canonicalize().unwrap(), parent_path);
+	let scratch_parent = env::temp_dir();
+	assert_eq!(scratch_parent.parent(), Some(parent_path));
+	assert_eq!(scratch_parent.canonicalize().unwrap(), scratch_parent);
+	let parent = DestinationRoot::from_directory(File::open(parent_path).unwrap()).unwrap();
+	let parent_facts =
+		observe_remote_destination(&parent).expect("observe the exact native fixture parent");
 	for cut in ORDER {
 		let fixture = Scratch::new();
+		assert_eq!(fixture.path("").parent(), Some(scratch_parent.as_path()));
 		let root = DestinationRoot::from_directory(fixture.open()).unwrap();
 		let native = observe_remote_destination(&root).expect("require native ext4 observation");
+		assert_eq!(same_mount(native.ids()), same_mount(parent_facts.ids()));
+		assert_ne!(native.ids().root.inode, parent_facts.ids().root.inode);
 		let mut worker = Worker::start(&fixture.path(""));
 		worker.stop_at(cut);
 		assert_eq!(observe_remote_destination(&root).unwrap(), native);
@@ -63,6 +79,29 @@ fn destination_substrate_preserves_bytes_at_each_native_process_cut() {
 		}
 		println!("\nEXACOPY_REMOTE_SUBSTRATE_PASS {cut}");
 	}
+	assert_eq!(observe_remote_destination(&parent).unwrap(), parent_facts);
+	let reopened = DestinationRoot::from_directory(File::open(parent_path).unwrap()).unwrap();
+	assert_eq!(observe_remote_destination(&reopened).unwrap(), parent_facts);
+	let ids = parent_facts.ids();
+	let mut boot = String::with_capacity(32);
+	for byte in ids.boot_id {
+		use std::fmt::Write as _;
+		write!(boot, "{byte:02x}").unwrap();
+	}
+	println!(
+		"\n{PARENT_MARKER} {} {} {boot} {} {} {}",
+		ids.root.device, ids.root.inode, ids.mount_namespace, ids.mount_id, ids.unique_mount,
+	);
+}
+
+fn same_mount(ids: RemoteDestinationIds) -> (u64, [u8; 16], u64, u64, u64) {
+	(
+		ids.root.device,
+		ids.boot_id,
+		ids.mount_namespace,
+		ids.mount_id,
+		ids.unique_mount,
+	)
 }
 
 #[test]

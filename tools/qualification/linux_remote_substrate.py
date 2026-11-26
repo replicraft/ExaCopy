@@ -16,7 +16,9 @@ import stat
 import subprocess
 import sys
 import tempfile
-from typing import BinaryIO
+
+from linux_remote_source import source_identity
+from native_supervision import CleanupUnconfirmed, file_digest, interrupted, logged_command
 
 REPO = Path(__file__).resolve().parents[2]
 SELECTOR = (
@@ -25,9 +27,19 @@ SELECTOR = (
 )
 EXPECTED = ("private-created", "data-synced", "closed-readback", "published-and-synced")
 PASSED = re.compile(rb"^EXACOPY_REMOTE_SUBSTRATE_PASS ([a-z-]+)$", re.MULTILINE)
+PARENT_MARKER = re.compile(rb"^EXACOPY_REMOTE_SUBSTRATE_PARENT(?:[ \t]|$)", re.MULTILINE)
+PARENT = re.compile(
+    rb"^EXACOPY_REMOTE_SUBSTRATE_PARENT ([1-9][0-9]{0,19}) ([1-9][0-9]{0,19}) "
+    rb"([0-9a-f]{32}) ([1-9][0-9]{0,19}) ([1-9][0-9]{0,19}) ([1-9][0-9]{0,19})$",
+    re.MULTILINE,
+)
+PARENT_FIELDS = ("device", "inode", "boot_id_hex", "mount_namespace", "mount_id", "unique_mount")
+MAX_LOG_BYTES = 8 * 1024 * 1024
 TIMEOUT_SECONDS = 600
 SOURCE_INPUTS = (
     "tools/qualification/linux_remote_substrate.py",
+    "tools/qualification/linux_remote_source.py",
+    "tools/qualification/native_supervision.py",
     "crates/interfaces/exacopy-endpoint/src/linux_remote_qualification.rs",
     "crates/platform/exacopy-platform/src/linux/mount_observation.rs",
     "crates/platform/exacopy-platform/src/linux/process_crash/remote_destination.rs",
@@ -35,7 +47,7 @@ SOURCE_INPUTS = (
 )
 
 
-def run(destination: Path, output: Path) -> int:
+def run(destination: Path, output: Path, *, environment=None) -> int:
     output.mkdir(mode=0o700, parents=False, exist_ok=False)
     recorder = {
         "schema": "ExaCopy/linux-remote-destination-substrate-diagnostic/v1",
@@ -47,6 +59,7 @@ def run(destination: Path, output: Path) -> int:
     }
     log = output / "native.log"
     result = 77
+    cleanup = None
     if sys.platform != "linux":
         recorder["outcome"] = "blocked_non_linux"
         log.write_bytes(b"Native Linux is required for the destination diagnostic.\n")
@@ -61,70 +74,97 @@ def run(destination: Path, output: Path) -> int:
             details = root.stat()
             if not stat.S_ISDIR(details.st_mode) or details.st_uid != os.geteuid():
                 raise ValueError("the diagnostic root must be an owned directory")
-            env = dict(os.environ, CARGO_BUILD_JOBS="2", CARGO_NET_OFFLINE="true")
+            env = dict(os.environ if environment is None else environment,
+                       CARGO_BUILD_JOBS="2", CARGO_NET_OFFLINE="true")
             command = [
-                "cargo", "test", "--offline", "--locked", "-p", "exacopy-platform", "--lib",
+                "cargo", "+1.100.0", "test", "--offline", "--locked", "-p", "exacopy-platform", "--lib",
                 SELECTOR, "--", "--exact", "--ignored", "--nocapture",
             ]
-            recorder["revision"] = subprocess.check_output(
-                ["git", "rev-parse", "HEAD"], cwd=REPO, timeout=10, text=True
-            ).strip()
-            recorder["lock_sha256"] = hash_file(REPO / "Cargo.lock")
-            recorder["source_sha256"] = {name: hash_file(REPO / name) for name in SOURCE_INPUTS}
+            before = source_identity(REPO)
+            recorder["source_before"] = before
+            recorder["revision"] = before["revision"]
+            recorder["lock_sha256"] = before["lock_sha256"]
+            recorder["source_sha256"] = {name: file_digest(REPO / name) for name in SOURCE_INPUTS}
             recorder["command"] = command
-            with tempfile.TemporaryDirectory(prefix=".exacopy-substrate-", dir=root) as disposable:
-                env["TMPDIR"] = disposable
-                with log.open("xb") as output_log:
-                    exit_code = run_owned_group(command, env, output_log)
-            cases = read_cut_markers(log)
+            disposable = Path(tempfile.mkdtemp(prefix=".exacopy-substrate-", dir=root))
+            try:
+                env["TMPDIR"] = os.fspath(disposable)
+                env["EXACOPY_REMOTE_SUBSTRATE_PARENT"] = os.fspath(root)
+                default_target = disposable / "cargo-target"
+                cargo_target = (REPO / env.get("CARGO_TARGET_DIR", os.fspath(default_target))).resolve()
+                if cargo_target.is_relative_to(REPO):
+                    raise ValueError("native substrate build target must be outside the source checkout")
+                env["CARGO_TARGET_DIR"] = os.fspath(cargo_target)
+                process = logged_command(
+                    command, log, TIMEOUT_SECONDS, cwd=REPO, env=env, output_limit=MAX_LOG_BYTES,
+                )
+            except CleanupUnconfirmed:
+                # The group may still hold its process-cut fixtures or Cargo work.
+                raise
+            except BaseException:
+                shutil.rmtree(disposable)
+                raise
+            else:
+                shutil.rmtree(disposable)
+            after = source_identity(REPO)
+            recorder["source_after"] = after
+            if before != after:
+                raise ValueError("source changed during the native substrate campaign")
+            cases, parent = read_markers(log)
             recorder["cases"] = list(cases)
-            recorder["process_exit"] = exit_code
-            result = int(exit_code != 0 or cases != EXPECTED)
-            recorder["outcome"] = "passed_native_substrate" if result == 0 else "failed_native_substrate"
-        except subprocess.TimeoutExpired:
-            recorder["outcome"] = "blocked_timeout"
+            recorder["process_exit"] = process.exit_status
+            recorder["process_status"] = process.status
+            result = int(not process.passed() or cases != EXPECTED or parent is None)
+            if parent is not None:
+                recorder["destination_parent"] = parent
+            if process.status != "exited":
+                recorder["outcome"] = f"blocked_{process.status.replace('-', '_')}"
+                result = 77
+            else:
+                recorder["outcome"] = "passed_native_substrate" if result == 0 else "failed_native_substrate"
+        except CleanupUnconfirmed as error:
+            recorder["outcome"] = "blocked_cleanup_unconfirmed"
+            cleanup = error
+        except KeyboardInterrupt:
+            recorder["outcome"] = "blocked_interrupted"
         except (OSError, ValueError, subprocess.CalledProcessError) as error:
             recorder["outcome"] = "blocked_fixture_setup"
+            recorder["reason"] = str(error) if type(error) is ValueError else type(error).__name__
             if not log.exists():
-                log.write_text(f"{type(error).__name__}: {error}\n")
-    recorder["log_sha256"] = hash_file(log) if log.exists() else None
-    with (output / "result.json").open("x") as manifest:
-        json.dump(recorder, manifest, indent=2, sort_keys=True)
-        manifest.write("\n")
+                log.write_text(recorder["reason"] + "\n")
+    try:
+        recorder["log_sha256"] = file_digest(log) if log.exists() else None
+        with (output / "result.json").open("x") as manifest:
+            json.dump(recorder, manifest, indent=2, sort_keys=True)
+            manifest.write("\n")
+    finally:
+        if cleanup is not None:
+            raise cleanup
     return result
 
 
-def hash_file(path: Path) -> str:
-    with path.open("rb") as source:
-        return hashlib.file_digest(source, "sha256").hexdigest()
-
-
-def run_owned_group(command: list[str], env: dict[str, str], output: BinaryIO) -> int:
-    with subprocess.Popen(
-        command, cwd=REPO, env=env, stdout=output, stderr=subprocess.STDOUT,
-        start_new_session=True,
-    ) as process:
-        try:
-            return process.wait(timeout=TIMEOUT_SECONDS)
-        except BaseException:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            process.wait()
-            raise
-
-
-def read_cut_markers(log: Path) -> tuple[str, ...]:
-    cases = []
+def read_markers(log: Path) -> tuple[tuple[str, ...], dict[str, str] | None]:
     with log.open("rb") as source:
-        for line in source:
-            marker = PASSED.fullmatch(line.rstrip(b"\n"))
-            if marker:
-                cases.append(marker[1].decode("ascii"))
-                if len(cases) > len(EXPECTED):
-                    break
-    return tuple(cases)
+        raw = source.read(MAX_LOG_BYTES + 1)
+    return parse_markers(raw)
+
+
+def parse_markers(raw: bytes) -> tuple[tuple[str, ...], dict[str, str] | None]:
+    if len(raw) > MAX_LOG_BYTES:
+        raise ValueError("native substrate log exceeds the input bound")
+    cases = tuple(marker[1].decode("ascii") for marker in PASSED.finditer(raw))
+    candidates = PARENT_MARKER.finditer(raw)
+    first = next(candidates, None)
+    parent = None
+    if first is not None and next(candidates, None) is None:
+        exact = PARENT.match(raw, first.start())
+        if exact is None:
+            return cases, None
+        fields = [item.decode("ascii") for item in exact.groups()]
+        if all(int(value) < 2**64 for key, value in zip(PARENT_FIELDS, fields)
+               if key != "boot_id_hex"):
+            parent = dict(zip(PARENT_FIELDS, fields, strict=True))
+    return cases, parent
 
 
 def main() -> int:
@@ -132,7 +172,13 @@ def main() -> int:
     parser.add_argument("--destination", required=True, type=Path)
     parser.add_argument("--evidence", required=True, type=Path)
     arguments = parser.parse_args()
-    return run(arguments.destination, arguments.evidence)
+    signal.signal(signal.SIGTERM, interrupted)
+    signal.signal(signal.SIGINT, interrupted)
+    try:
+        return run(arguments.destination, arguments.evidence)
+    except CleanupUnconfirmed:
+        print("Native substrate blocked: owned group cleanup unconfirmed; fixture retained.", file=sys.stderr)
+        return 77
 
 
 if __name__ == "__main__":
