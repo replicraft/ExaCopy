@@ -278,3 +278,15 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/remote_witness_budget.rs", test = "witnessed_whole_pass_matches_independent_capacity_paths", oracle = "Match independent whole-pass, suffix-phase and checkpoint-range vectors for separate byte, slot and receipt capacity. Exercise exact segment and sequence fit, one-unit shortages, zero tail, maximum ordinals, remaining capacity and final-run retirement refusal." }
+
+[[obligation]]
+id = "P-076"
+requirement_ids = ["R-253", "R-255"]
+source = "src/remote_download/witness/replay/receipt/basis.rs"
+symbols = ["RemoteDurableReceiptBasis", "RemoteReceiptReadyInspection"]
+assumptions = [
+    "The independently selected scanner authenticates the complete supplied history and exact archived qualification and grant selections.",
+    "These read-only views expose historical declarations and canonical bytes. Current inode custody, authority, barriers and native effects require independent held observations and admission.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_continuation/witnessed_replay.rs", test = "witness_closeout::witnessed_replay::receipt_basis_requires_exact_clean_phase_and_canonical_artifact", oracle = "Match submitted and recovered canonical receipt bytes and exact kind-42 encoding at clean kind-9 and kind-42 boundaries. Refuse all intervening byte cuts, later phases, wrong commitments, conflict, uncertainty and retirement; reject stage inode reuse without claiming physical receipt custody." }

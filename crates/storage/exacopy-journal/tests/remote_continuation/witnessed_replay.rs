@@ -386,3 +386,97 @@ fn fresh_v1_archive_cannot_select_the_known_op2_digest_even_before_input_is_read
 	assert!(matches!(result, Err(Error::Binding)));
 	assert_eq!(observed.get(), 0);
 }
+
+fn exact_clean_kind9_and_kind42_expose_distinct_receipt_views() {
+	use exacopy_journal::remote_download::witness::RemoteReceiptReady;
+
+	let run = Transcript::read(false);
+	for (label, receipt_label) in [
+		("published", "receipt"),
+		("recovered-published", "recovered-receipt"),
+	] {
+		let bytes = recorded(label);
+		let expected_bytes = recorded(receipt_label);
+		let durable = boundary_of(&bytes, FrameKind::DurabilityRecorded);
+		let ready = boundary_of(&bytes, FrameKind::RemoteReceiptReady);
+		let durable_end = usize::try_from(durable.offset).unwrap();
+		let ready_end = usize::try_from(ready.offset).unwrap();
+		let durable_replay = scan(&run, &bytes[..durable_end], FRESH);
+		let ready_replay = scan(&run, &bytes[..ready_end], FRESH);
+		let basis = durable_replay.durable_receipt_basis().unwrap();
+		let inspection = ready_replay.receipt_ready_inspection().unwrap();
+		assert_eq!(basis.boundary(), durable);
+		assert_eq!(inspection.boundary(), ready);
+		assert_eq!(inspection.durability_boundary(), durable);
+		assert_eq!(basis.bytes(), expected_bytes);
+		assert_eq!(inspection.bytes(), expected_bytes);
+		assert_eq!(usize::from(basis.length()), expected_bytes.len());
+		assert_eq!(basis.length(), inspection.record().length());
+		assert_eq!(basis.digest(), inspection.record().digest());
+		assert_eq!(basis.witness(), inspection.witness());
+		assert_eq!(basis.job_directory(), basis.witness().job_directory());
+		assert_eq!(basis.job_directory(), inspection.job_directory());
+		assert_eq!(basis.target_parent(), inspection.target_parent());
+		assert_eq!(basis.pending_name(), inspection.pending_name());
+		assert_eq!(basis.final_name(), inspection.final_name());
+		assert!(basis.pending_name().starts_with(b"rw-receipt.pending."));
+		assert!(basis.final_name().starts_with(b"rw-receipt.final."));
+		assert!(durable_replay.receipt_ready().is_none());
+
+		let mut frames = FrameReader::new(&bytes[durable_end..ready_end], durable.head);
+		let frame = frames.next_frame().unwrap().unwrap();
+		let expected = basis
+			.receipt_ready_expectation(inspection.record().receipt())
+			.unwrap();
+		assert_eq!(expected.durability.head(), durable.head);
+		assert_eq!(
+			RemoteReceiptReady::encode(&expected).unwrap(),
+			frame.payload()
+		);
+		assert!(
+			basis
+				.receipt_ready_expectation(basis.witness().binding().stage())
+				.is_err()
+		);
+	}
+}
+
+fn receipt_views_refuse_every_nearby_cut_except_the_exact_clean_boundary() {
+	let run = Transcript::read(false);
+	let bytes = recorded("published");
+	let durable =
+		usize::try_from(boundary_of(&bytes, FrameKind::DurabilityRecorded).offset).unwrap();
+	let ready = usize::try_from(boundary_of(&bytes, FrameKind::RemoteReceiptReady).offset).unwrap();
+
+	for cut in durable - 1..=bytes.len() {
+		let replay = scan(&run, &bytes[..cut], FRESH);
+		assert_eq!(
+			replay.durable_receipt_basis().is_ok(),
+			cut == durable,
+			"cut {cut}"
+		);
+		assert_eq!(
+			replay.receipt_ready_inspection().is_ok(),
+			cut == ready,
+			"cut {cut}"
+		);
+	}
+	for label in [
+		"conflict",
+		"uncertain",
+		"wrong-ready-digest",
+		"wrong-committed-inode",
+		"retire-preserved",
+	] {
+		let bad = recorded(label);
+		let rejected = scan(&run, bad.as_slice(), FRESH);
+		assert!(rejected.durable_receipt_basis().is_err(), "{label}");
+		assert!(rejected.receipt_ready_inspection().is_err(), "{label}");
+	}
+}
+
+#[test]
+fn receipt_basis_requires_exact_clean_phase_and_canonical_artifact() {
+	exact_clean_kind9_and_kind42_expose_distinct_receipt_views();
+	receipt_views_refuse_every_nearby_cut_except_the_exact_clean_boundary();
+}

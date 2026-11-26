@@ -12,9 +12,8 @@ use super::super::records::{
 	RemoteWitnessCloseoutRecord as Record, RemoteWitnessedOutcome as Outcome,
 };
 use super::super::{
-	Error, MAX_REMOTE_RECEIPT_READY_BYTES, MAX_REMOTE_WITNESS_INTENT_BYTES,
-	ReceiptReadyExpectation, RemoteBootstrapTrust, RemoteReceiptReady, RemoteWitnessBinding,
-	RemoteWitnessIntent, binding_for,
+	Error, MAX_REMOTE_RECEIPT_READY_BYTES, MAX_REMOTE_WITNESS_INTENT_BYTES, RemoteBootstrapTrust,
+	RemoteReceiptReady, RemoteWitnessBinding, RemoteWitnessIntent, binding_for,
 };
 use super::{
 	RemoteWitnessedReplayPhase as Phase, RemoteWitnessedReplaySelection, RemoteWitnessedRetirement,
@@ -31,7 +30,9 @@ pub(super) struct CloseoutFacts {
 	pub(super) outcome: Option<Outcome>,
 	pub(super) failure: Option<RemoteRecordedUncertainty>,
 	pub(super) ready: Option<RemoteReceiptReady>,
-	pub(super) receipt: Option<Vec<u8>>,
+	pub(super) receipt: Option<receipt::Artifact>,
+	pub(super) receipt_cut: Option<receipt::Cut>,
+	pub(super) durable_frames: Vec<Frame>,
 	pub(super) continued_extent: Option<StreamLength>,
 }
 
@@ -67,7 +68,10 @@ impl<'qualification> WitnessCloseoutHistory<'qualification> {
 		}
 	}
 
-	pub(super) fn into_facts(self) -> CloseoutFacts {
+	pub(super) fn into_facts(mut self) -> CloseoutFacts {
+		if self.facts.phase == Some(Phase::Durable) {
+			self.facts.durable_frames = self.phases;
+		}
 		self.facts
 	}
 
@@ -239,6 +243,13 @@ impl<'qualification> WitnessCloseoutHistory<'qualification> {
 					self.facts.outcome = Some(outcome);
 					self.observed = Some(end);
 				}
+				if phase == Phase::Durable {
+					self.facts.receipt_cut = Some(receipt::Cut {
+						durable: end,
+						metadata: self.head(FrameKind::MetadataRecorded)?,
+						observed: self.observed.ok_or(Error::FrameBinding)?,
+					});
+				}
 				self.facts.phase = Some(phase);
 				if matches!(
 					phase,
@@ -265,24 +276,14 @@ impl<'qualification> WitnessCloseoutHistory<'qualification> {
 		let witness = self.facts.witness.ok_or(Error::FrameBinding)?;
 		let boundary = prior.boundary();
 		let inode = archive::receipt_inode(frame, witness, boundary)?;
-		if prior
-			.attempts()
-			.iter()
-			.any(|attempt| attempt.prepared().is_some_and(|stage| stage.file == inode))
-		{
-			return Err(Error::Binding);
+		receipt::check_receipt_inode(prior.attempts(), inode)?;
+		let cut = self.facts.receipt_cut.ok_or(Error::FrameBinding)?;
+		if cut.durable != boundary {
+			return Err(Error::FrameBinding);
 		}
-		let receipt = receipt::canonical_receipt(witness, &self.phases)?;
-		let expected = ReceiptReadyExpectation {
-			witness,
-			durability: self.phases.last().ok_or(Error::FrameBinding)?,
-			boundary,
-			metadata: self.head(FrameKind::MetadataRecorded)?,
-			observed: self.observed.ok_or(Error::FrameBinding)?,
-			receipt: inode,
-			length: u16::try_from(receipt.len()).map_err(|_| Error::Length)?,
-			digest: receipt::digest(&receipt),
-		};
+		let receipt = receipt::Artifact::from_frames(witness, &self.phases)?;
+		let durability = self.phases.last().ok_or(Error::FrameBinding)?;
+		let expected = receipt.expectation(witness, cut, durability, inode);
 		let ready = RemoteReceiptReady::from_frame(frame, end, &expected)?;
 		self.facts.ready = Some(ready);
 		self.facts.receipt = Some(receipt);

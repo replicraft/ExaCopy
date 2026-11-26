@@ -1747,3 +1747,19 @@ level = "obligation"
 state = "defined"
 path = "crates/storage/exacopy-journal/verification/obligations.toml"
 target = "P-072"
+
+[[coverage]]
+id = "witnessed-historical-receipt-basis"
+status = "implemented"
+requirement_ids = ["R-253", "R-255"]
+acceptance_ids = ["A-253", "A-255"]
+invariant_ids = ["INV-009", "INV-018", "INV-019", "INV-032"]
+scope = "P-076 exposes bounded canonical receipt bytes and exact historical anchors only at clean kind-9 or kind-42 boundaries."
+limits = "The views expose historical declarations authenticated by replay. They confer no present receipt inode, namespace custody, live permission, native effect or durability qualification."
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "obligation"
+state = "defined"
+path = "crates/storage/exacopy-journal/verification/obligations.toml"
+target = "P-076"

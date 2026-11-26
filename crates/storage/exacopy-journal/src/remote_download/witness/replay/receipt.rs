@@ -1,11 +1,19 @@
+use std::fmt;
+
+use crate::LinuxFileIdentity;
 use crate::frame::{ChainHead, Frame, FrameKind};
 use crate::remote_download::finalization_policy::SftpDataOnlyV1;
+use crate::remote_download::replay::{RemoteReplayAttempt, RemoteReplayBoundary};
 use crate::remote_download::wire::{write_head, write_version};
 
 use super::super::{
-	Error, MAX_REMOTE_WITNESS_RECEIPT_BYTES, RemoteWitnessIntent,
+	Error, MAX_REMOTE_WITNESS_RECEIPT_BYTES, ReceiptReadyExpectation, RemoteWitnessIntent,
 	wire::{self, SELECTOR},
 };
+
+mod basis;
+
+pub use basis::{RemoteDurableReceiptBasis, RemoteReceiptReadyInspection};
 
 const DOMAIN: &[u8] = b"ExaCopy/linux-remote-witnessed-continued-download-receipt/v1\0";
 const VERSION: [u64; 3] = [1, 0, 15];
@@ -20,10 +28,7 @@ const PHASES: [FrameKind; 7] = [
 	FrameKind::DurabilityRecorded,
 ];
 
-pub(super) fn canonical_receipt(
-	witness: RemoteWitnessIntent,
-	frames: &[Frame],
-) -> Result<Vec<u8>, Error> {
+fn canonical_receipt(witness: RemoteWitnessIntent, frames: &[Frame]) -> Result<Vec<u8>, Error> {
 	if frames.len() != PHASES.len() || frames.iter().map(Frame::kind).ne(PHASES) {
 		return Err(Error::FrameBinding);
 	}
@@ -58,7 +63,7 @@ pub(super) fn canonical_receipt(
 	Ok(wire::finish(out))
 }
 
-pub(super) fn digest(bytes: &[u8]) -> [u8; 32] {
+fn digest(bytes: &[u8]) -> [u8; 32] {
 	*blake3::Hasher::new()
 		.update(DOMAIN)
 		.update(bytes)
@@ -72,4 +77,78 @@ pub(super) fn frame_head(frames: &[Frame], kind: FrameKind) -> Result<ChainHead,
 		.find(|frame| frame.kind() == kind)
 		.map(Frame::head)
 		.ok_or(Error::FrameBinding)
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Cut {
+	pub(super) durable: RemoteReplayBoundary,
+	pub(super) metadata: ChainHead,
+	pub(super) observed: RemoteReplayBoundary,
+}
+
+pub(super) struct Artifact {
+	bytes: Vec<u8>,
+	length: u16,
+	digest: [u8; 32],
+}
+
+impl Artifact {
+	pub(super) fn from_frames(
+		witness: RemoteWitnessIntent,
+		frames: &[Frame],
+	) -> Result<Self, Error> {
+		let bytes = canonical_receipt(witness, frames)?;
+		let length = u16::try_from(bytes.len()).map_err(|_| Error::Length)?;
+		let digest = digest(&bytes);
+		Ok(Self {
+			bytes,
+			length,
+			digest,
+		})
+	}
+
+	pub(super) fn bytes(&self) -> &[u8] {
+		&self.bytes
+	}
+
+	pub(super) const fn expectation<'history>(
+		&self,
+		witness: RemoteWitnessIntent,
+		cut: Cut,
+		durability: &'history Frame,
+		receipt: LinuxFileIdentity,
+	) -> ReceiptReadyExpectation<'history> {
+		ReceiptReadyExpectation {
+			witness,
+			durability,
+			boundary: cut.durable,
+			metadata: cut.metadata,
+			observed: cut.observed,
+			receipt,
+			length: self.length,
+			digest: self.digest,
+		}
+	}
+}
+
+impl fmt::Debug for Artifact {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		f.debug_struct("Artifact")
+			.field("length", &self.length)
+			.field("digest", &self.digest)
+			.finish_non_exhaustive()
+	}
+}
+
+pub(super) fn check_receipt_inode(
+	attempts: &[RemoteReplayAttempt],
+	inode: LinuxFileIdentity,
+) -> Result<(), Error> {
+	if attempts
+		.iter()
+		.any(|attempt| attempt.prepared().is_some_and(|stage| stage.file == inode))
+	{
+		return Err(Error::Binding);
+	}
+	Ok(())
 }

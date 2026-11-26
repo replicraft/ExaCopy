@@ -25,6 +25,7 @@ mod history;
 mod receipt;
 
 pub(in crate::remote_download) use history::WitnessCloseoutHistory;
+pub use receipt::{RemoteDurableReceiptBasis, RemoteReceiptReadyInspection};
 
 /// Externally selected historical evidence for the exact witnessed strategy.
 #[derive(Debug)]
@@ -184,7 +185,7 @@ impl RemoteWitnessedCloseoutReplay {
 				.history
 				.ready
 				.is_some_and(|ready| ready.receipt() == inode)
-			&& self.history.receipt.as_deref() == Some(bytes)
+			&& self.history.receipt.as_ref().map(receipt::Artifact::bytes) == Some(bytes)
 	}
 
 	/// Borrows all historical bytes declared covered in the active clean continued pass.

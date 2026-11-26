@@ -15,8 +15,8 @@ pub const MAX_REMOTE_WITNESS_RECEIPT_BYTES: u16 = 6144;
 const MAX_DURABILITY_BYTES: usize = 551;
 const PENDING_PREFIX: &[u8] = b"rw-receipt.pending.";
 const FINAL_PREFIX: &[u8] = b"rw-receipt.final.";
-const PENDING_NAME_BYTES: usize = 101;
-const FINAL_NAME_BYTES: usize = 99;
+pub(super) const PENDING_NAME_BYTES: usize = 101;
+pub(super) const FINAL_NAME_BYTES: usize = 99;
 const SUFFIX_BYTES: usize = 82;
 
 /// Independently resolved artifacts and accepted prior authority for kind 42.
@@ -181,7 +181,9 @@ fn validate(expected: &ReceiptReadyExpectation<'_>) -> Result<(), Error> {
 	Ok(())
 }
 
-fn names(witness: RemoteWitnessIntent) -> ([u8; PENDING_NAME_BYTES], [u8; FINAL_NAME_BYTES]) {
+pub(super) fn names(
+	witness: RemoteWitnessIntent,
+) -> ([u8; PENDING_NAME_BYTES], [u8; FINAL_NAME_BYTES]) {
 	let mut suffix = [b'.'; SUFFIX_BYTES];
 	hex(&mut suffix[..32], witness.binding.context.entry.as_bytes());
 	hex(
