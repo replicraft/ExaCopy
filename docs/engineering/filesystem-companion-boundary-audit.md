@@ -2,9 +2,10 @@
 
 ## Current selection and remaining work
 
-The source pin selects public APFS `f9fc9cb8527ea6af729703232fbb4e6f34be0162`.
-The update adds container, checksum and kernel verification. The mounted library tree
-is identical to `0e833186` and `a494df4`. Existing native results keep their recorded source and limits.
+The source pin selects public APFS `aa75bcb6d219fdb5c4c0fba39adc3ccdc9a1518f`.
+The update expands container, reader and format verification.
+The mounted library tree is identical to `f9fc9cb8`, `0e833186` and `a494df4`.
+Existing native results keep their recorded source and limits.
 ExaCopy uses `ReopenedStage::open_named` for read-only restart inspection,
 including bounded reads, the EOF probe and coherent live metadata.
 The reader owns its name and anchor while ExaCopy rechecks the complete
