@@ -103,3 +103,6 @@ todo = "deny"
 
 [profile.release]
 overflow-checks = true
+
+[patch.crates-io]
+russh-util = { version = "=0.52.0", path = "../local-deps/russh-util" }

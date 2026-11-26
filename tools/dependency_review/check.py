@@ -170,8 +170,13 @@ def production_graph(policy, lock, offline, source, apfs_pin, transport_pins):
                 name = package["name"]
                 if name in transport_pins:
                     consumer = transport_source.POLICY[name][1]
-                    consumer_version = next(member["version"] for member in metadata["packages"]
-                                            if member["id"] in workspace and member["name"] == consumer)
+                    if consumer in transport_pins:
+                        consumer_version = transport_pins[consumer]["version"]
+                    else:
+                        consumer_version = next(
+                            member["version"] for member in metadata["packages"]
+                            if member["id"] in workspace and member["name"] == consumer
+                        )
                     record = transport_inputs(
                         package, source, transport_pins[name], parents[key], selected, consumer_version,
                     )

@@ -998,3 +998,14 @@ adversarial_inputs = "The one-flow wrapper supplies exact address and packet bou
 verification = "The private embedded TCP suite built with 0.9.4 and passed its observed macOS cases. No independent heapless runtime audit was performed in this lane."
 replacement = "Require bounded interface storage and review the actual smoltcp container interface and resource limits."
 review_gaps = ["Exact container and build input review"]
+
+[assessment."russh-util@0.52.0"]
+archive_sha256 = "07cfabc921c1f123234dd8e6ddaec5dc2d89a1dd81bb5d0043705b6c9fee508e"
+release_observation = "The repaired local Git archive is 848592e3fdd7a30a0e7458ed9a6f23fd933d08bc with tree cf79a0ed70d8ea65fd1d937ecb5546f3d5efa97f. The preimage is the exact published registry archive. The supplier’s VCS metadata marks the packaged checkout dirty. The repair changes the Wasm wall-clock adapter and its target-scoped dependency."
+security_history = "Retain the exact registry preimage in the separate advisory scan and the whole-version Cargo Vet criterion. RUSTSEC-2026-0543 concerns the Chrono dependency removed from the repaired workspace lock."
+unsafe_exposure = "Native targets keep std::time::Instant. The modified Wasm clock converts host values with bounded checked Rust arithmetic. JS-hosted Wasm uses js-sys Date bindings; the OS-backed Wasm branches use std SystemTime."
+resource_limits = "The repaired clock accepts one bounded millisecond value or OS nanosecond sample at a time. It performs no allocation in the new Rust conversion."
+adversarial_inputs = "Non-finite or fractional milliseconds, values beyond the prior UTC range and backward duration observations refuse. OS clock values before the epoch retain refusal."
+verification = "Rust 1.100.0 native tests and strict Clippy passed. Executed the actual repaired clock in Node JS-hosted Wasm and in WASI with controlled signed milliseconds and nanosecond samples respectively. Source tooling reproducibly applied the exact repair and attribution patches."
+replacement = "Preserve the native alias, Wasm host selection, wall-clock precision and typed duration behavior."
+review_gaps = ["Independent whole-version Cargo Vet review", "Native browser, Wasm Linux and Emscripten runtime verification"]

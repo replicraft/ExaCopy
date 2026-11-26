@@ -47,3 +47,28 @@ archive_sha256 = "31d44ed3554febed5b895a05ae34a1361722336ad8421cd056f0550cde870f
 commit = "7bcc7bd46141c3eca20b885c1abc8031fd3ed4ff"
 tree = "201bf925a701826df74a4241eb42cdc707f9ac2e"
 archive_sha256 = "46a46524d96f2d7965b091aef2eaf3be58e2bb8b15ec6b5d8523a6fa40e74fd9"
+
+[russh-util]
+version = "0.52.0"
+registry_archive_sha256 = "668424a5dde0bcb45b55ba7de8476b93831b4aa2fa6947e145f3b053e22c60b6"
+upstream_repository = "https://github.com/warp-tech/russh"
+upstream_commit = "3d09c20c52a542ffa327723d3a44cb1edd9b0ca4"
+license = "Apache-2.0"
+license_file = "LICENSE.txt"
+license_sha256 = "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+normalized_manifest_sha256 = "6db855f526024b4a7384bbdc3d35515dbc4e6597c3f47189657683e26a777c54"
+repaired_manifest_sha256 = "9448d59e1094b17e4eb8709855ea30e85766bb3a51a793878d5f3ddae7780511"
+repair_patch_sha256 = "56ee17f71c7eddacce9b851023de9f50113a30bc97696b5cc5c66915ca8351c1"
+repair_patch = "russh-util-wasm-clock.patch"
+attribution_patch = "russh-util-modification-notice.patch"
+attribution_patch_sha256 = "63831675232be0ac294cdb1affaec6ed4716c73c28ff772c79ee6bfd7a9a13d3"
+
+[russh-util.base]
+commit = "0493da10e44e38723e414cc5906ba2e1e6003e72"
+tree = "0efe7dcabda9f4d40960b174fbc48c9961f92821"
+archive_sha256 = "f650e7214c6bd5875c4575614977490e0bb53007147dcaf35f5650c4d6dff8dd"
+
+[russh-util.repair]
+commit = "848592e3fdd7a30a0e7458ed9a6f23fd933d08bc"
+tree = "cf79a0ed70d8ea65fd1d937ecb5546f3d5efa97f"
+archive_sha256 = "07cfabc921c1f123234dd8e6ddaec5dc2d89a1dd81bb5d0043705b6c9fee508e"

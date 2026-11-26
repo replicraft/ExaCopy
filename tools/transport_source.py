@@ -20,9 +20,11 @@ import urllib.request
 PIN = Path("specs/dependencies/transport-source.toml")
 INPUTS = PIN.with_suffix("")
 SIBLINGS = Path("local-deps")
+RUSSH_UTILITY = "russh-util"
 POLICY = {
     "boringtun": ("0.7.1", "exacopy-wireguard", [], "BSD-3-Clause", "https://github.com/cloudflare/boringtun"),
     "russh": ("0.65.4", "exacopy-ssh", ["ring"], "Apache-2.0", "https://github.com/warp-tech/russh"),
+    RUSSH_UTILITY: ("0.52.0", "russh", [], "Apache-2.0", "https://github.com/warp-tech/russh"),
 }
 GIT_ENV = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")} | {
     "GIT_CONFIG_NOSYSTEM": "1",
@@ -44,7 +46,7 @@ def sibling(source, name):
 
 def dependency_edge_matches(dependency, source, consumer):
     name = dependency["name"]
-    if name not in POLICY:
+    if name not in POLICY or name == RUSSH_UTILITY:
         return False
     version, expected, features, _, _ = POLICY[name]
     return (
@@ -82,12 +84,13 @@ def read_pins(source):
                "repair_patch_sha256", "attribution_patch_sha256"}
     for name, pin in entries.items():
         version, _, _, license_name, repository = POLICY[name]
+        package_digests = digests | {"repaired_manifest_sha256"} if name == RUSSH_UTILITY else digests
         if (
-            not isinstance(pin, dict) or pin.keys() != digests | {"version", "upstream_repository", "upstream_commit", "license",
+            not isinstance(pin, dict) or pin.keys() != package_digests | {"version", "upstream_repository", "upstream_commit", "license",
                                      "license_file", "repair_patch", "attribution_patch", "base", "repair"}
             or pin["version"] != version or pin["license"] != license_name
             or pin["upstream_repository"] != repository or not hex_value(pin["upstream_commit"], 40)
-            or any(not hex_value(pin[entry], 64) for entry in digests)
+            or any(not hex_value(pin[entry], 64) for entry in package_digests)
             or any(not isinstance(pin[key], str) or not re.fullmatch(r"[-a-zA-Z0-9._]+", pin[key])
                    or pin[key] in (".", "..") for key in ("license_file", "repair_patch", "attribution_patch"))
         ):
@@ -101,8 +104,17 @@ def read_pins(source):
     return entries
 
 
+def verify_utility_patch(manifest, version):
+    direct = manifest["workspace"]["dependencies"]
+    patches = manifest.get("patch", {}).get("crates-io", {})
+    expected = {"version": f"={version}", "path": f"../{SIBLINGS}/{RUSSH_UTILITY}"}
+    if RUSSH_UTILITY in direct or patches.get(RUSSH_UTILITY) != expected:
+        raise ValueError("russh-util must use the exact transitive crates.io source repair")
+
+
 def verify_manifests(source):
-    deps = tomllib.loads((source / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]["dependencies"]
+    manifest = tomllib.loads((source / "Cargo.toml").read_text(encoding="utf-8"))
+    deps = manifest["workspace"]["dependencies"]
     lock = tomllib.loads((source / "Cargo.lock").read_text(encoding="utf-8"))["package"]
     for name, (version, consumer, features, _, _) in POLICY.items():
         packages = [package for package in lock if package["name"] == name]
@@ -110,6 +122,9 @@ def verify_manifests(source):
             field in packages[0] for field in ("source", "checksum")
         ):
             raise ValueError(f"{name} lockfile must contain only its pinned local version")
+        if name == RUSSH_UTILITY:
+            verify_utility_patch(manifest, version)
+            continue
         expected = {"version": f"={version}", "path": f"../{SIBLINGS}/{name}", "default-features": False}
         if deps.get(name) != expected:
             raise ValueError(f"{name} Cargo workspace declaration differs from its source pin")
@@ -259,6 +274,7 @@ def archive_sources(source, pins, output=None):
         archive = immutable_archive(repository, pin["repair"])
         verify_files(repository, archive)
         verify_lineage(repository, name, pin, patches, license_text)
+        verify_repaired_manifest(repository, name, pin)
         if output is not None:
             destination = output / f"{name}.tar"
             with destination.open("xb") as stream:
@@ -308,6 +324,11 @@ def verify_registry_preimages(source, pins, cache):
             raise ValueError(f"{name} cached registry package does not reproduce its pinned base files")
 
 
+def verify_repaired_manifest(repository, name, pin):
+    expected = pin.get("repaired_manifest_sha256", pin["normalized_manifest_sha256"])
+    checked((repository / "Cargo.toml").read_bytes(), expected, f"{name} repaired manifest")
+
+
 def provision_one(source, name, pin, repository, cache):
     archive = registry_archive(name, pin, cache)
     repository.mkdir()
@@ -341,8 +362,9 @@ def provision_one(source, name, pin, repository, cache):
         stream.write(license_text)
     license_file.chmod(0o644)
     git(repository, "add", "--", license_file.name)
-    git(repository, "commit", "--quiet", "-m", "Apply reviewed transport key API repair and retain upstream license")
-    checked((repository / "Cargo.toml").read_bytes(), pin["normalized_manifest_sha256"], f"{name} repaired manifest")
+    repair = "Wasm clock repair" if name == RUSSH_UTILITY else "transport key API repair"
+    git(repository, "commit", "--quiet", "-m", f"Apply reviewed {repair} and retain upstream license")
+    verify_repaired_manifest(repository, name, pin)
     verify_files(repository, immutable_archive(repository, pin["repair"]))
 
 

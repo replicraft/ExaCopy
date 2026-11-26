@@ -1,0 +1,212 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 946168979d350d0b758a6104d5d079c0db17b813..62285adff596c6b4292de617a37ad69b2126c552 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -45,11 +45,11 @@ features = [
+     "rt",
+ ]
+ 
+-[target.'cfg(target_arch = "wasm32")'.dependencies.chrono]
+-version = "0.4.38"
+-
+ [target.'cfg(target_arch = "wasm32")'.dependencies.wasm-bindgen]
+ version = "0.2"
+ 
+ [target.'cfg(target_arch = "wasm32")'.dependencies.wasm-bindgen-futures]
+ version = "0.4.43"
++
++[target.'cfg(all(target_arch = "wasm32", not(any(target_os = "emscripten", target_os = "wasi", target_os = "linux"))))'.dependencies.js-sys]
++version = "0.3"
+diff --git a/Cargo.toml.orig b/Cargo.toml.orig
+index 2c36a6c2a3618e514726e17886d4d68fb53bd89a..71c952e42e67727db031427dcaee793eb2c69917 100644
+--- a/Cargo.toml.orig
++++ b/Cargo.toml.orig
+@@ -13,9 +13,11 @@ repository = "https://github.com/warp-tech/russh"
+ tokio = { workspace = true, features = ["sync", "macros"] }
+ 
+ [target.'cfg(target_arch = "wasm32")'.dependencies]
+-chrono = "0.4.38"
+ wasm-bindgen = "0.2"
+ wasm-bindgen-futures = "0.4.43"
+ 
+ [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ tokio = { workspace = true, features = ["io-util", "rt-multi-thread", "rt"] }
++
++[target.'cfg(all(target_arch = "wasm32", not(any(target_os = "emscripten", target_os = "wasi", target_os = "linux"))))'.dependencies]
++js-sys = "0.3"
+diff --git a/src/time.rs b/src/time.rs
+index a5e1adc28a0fd8e2e6cee6d78d55bc9514e1ce71..8e46c6cccb56c27da18423e11bff204590924e84 100644
+--- a/src/time.rs
++++ b/src/time.rs
+@@ -4,24 +4,5 @@ pub use std::time::Instant;
+ #[cfg(target_arch = "wasm32")]
+ pub use wasm::Instant;
+ 
+-#[cfg(target_arch = "wasm32")]
+-mod wasm {
+-    #[derive(Debug, Clone, Copy)]
+-    pub struct Instant {
+-        inner: chrono::DateTime<chrono::Utc>,
+-    }
+-
+-    impl Instant {
+-        pub fn now() -> Self {
+-            Instant {
+-                inner: chrono::Utc::now(),
+-            }
+-        }
+-
+-        pub fn duration_since(&self, earlier: Instant) -> std::time::Duration {
+-            (self.inner - earlier.inner)
+-                .to_std()
+-                .expect("Duration is negative")
+-        }
+-    }
+-}
++#[cfg(any(target_arch = "wasm32", test))]
++mod wasm;
+diff --git a/src/time/wasm.rs b/src/time/wasm.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..9c85f6842d9739dfae120e9755939cc24f075701
+--- /dev/null
++++ b/src/time/wasm.rs
+@@ -0,0 +1,139 @@
++use std::time::Duration;
++
++#[cfg(any(
++    test,
++    target_os = "emscripten",
++    target_os = "wasi",
++    target_os = "linux"
++))]
++use std::time::{SystemTime, UNIX_EPOCH};
++
++const NANOS_PER_SECOND: i128 = 1_000_000_000;
++// Retain the representable bounds of the previous UTC clock samples.
++const MIN_NANOS: i128 = -8_334_601_228_800 * NANOS_PER_SECOND;
++const MAX_NANOS: i128 = 8_210_266_876_799 * NANOS_PER_SECOND + 999_999_999;
++
++#[cfg(target_arch = "wasm32")]
++#[derive(Debug, Clone, Copy)]
++pub struct Instant {
++    inner: ClockSample,
++}
++
++#[cfg(target_arch = "wasm32")]
++impl Instant {
++    pub fn now() -> Self {
++        #[cfg(not(any(target_os = "emscripten", target_os = "wasi", target_os = "linux")))]
++        let sample = ClockSample::from_javascript_millis(js_sys::Date::new_0().get_time());
++
++        #[cfg(any(target_os = "emscripten", target_os = "wasi", target_os = "linux"))]
++        let sample = ClockSample::from_system_time(SystemTime::now());
++
++        Self {
++            inner: sample.expect("system time is outside the supported UTC range"),
++        }
++    }
++
++    pub fn duration_since(&self, earlier: Instant) -> Duration {
++        self.inner
++            .elapsed(earlier.inner)
++            .expect("Duration is negative")
++    }
++}
++
++#[derive(Debug, Clone, Copy, Eq, PartialEq)]
++struct ClockSample(i128);
++
++impl ClockSample {
++    fn from_nanos(nanos: i128) -> Option<Self> {
++        (MIN_NANOS..=MAX_NANOS)
++            .contains(&nanos)
++            .then_some(Self(nanos))
++    }
++
++    #[cfg(any(
++        test,
++        not(any(target_os = "emscripten", target_os = "wasi", target_os = "linux"))
++    ))]
++    fn from_javascript_millis(millis: f64) -> Option<Self> {
++        // Date supplies integral milliseconds, all exactly representable in
++        // this range. Check the float before converting it to a signed value.
++        const NANOS_PER_MILLI: i128 = 1_000_000;
++        const MIN_MILLIS: f64 = (MIN_NANOS / NANOS_PER_MILLI) as f64;
++        const MAX_MILLIS: f64 = (MAX_NANOS / NANOS_PER_MILLI) as f64;
++        if !(MIN_MILLIS..=MAX_MILLIS).contains(&millis) || millis.fract() != 0.0 {
++            return None;
++        }
++        Self::from_nanos(i128::from(millis as i64) * NANOS_PER_MILLI)
++    }
++
++    #[cfg(any(
++        test,
++        target_os = "emscripten",
++        target_os = "wasi",
++        target_os = "linux"
++    ))]
++    fn from_system_time(time: SystemTime) -> Option<Self> {
++        let since_epoch = time.duration_since(UNIX_EPOCH).ok()?;
++        let nanos = i128::try_from(since_epoch.as_nanos()).ok()?;
++        Self::from_nanos(nanos)
++    }
++
++    fn elapsed(self, earlier: Self) -> Option<Duration> {
++        let nanos = u128::try_from(self.0 - earlier.0).ok()?;
++        let seconds = u64::try_from(nanos / 1_000_000_000).ok()?;
++        let fraction = u32::try_from(nanos % 1_000_000_000).ok()?;
++        Some(Duration::new(seconds, fraction))
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn javascript_samples_keep_signed_milliseconds_and_exact_utc_bounds() {
++        let min = ClockSample::from_javascript_millis(-8_334_601_228_800_000.0).unwrap();
++        let max = ClockSample::from_javascript_millis(8_210_266_876_799_999.0).unwrap();
++        assert_eq!(min.0, MIN_NANOS);
++        assert_eq!(max.0, MAX_NANOS - 999_999);
++        let before = ClockSample::from_javascript_millis(-750.0).unwrap();
++        let after = ClockSample::from_javascript_millis(1_251.0).unwrap();
++        assert_eq!(after.elapsed(before), Some(Duration::from_millis(2_001)));
++        assert_eq!(before.elapsed(after), None);
++        assert_eq!(after.elapsed(after), Some(Duration::ZERO));
++
++        for invalid in [
++            -8_334_601_228_800_001.0,
++            8_210_266_876_800_000.0,
++            f64::NAN,
++            f64::INFINITY,
++            f64::NEG_INFINITY,
++            0.5,
++            -0.5,
++        ] {
++            assert_eq!(ClockSample::from_javascript_millis(invalid), None);
++        }
++    }
++
++    #[test]
++    fn os_samples_keep_nanoseconds_and_refuse_pre_epoch_or_out_of_range_values() {
++        let before =
++            ClockSample::from_system_time(UNIX_EPOCH + Duration::new(1, 999_999_999)).unwrap();
++        let after = ClockSample::from_system_time(UNIX_EPOCH + Duration::new(2, 0)).unwrap();
++        assert_eq!(after.elapsed(before), Some(Duration::from_nanos(1)));
++        assert_eq!(before.elapsed(after), None);
++        assert_eq!(
++            ClockSample::from_system_time(UNIX_EPOCH - Duration::from_nanos(1)),
++            None
++        );
++        let last = UNIX_EPOCH + Duration::new(8_210_266_876_799, 999_999_999);
++        assert_eq!(
++            ClockSample::from_system_time(last),
++            Some(ClockSample(MAX_NANOS))
++        );
++        assert_eq!(
++            ClockSample::from_system_time(last + Duration::from_nanos(1)),
++            None
++        );
++    }
++}

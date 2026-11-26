@@ -29,3 +29,7 @@ notes = "The modified path source is independently gated by specs/dependencies/t
 [policy."russh:0.65.4"]
 audit-as-crates-io = false
 notes = "The modified path source is independently gated by specs/dependencies/transport-source.toml and tools/transport_source.py. Registry audit criteria remain in force for its resolved third-party dependencies."
+
+[policy."russh-util:0.52.0"]
+audit-as-crates-io = true
+notes = "Retain the whole-version registry audit criterion. The separate source pin verifies the modified utility; a registry audit cannot review its repair."

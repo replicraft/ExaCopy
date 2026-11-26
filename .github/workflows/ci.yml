@@ -319,7 +319,7 @@ jobs:
       - name: Audit the lockfile
         if: ${{ !cancelled() && steps.audit.outcome == 'success' }}
         run: bash .github/ci/capture.sh audit cargo audit --file Cargo.lock --deny warnings
-      - name: Audit the two upstream transport bases
+      - name: Audit the pinned upstream transport bases
         if: ${{ !cancelled() && steps.audit.outcome == 'success' }}
         run: |
           base_lock="$RUNNER_TEMP/exacopy-evidence/transport-registry-base.lock"
