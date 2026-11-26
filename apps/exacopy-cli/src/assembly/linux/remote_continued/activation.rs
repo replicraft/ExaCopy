@@ -1,3 +1,4 @@
+use super::prefix::WitnessPrefix;
 use std::io::{Cursor, Read};
 use std::num::NonZeroU64;
 
@@ -13,11 +14,11 @@ use exacopy_journal::remote_download::{RemoteBootstrapTrust, RemoteDownloadError
 use exacopy_model::retained_prefix::Head;
 use exacopy_platform::linux::{
 	ActiveWitnessReservation, ContinuationReservationError, PendingWitnessReservation,
-	ReservedContinuationRequest, RetainedPrefixRead, SyncedRetainedPrefix, WitnessReservationError,
-	WitnessReservationPlan,
+	ReservedContinuationRequest, SyncedRetainedPrefix, WitnessReservationAuthority,
+	WitnessReservationError, WitnessReservationPlan,
 };
 use exacopy_transfer::remote_capture::CapturedReadAt;
-use exacopy_transfer::remote_resume::prefix::LentRetainedSuffix;
+use exacopy_transfer::remote_resume::prefix::{LentRetainedSuffix, VerifiedRetainedPrefix};
 
 #[derive(Debug)]
 pub(super) enum AdmissionError<E> {
@@ -39,23 +40,51 @@ pub(super) struct Kind40Admission<'context, 'names> {
 impl Kind40Admission<'_, '_> {
 	pub(super) fn commit<'lease, R: CapturedReadAt, G, E>(
 		&self,
-		live: &LentRetainedSuffix<'_, '_, R, RetainedPrefixRead<'lease>>,
+		live: &LentRetainedSuffix<'_, '_, R, WitnessPrefix<'lease>>,
 		reservation: PendingWitnessReservation<'lease>,
 		prefix: &SyncedRetainedPrefix<'_, '_>,
 		enter: impl FnOnce(ReservedContinuationRequest<'_>) -> Result<G, E>,
 	) -> Result<ActiveWitnessReservation<'lease>, AdmissionError<E>> {
 		let proof = live.initial_prefix().ok_or(AdmissionError::Binding)?;
+		if !prefix.matches_reader(live.reader().native()) {
+			return Err(AdmissionError::Binding);
+		}
+		let (encoded, successor) =
+			self.preview(proof, reservation.authority(), reservation.plan())?;
+		reservation
+			.append_continuation(
+				prefix,
+				model_head(successor),
+				&encoded,
+				|old| {
+					confirm_selected(
+						old.chain(Cursor::new(encoded.as_slice())),
+						self.trust,
+						self.selection,
+						successor,
+					)
+				},
+				|request| enter(request).map_err(AdmissionError::Gate),
+				|actual| confirm_selected(actual, self.trust, self.selection, successor),
+			)
+			.map_err(|cause| AdmissionError::Native(Box::new(cause)))
+	}
+
+	pub(super) fn preview<R: CapturedReadAt, E>(
+		&self,
+		proof: &VerifiedRetainedPrefix<'_, R>,
+		authority: WitnessReservationAuthority,
+		plan: WitnessReservationPlan,
+	) -> Result<(Vec<u8>, RemoteReplayBoundary), AdmissionError<E>> {
 		let claims = self.expected.claims;
-		let authority = reservation.authority();
-		if !prefix.matches_reader(live.reader())
-			|| claims.context != proof.context()
+		if claims.context != proof.context()
 			|| claims.scope != proof.scope()
 			|| claims.previous != proof.boundary()
 			|| self.budget.boundary() != claims.previous
 			|| self.budget.retained_end() != claims.adopted_end
 			|| self.budget.fresh_source_length() != claims.source.length()
 			|| u64::from(self.budget.new_run().get()) != claims.epochs.run.get()
-			|| reservation_plan(self.budget).ok() != Some(reservation.plan())
+			|| reservation_plan(self.budget).ok() != Some(plan)
 			|| claims.prior.prepared != proof.stage().head
 			|| claims.prior.active != proof.active_preparation()
 			|| claims.prior.epochs != proof.previous_epochs()
@@ -87,24 +116,7 @@ impl Kind40Admission<'_, '_> {
 			.ok()
 			.and_then(|size| claims.previous.offset.checked_add(size))
 			.ok_or(AdmissionError::Binding)?;
-		let successor = RemoteReplayBoundary { head, offset };
-		reservation
-			.append_continuation(
-				prefix,
-				model_head(successor),
-				&encoded,
-				|old| {
-					confirm_selected(
-						old.chain(Cursor::new(encoded.as_slice())),
-						self.trust,
-						self.selection,
-						successor,
-					)
-				},
-				|request| enter(request).map_err(AdmissionError::Gate),
-				|actual| confirm_selected(actual, self.trust, self.selection, successor),
-			)
-			.map_err(|cause| AdmissionError::Native(Box::new(cause)))
+		Ok((encoded, RemoteReplayBoundary { head, offset }))
 	}
 }
 

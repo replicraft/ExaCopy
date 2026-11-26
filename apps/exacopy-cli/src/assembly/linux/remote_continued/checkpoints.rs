@@ -1,3 +1,4 @@
+use super::prefix::WitnessPrefix;
 use std::convert::Infallible;
 use std::io::{Cursor, Read as _};
 use std::num::{NonZeroU16, NonZeroU64};
@@ -26,8 +27,8 @@ use exacopy_model::retained_prefix::{
 };
 use exacopy_platform::linux::{
 	ActiveWitnessReservation, ContinuationReservationError, ReservedContinuationRequest,
-	RetainedPrefixRead, RetainedPrefixSelection, RetainedSuffixWriter, StageError, SuffixEffect,
-	SuffixError, WitnessReservationObservationError,
+	RetainedPrefixSelection, RetainedSuffixWriter, StageError, SuffixEffect, SuffixError,
+	WitnessReservationObservationError,
 };
 use exacopy_transfer::remote_capture::CapturedReadAt;
 use exacopy_transfer::remote_resume::prefix::{LentRetainedSuffix, PrefixVerificationError};
@@ -67,8 +68,7 @@ pub(super) struct CheckedRange<'context, 'writer, 'view, 'lease, 'held, 'source,
 	pub(super) state: &'context mut Continuation,
 	pub(super) journal: &'context mut ActiveWitnessReservation<'lease>,
 	pub(super) writer: &'writer mut RetainedSuffixWriter<'view, 'lease>,
-	pub(super) source:
-		&'context mut LentRetainedSuffix<'held, 'source, R, RetainedPrefixRead<'lease>>,
+	pub(super) source: &'context mut LentRetainedSuffix<'held, 'source, R, WitnessPrefix<'lease>>,
 	pub(super) scratch: &'context mut [u8],
 }
 
@@ -143,7 +143,7 @@ impl CheckpointPass<'_> {
 		let model_pass = state.basis().pass();
 		if self.epochs.run != model_pass.run
 			|| self.epochs.source != model_pass.source
-			|| !writer.matches_reader(source.reader())
+			|| !writer.matches_reader(source.reader().native())
 			|| live.head != journal.head()
 			|| scratch.is_empty()
 		{

@@ -99,6 +99,7 @@ fn actual_signed_kind40_must_form_the_exact_clean_successor() {
 		vector!("remote_continuation/witnessed_replay.hex"),
 		"published",
 	);
+	check_exact_live_witness_vector(&full, &trust, &selection);
 	let mut cursor = FrameReader::new(full.as_slice(), ChainHead::start());
 	let mut previous = 0;
 	let mut previous_head = ChainHead::start();
@@ -267,4 +268,55 @@ fn planned_checkpoint_refuses_a_displaced_or_stopped_source_cursor() {
 	);
 	assert!(checkpoint_range_at(plan, first, adopted, Some(adopted + 1)).is_none());
 	assert!(checkpoint_range_at(plan, first, adopted, None).is_none());
+}
+fn check_exact_live_witness_vector(
+	full: &[u8],
+	trust: &RemoteBootstrapTrust<'_>,
+	selection: &RemoteWitnessedReplaySelection<'_>,
+) {
+	use super::witness::confirm_intent;
+	use exacopy_journal::remote_download::witness::RemoteWitnessIntentExpectation;
+
+	let mut framed = FrameReader::new(full, ChainHead::start());
+	let (prior, end, frame) = loop {
+		let before = framed.offset() as usize;
+		let frame = framed.next_frame().unwrap().unwrap();
+		if frame.kind() == FrameKind::RemoteWitnessIntent {
+			break (before, framed.offset() as usize, frame);
+		}
+	};
+	let complete = replay_remote_witnessed_closeout(&full[..end], trust, selection).unwrap();
+	let recorded = complete.witness().unwrap();
+	assert_eq!(
+		confirm_intent(&complete, recorded).unwrap(),
+		recorded.witness_name()
+	);
+	let prior = replay_remote_witnessed_closeout(&full[..prior], trust, selection).unwrap();
+	assert!(confirm_intent(&prior, recorded).is_err());
+	let coverage = prior.complete_coverage_predecessor().unwrap();
+	let expected = RemoteWitnessIntentExpectation {
+		coverage,
+		qualification: selection.qualification,
+		stage_directory: prior.active_prefix_history().unwrap().prepared().directory,
+		job_directory: recorded.job_directory(),
+		consent: recorded.consent(),
+	};
+	let signed = trust
+		.sign_witness_intent(&expected, &SigningKey::from_bytes(&[0x52; 32]))
+		.unwrap();
+	assert_eq!(signed, frame.payload());
+	assert!(
+		confirm_intent(
+			&replay_remote_witnessed_closeout(&full[..end - 1], trust, selection).unwrap(),
+			recorded
+		)
+		.is_err()
+	);
+	assert!(
+		confirm_intent(
+			&replay_remote_witnessed_closeout(full, trust, selection).unwrap(),
+			recorded
+		)
+		.is_err()
+	);
 }
