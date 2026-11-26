@@ -32,6 +32,28 @@ disposable fixture; its SHA-256 commitment is retained. This used synthetic
 fixture authority. Embedded WireGuard, efficient prefix reuse, production
 destination qualification and power-loss behavior remain separate.
 
+The later [`caa573b` campaign](https://github.com/replicraft/ExaCopy/actions/runs/45871973178)
+failed its budget-case attendance check: two sessions opened, held a READ,
+and closed; the required third session never opened. All six authenticated
+sessions across the preceding cases closed, and fixture cleanup completed.
+That artifact did not export the budget invocation's terminal result or
+elapsed time, so it does not establish why the third admission was absent.
+The [`06212a3` campaign](https://github.com/replicraft/ExaCopy/actions/runs/45872972256)
+then passed all five cases with the identical staged executable SHA-256
+`9312340bf3d2a1ead3724fb3207a6cd6685983cda0854c439733af94cb642d37`.
+Its three-session budget case stopped after 52.006 seconds with an
+authorization refusal and no publication. The failed observation remains
+unresolved; the passing repetition does not replace it. Subsequent fixture
+diagnostics retain bounded terminal status before the unchanged attendance
+and closure assertions.
+
+The [`3861acc` campaign](https://github.com/replicraft/ExaCopy/actions/runs/45873691243)
+passed all five cases with those diagnostics. Independent review verified
+all five bounded terminal records and their hashes alongside the seven
+peer transcripts. The budget invocation reported `E_AUTHORIZATION`, no
+publication and 52.006 seconds, with all three held sessions closed.
+Fixture removal and process-group drainage were confirmed.
+
 ## Independent kernel WireGuard campaign
 
 The commissioning harness can run the unchanged embedded BoringTun CLI

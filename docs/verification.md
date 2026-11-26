@@ -33,6 +33,14 @@ selectors in their workspace packages. Workspace validation checks the
 declarations and their source paths. Native results require the
 corresponding execution and retained evidence.
 
+The [`3861acc` hosted sync run](https://github.com/replicraft/ExaCopy/actions/runs/45873691370)
+passed all 12 command cases, nine platform cases and one transfer case on
+its owned Linux x64 tmpfs fixture. Independent review matched the source,
+lockfile, fixture inventory and retained digests, confirmed unchanged input
+trees, and verified removal of the fixture and private build. This is
+single-subject, no-history preview evidence. Ext4 casefold, persistent
+baselines and sync mutation remain outside that result.
+
 Keep proofs, extraction, models, harnesses and obligation ownership in
 `<crate>/verification/`. Root tooling [captures](../tools/record_evidence.py)
 and validates scoped results. Preserve the original log and minimized

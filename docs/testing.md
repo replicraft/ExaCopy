@@ -172,6 +172,21 @@ verified fixture cleanup. See the
 [private staging contract](architecture/windows-private-staging.md) for the
 caller assumptions and implemented boundary.
 
+The [`c801745` hosted Stage run](https://github.com/replicraft/ExaCopy/actions/runs/45872475625)
+passed on Windows Server 2025 x64 and its fixed local NTFS volume. Independent
+artifact review verified five stage cases, five capture cases, three portable
+contracts, and all three optional symlink cases. The competing DELETE open
+returned a sharing violation, the protected ACL was unchanged, and cleanup
+deleted the original identified fixture. Earlier source-cleanup and ancestor
+admission failures remain retained; they occurred before these native cases.
+
+This hosted Stage profile admits the Windows Modules Installer owner only
+at the held system-volume root, corroborated by the native system directory
+and exact canonical main workflow. Other ancestors and competing-change ACEs
+retain their ordinary checks. The product installer has no such exception.
+This result does not qualify the separate Read or Diff modes, an ordinary
+user token, another NTFS volume, UNC, full copy recovery or power loss.
+
 The candidate starts with a directory handle supplied by the synthetic
 fixture. It checks the NTFS volume and parent, searches for the exact counted
 UTF-16 name, opens the observed file ID read-only, and checks identity and
