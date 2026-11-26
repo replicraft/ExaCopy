@@ -1,6 +1,6 @@
 # Bounded Linux mount attributes for managed synchronization
 
-**Status** Accepted; implementation is experimental and native qualification is pending.
+**Status** Accepted; implementation is experimental. Native evidence is scoped below.
 
 **Source basis** ExaCopy `802247da38aa59d4a5f24b64e5e2d1972e0c3fe2`
 
@@ -31,3 +31,18 @@ Linux 6.8 is the upstream minimum for the selected positive ID-based ABI. A rele
 The implementation lane owns ABI layout and typed refusal controls, including absent returned mask, short extent, wrong IDs, IDMAP present, unsupported syscall or architecture, permission error and a changed held namespace. The crate-owned native fixture must independently select real whole ext4 and capture source, kernel, architecture, boot, mount and namespace identities for an exact unprivileged run with no live capabilities. It must observe a valid positive BASIC and clear IDMAP result on that actual held mount. Any separate ID-mapped negative that needs setup privilege requires its own authorized fixture and cannot supply the ordinary observer's positive qualification. The prior whole-ext4 location/member run remains historical. The FFI uses no public CLI path or phase-one application policy wiring. Independent owner selection, cooperative lease, authentication and classification require their own integration evidence before any managed command is enabled. No mutation, recovery or durability guarantee follows from this check.
 
 ABI, refusal and ownership checks accompany the implementation. Cross-compilation and portable controls do not qualify a native mount. The separate unprivileged hosted fixture must pass before its observations can support managed admission. Owner selection and the cooperative lease remain separate requirements.
+
+## Native observation
+
+At `f12908a`, the exact feature-bound integration case passed on Linux x64,
+kernel `7.0.0-1020-azure`, whole ext4, as UID 1001. It observed clear ID mapping
+and matched the held ordinary and unique mount IDs, boot and namespaces before
+and after the query. The runner checked the selected Cargo target, singleton
+feature, manifest and held executable digest. One case executed, none were
+ignored, and the fixture and private build cleanup were confirmed.
+[Native run](https://github.com/replicraft/ExaCopy/actions/runs/45910373914)
+
+This is a positive read-only mount observation. A real ID-mapped negative,
+other kernel profiles, cooperative writer admission and authenticated live
+preview remain separate gates. The observed mount used `nobarrier` and
+`data=writeback`; this result establishes no publication or durability claim.
