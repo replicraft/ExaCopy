@@ -72,6 +72,57 @@ fn a_failed_file_barrier_permanently_revokes_the_stage() {
 	}
 }
 
+#[test]
+fn a_prefix_barrier_requires_matching_lengths_and_preserves_a_failed_writeback() {
+	let fixture = Scratch::new();
+	let root = DestinationRoot::from_directory(fixture.open()).unwrap();
+	let directory = root.create_stage_directory(component("prefix")).unwrap();
+	let job =
+		JobId::try_from_bytes([0, 0, 0, 0, 0, 0, 0x70, 0, 0x80, 0, 0, 0, 0, 0, 0, 1]).unwrap();
+	let binding = CopyBinding::new(
+		job,
+		EntryId::new(1),
+		RunEpoch::new(1),
+		StageId::from_bytes([1; 16]),
+	);
+	let mut stage = directory
+		.create_file(component("part"), component("target"), binding)
+		.unwrap();
+	assert_eq!(stage.sync_prefix(0).unwrap(), stage.identity());
+	stage.write_all_at(0, b"prefix").unwrap();
+	let mut sync_called = false;
+	assert!(matches!(
+		stage.sync_prefix_with(2, |_| {
+			sync_called = true;
+			Ok(())
+		}),
+		Err(StageError::IdentityChanged)
+	));
+	assert!(!sync_called);
+	assert_eq!(stage.sync_prefix(6).unwrap(), stage.identity());
+
+	assert!(matches!(
+		stage.sync_prefix_with(6, |_| Err(Errno::IO)),
+		Err(StageError::BarrierFailed(_))
+	));
+	assert!(matches!(
+		stage.observe_prefix(6),
+		Err(StageError::PriorBarrierFailure)
+	));
+	assert!(matches!(
+		stage.sync_prefix(6),
+		Err(StageError::PriorBarrierFailure)
+	));
+	assert!(matches!(
+		stage.close_writes(),
+		Err(StageError::PriorBarrierFailure)
+	));
+	assert_eq!(
+		fs::read(fixture.path("prefix").join("part")).unwrap(),
+		b"prefix"
+	);
+}
+
 fn component(name: &str) -> UnixComponent<'_> {
 	UnixComponent::new(name.as_bytes()).expect("valid fixture component")
 }
