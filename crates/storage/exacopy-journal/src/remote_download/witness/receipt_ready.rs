@@ -1,7 +1,9 @@
-use crate::LinuxFileIdentity;
+use std::num::NonZeroU64;
+
 use crate::frame::{ChainHead, Frame, FrameKind};
 use crate::remote_download::replay::RemoteReplayBoundary;
 use crate::remote_download::wire::{write_head, write_identity};
+use crate::{JournalEntryId, LinuxFileIdentity};
 
 use super::wire::{CONFIRMED, common, encoder, finish, hex};
 use super::{
@@ -184,13 +186,28 @@ fn validate(expected: &ReceiptReadyExpectation<'_>) -> Result<(), Error> {
 pub(super) fn names(
 	witness: RemoteWitnessIntent,
 ) -> ([u8; PENDING_NAME_BYTES], [u8; FINAL_NAME_BYTES]) {
+	witnessed_receipt_names(
+		witness.binding.context.entry,
+		witness.binding.epochs.run,
+		witness.nonce,
+	)
+}
+
+/// Derives the canonical pending and final selector-2 receipt basenames.
+///
+/// The entry and run select the continued pass. The nonce comes from its
+/// original allocation. This projection confers no authority to inspect or
+/// change either name.
+#[must_use]
+pub fn witnessed_receipt_names(
+	entry: JournalEntryId,
+	run: NonZeroU64,
+	nonce: [u8; 16],
+) -> ([u8; PENDING_NAME_BYTES], [u8; FINAL_NAME_BYTES]) {
 	let mut suffix = [b'.'; SUFFIX_BYTES];
-	hex(&mut suffix[..32], witness.binding.context.entry.as_bytes());
-	hex(
-		&mut suffix[33..49],
-		&witness.binding.epochs.run.get().to_be_bytes(),
-	);
-	hex(&mut suffix[50..], &witness.nonce);
+	hex(&mut suffix[..32], entry.as_bytes());
+	hex(&mut suffix[33..49], &run.get().to_be_bytes());
+	hex(&mut suffix[50..], &nonce);
 	let mut pending = [0; PENDING_NAME_BYTES];
 	let (prefix, bytes) = pending.split_at_mut(PENDING_PREFIX.len());
 	prefix.copy_from_slice(PENDING_PREFIX);

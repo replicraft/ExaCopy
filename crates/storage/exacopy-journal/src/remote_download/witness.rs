@@ -31,6 +31,7 @@ mod wire;
 
 pub use receipt_ready::{
 	MAX_REMOTE_WITNESS_RECEIPT_BYTES, ReceiptReadyExpectation, RemoteReceiptReady,
+	witnessed_receipt_names,
 };
 
 /// Exact maximum of canonical kind 41, including its signed envelope.

@@ -271,6 +271,27 @@ fn signed_foreign_payloads_and_early_or_mismatched_authority_refuse() {
 }
 
 #[test]
+fn receipt_names_preserve_exact_entry_run_and_allocation_nonce() {
+	let entry = exacopy_journal::JournalEntryId::from_bytes([
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+	]);
+	let run = NonZeroU64::new(0x0123_4567_89ab_cdef).unwrap();
+	let nonce = [
+		0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x99, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0,
+	];
+	let (pending, final_name) =
+		exacopy_journal::remote_download::witness::witnessed_receipt_names(entry, run, nonce);
+	assert_eq!(
+		&pending,
+		b"rw-receipt.pending.000102030405060708090a0b0c0d0e0f.0123456789abcdef.ffeeddccbbaa99887766554433221100",
+	);
+	assert_eq!(
+		&final_name,
+		b"rw-receipt.final.000102030405060708090a0b0c0d0e0f.0123456789abcdef.ffeeddccbbaa99887766554433221100",
+	);
+}
+
+#[test]
 fn receipt_ready_matches_canonical_artifact_and_exact_allocated_inode() {
 	let run = Transcript::read(false);
 	let expected = run.receipt();
