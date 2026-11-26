@@ -80,6 +80,23 @@ records. These runs do not sign a qualification or alter the release matrix.
 | `unsigned-request` | The approved native deployment supplies an empty owned destination which persists across review and execution. The producer records the exact root, boot, kernel and mount, and the build digest in the CLI's BLAKE3 domain. The destination-only fixture exercises disposable descendants, then repeats the exact observations. An assembled unsigned request remains incomplete and deliberately exits 77. The fixture's modeled permit supplies no application or route qualification. |
 | `qualified-cli` | The approved deployment supplies an independently reviewed signed destination qualification and separate, locally protected trust policy for the selected route and running build. The compiled command drives a dedicated independent OpenSSH fixture over direct TCP or an independent WireGuard peer. The harness retains refusal, publication and interruption evidence, exact byte and receipt checks, and any failing outcomes. |
 
+Ordinary push CI on `main` runs the same hosted diagnostic on Ubuntu 24.04.
+It uses the committed source and locked dependencies. It needs no protected
+deployment, secrets, signing key or attestation. Both entry points retain
+the native result and propagate its status. An unsupported host is a blocked
+diagnostic and leaves the check failing. The diagnostic claims only observed
+destination eligibility and the destination-only process-kill cuts that
+executed.
+
+The launcher retains logs and structured diagnostics even on failure. It
+records its private fixture parent before creating the temporary
+destination. Cleanup removes the original directory only after the
+wrapper's build target is gone and the directory is confirmed empty.
+Interruption or unconfirmed cleanup preserves the marker and any held
+fixture on the runner. CI attempts to upload the marker and diagnostic
+logs when the runner can still execute the upload step. The build target
+and fixture contents are outside the upload paths.
+
 Configure the runner group `exacopy-remote-qualification` to admit only
 this workflow on protected `main` before registering a runner with access
 to private profiles. Restrict the corresponding environments

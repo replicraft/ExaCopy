@@ -160,6 +160,40 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  hosted-remote-substrate:
+    name: Hosted Linux destination diagnostics (unsigned)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 85
+    env:
+      EXPECTED_RUST_HOST: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify exact clean checkout
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA" && test -z "$(git status --porcelain)"
+      - name: Prepare pinned source and tools
+        run: |
+          bash .github/ci/capture.sh apfs-source python3 -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source python3 -B tools/transport_source.py --fetch
+          bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
+          bash .github/ci/capture.sh locked-fetch cargo +1.100.0 fetch --locked
+      - name: Probe native eligibility and collect kill diagnostics
+        run: bash .github/ci/hosted_remote_substrate.sh
+      - name: Retain hosted diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: exacopy-linux-remote-push-substrate-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-evidence/
+            ${{ runner.temp }}/exacopy-hosted-native-remote/diagnostic/
+            ${{ runner.temp }}/exacopy-hosted-native-remote/cleanup-unconfirmed.txt
+          if-no-files-found: error
+          retention-days: 90
+
   policy:
     name: Engineering policy
     runs-on: ubuntu-24.04

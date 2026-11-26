@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import signal
 import subprocess
 import sys
@@ -437,6 +438,183 @@ print(child.pid, flush=True)
             with self.assertRaisesRegex(ValueError, "input bound"):
                 substrate.read_markers(log)
 
+
+
+class HostedLauncherControls(unittest.TestCase):
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory(prefix="exacopy-hosted-control-")
+        self.addCleanup(scratch.cleanup)
+        self.root = Path(scratch.name).resolve()
+        self.runner = self.root / "runner-temp"
+        self.runner.mkdir()
+        self.evidence = self.runner / "exacopy-hosted-native-remote"
+        self.marker = self.evidence / "cleanup-unconfirmed.txt"
+        capture = self.root / ".github" / "ci" / "capture.sh"
+        capture.parent.mkdir(parents=True)
+        capture.write_text("""#!/usr/bin/env bash
+set -euo pipefail
+marker="$RUNNER_TEMP/exacopy-hosted-native-remote/cleanup-unconfirmed.txt"
+test -s "$marker"
+case "$1" in
+  hosted-fixture-filesystem)
+    test "$2" = findmnt && test "$3" = -T
+    if [[ "$OUTCOME" == filesystem-failed ]]; then exit 1; fi
+    ;;
+  native-hosted)
+    shift
+    test "$#" = 10
+    test "$1" = python3 && test "$2" = -B && test "$3" = .github/ci/remote_qualification.py
+    test "$4" = hosted && test "$5" = --route && test "$6" = direct-pinned-tcp-v1
+    test "$7" = --destination && test "$9" = --evidence
+    test "${10}" = "$RUNNER_TEMP/exacopy-hosted-native-remote/diagnostic"
+    work="$8"
+    test -d "$work"
+    printf '%s\n' "$work" > "$RUNNER_TEMP/fixture-argument"
+    mkdir -- "${10}"
+    printf 'synthetic wrapper evidence\n' > "${10}/result.txt"
+    case "$OUTCOME" in
+      pass) exit 0 ;;
+      failed) exit 1 ;;
+      blocked) exit 77 ;;
+      retained-build)
+        mkdir -- "$RUNNER_TEMP/exacopy-hosted-native-remote/exacopy-remote-build-target"
+        exit 77 ;;
+      retained-child)
+        touch -- "$work/child"
+        exit 0 ;;
+      replaced-fixture)
+        mv -- "$work" "$work.original"
+        mkdir -- "$work"
+        exit 0 ;;
+      interrupted)
+        kill -TERM "$PPID"
+        exit 0 ;;
+      *) exit 2 ;;
+    esac
+    ;;
+  *) exit 2 ;;
+esac
+""")
+
+    def launch(self, outcome):
+        return subprocess.run(
+            ["bash", str(ROOT / ".github" / "ci" / "hosted_remote_substrate.sh")],
+            cwd=self.root,
+            env=dict(os.environ, RUNNER_TEMP=os.fspath(self.runner), OUTCOME=outcome),
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+
+    def owned_path(self):
+        return Path((self.runner / "fixture-argument").read_text().strip())
+
+    def test_confirmed_cleanup_preserves_native_exit_and_evidence(self):
+        for outcome, expected in (("pass", 0), ("failed", 1), ("blocked", 77)):
+            with self.subTest(outcome=outcome):
+                if self.evidence.exists():
+                    self.evidence.rename(self.runner / f"retained-{outcome}")
+                result = self.launch(outcome)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                self.assertFalse(self.owned_path().exists())
+                self.assertFalse(self.marker.exists())
+                self.assertTrue((self.evidence / "diagnostic" / "result.txt").is_file())
+
+    def test_filesystem_probe_failure_cleans_without_starting_wrapper(self):
+        result = self.launch("filesystem-failed")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertFalse((self.runner / "fixture-argument").exists())
+        self.assertFalse(list(self.evidence.glob("fixture.*")))
+        self.assertFalse(self.marker.exists())
+
+    def test_retained_build_defers_even_empty_fixture_cleanup(self):
+        result = self.launch("retained-build")
+        self.assertEqual(result.returncode, 77, result.stderr)
+        self.assertTrue(self.owned_path().is_dir())
+        self.assertTrue((self.evidence / "exacopy-remote-build-target").is_dir())
+        self.assertIn("cleanup=unconfirmed", self.marker.read_text())
+
+    def test_nonempty_or_rebound_fixture_is_never_removed(self):
+        for outcome in ("retained-child", "replaced-fixture"):
+            with self.subTest(outcome=outcome):
+                if self.evidence.exists():
+                    self.evidence.rename(self.runner / f"retained-{outcome}")
+                result = self.launch(outcome)
+                self.assertEqual(result.returncode, 77, result.stderr)
+                self.assertTrue(self.marker.exists())
+                work = self.owned_path()
+                self.assertTrue(work.is_dir())
+                if outcome == "retained-child":
+                    self.assertTrue((work / "child").is_file())
+                else:
+                    self.assertTrue(Path(f"{work}.original").is_dir())
+
+    def test_interruption_retains_empty_fixture_without_build_target(self):
+        result = self.launch("interrupted")
+        self.assertEqual(result.returncode, 143, result.stderr)
+        self.assertTrue(self.marker.exists())
+        self.assertTrue(self.owned_path().is_dir())
+        self.assertFalse((self.evidence / "exacopy-remote-build-target").exists())
+
+    def test_preamble_interruption_preserves_fixture_before_assignment(self):
+        tools = self.root / "interposed-tools"
+        tools.mkdir()
+        mktemp = tools / "mktemp"
+        mktemp.write_text("""#!/usr/bin/env bash
+set -euo pipefail
+test -s "$RUNNER_TEMP/exacopy-hosted-native-remote/cleanup-unconfirmed.txt"
+work=$("$ACTUAL_MKTEMP" "$@")
+printf '%s\n' "$work" > "$RUNNER_TEMP/preamble-fixture"
+for ((attempt=0; attempt<300; attempt++)); do
+  if [[ -e "$RUNNER_TEMP/release-preamble" ]]; then
+    printf '%s\n' "$work"
+    exit 0
+  fi
+  sleep 0.01
+done
+exit 1
+""")
+        mktemp.chmod(0o700)
+        observed = self.runner / "preamble-fixture"
+        release = self.runner / "release-preamble"
+        with subprocess.Popen(
+            ["bash", str(ROOT / ".github" / "ci" / "hosted_remote_substrate.sh")],
+            cwd=self.root,
+            env=dict(
+                os.environ, RUNNER_TEMP=os.fspath(self.runner), OUTCOME="pass",
+                PATH=os.pathsep.join((os.fspath(tools), os.environ["PATH"])),
+                ACTUAL_MKTEMP=shutil.which("mktemp"),
+            ),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        ) as process:
+            try:
+                deadline = time.monotonic() + 2
+                while not observed.exists() and process.poll() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(observed.is_file())
+                process.send_signal(signal.SIGTERM)
+                release.touch()
+                _, stderr = process.communicate(timeout=5)
+                self.assertEqual(process.returncode, 143, stderr)
+            finally:
+                release.touch()
+                if process.poll() is None:
+                    process.kill()
+                process.communicate(timeout=5)
+        work = Path(observed.read_text().strip())
+        self.assertEqual(work.parent, self.evidence)
+        self.assertTrue(work.is_dir())
+        retained = self.marker.read_text()
+        self.assertIn(f"fixture_parent={self.evidence}", retained)
+        self.assertNotIn("\nfixture=", retained)
+        self.assertFalse((self.runner / "fixture-argument").exists())
+        self.assertFalse((self.evidence / "exacopy-remote-build-target").exists())
+
+    def test_existing_evidence_root_is_refused_without_removing_its_contents(self):
+        self.evidence.mkdir()
+        self.marker.write_text("incumbent cleanup marker")
+        result = self.launch("pass")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.runner / "fixture-argument").exists())
+        self.assertEqual(self.marker.read_text(), "incumbent cleanup marker")
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

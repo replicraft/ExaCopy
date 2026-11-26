@@ -70,13 +70,7 @@ jobs:
           bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
           bash .github/ci/capture.sh locked-fetch cargo +1.100.0 fetch --locked
       - name: Probe native eligibility and collect kill diagnostics
-        run: |
-          work=$(mktemp -d "$(realpath "$RUNNER_TEMP")/exacopy-remote-substrate.XXXXXX")
-          trap 'rmdir -- "$work"' EXIT
-          bash .github/ci/capture.sh hosted-fixture-filesystem findmnt -T "$work" -o FSTYPE,FSROOT,OPTIONS
-          bash .github/ci/capture.sh native-hosted python3 -B .github/ci/remote_qualification.py hosted \
-            --route direct-pinned-tcp-v1 --destination "$work" \
-            --evidence "$RUNNER_TEMP/exacopy-hosted-native-remote"
+        run: bash .github/ci/hosted_remote_substrate.sh
       - name: Retain hosted diagnostic evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -84,7 +78,8 @@ jobs:
           name: exacopy-linux-remote-hosted-substrate-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/exacopy-evidence/
-            ${{ runner.temp }}/exacopy-hosted-native-remote/
+            ${{ runner.temp }}/exacopy-hosted-native-remote/diagnostic/
+            ${{ runner.temp }}/exacopy-hosted-native-remote/cleanup-unconfirmed.txt
           if-no-files-found: error
           retention-days: 90
 
