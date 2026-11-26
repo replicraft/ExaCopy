@@ -40,6 +40,33 @@ file verification to the Linux integration tests.
 The canonical Plan body lane also exercises opaque extension admission,
 including its 1 MiB body limit and a generated oversized input.
 
+## Optional compiler cache
+
+With sccache 0.18.0 installed, opt in to local development compilation from
+the workspace root on macOS or Linux.
+
+```sh
+python3 -B tools/development/sccache.py -- build --locked --workspace
+python3 -B tools/development/sccache.py -- check --locked -p exacopy-cli
+```
+
+Use `--binary /absolute/path/to/sccache` when the executable is outside
+`PATH`. Each invocation owns a private Unix socket and server. The wrapper
+uses a 1 GiB disk cache under `target/sccache/0.18.0`, excludes ambient
+sccache settings, and disables Cargo incremental compilation for that
+invocation. Only one session can open this cache at a time. sccache keys
+account for the compiler, target, flags and dependency inputs. The wrapper
+keeps normal path sensitivity. Cargo runs as the caller with its original
+features and inputs.
+
+In GitHub Actions, set repository variable `EXACOPY_SCCACHE=1` to opt the
+Linux x86-64 native compile step into the checksum-pinned cache tool. Its
+storage stays under the job's temporary directory. Native checks on the
+other runners use their existing compiler path. Test, lint, formal
+evidence and release commands run separately. A cache hit is a compile
+optimization and provides no verification result. Continue to run the
+checks documented above.
+
 ## Linux x86-64 cross-checks from macOS
 
 Use official Rust 1.100.0 with its `x86_64-unknown-linux-gnu` target standard

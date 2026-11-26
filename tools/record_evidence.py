@@ -94,7 +94,11 @@ def run_gate(command, gate, link, log, trace):
     clock = time.monotonic_ns()
     state_count = None
     with tempfile.TemporaryDirectory(prefix="exacopy-tlc-evidence-") as scratch:
-        environment = os.environ.copy()
+        environment = os.environ | {
+            "RUSTC_WRAPPER": "",
+            "RUSTC_WORKSPACE_WRAPPER": "",
+            "CARGO_INCREMENTAL": "0",
+        }
         if gate == "tlc":
             environment["TLC_LOG_DIR"] = scratch
         with log.open("xb") as output:

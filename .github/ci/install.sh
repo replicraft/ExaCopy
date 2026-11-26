@@ -19,6 +19,19 @@ case "$tool" in
 		fi
 		cargo +1.100.0 -V
 		;;
+	sccache)
+		if [[ ${RUNNER_OS:-} != Linux || ${RUNNER_ARCH:-} != X64 ]]; then
+			printf 'The pinned sccache CI compiler cache requires Linux x86_64\n' >&2
+			exit 1
+		fi
+		version=0.18.0
+		platform=x86_64-unknown-linux-musl
+		archive=sccache-v$version-$platform
+		fetch "https://github.com/mozilla/sccache/releases/download/v$version/$archive.tar.gz" \
+			45f1447fbe231e3037bde351ef70677dd212216c8d62ae7ca409fecc4d6acc89 "$asset"
+		tar -xzf "$asset" --strip-components=1 -C "$install_dir" "$archive/sccache"
+		"$install_dir/sccache" --version
+		;;
 	nextest)
 		executable=cargo-nextest
 		case "${RUNNER_OS:-}" in
