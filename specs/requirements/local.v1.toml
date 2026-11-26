@@ -1763,3 +1763,19 @@ level = "obligation"
 state = "defined"
 path = "crates/storage/exacopy-journal/verification/obligations.toml"
 target = "P-076"
+
+[[coverage]]
+id = "witnessed-complete-active-coverage-predecessor"
+status = "implemented"
+requirement_ids = ["R-253", "R-255"]
+acceptance_ids = ["A-253", "A-255"]
+invariant_ids = ["INV-018", "INV-019", "INV-024", "INV-032"]
+scope = "P-077 exposes the opaque terminal predecessor only for exact clean complete coverage of the active continued history."
+limits = "Historical coverage does not establish current byte equivalence, custody, authority, native witness creation or durability."
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "obligation"
+state = "defined"
+path = "crates/storage/exacopy-journal/verification/obligations.toml"
+target = "P-077"

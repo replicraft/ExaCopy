@@ -290,3 +290,15 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/remote_continuation/witnessed_replay.rs", test = "witness_closeout::witnessed_replay::receipt_basis_requires_exact_clean_phase_and_canonical_artifact", oracle = "Match submitted and recovered canonical receipt bytes and exact kind-42 encoding at clean kind-9 and kind-42 boundaries. Refuse all intervening byte cuts, later phases, wrong commitments, conflict, uncertainty and retirement; reject stage inode reuse without claiming physical receipt custody." }
+
+[[obligation]]
+id = "P-077"
+requirement_ids = ["R-253", "R-255"]
+source = "src/remote_download/witness/replay.rs"
+symbols = ["RemoteWitnessedCloseoutReplay::complete_coverage_predecessor"]
+assumptions = [
+    "The caller independently selects authenticated owner, qualification and grant archives and supplies the complete segment from its origin.",
+    "Historical complete coverage and canonical witness names confer no present byte equivalence, held stage custody, live consent, native effect or durability qualification.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_continuation/continued_coverage.rs", test = "witness_closeout::witnessed_replay::continued_coverage::mixed_coverage_predecessor_requires_exact_complete_active_history", oracle = "Match independent kind-41 bytes for zero-tail and multi-checkpoint coverage and exact current repeated continuation. Refuse incomplete coverage, stale predecessor, torn or uncertain history, and every other lifecycle phase." }

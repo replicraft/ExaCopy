@@ -5,7 +5,8 @@ use std::io::Read;
 use crate::frame::ChainHead;
 use crate::remote_download::checkpoints::{PrefixOwner, RemotePrefixHistory};
 use crate::remote_download::continuation::replay::{
-	ContinuedHistory, RemoteWitnessContinuationSelection, validate_witness_selection,
+	ContinuedHistory, RemoteWitnessContinuationSelection, RemoteWitnessCoveragePredecessor,
+	validate_witness_selection,
 };
 use crate::remote_download::finalization_replay::{FinalizationHistory, RemoteFinalizationPhase};
 use crate::remote_download::qualification::continuation::VerifiedRemoteWitnessQualification;
@@ -186,6 +187,24 @@ impl RemoteWitnessedCloseoutReplay {
 				.ready
 				.is_some_and(|ready| ready.receipt() == inode)
 			&& self.history.receipt.as_ref().map(receipt::Artifact::bytes) == Some(bytes)
+	}
+
+	/// Borrows the terminal coverage declaration at the clean active continued boundary.
+	///
+	/// Completeness covers the signed source extent in this replay. Current native EOF,
+	/// lease, stage identity, and live authorization require independent admission.
+	/// # Errors
+	/// Refuses incomplete signed coverage, any other phase, or any replay issue.
+	pub fn complete_coverage_predecessor(
+		&self,
+	) -> Result<RemoteWitnessCoveragePredecessor<'_>, Error> {
+		if self.issue().is_some() || self.phase() != RemoteWitnessedReplayPhase::ContinuedCapture {
+			return Err(Error::Binding);
+		}
+		self.continued
+			.active()
+			.ok_or(Error::Binding)?
+			.coverage_predecessor(self.boundary(), true)
 	}
 
 	/// Borrows all historical bytes declared covered in the active clean continued pass.

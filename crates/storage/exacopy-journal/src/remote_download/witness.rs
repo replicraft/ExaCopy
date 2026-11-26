@@ -183,6 +183,14 @@ impl RemoteWitnessIntent {
 		self.job_directory
 	}
 
+	/// Returns the exact witness basename committed by the authenticated record.
+	///
+	/// Current custody and permission to create or inspect the name are separate.
+	#[must_use]
+	pub fn witness_name(self) -> [u8; 40] {
+		wire::witness_name(self.nonce)
+	}
+
 	/// Returns the consent committed by the signed record.
 	#[must_use]
 	pub const fn consent(self) -> WitnessRetentionCommitment {

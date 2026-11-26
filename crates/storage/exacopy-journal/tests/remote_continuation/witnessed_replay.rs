@@ -13,6 +13,9 @@ use exacopy_journal::remote_download::witness::replay::{
 
 use super::*;
 
+#[path = "continued_coverage.rs"]
+mod continued_coverage;
+
 const FRESH: [u8; 32] = [0x85; 32];
 
 fn recorded(label: &str) -> Vec<u8> {
