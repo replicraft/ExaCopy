@@ -11,6 +11,8 @@ slices can proceed together. The [CLI guide](../apps/exacopy-cli/README.md)
 and platform work packages describe implemented behavior and evidence.
 The [remote transfer readiness record](engineering/remote-transfer-readiness.md)
 separates integrated components from the remaining complete-operation gates.
+The [managed APFS metadata handoff](engineering/proposed-apfs-metadata-and-birth-handoff.md)
+records the native copy and restart blockers and the work owned by each repository.
 
 | Order | Milestone | Acceptance dependency |
 | --- | --- | --- |
