@@ -1,0 +1,80 @@
+# Semantic Cargo manifest SHA-256 values approved for the default registry profile.
+# Reassess omitted options, feature links and dependencies before refreshing a value.
+workspace_sha256 = "5497fbedda768bd559440acab2b54c30fca9755d80935feec95eb4797885f10d"
+
+[[packages]]
+name = "exacopy-core"
+source_name = "exacopy-core"
+path = "crates/foundation/exacopy-core"
+description = "Shared bounded primitives for ExaCopy"
+manifest_sha256 = "9acf8bfe30409a106626245a4bc1284155c57dbd24661e6885f496d2675b196a"
+
+[[packages]]
+name = "exacopy-model"
+source_name = "exacopy-model"
+path = "crates/foundation/exacopy-model"
+description = "Executable preservation and publication decisions for ExaCopy"
+manifest_sha256 = "f336cff7c7f4bb2c1027c78413bdba4fd18fa9b1f0c88f241b3c14d24688e955"
+
+[[packages]]
+name = "exacopy-manifest"
+source_name = "exacopy-manifest"
+path = "crates/formats/exacopy-manifest"
+description = "Content manifest format for ExaCopy"
+manifest_sha256 = "34d6be9f4179e80e24464f886ce16175d2d4bdfa0e6a4677ef8aad889f53c5f3"
+
+[[packages]]
+name = "exacopy-plan"
+source_name = "exacopy-plan"
+path = "crates/formats/exacopy-plan"
+description = "Plan formats and canonical encoding for ExaCopy"
+manifest_sha256 = "67f082dcf95e3ad4c83694bf82b66634b4b10895e6b755a876fbe19c26f1d11a"
+
+[[packages]]
+name = "exacopy-endpoint"
+source_name = "exacopy-endpoint"
+path = "crates/interfaces/exacopy-endpoint"
+description = "Typed endpoint capabilities for ExaCopy"
+manifest_sha256 = "92525cf0eeafb6f4dfa3bff2f4c39e953ab5d6ad31570cb0107683fd082b0ee6"
+
+[[packages]]
+name = "exacopy-diff"
+source_name = "exacopy-diff"
+path = "crates/engines/exacopy-diff"
+description = "Exact byte comparison engine for ExaCopy"
+manifest_sha256 = "f64b2ce3d890c548be7de66f0958e9f05873f22cab73d934eb0c6c9c2456056e"
+
+[[packages]]
+name = "exacopy-platform"
+source_name = "exacopy-platform"
+path = "crates/platform/exacopy-platform"
+description = "Native endpoint implementations for ExaCopy"
+manifest_sha256 = "d9c9ad609bbadaa3355e3df7cbe861b7b63ab66786dba396c554f4da7f9882c0"
+
+[[packages]]
+name = "exacopy-content"
+source_name = "exacopy-content"
+path = "crates/storage/exacopy-content"
+description = "Content integrity and bounded streaming for ExaCopy"
+manifest_sha256 = "73496aec448a6a1f90ea5edcfc9b642a82d9688d99d5a9e9babf182a6e9dba32"
+
+[[packages]]
+name = "exacopy-journal"
+source_name = "exacopy-journal"
+path = "crates/storage/exacopy-journal"
+description = "Framed recovery journals for ExaCopy"
+manifest_sha256 = "4bc67feac558cbbc7fa6eff493d9a82d2ee2ec787b809dd4c38e658c0ead002c"
+
+[[packages]]
+name = "exacopy-transfer"
+source_name = "exacopy-transfer"
+path = "crates/engines/exacopy-transfer"
+description = "Capability-based transfer workflows for ExaCopy"
+manifest_sha256 = "42ac482372929fd5d269ef86a2755e1a4f5003b14ded70319b15b350df68bf78"
+
+[[packages]]
+name = "exacopy"
+source_name = "exacopy-cli"
+path = "apps/exacopy-cli"
+description = "Preserve-mode file transfer and byte comparison"
+manifest_sha256 = "7981117aeaa04079da04c33c2a6eb31e6b306488fae36121cb47bb5a1b1f20ed"
