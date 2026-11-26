@@ -7,7 +7,7 @@ use boringtun::noise::{
 	Tunn, TunnResult,
 };
 
-#[cfg(feature = "experimental-udp")]
+#[cfg(any(feature = "experimental-udp", all(test, feature = "experimental-tcp")))]
 use super::PacketOutput;
 use super::clock::{ClockValue, MAX_GENERATION_AGE, elapsed};
 use super::{MAX_GENERATION_OPERATIONS, MAX_INCOMING_HANDSHAKES, ProtocolError, ProtocolPeer};
@@ -249,7 +249,7 @@ impl ProtocolPeer {
 		Ok(())
 	}
 
-	#[cfg(feature = "experimental-udp")]
+	#[cfg(any(feature = "experimental-udp", all(test, feature = "experimental-tcp")))]
 	pub(in crate::protocol) fn check_output_key(
 		&mut self,
 		packet: &PacketOutput<'_>,

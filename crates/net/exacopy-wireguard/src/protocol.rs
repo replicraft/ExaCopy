@@ -183,7 +183,7 @@ impl ProtocolPeer {
 		self.clock.advance()
 	}
 
-	#[cfg(feature = "experimental-udp")]
+	#[cfg(any(feature = "experimental-udp", all(test, feature = "experimental-tcp")))]
 	pub(super) fn check_output(&mut self, packet: &PacketOutput<'_>) -> Result<(), ProtocolError> {
 		self.check_output_key(packet)
 	}
