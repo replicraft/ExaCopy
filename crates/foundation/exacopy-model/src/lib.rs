@@ -3,6 +3,7 @@
 
 mod binding;
 mod range;
+pub mod retained_prefix;
 mod sync;
 pub mod sync_genesis;
 mod transaction;

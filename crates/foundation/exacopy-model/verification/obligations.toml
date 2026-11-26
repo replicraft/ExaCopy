@@ -62,3 +62,17 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/sync_genesis.rs", test = "genesis_matches_independent_bounded_observation_oracle", oracle = "The independent defect oracle accepts only complete matched pairs in a finite product of 16 reported-fault axes and both read orders (131072 cases, two healthy). Accepted outputs retain the ordered observations and exact selection." }
+
+[[obligation]]
+id = "P-057"
+requirement_ids = ["R-253"]
+source = "src/retained_prefix.rs"
+symbols = ["Continuation::begin", "Continuation::permit_tail", "Continuation::checkpoint", "Continuation::complete_tail"]
+assumptions = [
+    "The live capability owner truthfully reports exact retained stage, active exclusive lease, approved scope and fresh source. Quiescence and old history classification are independently confirmed.",
+    "Fresh prefix comparison, independent historical digests, actual stage extent, prefix and chunk barriers and canonical durable journal successors and genuinely reserved closeout and receipt capacity are verified by their native and storage owners before they are reported.",
+    "One serialized coordinator owns the admitted stage. A rejected or uncertain execution must reconcile outside this pure model. The model grants no filesystem, publication or recovery authority by itself.",
+]
+gates = ["rust", "tlc"]
+rust = { file = "tests/retained_prefix.rs", test = "retained_prefix_requires_ordered_evidence_and_exact_tail_completions", oracle = "Tails are refused before the verified prefix barrier and durable continuation. Two exact contiguous tracked chunks proceed only through a confirmed intermediate checkpoint. Overlapping or unbounded ranges refuse." }
+tlc = { spec = "verification/tla/RetainedPrefix.tla", config = "verification/tla/RetainedPrefix.cfg", negative_control = "verification/tla/RetainedPrefixEarlyPermit.cfg", seeds = ["TLC seed and fingerprint index 0."], model_bounds = ["One retained unit, zero or two tail units, one old writer, two source labels, one continuing lineage, four capacity states and journal ends bounded by 8."], oracle = "Model exhausts both tail completions through a durable checkpoint without accepting prefix overwrite, post-intent/unknown history or a stale scope, source or head. Eight negative controls exercise early permit, overwrite, missing checkpoint, lost context, stale source, stale head, nonsticky ambiguous completion, and omitted closeout capacity." }

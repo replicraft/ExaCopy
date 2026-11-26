@@ -17,7 +17,8 @@ case ${1:-all} in
 	kani) exec "$verification_dir/kani/check.sh" ;;
 	tlc)
 		"$verification_dir/tla/check.sh"
-		exec python3 -B "$verification_dir/tla/check-sync.py"
+		python3 -B "$verification_dir/tla/check-sync.py"
+		exec python3 -B "$verification_dir/tla/check-continuation.py"
 		;;
 	miri) check_miri ;;
 	all)
