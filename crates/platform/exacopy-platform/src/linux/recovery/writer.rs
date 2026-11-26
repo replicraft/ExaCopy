@@ -18,10 +18,12 @@ use super::{
 };
 
 mod fresh;
+mod prefix;
 mod resume;
 mod retained;
 
 pub use fresh::FreshRecoveryStage;
+pub use prefix::{RetainedPrefixRead, RetainedPrefixSelection};
 pub use resume::RecoveryStageDirectory;
 pub use retained::RetainedStage;
 

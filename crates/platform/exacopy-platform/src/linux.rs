@@ -38,7 +38,8 @@ pub use process_crash::{
 };
 pub use recovery::{
 	FreshRecoveryStage, RecoveryFile, RecoveryInventory, RecoveryJob, RecoveryReadLease,
-	RecoveryReceiptDirectory, RecoveryStageDirectory, RecoveryWriteLease, RetainedStage,
+	RecoveryReceiptDirectory, RecoveryStageDirectory, RecoveryWriteLease, RetainedPrefixRead,
+	RetainedPrefixSelection, RetainedStage,
 };
 pub use running_image::RunningExecutable;
 pub use source::{
