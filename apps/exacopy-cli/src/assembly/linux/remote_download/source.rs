@@ -24,6 +24,10 @@ mod authentication;
 mod direct;
 #[cfg(feature = "experimental-ssh-wireguard")]
 mod embedded;
+#[cfg(test)]
+mod route_binding;
+#[cfg(test)]
+pub(in crate::assembly::linux) use route_binding::BoundRouteRetirement;
 mod route_lifetime;
 
 pub(crate) use direct::DirectConnectError;
@@ -225,6 +229,8 @@ impl<'authorization> ConnectingRemoteSource<'authorization> {
 				attempt: self.attempt,
 				route,
 				transport,
+				#[cfg(test)]
+				retirement_issued: false,
 			},
 		})
 	}
@@ -241,7 +247,7 @@ impl<'authorization> ConnectedRemoteSource<'authorization> {
 		self.session.cancellation_handle()
 	}
 
-	pub(super) fn into_current(
+	pub(in crate::assembly::linux) fn into_current(
 		self,
 		scope: RemoteScopeDigest,
 		grant: &RemoteGrant,
@@ -348,11 +354,13 @@ pub(super) struct SourceRetirement {
 	pub(super) route: Result<(), RemoteRouteCloseError>,
 }
 
-pub(super) struct SourceOwner<'authorization> {
+pub(in crate::assembly::linux) struct SourceOwner<'authorization> {
 	supervisor: Arc<Supervisor>,
 	attempt: ConnectionAttempt,
 	route: BoundRoute<'authorization>,
 	transport: Arc<RouteTask>,
+	#[cfg(test)]
+	retirement_issued: bool,
 }
 
 impl SourceOwner<'_> {
@@ -360,11 +368,11 @@ impl SourceOwner<'_> {
 		Arc::clone(&self.supervisor.grant)
 	}
 
-	pub(super) const fn attempt(&self) -> ConnectionAttempt {
+	pub(in crate::assembly::linux) const fn attempt(&self) -> ConnectionAttempt {
 		self.attempt
 	}
 
-	pub(super) fn admit_pending(
+	pub(in crate::assembly::linux) fn admit_pending(
 		&mut self,
 		pending: &PendingSftpSource<'_>,
 	) -> Result<ConnectionBinding, RetryError> {
@@ -385,7 +393,10 @@ impl SourceOwner<'_> {
 		})
 	}
 
-	pub(super) fn check_binding(&mut self, binding: ConnectionBinding) -> Result<(), RetryError> {
+	pub(in crate::assembly::linux) fn check_binding(
+		&mut self,
+		binding: ConnectionBinding,
+	) -> Result<(), RetryError> {
 		self.check_transport()?;
 		self.supervisor
 			.observe(|retry, now| retry.check_completion(now, binding))

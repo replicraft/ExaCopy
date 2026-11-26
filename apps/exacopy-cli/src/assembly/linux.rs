@@ -26,6 +26,12 @@ pub mod remote_download;
 mod remote_journal;
 #[cfg(feature = "experimental-ssh-capture")]
 mod remote_stage;
+#[cfg(all(test, feature = "experimental-ssh-capture"))]
+#[expect(
+	dead_code,
+	reason = "private witnessed consent factory awaits explicit command selection"
+)]
+mod remote_witness_authority;
 
 pub use public_plan::{NativePlanningError, plan_public_new_file};
 

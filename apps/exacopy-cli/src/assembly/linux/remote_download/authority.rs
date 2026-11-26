@@ -13,6 +13,11 @@ use tokio::sync::Notify;
 
 use super::super::remote_journal::{CurrentGrant, Error, RemoteActivation, component};
 
+#[cfg(test)]
+mod witness_clock;
+#[cfg(test)]
+pub(in crate::assembly::linux) use witness_clock::WitnessDeadline;
+
 /// Foreground invoker authorization for a fixed request and monotonic lease.
 /// The issuer checks the protected profile before constructing this capability.
 /// Revocation and each admitted synchronous native effect use the same lock.
@@ -20,6 +25,10 @@ pub struct RemoteGrant {
 	scope: RemoteScopeDigest,
 	digest: [u8; 32],
 	deadline: Instant,
+	#[cfg(test)]
+	wall_anchor: Option<witness_clock::ClockSample>,
+	#[cfg(test)]
+	witness_issued: std::sync::atomic::AtomicBool,
 	active: Mutex<bool>,
 	revoked: Notify,
 }
@@ -33,6 +42,10 @@ impl RemoteGrant {
 			scope,
 			digest,
 			deadline,
+			#[cfg(test)]
+			wall_anchor: witness_clock::ClockSample::now(),
+			#[cfg(test)]
+			witness_issued: std::sync::atomic::AtomicBool::new(false),
 			active: Mutex::new(true),
 			revoked: Notify::new(),
 		})
@@ -49,6 +62,23 @@ impl RemoteGrant {
 
 	pub(super) const fn deadline(&self) -> Instant {
 		self.deadline
+	}
+
+	#[cfg(test)]
+	pub(in crate::assembly::linux) fn issue_witness(
+		&self,
+		scope: RemoteScopeDigest,
+		digest: [u8; 32],
+	) -> Result<bool, Error> {
+		let _guard = self.enter(scope, digest)?;
+		Ok(!self
+			.witness_issued
+			.swap(true, std::sync::atomic::Ordering::Relaxed))
+	}
+
+	#[cfg(test)]
+	pub(in crate::assembly::linux) fn witness_deadline(&self) -> Option<WitnessDeadline> {
+		self.wall_anchor?.deadline(self.deadline)
 	}
 
 	pub(super) async fn wait_revoked(&self) {

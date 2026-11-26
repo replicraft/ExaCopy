@@ -83,14 +83,11 @@ impl ConnectingRemoteSource<'_> {
 		.await?;
 		carrier
 			.with_stream(async move |stream, driver, live_route| {
-				let guard = Arc::new(RouteTask::spawn(
+				let guard = Arc::new(RouteTask::spawn_draining(
 					lease,
 					RouteWake::Embedded(revocation),
 					Arc::clone(&grant),
-					None,
-					async move {
-						let _ = driver.run().await;
-					},
+					async move { driver.run().await },
 				));
 				let route = HeldRoute {
 					live_route,

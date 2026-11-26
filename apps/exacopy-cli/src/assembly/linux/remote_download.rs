@@ -23,6 +23,8 @@ use super::remote_journal::Error;
 use super::remote_stage::{NativeCaptureStageError, StageFinalizationError};
 
 mod authority;
+#[cfg(test)]
+pub(in crate::assembly::linux) use authority::WitnessDeadline;
 mod build;
 mod capture;
 pub(crate) use capture::{download_remote, download_retry};
@@ -34,6 +36,8 @@ pub(super) use authority::native_authority;
 pub use build::measure_running_executable;
 pub(crate) use retry::ReadyRetry;
 pub use retry::{RemoteRetryLease, RemoteRetryStamp};
+#[cfg(test)]
+pub(in crate::assembly::linux) use source::BoundRouteRetirement;
 
 pub(crate) use source::DirectConnectError;
 #[cfg(feature = "experimental-ssh-wireguard")]

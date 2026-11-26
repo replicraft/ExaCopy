@@ -12,6 +12,13 @@ use tokio::time::Instant as TokioInstant;
 
 use super::RemoteGrant;
 
+#[cfg(feature = "experimental-ssh-wireguard")]
+mod drain;
+#[cfg(test)]
+mod gated;
+#[cfg(test)]
+pub(in crate::assembly::linux) use gated::HeldRouteEffect;
+
 const TRANSPORT_CLOSE_LIMIT: Duration = Duration::from_secs(2);
 
 /// Serializes retirement with the actual nonblocking transport operation.
@@ -159,7 +166,7 @@ pub(super) struct RouteTask {
 }
 
 struct Retirement {
-	worker: JoinHandle<()>,
+	worker: JoinHandle<Result<(), RemoteRouteCloseError>>,
 	direct_close: Option<oneshot::Receiver<()>>,
 	outcome: Option<Result<(), RemoteRouteCloseError>>,
 }
@@ -209,7 +216,8 @@ impl Retirement {
 	async fn observe(&mut self) -> Result<(), RemoteRouteCloseError> {
 		let deadline = TokioInstant::now() + TRANSPORT_CLOSE_LIMIT;
 		match observe_before(deadline, &mut self.worker).await {
-			Some(Ok(())) => {}
+			Some(Ok(Ok(()))) => {}
+			Some(Ok(Err(error))) => return Err(error),
 			Some(Err(_)) => return Err(RemoteRouteCloseError::WorkerFailed),
 			None => {
 				self.worker.abort();
@@ -228,7 +236,7 @@ impl Retirement {
 	}
 }
 
-async fn observe_before<T>(
+pub(super) async fn observe_before<T>(
 	deadline: TokioInstant,
 	observation: impl Future<Output = T>,
 ) -> Option<T> {
@@ -259,6 +267,7 @@ impl RouteTask {
 				() = tokio::time::sleep_until(tokio::time::Instant::from_std(grant.deadline())) => {}
 				() = work => {}
 			}
+			Ok(())
 		});
 		Self {
 			lease,
@@ -376,7 +385,7 @@ mod tests {
 	async fn late_socket_close_cannot_recover_a_retirement_timeout() {
 		let (close, observed) = oneshot::channel();
 		let mut retirement = Retirement {
-			worker: tokio::spawn(async {}),
+			worker: tokio::spawn(async { Ok(()) }),
 			direct_close: Some(observed),
 			outcome: None,
 		};
@@ -395,7 +404,7 @@ mod tests {
 	async fn dropping_first_retirement_observation_cannot_confirm_a_later_retry() {
 		let (close, observed) = oneshot::channel();
 		let mut retirement = Retirement {
-			worker: tokio::spawn(async {}),
+			worker: tokio::spawn(async { Ok(()) }),
 			direct_close: Some(observed),
 			outcome: None,
 		};
@@ -418,7 +427,7 @@ mod tests {
 	async fn confirmed_socket_close_remains_confirmed_on_a_second_join() {
 		let (close, observed) = oneshot::channel();
 		let mut retirement = Retirement {
-			worker: tokio::spawn(async {}),
+			worker: tokio::spawn(async { Ok(()) }),
 			direct_close: Some(observed),
 			outcome: None,
 		};
