@@ -213,6 +213,49 @@ def report_code(report, actual, allowed):
     return code
 
 
+def read_terminal(source, destination, exit_status, elapsed):
+    observation = {
+        "exit_status": exit_status,
+        "elapsed_seconds": round(elapsed, 3),
+        "report_schema_valid": False,
+        "result": None,
+        "publication": None,
+        "error_code": None,
+    }
+    try:
+        report = json.loads(checked_read(canonical(source), MAX_REPORT))
+        require(isinstance(report, dict) and report.get("schema") == "exacopy.cli.remote_download"
+                and report.get("schema_version") == "1.0", "wrong public report schema")
+        observation["report_schema_valid"] = True
+        if (result := report.get("result")) in ("failed", "published_with_omissions"):
+            observation["result"] = result
+        if (publication := report.get("publication")) in ("not_published", "published", "publication_uncertain"):
+            observation["publication"] = publication
+        error = report.get("error")
+        if isinstance(error, dict) and (code := error.get("code")) in (
+            "E_INVALID_REQUEST", "E_CONFLICT", "E_IO", "E_INTEGRITY", "E_UNSUPPORTED",
+            "E_AUTHORIZATION", "E_RECOVERY_REQUIRED", "E_CANCELLED",
+        ):
+            observation["error_code"] = code
+        return report
+    finally:
+        # Retain the closed process's disposition before any peer oracle can fail.
+        # The fixture's paths, stderr and full report stay in the private workspace.
+        with destination.open("x", encoding="utf-8") as output:
+            json.dump(observation, output, sort_keys=True)
+            output.write("\n")
+
+
+def require_closed(rows, name, attempts):
+    for attempt in attempts:
+        require(one(rows, name, attempt, "open") is not None,
+                f"{name}: no SFTP open observed on expected session {attempt}")
+        require(one(rows, name, attempt, "timeout-held") is not None,
+                f"{name}: no held READ observed on expected session {attempt}")
+        require(one(rows, name, attempt, "transport-closed") is not None,
+                f"{name}: no closure observed after a held READ on session {attempt}")
+
+
 def peer_pass(rows, name, attempts):
     selected = [event for event in rows if event.case == name]
     require(not any(event.kind == "peer-budget" for event in selected), "fault peer timed out first")
@@ -255,10 +298,8 @@ def case(args, name, grant, b3sum, qualification, account, host, peer, trace, kn
                     process.signal(signal.SIGINT)
                 process.wait_for_exit(grant + 8)
                 elapsed = time.monotonic() - started
+        report = read_terminal(stdout, args.evidence / f"{name}.terminal.json", process.returncode, elapsed)
         args.inputs.recheck()
-        report = json.loads(checked_read(canonical(stdout), MAX_REPORT))
-        require(report.get("schema") == "exacopy.cli.remote_download" and report.get("schema_version") == "1.0",
-                "wrong public report schema")
         require(fingerprint(source.stat(follow_symlinks=False)) == fingerprint(info), "source changed")
         end = time.monotonic() + 2
         rows = trace.snapshot()
@@ -268,10 +309,8 @@ def case(args, name, grant, b3sum, qualification, account, host, peer, trace, kn
                    and time.monotonic() < end):
                 time.sleep(0.01)
                 rows = trace.snapshot()
+            require_closed(rows, name, expected_closed)
             closed = one(rows, name, 1, "transport-closed")
-            require(all(one(rows, name, attempt, "transport-closed") is not None
-                        for attempt in expected_closed),
-                    "the peer never independently observed closure after a held READ")
             retained.recheck()
             known.add(retained.job)
         if name == "redial":

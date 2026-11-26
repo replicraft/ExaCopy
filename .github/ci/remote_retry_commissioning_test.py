@@ -54,6 +54,18 @@ class RetryProviderTests(unittest.TestCase):
             with self.assertRaises(EvidenceFailed):
                 check_case_exports(report, hashes | {missing: "0" * 64}, CAMPAIGN_FILES)
 
+    def test_failed_export_retains_terminal_without_private_stdout(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            work, report = root / "work", root / "report"
+            (work / "campaign").mkdir(parents=True)
+            terminal = "campaign/budget.terminal.json"
+            (work / terminal).write_bytes(b'{"exit_status": 9, "elapsed_seconds": 41.5}\n')
+            (work / "campaign/budget.stdout").write_bytes(b"private fixture paths")
+            hashes = export(work, report, CAMPAIGN_FILES)
+            self.assertEqual(hashes, {terminal: hashlib.sha256((work / terminal).read_bytes()).hexdigest()})
+            self.assertFalse((report / "campaign/budget.stdout").exists())
+
     def test_only_exact_readonly_source_binding_and_public_trace(self):
         fixture = RetryFixture("0a" * 10, 65534)
         properties = fixture.sshd_properties()
@@ -61,10 +73,11 @@ class RetryProviderTests(unittest.TestCase):
                       properties["BindReadOnlyPaths"].split())
         self.assertEqual(properties["KillMode"], "control-group")
         self.assertEqual(properties["ProtectControlGroups"], "yes")
-        self.assertEqual(len(CAMPAIGN_FILES), 7)
+        self.assertEqual(len(CAMPAIGN_FILES), 12)
         for path in CAMPAIGN_FILES:
             self.assertEqual(Path(path).parent, Path("campaign"))
-            self.assertTrue(path.endswith(".openssh.log") or Path(path).name in ("sftp-events.log", "openssh.log"))
+            self.assertTrue(path.endswith((".openssh.log", ".terminal.json"))
+                            or Path(path).name in ("sftp-events.log", "openssh.log"))
 
 
 if __name__ == "__main__":

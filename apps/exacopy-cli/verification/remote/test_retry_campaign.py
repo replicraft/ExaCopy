@@ -2,6 +2,7 @@
 
 from contextlib import ExitStack
 import hashlib
+import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,7 +15,8 @@ import unittest
 
 from fixture import Failed, check_held
 from retry_campaign import (
-    Event, PreviousStage, SOURCE_BYTES, Trace, WINDOW, one, parse_trace, peer_pass, release_new,
+    Event, PreviousStage, SOURCE_BYTES, Trace, WINDOW, one, parse_trace, peer_pass, read_terminal,
+    release_new, require_closed,
 )
 
 
@@ -140,6 +142,42 @@ class FixturePeerTests(unittest.TestCase):
 
 
 class OracleTests(unittest.TestCase):
+    def test_terminal_evidence_precedes_missing_session_and_excludes_private_fields(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            stdout, observed = root / "budget.stdout", root / "budget.terminal.json"
+            report = {
+                "schema": "exacopy.cli.remote_download", "schema_version": "1.0",
+                "result": "failed", "publication": "not_published",
+                "error": {"code": "E_AUTHORIZATION", "job_directory": "/private/fixture"},
+            }
+            stdout.write_text(json.dumps(report))
+            self.assertEqual(read_terminal(stdout, observed, 8, 41.3299), report)
+            trace = [Event("budget", 1, kind, 0, 1, 1)
+                     for kind in ("open", "timeout-held", "transport-closed")]
+            for kind, reason in (("open", "no SFTP open"), ("timeout-held", "no held READ"),
+                                 ("transport-closed", "no closure observed")):
+                with self.subTest(kind=kind), self.assertRaisesRegex(Failed, reason + ".*session 2"):
+                    require_closed(trace, "budget", (1, 2))
+                trace.append(Event("budget", 2, kind, 0, 1, 2))
+            require_closed(trace, "budget", (1, 2))
+            self.assertEqual(json.loads(observed.read_bytes()), {
+                "exit_status": 8, "elapsed_seconds": 41.33, "report_schema_valid": True,
+                "result": "failed", "publication": "not_published", "error_code": "E_AUTHORIZATION",
+            })
+
+    def test_invalid_terminal_report_still_records_exit_without_payload(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            stdout, observed = root / "budget.stdout", root / "budget.terminal.json"
+            stdout.write_text("private non-JSON output")
+            with self.assertRaises(ValueError):
+                read_terminal(stdout, observed, 2, 0.3)
+            self.assertEqual(json.loads(observed.read_bytes()), {
+                "exit_status": 2, "elapsed_seconds": 0.3, "report_schema_valid": False,
+                "result": None, "publication": None, "error_code": None,
+            })
+
     def test_trace_failure_retains_last_validated_bytes(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp).resolve() / "trace"

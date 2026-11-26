@@ -17,6 +17,7 @@ from retry_campaign import CASES, SOURCE_BYTES
 COMMAND = "exacopy-fixture-sftp-v1"
 CC = Path("/usr/bin/cc")
 CAMPAIGN_FILES = {f"campaign/{name}.openssh.log": commissioning.MAX_SUMMARY for name, _ in CASES}
+CAMPAIGN_FILES.update({f"campaign/{name}.terminal.json": 1024 for name, _ in CASES})
 CAMPAIGN_FILES.update({
     "campaign/sftp-events.log": commissioning.MAX_SUMMARY,
     "campaign/openssh.log": commissioning.MAX_SUMMARY,
