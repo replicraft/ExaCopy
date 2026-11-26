@@ -147,7 +147,7 @@ fn encode_claims(claims: &Claims) -> Result<Buffer, Error> {
 	Ok(out.into_writer())
 }
 
-fn read_facts(input: &mut Decoder<'_>) -> Result<RemoteDestinationFacts, Error> {
+pub(super) fn read_facts(input: &mut Decoder<'_>) -> Result<RemoteDestinationFacts, Error> {
 	array(input, 11)?;
 	let root = read_identity(input)?;
 	let ids = RemoteDestinationIds {
@@ -177,7 +177,10 @@ fn read_facts(input: &mut Decoder<'_>) -> Result<RemoteDestinationFacts, Error> 
 	.ok_or(Error::DestinationFacts)
 }
 
-fn write_facts(out: &mut Encoder<Buffer>, facts: &RemoteDestinationFacts) -> Result<(), Error> {
+pub(super) fn write_facts(
+	out: &mut Encoder<Buffer>,
+	facts: &RemoteDestinationFacts,
+) -> Result<(), Error> {
 	let architecture = match facts.architecture() {
 		RemoteKernelArchitecture::X86_64 => X86_64,
 		RemoteKernelArchitecture::Aarch64 => AARCH64,

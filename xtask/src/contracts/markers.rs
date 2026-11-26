@@ -174,13 +174,21 @@ pub(super) const BINDINGS: &[Binding] = &[
 		Marker::array("VERSION", 3),
 	),
 	Binding::new(
+		"linux-remote-destination-qualification",
+		"crates/storage/exacopy-journal/src/remote_download/qualification/wire.rs",
+		Marker::Scalar {
+			version: "VERSION",
+			magic: None,
+		},
+	),
+	Binding::new(
 		"linux-remote-continued-checkpoint",
 		"crates/storage/exacopy-journal/src/remote_download/continuation/checkpoint.rs",
 		Marker::array("VERSION", 3),
 	),
 	Binding::new(
-		"linux-remote-destination-qualification",
-		"crates/storage/exacopy-journal/src/remote_download/qualification/wire.rs",
+		"linux-remote-continuation-qualification",
+		"crates/storage/exacopy-journal/src/remote_download/qualification/continuation/wire.rs",
 		Marker::Scalar {
 			version: "VERSION",
 			magic: None,

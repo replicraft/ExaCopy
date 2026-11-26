@@ -10,6 +10,7 @@ use minicbor::encode::{self, write::EndOfArray};
 
 use super::RemoteDownloadError;
 
+pub mod continuation;
 mod wire;
 
 const RECORD_DOMAIN: &[u8] = b"ExaCopy/linux-remote-destination-qualification-record/v1\0";

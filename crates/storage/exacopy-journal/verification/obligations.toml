@@ -169,3 +169,12 @@ symbols = ["RemoteContinuedCheckpoint"]
 assumptions = ["This codec authenticates canonical framing and recorded range declarations only; continued replay must independently resolve active lineage and contiguous coverage.", "No decoded checkpoint supplies a live writer, lease, synchronization or publication capability."]
 gates = ["rust"]
 rust = { file = "tests/remote_continued_checkpoint.rs", test = "independent_suffix_checkpoint_round_trips_and_legacy_refuses", oracle = "Reproduce the independently generated continued checkpoint frame exactly and require mutual refusal with the unchanged V1 checkpoint profile." }
+
+[[obligation]]
+id = "P-061"
+requirement_ids = ["R-253", "R-255"]
+source = "src/remote_download/qualification/continuation.rs"
+symbols = ["verify_remote_continuation_qualification"]
+assumptions = ["The separately provisioned attestor reports truthful campaign evidence for the exact build, route, scope and append-specific coverage profile.", "Signed historical destination facts are declarations. Native admission separately matches current facts and holds the actual grant and lease; this gate confers no effect authority."]
+gates = ["rust"]
+rust = { file = "tests/remote_continuation_qualification.rs", test = "independent_v2_vectors_require_selected_route_and_do_not_cross_v1", oracle = "Authenticate independent OpenSSL V2 records only under the independently selected route, attestor and build; require V1 and V2 mutual refusal without changing legacy bytes." }

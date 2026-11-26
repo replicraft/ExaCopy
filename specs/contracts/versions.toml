@@ -229,6 +229,14 @@ owner = "crates/storage/exacopy-journal/src/remote_download/qualification/wire.r
 notes = "Bounded signed destination attestation with separate attestor role, signature and record digest domains. Requires independently selected tested build, route profile class, complete campaign evidence and exact current destination facts."
 
 [[contract]]
+id = "linux-remote-continuation-qualification"
+kind = "transfer_journal"
+status = "implemented_private"
+version = "2"
+owner = "crates/storage/exacopy-journal/src/remote_download/qualification/continuation/wire.rs"
+notes = "Read-only verifier of independently selected retained-append process-crash attestation. Distinct V2 domains and closed coverage profile; current facts matching, native append admission and exact route qualification are separate."
+
+[[contract]]
 id = "linux-remote-download-receipt"
 kind = "transfer_journal"
 status = "implemented_private"
