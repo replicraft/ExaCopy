@@ -15,6 +15,8 @@ use super::*;
 
 #[path = "continued_coverage.rs"]
 mod continued_coverage;
+#[path = "witnessed_prepublication.rs"]
+mod prepublication;
 
 const FRESH: [u8; 32] = [0x85; 32];
 

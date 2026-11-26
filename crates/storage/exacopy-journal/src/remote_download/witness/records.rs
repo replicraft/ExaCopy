@@ -178,6 +178,18 @@ pub struct RemoteWitnessCloseoutRecord<'frame> {
 }
 
 impl<'frame> RemoteWitnessCloseoutRecord<'frame> {
+	pub(super) const fn new(
+		binding: RemoteWitnessBinding,
+		previous: RemoteReplayBoundary,
+		body: RemoteWitnessCloseoutBody<'frame>,
+	) -> Self {
+		Self {
+			binding,
+			previous,
+			body,
+		}
+	}
+
 	/// Returns the selected profile's exact payload ceiling for this kind.
 	#[must_use]
 	pub const fn payload_cap(kind: FrameKind) -> Option<usize> {
@@ -212,11 +224,7 @@ impl<'frame> RemoteWitnessCloseoutRecord<'frame> {
 		check_successor(frame, kind, previous, end)?;
 		let mut decoder = wire::selected_body(frame.payload(), binding, previous.head, kind)?;
 		let body = body::read(kind, &mut decoder)?;
-		let record = Self {
-			binding,
-			previous,
-			body,
-		};
+		let record = Self::new(binding, previous, body);
 		if decoder.position() != decoder.input().len() || record.encode()? != frame.payload() {
 			return Err(Error::NonCanonical);
 		}

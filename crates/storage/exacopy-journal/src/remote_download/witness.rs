@@ -76,6 +76,24 @@ pub struct RemoteWitnessBinding {
 }
 
 impl RemoteWitnessBinding {
+	/// Exact inherited owner, job and entry.
+	#[must_use]
+	pub const fn context(self) -> RemoteDownloadContext {
+		self.context
+	}
+
+	/// Exact signed remote scope of this continued pass.
+	#[must_use]
+	pub const fn scope(self) -> RemoteScopeDigest {
+		self.scope
+	}
+
+	/// Exact prepared stage frame inherited from the original allocation.
+	#[must_use]
+	pub const fn prepared(self) -> ChainHead {
+		self.prepared
+	}
+
 	/// Returns the active signed continuation head.
 	#[must_use]
 	pub const fn continuation(self) -> ChainHead {
@@ -328,7 +346,9 @@ fn binding_for(
 }
 
 impl RemoteWitnessCoverage {
-	const fn end(self) -> StreamLength {
+	/// Exclusive end of the complete declared source coverage.
+	#[must_use]
+	pub const fn end(self) -> StreamLength {
 		match self {
 			Self::ContinuedPrefix { end, .. } | Self::Checkpoint { end, .. } => end,
 		}

@@ -1,5 +1,5 @@
 use crate::StreamLength;
-use crate::frame::{Frame, FrameKind};
+use crate::frame::{ChainHead, Frame, FrameKind};
 use crate::remote_download::continuation::replay::RemoteContinuedCapture;
 use crate::remote_download::finalization_replay::RemoteFinalizationPhase;
 use crate::remote_download::qualification::continuation::VerifiedRemoteWitnessQualification;
@@ -33,6 +33,7 @@ pub(super) struct CloseoutFacts {
 	pub(super) receipt: Option<receipt::Artifact>,
 	pub(super) receipt_cut: Option<receipt::Cut>,
 	pub(super) durable_frames: Vec<Frame>,
+	pub(super) prepublication_heads: Option<(ChainHead, ChainHead)>,
 	pub(super) continued_extent: Option<StreamLength>,
 }
 
@@ -69,8 +70,15 @@ impl<'qualification> WitnessCloseoutHistory<'qualification> {
 	}
 
 	pub(super) fn into_facts(mut self) -> CloseoutFacts {
-		if self.facts.phase == Some(Phase::Durable) {
-			self.facts.durable_frames = self.phases;
+		match self.facts.phase {
+			Some(Phase::MetadataReady) => {
+				self.facts.prepublication_heads = self
+					.head(FrameKind::StageSealed)
+					.ok()
+					.zip(self.head(FrameKind::VerificationRecorded).ok());
+			}
+			Some(Phase::Durable) => self.facts.durable_frames = self.phases,
+			_ => {}
 		}
 		self.facts
 	}

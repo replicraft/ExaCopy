@@ -23,9 +23,11 @@ use super::{
 
 mod archive;
 mod history;
+mod prepublication;
 mod receipt;
 
 pub(in crate::remote_download) use history::WitnessCloseoutHistory;
+pub use prepublication::{PreparedWitnessedCloseout, WitnessedPrepublicationFact};
 pub use receipt::{RemoteDurableReceiptBasis, RemoteReceiptReadyInspection};
 
 /// Externally selected historical evidence for the exact witnessed strategy.
