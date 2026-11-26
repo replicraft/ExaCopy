@@ -11,13 +11,26 @@ distinct empty held stage. The original stage inode and bytes remain pinned
 through verified publication. Expiry, Ctrl-C, the original grant's total
 retry bound, and wrong host-key refusal have separate cases.
 
-The parent requires all seven event/peer transcripts and their exact
-digests before accepting success. Cleanup uncertainty is bound to the
-retry job's own marker and preserves partial evidence. Portable helper,
-provider, existing direct-fixture controls and workflow validation passed.
-Hosted native timeout recovery is pending. This direct-route campaign does
-not qualify embedded WireGuard, efficient prefix reuse, production
-destination authority or power-loss behavior.
+The hosted run at `04b77c6` passed all five cases. Independent artifact
+review matched the exact source, staged executable and repeated native
+BLAKE3, all fifteen outer artifact hashes and all seven event/peer
+transcript digests. [Hosted run](https://github.com/replicraft/ExaCopy/actions/runs/45867853948)
+
+| Case | Observed result |
+| --- | --- |
+| Held READ timeout | Two authenticated sessions; the first closed after its read deadline, the second began at byte zero. The 192 KiB transfer published a distinct inode and receipt while retaining the original 64 KiB stage unchanged. |
+| Grant expiry | One session, authorization refusal after 10.007 seconds, no publication. |
+| Ctrl-C revocation | One session, cancellation after 0.127 seconds, no publication. |
+| Original retry budget | Three sessions stopped after 52.012 seconds under the original grant, with no publication. |
+| Wrong host key | One TCP connection, no accepted public-key authentication, authorization refusal. |
+
+The parent requires every declared transcript digest before accepting
+success. Cleanup uncertainty is bound to the retry job's own marker and
+preserves partial evidence. The actual fixture was removed and owned
+process groups were confirmed drained. Receipt bytes stayed in the
+disposable fixture; its SHA-256 commitment is retained. This used synthetic
+fixture authority. Embedded WireGuard, efficient prefix reuse, production
+destination qualification and power-loss behavior remain separate.
 
 ## Independent kernel WireGuard campaign
 
