@@ -1,0 +1,70 @@
+name: Linux remote witness zero-tail evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      route:
+        description: Independently selected and provisioned transport
+        required: true
+        type: choice
+        options:
+          - direct_tcp_v1
+          - embedded_wireguard_tcp_v1
+      case:
+        description: Select one owned fixture
+        required: true
+        type: choice
+        options:
+          - positive
+          - qualification-refusal
+
+permissions:
+  contents: read
+
+concurrency:
+  group: exacopy-linux-witness-zero-tail
+  cancel-in-progress: false
+
+jobs:
+  witness:
+    if: github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main' && github.ref_protected
+    runs-on:
+      group: exacopy-witness-zero-tail-qualification
+      labels: [linux]
+    environment: remote-linux-witness-zero-tail-${{ inputs.route }}-${{ inputs.case }}
+    timeout-minutes: 10
+    env:
+      EXACOPY_HOSTED_WITNESS_REQUEST: ${{ vars.EXACOPY_HOSTED_WITNESS_REQUEST }}
+      EXACOPY_HOSTED_WITNESS_BUILD_MANIFEST: ${{ vars.EXACOPY_HOSTED_WITNESS_BUILD_MANIFEST }}
+      EXACOPY_HOSTED_WITNESS_BUILD_MANIFEST_SHA256: ${{ vars.EXACOPY_HOSTED_WITNESS_BUILD_MANIFEST_SHA256 }}
+      EXACOPY_HOSTED_WITNESS_SOURCE_SET_SHA256: ${{ vars.EXACOPY_HOSTED_WITNESS_SOURCE_SET_SHA256 }}
+      EXACOPY_HOSTED_WITNESS_QUALIFICATION_BLAKE3: ${{ vars.EXACOPY_HOSTED_WITNESS_QUALIFICATION_BLAKE3 }}
+      EXACOPY_HOSTED_WITNESS_B3SUM_SHA256: ${{ vars.EXACOPY_HOSTED_WITNESS_B3SUM_SHA256 }}
+      EXACOPY_HOSTED_WITNESS_REFUSAL_DESTINATION: ${{ vars.EXACOPY_HOSTED_WITNESS_REFUSAL_DESTINATION }}
+      EXACOPY_HOSTED_WITNESS_BINARY: ${{ vars.EXACOPY_HOSTED_WITNESS_BINARY }}
+      EXACOPY_HOSTED_WITNESS_BINARY_SHA256: ${{ vars.EXACOPY_HOSTED_WITNESS_BINARY_SHA256 }}
+      EXACOPY_HOSTED_WITNESS_BUILD_BLAKE3: ${{ vars.EXACOPY_HOSTED_WITNESS_BUILD_BLAKE3 }}
+      EXACOPY_HOSTED_WITNESS_REVISION: ${{ vars.EXACOPY_HOSTED_WITNESS_REVISION }}
+      CASE: ${{ inputs.case }}
+      ROUTE: ${{ inputs.route }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify the selected clean source
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA" && test -z "$(git status --porcelain)"
+      - name: Run the fixed, prebuilt witness fixture
+        run: |
+          python3 -B apps/exacopy-cli/verification/remote/witness-hosted/commission.py \
+            --route "$ROUTE" --case "$CASE" --evidence "$RUNNER_TEMP/exacopy-witness-zero-tail"
+      - name: Retain bounded evidence and cleanup disposition
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: exacopy-witness-zero-tail-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-witness-zero-tail/report.json
+            ${{ runner.temp }}/exacopy-witness-zero-tail/cleanup-unconfirmed.json
+          if-no-files-found: error
+          retention-days: 90
