@@ -1,7 +1,8 @@
-//! Pure decisions for preserve-mode ExaCopy transactions.
+//! Pure decisions for ExaCopy transactions.
 #![forbid(unsafe_code)]
 
 mod binding;
+pub mod protected_replace;
 mod range;
 pub mod retained_prefix;
 mod sync;

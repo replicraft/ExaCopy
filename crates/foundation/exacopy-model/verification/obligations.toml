@@ -90,3 +90,19 @@ assumptions = [
 gates = ["rust", "tlc"]
 rust = { file = "tests/witnessed_publication.rs", test = "recovery_requires_every_independent_observation_and_current_authority", oracle = "Vary 16 independent recovery defects and require exactly one approved complete simultaneously held binding." }
 tlc = { spec = "verification/tla/WitnessNamespace.tla", config = "verification/tla/WitnessNamespace-healthy.cfg", negative_control = "verification/tla/WitnessNamespace-reuse-witnessed.cfg", model_bounds = ["Two reusable inode slots, four names, three open references, a single protected witness, independent grant and retention approval, and one process crash/restart."], seeds = ["TLC seed and fingerprint index 0."], oracle = "Exhaust healthy protected inode lifetime and one-shot live rename paths. The checker detects ignored witness retention, witness alone, stale held target, and post-crash rename." }
+
+[[obligation]]
+id = "P-067"
+requirement_ids = ["R-031", "R-032", "R-033", "R-034"]
+source = "src/protected_replace.rs"
+symbols = ["Session::start", "Session::authorize_capture", "Session::observe_capture", "Session::acknowledge_capture", "Session::authorize_publication"]
+assumptions = [
+    "Caller verifies one explicit slot-at-effect and separate exclusive publication authority, layout, isolation, exact raw bindings, and current lease and grant serialization through the native effect.",
+    "Opaque entry relocation is confined to one literal same-filesystem pair of target and recovery names without following links, crossing mounts, overwriting, traversing or deleting. A separate physical source filesystem does not itself prove subtree exclusion.",
+    "Replay covers all relevant attempts and authoritative history, independently matches the current durable head and held context, and refuses re-admitting a scope whose earlier intent could have taken effect. The native coordinator enforces one unique admission under its held lease.",
+    "The coordinator truthfully reports matching stage evidence, both actual namespace barriers, independently observed durable journal successors and current captured and image facts. A required independent image uses separate qualified read and creation authority.",
+    "The bounded decision and namespace model do not execute native effects or grant restoration, deletion, automatic crash retry or power-loss guarantees.",
+]
+gates = ["rust", "tlc"]
+rust = { file = "tests/protected_replace.rs", test = "rejects_previously_issued_or_uncertain_history_at_fresh_admission", oracle = "After issued capture uncertainty, prior or indeterminate replay, stale held scope or divergent heads cannot admit a new capture. A fresh attempt still refuses a capture intent with the wrong predecessor." }
+tlc = { spec = "verification/tla/ProtectedReplacement.tla", config = "verification/tla/ProtectedReplacement.cfg", negative_control = "verification/tla/ProtectedReplacementAdmitPriorHistory.cfg", seeds = ["TLC seed and fingerprint index 0."], model_bounds = ["One selected source, verified stage, target and reserved recovery name with one pre-capture replacement, one late arrival, one private collision, either image policy, clean/prior/ambiguous initial history and one interrupted attempt."], oracle = "Exhaust the modeled namespace histories and reject nine weakened controls. Preserve actual capture, older and racing entries, expected-incumbent gating, post-barrier evidence, required image, public no-clobber sticky uncertainty and pre-intent-only admission." }
