@@ -18,7 +18,7 @@ pub struct Head {
 }
 
 impl Head {
-	pub(super) fn is_successor_of(self, previous: Self) -> bool {
+	pub(crate) fn is_successor_of(self, previous: Self) -> bool {
 		previous.sequence.checked_add(1) == Some(self.sequence)
 			&& previous.end > 0
 			&& self.end > previous.end

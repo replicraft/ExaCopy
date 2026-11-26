@@ -18,7 +18,8 @@ case ${1:-all} in
 	tlc)
 		"$verification_dir/tla/check.sh"
 		python3 -B "$verification_dir/tla/check-sync.py"
-		exec python3 -B "$verification_dir/tla/check-continuation.py"
+		python3 -B "$verification_dir/tla/check-continuation.py"
+		exec python3 -B "$verification_dir/tla/check-witness-namespace.py"
 		;;
 	miri) check_miri ;;
 	all)

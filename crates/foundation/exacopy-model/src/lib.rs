@@ -7,6 +7,7 @@ pub mod retained_prefix;
 mod sync;
 pub mod sync_genesis;
 mod transaction;
+pub mod witnessed_publication;
 
 #[cfg(kani)]
 #[path = "../verification/kani/mod.rs"]

@@ -76,3 +76,17 @@ assumptions = [
 gates = ["rust", "tlc"]
 rust = { file = "tests/retained_prefix.rs", test = "retained_prefix_requires_ordered_evidence_and_exact_tail_completions", oracle = "Tails are refused before the verified prefix barrier and durable continuation. Two exact contiguous tracked chunks proceed only through a confirmed intermediate checkpoint. Overlapping or unbounded ranges refuse." }
 tlc = { spec = "verification/tla/RetainedPrefix.tla", config = "verification/tla/RetainedPrefix.cfg", negative_control = "verification/tla/RetainedPrefixEarlyPermit.cfg", seeds = ["TLC seed and fingerprint index 0."], model_bounds = ["One retained unit, zero or two tail units, one old writer, two source labels, one continuing lineage, four capacity states and journal ends bounded by 8."], oracle = "Model exhausts both tail completions through a durable checkpoint without accepting prefix overwrite, post-intent/unknown history or a stale scope, source or head. Eight negative controls exercise early permit, overwrite, missing checkpoint, lost context, stale source, stale head, nonsticky ambiguous completion, and omitted closeout capacity." }
+
+[[obligation]]
+id = "P-066"
+requirement_ids = ["R-008", "R-253", "R-255", "R-320"]
+source = "src/witnessed_publication.rs"
+symbols = ["observe_recovery"]
+assumptions = [
+    "The held protected witness name and namespace remain in qualified custody across process restart. The same-principal or privileged tampering case is outside that scope.",
+    "The caller validates owner/scope, exact journal ancestry, current authority and complete simultaneous native observations. Positive recovery describes one observation point and gives no filesystem authority.",
+    "Pure executable namespace admission and the independent finite kernel/process model are separate evidence. This gate makes no native crash or power-loss claim.",
+]
+gates = ["rust", "tlc"]
+rust = { file = "tests/witnessed_publication.rs", test = "recovery_requires_every_independent_observation_and_current_authority", oracle = "Vary 16 independent recovery defects and require exactly one approved complete simultaneously held binding." }
+tlc = { spec = "verification/tla/WitnessNamespace.tla", config = "verification/tla/WitnessNamespace-healthy.cfg", negative_control = "verification/tla/WitnessNamespace-reuse-witnessed.cfg", model_bounds = ["Two reusable inode slots, four names, three open references, a single protected witness, independent grant and retention approval, and one process crash/restart."], seeds = ["TLC seed and fingerprint index 0."], oracle = "Exhaust healthy protected inode lifetime and one-shot live rename paths. The checker detects ignored witness retention, witness alone, stale held target, and post-crash rename." }
