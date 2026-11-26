@@ -3,6 +3,12 @@
 	not(any(
 		target_os = "macos",
 		all(
+			target_os = "linux",
+			feature = "experimental-linux-managed-sync",
+			target_pointer_width = "64",
+			any(target_arch = "x86_64", target_arch = "aarch64")
+		),
+		all(
 			target_os = "windows",
 			any(
 				feature = "experimental-windows-copy",
@@ -16,6 +22,12 @@
 	any(
 		target_os = "macos",
 		all(
+			target_os = "linux",
+			feature = "experimental-linux-managed-sync",
+			target_pointer_width = "64",
+			any(target_arch = "x86_64", target_arch = "aarch64")
+		),
+		all(
 			target_os = "windows",
 			any(
 				feature = "experimental-windows-copy",
@@ -27,7 +39,16 @@
 )]
 
 #[cfg(target_os = "linux")]
+#[forbid(unsafe_code)]
 pub mod linux;
+
+#[cfg(all(
+	target_os = "linux",
+	feature = "experimental-linux-managed-sync",
+	target_pointer_width = "64",
+	any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+mod managed_sync_statmount;
 
 #[cfg(target_os = "macos")]
 pub mod macos;

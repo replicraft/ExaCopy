@@ -7,6 +7,7 @@ license.workspace = true
 publish = false
 
 [features]
+experimental-linux-managed-sync = ["dep:libc"]
 windows-read-fixture = []
 experimental-windows-read = ["dep:exacopy-endpoint", "dep:windows-sys", "windows-sys/Win32_System_Threading"]
 experimental-windows-copy = ["dep:exacopy-endpoint", "dep:exacopy-model", "dep:windows-sys"]
@@ -21,6 +22,9 @@ exacopy-endpoint.workspace = true
 exacopy-model.workspace = true
 nix = { workspace = true, features = ["feature"] }
 rustix = { workspace = true, features = ["rand"] }
+
+[target.'cfg(all(target_os = "linux", target_pointer_width = "64", any(target_arch = "x86_64", target_arch = "aarch64")))'.dependencies]
+libc = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 apfs-mounted.workspace = true

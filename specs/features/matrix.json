@@ -43,6 +43,14 @@
       "feature_statuses": ["verification"],
       "purpose": "Compile the minimal workspace with the individual model extraction feature enabled."
     },
+    "experimental-linux-managed-sync": {
+      "defaults": false,
+      "check_cli": false,
+      "feature_statuses": [],
+      "exact_features": ["exacopy-platform/experimental-linux-managed-sync"],
+      "targets": ["x86_64-unknown-linux-gnu"],
+      "purpose": "Check the opt-in held ext4 mount attribute adapter and its separately qualified native integration test."
+    },
     "experimental-apfs-copy": {
       "defaults": false,
       "check_cli": false,
@@ -292,6 +300,13 @@
       }
     },
     "exacopy-platform": {
+      "experimental-linux-managed-sync": {
+        "status": "experimental",
+        "targets": ["x86_64-unknown-linux-gnu"],
+        "enables": ["dep:libc"],
+        "resolution_probe": [],
+        "purpose": "Observe exact native ext4 mount attributes for the experimental managed sync profile."
+      },
       "experimental-windows-copy": {
         "status": "experimental",
         "targets": ["x86_64-pc-windows-msvc"],
@@ -468,7 +483,12 @@
     "libc": {
       "default_features": true,
       "features": [],
-      "purpose": "Access macOS functions and constants unavailable through the safe platform wrapper."
+      "optional_targets": {
+        "exacopy-platform": [
+          "cfg(all(target_os = \"linux\", target_pointer_width = \"64\", any(target_arch = \"x86_64\", target_arch = \"aarch64\")))"
+        ]
+      },
+      "purpose": "Access platform functions and constants unavailable through the safe wrapper, including the opt-in Linux statmount query."
     },
     "minicbor": {
       "default_features": false,

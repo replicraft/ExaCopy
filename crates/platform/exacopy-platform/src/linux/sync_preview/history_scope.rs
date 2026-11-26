@@ -72,20 +72,7 @@ impl<'view> SyncPreviewPair<'view, '_> {
 		)
 		.ok_or(SyncPreviewError::UnsupportedNamespace)?;
 		let namespaces = pair.namespaces.facts();
-		let table = proc.mount_table().map_err(SyncPreviewError::System)?;
-		let observed_mount = table
-			.whole_filesystem_mount(&pair.parent)
-			.map_err(SyncPreviewError::System)?;
-		let record = table
-			.record(observed_mount)
-			.ok_or(SyncPreviewError::UnsupportedMount)?;
-		if observed_mount != pair.mount
-			|| record.filesystem != b"ext4"
-			|| fs::fstatfs(&pair.parent)?.f_type != EXT_SUPER_MAGIC
-		{
-			return Err(SyncPreviewError::UnsupportedMount);
-		}
-		let unique_mount = unique_mount_id(&pair.parent)?;
+		let unique_mount = whole_ext4_mount(&proc, &pair.parent, pair.mount)?;
 		check_directory(&pair.parent, pair.parent_identity, pair.mount, unique_mount)?;
 		let [left, right] = &pair.roots;
 		check_directory(left.directory(), left.identity(), pair.mount, unique_mount)?;
@@ -110,6 +97,28 @@ impl<'view> SyncPreviewPair<'view, '_> {
 			fact(right.identity(), right_name),
 		])
 	}
+}
+
+pub(super) fn whole_ext4_mount(
+	proc: &ProcMounts,
+	descriptor: impl AsFd,
+	expected: u64,
+) -> Result<NonZeroU64, SyncPreviewError> {
+	let fd = descriptor.as_fd();
+	let table = proc.mount_table().map_err(SyncPreviewError::System)?;
+	let observed = table
+		.whole_filesystem_mount(fd)
+		.map_err(SyncPreviewError::System)?;
+	let record = table
+		.record(observed)
+		.ok_or(SyncPreviewError::UnsupportedMount)?;
+	if observed != expected
+		|| record.filesystem != b"ext4"
+		|| fs::fstatfs(fd)?.f_type != EXT_SUPER_MAGIC
+	{
+		return Err(SyncPreviewError::UnsupportedMount);
+	}
+	unique_mount_id(fd)
 }
 
 fn unique_mount_id(descriptor: impl AsFd) -> Result<NonZeroU64, SyncPreviewError> {

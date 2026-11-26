@@ -24,6 +24,8 @@ const ORDINARY_PERMISSION_BITS: u32 = 0o777;
 
 mod history_members;
 mod history_scope;
+#[cfg(feature = "experimental-linux-managed-sync")]
+mod managed_mount;
 mod names;
 mod namespaces;
 #[cfg(test)]
@@ -48,6 +50,12 @@ pub enum SyncPreviewError {
 	UnsupportedNamespace,
 	/// The held directory uses encrypted or case-folded lookup semantics.
 	UnsupportedHistoryNamePolicy,
+	/// Exact native mount attributes were unavailable.
+	#[cfg(feature = "experimental-linux-managed-sync")]
+	UnsupportedHistoryMountAttributes,
+	/// The held mount translates UID/GID values.
+	#[cfg(feature = "experimental-linux-managed-sync")]
+	IdMappedHistoryMount,
 	/// Lookup did not correspond to an exact raw entry.
 	NameAlias,
 	/// The exact-name confirmation exceeded the bounded directory scan.
@@ -76,6 +84,12 @@ impl std::fmt::Display for SyncPreviewError {
 			}
 			Self::UnsupportedHistoryNamePolicy => formatter
 				.write_str("history preview requires exact unencrypted raw directory names"),
+			#[cfg(feature = "experimental-linux-managed-sync")]
+			Self::UnsupportedHistoryMountAttributes => {
+				formatter.write_str("history preview requires verified native mount attributes")
+			}
+			#[cfg(feature = "experimental-linux-managed-sync")]
+			Self::IdMappedHistoryMount => formatter.write_str("history preview refuses mount ID mapping"),
 			Self::NameAlias => formatter.write_str("sync lookup found a differently spelled entry"),
 			Self::DirectoryLimit => {
 				formatter.write_str("sync directory scan exceeds its entry limit")
