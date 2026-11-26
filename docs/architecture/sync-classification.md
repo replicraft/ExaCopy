@@ -31,3 +31,6 @@ incomplete/unknown observations, incumbent preservation and fabricated
 common history. Private evidence remains in
 `/private/tmp/exacopy-sync-classifier.FcNbHd3K`; older model coverage results
 exclude this module.
+
+The [proposed genesis decision](sync-baseline-genesis.md) specifies the
+fresh paired evidence and ownership required for an initial common seed.
