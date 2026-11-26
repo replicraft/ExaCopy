@@ -10,7 +10,9 @@ use rustix::io::Errno;
 
 use super::super::journal_segment::LinuxJournalSegment;
 use super::super::source::reopen_regular_for_append;
-use super::super::stage::{create_private_directory, create_private_file, sync_directory};
+use super::super::stage::{
+	component, create_private_directory, create_private_file, sync_directory,
+};
 use super::lease::{lock_job, reopen_directory};
 use super::{
 	DestinationRoot, FIRST_SEGMENT, FileIdentity, FilePolicy, JOURNAL, PrivateDirectory, RECEIPT,
@@ -104,6 +106,25 @@ impl RecoveryWriteLease<'_> {
 	#[must_use]
 	pub fn job(&self) -> &RecoveryJob<'_> {
 		&self.job
+	}
+
+	/// Requires two names to be observed absent under this held job root.
+	///
+	/// Each lookup is relative to the held directory and does not follow links.
+	/// These observations grant no authority for later effects and carry no
+	/// durability claim.
+	///
+	/// # Errors
+	/// Refuses an occupied name, a changed job or root binding, or a lookup failure.
+	pub fn require_job_root_names_absent(
+		&self,
+		names: [UnixComponent<'_>; 2],
+	) -> Result<(), StageError> {
+		self.job.recheck()?;
+		for name in names {
+			super::check_absent(&self.job.directory.file, component(name))?;
+		}
+		self.job.recheck()
 	}
 
 	/// Retains read-only pins for a private stage after its writer scope ends.

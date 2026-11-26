@@ -147,6 +147,47 @@ fn publication_barriers_require_the_leased_job_and_current_published_names() {
 }
 
 #[test]
+fn job_root_absence_refuses_occupied_names_and_a_rebound_job() {
+	let (scratch, root) = fixture();
+	let bootstrap = root.create_job_directory(name(JOB)).unwrap();
+	let identity = bootstrap.identity();
+	drop(bootstrap);
+
+	let writer = root.try_recovery_write_lease(name(JOB), identity).unwrap();
+	let names = [name(RECEIPTS), name(RECEIPT)];
+	writer.require_job_root_names_absent(names).unwrap();
+
+	let receipt_directory = scratch.path(JOB).join(RECEIPTS);
+	fs::create_dir(&receipt_directory).unwrap();
+	assert!(matches!(
+		writer.require_job_root_names_absent(names),
+		Err(StageError::IdentityChanged)
+	));
+	fs::remove_dir(&receipt_directory).unwrap();
+
+	let receipt = scratch.path(JOB).join(RECEIPT);
+	symlink("missing-receipt-target", &receipt).unwrap();
+	assert!(matches!(
+		writer.require_job_root_names_absent(names),
+		Err(StageError::IdentityChanged)
+	));
+	assert_eq!(
+		fs::read_link(&receipt).unwrap(),
+		std::path::Path::new("missing-receipt-target")
+	);
+	fs::remove_file(&receipt).unwrap();
+	writer.require_job_root_names_absent(names).unwrap();
+
+	fs::rename(scratch.path(JOB), scratch.path(MOVED)).unwrap();
+	let replacement = root.create_job_directory(name(JOB)).unwrap();
+	assert_ne!(replacement.identity(), identity);
+	assert!(matches!(
+		writer.require_job_root_names_absent(names),
+		Err(StageError::IdentityChanged)
+	));
+}
+
+#[test]
 fn receipts_are_exclusive_and_existing_bytes_have_only_read_access() {
 	let (scratch, root) = fixture();
 	let bootstrap = root.create_job_directory(name(JOB)).unwrap();
