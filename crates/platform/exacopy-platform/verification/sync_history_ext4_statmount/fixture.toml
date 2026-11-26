@@ -1,0 +1,17 @@
+schema_version = 1
+id = "linux-sync-history-ext4-statmount"
+target = "x86_64-unknown-linux-gnu"
+profile = "linux-unprivileged-whole-ext4-sync-statmount-v1"
+rust_toolchain = "1.100.0"
+runner = "verification/sync_history_ext4_statmount/run.py"
+controls = "verification/sync_history_ext4_statmount/test_runner.py"
+workflow = ".github/workflows/linux-sync-history-ext4-statmount-qualification.yml"
+result = "result.json"
+
+[[case]]
+kind = "rust-integration"
+test_target = "linux_sync_history_ext4_statmount"
+selector = "held_ext4_history_mount_admits_unmapped_attributes"
+source = "tests/linux_sync_history_ext4_statmount.rs"
+required_feature = "experimental-linux-managed-sync"
+ignored = true

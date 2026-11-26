@@ -17,6 +17,11 @@ name = "windows_read"
 path = "tests/windows_read.rs"
 required-features = ["windows-read-fixture"]
 
+[[test]]
+name = "linux_sync_history_ext4_statmount"
+path = "tests/linux_sync_history_ext4_statmount.rs"
+required-features = ["experimental-linux-managed-sync"]
+
 [target.'cfg(target_os = "linux")'.dependencies]
 exacopy-endpoint.workspace = true
 exacopy-model.workspace = true

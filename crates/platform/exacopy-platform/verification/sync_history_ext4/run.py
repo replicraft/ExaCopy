@@ -2,6 +2,7 @@
 
 import argparse
 from contextlib import ExitStack
+from dataclasses import dataclass
 import ctypes
 import errno
 import hashlib
@@ -40,6 +41,33 @@ UNAVAILABLE = {errno.ENOENT, errno.ENODEV, errno.ENOSYS, errno.EINVAL, errno.EOP
                errno.ELOOP, errno.EXDEV, errno.EACCES, errno.EPERM}
 
 
+@dataclass(frozen=True)
+class FixtureProfile:
+    id: str
+    profile: str
+    definition: Path
+    test: str
+    case: str
+    parent_variable: str
+    workflow: str
+    required_feature: str | None = None
+
+
+HISTORY = FixtureProfile(
+    "linux-sync-history-ext4", PROFILE, FIXTURE, TEST, CASE,
+    "EXACOPY_SYNC_HISTORY_EXT4_PARENT", ".github/workflows/linux-sync-history-ext4-qualification.yml",
+)
+STATMOUNT = FixtureProfile(
+    "linux-sync-history-ext4-statmount", "linux-unprivileged-whole-ext4-sync-statmount-v1",
+    FIXTURE.parent.parent / "sync_history_ext4_statmount" / "fixture.toml", "linux_sync_history_ext4_statmount",
+    "held_ext4_history_mount_admits_unmapped_attributes", "EXACOPY_SYNC_HISTORY_STATMOUNT_PARENT",
+    ".github/workflows/linux-sync-history-ext4-statmount-qualification.yml",
+    "experimental-linux-managed-sync",
+)
+STATMOUNT_MARKER = "EXACOPY_SYNC_HISTORY_STATMOUNT_RESULT "
+SIDES = ("left", "right")
+
+
 class Blocked(RuntimeError):
     """An independently observed host prerequisite is unavailable."""
 
@@ -49,7 +77,7 @@ def require(condition, message):
         raise ValueError(message)
 
 
-def command(evidence, label, args, *, env=None, held=(), executable=None, timeout=20):
+def command(evidence, label, args, *, env=None, held=(), executable=None, timeout=20, observe_exit=False):
     args = list(map(os.fspath, args))
     marker = evidence / f"{label}.drain"
     with marker.open("x", encoding="ascii") as state:
@@ -94,6 +122,8 @@ def command(evidence, label, args, *, env=None, held=(), executable=None, timeou
         (evidence / f"{label}.stderr").write_bytes(output[1])
         (evidence / f"{label}.exit").write_text(f"{code}\n")
         marker.write_text(f"{drain}\n")
+    if observe_exit:
+        return bytes(output[0]).decode("utf-8", errors="strict"), code
     require(code == 0, f"{label} exited {code}")
     return bytes(output[0]).decode("utf-8", errors="strict")
 
@@ -308,15 +338,17 @@ def check_revision(revision, evidence, phase):
     require(head == revision and not dirt, "qualification requires an exact clean revision")
 
 
-def artifact(output, target_root):
+def artifact(output, target_root, profile=HISTORY):
     paths = []
     for row in output.splitlines():
         event = json.loads(row)
         target = event.get("target", {})
-        if (event.get("reason") == "compiler-artifact" and target.get("name") == TEST
+        if (event.get("reason") == "compiler-artifact" and target.get("name") == profile.test
                 and target.get("kind") == ["test"] and event.get("profile", {}).get("test") is True
                 and event.get("manifest_path") == str(PACKAGE / "Cargo.toml")
-                and target.get("src_path") == str(PACKAGE / "tests" / f"{TEST}.rs")
+                and target.get("src_path") == str(PACKAGE / "tests" / f"{profile.test}.rs")
+                and (profile.required_feature is None
+                     or event.get("features") == [profile.required_feature])
                 and event.get("executable")):
             paths.append(Path(event["executable"]))
     require(len(paths) == 1, "expected exactly one matching native Cargo integration test artifact")
@@ -356,7 +388,38 @@ def checked_result(output, facts):
     return result
 
 
-def execute(evidence, binary, env, facts, report):
+def checked_statmount_result(output, code, facts, sides):
+    lines = output.splitlines()
+    markers = [line.removeprefix(STATMOUNT_MARKER) for line in lines if line.startswith(STATMOUNT_MARKER)]
+    require(len(markers) == 1, "required one statmount result marker")
+    require(sum(line.strip() == f"test {STATMOUNT.case} ..." for line in lines) == 1,
+            "statmount fixture did not report its exact executed case")
+    pairs = [token.split("=", 1) for token in markers[0].split()]
+    require(all(len(pair) == 2 for pair in pairs), "invalid statmount result")
+    status = dict(pairs)
+    require(len(status) == len(pairs) and status.get("schema_version") == "1"
+            and status.get("feature") == STATMOUNT.required_feature, "invalid statmount feature or schema")
+    if status.get("outcome") == "blocked":
+        require(code == 101 and status.keys() == {"schema_version", "outcome", "feature", "reason"}
+                and status["reason"] in {"unsupported_mount_attributes", "idmapped_mount", "permission_denied"}
+                and lines.count("FAILED") == 1
+                and sum(line.startswith("test result: FAILED. 0 passed; 1 failed; 0 ignored;")
+                        for line in lines) == 1, "invalid typed statmount blockage")
+        return status
+    keys = {"schema_version", "outcome", "feature", "boot", "mount_namespace", "user_namespace",
+            "mount", "unique_mount", "parent", "left", "right", "idmap"}
+    require(code == 0 and status.keys() == keys and status["outcome"] == "passed"
+            and status["idmap"] == "clear" and lines.count("ok") == 1
+            and sum(line.startswith("test result: ok. 1 passed; 0 failed; 0 ignored;")
+                    for line in lines) == 1, "statmount fixture did not pass exactly once")
+    for key in ("boot", "mount_namespace", "user_namespace", "mount", "unique_mount", "parent"):
+        require(status[key] == str(facts[key]), f"statmount {key} differs from independent observation")
+    for side in SIDES:
+        require(status[side] == sides[side], "statmount fixture sibling identity differs")
+    return status
+
+
+def execute(evidence, binary, env, facts, report, profile=HISTORY, sides=None):
     with os.fdopen(os.open(binary, FD_FLAGS | os.O_NONBLOCK), "rb", buffering=0) as held:
         node = os.fstat(held.fileno())
         require(stat.S_ISREG(node.st_mode) and node.st_mode & 0o111
@@ -369,38 +432,61 @@ def execute(evidence, binary, env, facts, report):
         for label, options in (("listed", []), ("ignored", ["--ignored"])):
             listed = command(evidence, label, [binary, "--list", "--format=terse", *options],
                              env=env, executable=pinned, held=(held.fileno(),))
-            require(listed.strip() == f"{CASE}: test", "unexpected test inventory")
-        result = command(evidence, "run", [
-            binary, "--ignored", "--exact", "--nocapture", "--test-threads=1", "--color", "never", CASE,
-        ], env=env, executable=pinned, held=(held.fileno(),), timeout=45)
-        report["case"] = checked_result(result, facts)
+            require(listed.strip() == f"{profile.case}: test", "unexpected test inventory")
+        args = [binary, "--ignored", "--exact", "--nocapture", "--test-threads=1",
+                "--color", "never", profile.case]
+        options = {"env": env, "executable": pinned, "held": (held.fileno(),), "timeout": 45}
+        if profile is STATMOUNT:
+            output, code = command(evidence, "run", args, observe_exit=True, **options)
+            report["case"] = checked_statmount_result(output, code, facts, sides)
+        else:
+            result = command(evidence, "run", args, **options)
+            report["case"] = checked_result(result, facts)
         after = binary.stat(follow_symlinks=False)
         require((node.st_dev, node.st_ino) == (after.st_dev, after.st_ino)
                 and report["executable_sha256"] == digest_file(held),
                 "held executable or exact name changed")
 
 
-def manifest_digest():
-    raw = FIXTURE.read_bytes()
+def manifest_digest(profile=HISTORY):
+    raw = profile.definition.read_bytes()
     actual = tomllib.loads(raw.decode())
     expected = {
-        "schema_version": 1, "id": "linux-sync-history-ext4", "target": TARGET,
-        "profile": PROFILE, "rust_toolchain": TOOLCHAIN,
-        "runner": "verification/sync_history_ext4/run.py",
-        "controls": "verification/sync_history_ext4/test_runner.py",
-        "workflow": ".github/workflows/linux-sync-history-ext4-qualification.yml",
-        "result": "result.json",
-        "case": [{"kind": "rust-integration", "test_target": TEST, "selector": CASE,
-                  "source": f"tests/{TEST}.rs", "ignored": True}],
+        "schema_version": 1, "id": profile.id, "target": TARGET,
+        "profile": profile.profile, "rust_toolchain": TOOLCHAIN,
+        "runner": profile.definition.with_name("run.py").relative_to(PACKAGE).as_posix(),
+        "controls": profile.definition.with_name("test_runner.py").relative_to(PACKAGE).as_posix(),
+        "workflow": profile.workflow, "result": "result.json",
+        "case": [{"kind": "rust-integration", "test_target": profile.test, "selector": profile.case,
+                  "source": f"tests/{profile.test}.rs", "ignored": True}],
     }
+    if profile.required_feature is not None:
+        expected["case"][0]["required_feature"] = profile.required_feature
     require(actual == expected and type(actual["schema_version"]) is int
             and actual["case"][0]["ignored"] is True, "exact native fixture manifest drift")
     return hashlib.sha256(raw).hexdigest()
 
 
-def qualify(revision, temp, evidence, report):
+def sibling_facts(parent_fd, held, parent_facts):
+    result = {}
+    for side, fd in held.items():
+        node = os.fstat(fd)
+        named = os.stat(side, dir_fd=parent_fd, follow_symlinks=False)
+        identity = f"{node.st_dev}:{node.st_ino}"
+        require((node.st_dev, node.st_ino) == (named.st_dev, named.st_ino)
+                and stat.S_ISDIR(node.st_mode) and stat.S_IMODE(node.st_mode) == 0o700
+                and node.st_uid == os.geteuid() and not os.listdir(fd)
+                and unique_mount(fd) == parent_facts["unique_mount"],
+                "held statmount sibling changed")
+        result[side] = identity
+    require(len({parent_facts["parent"], *result.values()}) == len(result) + 1,
+            "statmount siblings must have distinct identities")
+    return result
+
+
+def qualify(revision, temp, evidence, report, profile=HISTORY):
     check_revision(revision, evidence, "before")
-    report["fixture_manifest_sha256"] = manifest_digest()
+    report["fixture_manifest_sha256"] = manifest_digest(profile)
     parent_fd = os.open(temp, DIR_FLAGS)
     try:
         node = os.fstat(parent_fd)
@@ -420,6 +506,7 @@ def qualify(revision, temp, evidence, report):
     report["cleanup"] = "pending"
     parent = work / "fixture"
     parent_identity = None
+    held_sides = {}
     report["owned_work_basename"] = work.name
     try:
         require(not supervision.CANCELLATION_REQUESTED, "cancelled before fixture allocation")
@@ -430,6 +517,11 @@ def qualify(revision, temp, evidence, report):
             before = observe(parent, parent_fd, evidence, "fixture-before")
             require(stat.S_IMODE(os.fstat(parent_fd).st_mode) == 0o700 and not any(parent.iterdir()),
                     "private fixture parent is unavailable or occupied")
+            if profile is STATMOUNT:
+                for side in SIDES:
+                    os.mkdir(side, mode=0o700, dir_fd=parent_fd)
+                    held_sides[side] = os.open(side, DIR_FLAGS, dir_fd=parent_fd)
+            before_sides = sibling_facts(parent_fd, held_sides, before) if profile is STATMOUNT else None
             target_root = work / "target"
             overrides = {"RUSTC", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "RUSTFLAGS",
                          "CARGO_ENCODED_RUSTFLAGS", "CARGO_BUILD_RUSTC", "CARGO_BUILD_RUSTFLAGS",
@@ -441,61 +533,96 @@ def qualify(revision, temp, evidence, report):
                 "CARGO_INCREMENTAL": "0", "CARGO_PROFILE_TEST_DEBUG": "0", "LC_ALL": "C",
                 "TMPDIR": str(work),
             }
-            output = command(evidence, "cargo", [
-                "cargo", f"+{TOOLCHAIN}", "test", "--locked", "--offline", "--jobs", "2",
-                "--target", TARGET, "-p", "exacopy-platform", "--test", TEST,
-                "--no-run", "--message-format=json",
-            ], env=env, timeout=900)
+            args = ["cargo", f"+{TOOLCHAIN}", "test", "--locked", "--offline", "--jobs", "2",
+                    "--target", TARGET, "-p", "exacopy-platform", "--test", profile.test,
+                    "--no-run", "--message-format=json"]
+            if profile.required_feature is not None:
+                args.extend(("--features", profile.required_feature))
+            output = command(evidence, "cargo", args, env=env, timeout=900)
             child_env = {
                 "PATH": "/usr/bin:/bin", "LC_ALL": "C", "TMPDIR": str(work),
-                "EXACOPY_SYNC_HISTORY_EXT4_PARENT": str(parent),
+                profile.parent_variable: str(parent),
             }
-            execute(evidence, artifact(output, target_root), child_env, before, report)
+            execute(evidence, artifact(output, target_root, profile), child_env, before, report,
+                    profile, before_sides)
             try:
                 after = observe(parent, parent_fd, evidence, "fixture-after")
             except Blocked as error:
                 raise ValueError("native fixture substrate unavailable after execution") from error
             require(after == before, "native fixture substrate changed")
             report["fixture_substrate"] = before
+            if profile is STATMOUNT:
+                require(before_sides == sibling_facts(parent_fd, held_sides, after),
+                        "native statmount sibling custody changed")
+                report["fixture_siblings"] = before_sides
             check_revision(revision, evidence, "after")
-            require(manifest_digest() == report["fixture_manifest_sha256"], "fixture manifest changed")
+            require(manifest_digest(profile) == report["fixture_manifest_sha256"], "fixture manifest changed")
             require(hashlib.sha256(lock.read_bytes()).hexdigest() == report["lockfile_sha256"],
                     "lockfile changed")
+            if profile is STATMOUNT and report["case"].get("outcome") == "blocked":
+                raise Blocked(report["case"]["reason"])
         finally:
             os.close(parent_fd)
     finally:
-        terminal = {"not_started", "verified_absent", "verified_absent_after_failure"}
-        require(all(path.read_text().strip() in terminal for path in evidence.glob("*.drain")),
-                "owned process drain is unconfirmed; retain private tree")
-        require(work.resolve() == work and inode(work) == work_identity,
-                "private work identity changed; retain all entries")
-        require(parent_identity is not None and parent.is_dir() and parent.resolve() == parent
-                and inode(parent) == parent_identity and not any(parent.iterdir()),
-                "fixture cleanup unconfirmed; retain private tree")
-        parent.rmdir()
-        shutil.rmtree(work)
-        require(not os.path.lexists(work), "private build cleanup unconfirmed")
-        report["cleanup"] = "verified_absent"
+        try:
+            terminal = {"not_started", "verified_absent", "verified_absent_after_failure"}
+            require(all(path.read_text().strip() in terminal for path in evidence.glob("*.drain")),
+                    "owned process drain is unconfirmed; retain private tree")
+            require(work.resolve() == work and inode(work) == work_identity,
+                    "private work identity changed; retain all entries")
+            require(parent_identity is not None and parent.is_dir() and parent.resolve() == parent
+                    and inode(parent) == parent_identity, "fixture cleanup unconfirmed; retain private tree")
+            cleanup_siblings(parent, held_sides, parent_identity)
+            require(not any(parent.iterdir()), "fixture is occupied; retain private tree")
+            parent.rmdir()
+            shutil.rmtree(work)
+            require(not os.path.lexists(work), "private build cleanup unconfirmed")
+            report["cleanup"] = "verified_absent"
+        finally:
+            for fd in held_sides.values():
+                os.close(fd)
 
 
-def main():
+def cleanup_siblings(parent, held, parent_identity):
+    if not held:
+        return
+    directory = os.open(parent, DIR_FLAGS)
+    try:
+        original = os.fstat(directory)
+        require(f"{original.st_dev}:{original.st_ino}" == parent_identity,
+                "cleanup parent is outside held custody")
+        require(set(os.listdir(directory)) == set(held), "unexpected names; retain fixture")
+        for side, fd in held.items():
+            node = os.fstat(fd)
+            named = os.stat(side, dir_fd=directory, follow_symlinks=False)
+            require((node.st_dev, node.st_ino) == (named.st_dev, named.st_ino)
+                    and stat.S_ISDIR(named.st_mode) and not os.listdir(fd),
+                    "sibling cleanup custody changed")
+        for side in held:
+            os.rmdir(side, dir_fd=directory)
+    finally:
+        os.close(directory)
+
+
+def main(profile=HISTORY):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--revision", required=True)
     args = parser.parse_args()
     raw = Path(os.environ["RUNNER_TEMP"])
     require(raw.is_absolute() and raw.resolve(strict=True) == raw, "invalid exact RUNNER_TEMP")
-    evidence = Path(tempfile.mkdtemp(prefix="exacopy-sync-ext4-evidence-", dir=raw))
+    prefix = "exacopy-sync-ext4-statmount-evidence-" if profile is STATMOUNT else "exacopy-sync-ext4-evidence-"
+    evidence = Path(tempfile.mkdtemp(prefix=prefix, dir=raw))
     output_path = os.environ.get("GITHUB_OUTPUT")
     if output_path is not None:
         require("\n" not in str(evidence) and "\r" not in str(evidence), "invalid evidence output path")
         with open(output_path, "a", encoding="utf-8") as output:
             output.write(f"evidence_path={evidence}\n")
-    report = {"revision": args.revision, "profile": PROFILE, "outcome": "failed", "cleanup": "not_created"}
+    report = {"revision": args.revision, "profile": profile.profile, "outcome": "failed", "cleanup": "not_created"}
     code = 1
     for signum in (signal.SIGINT, signal.SIGTERM):
         signal.signal(signum, supervision.interrupted)
     try:
-        qualify(args.revision, raw, evidence, report)
+        qualify(args.revision, raw, evidence, report, profile)
     except Blocked as error:
         report.update(outcome="blocked", reason=str(error))
         code = 77
