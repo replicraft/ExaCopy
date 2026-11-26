@@ -123,18 +123,20 @@ fn admit_stage(
 	owner: u32,
 ) -> Result<(), SourceError> {
 	let observed = admission.metadata();
-	let initial = &stage.initial;
+	let initial = stage.initial.metadata;
+	let modified = initial.times.modification;
+	let changed = initial.change;
 	if ManagedObjectIdentity::from_mounted(admission.identity()) != stage.observation.identity()
 		|| observed.length != stage.observation.length()
 		|| observed.owner != owner
-		|| observed.group != initial.st_gid
+		|| observed.group != initial.gid
 		|| observed.mode != FILE_MODE.bits()
 		|| observed.link_count != 1
 		|| observed.flags != 0
-		|| observed.modified.seconds != initial.st_mtime
-		|| i64::from(observed.modified.nanoseconds) != initial.st_mtime_nsec
-		|| observed.changed.seconds != initial.st_ctime
-		|| i64::from(observed.changed.nanoseconds) != initial.st_ctime_nsec
+		|| observed.modified.seconds != modified.seconds()
+		|| i64::from(observed.modified.nanoseconds) != modified.nanoseconds()
+		|| observed.changed.seconds != changed.seconds()
+		|| i64::from(observed.changed.nanoseconds) != changed.nanoseconds()
 	{
 		return Err(SourceError::AdmissionRefused);
 	}
