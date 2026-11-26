@@ -13,6 +13,10 @@ use exacopy_plan::workflow_sync::{
 	WorkflowRef, decode_endpoint, decode_envelope, decode_root, project_pair, scope_digest,
 };
 
+mod manual;
+
+pub use manual::{SelectedSyncGenesisMember, inspect_selected_sync_genesis};
+
 /// Independent historical selection. Values must come from owner-approved state.
 #[derive(Clone, Copy)]
 pub struct ExpectedSyncGenesis<'selection> {
@@ -138,6 +142,15 @@ pub fn verify_sync_genesis<'root, 'selection>(
 	expected: &ExpectedSyncGenesis<'selection>,
 	resolver: &mut impl SyncGenesisResolver,
 ) -> Result<AuthenticatedSyncGenesis<'root, 'selection>, SyncGenesisError> {
+	verify_sync_genesis_with_inventory(root_bytes, expected, resolver, |_, _| Ok(()))
+}
+
+fn verify_sync_genesis_with_inventory<'root, 'selection, Resolver: SyncGenesisResolver>(
+	root_bytes: &'root [u8],
+	expected: &ExpectedSyncGenesis<'selection>,
+	resolver: &mut Resolver,
+	check_inventory: impl FnOnce(&Resolver, [WorkflowRef; 3]) -> Result<(), SyncGenesisError>,
+) -> Result<AuthenticatedSyncGenesis<'root, 'selection>, SyncGenesisError> {
 	use SyncGenesisError as Error;
 
 	let root = decode_root(authenticate(
@@ -186,6 +199,8 @@ pub fn verify_sync_genesis<'root, 'selection>(
 	{
 		return Err(Error::Closure);
 	}
+
+	check_inventory(resolver, refs)?;
 
 	let mut buffer = [0; MAX_MEMBER_BYTES];
 	let mut ids = [root.id; 2];
@@ -283,7 +298,13 @@ fn read_member<'buffer>(
 	let bytes = buffer
 		.get_mut(..usize::from(reference.byte_len))
 		.ok_or(Error::Closure)?;
-	let mut reader = resolver.open(reference).map_err(Error::Read)?;
+	let reader = resolver.open(reference).map_err(Error::Read)?;
+	read_exact_artifact(reader, bytes)
+}
+
+fn read_exact_artifact(mut reader: impl Read, bytes: &mut [u8]) -> Result<&[u8], SyncGenesisError> {
+	use SyncGenesisError as Error;
+
 	exacopy_endpoint::read_exact_at(0, bytes, |_, chunk| reader.read(chunk))
 		.map_err(io::Error::other)
 		.map_err(Error::Read)?;

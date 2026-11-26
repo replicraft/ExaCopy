@@ -10,6 +10,9 @@ use exacopy_transfer::sync_genesis::{
 	ExpectedSyncGenesis, SyncGenesisError, SyncGenesisResolver, verify_sync_genesis,
 };
 
+#[path = "sync_genesis/manual.rs"]
+mod manual;
+
 const VECTORS: &str = include_str!("../verification/sync_genesis/vectors.tsv");
 
 fn hex(value: &str) -> Vec<u8> {
