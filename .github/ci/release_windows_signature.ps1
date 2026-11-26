@@ -1,6 +1,9 @@
 #Requires -Version 7.4
 [CmdletBinding()]
-param([Parameter(Mandatory)][string] $Directory)
+param(
+    [Parameter(Mandatory)][string] $Directory,
+    [string] $Report = (Join-Path $Directory 'native-signature.txt')
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -17,7 +20,7 @@ if ($signature.Status -ne [Management.Automation.SignatureStatus]::Valid -or
 }
 $tool = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe'
 & $tool verify /pa /all /v $binary 2>&1 |
-    Set-Content -Encoding utf8 (Join-Path $Directory 'native-signature.txt')
+    Set-Content -Encoding utf8 -LiteralPath $Report
 if ($LASTEXITCODE -ne 0) {
     throw 'Windows SDK Signature verification failed.'
 }

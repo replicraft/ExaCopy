@@ -38,7 +38,18 @@ must all succeed before publication.
 
 Production dispatch requires `publish=true` and the publisher's next
 monotonically increasing sequence. Whenever required evidence is unavailable,
-keep the job or the release approval blocked. The workflow attaches the three
+keep the job or the release approval blocked. The final verification matrix
+installs the exact production archive for each target using the generated
+checksum index and the separately configured publisher pin. It launches the
+selected CLI and withdraws the owned installation from a disposable root.
+The macOS and Windows checks verify the native signature of the installed
+executable against the approved signer before launch. The POSIX checks launch
+through the stable entry point. The Windows check executes the selected binary
+after confirming the shim and its selection, and public non-elevated shim
+execution remains a separate qualification. Publication downloads the same
+immutable Actions artifact identifier that passed the matrix.
+
+The workflow attaches the three
 archives, the checksum index, and the per-target SBOM and provenance. It
 compares GitHub's asset digests with the local file digests before it selects
 the draft as latest and checks the resulting immutable release again. If

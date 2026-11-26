@@ -149,11 +149,15 @@ def sign(args, identity):
     args.output.mkdir()
     assets = args.output / "assets"
     evidence = args.output / "evidence"
+    trust = args.output / "trust"
     assets.mkdir()
     evidence.mkdir()
+    trust.mkdir()
     with tempfile.TemporaryDirectory(prefix="exacopy-production-signer-") as temporary:
         work = Path(temporary)
         key, certificate, pin = production_key(work)
+        # Verifiers receive public material. Their pin comes from the protected environment.
+        shutil.copyfile(certificate, trust / "publisher.der")
         for target in candidate.ASSETS:
             unsigned_dir = args.unsigned / f"release-unsigned-{target}-{os.environ['GITHUB_RUN_ATTEMPT']}"
             unsigned, sbom, build = verified_build(unsigned_dir, target, commit, tag, version)

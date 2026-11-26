@@ -245,6 +245,8 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
     environment: release-macos-signing
+    outputs:
+      team-id: ${{ steps.native-sign.outputs.team-id }}
     env:
       NATIVE_TARGET: aarch64-apple-darwin
     steps:
@@ -265,6 +267,7 @@ jobs:
           python -B .github/ci/release_signed.py prepare-native --target "$NATIVE_TARGET" \
             --unsigned "$RUNNER_TEMP/exacopy-unsigned" --output "$RUNNER_TEMP/exacopy-native"
       - name: Sign, verify and notarize
+        id: native-sign
         env:
           EXACOPY_MACOS_CERT_P12_B64: ${{ secrets.EXACOPY_MACOS_CERT_P12_B64 }}
           EXACOPY_MACOS_CERT_PASSWORD: ${{ secrets.EXACOPY_MACOS_CERT_PASSWORD }}
@@ -273,7 +276,10 @@ jobs:
           EXACOPY_APPLE_NOTARY_KEY_B64: ${{ secrets.EXACOPY_APPLE_NOTARY_KEY_B64 }}
           EXACOPY_APPLE_NOTARY_KEY_ID: ${{ vars.EXACOPY_APPLE_NOTARY_KEY_ID }}
           EXACOPY_APPLE_NOTARY_ISSUER_ID: ${{ vars.EXACOPY_APPLE_NOTARY_ISSUER_ID }}
-        run: bash .github/ci/release_macos_sign.sh "$RUNNER_TEMP/exacopy-native"
+        run: |
+          [[ "$EXACOPY_MACOS_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]]
+          bash .github/ci/release_macos_sign.sh "$RUNNER_TEMP/exacopy-native"
+          printf 'team-id=%s\n' "$EXACOPY_MACOS_TEAM_ID" >> "$GITHUB_OUTPUT"
       - name: Smoke test the signed CLI and bind evidence to it
         run: |
           python -B .github/ci/release_signed.py record-native --target "$NATIVE_TARGET" \
@@ -291,6 +297,8 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 25
     environment: release-windows-signing
+    outputs:
+      signer-subject: ${{ steps.native-verify.outputs.signer-subject }}
     permissions:
       contents: read
       id-token: write
@@ -331,10 +339,17 @@ jobs:
           exclude-environment-credential: true
           cache-dependencies: false
       - name: Verify the native publisher and timestamp
+        id: native-verify
         shell: pwsh
         env:
           EXACOPY_WINDOWS_SIGNER_SUBJECT: ${{ vars.EXACOPY_WINDOWS_SIGNER_SUBJECT }}
-        run: ./.github/ci/release_windows_signature.ps1 -Directory (Join-Path $env:RUNNER_TEMP 'exacopy-native')
+        run: |
+          $subject = $env:EXACOPY_WINDOWS_SIGNER_SUBJECT
+          if ([string]::IsNullOrWhiteSpace($subject) -or $subject.Length -gt 2048 -or $subject -match '[\r\n]') {
+            throw 'Invalid approved Authenticode signer subject.'
+          }
+          ./.github/ci/release_windows_signature.ps1 -Directory (Join-Path $env:RUNNER_TEMP 'exacopy-native')
+          "signer-subject=$subject" >> $env:GITHUB_OUTPUT
       - name: Smoke test the signed CLI and bind evidence to it
         run: |
           python -B .github/ci/release_signed.py record-native --target "$NATIVE_TARGET" \
@@ -352,6 +367,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment: release-publisher-signing
+    outputs:
+      artifact-id: ${{ steps.production.outputs.artifact-id }}
+      publisher-sha256: ${{ steps.sign.outputs.publisher-sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -371,6 +389,7 @@ jobs:
           path: ${{ runner.temp }}/exacopy-native
           digest-mismatch: error
       - name: Sign the exact native artifacts and their SBOM and provenance digests
+        id: sign
         env:
           RELEASE_SEQUENCE: ${{ inputs.sequence }}
           EXACOPY_RELEASE_PRIVATE_KEY_PEM: ${{ secrets.EXACOPY_RELEASE_PRIVATE_KEY_PEM }}
@@ -381,17 +400,97 @@ jobs:
           python -B .github/ci/release_signed.py sign --sequence "$RELEASE_SEQUENCE" \
             --unsigned "$RUNNER_TEMP/exacopy-unsigned" --native "$RUNNER_TEMP/exacopy-native" \
             --output "$RUNNER_TEMP/exacopy-signed-release"
+          printf 'publisher-sha256=%s\n' "$EXACOPY_RELEASE_PUBLISHER_SHA256" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        id: production
         with:
           name: release-production-signed-${{ github.run_attempt }}
           path: ${{ runner.temp }}/exacopy-signed-release/
           if-no-files-found: error
           compression-level: 0
 
+  verify-production:
+    name: Verify the production archive on ${{ matrix.target }}
+    if: inputs.publish
+    needs: [publisher-sign, macos-sign, windows-sign]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            archive: exacopy-cli-x86_64-unknown-linux-gnu.tar.gz
+          - os: macos-15
+            target: aarch64-apple-darwin
+            archive: exacopy-cli-aarch64-apple-darwin.tar.gz
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            archive: exacopy-cli-x86_64-pc-windows-msvc.zip
+    env:
+      RELEASE_ARTIFACT_ID: ${{ needs.publisher-sign.outputs.artifact-id }}
+      RELEASE_ARCHIVE: ${{ matrix.archive }}
+      RELEASE_PUBLISHER_SHA256: ${{ needs.publisher-sign.outputs.publisher-sha256 }}
+    steps:
+      - name: Require the signed artifact and independent publisher pin
+        run: |
+          [[ "$RELEASE_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$RELEASE_PUBLISHER_SHA256" =~ ^[a-f0-9]{64}$ ]]
+          evidence="$RUNNER_TEMP/exacopy-evidence"
+          mkdir -p "$evidence"
+          printf 'artifact_id=%s\narchive=%s\npublisher_sha256=%s\n' \
+            "$RELEASE_ARTIFACT_ID" "$RELEASE_ARCHIVE" "$RELEASE_PUBLISHER_SHA256" > "$evidence/release-artifact.txt"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        if: runner.os != 'Windows'
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ env.RELEASE_ARTIFACT_ID }}
+          path: ${{ runner.temp }}/exacopy-signed-release
+          digest-mismatch: error
+      - name: Install, launch and withdraw the exact POSIX production archive
+        if: runner.os != 'Windows'
+        env:
+          EXACOPY_MACOS_TEAM_ID: ${{ needs.macos-sign.outputs.team-id }}
+        run: |
+          signed="$RUNNER_TEMP/exacopy-signed-release"
+          native_signature=()
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            native_signature+=(--apple-team-id "$EXACOPY_MACOS_TEAM_ID")
+          fi
+          bash .github/ci/capture.sh release-post-sign python -B tools/installer/test_latest.py \
+            --archive "$signed/assets/$RELEASE_ARCHIVE" --checksum-index "$signed/assets/SHA256SUMS.txt" \
+            --publisher-cert "$signed/trust/publisher.der" --publisher-sha256 "$RELEASE_PUBLISHER_SHA256" \
+            --version "${GITHUB_REF_NAME#v}" "${native_signature[@]}"
+      - name: Install, launch the selected Windows CLI and withdraw the owned version
+        if: runner.os == 'Windows'
+        env:
+          EXACOPY_WINDOWS_SIGNER_SUBJECT: ${{ needs.windows-sign.outputs.signer-subject }}
+        run: |
+          signed="$RUNNER_TEMP/exacopy-signed-release"
+          bash .github/ci/capture.sh release-post-sign pwsh -NoLogo -NoProfile -NonInteractive \
+            -File .github/ci/release_windows_fixture.ps1 -Archive "$signed/assets/$RELEASE_ARCHIVE" \
+            -Index "$signed/assets/SHA256SUMS.txt" -Certificate "$signed/trust/publisher.der" \
+            -PublisherSha256 "$RELEASE_PUBLISHER_SHA256" -Version "${GITHUB_REF_NAME#v}" \
+            -NativeSignatureReport "$RUNNER_TEMP/exacopy-evidence/release-post-sign-authenticode.txt"
+      - name: Retain exact production archive verification results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-production-results-${{ matrix.target }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-evidence/
+          if-no-files-found: warn
+          retention-days: 90
+
   publish:
     name: Stage, verify and publish the GitHub release
     if: inputs.publish
-    needs: publisher-sign
+    needs: [publisher-sign, verify-production]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment: release-publication
@@ -405,9 +504,13 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      - name: Require the verified production artifact identifier
+        env:
+          RELEASE_ARTIFACT_ID: ${{ needs.publisher-sign.outputs.artifact-id }}
+        run: '[[ "$RELEASE_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]'
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: release-production-signed-${{ github.run_attempt }}
+          artifact-ids: ${{ needs.publisher-sign.outputs.artifact-id }}
           path: ${{ runner.temp }}/exacopy-signed-release
           digest-mismatch: error
       - name: Publish the verified draft as latest

@@ -5,7 +5,8 @@ param(
     [Parameter(Mandatory)][string] $Index,
     [Parameter(Mandatory)][string] $Certificate,
     [Parameter(Mandatory)][string] $PublisherSha256,
-    [Parameter(Mandatory)][string] $Version
+    [Parameter(Mandatory)][string] $Version,
+    [string] $NativeSignatureReport
 )
 
 Set-StrictMode -Version Latest
@@ -44,41 +45,54 @@ function Test-ExaCopyPackagedLauncher {
     $bin = Join-Path $installRoot 'bin'
     $expectedExecutable = Join-Path (Join-Path (Join-Path $installRoot 'versions') $Version) 'exacopy.exe'
     $expectedLauncher = Join-Path $bin 'exacopy.ps1'
-    if ($installed.status -cne 'installed' -or $installed.path -cne $expectedExecutable -or
-        $installed.launcher -cne $expectedLauncher -or ![IO.File]::Exists($expectedLauncher)) {
-        throw 'The installer did not publish the exact packaged version and stable launcher.'
+    if ($installed.status -cne 'installed') { throw 'The installer did not publish the package.' }
+    try {
+        if ($installed.path -cne $expectedExecutable -or
+            $installed.launcher -cne $expectedLauncher -or ![IO.File]::Exists($expectedLauncher)) {
+            throw 'The installer did not publish the exact packaged version and stable launcher.'
+        }
+        Assert-ExaCopyExactEntries $bin @('exacopy.ps1', 'selected', 'owner.marker')
+        $selected = [Text.Encoding]::ASCII.GetString((Read-ExaCopyBoundedBytes (Join-Path $bin 'selected') 256))
+        $expectedSelection = "schema=exacopy-windows-selection-v1`nversion=$Version`nmanifest_sha256=$($Signed.ManifestHash)`n"
+        if ($selected -cne $expectedSelection) { throw 'The launcher does not select the exact signed package.' }
+        Confirm-ExaCopyArtifact $expectedExecutable $Signed.Release
+        Write-Output "Verified installed executable SHA-256 $($Signed.Release.sha256)"
+        if ($NativeSignatureReport) {
+            & (Join-Path $PSScriptRoot 'release_windows_signature.ps1') `
+                -Directory (Split-Path -Parent $expectedExecutable) -Report $NativeSignatureReport
+        }
+        $helpText = & $expectedExecutable --help
+        if ($LASTEXITCODE -ne 0 -or ($helpText -join "`n") -notmatch 'Usage: exacopy') {
+            throw 'The verified packaged CLI did not emit the expected help.'
+        }
+        $versionText = @(& $expectedExecutable --version)
+        if ($LASTEXITCODE -ne 0 -or $versionText.Count -eq 0 -or $versionText[0] -cne "exacopy $Version") {
+            throw 'The exact selected CLI did not report the expected version.'
+        }
     }
-    Assert-ExaCopyExactEntries $bin @('exacopy.ps1', 'selected', 'owner.marker')
-    $selected = [Text.Encoding]::ASCII.GetString((Read-ExaCopyBoundedBytes (Join-Path $bin 'selected') 256))
-    $expectedSelection = "schema=exacopy-windows-selection-v1`nversion=$Version`nmanifest_sha256=$($Signed.ManifestHash)`n"
-    if ($selected -cne $expectedSelection) { throw 'The launcher does not select the exact signed package.' }
-    Confirm-ExaCopyArtifact $expectedExecutable $Signed.Release
-    $versionText = @(& $expectedExecutable --version)
-    if ($LASTEXITCODE -ne 0 -or $versionText.Count -eq 0 -or $versionText[0] -cne "exacopy $Version") {
-        throw 'The exact selected CLI did not report the expected version.'
-    }
+    finally {
+        $removed = Uninstall-ExaCopySignedVersion $context -Quiesced
+        if ($removed.status -cne 'uninstalled' -or (Get-ExaCopyNodeExists $bin) -or
+            (Get-ExaCopyNodeExists (Split-Path -Parent $expectedExecutable)) -or
+            [IO.File]::ReadAllText($incumbent) -cne 'preserve a neighboring owner file') {
+            throw 'The uninstall did not withdraw exactly the owned launcher and version.'
+        }
 
-    $removed = Uninstall-ExaCopySignedVersion $context -Quiesced
-    if ($removed.status -cne 'uninstalled' -or (Get-ExaCopyNodeExists $bin) -or
-        (Get-ExaCopyNodeExists (Split-Path -Parent $expectedExecutable)) -or
-        [IO.File]::ReadAllText($incumbent) -cne 'preserve a neighboring owner file') {
-        throw 'The uninstall did not withdraw exactly the owned launcher and version.'
+        # The production uninstall retains the authenticated root. The runner
+        # fixture owns this entire disposable case and clears only its known files.
+        Assert-ExaCopyExactEntries $fixture @('Programs', 'unrelated.txt')
+        Assert-ExaCopyExactEntries $programs @('ExaCopy')
+        Assert-ExaCopyExactEntries $installRoot @('owner.marker', 'release.manifest', 'release.sig', 'versions')
+        Assert-ExaCopyExactEntries (Join-Path $installRoot 'versions') @()
+        foreach ($name in @('owner.marker', 'release.manifest', 'release.sig')) {
+            [IO.File]::Delete((Join-Path $installRoot $name))
+        }
+        [IO.Directory]::Delete((Join-Path $installRoot 'versions'), $false)
+        [IO.Directory]::Delete($installRoot, $false)
+        [IO.Directory]::Delete($programs, $false)
+        [IO.File]::Delete($incumbent)
+        [IO.Directory]::Delete($fixture, $false)
     }
-
-    # The production uninstall retains the authenticated root. The runner
-    # fixture owns this entire disposable case and clears only its known files.
-    Assert-ExaCopyExactEntries $fixture @('Programs', 'unrelated.txt')
-    Assert-ExaCopyExactEntries $programs @('ExaCopy')
-    Assert-ExaCopyExactEntries $installRoot @('owner.marker', 'release.manifest', 'release.sig', 'versions')
-    Assert-ExaCopyExactEntries (Join-Path $installRoot 'versions') @()
-    foreach ($name in @('owner.marker', 'release.manifest', 'release.sig')) {
-        [IO.File]::Delete((Join-Path $installRoot $name))
-    }
-    [IO.Directory]::Delete((Join-Path $installRoot 'versions'), $false)
-    [IO.Directory]::Delete($installRoot, $false)
-    [IO.Directory]::Delete($programs, $false)
-    [IO.File]::Delete($incumbent)
-    [IO.Directory]::Delete($fixture, $false)
 }
 
 $target = Get-ExaCopyTarget
@@ -98,14 +112,9 @@ try {
     $context = @{ PublisherSha256 = $PublisherSha256; Version = $Version; Target = $target }
     $signed = Read-ExaCopyReleaseFiles $stage.FullName $context $certificateBytes
     Assert-ExaCopyWindowsFloor $signed.Release.min_os
-    $executable = Join-Path $stage.FullName 'exacopy.exe'
-    Confirm-ExaCopyArtifact $executable $signed.Release
-    $helpText = & $executable --help
-    if ($LASTEXITCODE -ne 0 -or ($helpText -join "`n") -notmatch 'Usage: exacopy') {
-        throw 'The verified packaged CLI did not emit the expected help.'
-    }
     Test-ExaCopyPackagedLauncher $stage.FullName $target $signed
-    Write-Output 'The Windows installer verified the mixed index, installed the exact launcher selection and removed only its owned version.'
+    Write-Output 'Windows verified the archive, launcher selection, selected executable launch, and owned withdrawal.'
+    Write-Output 'The public non-elevated PowerShell shim requires its canonical per-user root.'
 }
 finally {
     foreach ($entry in $created) { [IO.File]::Delete((Join-Path $stage.FullName $entry)) }

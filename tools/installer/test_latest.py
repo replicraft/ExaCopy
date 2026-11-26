@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shlex
 import shutil
 import subprocess
@@ -332,6 +333,22 @@ def exercise(base):
     assert (root / ".high-water").is_file()
 
 
+def verify_developer_id(executable, team):
+    requirement = (
+        '=anchor apple generic'
+        ' and certificate 1[field.1.2.840.113635.100.6.2.6] exists'
+        ' and certificate leaf[field.1.2.840.113635.100.6.1.13] exists'
+        f' and certificate leaf[subject.OU] = "{team}"'
+    )
+    subprocess.run(["/usr/bin/codesign", "--verify", "--strict", "--verbose=2", "-R", requirement,
+                    executable], check=True, timeout=30)
+    details = subprocess.run(["/usr/bin/codesign", "--display", "--verbose=4", executable],
+                             check=True, capture_output=True, text=True, timeout=30).stderr
+    if not any(line.startswith("Timestamp=") for line in details.splitlines()):
+        raise ValueError("installed Developer ID signature has no secure timestamp")
+    print(details, end="")
+
+
 def exercise_release(base, release):
     source = mock_source(base)
     asset_url = f"{GITHUB}/download/v{release.version}"
@@ -367,20 +384,26 @@ def exercise_release(base, release):
     launcher = home / ".local" / "bin" / "exacopy"
     assert str(launcher) in run.stdout and launcher.readlink() == executable
     assert str(executable) in run.stdout and executable.stat().st_mode & 0o777 == 0o700
-    with tarfile.open(release.archive, "r:gz") as archive, executable.open("rb") as installed:
-        with archive.extractfile("exacopy") as packed:
-            assert sha256_stream(installed) == sha256_stream(packed)
-    launched = subprocess.run([launcher, "--version"], env=environment, capture_output=True, text=True, timeout=30)
-    assert launched.returncode == 0 and launched.stdout.splitlines()[:1] == [f"exacopy {release.version}"], launched
     incumbent = launcher.parent / "unrelated command"
     preserved = b"launcher directory incumbent\x00\xff"
     incumbent.write_bytes(preserved)
-    run = subprocess.run([str(source / "uninstall.sh"), *credentials, "--quiesced"], env=environment,
-                         capture_output=True, text=True, timeout=120)
-    assert run.returncode == 0 and not executable.exists(), run
-    assert not launcher.exists() and not launcher.is_symlink()
-    assert incumbent.read_bytes() == preserved
-    assert (root / ".high-water").is_file()
+    try:
+        with tarfile.open(release.archive, "r:gz") as archive, executable.open("rb") as installed:
+            with archive.extractfile("exacopy") as packed:
+                installed_digest = sha256_stream(installed)
+                assert installed_digest == sha256_stream(packed)
+        print(f"verified installed executable SHA-256 {installed_digest.hex()}")
+        if release.apple_team_id:
+            verify_developer_id(executable, release.apple_team_id)
+        launched = subprocess.run([launcher, "--version"], env=environment, capture_output=True, text=True, timeout=30)
+        assert launched.returncode == 0 and launched.stdout.splitlines()[:1] == [f"exacopy {release.version}"], launched
+    finally:
+        run = subprocess.run([str(source / "uninstall.sh"), *credentials, "--quiesced"], env=environment,
+                             capture_output=True, text=True, timeout=120)
+        assert run.returncode == 0 and not executable.exists(), run
+        assert not launcher.exists() and not launcher.is_symlink()
+        assert incumbent.read_bytes() == preserved
+        assert (root / ".high-water").is_file()
     print(f"pass release candidate install, stable launcher execution and owned withdrawal for {ARCHIVE}")
 
 
@@ -398,10 +421,15 @@ if __name__ == "__main__":
     parser.add_argument("--publisher-cert", type=Path)
     parser.add_argument("--publisher-sha256")
     parser.add_argument("--version")
+    parser.add_argument("--apple-team-id", help="require a trusted Developer ID signature on the installed CLI")
     release = parser.parse_args()
-    supplied = vars(release).values()
+    supplied = (release.archive, release.checksum_index, release.publisher_cert,
+                release.publisher_sha256, release.version)
     if any(supplied) and not all(supplied):
         parser.error("supply all five release fixture arguments together")
+    if release.apple_team_id is not None and (not all(supplied) or platform.system() != "Darwin"
+                                            or not re.fullmatch(r"[A-Z0-9]{10}", release.apple_team_id)):
+        parser.error("the Apple team ID requires Darwin, all release arguments and ten uppercase letters or digits")
     if os.geteuid() == 0:
         parser.error("run as an unprivileged user")
     temporary_root = "/private/tmp" if platform.system() == "Darwin" else "/tmp"
