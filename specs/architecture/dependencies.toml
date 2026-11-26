@@ -72,6 +72,7 @@ role = "application"
 members = { exacopy-cli = "apps/exacopy-cli" }
 normal.groups = ["contracts", "operations", "platform", "core", "storage", "codecs", "adapters", "network"]
 normal.external = ["blake3", "clap", "ed25519-dalek", "rustix", "serde", "serde_json", "uuid", "zeroize"]
+normal.optional_external = ["base64ct", "tokio"]
 dev.groups = ["testkit"]
 dev.external = ["blake3", "ed25519-dalek", "rustix", "russh", "russh-sftp", "tokio", "zeroize"]
 

@@ -72,6 +72,7 @@ serde_derive = "Generate report serialization trait implementations at build tim
 serde_json = "Serialize versioned CLI report values to JSON."
 sha2 = "SHA-512 for Ed25519 signing and verification."
 shlex = "Interpret compiler command and flag syntax used by cc."
+signal-hook-registry = "Register the process-wide native SIGINT notification used by the optional Linux remote command through Tokio."
 signature = "Signature trait interface used by the Ed25519 signature representation."
 smallvec = "Inline buffer for the parking_lot synchronization backend."
 subtle = "Constant-time selection and equality in the Ed25519 and Curve25519 stack."
@@ -104,7 +105,7 @@ aes = "Block cipher implementation used by Russh and key-format dependencies."
 aes-gcm = "GCM mode for the SSH cipher and encrypted key format implementations."
 argon2 = "Password-based derivation in the upstream SSH key-format support."
 base16ct = "Constant-time hexadecimal conversion for EC encodings and Windows Pageant bookkeeping."
-base64ct = "Base64 encoding for SSH material and PEM key formats."
+base64ct = "Base64 encoding for SSH and PEM material, and fixed-width Linux WireGuard private key decoding into caller-owned zeroizing storage."
 bcrypt-pbkdf = "OpenSSH encrypted private key derivation support retained by the SSH key-format library."
 block-padding = "Block padding support for upstream cipher and encrypted key codecs."
 blowfish = "Block primitive used by the upstream OpenSSH bcrypt derivation implementation."
@@ -797,6 +798,17 @@ verification = "An exact registry artifact with only alloc compiled under Rust 1
 replacement = "Retain RFC 4648 standard padded spellings and rejection of nonzero unused terminal bits to preserve the public JSON projection and schema acceptance."
 review_gaps = ["Other supported targets still require their integration lanes", "The default SIMD engines and whole package Cargo Vet safe-to-deploy review are outside this selected scalar review."]
 
+[assessment."base64ct@1.8.3"]
+archive_sha256 = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
+release_observation = "The locked archive identifies RustCrypto/formats source commit 9adf88fe3e6e0fb9f8cf20b54747aff67a3eca6e under base64ct and declares Rust 1.85."
+security_history = "This direct-edge review covers the exact cached source and selected decode function. It does not assert a refreshed advisory search or a whole-package audit."
+unsafe_exposure = "The application calls only safe scalar Base64::decode with separate initialized input and output buffers. The library also implements an in-place operation with localized pointer use, which this application does not call."
+resource_limits = "The Linux application reads at most 45 bytes through the existing protected snapshot capability, strips at most one LF, requires exactly 44 Base64 bytes and decodes into a caller-owned zeroizing 32-byte array. It uses the result only after exact decoded length, nonzero key, and selected public key checks."
+adversarial_inputs = "The selected standard padded alphabet checks malformed padding and validates the last block by re-encoding it, rejecting unused-bit aliases. Fixed-size application buffers remain zeroizing on every return. The crate uses arithmetic scalar alphabet operations. This review makes no end-to-end timing or internal scratch zeroization claim."
+verification = "The exact application decoder and controls pass on macOS using the archived no-feature crate. Rust 1.100.0 Linux x86-64 strict all-target Clippy compiles the actual protected-key reader and embedded command assembly."
+replacement = "Preserve canonical RFC 4648 standard padded encoding, enforce decoded extent, and keep private bytes within bounded zeroizing caller-owned storage."
+review_gaps = ["Native Linux protected key provisioning on an admitted host", "Independent advisory refresh, complete constant-time audit, and whole-package Cargo Vet review"]
+
 [assessment."windows-sys@0.61.2"]
 archive_sha256 = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
 release_observation = "The exact cached registry archive identifies windows-rs commit 32c3144490c016fe496a0aed769bce60987a2e9d and crates/libs/sys. The declared MSRV is 1.71."
@@ -896,6 +908,17 @@ adversarial_inputs = "The checked profile rejects missing or unsupported attribu
 verification = "The synthetic peer tests cover actual read-only open, listing, stat, short reads, EOF and close. Parser mutation testing and independent server interoperability remain open."
 replacement = "Retain exact SFTP v3 packet behavior and opaque bytes. Any replacement must preserve frame admission, expected reply identity and refusal of writes."
 review_gaps = ["Exact-version parser audit", "Native external server interoperability", "Hostile packet corpus and mutation sensitivity"]
+
+[assessment."signal-hook-registry@1.4.8"]
+archive_sha256 = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
+release_observation = "The local crates.io index and cached archive agree on version, digest and MIT OR Apache-2.0 licensing. The added Unix lock edges resolve to already pinned errno and libc."
+security_history = "Advisory status requires the integrating release's independently pinned advisory snapshot. This feature proposal supplies no whole-version audit."
+unsafe_exposure = "Tokio's safe Unix signal listener uses the dependency's unsafe process-wide POSIX handler registration. ExaCopy provides no signal handler callback. Tokio records a notification and writes to its driver wakeup socket from the handler."
+resource_limits = "The optional Linux command registers one SIGINT receiver for its foreground runtime. Coalesced events are sufficient for monotonic grant revocation. Listener drop retires the receive task; Tokio keeps the process-wide handler until exit."
+adversarial_inputs = "The handler accepts a fixed native SIGINT, with no untrusted signal number or callback. The async application task runs its ordinary mutex-protected grant revocation and route shutdown in runtime context."
+verification = "Offline target dependency-tree resolution and selected exact source inspection passed. Native signal timing during route work, stage cleanup and the exact publication guard requires separate execution."
+replacement = "A replacement must wake the async grant-revocation owner while synchronous destination operations may block the foreground thread, without installing an application-authored unsafe signal handler."
+review_gaps = ["Review selected raw Unix signal registration and callback-safety code", "Run native SIGINT outcome and shutdown tests", "Resolve exact pinned advisory and deployment audit requirements"]
 
 [assessment."tokio@1.54.1"]
 archive_sha256 = "b52fd3255258d26fac7264ab5a76b53c13367136dc011d3d6ad4f8ed070396a3"

@@ -28,6 +28,7 @@ license = "Apache-2.0"
 [workspace.dependencies]
 # Internal crates
 exacopy-ssh = { path = "crates/net/exacopy-ssh", version = "=0.1.0" }
+exacopy-wireguard = { path = "crates/net/exacopy-wireguard", version = "=0.1.0" }
 exacopy-sftp = { path = "crates/adapters/exacopy-sftp", version = "=0.1.0" }
 exacopy-core = { path = "crates/foundation/exacopy-core", version = "=0.1.0" }
 exacopy-manifest = { path = "crates/formats/exacopy-manifest", version = "=0.1.0" }
@@ -42,6 +43,7 @@ exacopy-transfer = { path = "crates/engines/exacopy-transfer", version = "=0.1.0
 
 # Public codec
 base64 = { version = "=0.23.1", default-features = false, features = ["alloc"] }
+base64ct = { version = "=1.8.3", default-features = false }
 chrono = { version = "=0.4.45", default-features = false, features = ["alloc"] }
 
 # Experimental network protocol

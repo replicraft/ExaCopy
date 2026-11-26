@@ -131,7 +131,23 @@
         "exacopy-ssh/experimental-ssh"
       ],
       "targets": ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"],
-      "purpose": "Check application composition of a held SFTP source and private capture without enabling native APFS copy."
+      "purpose": "Check opt-in direct Linux SSH/SFTP get and remote-resume with independent destination qualification, and portable private capture from a held SFTP source."
+    },
+    "experimental-ssh-wireguard": {
+      "defaults": false,
+      "check_cli": false,
+      "feature_statuses": [],
+      "exact_features": [
+        "exacopy-cli/experimental-ssh-wireguard",
+        "exacopy-cli/experimental-ssh-capture",
+        "exacopy-sftp/experimental-sftp",
+        "exacopy-ssh/experimental-ssh",
+        "exacopy-wireguard/experimental-protocol",
+        "exacopy-wireguard/experimental-udp",
+        "exacopy-wireguard/experimental-tcp"
+      ],
+      "targets": ["x86_64-unknown-linux-gnu"],
+      "purpose": "Check Linux application composition of pinned SSH/SFTP through one owned embedded WireGuard TCP flow."
     },
     "development-all": {
       "defaults": true,
@@ -185,11 +201,25 @@
           "dep:exacopy-sftp",
           "dep:exacopy-ssh",
           "dep:exacopy-transfer",
+          "dep:tokio",
           "exacopy-sftp/experimental-sftp",
           "exacopy-ssh/experimental-ssh"
         ],
         "resolution_probe": ["exacopy-sftp", "exacopy-ssh", "russh"],
-        "purpose": "Expose application wiring for private live SFTP capture without selecting a command or a native write adapter."
+        "purpose": "Expose held SFTP private capture and the opt-in direct Linux command with a scoped Tokio runtime."
+      },
+      "experimental-ssh-wireguard": {
+        "status": "experimental",
+        "targets": ["x86_64-unknown-linux-gnu"],
+        "enables": [
+          "experimental-ssh-capture",
+          "dep:base64ct",
+          "dep:exacopy-wireguard",
+          "exacopy-wireguard?/experimental-udp",
+          "exacopy-wireguard?/experimental-tcp"
+        ],
+        "resolution_probe": ["base64ct", "exacopy-wireguard", "boringtun", "smoltcp"],
+        "purpose": "Select the owned embedded WireGuard SSH carrier for Linux get and remote-resume with independent destination qualification."
       },
       "experimental-windows-diff": {
         "status": "experimental",
@@ -325,6 +355,12 @@
       "features": ["alloc"],
       "purpose": "Encode the bounded raw-byte fields of public integrity manifests."
     },
+    "base64ct": {
+      "default_features": false,
+      "features": [],
+      "optional": true,
+      "purpose": "Decode fixed-size protected WireGuard key Base64 into caller-owned zeroizing storage."
+    },
     "bytes": {
       "default_features": false,
       "features": [],
@@ -366,7 +402,10 @@
           "sync",
           "time"
         ],
-        "exacopy-wireguard": ["rt", "time"]
+        "exacopy-wireguard": ["rt", "time"],
+        "exacopy-cli": {
+          "cfg(target_os = \"linux\")": ["macros", "net", "rt-multi-thread", "signal", "sync", "time"]
+        }
       }
     },
     "tokio-util": {

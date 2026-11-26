@@ -11,8 +11,16 @@ experimental-ssh-capture = [
 	"dep:exacopy-sftp",
 	"dep:exacopy-ssh",
 	"dep:exacopy-transfer",
+	"dep:tokio",
 	"exacopy-sftp/experimental-sftp",
 	"exacopy-ssh/experimental-ssh",
+]
+experimental-ssh-wireguard = [
+	"experimental-ssh-capture",
+	"dep:base64ct",
+	"dep:exacopy-wireguard",
+	"exacopy-wireguard?/experimental-udp",
+	"exacopy-wireguard?/experimental-tcp",
 ]
 experimental-apfs-copy = ["dep:exacopy-content", "dep:exacopy-journal", "dep:exacopy-model", "dep:exacopy-transfer", "exacopy-transfer/experimental-apfs-copy"]
 experimental-windows-diff = ["dep:exacopy-diff", "dep:exacopy-endpoint", "dep:exacopy-platform", "exacopy-platform/experimental-windows-read"]
@@ -43,6 +51,9 @@ exacopy-model.workspace = true
 exacopy-journal.workspace = true
 exacopy-transfer.workspace = true
 rustix.workspace = true
+base64ct = { workspace = true, optional = true }
+exacopy-wireguard = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 uuid.workspace = true
 zeroize.workspace = true
 

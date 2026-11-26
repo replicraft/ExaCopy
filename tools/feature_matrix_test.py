@@ -117,6 +117,15 @@ class FeatureMatrixTests(unittest.TestCase):
                 for profile, config in profiles.items():
                     flags = profile_flags(POLICY, config, target)
                     selectors = ",".join(flags).split(",")
+                    if profile == "experimental-ssh-wireguard" and target == LINUX:
+                        self.assertEqual(set(selectors[2:]), {
+                            "exacopy-cli/experimental-ssh-capture",
+                            "exacopy-cli/experimental-ssh-wireguard",
+                            "exacopy-sftp/experimental-sftp",
+                            "exacopy-ssh/experimental-ssh",
+                            feature, udp, tcp,
+                        })
+                        continue
                     if profile not in {standalone, udp_profile, tcp_profile, combined, "development-all"}:
                         self.assertNotIn(feature, selectors)
                     if profile not in {udp_profile, combined, "development-all"}:
