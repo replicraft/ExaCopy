@@ -24,7 +24,7 @@ pub(super) fn replay(
 	max_bytes: u64,
 	max_attempts: usize,
 ) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
-	scan(input, owner, None, None, max_bytes, max_attempts)
+	scan(input, owner, None, None, false, max_bytes, max_attempts)
 }
 
 pub(super) fn replay_with_bootstrap(
@@ -38,6 +38,7 @@ pub(super) fn replay_with_bootstrap(
 		trust.owner(),
 		Some(trust),
 		None,
+		false,
 		max_bytes,
 		max_attempts,
 	)
@@ -47,6 +48,7 @@ pub(super) fn scan_finalization(
 	input: impl Read,
 	trust: &RemoteBootstrapTrust<'_>,
 	history: &mut FinalizationHistory,
+	retain_checkpoints: bool,
 	max_bytes: u64,
 	max_attempts: usize,
 ) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
@@ -55,6 +57,7 @@ pub(super) fn scan_finalization(
 		trust.owner(),
 		Some(trust),
 		Some(history),
+		retain_checkpoints,
 		max_bytes,
 		max_attempts,
 	)
@@ -65,6 +68,7 @@ fn scan(
 	owner: &RemoteDownloadOwnerRecord,
 	bootstrap: Option<&RemoteBootstrapTrust<'_>>,
 	mut finalization: Option<&mut FinalizationHistory>,
+	retain_checkpoints: bool,
 	max_bytes: u64,
 	max_attempts: usize,
 ) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
@@ -91,6 +95,7 @@ fn scan(
 		job_prepared: None,
 		stage_directory_prepared: None,
 		attempts: Vec::new(),
+		active_checkpoints: retain_checkpoints.then(Vec::new),
 		uncertainty: None,
 		issue: None,
 	};

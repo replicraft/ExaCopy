@@ -134,3 +134,16 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/remote_download/absolute_path.rs", test = "absolute_path::absolute_owner_keeps_exact_path_and_requires_bound_direct_or_wireguard", oracle = "Independent signed vectors preserve the exact slash-prefixed pathname and bind it to the exact resolved direct socket or embedded WireGuard route. Both account-relative readers refuse the absolute owner." }
+
+[[obligation]]
+id = "P-054"
+requirement_ids = ["R-253", "R-255", "R-262"]
+source = "src/remote_download/checkpoints.rs"
+symbols = ["RemoteActiveCheckpoints::from_replay"]
+assumptions = [
+    "The caller independently selects the authenticated owner, bootstrap trust and expected qualification digest, and supplies the complete bounded journal from byte zero.",
+    "This inventory reports historical declarations. Current physical EOF, leases, names, identity, writer quiescence, source/stage bytes and any continuation grant must be established separately.",
+    "Ed25519, BLAKE3 and CRC follow the selected framing and owner profiles. This gate changes no disk format or mutation authority.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_finalization_replay/checkpoints.rs", test = "checkpoints::checkpoint_inventory_matches_complete_history_and_failure_oracles", oracle = "Compare opt-in and legacy replay at every cut after preparation; refuse every damaged byte in the final checkpoint, semantic mismatch, recorded uncertainty and sealed phase; prove fresh allocation cannot reuse old rows and default scans do not collect them." }

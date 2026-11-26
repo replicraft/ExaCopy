@@ -15,6 +15,7 @@ use super::{
 use super::finalization_replay::FinalizationHistory;
 
 mod attempts;
+mod diagnostics;
 mod reader;
 
 pub use attempts::RemoteReplayAttempt;
@@ -131,12 +132,12 @@ pub enum RemoteReplayState<'scan> {
 }
 
 /// Accepted historical evidence for read-only inspection of the private capture profile.
-#[derive(Debug)]
 pub struct RemoteDownloadReplay {
 	boundary: RemoteReplayBoundary,
 	job_prepared: Option<ChainHead>,
 	stage_directory_prepared: Option<RemoteStageDirectoryPrepared>,
 	attempts: Vec<RemoteReplayAttempt>,
+	pub(super) active_checkpoints: Option<Vec<super::checkpoints::RemoteVerifiedCheckpoint>>,
 	uncertainty: Option<RemoteRecordedUncertainty>,
 	issue: Option<RemoteReplayIssue>,
 }
@@ -251,11 +252,13 @@ pub(super) fn scan_finalization(
 	input: impl Read,
 	trust: &RemoteBootstrapTrust<'_>,
 	history: &mut FinalizationHistory,
+	retain_checkpoints: bool,
 ) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
 	reader::scan_finalization(
 		input,
 		trust,
 		history,
+		retain_checkpoints,
 		MAX_REMOTE_REPLAY_SEGMENT_BYTES,
 		MAX_REMOTE_REPLAY_ATTEMPTS,
 	)

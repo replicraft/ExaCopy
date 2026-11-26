@@ -118,18 +118,28 @@ fn extended_segment_budget_refuses_payload_after_only_its_header() {
 	let profile = OwnerProfileId::from_bytes([0x22; 16]).unwrap();
 	let key = SigningKey::from_bytes(&[0x52; 32]).verifying_key();
 	let trust = RemoteBootstrapTrust::new(&owner, profile, &key).unwrap();
-	let mut history = FinalizationHistory::new([0x71; 32]);
-	let mut input = bytes.as_slice();
 	let budget = u64::try_from(bytes.len()).unwrap() - 1;
-	let replay = scan_finalization(&mut input, &trust, &mut history, budget, 4).unwrap();
-	assert!(matches!(
-		replay.issue(),
-		Some(RemoteReplayIssue::SegmentLimit)
-	));
-	assert_eq!(replay.boundary().offset, 0);
-	assert_eq!(
-		bytes.len() - input.len(),
-		56,
-		"only the v1 frame header was read"
-	);
+	for retain_checkpoints in [false, true] {
+		let mut history = FinalizationHistory::new([0x71; 32]);
+		let mut input = bytes.as_slice();
+		let replay = scan_finalization(
+			&mut input,
+			&trust,
+			&mut history,
+			retain_checkpoints,
+			budget,
+			4,
+		)
+		.unwrap();
+		assert!(matches!(
+			replay.issue(),
+			Some(RemoteReplayIssue::SegmentLimit)
+		));
+		assert_eq!(replay.boundary().offset, 0);
+		assert_eq!(
+			bytes.len() - input.len(),
+			56,
+			"only the v1 frame header was read"
+		);
+	}
 }

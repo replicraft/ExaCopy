@@ -428,3 +428,6 @@ fn unknown_signed_policy_is_refused_without_reading_a_journal() {
 
 #[path = "remote_finalization_replay/retirement.rs"]
 mod retirement;
+
+#[path = "remote_finalization_replay/checkpoints.rs"]
+mod checkpoints;

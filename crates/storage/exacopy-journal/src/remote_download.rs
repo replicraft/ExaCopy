@@ -1,6 +1,7 @@
 //! Private Linux journal evidence for a single live, read-only SFTP capture.
 
 mod bootstrap;
+pub mod checkpoints;
 mod error;
 pub mod finalization;
 pub mod finalization_policy;

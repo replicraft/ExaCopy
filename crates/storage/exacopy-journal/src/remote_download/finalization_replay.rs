@@ -76,6 +76,23 @@ pub struct RemoteFinalizationReplay<'owner> {
 }
 
 impl RemoteFinalizationReplay<'_> {
+	/// Borrows retained checkpoint declarations only from a clean unsealed active attempt.
+	///
+	/// Use the opt-in checkpoint scan to retain them. These are historical declarations,
+	/// not current byte verification or permission to reopen, append, seal or publish.
+	/// # Errors
+	/// Refuses a default scan, empty prefix, uncertain suffix or any finalization phase.
+	pub fn active_checkpoints(
+		&self,
+	) -> Result<super::checkpoints::RemoteActiveCheckpoints<'_>, RemoteDownloadError> {
+		super::checkpoints::RemoteActiveCheckpoints::from_replay(
+			self.owner,
+			&self.prefix,
+			self.phase(),
+			self.expected_qualification(),
+		)
+	}
+
 	/// Returns the exact end of the last accepted frame.
 	#[must_use]
 	pub const fn boundary(&self) -> RemoteReplayBoundary {
@@ -209,6 +226,33 @@ pub fn replay_remote_finalization<'owner>(
 	expected_qualification: [u8; 32],
 	receipt: Option<&[u8]>,
 ) -> Result<RemoteFinalizationReplay<'owner>, RemoteDownloadError> {
+	replay_profile(input, trust, expected_qualification, receipt, false)
+}
+
+/// Inspects the same complete lifecycle while retaining the latest capture's checkpoints.
+///
+/// Retains at most 4,096 rows for one active attempt, clearing them on each fresh
+/// allocation. Older attempts keep their existing bounded summaries. No wire bytes
+/// or legacy reader rules change. Current leases, identity, EOF and byte verification
+/// remain separate; historical evidence never supplies mutation authority.
+/// # Errors
+/// Uses the exact policy, qualification and bootstrap checks of the ordinary scan.
+pub fn replay_remote_finalization_with_checkpoints<'owner>(
+	input: impl Read,
+	trust: &RemoteBootstrapTrust<'owner>,
+	expected_qualification: [u8; 32],
+	receipt: Option<&[u8]>,
+) -> Result<RemoteFinalizationReplay<'owner>, RemoteDownloadError> {
+	replay_profile(input, trust, expected_qualification, receipt, true)
+}
+
+fn replay_profile<'owner>(
+	input: impl Read,
+	trust: &RemoteBootstrapTrust<'owner>,
+	expected_qualification: [u8; 32],
+	receipt: Option<&[u8]>,
+	retain_checkpoints: bool,
+) -> Result<RemoteFinalizationReplay<'owner>, RemoteDownloadError> {
 	let owner = trust.owner();
 	if owner.manifest().scope.metadata_policy != SftpDataOnlyV1::digest()
 		|| expected_qualification == [0; 32]
@@ -216,7 +260,7 @@ pub fn replay_remote_finalization<'owner>(
 		return Err(RemoteDownloadError::Binding);
 	}
 	let mut history = FinalizationHistory::new(expected_qualification);
-	let prefix = replay::scan_finalization(input, trust, &mut history)?;
+	let prefix = replay::scan_finalization(input, trust, &mut history, retain_checkpoints)?;
 	let association = history.associate(owner, prefix.issue(), receipt);
 	Ok(RemoteFinalizationReplay {
 		owner,

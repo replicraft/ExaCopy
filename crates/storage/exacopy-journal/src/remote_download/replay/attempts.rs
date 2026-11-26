@@ -151,6 +151,9 @@ impl RemoteDownloadReplay {
 					checkpoint_count: 0,
 					covered_extent: 0,
 				});
+				if let Some(checkpoints) = &mut self.active_checkpoints {
+					checkpoints.clear();
+				}
 				Ok(())
 			}
 			Body::EntryPrepared {
@@ -187,7 +190,7 @@ impl RemoteDownloadReplay {
 				ordinal,
 				offset,
 				length,
-				..
+				digest,
 			} => {
 				let attempt = self
 					.attempts
@@ -197,7 +200,9 @@ impl RemoteDownloadReplay {
 					|| attempt.epochs != epochs
 					|| attempt.checkpoint_count.checked_add(1) != Some(ordinal)
 					|| attempt.covered_extent != offset
-				{
+					|| self.active_checkpoints.as_ref().is_some_and(|rows| {
+						rows.len() >= usize::from(super::super::MAX_REMOTE_CHECKPOINTS)
+					}) {
 					return Err(problem(Mismatch::Checkpoint));
 				}
 				let end = offset
@@ -206,6 +211,11 @@ impl RemoteDownloadReplay {
 					.ok_or_else(|| problem(Mismatch::Checkpoint))?;
 				attempt.checkpoint_count = ordinal;
 				attempt.covered_extent = end;
+				if let Some(checkpoints) = &mut self.active_checkpoints {
+					checkpoints.push(super::super::checkpoints::RemoteVerifiedCheckpoint::new(
+						head, ordinal, offset, length, digest,
+					));
+				}
 				Ok(())
 			}
 			Body::FailureRecorded {
