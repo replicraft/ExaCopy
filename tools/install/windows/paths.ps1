@@ -176,27 +176,34 @@ function New-ExaCopyPrivateStage {
     return $path
 }
 
-function Assert-ExaCopyParentDacl {
-    param($Acl, [string[]] $Trusted, [switch] $Ancestor)
+function Get-ExaCopyParentChangeMask {
+    param([switch] $Ancestor)
     $ownershipChanges = [Security.AccessControl.FileSystemRights]::Delete -bor
         [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
         [Security.AccessControl.FileSystemRights]::ChangePermissions -bor
         [Security.AccessControl.FileSystemRights]::TakeOwnership -bor
         [Security.AccessControl.FileSystemRights]::WriteAttributes -bor
         [Security.AccessControl.FileSystemRights]::WriteExtendedAttributes
-    $changes = if ($Ancestor) {
+    if ($Ancestor) {
         # Ordinary create-child access on a higher ancestor cannot replace an
         # existing child protected against both deletion and ACL changes.
-        $ownershipChanges
+        return $ownershipChanges
     }
-    else {
-        $ownershipChanges -bor [Security.AccessControl.FileSystemRights]::Write
-    }
-    foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
-        if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
-            $rule.IdentityReference.Value -notin $trusted -and
-            ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) -eq 0 -and
-            ($rule.FileSystemRights -band $changes) -ne 0) {
+    return ($ownershipChanges -bor [Security.AccessControl.FileSystemRights]::Write)
+}
+
+function Test-ExaCopyCompetingParentGrant {
+    param([string] $Trustee, [int] $Rights, [string[]] $Trusted, [int] $Changes, [bool] $Allows, [bool] $InheritOnly)
+    return ($Allows -and $Trustee -notin $Trusted -and !$InheritOnly -and ($Rights -band $Changes) -ne 0)
+}
+
+function Assert-ExaCopyParentDacl {
+    param($Acl, [string[]] $Trusted, [switch] $Ancestor)
+    $changes = Get-ExaCopyParentChangeMask -Ancestor:$Ancestor
+    foreach ($rule in $Acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+        $allows = $rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow
+        $inheritOnly = ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) -ne 0
+        if (Test-ExaCopyCompetingParentGrant $rule.IdentityReference.Value $rule.FileSystemRights $Trusted $changes $allows $inheritOnly) {
             throw 'An installation ancestor admits competing changes by another principal.'
         }
     }
@@ -218,7 +225,7 @@ function Assert-ExaCopyInstallAncestors {
     if ($null -ne $ProductAncestry) {
         $observations = $ProductAncestry.Inspect($Path)
         for ($i = 0; $i -lt $observations.Length; $i++) {
-            Assert-ExaCopyHeldAncestorAcl $ProductAncestry $observations[$i] $Owner -Ancestor:($i -lt ($observations.Length - 1))
+            Assert-ExaCopyHeldAncestorAcl $ProductAncestry $observations[$i] $Owner -Depth $i -Ancestor:($i -lt ($observations.Length - 1))
         }
         return
     }
@@ -517,26 +524,76 @@ namespace ExaCopyInstaller {
     return [ExaCopyInstaller.ProductAncestry]::new($Local)
 }
 
+function ConvertTo-ExaCopyDirectoryAccessMask {
+    param([int] $AccessMask)
+    # Winnt.h file GENERIC_MAPPING and MapGenericMask semantics. CommonAce
+    # exposes the same 32-bit mask as a signed Int32. High generic bits are
+    # expanded, never treated as already-specific rights or dropped silently.
+    $mask = [BitConverter]::ToUInt32([BitConverter]::GetBytes($AccessMask), 0)
+    $mapped = $mask -band 0x0FFFFFFFu
+    if (($mapped -band 0x0FE0FE00u) -ne 0) { throw 'Unsupported specific directory rights.' }
+    if (($mask -band 0x80000000u) -ne 0) { $mapped = $mapped -bor 0x00120089u } # FILE_GENERIC_READ
+    if (($mask -band 0x40000000u) -ne 0) { $mapped = $mapped -bor 0x00120116u } # FILE_GENERIC_WRITE
+    if (($mask -band 0x20000000u) -ne 0) { $mapped = $mapped -bor 0x001200A0u } # FILE_GENERIC_EXECUTE
+    if (($mask -band 0x10000000u) -ne 0) { $mapped = $mapped -bor 0x001F01FFu } # FILE_ALL_ACCESS
+    return [int] $mapped
+}
+
+function Get-ExaCopyGenericRightKinds {
+    param([int] $AccessMask)
+    $mask = [BitConverter]::ToUInt32([BitConverter]::GetBytes($AccessMask), 0)
+    $kinds = @(
+        if (($mask -band 0x80000000u) -ne 0) { 'read' }
+        if (($mask -band 0x40000000u) -ne 0) { 'write' }
+        if (($mask -band 0x20000000u) -ne 0) { 'execute' }
+        if (($mask -band 0x10000000u) -ne 0) { 'all' }
+    )
+    if ($kinds.Count -eq 0) { return 'none' }
+    return ($kinds -join '+')
+}
+
+function Assert-ExaCopyMappedAncestorGrant {
+    param([string] $Trustee, [int] $AccessMask, [string[]] $Trusted, [int] $Changes,
+        [bool] $Allows, [bool] $InheritOnly, [int] $Depth, [int] $RuleIndex)
+    $shape = if ($Allows) { 'common-allow' } else { 'common-deny' }
+    try { $rights = ConvertTo-ExaCopyDirectoryAccessMask $AccessMask }
+    catch {
+        $generic = Get-ExaCopyGenericRightKinds $AccessMask
+        throw "Installer ancestor ACL has unsupported specific rights (depth=$Depth ace=$RuleIndex shape=$shape generic=$generic)."
+    }
+    if (Test-ExaCopyCompetingParentGrant $Trustee $rights $Trusted $Changes $Allows $InheritOnly) {
+        $generic = Get-ExaCopyGenericRightKinds $AccessMask
+        throw "An installation ancestor admits competing changes by another principal (depth=$Depth ace=$RuleIndex shape=$shape generic=$generic)."
+    }
+}
+
 function Assert-ExaCopyHeldAncestorAcl {
-    param($Ancestry, $Observation, [Security.Principal.SecurityIdentifier] $Owner, [switch] $Ancestor)
+    param($Ancestry, $Observation, [Security.Principal.SecurityIdentifier] $Owner, [int] $Depth, [switch] $Ancestor)
     $raw = [Security.AccessControl.RawSecurityDescriptor]::new($Observation.Security, 0)
     if ($null -eq $raw.Owner -or $null -eq $raw.DiscretionaryAcl -or
         ($raw.ControlFlags -band [Security.AccessControl.ControlFlags]::DiscretionaryAclPresent) -eq 0) {
-        throw 'Installer ancestor owner or effective ACL is unavailable.'
-    }
-    foreach ($ace in $raw.DiscretionaryAcl) {
-        if ($ace -isnot [Security.AccessControl.CommonAce] -or $ace.IsCallback -or
-            $ace.AceType -notin @([Security.AccessControl.AceType]::AccessAllowed, [Security.AccessControl.AceType]::AccessDenied) -or
-            ($ace.AccessMask -band -268435456) -ne 0) {
-            throw 'Installer ancestor ACL has an unsupported rule representation.'
-        }
+        throw "Installer ancestor owner or effective ACL is unavailable (depth=$Depth)."
     }
     $trusted = @($Owner.Value, 'S-1-5-18', 'S-1-5-32-544')
     Assert-ExaCopyHeldAncestorOwner $raw.Owner.Value $trusted -Ancestor:$Ancestor -VolumeRoot:$Observation.IsSystemRoot -Ancestry $Ancestry
-    $acl = [Security.AccessControl.DirectorySecurity]::new()
-    $sections = [Security.AccessControl.AccessControlSections]::Owner -bor [Security.AccessControl.AccessControlSections]::Access
-    $acl.SetSecurityDescriptorBinaryForm($Observation.Security, $sections)
-    Assert-ExaCopyParentDacl $acl $trusted -Ancestor:$Ancestor
+    $changes = Get-ExaCopyParentChangeMask -Ancestor:$Ancestor
+    for ($index = 0; $index -lt $raw.DiscretionaryAcl.Count; $index++) {
+        $ace = $raw.DiscretionaryAcl[$index]
+        if ($ace -isnot [Security.AccessControl.CommonAce]) {
+            $shape = if ($ace -is [Security.AccessControl.ObjectAce]) { 'object' } else { 'non-common' }
+            $generic = if ($ace -is [Security.AccessControl.KnownAce]) { Get-ExaCopyGenericRightKinds $ace.AccessMask }
+                       else { 'unknown' }
+            throw "Installer ancestor ACL has an unsupported rule representation (depth=$Depth ace=$index shape=$shape generic=$generic)."
+        }
+        $allows = $ace.AceType -eq [Security.AccessControl.AceType]::AccessAllowed
+        if ($ace.IsCallback -or (!$allows -and $ace.AceType -ne [Security.AccessControl.AceType]::AccessDenied)) {
+            $shape = if ($ace.IsCallback) { 'callback' } else { 'other-common' }
+            $generic = Get-ExaCopyGenericRightKinds $ace.AccessMask
+            throw "Installer ancestor ACL has an unsupported rule representation (depth=$Depth ace=$index shape=$shape generic=$generic)."
+        }
+        $inheritOnly = ($ace.AceFlags -band [Security.AccessControl.AceFlags]::InheritOnly) -ne 0
+        Assert-ExaCopyMappedAncestorGrant $ace.SecurityIdentifier.Value $ace.AccessMask $trusted $changes $allows $inheritOnly $Depth $index
+    }
 }
 
 function Assert-ExaCopyHeldAncestorOwner {
