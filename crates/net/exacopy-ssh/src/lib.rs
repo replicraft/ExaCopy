@@ -10,7 +10,11 @@ mod known_hosts;
 mod shape;
 mod wire;
 
-pub use connection::{Ed25519Key, Password, SshAuthenticatedPeer, connect, connect_with_ed25519};
+pub use connection::MAX_OPENSSH_ED25519_BYTES;
+pub use connection::{
+	Ed25519Key, Password, SshAuthenticatedPeer, connect, connect_with_ed25519,
+	connect_with_ed25519_async,
+};
 pub use data::{
 	FileObservation, MAX_READ_CHUNK_BYTES, MAX_STREAM_BYTES, ReadOnlySftp, RemotePositionedRead,
 	RemoteReadFile, RemoteReadWindow, WindowObservation,

@@ -14,7 +14,7 @@ use russh::keys::{
 use russh::{Channel, Names, Preferred, cipher, compression, kex, mac};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::oneshot;
-use tokio::time::timeout;
+use tokio::time::{Instant, timeout_at};
 use zeroize::Zeroizing;
 
 use crate::data::ReadOnlySftp;
@@ -23,7 +23,10 @@ use crate::fence::FencedStream;
 use crate::known_hosts::KnownHostTrust;
 use crate::wire::Wire;
 
+mod protected_key;
 mod subsystem;
+
+pub use protected_key::MAX_OPENSSH_ED25519_BYTES;
 
 const MAX_PASSWORD_BYTES: usize = 4096;
 const CONNECT_DEADLINE: Duration = Duration::from_secs(20);
@@ -287,7 +290,16 @@ where
 	S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 	B: FnOnce(CredentialRequest<'_>) -> Result<Password, Error>,
 {
-	connect_with_credential(stream, authority, pin, trust, credential_authority, broker).await
+	connect_with_credential(
+		stream,
+		authority,
+		pin,
+		trust,
+		credential_authority,
+		async move |request| broker(request),
+		|| Ok(()),
+	)
+	.await
 }
 
 /// Connects to a pinned SFTP peer with one caller-supplied Ed25519 key.
@@ -295,7 +307,7 @@ where
 /// The broker is called after the SSH peer and credential authority have
 /// been verified. It must be bounded and nonblocking. The key is used only
 /// for authentication on the verified connection. The adapter exposes no
-/// private key loading, agent forwarding, or shell operation.
+/// ambient key discovery, agent forwarding, or shell operation.
 ///
 /// # Errors
 /// A failure to establish SSH/SFTP or obtain an approved key is returned.
@@ -312,7 +324,49 @@ where
 	S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 	B: FnOnce(CredentialRequest<'_>) -> Result<Ed25519Key, Error>,
 {
-	connect_with_credential(stream, authority, pin, trust, credential_authority, broker).await
+	connect_with_credential(
+		stream,
+		authority,
+		pin,
+		trust,
+		credential_authority,
+		async move |request| broker(request),
+		|| Ok(()),
+	)
+	.await
+}
+
+/// Connect to a pinned SFTP peer with a broker that can await protected key acquisition.
+///
+/// The future starts after host verification. A broker that performs native
+/// I/O or decrypts a key should use a bounded blocking worker. The offer
+/// check runs after that future resolves, immediately before authentication.
+///
+/// # Errors
+/// Returns a refusal if the broker, live offer check, peer or SFTP setup fails.
+pub async fn connect_with_ed25519_async<S, B>(
+	stream: S,
+	authority: &SshAuthority,
+	pin: HostKeyFingerprint,
+	trust: KnownHostTrust,
+	credential_authority: &SshAuthority,
+	broker: B,
+	offer_current: impl FnOnce() -> Result<(), Error>,
+) -> Result<ReadOnlySftp, Error>
+where
+	S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+	B: for<'a> AsyncFnOnce(CredentialRequest<'a>) -> Result<Ed25519Key, Error>,
+{
+	connect_with_credential(
+		stream,
+		authority,
+		pin,
+		trust,
+		credential_authority,
+		broker,
+		offer_current,
+	)
+	.await
 }
 
 async fn connect_with_credential<S, B, C>(
@@ -322,16 +376,18 @@ async fn connect_with_credential<S, B, C>(
 	trust: KnownHostTrust,
 	credential_authority: &SshAuthority,
 	broker: B,
+	offer_current: impl FnOnce() -> Result<(), Error>,
 ) -> Result<ReadOnlySftp, Error>
 where
 	S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-	B: FnOnce(CredentialRequest<'_>) -> Result<C, Error>,
+	B: for<'a> AsyncFnOnce(CredentialRequest<'a>) -> Result<C, Error>,
 	C: Authentication,
 {
 	if !trust.binds(authority) {
 		return Err(Error::HostKey(HostKeyRefusal::TrustUnavailable));
 	}
-	timeout(CONNECT_DEADLINE, async {
+	let deadline = Instant::now() + CONNECT_DEADLINE;
+	timeout_at(deadline, async {
 		let (verified, checked) = oneshot::channel();
 		let handler = HostCheck {
 			authority: authority.clone(),
@@ -354,7 +410,11 @@ where
 			.map_err(Error::Credential)?;
 		let authority = request.authority().clone();
 		let fingerprint = request.fingerprint();
-		let credential = broker(request)?;
+		let credential = broker(request).await?;
+		if Instant::now() >= deadline {
+			return Err(Error::Timeout);
+		}
+		offer_current()?;
 		if !credential
 			.authenticate(&mut connection, authority.account())
 			.await?

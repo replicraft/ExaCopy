@@ -148,3 +148,59 @@ async fn successful_authentication_does_not_authorize_a_second_key_exchange() {
 	assert!(matches!(session.stat(&path).await, Err(Error::Closed)));
 	assert_eq!(calls.key_auth.load(Ordering::Relaxed), 1);
 }
+
+#[tokio::test]
+async fn async_protected_key_broker_requires_current_grant_before_actual_offer() {
+	use exacopy_ssh::connect_with_ed25519_async;
+	use russh::keys::ssh_key::LineEnding;
+	use russh::keys::ssh_key::private::KeypairData;
+	use russh::keys::{HashAlg, PrivateKey};
+
+	for permitted in [false, true] {
+		let (stream, pin, calls) = peer(true, false);
+		let target = authority("transfer");
+		let broker_calls = std::cell::Cell::new(0);
+		let mut result = connect_with_ed25519_async(
+			stream,
+			&target,
+			pin,
+			fixture_trust(&target, ""),
+			&target,
+			async |request| {
+				assert_eq!(request.authority(), &target);
+				assert_eq!(request.fingerprint(), pin);
+				assert_eq!(request.source(), CredentialSource::SuppliedKey);
+				broker_calls.set(broker_calls.get() + 1);
+				tokio::task::spawn_blocking(|| {
+					let keypair = Ed25519Keypair::from_seed(&SYNTHETIC_SEED);
+					let key = PrivateKey::new(KeypairData::Ed25519(keypair), "").unwrap();
+					let encoded = key.to_openssh(LineEnding::LF).unwrap();
+					let key_pin = key.fingerprint(HashAlg::Sha256).sha256().unwrap();
+					Ed25519Key::from_openssh(encoded.as_bytes(), None, key_pin)
+				})
+				.await
+				.unwrap()
+			},
+			|| {
+				assert_eq!(broker_calls.get(), 1);
+				assert_eq!(calls.key_auth.load(Ordering::Relaxed), 0);
+				permitted.then_some(()).ok_or(Error::KeyProfile)
+			},
+		)
+		.await;
+		if permitted {
+			let Ok(sftp) = &mut result else {
+				panic!("the selected synthetic key authenticates the account");
+			};
+			assert_eq!(sftp.authenticated_peer().authority(), &target);
+			assert_eq!(sftp.list(&[]).await.unwrap(), vec![NAME.to_vec()]);
+		} else {
+			assert!(matches!(result, Err(Error::KeyProfile)));
+		}
+		assert_eq!(
+			calls.key_auth.load(Ordering::Relaxed),
+			usize::from(permitted)
+		);
+		assert_eq!(calls.auth.load(Ordering::Relaxed), 0);
+	}
+}

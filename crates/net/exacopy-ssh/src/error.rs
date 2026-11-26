@@ -18,6 +18,8 @@ pub enum Error {
 	Password,
 	/// The key library could not construct the supplied Ed25519 key.
 	Key(russh::keys::ssh_key::Error),
+	/// The protected key input or its live broker was refused.
+	KeyProfile,
 	/// The server rejected password authentication.
 	Authentication,
 	/// The server rejected the selected Ed25519 key.
@@ -74,7 +76,9 @@ impl std::fmt::Display for Error {
 			Self::KeyExchange => "SSH peer does not support strict key exchange",
 			Self::Rekey => "SSH credential and stream binding cannot be revalidated during rekey",
 			Self::Password => "SSH credential broker did not provide a usable password",
-			Self::Key(_) => "SSH credential broker did not provide a usable Ed25519 key",
+			Self::Key(_) | Self::KeyProfile => {
+				"SSH credential broker did not provide a usable Ed25519 key"
+			}
 			Self::Authentication => "SSH password authentication was refused",
 			Self::KeyAuthentication => "SSH Ed25519 authentication was refused",
 			Self::Subsystem => "SSH server did not confirm the SFTP subsystem",
