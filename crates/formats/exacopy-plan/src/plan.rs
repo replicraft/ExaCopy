@@ -3,13 +3,14 @@
 use std::borrow::Cow;
 use std::fmt;
 
-use uuid::{Uuid, Variant};
+use uuid::Uuid;
 
 use crate::document::{DocumentPageKind, DocumentRef};
 
 mod error;
 mod evidence;
 mod extensions;
+mod identifiers;
 mod json;
 mod policy;
 mod wire;
@@ -17,6 +18,7 @@ mod wire;
 pub use error::PlanError;
 pub use evidence::{PlanResourceLimits, PlanSourceView, UnixTimestamp};
 pub use extensions::PlanExtensions;
+pub use identifiers::{PlanCreationTime, is_plan_id, plan_reference};
 pub use json::{MAX_PLAN_JSON_BYTES, PlanJsonError, PublicPlan};
 pub use policy::{
 	PlanConflict, PlanConsistency, PlanDurability, PlanFidelity, PlanOperation, PlanPolicy,
@@ -163,8 +165,7 @@ fn validate_fields(fields: &PlanBodyFields<'_>) -> Result<(), PlanError> {
 	{
 		return Err(PlanError::Bounds);
 	}
-	if fields.plan_id.get_version_num() != 7
-		|| fields.plan_id.get_variant() != Variant::RFC4122
+	if !is_plan_id(fields.plan_id)
 		|| fields.destination_root.is_nil()
 		|| fields.source_roots.iter().any(Uuid::is_nil)
 	{

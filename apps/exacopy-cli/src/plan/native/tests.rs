@@ -13,7 +13,10 @@ struct Fixture(PathBuf);
 
 impl Fixture {
 	fn in_root(root: &Path) -> Self {
-		let directory = root.join(format!("exacopy-plan-{}", fresh_reference().unwrap()));
+		let directory = root.join(format!(
+			"exacopy-plan-{}",
+			fresh_reference(&mut kernel_random).unwrap()
+		));
 		DirBuilder::new().mode(0o700).create(&directory).unwrap();
 		Self(directory)
 	}
@@ -52,6 +55,79 @@ impl Drop for Fixture {
 
 fn clock() -> SystemTime {
 	UNIX_EPOCH + Duration::from_secs(1_700_000_000)
+}
+
+#[test]
+fn output_conflict_precedes_clock_and_identifier_entropy() {
+	let fixture = Fixture::new();
+	let command = fixture.command();
+	std_fs::write(&command.output, b"retained plan").unwrap();
+
+	let failure = export_with_entropy(
+		&command,
+		|| panic!("an incumbent output must refuse before observing the clock"),
+		|_| panic!("an incumbent output must refuse before obtaining entropy"),
+	)
+	.unwrap_err();
+	assert_eq!(failure.exit_code(), 3);
+	assert_eq!(std_fs::read(&command.output).unwrap(), b"retained plan");
+}
+
+#[test]
+fn invalid_creation_times_refuse_before_identifier_entropy() {
+	let fixture = Fixture::new();
+	let command = fixture.command();
+	for observed in [
+		UNIX_EPOCH - Duration::from_nanos(1),
+		UNIX_EPOCH + Duration::from_millis(1 << 48),
+	] {
+		let failure = export_with_entropy(
+			&command,
+			|| observed,
+			|_| panic!("an unrepresentable clock must refuse before obtaining entropy"),
+		)
+		.unwrap_err();
+		assert_eq!(failure.exit_code(), 4);
+		assert_eq!(
+			failure.to_string(),
+			"the current clock is outside the supported plan range"
+		);
+		assert!(!command.output.exists());
+		assert!(!command.output.parent().unwrap().join("pages").exists());
+	}
+}
+
+#[test]
+fn each_identifier_entropy_failure_stops_later_requests_and_keeps_errno() {
+	use exacopy_platform::linux::OwnerSeedError;
+	use rustix::io::Errno;
+
+	let fixture = Fixture::new();
+	let command = fixture.command();
+	let expected_sizes = [10, 16, 16, 16];
+	let errno = Errno::IO.raw_os_error();
+	for fail_at in 1..=expected_sizes.len() {
+		let mut requested = Vec::new();
+		let failure = export_with_entropy(&command, clock, |bytes| {
+			requested.push(bytes.len());
+			if requested.len() == fail_at {
+				return Err(ProfileError::from(OwnerSeedError::Io(
+					std::io::Error::from_raw_os_error(errno),
+				)));
+			}
+			bytes.fill(0x42);
+			Ok(())
+		})
+		.unwrap_err();
+		assert_eq!(requested, expected_sizes[..fail_at]);
+		assert_eq!(failure.exit_code(), 4);
+		assert_eq!(
+			failure.to_string(),
+			format!("could not obtain plan identifier entropy (OS error {errno})")
+		);
+		assert!(!command.output.exists());
+		assert!(!command.output.parent().unwrap().join("pages").exists());
+	}
 }
 
 #[test]

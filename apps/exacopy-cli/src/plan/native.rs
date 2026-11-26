@@ -4,19 +4,18 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::assembly::linux::plan_public_new_file;
 use exacopy_endpoint::plan_bundle::PlanBundleSink as _;
 use exacopy_journal::LinuxFileIdentity;
-use exacopy_plan::{PlanBody, RenderedPlanEnvelope, UnixTimestamp};
+use exacopy_plan::{PlanBody, PlanCreationTime, RenderedPlanEnvelope, plan_reference};
 use exacopy_platform::linux::{FileIdentity, LinuxPlanBundle, PlanInputDirectory};
 use exacopy_transfer::copy_planning::{CreateNewRequest, PlanSelection};
 use exacopy_transfer::public_plan::write_plan_bundle;
-use uuid::{Builder, Uuid};
+use uuid::Uuid;
 
 use super::error::{Failure, Kind};
 use crate::args::PlanCommand;
 use crate::linux_path::split;
-use crate::profile::{LocalProfile, kernel_random};
+use crate::profile::{LocalProfile, ProfileError, kernel_random};
 
 const BUFFER_BYTES: usize = 256 * 1024;
-const MAX_UUIDV7_MILLIS: u128 = (1 << 48) - 1;
 
 pub(super) fn export(command: &PlanCommand) -> Result<[u8; 32], Failure> {
 	export_at(command, SystemTime::now)
@@ -25,6 +24,14 @@ pub(super) fn export(command: &PlanCommand) -> Result<[u8; 32], Failure> {
 fn export_at(
 	command: &PlanCommand,
 	clock: impl FnOnce() -> SystemTime,
+) -> Result<[u8; 32], Failure> {
+	export_with_entropy(command, clock, kernel_random)
+}
+
+fn export_with_entropy(
+	command: &PlanCommand,
+	clock: impl FnOnce() -> SystemTime,
+	mut entropy: impl FnMut(&mut [u8]) -> Result<(), ProfileError>,
 ) -> Result<[u8; 32], Failure> {
 	let (source_parent, source_name) =
 		split(&command.source).map_err(|error| Failure::with(Kind::Invalid, error))?;
@@ -59,21 +66,10 @@ fn export_at(
 	let time = clock()
 		.duration_since(UNIX_EPOCH)
 		.map_err(|error| Failure::with(Kind::Clock, error))?;
-	if time.as_millis() > MAX_UUIDV7_MILLIS {
-		return Err(Failure::plain(Kind::Clock));
-	}
-	let observed_at = UnixTimestamp::new(
-		i64::try_from(time.as_secs()).map_err(|error| Failure::with(Kind::Clock, error))?,
-		time.subsec_nanos(),
-	)
-	.map_err(|error| Failure::with(Kind::Clock, error))?;
+	let creation = PlanCreationTime::new(time).ok_or_else(|| Failure::plain(Kind::Clock))?;
 	let mut random = [0; 10];
-	kernel_random(&mut random).map_err(Failure::entropy)?;
-	let plan_id = Builder::from_unix_timestamp_millis(
-		u64::try_from(time.as_millis()).map_err(|error| Failure::with(Kind::Clock, error))?,
-		&random,
-	)
-	.into_uuid();
+	entropy(&mut random).map_err(Failure::entropy)?;
+	let plan_id = creation.plan_id(&random);
 	let source_root = profile
 		.root_id(source.identity())
 		.map_err(Failure::profile)?;
@@ -82,9 +78,9 @@ fn export_at(
 		.map_err(Failure::profile)?;
 	let request = CreateNewRequest {
 		plan_id,
-		entry_id: fresh_reference()?,
-		source_view_id: fresh_reference()?,
-		measurement_id: fresh_reference()?,
+		entry_id: fresh_reference(&mut entropy)?,
+		source_view_id: fresh_reference(&mut entropy)?,
+		measurement_id: fresh_reference(&mut entropy)?,
 		source: PlanSelection {
 			root_id: Uuid::from_bytes(*source_root.as_bytes()),
 			component: source_name,
@@ -93,7 +89,7 @@ fn export_at(
 			root_id: Uuid::from_bytes(*target_root.as_bytes()),
 			component: target_name,
 		},
-		observed_at,
+		observed_at: creation.timestamp(),
 	};
 	let mut scratch = vec![0; BUFFER_BYTES];
 	let result = plan_public_new_file(&source, &target, request, |id| !is_seed(id), &mut scratch)
@@ -117,10 +113,12 @@ fn export_at(
 	Ok(digest)
 }
 
-fn fresh_reference() -> Result<Uuid, Failure> {
+fn fresh_reference(
+	entropy: &mut impl FnMut(&mut [u8]) -> Result<(), ProfileError>,
+) -> Result<Uuid, Failure> {
 	let mut bytes = [0; 16];
-	kernel_random(&mut bytes).map_err(Failure::entropy)?;
-	Ok(Builder::from_random_bytes(bytes).into_uuid())
+	entropy(&mut bytes).map_err(Failure::entropy)?;
+	Ok(plan_reference(bytes))
 }
 
 pub(super) fn hex(bytes: &[u8; 32]) -> String {

@@ -13,9 +13,9 @@ use exacopy_plan::{
 	PlanEntriesPage, PlanEntry, PlanExtensions, PlanFidelity, PlanIdentityPlatform, PlanOperation,
 	PlanPath, PlanPolicy, PlanPreservation, PlanPublication, PlanResourceLimits,
 	PlanSourceIdentity, PlanSourceRetirement, PlanSourceView, PlanStorage, PlanVerification,
-	PlanViewConsistency, UnixTimestamp,
+	PlanViewConsistency, UnixTimestamp, is_plan_id,
 };
-use uuid::{Uuid, Variant};
+use uuid::Uuid;
 
 use crate::{linux_staging::check_source, manifest};
 
@@ -172,8 +172,7 @@ fn admit_request<S, D>(
 	request: CreateNewRequest<'_>,
 	scratch: usize,
 ) -> Result<PlanResourceLimits, PlanningError<S, D>> {
-	if request.plan_id.get_version_num() != 7
-		|| request.plan_id.get_variant() != Variant::RFC4122
+	if !is_plan_id(request.plan_id)
 		|| [
 			request.entry_id,
 			request.source_view_id,

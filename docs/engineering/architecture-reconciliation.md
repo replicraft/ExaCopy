@@ -126,7 +126,14 @@ encoding now belongs to the Plan format crate; the transfer engine orders
 page verification and barriers, and a held Linux platform capability owns
 the filesystem effects. The existing envelope name can be visible during
 its write; this move does not establish atomic multi-file publication.
-The remaining identifier policy still needs its ownership move.
+Plan creation-time bounds, UUIDv7 construction, UUIDv4 reference encoding
+and Plan identifier validation now belong to the Plan format owner. The CLI
+supplies the observed clock and native entropy in the original order, and
+the transfer engine uses the same identifier predicate as format admission.
+Exact byte vectors and refusal-order regressions preserve the existing wire
+versions and error behavior. Native macOS format and transfer tests and strict
+host/Linux cross checks passed; the new Linux CLI fixtures still require
+native execution.
 
 Historical evidence retains its recorded revision and paths. Current
 source links and reproduction entry points follow the corrected layout.
