@@ -227,6 +227,11 @@ pub(super) const BINDINGS: &[Binding] = &[
 		Marker::array("VERSION", 3),
 	),
 	Binding::new(
+		"linux-remote-witness-closeout-phases",
+		"crates/storage/exacopy-journal/src/remote_download/witness/wire.rs",
+		Marker::array("VERSION", 3),
+	),
+	Binding::new(
 		"linux-remote-stage-directory-bootstrap",
 		"crates/storage/exacopy-journal/src/remote_download/bootstrap.rs",
 		Marker::Scalar {

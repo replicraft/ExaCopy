@@ -241,3 +241,27 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/remote_continuation/witness_closeout.rs", test = "witness_closeout::receipt_ready_matches_canonical_artifact_and_exact_allocated_inode", oracle = "Match independent canonical receipt declarations to the exact phase, selected inode, derived pending/final basenames and bounded artifact digest and length. Refuse malformed, mismatched and wrong-profile declarations." }
+
+[[obligation]]
+id = "P-073"
+requirement_ids = ["R-253", "R-255"]
+source = "src/remote_download/witness/records.rs"
+symbols = ["RemoteWitnessCloseoutRecord"]
+assumptions = [
+    "The caller selects the authenticated witness binding and actual preceding frame boundary. These codecs check declarations, not native data, barriers, custody or current permission.",
+    "Actual ancestry and phase are resolved by the independently selected scanner; legacy V1 and operation-1 interpretation are not widened.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_continuation/phase_records.rs", test = "witness_closeout::phase_records::exact_witnessed_phase_transcript_round_trips_and_legacy_refuses", oracle = "Match independent selector-2 phase bytes under exact selected frame links and per-kind bounds. Reject malformed, truncated, oversized and legacy interpretations without treating declarations as native observations." }
+
+[[obligation]]
+id = "P-074"
+requirement_ids = ["R-253", "R-255"]
+source = "src/remote_download/witness/replay.rs"
+symbols = ["replay_remote_witnessed_closeout"]
+assumptions = [
+    "The caller independently selects authenticated owner and V1 archives, attestor-verified operation-2 qualification and exact archived grant. The complete selected byte stream is supplied from its first segment origin.",
+    "Historical declarations establish no current presence, writer exclusion, retention approval, held receipt, native namespace effect, or durability qualification.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_continuation/witnessed_replay.rs", test = "witness_closeout::witnessed_replay::closed_witnessed_transcripts_bind_both_observation_channels_and_exact_receipt", oracle = "Validate independent live-observed and recovered selector-2 transcripts and reconstruct exact artifact bytes through the terminal commit. Preserve exact phase, global epochs, repeat and retirement boundaries; independently inspect current native artifacts before relying on historical receipt claims." }

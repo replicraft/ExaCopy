@@ -24,6 +24,8 @@ use super::{
 };
 
 mod receipt_ready;
+pub mod records;
+pub mod replay;
 mod wire;
 
 pub use receipt_ready::{
@@ -69,6 +71,32 @@ pub struct RemoteWitnessBinding {
 	epochs: RemoteEpochs,
 	stage: LinuxFileIdentity,
 	coverage: RemoteWitnessCoverage,
+}
+
+impl RemoteWitnessBinding {
+	/// Returns the active signed continuation head.
+	#[must_use]
+	pub const fn continuation(self) -> ChainHead {
+		self.continuation
+	}
+
+	/// Returns the active declaration's job-wide epochs.
+	#[must_use]
+	pub const fn epochs(self) -> RemoteEpochs {
+		self.epochs
+	}
+
+	/// Returns the inherited private stage inode identity as recorded.
+	#[must_use]
+	pub const fn stage(self) -> LinuxFileIdentity {
+		self.stage
+	}
+
+	/// Returns the exact same-pass coverage declaration.
+	#[must_use]
+	pub const fn coverage(self) -> RemoteWitnessCoverage {
+		self.coverage
+	}
 }
 
 /// Historical owner consent expected for this exact witness observation.
@@ -255,18 +283,12 @@ fn resolve(
 		return Err(Error::Binding);
 	}
 	let boundary = expected.coverage.boundary();
-	let coverage = coverage(continuation, predecessor, boundary)?;
+	let binding = binding_for(continuation, predecessor, boundary)?;
+	if binding.coverage.end() != active.source.length() {
+		return Err(Error::Binding);
+	}
 	Ok(RemoteWitnessIntent {
-		binding: RemoteWitnessBinding {
-			context: active.context,
-			scope: active.scope,
-			allocation: active.prior.allocation,
-			prepared: active.prior.prepared,
-			continuation: continuation.boundary().head,
-			epochs: active.epochs,
-			stage: active.stage,
-			coverage,
-		},
+		binding,
 		boundary,
 		stage_directory: active.directory,
 		job_directory: expected.job_directory,
@@ -275,6 +297,32 @@ fn resolve(
 		qualification_digest: active.qualification_digest,
 		consent: expected.consent,
 	})
+}
+
+fn binding_for(
+	continuation: RemoteCaptureContinued<'_>,
+	predecessor: &Frame,
+	boundary: RemoteReplayBoundary,
+) -> Result<RemoteWitnessBinding, Error> {
+	let active = continuation.claims();
+	Ok(RemoteWitnessBinding {
+		context: active.context,
+		scope: active.scope,
+		allocation: active.prior.allocation,
+		prepared: active.prior.prepared,
+		continuation: continuation.boundary().head,
+		epochs: active.epochs,
+		stage: active.stage,
+		coverage: coverage(continuation, predecessor, boundary)?,
+	})
+}
+
+impl RemoteWitnessCoverage {
+	const fn end(self) -> StreamLength {
+		match self {
+			Self::ContinuedPrefix { end, .. } | Self::Checkpoint { end, .. } => end,
+		}
+	}
 }
 
 fn route_class(route: RemoteDownloadRoute) -> Result<RemoteQualificationRouteClass, Error> {
@@ -296,21 +344,26 @@ fn coverage(
 ) -> Result<RemoteWitnessCoverage, Error> {
 	let active = continuation.claims();
 	let continued = continuation.boundary();
-	let end = active.source.length();
 	if boundary.head != frame.head() || boundary.offset > MAX_FIRST_SEGMENT_BYTES {
 		return Err(Error::FrameBinding);
 	}
 	if frame.kind() == FrameKind::RemoteCaptureContinued {
-		if boundary != continued || active.adopted_end != end {
+		if boundary != continued {
 			return Err(Error::FrameBinding);
 		}
 		return Ok(RemoteWitnessCoverage::ContinuedPrefix {
 			head: frame.head(),
-			end,
+			end: active.adopted_end,
 		});
 	}
 	let checkpoint = RemoteContinuedCheckpoint::from_frame(frame)?;
 	let range = checkpoint.range();
+	let end = range
+		.offset
+		.checked_add(range.length)
+		.filter(|&end| end <= active.source.length().get())
+		.and_then(|end| StreamLength::new(end).ok())
+		.ok_or(Error::Binding)?;
 	let checkpoint_bytes =
 		u64::try_from(FRAME_OVERHEAD_BYTES + frame.payload().len()).map_err(|_| Error::Length)?;
 	let begin = boundary
@@ -320,7 +373,6 @@ fn coverage(
 	if checkpoint.context() != active.context
 		|| checkpoint.epochs() != active.epochs
 		|| checkpoint.continuation() != continued.head
-		|| range.offset.checked_add(range.length) != Some(end.get())
 		|| range.offset < active.adopted_end.get()
 		|| (range.ordinal == 1
 			&& (range.offset != active.adopted_end.get() || begin != continued.offset))

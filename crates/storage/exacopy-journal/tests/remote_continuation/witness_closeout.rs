@@ -398,3 +398,9 @@ fn neither_codec_accepts_any_truncated_payload_in_a_new_valid_frame() {
 
 #[path = "coverage_controls.rs"]
 mod coverage_controls;
+
+#[path = "phase_records.rs"]
+mod phase_records;
+
+#[path = "witnessed_replay.rs"]
+mod witnessed_replay;

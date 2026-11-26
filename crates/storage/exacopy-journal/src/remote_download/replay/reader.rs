@@ -1,7 +1,5 @@
 use std::cell::Cell;
-use std::io::{self, Read};
-
-use exacopy_endpoint::MAX_INTERRUPTED_RETRIES;
+use std::io::Read;
 
 use crate::frame::{
 	ChainHead, FRAME_OVERHEAD_BYTES, Frame, FrameKind, FrameProblem, FrameReadError, FrameReader,
@@ -21,6 +19,14 @@ use super::{
 	ContinuationReplayProfile, RemoteDownloadReplay, RemoteReplayBoundary, RemoteReplayIssue,
 	RemoteReplayMismatch,
 };
+
+mod budget;
+mod mixed;
+
+use budget::BudgetRead;
+
+use super::super::witness::replay::WitnessCloseoutHistory;
+pub(super) use mixed::scan_witness_closeout;
 
 pub(super) fn replay(
 	input: impl Read,
@@ -95,6 +101,7 @@ pub(super) fn scan_continuation(
 			continued: Some(continued),
 			retain_checkpoints: true,
 			continuation_profile,
+			mixed: None,
 		},
 		max_bytes,
 		max_attempts,
@@ -102,10 +109,11 @@ pub(super) fn scan_continuation(
 }
 
 #[derive(Default)]
-struct ScanProfile<'scan, 'owner> {
+struct ScanProfile<'scan, 'owner, 'qualification> {
 	bootstrap: Option<&'scan RemoteBootstrapTrust<'owner>>,
 	finalization: Option<&'scan mut FinalizationHistory>,
 	continued: Option<&'scan mut ContinuedHistory>,
+	mixed: Option<&'scan mut WitnessCloseoutHistory<'qualification>>,
 	retain_checkpoints: bool,
 	continuation_profile: ContinuationReplayProfile,
 }
@@ -113,7 +121,7 @@ struct ScanProfile<'scan, 'owner> {
 fn scan(
 	input: impl Read,
 	owner: &RemoteDownloadOwnerRecord,
-	profile: ScanProfile<'_, '_>,
+	profile: ScanProfile<'_, '_, '_>,
 	max_bytes: u64,
 	max_attempts: usize,
 ) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
@@ -121,6 +129,7 @@ fn scan(
 		bootstrap,
 		mut finalization,
 		mut continued,
+		mut mixed,
 		retain_checkpoints,
 		continuation_profile,
 	} = profile;
@@ -149,14 +158,17 @@ fn scan(
 		attempts: Vec::new(),
 		active_checkpoints: retain_checkpoints.then(Vec::new),
 		uncertainty: None,
+		logical_previous: None,
 		issue: None,
 	};
 
 	loop {
 		let mut budget_payload = None;
 		let mut unsupported_kind = None;
+		let mut selected_refusal = None;
 		let read = reader.next_frame_with_payload_limit(|kind| {
-			if continuation_profile == ContinuationReplayProfile::Witness
+			if mixed.is_none()
+				&& continuation_profile == ContinuationReplayProfile::Witness
 				&& continued
 					.as_ref()
 					.is_some_and(|history| history.active().is_some())
@@ -169,8 +181,26 @@ fn scan(
 				unsupported_kind = Some(kind);
 				return 0;
 			}
-			let profile_limit = if bootstrap.is_some() && kind == FrameKind::StageDirectoryPrepared
-			{
+			let selected_cap = if let Some(mixed) = mixed.as_ref() {
+				match mixed::profile_cap(
+					mixed,
+					&replay,
+					finalization.as_ref().map(|history| history.phase()),
+					kind,
+					max_attempts,
+				) {
+					Ok(cap) => cap,
+					Err(issue) => {
+						selected_refusal = Some(issue);
+						return 0;
+					}
+				}
+			} else {
+				None
+			};
+			let profile_limit = if let Some(cap) = selected_cap {
+				cap
+			} else if bootstrap.is_some() && kind == FrameKind::StageDirectoryPrepared {
 				MAX_REMOTE_BOOTSTRAP_PAYLOAD_BYTES
 			} else if continued.is_some() && kind == FrameKind::RemoteCaptureContinued {
 				MAX_REMOTE_CONTINUATION_PAYLOAD_BYTES
@@ -209,13 +239,18 @@ fn scan(
 			replay.issue = Some(RemoteReplayIssue::SegmentLimit);
 			break;
 		}
+		if let Some(issue) = selected_refusal {
+			replay.issue = Some(issue);
+			break;
+		}
 		if let Some(kind) = unsupported_kind {
 			replay.issue = Some(RemoteReplayIssue::Record {
 				offset: replay.boundary.offset,
 				kind,
-				problem: if continued
-					.as_ref()
-					.is_some_and(|history| history.failure().is_some())
+				problem: if mixed.as_ref().is_some_and(|history| history.uncertain())
+					|| continued
+						.as_ref()
+						.is_some_and(|history| history.failure().is_some())
 				{
 					RemoteReplayMismatch::AfterUncertainty
 				} else {
@@ -228,6 +263,7 @@ fn scan(
 			Ok(Some(frame)) => frame,
 			Ok(None) => {
 				if replay.uncertainty.is_some()
+					|| mixed.as_ref().is_some_and(|history| history.uncertain())
 					|| continued
 						.as_ref()
 						.is_some_and(|history| history.failure().is_some())
@@ -263,7 +299,25 @@ fn scan(
 				break;
 			}
 		}
-		let accepted = if let (Some(continued), Some(trust), Some(history)) =
+		let accepted = if let (Some(mixed), Some(continued), Some(legacy), Some(trust)) = (
+			mixed.as_deref_mut(),
+			continued.as_deref_mut(),
+			finalization.as_deref_mut(),
+			bootstrap,
+		) {
+			mixed::accept(
+				mixed::Acceptance {
+					mixed,
+					continued,
+					legacy,
+					trust,
+					validation: &validation,
+				},
+				&mut replay,
+				frame,
+				end,
+			)
+		} else if let (Some(continued), Some(trust), Some(history)) =
 			(continued.as_deref_mut(), bootstrap, finalization.as_ref())
 			&& (kind == FrameKind::RemoteCaptureContinued || continued.active().is_some())
 		{
@@ -402,54 +456,6 @@ impl ReplayValidation<'_> {
 			self.scope,
 			self.max_attempts,
 		)
-	}
-}
-
-struct BudgetRead<'budget, R> {
-	input: R,
-	consumed: &'budget Cell<u64>,
-	limit: u64,
-}
-
-impl<R: Read> Read for BudgetRead<'_, R> {
-	fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-		let remaining = self
-			.limit
-			.checked_sub(self.consumed.get())
-			.ok_or_else(|| io::Error::other("remote journal byte budget exceeded"))?;
-		let limit = usize::try_from(remaining)
-			.unwrap_or(buffer.len())
-			.min(buffer.len());
-		if limit == 0 {
-			return Ok(0);
-		}
-		let mut interruptions = 0;
-		loop {
-			match self.input.read(&mut buffer[..limit]) {
-				Ok(count) if count <= limit => {
-					let count_u64 = u64::try_from(count).map_err(io::Error::other)?;
-					let consumed =
-						self.consumed.get().checked_add(count_u64).ok_or_else(|| {
-							io::Error::other("remote journal byte offset overflow")
-						})?;
-					self.consumed.set(consumed);
-					return Ok(count);
-				}
-				Ok(_) => {
-					return Err(io::Error::new(
-						io::ErrorKind::InvalidData,
-						"remote journal reader returned an oversized count",
-					));
-				}
-				Err(cause) if cause.kind() == io::ErrorKind::Interrupted => {
-					if interruptions >= MAX_INTERRUPTED_RETRIES {
-						return Err(io::Error::other(cause));
-					}
-					interruptions += 1;
-				}
-				Err(cause) => return Err(cause),
-			}
-		}
 	}
 }
 

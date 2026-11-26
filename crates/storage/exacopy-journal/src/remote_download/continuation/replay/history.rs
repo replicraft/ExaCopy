@@ -26,7 +26,7 @@ pub(in crate::remote_download) struct ContinuedHistory {
 }
 
 impl ContinuedHistory {
-	pub(super) const fn new(
+	pub(in crate::remote_download) const fn new(
 		legacy_qualification: [u8; 32],
 		qualification: [u8; 32],
 		grant: [u8; 32],
@@ -79,6 +79,80 @@ impl ContinuedHistory {
 			prior.active_checkpoints = None;
 			Ok(())
 		}
+	}
+
+	pub(in crate::remote_download) fn select_fresh(&mut self, qualification: [u8; 32]) {
+		self.legacy_qualification = qualification;
+		self.active = None;
+	}
+
+	pub(in crate::remote_download) fn repeat(
+		&mut self,
+		prior: &RemoteDownloadReplay,
+		trust: &RemoteBootstrapTrust<'_>,
+		frame: Frame,
+		end: RemoteReplayBoundary,
+	) -> Result<(), Mismatch> {
+		let old = self.active.as_ref().ok_or(Mismatch::Order)?;
+		let previous = prior.boundary();
+		let coverage = old
+			.coverage_predecessor(previous, false)
+			.map_err(Mismatch::Payload)?;
+		let (old_continuation, _) = coverage.authenticated(trust).map_err(Mismatch::Payload)?;
+		let prior_claims = old_continuation.claims();
+		let source_extent = old.source.length();
+		let claims = trust
+			.verify_continuation_frame(&frame, previous, end, source_extent)
+			.map_err(Mismatch::Payload)?
+			.claims();
+		let expected_prior = RemoteContinuationPrior {
+			active: PriorPreparation::Continued(old.admitted_at.head),
+			epochs: old.epochs,
+			..prior_claims.prior
+		};
+		let basis = old.checkpoints.last().map_or(
+			CoverageBasis::ContinuedPrefix(old.admitted_at.head),
+			|row| CoverageBasis::Checkpoint {
+				head: row.head(),
+				ordinal: row.ordinal(),
+			},
+		);
+		let expected_coverage = RemoteContinuationCoverage {
+			basis,
+			end: StreamLength::new(old.covered_end).map_err(|_| Mismatch::Checkpoint)?,
+		};
+		if claims.prior != expected_prior
+			|| claims.directory != prior_claims.directory
+			|| claims.stage != prior_claims.stage
+		{
+			return Err(Mismatch::StageBinding);
+		}
+		if claims.coverage != expected_coverage {
+			return Err(Mismatch::Checkpoint);
+		}
+		if claims.qualification_digest != self.qualification || claims.grant_digest != self.grant {
+			return Err(Mismatch::Payload(Error::Binding));
+		}
+		let epochs = claims.epochs;
+		let source = claims.source;
+		let adopted_end = claims.adopted_end;
+		let prefix_digest = claims.prefix_digest;
+		self.active = Some(RemoteContinuedCapture {
+			frame,
+			admitted_at: end,
+			epochs,
+			source,
+			adopted_end,
+			prefix_digest,
+			checkpoints: Vec::new(),
+			covered_end: adopted_end.get(),
+			witness_frames: Some(WitnessFrames {
+				original_boundary: previous,
+				original_source_extent: source_extent,
+				latest: None,
+			}),
+		});
+		Ok(())
 	}
 
 	fn accept_continuation(
@@ -208,7 +282,7 @@ impl RemoteContinuedCapture {
 		Ok(())
 	}
 
-	fn accept_failure(
+	pub(in crate::remote_download) fn accept_failure(
 		&self,
 		trust: &RemoteBootstrapTrust<'_>,
 		previous: RemoteReplayBoundary,

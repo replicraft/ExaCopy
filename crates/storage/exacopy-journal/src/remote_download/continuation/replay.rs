@@ -27,7 +27,7 @@ use crate::remote_download::{RemoteDownloadRoute, RemoteStageDirectoryPrepared};
 
 mod history;
 
-pub(in super::super) use history::ContinuedHistory;
+pub(in crate::remote_download) use history::ContinuedHistory;
 
 /// Independently selected trust for one archived remote job.
 #[derive(Debug)]
@@ -87,22 +87,7 @@ impl RemoteWitnessContinuationReplay {
 		{
 			return Err(Error::Binding);
 		}
-		let frames = active.witness_frames.as_ref().ok_or(Error::Binding)?;
-		let (frame, boundary) = frames
-			.latest
-			.as_ref()
-			.map_or((&active.frame, active.admitted_at), |(frame, boundary)| {
-				(frame, *boundary)
-			});
-		if boundary != history.boundary() || frame.head() != boundary.head {
-			return Err(Error::FrameBinding);
-		}
-		Ok(RemoteWitnessCoveragePredecessor {
-			active,
-			frames,
-			frame,
-			boundary,
-		})
+		active.coverage_predecessor(history.boundary(), true)
 	}
 }
 
@@ -160,6 +145,34 @@ pub struct RemoteContinuedCapture {
 }
 
 impl RemoteContinuedCapture {
+	// The selected mixed scanner can resolve the previous accepted boundary
+	// before accepting the next frame; this does not imply a physical EOF.
+	pub(in crate::remote_download) fn coverage_predecessor(
+		&self,
+		boundary: RemoteReplayBoundary,
+		complete: bool,
+	) -> Result<RemoteWitnessCoveragePredecessor<'_>, Error> {
+		if complete && self.covered_end != self.source.length().get() {
+			return Err(Error::Binding);
+		}
+		let frames = self.witness_frames.as_ref().ok_or(Error::Binding)?;
+		let (frame, end) = frames
+			.latest
+			.as_ref()
+			.map_or((&self.frame, self.admitted_at), |(frame, end)| {
+				(frame, *end)
+			});
+		if end != boundary || frame.head() != boundary.head {
+			return Err(Error::FrameBinding);
+		}
+		Ok(RemoteWitnessCoveragePredecessor {
+			active: self,
+			frames,
+			frame,
+			boundary,
+		})
+	}
+
 	/// Returns the exact signed frame admitted as the new active preparation.
 	#[must_use]
 	pub const fn frame(&self) -> &Frame {
@@ -346,17 +359,31 @@ pub fn replay_remote_witness_continuation(
 	replay_selected(
 		input,
 		trust,
-		HistoricalSelection {
-			legacy_qualification: selection.initial_v1_qualification,
-			qualification: *selection.qualification.digest().as_bytes(),
-			grant: selection.grant_digest,
-			facts: selection.qualification.facts(),
-			route: selection.qualification.scope().common.route,
-			owner_matches: selection.qualification.matches_owner(trust.key()),
-		},
+		historical_witness_selection(trust, selection),
 		ContinuationReplayProfile::Witness,
 	)
 	.map(RemoteWitnessContinuationReplay)
+}
+
+fn historical_witness_selection<'selection>(
+	trust: &RemoteBootstrapTrust<'_>,
+	selection: &'selection RemoteWitnessContinuationSelection<'_>,
+) -> HistoricalSelection<'selection> {
+	HistoricalSelection {
+		legacy_qualification: selection.initial_v1_qualification,
+		qualification: *selection.qualification.digest().as_bytes(),
+		grant: selection.grant_digest,
+		facts: selection.qualification.facts(),
+		route: selection.qualification.scope().common.route,
+		owner_matches: selection.qualification.matches_owner(trust.key()),
+	}
+}
+
+pub(in crate::remote_download) fn validate_witness_selection(
+	trust: &RemoteBootstrapTrust<'_>,
+	selection: &RemoteWitnessContinuationSelection<'_>,
+) -> Result<(), Error> {
+	validate_selection(trust, &historical_witness_selection(trust, selection))
 }
 
 struct HistoricalSelection<'facts> {

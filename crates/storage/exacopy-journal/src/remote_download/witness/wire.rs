@@ -88,7 +88,19 @@ pub(super) fn common<W: Write>(
 	out.u64(binding.epochs.run.get())?
 		.u64(binding.epochs.source.get())?;
 	write_identity(out, binding.stage)?;
-	match binding.coverage {
+	write_coverage(out, binding.coverage)?;
+
+	out.u8(2)?;
+	write_head(out, previous)?;
+	out.u8(3)?.u16(kind.code())?.u8(4)?.u8(SELECTOR)?.u8(5)?;
+	Ok(())
+}
+
+pub(super) fn write_coverage<W: Write>(
+	out: &mut Encoder<W>,
+	coverage: RemoteWitnessCoverage,
+) -> Result<(), minicbor::encode::Error<W::Error>> {
+	match coverage {
 		RemoteWitnessCoverage::ContinuedPrefix { head, end } => {
 			out.array(3)?.u8(0)?;
 			write_head(out, head)?;
@@ -101,10 +113,22 @@ pub(super) fn common<W: Write>(
 		}
 	}
 
-	out.u8(2)?;
-	write_head(out, previous)?;
-	out.u8(3)?.u16(kind.code())?.u8(4)?.u8(SELECTOR)?.u8(5)?;
 	Ok(())
+}
+
+pub(super) fn selected_body<'frame>(
+	payload: &'frame [u8],
+	binding: RemoteWitnessBinding,
+	previous: ChainHead,
+	kind: FrameKind,
+) -> Result<Decoder<'frame>, Error> {
+	let mut output = encoder::<MAX_WITNESS_CLAIMS_BYTES>();
+	common(&mut output, binding, previous, kind)?;
+	let encoded = output.into_writer();
+	let body = payload
+		.strip_prefix(encoded_bytes(&encoded))
+		.ok_or(Error::Binding)?;
+	Ok(Decoder::new(body))
 }
 
 pub(super) fn witness_claims(
@@ -121,17 +145,21 @@ pub(super) fn witness_claims(
 	out.array(8)?;
 	write_identity(&mut out, record.stage_directory)?;
 	write_identity(&mut out, record.job_directory)?;
-	let mut name = [0; 40];
-	let (prefix, suffix) = name.split_at_mut(b"witness.".len());
-	prefix.copy_from_slice(b"witness.");
-	hex(suffix, &record.nonce);
-	out.bytes(&name)?
+	out.bytes(&witness_name(record.nonce))?
 		.bytes(&record.consent.approval_digest)?
 		.u64(record.consent.deadline.get())?
 		.u8(CONFIRMED)?
 		.u8(CONFIRMED)?
 		.u8(CONFIRMED)?;
 	Ok(finish(out))
+}
+
+pub(super) fn witness_name(nonce: [u8; 16]) -> [u8; 40] {
+	let mut name = [0; 40];
+	let (prefix, suffix) = name.split_at_mut(b"witness.".len());
+	prefix.copy_from_slice(b"witness.");
+	hex(suffix, &nonce);
+	name
 }
 
 pub(super) fn signature_input(claims: &[u8]) -> Result<Vec<u8>, Error> {

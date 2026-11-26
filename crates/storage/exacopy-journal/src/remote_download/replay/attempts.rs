@@ -131,7 +131,9 @@ impl RemoteDownloadReplay {
 				if self.attempts.len() >= max_attempts {
 					return Err(RemoteReplayIssue::AttemptLimit);
 				}
-				let last_epochs = self.attempts.last().map(RemoteReplayAttempt::epochs);
+				let last_epochs = self
+					.logical_previous
+					.or_else(|| self.attempts.last().map(RemoteReplayAttempt::epochs));
 				if previous != last_epochs
 					|| source.length().get() > owner.scope.maximum_extent.get()
 					|| self
@@ -141,6 +143,7 @@ impl RemoteDownloadReplay {
 				{
 					return Err(problem(Mismatch::Allocation));
 				}
+				self.logical_previous = None;
 				self.attempts.push(RemoteReplayAttempt {
 					allocation: head,
 					epochs: next,

@@ -139,6 +139,7 @@ pub struct RemoteDownloadReplay {
 	attempts: Vec<RemoteReplayAttempt>,
 	pub(super) active_checkpoints: Option<Vec<super::checkpoints::RemoteVerifiedCheckpoint>>,
 	uncertainty: Option<RemoteRecordedUncertainty>,
+	logical_previous: Option<RemoteEpochs>,
 	issue: Option<RemoteReplayIssue>,
 }
 
@@ -284,6 +285,24 @@ pub(super) fn scan_continuation(
 		history,
 		continued,
 		continuation_profile,
+		MAX_REMOTE_REPLAY_SEGMENT_BYTES,
+		MAX_REMOTE_REPLAY_ATTEMPTS,
+	)
+}
+
+pub(super) fn scan_witness_closeout(
+	input: impl Read,
+	trust: &RemoteBootstrapTrust<'_>,
+	legacy: &mut FinalizationHistory,
+	continued: &mut super::continuation::replay::ContinuedHistory,
+	mixed: &mut super::witness::replay::WitnessCloseoutHistory<'_>,
+) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
+	reader::scan_witness_closeout(
+		input,
+		trust,
+		legacy,
+		continued,
+		mixed,
 		MAX_REMOTE_REPLAY_SEGMENT_BYTES,
 		MAX_REMOTE_REPLAY_ATTEMPTS,
 	)

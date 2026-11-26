@@ -43,6 +43,10 @@ impl FinalizationHistory {
 		}
 	}
 
+	pub(in crate::remote_download) fn select_fresh_archive(&mut self, qualification: [u8; 32]) {
+		self.expected_qualification = qualification;
+	}
+
 	pub(super) const fn expected_qualification(&self) -> [u8; 32] {
 		self.expected_qualification
 	}
