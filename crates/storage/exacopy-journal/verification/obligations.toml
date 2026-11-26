@@ -122,3 +122,15 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/remote_download/resolved_direct.rs", test = "resolved_direct::resolved_direct_owner_binds_hostname_pin_and_literal_socket_to_new_profile", oracle = "The independent signed vector binds the canonical hostname and host-key pin to the exact IPv4 socket. The resolved-direct owner matches the distinct scope projection and the legacy reader refuses it." }
+
+[[obligation]]
+id = "P-051"
+requirement_ids = ["R-013", "R-140", "R-216", "R-223", "R-229"]
+source = "src/remote_download/owner.rs"
+symbols = ["RemoteDownloadOwnerRecord::decode_absolute_path", "ABSOLUTE_PATH_VERSION"]
+assumptions = [
+    "The caller independently selects the required owner profile, local signing key and authorized source route.",
+    "Ed25519 and BLAKE3 follow their selected profiles. Actual source observation, server namespace semantics and live route enforcement require separate evidence.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_download/absolute_path.rs", test = "absolute_path::absolute_owner_keeps_exact_path_and_requires_bound_direct_or_wireguard", oracle = "Independent signed vectors preserve the exact slash-prefixed pathname and bind it to the exact resolved direct socket or embedded WireGuard route. Both account-relative readers refuse the absolute owner." }

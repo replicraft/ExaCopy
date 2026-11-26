@@ -1,9 +1,10 @@
 use exacopy_endpoint::UnixComponent;
+use exacopy_endpoint::remote_source::SftpPath;
 use tokio::time::Instant;
 
 use super::{
 	Extent, FileObservation, OPERATION_TIMEOUT, ReadOnlySftp, ReadRange, Session, Source,
-	encode_path,
+	encode_selected_path,
 };
 use crate::error::Error;
 
@@ -75,7 +76,19 @@ impl ReadOnlySftp {
 		&mut self,
 		path: &[UnixComponent<'_>],
 	) -> Result<RemotePositionedRead<'_>, Error> {
-		let path = encode_path(path)?;
+		self.open_positioned_path(SftpPath::AccountRelative(path))
+			.await
+	}
+
+	/// Opens an explicitly rooted regular-file source using its exact SFTP name.
+	/// An absolute path includes one leading slash. It is interpreted by the server.
+	/// # Errors
+	/// Refuses an empty absolute path, bounded-path failure or unconfirmed open.
+	pub async fn open_positioned_path(
+		&mut self,
+		path: SftpPath<'_>,
+	) -> Result<RemotePositionedRead<'_>, Error> {
+		let path = encode_selected_path(path)?;
 		let deadline = Instant::now() + OPERATION_TIMEOUT;
 		let (session, source) = self.open_source(path, Extent::Positioned, deadline).await?;
 		Ok(RemotePositionedRead {

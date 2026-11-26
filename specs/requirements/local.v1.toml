@@ -1282,6 +1282,42 @@ path = "crates/storage/exacopy-journal/tests/remote_download/resolved_direct.rs"
 target = "resolved_direct_bootstrap_requires_selected_profile_and_exact_scope"
 
 [[coverage]]
+id = "linux-remote-download-absolute-path-owner"
+status = "implemented"
+requirement_ids = ["R-013", "R-140", "R-216", "R-223", "R-229"]
+acceptance_ids = ["A-013", "A-140", "A-216", "A-223", "A-229"]
+invariant_ids = ["INV-013", "INV-014", "INV-019", "INV-021", "INV-022"]
+scope = "Canonical bounded signed absolute SFTP pathname ownership preserves the exact slash-prefixed bytes and selected SSH and route authority. Strict bootstrap retains the same selected scope."
+limits = "The gate exercises private format admission and historical authenticated binding. Server namespace confinement and identity, live routing, writable authority and native effects require separate evidence."
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "obligation"
+state = "defined"
+path = "crates/storage/exacopy-journal/verification/obligations.toml"
+target = "P-051"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "fixture"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/remote_download/absolute-path.hex"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/remote_download/absolute_path.rs"
+target = "absolute_owner_refuses_other_roots_and_malformed_signed_names"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/remote_download/absolute_path.rs"
+target = "strict_bootstrap_binds_absolute_name_for_embedded_route"
+
+[[coverage]]
 id = "remote-download-journal-replay"
 status = "implemented"
 requirement_ids = ["R-013", "R-017", "R-140"]

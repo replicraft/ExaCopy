@@ -5,8 +5,8 @@ use russh_sftp::protocol::{
 use tokio::time::Instant;
 
 use super::{
-	FileObservation, OPERATION_TIMEOUT, ReadOnlySftp, Session, close, encode_path, handle, lstat,
-	observation, unexpected,
+	FileObservation, OPERATION_TIMEOUT, ReadOnlySftp, Session, close, encode_path,
+	encode_selected_path, handle, lstat, observation, unexpected,
 };
 use crate::error::Error;
 use crate::wire::Wire;

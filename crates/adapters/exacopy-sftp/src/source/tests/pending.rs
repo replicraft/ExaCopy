@@ -304,3 +304,69 @@ async fn callback_refusal_preserves_durable_error_and_discards_stale_success() {
 		assert_eq!(calls.read.load(Ordering::Relaxed), 0);
 	}
 }
+
+#[tokio::test]
+async fn typed_absolute_source_preserves_leading_slash_on_the_same_handle() {
+	use exacopy_endpoint::UnixComponent;
+	use exacopy_endpoint::remote_source::SftpPath;
+
+	use crate::{PendingSftpPathRequest, open_pending_path_source};
+
+	let mut generated = Generated::new(3);
+	generated.selected_name = b"/folder/\xfffile";
+	let (mut session, calls) = peer_source(generated).await;
+	let (mut owner, attempt) = Owner::start(NonZeroU128::MIN);
+	let paths = [UnixComponent::new(b"folder").unwrap(), path()[0]];
+	let pending = open_pending_path_source(
+		&mut session,
+		PendingSftpPathRequest {
+			path: SftpPath::Absolute(&paths),
+			attempt,
+			epoch: EPOCH,
+		},
+		&mut owner,
+	)
+	.await
+	.unwrap();
+	assert_eq!(calls.open.load(Ordering::Relaxed), 1);
+	assert_eq!(calls.read.load(Ordering::Relaxed), 0);
+
+	let binding = owner.admit(pending.attempt(), pending.epoch());
+	let mut source = pending
+		.activate(binding, |binding| owner.check_binding(binding))
+		.unwrap();
+	let mut bytes = [0; 3];
+	source.read_exact_at(0, &mut bytes).await.unwrap();
+	source.finish().await.unwrap();
+	drop(source);
+	owner.check_attempt(attempt).unwrap();
+	assert_eq!(bytes, [0, 1, 2]);
+	assert_eq!(calls.open.load(Ordering::Relaxed), 1);
+	assert_eq!(calls.close.load(Ordering::Relaxed), 1);
+}
+
+#[tokio::test]
+async fn empty_absolute_root_is_not_a_relative_dot_request() {
+	use exacopy_endpoint::remote_source::SftpPath;
+
+	use crate::{PendingSftpPathRequest, open_pending_path_source};
+
+	let (mut session, calls) = peer_source(Generated::new(3)).await;
+	let (mut owner, attempt) = Owner::start(NonZeroU128::MIN);
+	let result = open_pending_path_source(
+		&mut session,
+		PendingSftpPathRequest {
+			path: SftpPath::Absolute(&[]),
+			attempt,
+			epoch: EPOCH,
+		},
+		&mut owner,
+	)
+	.await;
+	assert!(matches!(
+		result,
+		Err(SftpSourceError::Sftp(exacopy_ssh::Error::UnsupportedSource))
+	));
+	assert_eq!(calls.open.load(Ordering::Relaxed), 0);
+	assert_eq!(calls.read.load(Ordering::Relaxed), 0);
+}

@@ -144,6 +144,11 @@ pub(super) const BINDINGS: &[Binding] = &[
 		Marker::array("RESOLVED_DIRECT_VERSION", 3),
 	),
 	Binding::new(
+		"linux-remote-download-absolute-path-owner",
+		"crates/storage/exacopy-journal/src/remote_download/owner.rs",
+		Marker::array("ABSOLUTE_PATH_VERSION", 3),
+	),
+	Binding::new(
 		"linux-remote-download-records",
 		"crates/storage/exacopy-journal/src/remote_download/records/wire.rs",
 		Marker::array("VERSION", 3),

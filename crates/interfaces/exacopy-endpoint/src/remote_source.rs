@@ -3,6 +3,46 @@
 use std::future::Future;
 use std::num::{NonZeroU64, NonZeroUsize};
 
+use crate::UnixComponent;
+
+/// The selected base for an exact slash-delimited SFTP path.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SftpPathRoot {
+	/// Use the authenticated account's starting directory.
+	AccountRelative,
+	/// Use the server's absolute slash namespace.
+	Absolute,
+}
+
+/// One explicitly rooted SFTP name in already validated raw components.
+/// This describes bytes sent to the server and confers no confinement.
+#[derive(Clone, Copy)]
+pub enum SftpPath<'path> {
+	/// Interpret these components relative to the authenticated account.
+	AccountRelative(&'path [UnixComponent<'path>]),
+	/// Interpret these components after one leading slash.
+	Absolute(&'path [UnixComponent<'path>]),
+}
+
+impl<'path> SftpPath<'path> {
+	/// Returns the selected path base.
+	#[must_use]
+	pub const fn root(self) -> SftpPathRoot {
+		match self {
+			Self::AccountRelative(_) => SftpPathRoot::AccountRelative,
+			Self::Absolute(_) => SftpPathRoot::Absolute,
+		}
+	}
+
+	/// Returns the original validated raw components.
+	#[must_use]
+	pub const fn components(self) -> &'path [UnixComponent<'path>] {
+		match self {
+			Self::AccountRelative(components) | Self::Absolute(components) => components,
+		}
+	}
+}
+
 /// A caller-assigned identifier for one held live read pass.
 ///
 /// A reopen or connection-generation change needs a fresh epoch before another

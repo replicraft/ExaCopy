@@ -7,7 +7,7 @@ mod source;
 
 pub use error::SftpSourceError;
 pub use source::{
-	PendingSftpSource, PendingSftpSourceRequest, PendingSourceOwner, open_pending_source,
-	with_pending_source,
+	PendingSftpPathRequest, PendingSftpSource, PendingSftpSourceRequest, PendingSourceOwner,
+	open_pending_path_source, open_pending_source, with_pending_source,
 };
 pub use source::{SftpSource, SftpSourceRequest, with_source};

@@ -177,6 +177,15 @@ owner = "crates/storage/exacopy-journal/src/remote_download/owner.rs"
 notes = "Mandatory account-relative owner profile for resolved direct SSH. The canonical SSH authority and host-key pin bind an exact authorized IP address and port under a distinct scope digest domain. Readers require explicit profile selection."
 
 [[contract]]
+id = "linux-remote-download-absolute-path-owner"
+kind = "transfer_journal"
+status = "implemented_private"
+version = "1.2"
+required_features = 7
+owner = "crates/storage/exacopy-journal/src/remote_download/owner.rs"
+notes = "Mandatory absolute-name owner profile for an exact bounded SFTP pathname. The distinct scope digest binds the SSH authority and pin to an exact resolved direct socket or embedded WireGuard route. Prior account-relative readers require their original profiles."
+
+[[contract]]
 id = "linux-remote-download-records"
 kind = "transfer_journal"
 status = "implemented_private"

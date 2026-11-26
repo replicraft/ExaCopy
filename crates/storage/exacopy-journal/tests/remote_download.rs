@@ -23,6 +23,8 @@ use exacopy_journal::{
 use minicbor::encode::write::Cursor;
 use minicbor::{Decoder, Encoder};
 
+#[path = "remote_download/absolute_path.rs"]
+mod absolute_path;
 #[path = "remote_download/properties.rs"]
 mod properties;
 #[path = "remote_download/resolved_direct.rs"]

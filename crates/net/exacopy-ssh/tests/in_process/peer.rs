@@ -122,6 +122,7 @@ pub(super) enum ChangedObservation {
 }
 
 pub(super) struct Generated {
+	pub(super) selected_name: &'static [u8],
 	pub(super) observed_length: u64,
 	pub(super) actual_length: u64,
 	pub(super) max_reply: u32,
@@ -135,6 +136,7 @@ pub(super) struct Generated {
 impl Generated {
 	pub(super) const fn new(length: u64) -> Self {
 		Self {
+			selected_name: NAME,
 			observed_length: length,
 			actual_length: length,
 			max_reply: 4093,
@@ -148,6 +150,12 @@ impl Generated {
 }
 
 impl Files {
+	fn selected_name(&self) -> &[u8] {
+		self.generated
+			.as_ref()
+			.map_or(NAME, |generated| generated.selected_name)
+	}
+
 	fn changed_during_window(&self, observation: ChangedObservation) -> bool {
 		self.calls.read.load(Ordering::Relaxed) != 0
 			&& self
@@ -186,7 +194,7 @@ impl sftp_server::Handler for Files {
 	}
 
 	async fn lstat(&mut self, id: u32, path: sftp::SftpString) -> Result<sftp::Attrs, Self::Error> {
-		assert_eq!(path.as_bytes(), NAME);
+		assert_eq!(path.as_bytes(), self.selected_name());
 		let changed = self
 			.generated
 			.as_ref()
@@ -248,7 +256,7 @@ impl sftp_server::Handler for Files {
 		flags: sftp::OpenFlags,
 		_attrs: sftp::FileAttributes,
 	) -> Result<sftp::Handle, Self::Error> {
-		assert_eq!(name.as_bytes(), NAME);
+		assert_eq!(name.as_bytes(), self.selected_name());
 		assert_eq!(flags.bits(), sftp::OpenFlags::READ.bits());
 		self.calls.open.fetch_add(1, Ordering::Relaxed);
 		Ok(sftp::Handle {

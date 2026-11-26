@@ -3,6 +3,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::num::NonZeroU16;
 
 use exacopy_endpoint::UnixComponent;
+use exacopy_endpoint::remote_source::SftpPathRoot;
 use exacopy_endpoint::ssh_sftp::SshAuthority;
 use exacopy_endpoint::wireguard::{InnerDial, InnerDialKind};
 use minicbor::encode::{self, Write, write::Cursor};
@@ -17,12 +18,15 @@ use super::wire::{array, fixed, key, map, read_identity, write_identity};
 pub const MAX_REMOTE_PATH_BYTES: usize = 4096;
 const SCOPE_DOMAIN: &[u8] = b"ExaCopy/linux-remote-scope/v1\0";
 const RESOLVED_DIRECT_SCOPE_DOMAIN: &[u8] = b"ExaCopy/linux-remote-scope/resolved-direct/v1\0";
+const ABSOLUTE_SCOPE_DOMAIN: &[u8] = b"ExaCopy/linux-remote-scope/absolute-path/v1\0";
 const DIRECT: u8 = 0;
 const EMBEDDED: u8 = 1;
 const RESOLVED_DIRECT: u8 = 2;
 const PROCESS_CRASH: u8 = 0;
 
 pub(super) const MAX_BODY_BYTES: usize = 6144;
+
+mod absolute;
 
 /// The canonical remote scope's independent, domain-separated digest.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -83,13 +87,31 @@ impl RemoteDownloadSource {
 		route: RemoteDownloadRoute,
 		path: &[u8],
 	) -> Result<Self, Error> {
+		Self::new_rooted(
+			authority,
+			host_key_sha256,
+			route,
+			path,
+			SftpPathRoot::AccountRelative,
+		)
+	}
+
+	fn new_rooted(
+		authority: SshAuthority,
+		host_key_sha256: [u8; 32],
+		route: RemoteDownloadRoute,
+		path: &[u8],
+		root: SftpPathRoot,
+	) -> Result<Self, Error> {
 		if path.len() > MAX_REMOTE_PATH_BYTES {
 			return Err(Error::Length);
 		}
+		let names = absolute::component_bytes(path, root)?;
 		if host_key_sha256 == [0; 32]
-			|| path
+			|| names
 				.split(|byte| *byte == b'/')
 				.any(|name| UnixComponent::new(name).is_err())
+			|| (root == SftpPathRoot::Absolute && route == RemoteDownloadRoute::Direct)
 		{
 			return Err(Error::Scope);
 		}
@@ -298,13 +320,10 @@ impl RemoteDownloadScope {
 		self.write(&mut encoder)?;
 		let encoded = encoder.into_writer();
 		let mut hash = blake3::Hasher::new();
-		let domain = if matches!(
-			self.source.route,
-			RemoteDownloadRoute::ResolvedDirect { .. }
-		) {
-			RESOLVED_DIRECT_SCOPE_DOMAIN
-		} else {
-			SCOPE_DOMAIN
+		let domain = match (self.source.route(), self.source.path_root()) {
+			(_, SftpPathRoot::Absolute) => ABSOLUTE_SCOPE_DOMAIN,
+			(RemoteDownloadRoute::ResolvedDirect { .. }, _) => RESOLVED_DIRECT_SCOPE_DOMAIN,
+			_ => SCOPE_DOMAIN,
 		};
 		hash.update(domain);
 		hash.update(&encoded.get_ref()[..encoded.position()]);
@@ -391,7 +410,9 @@ fn read_source(decoder: &mut Decoder<'_>) -> Result<RemoteDownloadSource, Error>
 	let authority = SshAuthority::new(host, port, account).map_err(|_| Error::Scope)?;
 	let host_key = fixed(decoder)?;
 	let route = read_route(decoder)?;
-	RemoteDownloadSource::new(authority, host_key, route, decoder.bytes()?)
+	let path = decoder.bytes()?;
+	let root = absolute::path_root(path);
+	RemoteDownloadSource::new_rooted(authority, host_key, route, path, root)
 }
 
 fn read_route(decoder: &mut Decoder<'_>) -> Result<RemoteDownloadRoute, Error> {

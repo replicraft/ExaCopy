@@ -1,5 +1,7 @@
 use std::fmt;
 
+use exacopy_endpoint::remote_source::SftpPathRoot;
+
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use minicbor::encode::write::Cursor;
 use minicbor::{Decoder, Encoder};
@@ -16,16 +18,18 @@ use super::scope::{MAX_BODY_BYTES, RemoteDownloadScope};
 use super::wire::{
 	array, fixed, key, map, read_identity, read_version, write_identity, write_version,
 };
-use super::{RemoteDownloadError as Error, RemoteDownloadRoute};
+use super::{RemoteDownloadError as Error, RemoteDownloadRoute, RemoteDownloadSource};
 
 const DOMAIN: OwnerDomain = OwnerDomain::LinuxRemoteDownload;
 const VERSION: [u64; 3] = [1, 0, 1];
 const RESOLVED_DIRECT_VERSION: [u64; 3] = [1, 1, 3];
+const ABSOLUTE_PATH_VERSION: [u64; 3] = [1, 2, 7];
 
 #[derive(Clone, Copy)]
 enum OwnerFormat {
 	V1,
 	ResolvedDirect,
+	AbsolutePath,
 }
 
 impl OwnerFormat {
@@ -33,16 +37,18 @@ impl OwnerFormat {
 		match self {
 			Self::V1 => VERSION,
 			Self::ResolvedDirect => RESOLVED_DIRECT_VERSION,
+			Self::AbsolutePath => ABSOLUTE_PATH_VERSION,
 		}
 	}
 
-	fn require_route(self, route: RemoteDownloadRoute) -> Result<(), Error> {
-		match (self, route) {
-			(
-				Self::V1,
-				RemoteDownloadRoute::Direct | RemoteDownloadRoute::EmbeddedWireGuard { .. },
-			)
-			| (Self::ResolvedDirect, RemoteDownloadRoute::ResolvedDirect { .. }) => Ok(()),
+	fn require_source(self, source: &RemoteDownloadSource) -> Result<(), Error> {
+		use RemoteDownloadRoute::{Direct, EmbeddedWireGuard, ResolvedDirect};
+		use SftpPathRoot::{Absolute, AccountRelative};
+
+		match (self, source.route(), source.path_root()) {
+			(Self::V1, Direct | EmbeddedWireGuard { .. }, AccountRelative)
+			| (Self::ResolvedDirect, ResolvedDirect { .. }, AccountRelative)
+			| (Self::AbsolutePath, EmbeddedWireGuard { .. } | ResolvedDirect { .. }, Absolute) => Ok(()),
 			_ => Err(Error::Scope),
 		}
 	}
@@ -134,13 +140,23 @@ impl RemoteDownloadOwnerRecord {
 		Self::sign_in(manifest, signer, OwnerFormat::ResolvedDirect)
 	}
 
+	/// Signs the explicit absolute-path owner profile with an exact bound route.
+	/// # Errors
+	/// Refuses another path root or route profile, invalid scope or unusable signer.
+	pub fn sign_absolute_path(
+		manifest: RemoteDownloadOwner,
+		signer: &SigningKey,
+	) -> Result<Self, Error> {
+		Self::sign_in(manifest, signer, OwnerFormat::AbsolutePath)
+	}
+
 	fn sign_in(
 		manifest: RemoteDownloadOwner,
 		signer: &SigningKey,
 		format: OwnerFormat,
 	) -> Result<Self, Error> {
 		manifest.validate()?;
-		format.require_route(manifest.scope.source.route())?;
+		format.require_source(&manifest.scope.source)?;
 		let key = signer.verifying_key();
 		if key.is_weak() {
 			return Err(OwnerError::InvalidSignature.into());
@@ -184,6 +200,17 @@ impl RemoteDownloadOwnerRecord {
 		key: &VerifyingKey,
 	) -> Result<Self, Error> {
 		Self::decode_in(bytes, profile, key, OwnerFormat::ResolvedDirect)
+	}
+
+	/// Authenticates the required absolute-path owner profile explicitly.
+	/// # Errors
+	/// Refuses a different owner, root or route profile, key, signature or invalid bytes.
+	pub fn decode_absolute_path(
+		bytes: &[u8],
+		profile: OwnerProfileId,
+		key: &VerifyingKey,
+	) -> Result<Self, Error> {
+		Self::decode_in(bytes, profile, key, OwnerFormat::AbsolutePath)
 	}
 
 	fn decode_in(
@@ -300,7 +327,7 @@ fn decode_body(
 	let job_directory = read_identity(&mut decoder)?;
 	key(&mut decoder, 7)?;
 	let scope = RemoteDownloadScope::read(&mut decoder)?;
-	format.require_route(scope.source.route())?;
+	format.require_source(&scope.source)?;
 	let manifest = RemoteDownloadOwner::new(token, job, profile, created, job_directory, scope)?;
 	if encoded_bytes(&encode_body(&manifest, public_key, format)?) != bytes {
 		return Err(Error::NonCanonical);

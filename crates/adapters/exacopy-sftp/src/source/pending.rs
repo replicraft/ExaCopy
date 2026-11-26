@@ -1,5 +1,5 @@
 use exacopy_endpoint::connection_retry::{ConnectionAttempt, ConnectionBinding, RetryError};
-use exacopy_endpoint::remote_source::SourceEpoch;
+use exacopy_endpoint::remote_source::{SftpPath, SourceEpoch};
 use exacopy_endpoint::{MAX_FILE_LENGTH, UnixComponent};
 use exacopy_ssh::{FileObservation, ReadOnlySftp, RemotePositionedRead};
 
@@ -13,6 +13,16 @@ pub struct PendingSftpSourceRequest<'path> {
 	/// The application-owned attempt for this authenticated SSH session.
 	pub attempt: ConnectionAttempt,
 	/// The new live source pass reserved for the selected attempt.
+	pub epoch: SourceEpoch,
+}
+
+/// A selected explicitly rooted SFTP name and fresh source epoch for an attempt.
+pub struct PendingSftpPathRequest<'path> {
+	/// Exact rooted SFTP file name.
+	pub path: SftpPath<'path>,
+	/// Current application-owned connecting attempt.
+	pub attempt: ConnectionAttempt,
+	/// Fresh source pass supplied by that attempt's owner.
 	pub epoch: SourceEpoch,
 }
 
@@ -158,10 +168,30 @@ pub async fn open_pending_source<'session>(
 	request: PendingSftpSourceRequest<'_>,
 	owner: &mut impl PendingSourceOwner,
 ) -> Result<PendingSftpSource<'session>, SftpSourceError> {
+	open_pending_path_source(
+		session,
+		PendingSftpPathRequest {
+			path: SftpPath::AccountRelative(request.path),
+			attempt: request.attempt,
+			epoch: request.epoch,
+		},
+		owner,
+	)
+	.await
+}
+
+/// Opens one explicitly rooted held source under the borrowed pending-source contract.
+/// # Errors
+/// Refuses stale authority or an unsupported, unconfirmed source observation.
+pub async fn open_pending_path_source<'session>(
+	session: &'session mut ReadOnlySftp,
+	request: PendingSftpPathRequest<'_>,
+	owner: &mut impl PendingSourceOwner,
+) -> Result<PendingSftpSource<'session>, SftpSourceError> {
 	owner
 		.check_connecting(request.attempt)
 		.map_err(SftpSourceError::Binding)?;
-	let reader = session.open_positioned(request.path).await;
+	let reader = session.open_positioned_path(request.path).await;
 	owner
 		.check_connecting(request.attempt)
 		.map_err(SftpSourceError::Binding)?;

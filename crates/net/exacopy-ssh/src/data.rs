@@ -3,6 +3,7 @@ use std::pin::Pin;
 use std::time::Duration;
 
 use exacopy_endpoint::UnixComponent;
+use exacopy_endpoint::remote_source::{SftpPath, SftpPathRoot};
 use exacopy_endpoint::ssh_sftp::SftpCapabilities;
 use russh_sftp::protocol::{
 	Close, Lstat, OpenDir, Packet, ReadDir, SftpHandle, SftpString, StatusCode,
@@ -147,13 +148,23 @@ impl Session {
 }
 
 fn encode_path(path: &[UnixComponent<'_>]) -> Result<SftpString, Error> {
-	if path.is_empty() {
-		return Ok(SftpString::from("."));
+	encode_selected_path(SftpPath::AccountRelative(path))
+}
+
+fn encode_selected_path(path: SftpPath<'_>) -> Result<SftpString, Error> {
+	let absolute = path.root() == SftpPathRoot::Absolute;
+	let components = path.components();
+	if components.is_empty() {
+		return if absolute {
+			Err(Error::UnsupportedSource)
+		} else {
+			Ok(SftpString::from("."))
+		};
 	}
 	let mut bytes = Vec::new();
-	for component in path {
+	for (index, component) in components.iter().enumerate() {
 		let name = component.as_bytes();
-		let separator = usize::from(!bytes.is_empty());
+		let separator = usize::from(absolute || index != 0);
 		if bytes.len() + separator + name.len() > MAX_PATH_BYTES {
 			return Err(Error::Limit);
 		}

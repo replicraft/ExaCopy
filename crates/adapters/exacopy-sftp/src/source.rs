@@ -13,8 +13,8 @@ mod tests;
 mod pending;
 
 pub use pending::{
-	PendingSftpSource, PendingSftpSourceRequest, PendingSourceOwner, open_pending_source,
-	with_pending_source,
+	PendingSftpPathRequest, PendingSftpSource, PendingSftpSourceRequest, PendingSourceOwner,
+	open_pending_path_source, open_pending_source, with_pending_source,
 };
 
 const MAX_WINDOW: NonZeroUsize =

@@ -2,6 +2,8 @@
 
 use std::io::Read;
 
+use exacopy_endpoint::remote_source::SftpPathRoot;
+
 use crate::frame::{ChainHead, FrameKind, FrameReadError};
 use crate::{LinuxFileIdentity, MAX_FIRST_SEGMENT_BYTES};
 
@@ -212,7 +214,8 @@ pub fn replay_remote_download(
 	if matches!(
 		owner.manifest().scope.source.route(),
 		RemoteDownloadRoute::ResolvedDirect { .. }
-	) {
+	) || owner.manifest().scope.source.path_root() == SftpPathRoot::Absolute
+	{
 		return Err(RemoteDownloadError::UnsupportedVersion);
 	}
 	reader::replay(
