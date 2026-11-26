@@ -44,8 +44,9 @@ The reviewed baseline used `fdcc3ea`; `5e936f0` advanced the selected pin to
 the duplicate consumer descriptor. The current pin selects public `a494df4`,
 whose owned observation-only reader supplies restart read-back. Publication
 uses coherent companion observations and exposes the checked final-guard
-seam. Outer event inventories, immutable artifacts and mutation-free remote
-sealing remain separate consumer integrations. The bounded
+seam. Outer recovery inventories use owned event anchors, and immutable
+owner/plan records use the checked artifact lifecycle. Receipts and
+mutation-free remote sealing remain separate integrations. The bounded
 [companion audit](filesystem-companion-boundary-audit.md)
 reviewed APFS and HFS+ source without changing either. At `1660ab3`,
 [BoringTun and Russh](../supply-chain/local-transport-sources.md) became

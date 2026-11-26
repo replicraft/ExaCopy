@@ -9,6 +9,10 @@ The reader owns its name and anchor while ExaCopy rechecks the complete
 original inventory. The [handoff](apfs-recovery-handoff.md) records the
 companion's separate mutation-free sealing and coherent event and
 post-publication observations.
+Outer recovery inventories now use owned event anchors, and immutable owner
+and plan records use the checked artifact lifecycle with independent byte
+and EOF verification. ExaCopy keeps their strict metadata policy and final
+namespace checks. Receipt and append-only journal lifecycles remain separate.
 Authorization, metadata policy, hashes, journal/receipt formats, durable
 intent and reconciliation remain in ExaCopy. No HFS+ implementation was found
 to move. The historical findings below retain their original revision scope.

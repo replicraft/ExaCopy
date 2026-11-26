@@ -73,10 +73,12 @@ exact stored spelling for private stages and lookup spelling for public
 occupancy. ExaCopy's recovery read-back uses a coherent data-handle observation
 for initial and final metadata. Post-publication checks now use a coherent
 companion snapshot around strict metadata queries on the sealed read-only
-descriptor. `OwnedEventEntry` additionally supplies an owned name, retained
-parent descriptor and event anchor for outer recovery inventory migration.
-It grants neither payload access nor lease authority. ExaCopy retains its
-original inventory baseline and binding checks.
+descriptor. Outer recovery inventory now uses `OwnedEventEntry` for its
+owned name, retained parent descriptor and event anchor. Its capability
+exposes metadata operations and no payload access or lease authority.
+ExaCopy preserves its initial no-follow regular-file and volume admission,
+correlates the first coherent sample with the original full identity and
+stat baseline, and rechecks the original leased ancestry and both names.
 
 Consumer firmlink and dataless admission now uses the companion's typed
 `ObjectFlags`. ExaCopy keeps the comparison with its recorded publication
@@ -86,10 +88,12 @@ Existing `Directory::create_private_directory` can also replace consumer
 existing and created-but-unconfirmed outcomes and ExaCopy's strict 0700/ACL
 admission. `write_private_artifact_checked` now supplies exclusive creation,
 held/name observation, a file barrier, consuming checked close and independent
-byte/EOF read-back. It can serve immutable job records and receipts while
-ExaCopy retains their names, formats, resource reservations, directory barriers
-and publication ordering. Consumer adoption must retain strict ACL admission,
-including refusal of an unknown entry count, and map nested restoration
+byte/EOF read-back. ExaCopy uses it for immutable owner and plan records,
+retaining their names, formats, resource reservations, directory barriers
+and final held/name identity checks. Receipt migration remains separate.
+The adapter retains strict ACL admission,
+including the existing refusal of a present native no-ACL marker rather than
+an explicit zero-entry payload, and map nested restoration
 outcomes without confusing pre-effect refusal with incomplete creation.
 The artifact helper is not a replacement for an append-only journal.
 

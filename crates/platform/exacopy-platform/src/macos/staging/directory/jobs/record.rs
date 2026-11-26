@@ -1,15 +1,19 @@
 use std::fs::File;
 use std::os::fd::AsFd as _;
-use std::os::unix::fs::FileExt as _;
 
-use exacopy_endpoint::{UnixComponent, write_all_at};
+use exacopy_endpoint::UnixComponent;
 use rustix::fs::{self, FileType, Mode, OFlags};
 
 use super::super::super::super::{FILE_MODE, PhysicalFsid, acl, file::same_observation};
-use super::super::super::close::close_writer;
 use super::checked_component;
 use super::{Creation, DirectoryLease, JobArtifact, JobDirectory, JobError, JobStep};
 use super::{DarwinJournalSegment, JOURNAL, JournalDirectory, ManagedObjectIdentity};
+
+mod artifact;
+
+use artifact::write_record;
+#[cfg(test)]
+pub(super) use artifact::write_record_with_namespace_barrier;
 
 pub(super) const OWNER: &[u8] = b"owner.cbor";
 pub(super) const PLAN: &[u8] = b"plan.cbor";
@@ -90,53 +94,6 @@ impl<'job> JournalDirectory<'job> {
 		self.directory
 			.check_current(&self.job.directory.lease, checked_component(JOURNAL)?)
 	}
-}
-
-fn write_record(
-	lease: &DirectoryLease,
-	name: UnixComponent<'_>,
-	bytes: &[u8],
-	creation: Creation,
-	check_parent: impl Fn() -> Result<(), JobError>,
-) -> Result<ManagedObjectIdentity, JobError> {
-	write_record_with(lease, name, bytes, creation, check_parent, |file| {
-		fs::fcntl_fullfsync(file)
-	})
-}
-
-pub(super) fn write_record_with(
-	lease: &DirectoryLease,
-	name: UnixComponent<'_>,
-	bytes: &[u8],
-	creation: Creation,
-	check_parent: impl Fn() -> Result<(), JobError>,
-	file_barrier: impl FnOnce(&File) -> rustix::io::Result<()>,
-) -> Result<ManagedObjectIdentity, JobError> {
-	let length = record_length(bytes)?;
-	creation.run(|creation| {
-		check_parent()?;
-		let (file, identity) = create_empty(lease, name, creation)?;
-		creation.step = Some(JobStep::Write);
-		write_all_at(0, bytes, |offset, remaining| {
-			file.write_at(remaining, offset)
-		})
-		.map_err(super::StageError::Write)?;
-		check_record(lease, name, &file, length, Some(identity))?;
-		creation.step = Some(JobStep::FileBarrier);
-		file_barrier(&file)?;
-		creation.step = Some(JobStep::Close);
-		close_writer(file)?;
-		creation.step = Some(JobStep::NamespaceBarrier);
-		fs::fsync(&lease.file)?;
-		creation.step = Some(JobStep::Revalidate);
-		check_parent()?;
-		let named = lease.named_stat(name)?;
-		if ManagedObjectIdentity::from_stat(&named, lease.identity.physical_fsid) != Some(identity)
-		{
-			return Err(JobError::IdentityChanged);
-		}
-		Ok(identity)
-	})
 }
 
 pub(super) fn record_length(bytes: &[u8]) -> Result<u64, JobError> {

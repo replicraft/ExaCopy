@@ -388,7 +388,7 @@ fn lost_job_and_child_bindings_do_not_grant_mutation_to_replacements() {
 }
 
 #[test]
-fn failed_file_barrier_reports_reconciliation_and_preserves_artifact() {
+fn failed_record_namespace_barrier_reports_reconciliation_and_preserves_artifact() {
 	let fixture = Fixture::new();
 	let root = fixture.bind();
 	let container = open_staging(&root);
@@ -396,7 +396,7 @@ fn failed_file_barrier_reports_reconciliation_and_preserves_artifact() {
 		.create_job_directory(job_name())
 		.expect("create job");
 	let bytes = b"retain for reconciliation";
-	let result = super::record::write_record_with(
+	let result = super::record::write_record_with_namespace_barrier(
 		&job.directory.lease,
 		checked_component(OWNER.as_bytes()).expect("valid owner component"),
 		bytes,
@@ -407,11 +407,11 @@ fn failed_file_barrier_reports_reconciliation_and_preserves_artifact() {
 	let Err(JobError::Uncertain {
 		job: reported_job,
 		artifact: JobArtifact::Owner,
-		step: JobStep::FileBarrier,
+		step: JobStep::NamespaceBarrier,
 		source,
 	}) = result
 	else {
-		panic!("expected an uncertain file barrier, got {result:?}");
+		panic!("expected an uncertain namespace barrier, got {result:?}");
 	};
 	assert_eq!(reported_job, job_name());
 	assert!(matches!(*source, JobError::System(error) if error.raw_os_error() == Some(libc::EIO)));
