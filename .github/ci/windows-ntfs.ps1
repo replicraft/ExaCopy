@@ -224,12 +224,16 @@ try {
         } finally {
             $identity.Dispose()
         }
+        $systemVolume = if ($token.administrator_enabled) {
+            Get-StageHostedSystemVolume $rootInfo.FullName ([Environment]::GetEnvironmentVariables()) ([Environment]::SystemDirectory)
+        }
+        $token['ancestor_owner_profile'] = if ($systemVolume) { 'hosted-system-volume-owner-v1' } else { 'ordinary-owner-v1' }
         $token | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence.FullName 'stage-token.json')
         if ((Invoke-Lane -Name 'stage-token-groups-privileges' -Program 'whoami.exe' -Arguments @('/all')) -ne 0) {
             throw 'Could not record the native Stage caller token.'
         }
         $usesUserProfile = [string]::Equals($rootInfo.FullName, $env:USERPROFILE, [StringComparison]::OrdinalIgnoreCase)
-        $stageAncestors = New-StageAncestorCustody $rootInfo.FullName $stageOwner {
+        $stageAncestors = New-StageAncestorCustody $rootInfo.FullName $stageOwner -HostedSystemVolume $systemVolume -BeforeAdmission {
             param($Held)
             Write-StageAncestorDiagnostic $Held $token $usesUserProfile (Join-Path $evidence.FullName 'stage-ancestor-admission.json')
         }

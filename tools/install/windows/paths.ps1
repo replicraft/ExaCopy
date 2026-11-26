@@ -176,11 +176,8 @@ function New-ExaCopyPrivateStage {
     return $path
 }
 
-function Assert-ExaCopyParentAcl {
-    param([string] $Path, [Security.Principal.SecurityIdentifier] $Owner, [switch] $Ancestor)
-    [void](Confirm-ExaCopyPath $Path)
-    $acl = [IO.FileSystemAclExtensions]::GetAccessControl([IO.DirectoryInfo]::new($Path))
-    $trusted = @($Owner.Value, 'S-1-5-18', 'S-1-5-32-544')
+function Assert-ExaCopyParentDacl {
+    param($Acl, [string[]] $Trusted, [switch] $Ancestor)
     $ownershipChanges = [Security.AccessControl.FileSystemRights]::Delete -bor
         [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
         [Security.AccessControl.FileSystemRights]::ChangePermissions -bor
@@ -195,9 +192,6 @@ function Assert-ExaCopyParentAcl {
     else {
         $ownershipChanges -bor [Security.AccessControl.FileSystemRights]::Write
     }
-    if ($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -notin $trusted) {
-        throw 'An installation ancestor is outside trusted user or system ownership.'
-    }
     foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
         if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
             $rule.IdentityReference.Value -notin $trusted -and
@@ -206,6 +200,17 @@ function Assert-ExaCopyParentAcl {
             throw 'An installation ancestor admits competing changes by another principal.'
         }
     }
+}
+
+function Assert-ExaCopyParentAcl {
+    param([string] $Path, [Security.Principal.SecurityIdentifier] $Owner, [switch] $Ancestor)
+    [void](Confirm-ExaCopyPath $Path)
+    $acl = [IO.FileSystemAclExtensions]::GetAccessControl([IO.DirectoryInfo]::new($Path))
+    $trusted = @($Owner.Value, 'S-1-5-18', 'S-1-5-32-544')
+    if ($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -notin $trusted) {
+        throw 'An installation ancestor is outside trusted user or system ownership.'
+    }
+    Assert-ExaCopyParentDacl $acl $trusted -Ancestor:$Ancestor
 }
 
 function Assert-ExaCopyInstallAncestors {

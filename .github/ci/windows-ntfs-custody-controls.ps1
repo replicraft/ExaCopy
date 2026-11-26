@@ -1,6 +1,7 @@
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'windows-ntfs-custody.ps1')
 . (Join-Path $PSScriptRoot 'windows-ntfs-ancestor-diagnostic.ps1')
+. (Join-Path $PSScriptRoot '../../tools/install/windows/paths.ps1')
 
 function Assert-Refused {
     param([scriptblock] $Operation, [string] $Expected)
@@ -84,3 +85,55 @@ if ($deep.ancestors.Count -ne 32 -or $deep.ancestors_omitted -ne 1 -or
     throw 'Stage ancestor diagnostic exceeded its bound.'
 }
 Write-Output 'Synthetic Stage ancestor diagnostic controls passed.'
+
+$environment = @{
+    GITHUB_ACTIONS = 'true'; RUNNER_ENVIRONMENT = 'github-hosted'; RUNNER_OS = 'Windows'; RUNNER_ARCH = 'X64'
+    GITHUB_SERVER_URL = 'https://github.com'; GITHUB_REPOSITORY = 'replicraft/ExaCopy'
+    GITHUB_EVENT_NAME = 'push'; GITHUB_REF = 'refs/heads/main'
+    GITHUB_WORKFLOW_REF = 'replicraft/ExaCopy/.github/workflows/windows-ntfs-qualification.yml@refs/heads/main'
+    GITHUB_SHA = 'a' * 40; GITHUB_WORKFLOW_SHA = 'a' * 40
+    SystemDrive = 'C:'; SystemRoot = 'C:\Windows'; USERPROFILE = 'C:\Users\runneradmin'
+}
+$systemDirectory = 'C:\Windows\System32'
+if ((Get-StageHostedSystemVolume $environment.USERPROFILE $environment $systemDirectory) -cne 'C:\') {
+    throw 'The exact hosted Stage system-volume profile was refused.'
+}
+foreach ($entry in @{
+    GITHUB_EVENT_NAME = 'workflow_dispatch'; RUNNER_ENVIRONMENT = 'self-hosted'
+    GITHUB_REPOSITORY = 'another/ExaCopy'; GITHUB_REF = 'refs/heads/other'
+    GITHUB_WORKFLOW_REF = 'other'; GITHUB_WORKFLOW_SHA = 'b' * 40
+    SystemDrive = 'D:'; SystemRoot = 'C:\OtherWindows'
+}.GetEnumerator()) {
+    $other = $environment.Clone()
+    $other[$entry.Key] = $entry.Value
+    if (Get-StageHostedSystemVolume $environment.USERPROFILE $other $systemDirectory) { throw "Unexpected hosted Stage profile for $($entry.Key)." }
+}
+foreach ($parent in @('C:\', 'C:\other', 'D:\Users\runneradmin')) {
+    if (Get-StageHostedSystemVolume $parent $environment $systemDirectory) { throw 'Unexpected hosted Stage parent.' }
+}
+if (Get-StageHostedSystemVolume $environment.USERPROFILE $environment 'D:\Windows\System32') {
+    throw 'Unexpected hosted Stage system directory.'
+}
+
+$service = $sample[0].OwnerSid
+$acl = [pscustomobject]@{ OwnerSid = $service; Rules = @() }
+$acl | Add-Member -MemberType ScriptMethod -Name GetOwner -Value { param($Type) [pscustomobject]@{ Value = $this.OwnerSid } }
+$acl | Add-Member -MemberType ScriptMethod -Name GetAccessRules -Value { param($Explicit, $Inherited, $Type) $this.Rules }
+Assert-StageSystemVolumeAcl $acl $user
+$acl.OwnerSid = 'S-1-5-19'
+Assert-Refused { Assert-StageSystemVolumeAcl $acl $user } 'An installation ancestor is outside trusted user or system ownership.'
+$acl.OwnerSid = $service
+$ace = [pscustomobject]@{
+    IdentityReference = [pscustomobject]@{ Value = 'S-1-5-11' }
+    AccessControlType = [Security.AccessControl.AccessControlType]::Allow
+    PropagationFlags = [Security.AccessControl.PropagationFlags]::None
+    FileSystemRights = [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles
+}
+$acl.Rules = @($ace)
+$competing = 'An installation ancestor admits competing changes by another principal.'
+Assert-Refused { Assert-StageSystemVolumeAcl $acl $user } $competing
+$ace.IdentityReference.Value = $service
+Assert-Refused { Assert-StageSystemVolumeAcl $acl $user } $competing
+$ace.IdentityReference.Value = 'S-1-5-18'
+Assert-StageSystemVolumeAcl $acl $user
+Write-Output 'Synthetic hosted Stage system-volume controls passed.'
