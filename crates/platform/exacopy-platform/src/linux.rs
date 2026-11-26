@@ -37,9 +37,11 @@ pub use process_crash::{
 	observe_process_crash_environment, observe_remote_destination,
 };
 pub use recovery::{
-	FreshRecoveryStage, RecoveryFile, RecoveryInventory, RecoveryJob, RecoveryReadLease,
-	RecoveryReceiptDirectory, RecoveryStageDirectory, RecoveryWriteLease, RetainedPrefixRead,
-	RetainedPrefixSelection, RetainedStage,
+	FreshRecoveryStage, PendingWitnessReservation, RecoveryFile, RecoveryInventory, RecoveryJob,
+	RecoveryReadLease, RecoveryReceiptDirectory, RecoveryStageDirectory, RecoveryWriteLease,
+	ReservedJournalRead, RetainedPrefixRead, RetainedPrefixSelection, RetainedStage,
+	WitnessReservationAuthority, WitnessReservationEffect, WitnessReservationError,
+	WitnessReservationGateRequest, WitnessReservationObservationError, WitnessReservationPlan,
 };
 pub use running_image::RunningExecutable;
 pub use source::{

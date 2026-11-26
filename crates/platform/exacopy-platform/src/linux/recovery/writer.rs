@@ -1,6 +1,7 @@
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{Seek as _, SeekFrom};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 use exacopy_endpoint::UnixComponent;
@@ -21,11 +22,17 @@ mod fresh;
 mod prefix;
 mod resume;
 mod retained;
+mod witness_reservation;
 
 pub use fresh::FreshRecoveryStage;
 pub use prefix::{RetainedPrefixRead, RetainedPrefixSelection};
 pub use resume::RecoveryStageDirectory;
 pub use retained::RetainedStage;
+pub use witness_reservation::{
+	PendingWitnessReservation, ReservedJournalRead, WitnessReservationAuthority,
+	WitnessReservationEffect, WitnessReservationError, WitnessReservationGateRequest,
+	WitnessReservationObservationError, WitnessReservationPlan,
+};
 
 #[cfg(test)]
 mod tests;
@@ -53,6 +60,7 @@ impl DestinationRoot {
 			lock,
 			stage_access: Mutex::new(()),
 			journal_access: Mutex::new(()),
+			journal_reservation_started: AtomicBool::new(false),
 		})
 	}
 }
@@ -69,6 +77,7 @@ pub struct RecoveryWriteLease<'root> {
 	lock: File,
 	stage_access: Mutex<()>,
 	journal_access: Mutex<()>,
+	journal_reservation_started: AtomicBool,
 }
 
 impl RecoveryWriteLease<'_> {
@@ -108,10 +117,21 @@ impl RecoveryWriteLease<'_> {
 		&self,
 		expected: &RecoveryFile,
 	) -> Result<LinuxJournalSegment<'_>, StageError> {
+		let held = self.hold_first_segment_for_append(expected)?;
+		Ok(LinuxJournalSegment::recovered(held.file, held.writer))
+	}
+
+	fn hold_first_segment_for_append(
+		&self,
+		expected: &RecoveryFile,
+	) -> Result<HeldFirstSegment<'_>, StageError> {
 		let writer = self
 			.journal_access
 			.try_lock()
 			.map_err(|_| StageError::JobBusy)?;
+		if self.journal_reservation_started.load(Ordering::Relaxed) {
+			return Err(StageError::JobBusy);
+		}
 		let job = &self.job;
 		let mount = job.root.mount;
 		let parent = &job.directory.file;
@@ -153,7 +173,11 @@ impl RecoveryWriteLease<'_> {
 		)?;
 		journal.recheck(parent, journal_name, mount)?;
 		job.recheck()?;
-		Ok(LinuxJournalSegment::recovered(file, writer))
+		Ok(HeldFirstSegment {
+			file,
+			writer,
+			journal,
+		})
 	}
 
 	/// Requests file and directory barriers for an observed, already-published name.
@@ -236,6 +260,12 @@ impl RecoveryWriteLease<'_> {
 		receipts.recheck()?;
 		Ok(receipts)
 	}
+}
+
+struct HeldFirstSegment<'lease> {
+	file: File,
+	writer: MutexGuard<'lease, ()>,
+	journal: PrivateDirectory,
 }
 
 /// Access to the fixed receipt of a job protected by an exclusive recovery lease.

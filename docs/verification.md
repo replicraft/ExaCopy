@@ -28,6 +28,10 @@ Keep proofs, extraction, models, harnesses and obligation ownership in
 and validates scoped results. Preserve the original log and minimized
 counterexample when a check fails.
 
+The [P-071 Linux reservation fixture](architecture/remote-witnessed-closeout.md#p-071-linux-native-reservation)
+is an adapter test selected on a Linux filesystem that supplies the needed
+native primitives. Its result belongs to that recorded fixture profile.
+
 A theorem covers its pinned source, statement, assumptions and trusted
 computing base. TLC and Kani results are bounded by the actual model and
 harness. Record native adapter tests, process-crash runs and hardware

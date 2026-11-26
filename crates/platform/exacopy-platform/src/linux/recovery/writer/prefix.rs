@@ -86,6 +86,16 @@ pub struct RetainedPrefixRead<'lease> {
 }
 
 impl RetainedPrefixRead<'_> {
+	pub(super) fn recheck_for_lease(
+		&self,
+		lease: &RecoveryWriteLease<'_>,
+	) -> Result<(), StageError> {
+		if !std::ptr::eq(self.inventory.job, lease.job()) {
+			return Err(StageError::IdentityChanged);
+		}
+		self.recheck_observation()
+	}
+
 	/// Returns the names and native identities matched to this exact view.
 	#[must_use]
 	pub const fn selection(&self) -> RetainedPrefixSelection<'_> {

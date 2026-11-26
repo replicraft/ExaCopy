@@ -156,6 +156,27 @@ The operation-2 pair, mask, signed domains and byte ceilings are unchanged. In b
 
 Storage owns typed format/replay/selections/receipt and version-refusal vectors. The owning [width checker](../../crates/storage/exacopy-journal/verification/remote_download/witness_closeout_widths.py) is arithmetic only. Require independent deterministic CBOR/frame/digest fixtures and mutated decoder oracles for wrong ancestry, actual predecessor, scope, operation pair, old/signed/fallback selectors, witness raw name/identity, approval absence/wrong binding/expiry and signed owner mismatch, checked bounds, receipt 42/18 order or digest mismatch. Model/transfer own exact checked phase graph, protected alias cardinality, epoch/append/retirement decisions and witness/receipt capabilities. Independent bounded model must include dual append checkpoints, repeat continuation, retirement at each pre-intent state, independent consent and observed-with-late-expiry, no stage rename after 7, and deterministic pending/final convergence. Kill cuts and closed qualification case matrix are native platform/application operations with independent observations, including both route profiles. Keep existing model gates unchanged. Native toolchains and cases require actual evidence on exact eligible environment. Do not issue attestation or enable production writer from this proposal.
 
+### P-071 Linux native reservation
+
+The platform adapter owns the two native reservations and the protected
+read-back aperture under one recovery lease. The Linux fixture checks the
+positive segment and sequence bounds, exact plan and authority projections
+under the submission guard, preservation of old journal bytes and EOF,
+zero-length unnamed receipt allocation, and the sticky lease after a
+submitted journal allocation returns an error. The CI fixture selects all
+four tests, including two normally ignored because they require native
+capabilities. Read the exact run's filesystem and kernel metadata before
+using its result. The combined adapter candidate's earlier native run passed
+all four with an unprivileged ARM64 Linux tmpfs fixture.
+
+These tests exercise the adapter projection and isolated native primitives.
+Complete invocation with an eligible, qualified operation-2 destination,
+full authenticated replay from byte zero, true ENOSPC/quota and interruption
+campaigns, and writer or receipt activation each require further evidence.
+P-072 remains reserved for the independently checked portable whole-pass
+arithmetic. The width checker supplies structural arithmetic and does not
+supply a native reservation result.
+
 ## Source references
 
  existing numeric frame codes `crates/storage/exacopy-journal/src/frame/kind.rs`, common width helpers `remote_download/wire.rs:54`, previous qualification `remote_download/qualification/continuation/wire.rs:17`, legacy and active records `remote_download/records/wire.rs:23` and `remote_download/continuation/checkpoint.rs:21`, prefix journal projections `remote_download/checkpoints/prefix.rs`, V1 one-link checks `crates/platform/exacopy-platform/src/linux/recovery.rs:333` and `linux/stage/selected_stream.rs:223`, existing submission gate `linux/stage/selected_stream/publication.rs:234`, fixed job/receipt namespace `linux/job.rs:25` and `:30`, existing writer ADR `docs/architecture/remote-retained-suffix-appender.md`.

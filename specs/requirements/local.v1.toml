@@ -1687,3 +1687,40 @@ owner = "exacopy-model"
 level = "documentation"
 state = "reported"
 path = "crates/foundation/exacopy-model/verification/tla/WITNESSED_CLOSEOUT.md"
+
+[[coverage]]
+id = "linux-witnessed-native-reservation"
+status = "experimental"
+requirement_ids = ["R-253", "R-255"]
+acceptance_ids = ["A-253", "A-255"]
+invariant_ids = ["INV-009", "INV-013", "INV-021", "INV-024"]
+scope = "P-071 checks native reservation primitives on a disposable Linux fixture and keeps the exact checked plan and selected authority commitments with the held lease."
+limits = "The fixture does not execute the whole eligible operation-2 reservation path, authenticate the retained journal, exercise the remote stream, or qualify process crash or power loss. The portable whole-pass arithmetic is separate."
+
+[[coverage.evidence]]
+level = "native"
+state = "defined"
+owner = "exacopy-platform"
+path = "crates/platform/exacopy-platform/src/linux/recovery/writer/witness_reservation/tests.rs"
+target = "native_plan_checks_the_positive_byte_and_sequence_bounds"
+
+[[coverage.evidence]]
+level = "native"
+state = "defined"
+owner = "exacopy-platform"
+path = "crates/platform/exacopy-platform/src/linux/recovery/writer/witness_reservation/tests.rs"
+target = "separate_gate_holds_through_syscall_and_refusal_runs_no_effect"
+
+[[coverage.evidence]]
+level = "native"
+state = "defined"
+owner = "exacopy-platform"
+path = "crates/platform/exacopy-platform/src/linux/recovery/writer/witness_reservation/tests.rs"
+target = "native_allocation_preserves_the_named_segment_and_anonymous_eof"
+
+[[coverage.evidence]]
+level = "native"
+state = "defined"
+owner = "exacopy-platform"
+path = "crates/platform/exacopy-platform/src/linux/recovery/writer/witness_reservation/tests.rs"
+target = "only_a_submitted_journal_allocation_latches_the_lease_even_on_syscall_error"

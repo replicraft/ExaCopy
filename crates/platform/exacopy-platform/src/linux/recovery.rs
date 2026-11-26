@@ -23,8 +23,11 @@ mod writer;
 
 pub use lease::RecoveryReadLease;
 pub use writer::{
-	FreshRecoveryStage, RecoveryReceiptDirectory, RecoveryStageDirectory, RecoveryWriteLease,
-	RetainedPrefixRead, RetainedPrefixSelection, RetainedStage,
+	FreshRecoveryStage, PendingWitnessReservation, RecoveryReceiptDirectory,
+	RecoveryStageDirectory, RecoveryWriteLease, ReservedJournalRead, RetainedPrefixRead,
+	RetainedPrefixSelection, RetainedStage, WitnessReservationAuthority, WitnessReservationEffect,
+	WitnessReservationError, WitnessReservationGateRequest, WitnessReservationObservationError,
+	WitnessReservationPlan,
 };
 
 #[cfg(test)]
