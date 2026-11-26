@@ -65,5 +65,6 @@ pub use stage::{
 pub use mount_observation::MountObservations;
 
 pub use sync_preview::{
-	SyncPreviewEntry, SyncPreviewError, SyncPreviewPair, SyncPreviewRoots, SyncPreviewSelection,
+	SyncHistoryDirectory, SyncHistoryLocation, SyncHistoryReader, SyncPreviewEntry,
+	SyncPreviewError, SyncPreviewPair, SyncPreviewRoots, SyncPreviewSelection,
 };

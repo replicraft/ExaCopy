@@ -19,7 +19,7 @@ pub use remote_destination::{
 mod tests;
 
 const MAX_KERNEL_FIELD_BYTES: usize = 256;
-const KERNEL_BOOT_ID_BYTES: usize = 37;
+pub(super) const KERNEL_BOOT_ID_BYTES: usize = 37;
 const KERNEL_RELEASE: &[u8] = b"6.8.0-147-generic\n";
 const KERNEL_BUILD: &[u8] = b"#147-Ubuntu SMP PREEMPT_DYNAMIC Thu Sep 24 11:39:52 UTC 2026\n";
 
@@ -166,7 +166,7 @@ fn proc_error(error: io::Error) -> ProcessCrashProfileError {
 	}
 }
 
-fn parse_boot_id(bytes: &[u8]) -> Option<[u8; 16]> {
+pub(super) fn parse_boot_id(bytes: &[u8]) -> Option<[u8; 16]> {
 	let text = bytes.strip_suffix(b"\n")?;
 	if text.len() != 36 {
 		return None;

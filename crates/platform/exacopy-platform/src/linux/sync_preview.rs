@@ -22,10 +22,15 @@ const CHILD_RESOLUTION: ResolveFlags = NO_LINKS
 const MAX_PARENT_PATH_BYTES: usize = 4095;
 const ORDINARY_PERMISSION_BITS: u32 = 0o777;
 
+mod history_members;
+mod history_scope;
 mod names;
 mod namespaces;
 #[cfg(test)]
 mod tests;
+
+pub use history_members::{SyncHistoryDirectory, SyncHistoryReader};
+pub use history_scope::SyncHistoryLocation;
 
 /// Failure to obtain a complete live observation of the selected pair.
 #[derive(Debug)]
@@ -41,6 +46,8 @@ pub enum SyncPreviewError {
 	UnsupportedMount,
 	/// The current mount or user namespace could not be verified through procfs.
 	UnsupportedNamespace,
+	/// The held directory uses encrypted or case-folded lookup semantics.
+	UnsupportedHistoryNamePolicy,
 	/// Lookup did not correspond to an exact raw entry.
 	NameAlias,
 	/// The exact-name confirmation exceeded the bounded directory scan.
@@ -67,6 +74,8 @@ impl std::fmt::Display for SyncPreviewError {
 			Self::UnsupportedNamespace => {
 				formatter.write_str("sync requires verified mount and user namespaces")
 			}
+			Self::UnsupportedHistoryNamePolicy => formatter
+				.write_str("history preview requires exact unencrypted raw directory names"),
 			Self::NameAlias => formatter.write_str("sync lookup found a differently spelled entry"),
 			Self::DirectoryLimit => {
 				formatter.write_str("sync directory scan exceeds its entry limit")

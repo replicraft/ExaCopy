@@ -54,6 +54,7 @@ pub struct AuthenticatedSyncGenesis<'root, 'selection> {
 	digest: [u8; 32],
 	root: RootBody<'root>,
 	revision: NonZeroU64,
+	owner_key: [u8; 32],
 	endpoints: [EndpointFacts<'selection>; 2],
 	sides: [SideEvidence; 2],
 }
@@ -75,6 +76,12 @@ impl<'root, 'selection> AuthenticatedSyncGenesis<'root, 'selection> {
 	#[must_use]
 	pub const fn profile_revision(&self) -> NonZeroU64 {
 		self.revision
+	}
+
+	/// Independently pinned owner public key that authenticated the closure.
+	#[must_use]
+	pub const fn owner_key(&self) -> [u8; 32] {
+		self.owner_key
 	}
 
 	/// Historical endpoint selection, including exact rooted path and limits.
@@ -263,6 +270,7 @@ fn verify_sync_genesis_with_inventory<'root, 'selection, Resolver: SyncGenesisRe
 		digest: expected.root_digest,
 		root,
 		revision: expected.revision,
+		owner_key: expected.owner.to_bytes(),
 		endpoints: expected.endpoints,
 		sides,
 	})

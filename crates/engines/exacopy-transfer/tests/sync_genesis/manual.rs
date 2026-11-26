@@ -8,6 +8,10 @@ use exacopy_transfer::sync_genesis::{SelectedSyncGenesisMember, inspect_selected
 
 use super::{ExpectedSyncGenesis, Fixture, SyncGenesisError, first, owner};
 
+#[cfg(target_os = "linux")]
+#[path = "manual/preview.rs"]
+mod preview;
+
 fn selected_members(fixture: &Fixture<'_>) -> [SelectedSyncGenesisMember<usize>; 3] {
 	// These commitments locate only the fixture resource. The independent
 	// expected root digest, key, and endpoint facts still control trust.

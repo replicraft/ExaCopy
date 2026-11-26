@@ -1,4 +1,4 @@
-//! Bounded twin measurement and read-only first-run sync classification.
+//! Bounded twin measurement and read-only synchronization classification.
 
 use std::error::Error;
 use std::fmt;
@@ -12,6 +12,12 @@ use exacopy_model::{
 };
 
 use crate::manifest;
+
+mod history;
+
+pub use history::{
+	HeldSyncPreview, HistoricalPreviewFailure, LiveSyncSelection, preview_with_history,
+};
 
 #[cfg(test)]
 mod tests;
@@ -35,7 +41,7 @@ pub enum PreviewInput<'view, R> {
 	Unsupported,
 }
 
-/// Completed live evidence for one selected basename and no common history.
+/// Completed live evidence and classification for one selected basename.
 #[derive(Debug)]
 pub struct FirstSyncPreview {
 	/// Ordered observations in left-to-right order.
@@ -104,15 +110,31 @@ pub fn preview_without_history<R: ReadView, P>(
 	scratch: &mut [u8],
 	recheck_pair: impl FnOnce() -> Result<(), P>,
 ) -> Result<FirstSyncPreview, SyncPreviewFailure<R::Error, P>> {
+	preview(
+		inputs,
+		SyncBaseline::Uninitialized,
+		[MAX_PREVIEW_FILE_BYTES; 2],
+		scratch,
+		recheck_pair,
+	)
+}
+
+fn preview<R: ReadView, P>(
+	inputs: [PreviewInput<'_, R>; 2],
+	baseline: SyncBaseline,
+	limits: [u64; 2],
+	scratch: &mut [u8],
+	recheck_pair: impl FnOnce() -> Result<(), P>,
+) -> Result<FirstSyncPreview, SyncPreviewFailure<R::Error, P>> {
 	use SyncPreviewFailure as Error;
 	use SyncSide::{Left, Right};
 
 	if scratch.is_empty() || scratch.len() > MAX_SCRATCH_BYTES {
 		return Err(Error::ScratchLimit);
 	}
-	for (input, side) in inputs.iter().zip([Left, Right]) {
+	for ((input, side), limit) in inputs.iter().zip([Left, Right]).zip(limits) {
 		if let PreviewInput::Present { view, .. } = input
-			&& view.length() > MAX_PREVIEW_FILE_BYTES
+			&& view.length() > limit
 		{
 			return Err(Error::FileLimit(side));
 		}
@@ -124,12 +146,8 @@ pub fn preview_without_history<R: ReadView, P>(
 	];
 	recheck_pair().map_err(Error::Pair)?;
 	let [left, right] = observations;
-	let decision = classify_two_way_path(
-		SyncInventoryCompleteness::Complete,
-		SyncBaseline::Uninitialized,
-		left,
-		right,
-	);
+	let decision =
+		classify_two_way_path(SyncInventoryCompleteness::Complete, baseline, left, right);
 	Ok(FirstSyncPreview {
 		observations,
 		decision,
