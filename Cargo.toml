@@ -44,7 +44,7 @@ exacopy-transfer = { path = "crates/engines/exacopy-transfer", version = "=0.1.0
 # Public codec
 base64 = { version = "=0.23.1", default-features = false, features = ["alloc"] }
 base64ct = { version = "=1.8.3", default-features = false }
-chrono = { version = "=0.4.45", default-features = false, features = ["alloc"] }
+jiff = { version = "=1.0.3", default-features = false }
 
 # Experimental network protocol
 boringtun = { version = "=0.7.1", path = "../local-deps/boringtun", default-features = false }

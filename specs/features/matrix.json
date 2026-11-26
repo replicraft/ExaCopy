@@ -506,10 +506,10 @@
       "features": ["derive"],
       "purpose": "Describe stable field and enum names for CLI reports."
     },
-    "chrono": {
+    "jiff": {
       "default_features": false,
-      "features": ["alloc"],
-      "purpose": "Parse and format public Plan UTC timestamps without clock or timezone database support."
+      "features": [],
+      "purpose": "Validate Plan civil dates and normalize timestamps without clock or timezone data."
     },
     "serde_json": {
       "default_features": true,
@@ -559,7 +559,7 @@
       "minicbor@2.3.1", "nix@0.31.4", "rustc_version@0.4.1", "semver@1.0.28", "sha2@0.10.9", "shlex@2.0.1", "signature@2.2.0", "syn@2.0.119", "subtle@2.6.1",
       "typenum@1.20.1", "version_check@0.9.5", "zeroize@1.9.2"
     ],
-    "linux_manifests": ["autocfg@1.5.1", "base64@0.23.1", "chrono@0.4.45", "exacopy-manifest@0.1.0", "exacopy-plan@0.1.0", "num-traits@0.2.19"],
+    "linux_manifests": ["base64@0.23.1", "exacopy-manifest@0.1.0", "exacopy-plan@0.1.0", "jiff-core@1.0.2", "jiff@1.0.3"],
     "macos_io": ["apfs-mounted@0.1.0", "cfg-if@1.0.5", "errno@0.3.15", "getrandom@0.4.3", "libc@0.2.191"]
   },
   "targets": {

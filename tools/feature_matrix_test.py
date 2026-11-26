@@ -55,7 +55,6 @@ class FeatureMatrixTests(unittest.TestCase):
         graph["ed25519-dalek@2.2.0"] = {"zeroize"}
         graph["clap@4.6.10"] = {"error-context", "help", "std", "usage"}
         graph["base64@0.23.1"] = {"alloc"}
-        graph["chrono@0.4.45"] = {"alloc"}
         graph["nix@0.31.4"] = {"feature"}
         check_cli_graph(POLICY, LINUX, graph)
         unrelated_nix = deepcopy(graph)
@@ -71,8 +70,8 @@ class FeatureMatrixTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "CLI dependency base64"):
             check_cli_graph(POLICY, LINUX, defaulted)
         clock_enabled = deepcopy(graph)
-        clock_enabled["chrono@0.4.45"].update({"clock", "std"})
-        with self.assertRaisesRegex(ValueError, "CLI dependency chrono"):
+        clock_enabled["jiff@1.0.3"].update({"std", "tz-system"})
+        with self.assertRaisesRegex(ValueError, "CLI dependency jiff"):
             check_cli_graph(POLICY, LINUX, clock_enabled)
         corrupted = deepcopy(graph)
         del corrupted["blake3@1.8.7"]

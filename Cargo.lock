@@ -909,8 +909,8 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "blake3",
- "chrono",
  "exacopy-core",
+ "jiff",
  "minicbor",
  "serde",
  "serde_json",

@@ -19,7 +19,6 @@ cfg-if = "Select architecture and feature-specific implementations in hash, sign
 cfg_aliases = "Configure conditional build aliases for the nix native ABI."
 chacha20 = "ChaCha20 keystream generation inside ChaCha20-Poly1305."
 chacha20poly1305 = "ChaCha20-Poly1305 and XChaCha20-Poly1305 authenticated encryption for WireGuard handshake and cookie processing."
-chrono = "Convert public Plan RFC 3339 timestamps between JSON strings and normalized UTC seconds and nanoseconds."
 cipher = "Cipher types and block/stream traits for ChaCha20."
 clap = "Parse ExaCopy's typed command-line grammar and provide command-specific usage and help."
 clap_builder = "Implement Clap command grammar, argument validation, error contexts, and help rendering."
@@ -142,7 +141,7 @@ hashbrown = "Hash table implementation used by DashMap."
 hex-literal = "Compile-time cryptographic byte literals in Russh."
 hkdf = "HMAC-based key derivation support in elliptic-curve dependencies."
 hybrid-array = "Fixed-size array support shared by the upstream cryptographic types."
-jiff = "Timestamp formatting in the upstream SFTP file and directory metadata representation."
+jiff = "Validate Plan civil dates and normalize timestamps to UTC, and format timestamps in upstream SFTP metadata."
 jiff-core = "Calendar and timestamp arithmetic used by Jiff."
 keccak = "Keccak permutation supporting SHA-3 and SHAKE dependencies."
 kem = "Key encapsulation interface compiled for ML-KEM support."
@@ -831,25 +830,25 @@ verification = "Reviewed the exact archive's selected Windows macro and cross-ch
 replacement = "Retain the selected Windows raw-dylib link semantics and static ABI declarations."
 review_gaps = ["Native loader and execution check", "Independent exact-release upstream comparison, advisory history, and whole-package Cargo Vet review"]
 
-[assessment."chrono@0.4.45"]
-archive_sha256 = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
-release_observation = "Chrono released 0.4.45 on 2026-06-04. The packaged source matches upstream commit 170338250e836976a211e64728ec956e45e78a39. The library MSRV is 1.62."
-security_history = "RustSec RUSTSEC-2020-0159 affected the historical local-time implementation and was patched in 0.4.20. ExaCopy selects alloc only. The clock feature is disabled."
-unsafe_exposure = "The calendar packs validated date fields into a private NonZeroI32 with an unchecked constructor. The legacy Date wrapper has a Send implementation conditional on its stored offset type. The selected RFC 3339 path uses fixed UTC offsets and no clock or local timezone I/O. No build script or procedural macro is present in the package."
-resource_limits = "Plan JSON can bound the timestamp field to 35 bytes before validation. Chrono checks fixed-width date and time components, scans the fractional digits and formats a short UTC string. Calendar conversion uses finite scalar values. The alloc feature enables formatting."
-adversarial_inputs = "Validate the Plan ASCII transport grammar and nanosecond precision before parsing because Chrono otherwise accepts a space separator and Unicode minus offset and truncates long fractions. Its leap-second marker exceeds the Plan nanosecond bound. Check for four-digit UTC year after numeric offset normalization and before formatting binary timestamps."
-verification = "Tests on ARM64 macOS with Rust 1.100.0 exercised numeric offset normalization, pre-epoch fractions, leap-second rejection through the candidate adapter policy, invalid calendar data, UTC range endpoints and canonical round trips. Locked metadata selected alloc only across all three repository targets. Isolated compile checks passed for Linux x86-64 and Windows MSVC."
-replacement = "Preserve numeric offset normalization, exact signed Unix seconds and fractions, canonical Z output, checked output bounds and strict refusal of unsupported timestamps."
-review_gaps = ["Whole-version safe-to-deploy withheld: optional mobile timezone short-record parsing and advertised allocations, plus optional rkyv semantic invariants remain unresolved. Selected alloc-only profile disables both; independent native and Miri probes do not close the whole-version gate."]
+[assessment."jiff@1.0.3"]
+archive_sha256 = "107f2e89536b6818514025f6787b0d94d819e54fe3b40365275fc753de485b3f"
+release_observation = "The exact cached archive declares rust-version 1.85, Unlicense OR MIT and upstream commit 6251312ca1ccb078f53896e11847cd9a5decae93. The version was already resolved for upstream SFTP metadata."
+security_history = "The hosted Cargo Audit run that rejected Chrono reported no Jiff finding. This scoped assessment does not infer a complete package advisory history."
+unsafe_exposure = "The Plan profile invokes the civil parser, checked civil arithmetic and validated field getters. It selects no Jiff features and does not use the timestamp clock, timezone data, or file or environment access. Other Jiff feature profiles require separate assessment."
+resource_limits = "Plan validates exact ASCII input bounds at 20 through 35 bytes before civil parsing. The offset conversion uses checked-width integers and the projection bounds the UTC year and nanosecond fraction."
+adversarial_inputs = "Reject unsupported offset spellings, leap seconds, out-of-range civil fields and UTC years outside 0000 through 9999. The formatter preserves the existing complete fractional precision groups."
+verification = "Native Plan tests on ARM64 macOS with Rust 1.100.0 match the existing independent Plan JSON and CBOR vectors plus independently generated timestamp cases. Strict Clippy passed. Cargo resolves featureless Jiff in the stable Linux CLI."
+replacement = "Preserve the established timestamp grammar, numeric UTC normalization, signed binary seconds and nanoseconds, four-digit year range and exact canonical Z output."
+review_gaps = ["Independent whole-version Cargo Vet and expanded feature review"]
 
 [assessment."num-traits@0.2.19"]
 archive_sha256 = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 release_observation = "The exact version was already locked for other workspace dependency paths. The archive identifies upstream commit 7ec3d41d39b28190ec1d42db38021107b3951f3a. The library MSRV is 1.60."
 security_history = "No package advisory in the recorded RustSec snapshot."
-unsafe_exposure = "The library's floating-to-integer trait methods use unchecked conversion after finite range checks. Chrono implements FromPrimitive for Month and Weekday. The num-traits build script uses autocfg to compile a fixed expression against the selected compiler."
+unsafe_exposure = "The library's floating-to-integer trait methods use unchecked conversion after finite range checks. The num-traits build script uses autocfg to compile a fixed expression against the selected compiler."
 resource_limits = "Numeric trait conversions operate on primitive scalar values. The build script issues a fixed compiler capability probe and uses Cargo's build output context."
 adversarial_inputs = "The Plan parser uses fixed calendar and offset fields. It sends no user input to the build script and does not invoke the floating-to-integer trait path."
-verification = "The exact version compiled in the Chrono alloc-only target graph and the ARM64 macOS timestamp probes. The imported Bytecode Alliance audit covers version 0.2.19 for safe-to-deploy."
+verification = "The exact version compiled in the earlier calendar adapter probes and the selected workspace feature graphs. The imported Bytecode Alliance audit covers version 0.2.19 for safe-to-deploy."
 replacement = "Choose a calendar implementation with equivalent checked date conversion and no added ambient runtime capabilities."
 review_gaps = []
 

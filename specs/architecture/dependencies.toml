@@ -25,7 +25,7 @@ normal.external = ["uuid"]
 [groups.codecs]
 normal.groups = ["foundation"]
 members = { exacopy-manifest = "crates/formats/exacopy-manifest", exacopy-plan = "crates/formats/exacopy-plan" }
-normal.external = ["base64", "blake3", "chrono", "minicbor", "serde", "serde_json", "uuid"]
+normal.external = ["base64", "blake3", "jiff", "minicbor", "serde", "serde_json", "uuid"]
 
 [groups.contracts]
 members = { exacopy-endpoint = "crates/interfaces/exacopy-endpoint" }

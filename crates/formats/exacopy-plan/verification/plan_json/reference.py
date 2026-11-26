@@ -37,8 +37,39 @@ def date(value):
         return None
     seconds, nanos = value
     utc = datetime.fromtimestamp(seconds, timezone.utc)
-    fraction = f".{nanos:09d}".rstrip("0") if nanos else ""
-    return utc.strftime("%Y-%m-%dT%H:%M:%S") + fraction + "Z"
+    fraction = ""
+    if nanos:
+        precision, scale = next(
+            (digits, denominator) for digits, denominator in ((3, 1_000_000), (6, 1_000), (9, 1))
+            if nanos % denominator == 0
+        )
+        fraction = f".{nanos // scale:0{precision}d}"
+    return utc.isoformat(timespec="seconds").removesuffix("+00:00") + fraction + "Z"
+
+
+def timestamp_vectors():
+    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    cases = (
+        ("1969-12-31T23:59:59", "1", "Z"),
+        ("1970-01-01T00:15:00", "12", "+00:30"),
+        ("1970-01-01T00:00:00", "1234", "+00:00"),
+        ("1970-01-01T00:00:00", "1234567", "-00:00"),
+        ("0001-01-02T23:59:01", "000000001", "+23:59"),
+        ("2000-02-29T23:00:00", "000001", "-02:00"),
+        ("9999-12-31T00:00:59", "999999999", "-23:59"),
+    )
+    vectors = []
+    for local, fraction, offset in cases:
+        elapsed = datetime.fromisoformat(local + offset) - epoch
+        seconds = elapsed.days * 86400 + elapsed.seconds
+        nanos = int(fraction.ljust(9, "0"))
+        vectors.append({
+            "input": f"{local}.{fraction}{offset}",
+            "seconds": seconds,
+            "nanoseconds": nanos,
+            "canonical": date((seconds, nanos)),
+        })
+    return (json.dumps(vectors, indent=2) + "\n").encode()
 
 
 def uid(value):
@@ -137,6 +168,7 @@ def main():
         reference.emit(BASE / f"vectors/{name}.json", payload, args.write)
         reference.emit(BASE / f"vectors/{name}.body.cbor", canonical, args.write)
         print(name, len(payload), len(canonical), digest.hex())
+    reference.emit(BASE / "vectors/timestamps.json", timestamp_vectors(), args.write)
 
 
 if __name__ == "__main__":

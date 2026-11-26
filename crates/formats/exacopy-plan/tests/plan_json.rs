@@ -182,7 +182,7 @@ fn all_structs_are_map_only_and_reject_missing_duplicate_and_unknown_fields() {
 }
 
 #[test]
-fn validates_lexical_dates_before_using_chrono_calendar_and_normalizes_utc() {
+fn validates_lexical_dates_before_calendar_parsing_and_normalizes_utc() {
 	for timestamp in [
 		"1970-01-01t00:00:00z",
 		"1970-01-01T00:00:00.0Z",
@@ -224,6 +224,35 @@ fn validates_lexical_dates_before_using_chrono_calendar_and_normalizes_utc() {
 			Err(PlanJsonError::Timestamp),
 			"{timestamp}"
 		);
+	}
+}
+
+#[test]
+fn normalizes_independent_timestamp_vectors_without_changing_canonical_plan() {
+	#[derive(serde::Deserialize)]
+	struct TimestampVector {
+		input: String,
+		seconds: i64,
+		nanoseconds: u32,
+		canonical: String,
+	}
+	let vectors: Vec<TimestampVector> = serde_json::from_slice(include_bytes!(
+		"../verification/plan_json/vectors/timestamps.json"
+	))
+	.expect("independent timestamp vectors");
+	let template = PublicPlan::from_json(EMPTY_JSON).expect("empty plan");
+	let template_body = template.body().expect("checked body");
+	for vector in vectors {
+		let mut fields = template_body.fields().clone();
+		fields.created_at = UnixTimestamp::new(vector.seconds, vector.nanoseconds)
+			.expect("independent normalized timestamp");
+		let body = PlanBody::new(fields).expect("checked timestamp body");
+		let expected = PublicPlan::from_body(&body).expect("render timestamp");
+		let mut document: Value =
+			serde_json::from_slice(&expected.to_json().expect("public JSON")).expect("JSON fields");
+		assert_eq!(document["body"]["created_at"], vector.canonical);
+		document["body"]["created_at"] = json!(vector.input);
+		assert_eq!(admit(&document).expect("parse timestamp"), expected);
 	}
 }
 
