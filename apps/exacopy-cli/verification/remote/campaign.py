@@ -81,7 +81,16 @@ class HeldInputs:
                 check_held(path, file, info)
 
 
+def empty_destination(root):
+    if next(root.iterdir(), None) is not None:
+        raise Blocked("the exact attested destination must be an empty dedicated fixture root")
+
+
 def preflight(args, summary):
+    return protected_preflight(args, summary, empty_destination)
+
+
+def protected_preflight(args, summary, validate_destination):
     if sys.platform != "linux" or platform.machine() not in ("aarch64", "x86_64"):
         raise Blocked("the campaign requires an admitted native Linux architecture")
     if git("status", "--porcelain", "--untracked-files=normal"):
@@ -94,8 +103,7 @@ def preflight(args, summary):
         for name in ("campaign.py", "fixture.py", "process.py")
     }
     dest = owned_directory(args.destination, private=True)
-    if next(args.destination.iterdir(), None) is not None:
-        raise Blocked("the exact attested destination must be an empty dedicated fixture root")
+    validate_destination(args.destination)
     if args.evidence.is_relative_to(args.destination):
         raise Blocked("evidence must be outside the dedicated destination")
     for operand in (
@@ -332,6 +340,8 @@ def cut_partial(process, destination, target, known, length):
 
 def record_case(args, summary, peer, name, connections):
     peer.check(connections, args.evidence / f"{name}.openssh.log")
+    if getattr(args, "observe_case", None) is not None:
+        args.observe_case(name, connections)
     summary["cases"].append({"name": name, "outcome": "pass", "connections": connections})
 
 
@@ -465,6 +475,8 @@ def run_campaign(args, summary):
     compare_files(args.source_interrupt, interrupted, large[0])
     require(checked_read(incumbent, len(INCUMBENT)) == INCUMBENT, "final incumbent bytes differed")
     args.inputs.recheck()
+    if getattr(args, "observe_destination", None) is not None:
+        args.observe_destination(args.destination, {first, job, target, incumbent, interrupted})
 
 
 def cleanup_status(evidence, summary, status):
@@ -477,7 +489,7 @@ def cleanup_status(evidence, summary, status):
     return status
 
 
-def main():
+def main(observe_case=None, observe_destination=None):
     parser = argparse.ArgumentParser(description=__doc__)
     for name in (
         "binary", "destination", "owner-profile", "ssh-profile", "qualification",
@@ -486,6 +498,8 @@ def main():
         parser.add_argument("--" + name, required=True, type=Path)
     parser.add_argument("--route", choices=ROUTES, required=True)
     args = parser.parse_args()
+    args.observe_case = observe_case
+    args.observe_destination = observe_destination
     args.evidence = args.evidence.absolute()
     if args.evidence.resolve().is_relative_to(args.destination.resolve()):
         parser.error("evidence directory may not touch the dedicated destination")

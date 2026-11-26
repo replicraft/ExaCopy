@@ -13,7 +13,7 @@ import tempfile
 
 from native_supervision import file_digest
 from remote_commissioning_peer import Blocked, OPENSSL, run
-from remote_qualification import DIRECT, REPO
+from remote_qualification import DIRECT, EMBEDDED, REPO
 
 V1_DOMAIN = b"ExaCopy/linux-remote-destination-qualification/v1\0"
 RECORD_DOMAIN = b"ExaCopy/linux-remote-destination-qualification-record/v1\0"
@@ -75,12 +75,14 @@ def observed_facts(fixture, facts, substrate, source, log):
     return value
 
 
-def fixture_payload(reference, destination, build_digest, nonce, source, observed_hashes):
+def fixture_payload(reference, destination, build_digest, nonce, source, observed_hashes, *, route=DIRECT, route_revision=None):
+    route_number = {DIRECT: 1, EMBEDDED: 2}[route]
     attestor = secrets.token_bytes(16)
     if not any(attestor):
         raise Blocked("empty fixture attestor identity")
     scope = stable_claim_digest("scope", {
-        "fixture_id": nonce, "route": DIRECT, "source": source, "build": build_digest,
+        "fixture_id": nonce, "route": route, "source": source, "build": build_digest,
+        **({"route_revision": route_revision} if route_revision is not None else {}),
         "claims_are_assumed": True, "kind": CLAIM_KIND, "destination": destination,
     })
     assumed = stable_claim_digest("antecedent", {
@@ -98,22 +100,22 @@ def fixture_payload(reference, destination, build_digest, nonce, source, observe
             "kernel_release_hex", "kernel_build_hex", "mount_record_hex",
         )),
     ]
-    body = reference.encode({0: attestor, 1: bytes.fromhex(build_digest), 2: 1, 3: scope, 4: assumed, 5: native})
+    body = reference.encode({0: attestor, 1: bytes.fromhex(build_digest), 2: route_number, 3: scope, 4: assumed, 5: native})
     return body, {
         "schema": "exacopy-remote-qualification-trust-v1", "attestor": attestor.hex(),
-        "build": build_digest, "route": DIRECT,
+        "build": build_digest, "route": route,
         "campaign_scope": scope.hex(), "campaign_evidence": assumed.hex(),
     }
 
 
-def make_authority(fixture, evidence, manifest, b3sum):
+def make_authority(fixture, evidence, manifest, b3sum, *, route=DIRECT, route_revision=None):
     facts_path = evidence / "native-facts/facts.json"
     substrate_path = evidence / "substrate/result.json"
     facts = read_json(facts_path)
     substrate = read_json(substrate_path)
     build = read_json(manifest)
-    if file_digest(manifest) != facts["build_manifest_sha256"] or build["route"] != DIRECT:
-        raise Blocked("native facts do not bind the exact direct build")
+    if file_digest(manifest) != facts["build_manifest_sha256"] or build["route"] != route:
+        raise Blocked("native facts do not bind the exact fixture build")
     with (evidence / "substrate/native.log").open("rb") as stream:
         log = stream.read(8 * 1024 * 1024 + 1)
     if len(log) > 8 * 1024 * 1024:
@@ -123,6 +125,7 @@ def make_authority(fixture, evidence, manifest, b3sum):
     body, trust = fixture_payload(
         reference, destination, facts["build_blake3_derive_key"], fixture.nonce, build["source_after"],
         {"native_facts_sha256": file_digest(facts_path), "substrate_result_sha256": file_digest(substrate_path)},
+        route=route, route_revision=route_revision,
     )
     with tempfile.TemporaryDirectory(prefix="one-use-attestor-", dir=fixture.private) as scratch:
         key, message = Path(scratch) / "key.der", Path(scratch) / "message"

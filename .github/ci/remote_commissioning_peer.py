@@ -165,14 +165,14 @@ def select_port():
         return reservation.getsockname()[1]
 
 
-def sshd_configuration(fixture, port):
+def sshd_configuration(fixture, port, listen="127.0.0.1", source="127.0.0.1"):
     return (
         "AddressFamily inet\n"
-        f"ListenAddress 127.0.0.1:{port}\n"
+        f"ListenAddress {listen}:{port}\n"
         f"PidFile {fixture.root / 'daemon.pid'}\n"
         f"HostKey {fixture.root / 'host-key'}\n"
         f"AuthorizedKeysFile {fixture.root / 'authorized_keys'}\n"
-        f"AllowUsers {fixture.account}@127.0.0.1\n"
+        f"AllowUsers {fixture.account}@{source}\n"
         f"ChrootDirectory {fixture.chroot}\n"
         "AuthenticationMethods publickey\nPubkeyAuthentication yes\n"
         "PasswordAuthentication no\nKbdInteractiveAuthentication no\n"
@@ -437,6 +437,14 @@ class Fixture:
             data=self.account.encode("ascii") + b":" + password_hash, operation="nonlocked fixture account setup")
 
     def make_peer(self):
+        return self.make_selected_peer("127.0.0.1", select_port(), "127.0.0.1", None, None)
+
+    def make_selected_peer(self, listen, port, source, protected_namespace, embedded_route):
+        if (protected_namespace is None) != (embedded_route is None):
+            raise Blocked("fixture namespace and embedded route must be selected together")
+        if protected_namespace is None and (listen, source) != ("127.0.0.1", "127.0.0.1"):
+            raise Blocked("direct fixture requires loopback listener and source")
+
         self.make_runtime()
         host, client = self.private / "host-key", self.private / "client-key"
         for key in (host, client):
@@ -454,7 +462,6 @@ class Fixture:
         checkpoint()
         run([INSTALL, "-m", "0644", "--", public_file, authorized],
             privileged=True, operation="fixture account public key installation")
-        port = select_port()
         log = self.root / "peer.log"
         checkpoint()
         run(
@@ -463,28 +470,39 @@ class Fixture:
             privileged=True, operation="fixture-only daemon log in the owned root",
         )
         known = self.private / "known_hosts"
-        known.write_bytes(f"[127.0.0.1]:{port} ".encode("ascii") + host_key + b"\n")
+        known.write_bytes(f"[{listen}]:{port} ".encode("ascii") + host_key + b"\n")
         known.chmod(0o600)
         config_source = self.private / "sshd_config"
         config = self.root / "sshd_config"
-        config_source.write_text(self.sshd_config(port), encoding="ascii")
+        configuration = (
+            self.sshd_config(port)
+            if protected_namespace is None
+            else sshd_configuration(self, port, listen, source)
+        )
+        config_source.write_text(configuration, encoding="ascii")
         checkpoint()
         run([INSTALL, "-m", "0600", "--", config_source, config],
             privileged=True, operation="root-owned fixture OpenSSH configuration")
         profile = self.private / "ssh.json"
+        route = {"kind": "direct", "endpoint": f"{listen}:{port}"} if embedded_route is None else embedded_route
         write_json(profile, {
-            "schema": "exacopy-ssh-profile-v1", "host": "127.0.0.1",
+            "schema": "exacopy-ssh-profile-v1", "host": listen,
             "port": port, "account": self.account,
             "host_key_sha256": host_hash, "known_hosts": str(known),
             "credential": {"kind": "openssh-ed25519", "private_key_file": str(client),
                            "public_key_sha256": client_hash},
-            "route": {"kind": "direct", "endpoint": f"127.0.0.1:{port}"},
+            "route": route,
             "maximum_extent": SOURCE_BYTES, "grant_seconds": 300,
         })
         profile.chmod(0o600)
         checkpoint()
         self.unit_attempted = True
-        properties = self.sshd_properties()
+        if protected_namespace is None:
+            properties = self.sshd_properties()
+        else:
+            properties = unit_properties(self)
+            properties["NetworkNamespacePath"] = str(protected_namespace)
+            properties["CapabilityBoundingSet"] = "~CAP_SYS_ADMIN CAP_NET_ADMIN CAP_NET_RAW"
         run(
             [SYSTEMD_RUN, "--quiet", "--unit", self.unit,
              *(f"--property={key}={value}" for key, value in properties.items()),
@@ -516,7 +534,7 @@ class Fixture:
             raise Blocked("OpenSSH leader retained a mount administration capability")
         verify_privsep_runtime(leader, self)
         deadline = time.monotonic() + 12
-        expected = f"Server listening on 127.0.0.1 port {port}.".encode("ascii")
+        expected = f"Server listening on {listen} port {port}.".encode("ascii")
         while time.monotonic() < deadline:
             checkpoint()
             with log.open("rb") as source:
@@ -526,7 +544,7 @@ class Fixture:
             if expected in raw:
                 self.recheck_listening_leader(current, leader)
                 return profile, log, {
-                    "implementation": "OpenSSH", "listener": f"127.0.0.1:{port}",
+                    "implementation": "OpenSSH", "listener": f"{listen}:{port}",
                     "host_key_sha256": host_hash, "client_key_sha256": client_hash,
                     "invocation_id": self.invocation,
                     "privsep_runtime": "owned-read-only-mount",
@@ -558,6 +576,7 @@ class Fixture:
                     privileged=True, budget=25, operation="dedicated OpenSSH group stop")
             if not cgroup_drained(self.cgroup, self.cgroup_identity):
                 raise CleanupUnconfirmed("OpenSSH cgroup still contains processes")
+
     def stop(self):
         self.stop_peer()
         if self.account_attempted:

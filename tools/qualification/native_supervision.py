@@ -99,13 +99,15 @@ def stop_group(process: subprocess.Popen, initial: int) -> bool:
     return immediate_drain
 
 
-def stream(process: subprocess.Popen, transcript, timeout: float, output_limit: int) -> ProcessResult:
+def stream(
+    process: subprocess.Popen, transcript, timeout: float, output_limit: int, *, honor_cancellation=True,
+) -> ProcessResult:
     deadline = time.monotonic() + timeout
     remaining_extent = output_limit
     with selectors.DefaultSelector() as readiness:
         readiness.register(process.stdout, selectors.EVENT_READ)
         while time.monotonic() < deadline:
-            if CANCELLATION_REQUESTED:
+            if honor_cancellation and CANCELLATION_REQUESTED:
                 return ProcessResult("interrupted")
             if not readiness.get_map():
                 if leader_exited(process):
@@ -132,9 +134,18 @@ def logged_command(
     command, log: Path, timeout: float, *, cwd: Path | None = None, env=None,
     output_limit: int = LOG_LIMIT, soft_signal: int = signal.SIGTERM,
 ) -> ProcessResult:
+    return _logged_command(command, log, timeout, cwd, env, output_limit, soft_signal, honor_cancellation=True)
+
+
+def logged_cleanup_command(command, log: Path, timeout: float, *, output_limit: int) -> ProcessResult:
+    """Run an already-admitted owned teardown, retaining the deadline and output cap."""
+    return _logged_command(command, log, timeout, None, None, output_limit, signal.SIGTERM, honor_cancellation=False)
+
+
+def _logged_command(command, log, timeout, cwd, env, output_limit, soft_signal, *, honor_cancellation):
     try:
         with log.open("xb", buffering=0) as transcript:
-            if CANCELLATION_REQUESTED:
+            if honor_cancellation and CANCELLATION_REQUESTED:
                 return ProcessResult("interrupted")
             try:
                 child = subprocess.Popen(
@@ -145,7 +156,11 @@ def logged_command(
                 return ProcessResult("startup-failed")
             try:
                 try:
-                    result = stream(child, transcript, timeout, output_limit)
+                    result = (
+                        stream(child, transcript, timeout, output_limit)
+                        if honor_cancellation
+                        else stream(child, transcript, timeout, output_limit, honor_cancellation=False)
+                    )
                 except KeyboardInterrupt:
                     result = ProcessResult("interrupted")
                 except CleanupUnconfirmed:
@@ -155,7 +170,7 @@ def logged_command(
                     raise
                 if result.status == "exited":
                     drained = stop_group(child, signal.SIGKILL)
-                    if CANCELLATION_REQUESTED:
+                    if honor_cancellation and CANCELLATION_REQUESTED:
                         status = "interrupted"
                     else:
                         status = "exited" if drained else "stray-descendant"
