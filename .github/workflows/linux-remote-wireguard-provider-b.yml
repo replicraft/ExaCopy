@@ -5,10 +5,25 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/linux-remote-wireguard-provider-b.yml'
-      - '.github/ci/remote_commissioning_wireguard_azure.py'
-      - '.github/ci/remote_commissioning_wireguard_dispatch.py'
-      - '.github/ci/remote_commissioning_wireguard_dispatch_test.py'
-      - '.github/ci/remote_commissioning_wireguard_provider_b.py'
+      - '.github/ci/remote_commissioning*.py'
+      - '.github/ci/remote_qualification.py'
+      - '.github/ci/remote_retry_commissioning*.py'
+      - '.github/ci/wireguard_enrollment*.py'
+      - '.github/ci/common.sh'
+      - '.github/ci/install.sh'
+      - '.cargo/config.toml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'apps/exacopy-cli/Cargo.toml'
+      - 'apps/exacopy-cli/src/**'
+      - 'apps/exacopy-cli/verification/remote/**'
+      - 'crates/**/Cargo.toml'
+      - 'crates/**/src/**'
+      - 'specs/dependencies/**'
+      - 'tools/apfs_source.py'
+      - 'tools/transport_source.py'
+      - 'tools/qualification/**'
 
 permissions:
   contents: read
@@ -41,7 +56,8 @@ jobs:
           test "$GITHUB_WORKFLOW_REF" = "replicraft/ExaCopy/.github/workflows/linux-remote-wireguard-provider-b.yml@refs/heads/main"
           test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test -z "$(git status --porcelain)"
+          source_status=$(git status --porcelain)
+          test -z "$source_status"
       - name: Exercise portable fixture checks
         run: |
           python3 -B -Werror .github/ci/remote_commissioning_wireguard_test.py -v
