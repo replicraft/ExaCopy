@@ -91,6 +91,7 @@ jobs:
           release_python=python3
           if [[ "$RUNNER_OS" == Windows ]]; then release_python=python; fi
           bash .github/ci/capture.sh release-package-controls "$release_python" -u -B tools/release/package_test.py
+          bash .github/ci/capture.sh release-registry-projection "$release_python" -u -B tools/release/registry_projection_test.py
           bash .github/ci/capture.sh release-publication-controls "$release_python" -u -B .github/ci/release_candidate_test.py
       - name: Retain installer evidence
         if: always()
