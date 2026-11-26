@@ -10,8 +10,8 @@ use exacopy_endpoint::wireguard::{
 use super::*;
 use crate::protocol::{PeerAddresses, PublicKey, StaticSecret};
 
-const LOCAL: Ipv4Addr = Ipv4Addr::new(10, 45, 1, 1);
-const REMOTE: Ipv4Addr = Ipv4Addr::new(10, 45, 1, 2);
+pub(super) const LOCAL: Ipv4Addr = Ipv4Addr::new(10, 45, 1, 1);
+pub(super) const REMOTE: Ipv4Addr = Ipv4Addr::new(10, 45, 1, 2);
 const SHORT_WAIT: Duration = Duration::from_millis(25);
 const BIND_LOOPBACK: SocketAddr = SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::LOCALHOST), 0);
 
@@ -58,7 +58,7 @@ impl RouteOwner for MockRoute {
 	}
 }
 
-fn run(test: impl std::future::Future<Output = ()>) {
+pub(super) fn run(test: impl std::future::Future<Output = ()>) {
 	tokio::runtime::Builder::new_current_thread()
 		.enable_io()
 		.enable_time()
@@ -67,7 +67,7 @@ fn run(test: impl std::future::Future<Output = ()>) {
 		.block_on(test);
 }
 
-fn binding(generation: u64) -> PeerBinding {
+pub(super) fn binding(generation: u64) -> PeerBinding {
 	PeerBinding {
 		actor: NonZeroU128::MIN,
 		revision: [1; 32],
@@ -75,7 +75,11 @@ fn binding(generation: u64) -> PeerBinding {
 	}
 }
 
-fn protocol(outer: SocketAddr, initiator: bool, generation: PeerBinding) -> ProtocolPeer {
+pub(super) fn protocol(
+	outer: SocketAddr,
+	initiator: bool,
+	generation: PeerBinding,
+) -> ProtocolPeer {
 	let (local_key, remote_key, local, remote) = if initiator {
 		(111, 123, LOCAL, REMOTE)
 	} else {
@@ -94,7 +98,7 @@ fn protocol(outer: SocketAddr, initiator: bool, generation: PeerBinding) -> Prot
 	.unwrap()
 }
 
-async fn socket_pair() -> (UdpSocket, UdpSocket) {
+pub(super) async fn socket_pair() -> (UdpSocket, UdpSocket) {
 	let first = UdpSocket::bind(BIND_LOOPBACK).await.unwrap();
 	let second = UdpSocket::bind(BIND_LOOPBACK).await.unwrap();
 	first.connect(second.local_addr().unwrap()).await.unwrap();
@@ -117,7 +121,7 @@ async fn peers() -> (MockRoute, UdpPeer<MockRoute>, UdpPeer<MockRoute>) {
 	)
 }
 
-async fn handshake(first: &mut UdpPeer<MockRoute>, second: &mut UdpPeer<MockRoute>) {
+pub(super) async fn handshake<R: RouteOwner>(first: &mut UdpPeer<R>, second: &mut UdpPeer<R>) {
 	let mut output = [0; MAX_DATAGRAM_BYTES];
 	assert!(matches!(first.initiate(&mut output), Ok(UdpProgress::Sent)));
 	for peer in [&mut *second, &mut *first] {
@@ -151,7 +155,7 @@ async fn handshake(first: &mut UdpPeer<MockRoute>, second: &mut UdpPeer<MockRout
 }
 
 async fn receive_control(
-	peer: &mut UdpPeer<MockRoute>,
+	peer: &mut UdpPeer<impl RouteOwner>,
 	output: &mut [u8; MAX_DATAGRAM_BYTES],
 ) -> UdpProgress<'static> {
 	// A consumed datagram with no output is distinct from stale relay readiness.
@@ -166,7 +170,7 @@ async fn receive_control(
 	panic!("expected a loopback handshake datagram");
 }
 
-fn fixture_ip(source: Ipv4Addr, destination: Ipv4Addr) -> [u8; 24] {
+pub(super) fn fixture_ip(source: Ipv4Addr, destination: Ipv4Addr) -> [u8; 24] {
 	let mut packet = [0; 24];
 	packet[0] = 0x45;
 	packet[2..4].copy_from_slice(&24_u16.to_be_bytes());

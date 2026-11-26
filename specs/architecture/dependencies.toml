@@ -5,7 +5,7 @@ schema_version = 2
 [inversion]
 # Use [[inversion.adapter_transport]] for an exact normal adapter → transport edge.
 # Both endpoints must be workspace members and the normal group must permit the edge.
-concrete_external = ["apfs-mounted", "boringtun", "libc", "nix", "russh", "russh-sftp", "tokio", "tokio-util", "windows-sys"]
+concrete_external = ["apfs-mounted", "boringtun", "libc", "nix", "russh", "russh-sftp", "smoltcp", "tokio", "tokio-util", "windows-sys"]
 
 [[inversion.adapter_transport]]
 from = "exacopy-sftp"
@@ -59,7 +59,7 @@ dev.external = ["ed25519-dalek", "rustix"]
 role = "transport"
 members = { exacopy-ssh = "crates/net/exacopy-ssh", exacopy-wireguard = "crates/net/exacopy-wireguard" }
 normal.groups = ["contracts"]
-normal.optional_external = ["boringtun", "bytes", "russh", "russh-sftp", "rustix", "tokio", "tokio-util", "zeroize", "hmac", "sha1"]
+normal.optional_external = ["boringtun", "bytes", "russh", "russh-sftp", "rustix", "smoltcp", "tokio", "tokio-util", "zeroize", "hmac", "sha1"]
 
 [groups.adapters]
 role = "adapter"

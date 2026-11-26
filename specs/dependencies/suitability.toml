@@ -92,6 +92,13 @@ zeroize = "Clear temporary copies of signing keys and cryptographic intermediate
 zeroize_derive = "Generate zeroization implementations for Curve25519 secret types."
 zmij = "Format floating-point JSON values in serde_json's serializer."
 
+# Packages selected by the experimental embedded TCP profile.
+hash32 = "Provide the no-std hashing interface selected by heapless."
+heapless = "Bound interface address and route storage inside the embedded TCP stack."
+managed = "Represent the selected smoltcp socket and buffer storage."
+smoltcp = "Drive the bounded userspace IP and TCP stack for one fixed inner peer."
+stable_deref_trait = "Support stable address identity in the selected heapless dependency."
+
 # Packages selected by the experimental SSH profile.
 aes = "Block cipher implementation used by Russh and key-format dependencies."
 aes-gcm = "GCM mode for the SSH cipher and encrypted key format implementations."
@@ -178,9 +185,9 @@ ssh-encoding = "SSH binary key and protocol encodings used by Russh and its key 
 ssh-key = "Upstream SSH types, key decoding and public key fingerprint calculation."
 thiserror = "Error derivation used by the SSH, SFTP and Windows Pageant dependencies."
 thiserror-impl = "Build-time generation of error trait implementations."
-tokio = "Async I/O, synchronization, deadlines and in-process fixture streams for the SSH transport."
+tokio = "Async I/O, synchronization and deadlines for SSH and the experimental WireGuard adapters."
 tokio-macros = "Build-time generation of async test and select support in the Tokio graph."
-tokio-util = "Cancellation guard and stream-lifetime coordination in the SSH adapter and upstream SFTP implementation."
+tokio-util = "Cancellation guard and stream-lifetime coordination in the SSH adapter, embedded TCP driver and upstream SFTP implementation."
 windows = "Windows API bindings for the target-specific upstream Pageant code."
 windows-collections = "Collection interop for the upstream Windows API bindings."
 windows-core = "Core Windows ABI types and COM support."
@@ -946,3 +953,26 @@ adversarial_inputs = "The digest receives canonical host spelling from the typed
 verification = "The selected HMAC-SHA1 call path passed the 22-test ARM64 macOS SSH run. OpenSSH 9.7p1 synthetic label generation and lookup were independently compared with Python HMAC-SHA1. The run does not establish which ARM64 compression branch executed."
 replacement = "Use a reviewed compatible SHA-1 digest solely inside OpenSSH version-1 hostname matching, or explicitly drop hashed labels. Changing the digest would change the stored-format contract."
 review_gaps = ["Whole-version Cargo Vet safe-to-deploy admission and transitive audit coverage remain open.", "Selected tests do not qualify software and accelerated backend parity or native Linux and Windows behavior."]
+
+
+[assessment."smoltcp@0.14.0"]
+archive_sha256 = "b6f8b28ad56c6e35524a37dd492af5d1a47e31e1a4d175cd12f89c075f01980f"
+release_observation = "Pinned crates.io 0.14.0 and reviewed upstream v0.14.0 source. The crate declares 0BSD."
+security_history = "Upstream issue 1231 concerns an acknowledgement of queued bytes that were never emitted. The experimental caller guards acknowledgements against the exact accepted-egress frontier. The paused listener involved in issue 1214 is outside the selected profile."
+unsafe_exposure = "The selected interface and wire implementation uses safe Rust. Native raw socket and TUN/TAP backends are outside the selected features. Bounded container internals and upstream build script require their own review."
+resource_limits = "The wrapper uses one peer and flow, fixed packet slots and bounded socket and application buffers, with explicit Reno and monotonic deadlines."
+adversarial_inputs = "The wrapper validates exact tuple, IP and TCP shape, checksum, generation and accepted-egress acknowledgement frontier. Protocol parsing and TCP state transitions still use the selected upstream implementation."
+verification = "Private macOS tests exercised bounded TCP, paired WireGuard and smoltcp peers over native loopback UDP, plus one positioned SFTP read against independent OpenSSH. Dependency admission and independent TCP and kernel WireGuard end-to-end parity remain open."
+replacement = "An alternative must preserve the caller-owned packet, clock and routing boundaries, exact tuple admission, bounded resources and ordered TCP stream semantics."
+review_gaps = ["Exact dependency audit and upstream acknowledgement behavior", "Independent TCP interoperability, real path and cross-platform qualification"]
+
+[assessment."heapless@0.9.4"]
+archive_sha256 = "411fdef4df93751117bd9ef8caa0e7f99c65dafec5bd84313eb8e2fdd75e32f2"
+release_observation = "Pinned crates.io 0.9.4 identifies upstream revision e1b4a3f3cf37240d30ae497016095f36441289e7 and declares MIT OR Apache-2.0."
+security_history = "The reviewed notices RUSTSEC-2026-0574 through RUSTSEC-2026-0581 designate 0.9.4 as the first patched version."
+unsafe_exposure = "The library uses unsafe container internals. The selected upstream build script can invoke the configured compiler and wrapper for a fixed capability probe."
+resource_limits = "The selected smoltcp path uses bounded vectors for interface addresses and routes with compile-time capacity settings."
+adversarial_inputs = "The one-flow wrapper supplies exact address and packet bounds. The container implementation still needs independent suitability review for the exact selected features."
+verification = "The private embedded TCP suite built with 0.9.4 and passed its observed macOS cases. No independent heapless runtime audit was performed in this lane."
+replacement = "Require bounded interface storage and review the actual smoltcp container interface and resource limits."
+review_gaps = ["Exact container and build input review"]

@@ -89,6 +89,24 @@
       ],
       "purpose": "Check the connected WireGuard UDP actor and loopback fixtures in isolation."
     },
+    "experimental-wireguard-tcp": {
+      "defaults": false,
+      "check_cli": false,
+      "feature_statuses": [],
+      "exact_features": ["exacopy-wireguard/experimental-protocol", "exacopy-wireguard/experimental-tcp"],
+      "purpose": "Check the bounded embedded TCP stack and caller-supervised stream without the native UDP actor."
+    },
+    "experimental-wireguard-tcp-udp": {
+      "defaults": false,
+      "check_cli": false,
+      "feature_statuses": [],
+      "exact_features": [
+        "exacopy-wireguard/experimental-protocol",
+        "exacopy-wireguard/experimental-udp",
+        "exacopy-wireguard/experimental-tcp"
+      ],
+      "purpose": "Check the opt-in connected WireGuard UDP actor and embedded TCP flow together."
+    },
     "experimental-ssh": {
       "defaults": false,
       "check_cli": false,
@@ -221,9 +239,18 @@
       },
       "experimental-udp": {
         "status": "experimental",
-        "enables": ["experimental-protocol", "dep:exacopy-endpoint", "dep:tokio"],
+        "enables": ["experimental-protocol", "dep:exacopy-endpoint", "dep:tokio", "tokio/net"],
         "resolution_probe": ["boringtun", "exacopy-endpoint", "mio", "socket2", "tokio"],
         "purpose": "Enable bounded I/O through an approved connected UDP socket."
+      },
+      "experimental-tcp": {
+        "status": "experimental",
+        "enables": [
+          "experimental-protocol", "dep:smoltcp", "dep:tokio", "dep:tokio-util",
+          "tokio/io-util", "tokio/macros", "tokio/sync"
+        ],
+        "resolution_probe": ["boringtun", "heapless", "smoltcp", "tokio", "tokio-macros", "tokio-util"],
+        "purpose": "Enable one bounded embedded TCP flow with supervised I/O and cancellation."
       }
     },
     "exacopy-model": {
@@ -330,7 +357,7 @@
       "default_features": false,
       "features": [],
       "optional": true,
-      "purpose": "Supply bounded async I/O and timers for caller-owned SSH streams and connected WireGuard UDP sockets.",
+      "purpose": "Supply bounded async I/O and timers for caller-owned SSH streams and selectable WireGuard UDP and TCP adapters.",
       "feature_additions": {
         "exacopy-ssh": [
           "io-util",
@@ -339,18 +366,26 @@
           "sync",
           "time"
         ],
-        "exacopy-wireguard": ["net", "rt", "time"]
+        "exacopy-wireguard": ["rt", "time"]
       }
     },
     "tokio-util": {
       "default_features": false,
       "features": [],
       "optional": true,
-      "purpose": "Fence the owned SSH byte stream when an operation fails or its owner is dropped.",
+      "purpose": "Fence owned SSH or embedded TCP streams when an operation fails or its owner is dropped.",
       "feature_additions": {
-        "exacopy-ssh": [
-          "rt"
-        ]
+        "exacopy-ssh": ["rt"],
+        "exacopy-wireguard": ["rt"]
+      }
+    },
+    "smoltcp": {
+      "default_features": false,
+      "features": [],
+      "optional": true,
+      "purpose": "Supply the fixed-pair userspace IPv4 and IPv6 TCP stack with explicit Reno congestion control.",
+      "feature_additions": {
+        "exacopy-wireguard": ["alloc", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp", "socket-tcp-reno"]
       }
     },
     "boringtun": {

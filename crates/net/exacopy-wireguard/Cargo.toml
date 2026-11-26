@@ -8,12 +8,25 @@ publish = false
 
 [features]
 experimental-protocol = ["dep:boringtun", "dep:rustix"]
-experimental-udp = ["experimental-protocol", "dep:exacopy-endpoint", "dep:tokio"]
+experimental-udp = ["experimental-protocol", "dep:exacopy-endpoint", "dep:tokio", "tokio/net"]
+experimental-tcp = [
+    "experimental-protocol",
+    "dep:smoltcp",
+    "dep:tokio",
+    "dep:tokio-util",
+    "tokio/io-util",
+    "tokio/macros",
+    "tokio/sync",
+]
 
 [dependencies]
 boringtun = { workspace = true, optional = true }
 exacopy-endpoint = { workspace = true, optional = true }
-tokio = { workspace = true, features = ["net", "rt", "time"], optional = true }
+smoltcp = { workspace = true, features = [
+    "alloc", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp", "socket-tcp-reno",
+], optional = true }
+tokio = { workspace = true, features = ["rt", "time"], optional = true }
+tokio-util = { workspace = true, features = ["rt"], optional = true }
 
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 rustix = { workspace = true, features = ["time"], optional = true }

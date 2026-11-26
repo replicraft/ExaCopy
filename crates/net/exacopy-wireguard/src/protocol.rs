@@ -88,6 +88,8 @@ pub enum PacketOutput<'buffer> {
 /// Ownership of this value alone conveys no I/O or runtime qualification.
 pub struct ProtocolPeer {
 	binding: PeerBinding,
+	#[cfg(all(feature = "experimental-udp", feature = "experimental-tcp"))]
+	remote_public_key: [u8; 32],
 	endpoints: PeerAddresses,
 	tunnel: Tunn,
 	clock: GenerationClock,
@@ -125,6 +127,8 @@ impl ProtocolPeer {
 			return Err(ProtocolError::InvalidPeerKey);
 		}
 		let clock = GenerationClock::start()?;
+		#[cfg(all(feature = "experimental-udp", feature = "experimental-tcp"))]
+		let remote_public_key = remote_public.to_bytes();
 		let tunnel = Tunn::new(
 			local_private,
 			remote_public,
@@ -135,6 +139,8 @@ impl ProtocolPeer {
 		);
 		Ok(Self {
 			binding,
+			#[cfg(all(feature = "experimental-udp", feature = "experimental-tcp"))]
+			remote_public_key,
 			endpoints,
 			tunnel,
 			clock,
@@ -146,6 +152,16 @@ impl ProtocolPeer {
 	#[cfg(feature = "experimental-udp")]
 	pub(super) const fn binding(&self) -> PeerBinding {
 		self.binding
+	}
+
+	#[cfg(all(feature = "experimental-udp", feature = "experimental-tcp"))]
+	pub(super) const fn remote_public_key(&self) -> [u8; 32] {
+		self.remote_public_key
+	}
+
+	#[cfg(all(feature = "experimental-udp", feature = "experimental-tcp"))]
+	pub(super) const fn inner_local(&self) -> IpAddr {
+		self.endpoints.local
 	}
 
 	#[cfg(feature = "experimental-udp")]

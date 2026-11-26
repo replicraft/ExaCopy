@@ -12,6 +12,13 @@ use tokio::net::UdpSocket;
 use crate::protocol::{MAX_DATAGRAM_BYTES, PacketOutput, PeerBinding, ProtocolError, ProtocolPeer};
 
 mod error;
+#[cfg(feature = "experimental-tcp")]
+mod tcp;
+#[cfg(feature = "experimental-tcp")]
+pub use tcp::{
+	TcpDialSettings, TcpRouteOwner, UdpTcpAdmission, UdpTcpDriver, UdpTcpError, UdpTcpPeer,
+	UdpTcpRoute,
+};
 #[cfg(test)]
 mod tests;
 
@@ -140,17 +147,28 @@ impl<R: RouteOwner> UdpPeer<R> {
 			return Err(UdpError::WaitLimit);
 		}
 		let active = self.active.as_mut().ok_or(UdpError::Retired)?;
-		let ready = tokio::time::timeout(wait, active.socket.readable()).await;
+		match tokio::time::timeout(wait, active.socket.readable()).await {
+			Ok(Ok(())) => self.receive_ready(output),
+			Ok(Err(error)) => {
+				self.check()?;
+				self.keep_active(Err(UdpError::Socket(SocketPhase::Receive, error)))
+			}
+			Err(_) => {
+				self.check()?;
+				Ok(UdpProgress::NoDatagram)
+			}
+		}
+	}
+
+	fn receive_ready<'buffer>(
+		&mut self,
+		output: &'buffer mut [u8; MAX_DATAGRAM_BYTES],
+	) -> Result<UdpProgress<'buffer>, UdpError> {
 		// Reserve one extra byte so a truncated datagram cannot pass the size check.
 		let mut packet = [0; MAX_DATAGRAM_BYTES + 1];
 		let active = self.active.as_mut().ok_or(UdpError::Retired)?;
 		let receipt = self.owner.with_observation(|current| {
 			ensure_binding(self.binding, current, &mut active.protocol)?;
-			match ready {
-				Err(_) => return Ok(None),
-				Ok(Err(error)) => return Err(UdpError::Socket(SocketPhase::Receive, error)),
-				Ok(Ok(())) => {}
-			}
 			require_connected_peer(
 				&active.socket,
 				active.protocol.outer_endpoint(),
@@ -171,6 +189,23 @@ impl<R: RouteOwner> UdpPeer<R> {
 		self.operate(Operation::Receive(&packet[..size]), output)
 	}
 
+	/// Reobserves readiness on this fixed connected peer without claiming a dial.
+	///
+	/// The actor's bounded handshake, timer and generation policy still governs
+	/// progress. Recheck after each bounded receive or timer step before consuming
+	/// the actor in an inner dial. Readiness can lapse before dial admission.
+	///
+	/// # Errors
+	/// Refuses an expired, retired, revoked or mismatched connected peer.
+	pub fn session_ready(&mut self) -> Result<bool, UdpError> {
+		let active = self.active.as_mut().ok_or(UdpError::Retired)?;
+		let result = self.owner.with_observation(|current| {
+			check_current_socket(self.binding, current, active)?;
+			Ok(active.protocol.has_session())
+		});
+		self.keep_active(result)
+	}
+
 	/// Rechecks a dispatched application dial under the actor lease.
 	///
 	/// The result identifies a permitted command for a future inner-stack
@@ -183,7 +218,7 @@ impl<R: RouteOwner> UdpPeer<R> {
 	) -> Result<InnerDial, UdpError> {
 		let active = self.active.as_mut().ok_or(UdpError::Retired)?;
 		let result = self.owner.with_observation(|current| {
-			ensure_binding(self.binding, current, &mut active.protocol)?;
+			check_current_socket(self.binding, current, active)?;
 			if !active.protocol.has_session() {
 				return Err(UdpError::Protocol(ProtocolError::NoSession));
 			}
@@ -270,6 +305,19 @@ impl Operation<'_> {
 			Self::Receive(packet) => protocol.receive(protocol.outer_endpoint(), packet, output),
 		}
 	}
+}
+
+fn check_current_socket(
+	expected: RouteObservation,
+	current: RouteObservation,
+	active: &mut Active,
+) -> Result<(), UdpError> {
+	ensure_binding(expected, current, &mut active.protocol)?;
+	require_connected_peer(
+		&active.socket,
+		active.protocol.outer_endpoint(),
+		SocketPhase::Admit,
+	)
 }
 
 fn route_binding(binding: PeerBinding) -> RouteObservation {

@@ -51,6 +51,7 @@ hmac = { version = "=0.13.0", default-features = false }
 sha1 = { version = "=0.11.0", default-features = false }
 russh = { version = "=0.65.4", path = "../local-deps/russh", default-features = false }
 russh-sftp = { version = "=4.0.0", default-features = false }
+smoltcp = { version = "=0.14.0", default-features = false }
 tokio = { version = "=1.54.1", default-features = false }
 tokio-util = { version = "=0.7.20", default-features = false }
 
