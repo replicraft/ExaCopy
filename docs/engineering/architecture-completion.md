@@ -41,10 +41,12 @@ integrate serially, with failure evidence kept by revision.
 [APFS](../../specs/dependencies/apfs-source.toml) is an independent companion.
 The reviewed baseline used `fdcc3ea`; `5e936f0` advanced the selected pin to
 `0266afa`; the sealed-handle metadata follow-up selected `fc71ded` and removed
-the duplicate consumer descriptor. The current pin selects public `827f948`,
-whose owned observation-only reader now supplies restart read-back. Coherent
-publication observations and mutation-free sealing are separate consumer
-integrations. The bounded [companion audit](filesystem-companion-boundary-audit.md)
+the duplicate consumer descriptor. The current pin selects public `a494df4`,
+whose owned observation-only reader supplies restart read-back. Publication
+uses coherent companion observations and exposes the checked final-guard
+seam. Outer event inventories, immutable artifacts and mutation-free remote
+sealing remain separate consumer integrations. The bounded
+[companion audit](filesystem-companion-boundary-audit.md)
 reviewed APFS and HFS+ source without changing either. At `1660ab3`,
 [BoringTun and Russh](../supply-chain/local-transport-sources.md) became
 locally reconstructed, reviewed dependencies pinned to repair commits
@@ -142,7 +144,7 @@ the current fresh-attempt command. [Registered contracts](../../specs/contracts/
 - **APFS companion.** The source and live staging/publication adapters use
   the companion mechanisms, including the strict stage ACL predicate and
   explicit partial-read diagnostics. Restart inspection uses the pinned
-  `827f948` companion's `ReopenedStage::open_named`. The reader owns its
+  `a494df4` companion's `ReopenedStage::open_named`. The reader owns its
   exact component and event anchor, and borrows the held directory and
   matching lease. ExaCopy checks protected ancestry, both names, recorded
   identity and strict metadata, including initial post-open and final

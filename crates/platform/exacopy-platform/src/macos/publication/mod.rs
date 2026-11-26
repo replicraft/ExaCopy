@@ -20,6 +20,7 @@ mod native;
 mod tests;
 
 pub use error::{
-	DirectoryBarrierFailures, PublishError, PublishRejection, PublishedObservationError,
+	CheckedPublishError, DirectoryBarrierFailures, PublishError, PublishRejection,
+	PublishedObservationError,
 };
-pub use evidence::PublishedFile;
+pub use evidence::{PublicationGateRequest, PublishedFile};

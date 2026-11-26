@@ -133,3 +133,60 @@ fn policy_failure_cannot_hide_rejection_conflict_or_uncertainty() {
 }
 
 mod adapter;
+
+#[test]
+fn checked_refusal_keeps_the_exact_typed_cause_and_policy_restoration_error() {
+	use super::CheckedPublishError;
+	use super::attempt::{AttemptRejection, finish_checked_attempt};
+
+	let refusal = io::Error::from_raw_os_error(libc::EPERM);
+	let result = finish_checked_attempt(
+		Some(Err(AttemptRejection::Authorization(refusal))),
+		Err(ManagedReadError::RestoreMaterializationPolicy(
+			io::Error::from_raw_os_error(libc::EIO),
+		)),
+	);
+	assert!(matches!(
+		result,
+		Err(CheckedPublishError::Authorization {
+			cause,
+			policy_error: Some(ManagedReadError::RestoreMaterializationPolicy(policy)),
+		}) if cause.raw_os_error() == Some(libc::EPERM)
+			&& policy.raw_os_error() == Some(libc::EIO)
+	));
+}
+
+#[test]
+fn checked_native_outcome_keeps_failed_barriers_and_known_rename() {
+	use super::CheckedPublishError;
+	use super::attempt::finish_checked_attempt;
+
+	let identity = observed_identity(&Scratch::new());
+	let result = finish_checked_attempt::<io::Error>(
+		Some(Ok(RenameOutcome::Renamed {
+			barriers: DirectoryBarrierFailures::from_results(
+				Err(io::Error::from_raw_os_error(libc::EIO)),
+				Err(io::Error::from_raw_os_error(libc::ENOSPC)),
+			),
+			observation: Ok(PublicationObservation {
+				target: identity,
+				stage_directory: identity,
+				destination_directory: identity,
+			}),
+		})),
+		Err(ManagedReadError::RestoreMaterializationPolicy(
+			io::ErrorKind::PermissionDenied.into(),
+		)),
+	);
+	assert!(matches!(
+		result,
+		Err(CheckedPublishError::Native(PublishError::Renamed {
+			barriers: Some(barriers),
+			observation: None,
+			observed_target: Some(target),
+			policy_error: Some(_),
+		})) if target == identity
+			&& barriers.stage().and_then(io::Error::raw_os_error) == Some(libc::EIO)
+			&& barriers.destination().and_then(io::Error::raw_os_error) == Some(libc::ENOSPC)
+	));
+}

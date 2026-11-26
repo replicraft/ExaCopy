@@ -1,7 +1,7 @@
 # APFS private-stage recovery handoff
 
 The selected mounted APFS companion is public commit
-`827f94821a59d1bd99745414476aa04716c9429d` (`apfs-mounted` 0.1.0).
+`a494df4ab01586032d69b85f26f697ddca7b5913` (`apfs-mounted` 0.1.0).
 Commit `4fa67b7` adds the owned-name and event-anchor constructor for the
 observation-only `ReopenedStage` API. ExaCopy uses it for restart read-back
 under the existing stage-directory lease.
@@ -65,28 +65,33 @@ fresh observations. This reader grants observation authority only. It
 cannot establish live writer closure, a new durability barrier, permission
 to mutate, or publication authority.
 
-## Remaining upstream boundaries
+## Supplied mechanisms and remaining consumer work
 
 The companion supplies coherent event and post-publication observations of
 native identity, extent, change stamp and bounded held metadata. These support
 exact stored spelling for private stages and lookup spelling for public
 occupancy. ExaCopy's recovery read-back uses a coherent data-handle observation
-for initial and final metadata. Other recovery inventory and post-publication
-callers can adopt the separate mounted observation APIs while retaining
-their original binding checks.
+for initial and final metadata. Post-publication checks now use a coherent
+companion snapshot around strict metadata queries on the sealed read-only
+descriptor. `OwnedEventEntry` additionally supplies an owned name, retained
+parent descriptor and event anchor for outer recovery inventory migration.
+It grants neither payload access nor lease authority. ExaCopy retains its
+original inventory baseline and binding checks.
 
-Typed `ObjectFlags` already exist upstream. Remaining consumer firmlink and
-dataless bit interpretation should use those APIs. Post-publication named
-identity/metadata observation belongs to the same reusable native boundary;
-ExaCopy keeps the comparison with its recorded publication expectation.
+Consumer firmlink and dataless admission now uses the companion's typed
+`ObjectFlags`. ExaCopy keeps the comparison with its recorded publication
+expectation.
 Existing `Directory::create_private_directory` can also replace consumer
 `mkdirat`/open/barrier scaffolding, while preserving separate created,
 existing and created-but-unconfirmed outcomes and ExaCopy's strict 0700/ACL
-admission. A reusable checked private-artifact lifecycle (exclusive create,
-held/name observation, barrier, checked close and read-only reopen) could
-serve immutable job records and receipts. It must not absorb their names,
-formats, journal cursor, resource reservations or publication ordering.
-The existing stage writer is not a replacement for an append-only journal.
+admission. `write_private_artifact_checked` now supplies exclusive creation,
+held/name observation, a file barrier, consuming checked close and independent
+byte/EOF read-back. It can serve immutable job records and receipts while
+ExaCopy retains their names, formats, resource reservations, directory barriers
+and publication ordering. Consumer adoption must retain strict ACL admission,
+including refusal of an unknown entry count, and map nested restoration
+outcomes without confusing pre-effect refusal with incomplete creation.
+The artifact helper is not a replacement for an append-only journal.
 
 A checked protected ancestor walk and final read would be reusable upstream
 if macOS protected snapshot support is added. That path currently refuses
@@ -148,31 +153,34 @@ durable intent, qualification and one no-clobber permit before publication.
 No duplicate consumer descriptor, raw barrier fallback or timestamp mutation
 is needed for this seal.
 
-## Future remote publication fence
+## Supplied remote publication fence
 
 The fresh seal and read-back primitives are supplied. ExaCopy still needs a
 verified-capture handoff and a Darwin remote publication coordinator before
 adopting this seal for remote transfers. Locally observed metadata must not
 be presented as preserved remote metadata.
 
-The current companion `attempt_exclusive_rename` validates the held and named
-source internally before issuing the syscall. A remote grant check before
-calling it can expire during those native probes. For a future Darwin remote
-executor, a checked rename variant should let the caller establish its final
-current-grant fence after those probes and retain the guard through the one
-exclusive rename. An opaque prepared rename consumed under that guard is
-another possible interface; it must be single-use and bound to the original
-leases and exact names. Check the deadline at submission after all probes,
-with no intervening I/O, await or revalidation. The guard serializes
-application revocation through the syscall; it cannot freeze time or promise
-syscall completion before expiry. The companion should keep its existing source
-validation, no-clobber syscall and distinct refusal, conflict, uncertain and
-successful outcomes. ExaCopy owns the grant, deadline, revocation guard,
-durable intent and reconciliation. Existing local-copy publication has a
-separate authorization contract and does not acquire remote authority from
-this proposed interface.
+The pinned companion now supplies `attempt_exclusive_rename_checked`. It
+validates the held and named source, then calls the caller's authorization
+closure and keeps the returned guard through the one exclusive rename.
+Authorization failure prevents the syscall. There are no intervening native
+probes or destination prelookup after the callback. Native preflight refusal,
+conflict, uncertain effect and success retain their separate outcomes.
+
+The future Darwin remote coordinator must acquire its revocation guard before
+checking the monotonic deadline in that callback, with no intervening I/O,
+await or revalidation. The guard serializes application revocation through
+the syscall; it cannot freeze time or promise syscall completion before
+expiry. ExaCopy owns the grant, deadline, original leases, one-shot durable
+intent and reconciliation. Existing local-copy publication has a separate
+authorization contract and does not acquire remote authority from the new
+interface. The platform exposes this seam as
+`MetadataReadyStage::publish_no_clobber_checked`, preserving typed caller
+refusal and any thread-policy restoration failure. Its existing local method
+keeps the original companion dispatch. No Darwin remote command uses the seam.
 
 Qualification must include expiry or revocation during the native probes,
 before rename, alongside the ordinary binding and no-clobber controls. This
-is a future reusable mechanism request; neither the current companion tests
-nor consumer adapter migration qualifies Darwin remote transfers.
+is a remaining consumer qualification obligation; neither the current
+companion tests nor consumer adapter migration qualifies Darwin remote
+transfers.

@@ -182,3 +182,93 @@ fn post_rename_stable_observation_cannot_replace_the_original_sealed_metadata() 
 	assert_eq!(identity(&target), original);
 	assert_eq!(fs::read(target).unwrap(), PAYLOAD);
 }
+
+#[test]
+#[ignore = "requires managed APFS fixtures without visible extended attributes"]
+fn checked_publication_reports_caller_refusal_without_touching_an_incumbent() {
+	use super::super::super::CheckedPublishError;
+
+	#[derive(Debug, Eq, PartialEq)]
+	enum Denial {
+		Revoked,
+	}
+
+	let fixture = Fixture::new();
+	let root = fixture.bind();
+	let directory = root.open_stage_directory(name(STAGE_DIRECTORY)).unwrap();
+	let stage = fixture.standard_stage(&directory);
+	let original = fixture.destination.path(STAGE_DIRECTORY).join(STAGE_NAME);
+	let target = fixture.destination.path(TARGET_NAME);
+	let expected_stage = identity(&original);
+	let expected_stage_directory = identity(&fixture.destination.path(STAGE_DIRECTORY));
+	let expected_destination_directory = identity(&fixture.destination.path(""));
+	write_new(&target, INCUMBENT);
+	let incumbent = identity(&target);
+	let binding = stage.binding();
+	let permit = fixture.authorize(binding);
+	let result = stage.publish_no_clobber_checked(permit, |request| {
+		assert_eq!(request.binding(), binding);
+		assert_eq!(request.expected_stage_name(), STAGE_NAME.as_bytes());
+		assert_eq!(request.expected_target_name(), TARGET_NAME.as_bytes());
+		assert_eq!(request.expected_stage().inode().get(), expected_stage.1);
+		assert_eq!(
+			request.expected_stage_directory().inode().get(),
+			expected_stage_directory.1
+		);
+		assert_eq!(
+			request.expected_destination_directory().inode().get(),
+			expected_destination_directory.1
+		);
+		Err::<(), _>(Denial::Revoked)
+	});
+	assert!(matches!(
+		result,
+		Err(CheckedPublishError::Authorization {
+			cause: Denial::Revoked,
+			policy_error: None
+		})
+	));
+	assert_eq!(identity(&original), expected_stage);
+	assert_eq!(identity(&target), incumbent);
+	assert_eq!(fs::read(original).unwrap(), PAYLOAD);
+	assert_eq!(fs::read(target).unwrap(), INCUMBENT);
+}
+
+#[test]
+#[ignore = "requires managed APFS fixtures without visible extended attributes"]
+fn checked_publication_holds_the_borrowed_guard_through_the_rename() {
+	use std::cell::Cell;
+
+	struct Guard<'a> {
+		target: &'a Path,
+		expected: (u64, u64),
+		observed: &'a Cell<bool>,
+	}
+
+	impl Drop for Guard<'_> {
+		fn drop(&mut self) {
+			self.observed.set(identity(self.target) == self.expected);
+		}
+	}
+
+	let fixture = Fixture::new();
+	let root = fixture.bind();
+	let directory = root.open_stage_directory(name(STAGE_DIRECTORY)).unwrap();
+	let stage = fixture.standard_stage(&directory);
+	let expected = identity(&fixture.destination.path(STAGE_DIRECTORY).join(STAGE_NAME));
+	let target = fixture.destination.path(TARGET_NAME);
+	let observed = Cell::new(false);
+	let permit = fixture.authorize(stage.binding());
+	let publication = stage
+		.publish_no_clobber_checked(permit, |_| {
+			Ok::<_, io::Error>(Guard {
+				target: &target,
+				expected,
+				observed: &observed,
+			})
+		})
+		.unwrap();
+	assert!(observed.get());
+	assert_eq!(publication.target_identity().inode().get(), expected.1);
+	assert_eq!(fs::read(target).unwrap(), PAYLOAD);
+}

@@ -11,6 +11,39 @@ use rustix::io::Errno;
 use super::super::staging::StageError;
 use super::super::{ManagedObjectIdentity, ManagedReadError};
 
+/// Refusal or native outcome from a caller-checked publication.
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum CheckedPublishError<E> {
+	/// Native preflight, rename or post-rename outcome, including policy restoration.
+	Native(PublishError),
+	/// The final application authorization refused before the rename syscall.
+	Authorization {
+		/// Original typed refusal returned by the caller.
+		cause: E,
+		/// Scoped thread-policy restoration failure, if also observed.
+		policy_error: Option<ManagedReadError>,
+	},
+}
+
+impl<E> fmt::Display for CheckedPublishError<E> {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			Self::Native(error) => error.fmt(f),
+			Self::Authorization { .. } => f.write_str("APFS publication authorization refused"),
+		}
+	}
+}
+
+impl<E: Error + 'static> Error for CheckedPublishError<E> {
+	fn source(&self) -> Option<&(dyn Error + 'static)> {
+		match self {
+			Self::Native(error) => Some(error),
+			Self::Authorization { cause, .. } => Some(cause),
+		}
+	}
+}
+
 /// An attempted exclusive publication did not produce complete success evidence.
 #[derive(Debug)]
 #[non_exhaustive]
