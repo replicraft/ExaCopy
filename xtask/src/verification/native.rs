@@ -14,6 +14,8 @@ mod integration;
 
 const FIXTURE_MANIFEST: &str = "fixture.toml";
 const RESULT: &str = "result.json";
+const STATMOUNT_MANIFEST: &str = "verification/sync_history_ext4_statmount/fixture.toml";
+const STATMOUNT_FEATURE: &str = "experimental-linux-managed-sync";
 
 #[derive(Clone, Copy, Deserialize, Eq, PartialEq)]
 enum Target {
@@ -39,6 +41,8 @@ enum Profile {
 	UnprivilegedTmpfsSyncPreview,
 	#[serde(rename = "linux-unprivileged-whole-ext4-sync-history-v1")]
 	UnprivilegedWholeExt4SyncHistory,
+	#[serde(rename = "linux-unprivileged-whole-ext4-sync-statmount-v1")]
+	UnprivilegedWholeExt4SyncStatmount,
 }
 
 impl Profile {
@@ -47,8 +51,20 @@ impl Profile {
 			Self::UnprivilegedSameDeviceBind
 			| Self::HostedRootSetupUnprivilegedObserver
 			| Self::UnprivilegedTmpfsSyncPreview
-			| Self::UnprivilegedWholeExt4SyncHistory => Target::LinuxX86_64Gnu,
+			| Self::UnprivilegedWholeExt4SyncHistory
+			| Self::UnprivilegedWholeExt4SyncStatmount => Target::LinuxX86_64Gnu,
 		}
+	}
+
+	fn integration(self) -> bool {
+		matches!(
+			self,
+			Self::UnprivilegedWholeExt4SyncHistory | Self::UnprivilegedWholeExt4SyncStatmount
+		)
+	}
+
+	fn required_feature(self) -> Option<&'static str> {
+		matches!(self, Self::UnprivilegedWholeExt4SyncStatmount).then_some(STATMOUNT_FEATURE)
 	}
 }
 
@@ -84,6 +100,7 @@ struct Case {
 	kind: CaseKind,
 	owner: Option<String>,
 	test_target: Option<String>,
+	required_feature: Option<String>,
 	selector: String,
 	source: PathBuf,
 	ignored: bool,
@@ -167,6 +184,17 @@ fn check_manifest(
 		);
 	}
 
+	let statmount = fixture.profile.required_feature().is_some();
+	if statmount != (manifest == Path::new(STATMOUNT_MANIFEST))
+		|| (statmount && !exact_statmount_case(package, &fixture.cases))
+	{
+		findings.add(
+			&path,
+			"statmount fixture requires its exact platform owner, manifest and one case",
+		);
+		return;
+	}
+
 	check_custody(
 		metadata.workspace_root.as_std_path(),
 		root,
@@ -175,6 +203,14 @@ fn check_manifest(
 		findings,
 	);
 	check_cases(metadata, package, root, &path, &fixture, findings);
+}
+
+fn exact_statmount_case(package: &Package, cases: &[Case]) -> bool {
+	package.name.as_str() == "exacopy-platform"
+		&& matches!(cases, [case]
+			if case.test_target.as_deref() == Some("linux_sync_history_ext4_statmount")
+				&& case.source == Path::new("tests/linux_sync_history_ext4_statmount.rs")
+				&& case.selector == "held_ext4_history_mount_admits_unmapped_attributes")
 }
 
 fn check_custody(
@@ -265,12 +301,17 @@ fn check_cases(
 			);
 			continue;
 		}
-		if matches!(fixture.profile, Profile::UnprivilegedWholeExt4SyncHistory)
-			!= matches!(case.kind, CaseKind::RustIntegration)
-		{
+		if case.required_feature.as_deref() != fixture.profile.required_feature() {
 			findings.add(
 				manifest,
-				"native Rust integration cases require the whole-ext4 sync-history profile",
+				"native fixture feature must match its exact profile",
+			);
+			continue;
+		}
+		if fixture.profile.integration() != matches!(case.kind, CaseKind::RustIntegration) {
+			findings.add(
+				manifest,
+				"native Rust integration cases require the whole-ext4 sync-history or statmount profile",
 			);
 			continue;
 		}

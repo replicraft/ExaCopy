@@ -2,10 +2,14 @@ use std::path::{Component, Path, PathBuf};
 
 use cargo_metadata::{Package, TargetKind};
 use serde::Deserialize;
-use syn::{Attribute, Expr, Item, Lit, Meta, MetaNameValue};
+use syn::punctuated::Punctuated;
+use syn::{Attribute, Expr, Item, Lit, Meta, MetaNameValue, Token};
 
 use super::{Case, artifact_text, command_identifier};
 use crate::finding::Findings;
+
+#[cfg(test)]
+mod tests;
 
 const CARGO_MANIFEST: &str = "Cargo.toml";
 
@@ -20,6 +24,8 @@ struct TestDeclaration {
 	name: Option<String>,
 	path: Option<String>,
 	harness: Option<bool>,
+	#[serde(default, rename = "required-features")]
+	required_features: Vec<String>,
 }
 
 pub(super) fn check(
@@ -51,6 +57,14 @@ pub(super) fn check(
 		);
 		return;
 	}
+	let feature = case.required_feature.as_deref();
+	if feature.is_some_and(|feature| !package.features.contains_key(feature)) {
+		findings.add(
+			manifest,
+			"native test requires a feature declared by its owner",
+		);
+		return;
+	}
 	let path = root.join(&case.source);
 	let mut candidates = package.targets.iter().filter(|target| {
 		target.kind.as_slice() == [TargetKind::Test]
@@ -59,27 +73,35 @@ pub(super) fn check(
 	});
 	if !candidates
 		.next()
-		.is_some_and(|target| target.test && target.required_features.is_empty())
+		.is_some_and(|target| target.test && exact_features(&target.required_features, feature))
 		|| candidates.next().is_some()
 	{
 		findings.add(
 			manifest,
-			"native Rust integration case needs an exact owner Cargo test target and source with no required features",
+			if feature.is_some() {
+				"native Rust integration case needs an exact owner Cargo test target, source and required feature"
+			} else {
+				"native Rust integration case needs an exact owner Cargo test target and source with no required features"
+			},
 		);
 		return;
 	}
-	if !standard_harness(workspace, package, root, name, &case.source, findings) {
+	if !standard_harness(workspace, package, root, name, case, findings) {
 		return;
 	}
 	let Some(contents) = artifact_text(root, &case.source, findings) else {
 		return;
 	};
-	if !has_linux_test(&contents, &case.selector) {
+	if !has_linux_test(&contents, &case.selector, feature) {
 		findings.add(
 			&path,
-			"expected exact crate-level Linux cfg and a substantive top-level ignored libtest test",
+			"expected exact crate-level Linux/profile cfg and a substantive top-level ignored libtest test",
 		);
 	}
+}
+
+fn exact_features(actual: &[String], expected: Option<&str>) -> bool {
+	actual.iter().map(String::as_str).eq(expected)
 }
 
 fn target_name(name: &str) -> bool {
@@ -109,9 +131,10 @@ fn standard_harness(
 	package: &Package,
 	root: &Path,
 	name: &str,
-	source: &Path,
+	case: &Case,
 	findings: &mut Findings,
 ) -> bool {
+	let source = &case.source;
 	let manifest = Path::new(CARGO_MANIFEST);
 	let path = root.join(manifest);
 	if package.manifest_path.as_std_path().as_os_str() != path.as_os_str() {
@@ -148,20 +171,33 @@ fn standard_harness(
 				.as_deref()
 				.is_some_and(|path| canonical_lexical_target(&root.join(path)) == root.join(source))
 	});
-	let valid = explicit.next().is_none_or(|test| {
-		test.harness != Some(false)
-			&& test
-				.path
-				.as_deref()
-				.is_none_or(|path| Some(path) == source.to_str())
-	}) && explicit.next().is_none();
+	let declaration = explicit.next();
+	let valid = explicit.next().is_none()
+		&& valid_declaration(declaration, name, source, case.required_feature.as_deref());
 	if !valid {
 		findings.add(
 			&path,
-			"native Rust integration target requires a standard libtest harness and canonical source",
+			"native Rust integration target requires a standard libtest harness, canonical source and exact required features",
 		);
 	}
 	valid
+}
+
+fn valid_declaration(
+	declaration: Option<&TestDeclaration>,
+	name: &str,
+	source: &Path,
+	feature: Option<&str>,
+) -> bool {
+	let Some(declaration) = declaration else {
+		return feature.is_none();
+	};
+	let declared_path = declaration.path.as_deref();
+	declaration.harness != Some(false)
+		&& declared_path.is_none_or(|path| Some(path) == source.to_str())
+		&& exact_features(&declaration.required_features, feature)
+		&& (feature.is_none()
+			|| (declaration.name.as_deref() == Some(name) && declared_path.is_some()))
 }
 
 fn canonical_lexical_target(path: &Path) -> PathBuf {
@@ -178,13 +214,13 @@ fn canonical_lexical_target(path: &Path) -> PathBuf {
 	canonical
 }
 
-fn has_linux_test(contents: &str, selector: &str) -> bool {
+fn has_linux_test(contents: &str, selector: &str, feature: Option<&str>) -> bool {
 	syn::parse_file(contents).is_ok_and(|syntax| {
 		let mut cfg = syntax
 			.attrs
 			.iter()
 			.filter(|attr| attr.path().is_ident("cfg"));
-		if !cfg.next().is_some_and(linux_cfg)
+		if !cfg.next().is_some_and(|attr| linux_cfg(attr, feature))
 			|| cfg.next().is_some()
 			|| syntax.attrs.iter().any(|attr| {
 				attr.path().is_ident("cfg_attr")
@@ -230,12 +266,33 @@ fn has_linux_test(contents: &str, selector: &str) -> bool {
 	})
 }
 
-fn linux_cfg(attr: &Attribute) -> bool {
-	attr.parse_args::<MetaNameValue>().is_ok_and(|cfg| {
-		cfg.path.is_ident("target_os")
-			&& matches!(&cfg.value, Expr::Lit(value)
-				if matches!(&value.lit, Lit::Str(os) if os.value() == "linux"))
+fn linux_cfg(attr: &Attribute, feature: Option<&str>) -> bool {
+	let Some(feature) = feature else {
+		return attr
+			.parse_args::<MetaNameValue>()
+			.is_ok_and(|cfg| literal_cfg(&cfg, "target_os", "linux"));
+	};
+	attr.parse_args::<syn::MetaList>().is_ok_and(|cfg| {
+		cfg.path.is_ident("all")
+			&& cfg
+				.parse_args_with(Punctuated::<MetaNameValue, Token![,]>::parse_terminated)
+				.is_ok_and(|conditions| {
+					let mut conditions = conditions.iter();
+					conditions
+						.next()
+						.is_some_and(|condition| literal_cfg(condition, "target_os", "linux"))
+						&& conditions
+							.next()
+							.is_some_and(|condition| literal_cfg(condition, "feature", feature))
+						&& conditions.next().is_none()
+				})
 	})
+}
+
+fn literal_cfg(cfg: &MetaNameValue, key: &str, expected: &str) -> bool {
+	cfg.path.is_ident(key)
+		&& matches!(&cfg.value, Expr::Lit(value)
+			if matches!(&value.lit, Lit::Str(value) if value.value() == expected))
 }
 
 fn ignore_attribute(attr: &Attribute) -> bool {
