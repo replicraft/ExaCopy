@@ -49,6 +49,19 @@ impl ProcMounts {
 	}
 
 	pub(super) fn namespace_id(&self) -> io::Result<u64> {
+		self.thread_namespace(c"mnt", b"mnt:[")
+	}
+
+	pub(super) fn user_namespace_id(&self) -> io::Result<u64> {
+		self.thread_namespace(c"user", b"user:[")
+	}
+
+	pub(super) fn credential_status(&self) -> io::Result<Vec<u8>> {
+		const MAX_CREDENTIAL_STATUS_BYTES: usize = 64 * 1024;
+		read_proc(&self.thread, c"status", MAX_CREDENTIAL_STATUS_BYTES)
+	}
+
+	fn thread_namespace(&self, name: &CStr, prefix: &[u8]) -> io::Result<u64> {
 		let namespace = fs::openat2(
 			&self.thread,
 			c"ns",
@@ -56,10 +69,10 @@ impl ProcMounts {
 			Mode::empty(),
 			BELOW_PROC | ResolveFlags::NO_SYMLINKS,
 		)?;
-		let target = fs::readlinkat(&namespace, c"mnt", Vec::new())?;
+		let target = fs::readlinkat(&namespace, name, Vec::new())?;
 		target
 			.as_bytes()
-			.strip_prefix(b"mnt:[")
+			.strip_prefix(prefix)
 			.and_then(|value| value.strip_suffix(b"]"))
 			.and_then(nonzero_decimal)
 			.ok_or_else(unsupported)

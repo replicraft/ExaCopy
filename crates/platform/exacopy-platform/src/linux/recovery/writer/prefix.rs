@@ -13,8 +13,9 @@ mod suffix;
 mod tests;
 
 pub use suffix::{
-	RetainedSuffixReadback, RetainedSuffixWriter, SuffixEffect, SuffixError, SyncedRetainedPrefix,
-	SyncedSuffixRange,
+	ProtectedWitnessEffect, ProtectedWitnessError, RetainedSuffixReadback, RetainedSuffixWriter,
+	SuffixEffect, SuffixError, SyncedRetainedPrefix, SyncedSuffixRange, WitnessCredentialLane,
+	WitnessLinkCandidate, WitnessedSuffixReadback,
 };
 
 /// Expected names and identities from the selected prepared-stage history.
@@ -97,11 +98,17 @@ pub struct RetainedPrefixRead<'lease> {
 }
 
 impl RetainedPrefixRead<'_> {
+	/// Checks that this reader still belongs to the same live exclusive lease.
+	#[must_use]
+	pub fn matches_lease(&self, lease: &RecoveryWriteLease<'_>) -> bool {
+		std::ptr::eq(self.inventory.job, lease.job())
+	}
+
 	pub(super) fn recheck_for_lease(
 		&self,
 		lease: &RecoveryWriteLease<'_>,
 	) -> Result<(), StageError> {
-		if !std::ptr::eq(self.inventory.job, lease.job()) {
+		if !self.matches_lease(lease) {
 			return Err(StageError::IdentityChanged);
 		}
 		self.recheck_observation()

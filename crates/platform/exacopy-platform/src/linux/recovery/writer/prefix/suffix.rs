@@ -16,7 +16,12 @@ use crate::linux::handle::mount_id;
 use crate::linux::source::{SourceObservation, reopen_regular_for_write};
 
 mod custody;
+mod witness;
 pub use custody::SyncedSuffixRange;
+pub use witness::{
+	ProtectedWitnessEffect, ProtectedWitnessError, WitnessCredentialLane, WitnessLinkCandidate,
+	WitnessedSuffixReadback,
+};
 const MAX_INTERRUPTS: usize = 8;
 
 /// An actual syscall about to be submitted for the same retained stage.
@@ -471,29 +476,4 @@ fn check_named(
 pub struct RetainedSuffixReadback<'view, 'lease> {
 	reader: &'view RetainedPrefixRead<'lease>,
 	file: RecoveryFile,
-}
-
-impl ReadView for RetainedSuffixReadback<'_, '_> {
-	type Error = StageError;
-
-	fn length(&self) -> u64 {
-		self.file.len()
-	}
-
-	fn recheck_observation(&self) -> Result<(), Self::Error> {
-		let expected = self.file.observation();
-		let current = check_named(self.reader, expected, expected.len())?;
-		self.file
-			.recheck_observation()
-			.map_err(StageError::ReadBack)?;
-		expected
-			.recheck(current.observation())
-			.map_err(StageError::ReadBack)
-	}
-
-	fn read_exact_at(&self, offset: u64, bytes: &mut [u8]) -> Result<(), Self::Error> {
-		self.file
-			.read_exact_at(offset, bytes)
-			.map_err(StageError::ReadBack)
-	}
 }

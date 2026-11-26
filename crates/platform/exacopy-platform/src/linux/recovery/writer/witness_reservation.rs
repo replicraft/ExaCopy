@@ -21,7 +21,8 @@ mod native;
 mod types;
 
 pub use continuation::{
-	ActiveWitnessReservation, ContinuationReservationError, ReservedContinuationRequest,
+	ActiveWitnessReservation, ContinuationReservationError, PendingProtectedWitness,
+	ReservedContinuationRequest, SealedProtectedWitness,
 };
 pub use types::{
 	WitnessReservationAuthority, WitnessReservationEffect, WitnessReservationError,

@@ -215,3 +215,5 @@ fn component(bytes: &[u8]) -> UnixComponent<'_> {
 
 #[path = "suffix_tests.rs"]
 mod suffix_tests;
+
+mod witness;

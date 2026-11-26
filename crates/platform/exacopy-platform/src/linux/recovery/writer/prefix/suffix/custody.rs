@@ -16,7 +16,9 @@ impl SyncedRetainedPrefix<'_, '_> {
 
 use std::ops::Range;
 
-use super::{Phase, RetainedSuffixWriter, StageError};
+use exacopy_endpoint::ReadView;
+
+use super::{Phase, RetainedSuffixReadback, RetainedSuffixWriter, StageError, check_named};
 
 /// Actual data-barrier observation while the original native writer is parked.
 #[must_use]
@@ -68,5 +70,30 @@ impl SyncedSuffixRange<'_, '_, '_> {
 			return Err(StageError::IdentityChanged);
 		}
 		self.writer.check_current()
+	}
+}
+
+impl ReadView for RetainedSuffixReadback<'_, '_> {
+	type Error = StageError;
+
+	fn length(&self) -> u64 {
+		self.file.len()
+	}
+
+	fn recheck_observation(&self) -> Result<(), Self::Error> {
+		let expected = self.file.observation();
+		let current = check_named(self.reader, expected, expected.len())?;
+		self.file
+			.recheck_observation()
+			.map_err(StageError::ReadBack)?;
+		expected
+			.recheck(current.observation())
+			.map_err(StageError::ReadBack)
+	}
+
+	fn read_exact_at(&self, offset: u64, bytes: &mut [u8]) -> Result<(), Self::Error> {
+		self.file
+			.read_exact_at(offset, bytes)
+			.map_err(StageError::ReadBack)
 	}
 }

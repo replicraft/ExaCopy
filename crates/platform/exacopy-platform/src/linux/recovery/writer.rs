@@ -26,16 +26,18 @@ mod witness_reservation;
 
 pub use fresh::FreshRecoveryStage;
 pub use prefix::{
-	RetainedPrefixRead, RetainedPrefixSelection, RetainedSuffixReadback, RetainedSuffixWriter,
-	SuffixEffect, SuffixError, SyncedRetainedPrefix, SyncedSuffixRange,
+	ProtectedWitnessEffect, ProtectedWitnessError, RetainedPrefixRead, RetainedPrefixSelection,
+	RetainedSuffixReadback, RetainedSuffixWriter, SuffixEffect, SuffixError, SyncedRetainedPrefix,
+	SyncedSuffixRange, WitnessCredentialLane, WitnessLinkCandidate, WitnessedSuffixReadback,
 };
 pub use resume::RecoveryStageDirectory;
 pub use retained::RetainedStage;
 pub use witness_reservation::{
-	ActiveWitnessReservation, ContinuationReservationError, PendingWitnessReservation,
-	ReservedContinuationRequest, ReservedJournalRead, WitnessReservationAuthority,
-	WitnessReservationEffect, WitnessReservationError, WitnessReservationGateRequest,
-	WitnessReservationObservationError, WitnessReservationPlan,
+	ActiveWitnessReservation, ContinuationReservationError, PendingProtectedWitness,
+	PendingWitnessReservation, ReservedContinuationRequest, ReservedJournalRead,
+	SealedProtectedWitness, WitnessReservationAuthority, WitnessReservationEffect,
+	WitnessReservationError, WitnessReservationGateRequest, WitnessReservationObservationError,
+	WitnessReservationPlan,
 };
 
 #[cfg(test)]

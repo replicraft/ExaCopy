@@ -26,12 +26,14 @@ pub use anchor::RecoveryStageAnchor;
 pub use lease::RecoveryReadLease;
 pub use writer::{
 	ActiveWitnessReservation, ContinuationReservationError, FreshRecoveryStage,
-	PendingWitnessReservation, RecoveryReceiptDirectory, RecoveryStageDirectory,
-	RecoveryWriteLease, ReservedContinuationRequest, ReservedJournalRead, RetainedPrefixRead,
-	RetainedPrefixSelection, RetainedStage, RetainedSuffixReadback, RetainedSuffixWriter,
-	SuffixEffect, SuffixError, SyncedRetainedPrefix, SyncedSuffixRange,
-	WitnessReservationAuthority, WitnessReservationEffect, WitnessReservationError,
-	WitnessReservationGateRequest, WitnessReservationObservationError, WitnessReservationPlan,
+	PendingProtectedWitness, PendingWitnessReservation, ProtectedWitnessEffect,
+	ProtectedWitnessError, RecoveryReceiptDirectory, RecoveryStageDirectory, RecoveryWriteLease,
+	ReservedContinuationRequest, ReservedJournalRead, RetainedPrefixRead, RetainedPrefixSelection,
+	RetainedStage, RetainedSuffixReadback, RetainedSuffixWriter, SealedProtectedWitness,
+	SuffixEffect, SuffixError, SyncedRetainedPrefix, SyncedSuffixRange, WitnessCredentialLane,
+	WitnessLinkCandidate, WitnessReservationAuthority, WitnessReservationEffect,
+	WitnessReservationError, WitnessReservationGateRequest, WitnessReservationObservationError,
+	WitnessReservationPlan, WitnessedSuffixReadback,
 };
 
 #[cfg(test)]

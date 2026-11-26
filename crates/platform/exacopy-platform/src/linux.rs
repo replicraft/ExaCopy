@@ -41,13 +41,15 @@ pub use process_crash::{
 };
 pub use recovery::{
 	ActiveWitnessReservation, ContinuationReservationError, FreshRecoveryStage,
-	PendingWitnessReservation, RecoveryFile, RecoveryInventory, RecoveryJob, RecoveryReadLease,
+	PendingProtectedWitness, PendingWitnessReservation, ProtectedWitnessEffect,
+	ProtectedWitnessError, RecoveryFile, RecoveryInventory, RecoveryJob, RecoveryReadLease,
 	RecoveryReceiptDirectory, RecoveryStageAnchor, RecoveryStageDirectory, RecoveryWriteLease,
 	ReservedContinuationRequest, ReservedJournalRead, RetainedPrefixRead, RetainedPrefixSelection,
-	RetainedStage, RetainedSuffixReadback, RetainedSuffixWriter, SuffixEffect, SuffixError,
-	SyncedRetainedPrefix, SyncedSuffixRange, WitnessReservationAuthority, WitnessReservationEffect,
+	RetainedStage, RetainedSuffixReadback, RetainedSuffixWriter, SealedProtectedWitness,
+	SuffixEffect, SuffixError, SyncedRetainedPrefix, SyncedSuffixRange, WitnessCredentialLane,
+	WitnessLinkCandidate, WitnessReservationAuthority, WitnessReservationEffect,
 	WitnessReservationError, WitnessReservationGateRequest, WitnessReservationObservationError,
-	WitnessReservationPlan,
+	WitnessReservationPlan, WitnessedSuffixReadback,
 };
 pub use running_image::RunningExecutable;
 pub use source::{
