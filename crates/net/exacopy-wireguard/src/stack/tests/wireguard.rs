@@ -57,31 +57,34 @@ fn datagram(output: PacketOutput<'_>, expected: SocketAddr) -> &[u8] {
 	bytes
 }
 
-fn handshake(client: &mut HarnessPeer, server: &mut HarnessPeer) {
+fn handshake(client: &mut HarnessPeer, server: &mut HarnessPeer, rekey: bool) {
 	let mut first = [0; MAX_DATAGRAM_BYTES];
 	let mut second = [0; MAX_DATAGRAM_BYTES];
-	let initiation = datagram(client.wg.initiate(&mut first).unwrap(), server.outer);
-	let response = datagram(
-		server
-			.wg
-			.receive(client.outer, initiation, &mut second)
-			.unwrap(),
-		client.outer,
-	);
-	let confirmation = datagram(
-		client
-			.wg
-			.receive(server.outer, response, &mut first)
-			.unwrap(),
-		server.outer,
-	);
-	assert!(matches!(
-		server
-			.wg
-			.receive(client.outer, confirmation, &mut second)
-			.unwrap(),
-		PacketOutput::None
-	));
+	let initiation = if rekey {
+		client.wg.tick(&mut first).unwrap()
+	} else {
+		client.wg.initiate(&mut first).unwrap()
+	};
+	client.wg.check_output(&initiation).unwrap();
+	let initiation = datagram(initiation, server.outer);
+	let response = server
+		.wg
+		.receive(client.outer, initiation, &mut second)
+		.unwrap();
+	server.wg.check_output(&response).unwrap();
+	let response = datagram(response, client.outer);
+	let confirmation = client
+		.wg
+		.receive(server.outer, response, &mut first)
+		.unwrap();
+	client.wg.check_output(&confirmation).unwrap();
+	let confirmation = datagram(confirmation, server.outer);
+	let result = server
+		.wg
+		.receive(client.outer, confirmation, &mut second)
+		.unwrap();
+	server.wg.check_output(&result).unwrap();
+	assert!(matches!(result, PacketOutput::None));
 }
 
 fn push(sender: &mut HarnessPeer, receiver: &mut HarnessPeer) {
@@ -90,16 +93,16 @@ fn push(sender: &mut HarnessPeer, receiver: &mut HarnessPeer) {
 		.egress(|_, packet| {
 			let mut encrypted = [0; MAX_DATAGRAM_BYTES];
 			let mut decrypted = [0; MAX_DATAGRAM_BYTES];
-			let ciphertext = datagram(
-				sender.wg.send(packet, &mut encrypted).unwrap(),
-				receiver.outer,
-			);
+			let output = sender.wg.send(packet, &mut encrypted).unwrap();
+			sender.wg.check_output(&output).unwrap();
+			let ciphertext = datagram(output, receiver.outer);
 			assert_ne!(packet, ciphertext);
-			let PacketOutput::Inner(bytes) = receiver
+			let input = receiver
 				.wg
 				.receive(sender.outer, ciphertext, &mut decrypted)
-				.unwrap()
-			else {
+				.unwrap();
+			receiver.wg.check_output(&input).unwrap();
+			let PacketOutput::Inner(bytes) = input else {
 				panic!("expected an authenticated TCP packet");
 			};
 			receiver
@@ -111,12 +114,19 @@ fn push(sender: &mut HarnessPeer, receiver: &mut HarnessPeer) {
 }
 
 #[test]
-fn a_tcp_flow_exchanges_data_through_two_in_memory_wireguard_peers() {
+fn the_same_tcp_flow_exchanges_data_beyond_its_original_wireguard_keys() {
 	for route in [ipv4_flow(), ipv6_flow()] {
 		let (mut client, mut server) = two_peers(route);
-		handshake(&mut client, &mut server);
-
-		let source = vec![53; STREAM_BUFFER_BYTES + 137];
+		handshake(&mut client, &mut server, false);
+		let initial = [
+			client.wg.selected_key_for_test(),
+			server.wg.selected_key_for_test(),
+		];
+		let bindings = [client.tcp.binding(), server.tcp.binding()];
+		let source: Vec<_> = (0..STREAM_BUFFER_BYTES + 137)
+			.map(|index| (index % 251) as u8)
+			.collect();
+		let mut rolled = false;
 		let mut transmitted = 0;
 		let mut received = Vec::new();
 		for now in 0..2_000 {
@@ -127,10 +137,24 @@ fn a_tcp_flow_exchanges_data_through_two_in_memory_wireguard_peers() {
 			push(&mut server, &mut client);
 			write_all(&mut client.tcp, &source, &mut transmitted);
 			read_available(&mut server.tcp, &mut received);
+			if !rolled && !received.is_empty() {
+				assert!(received.len() < source.len());
+				let step = Duration::from_secs(61);
+				client.wg.advance_rekey_clock_for_test(step);
+				server.wg.advance_rekey_clock_for_test(step);
+				handshake(&mut client, &mut server, true);
+				assert_ne!(client.wg.selected_key_for_test(), initial[0]);
+				assert_ne!(server.wg.selected_key_for_test(), initial[1]);
+				client.wg.advance_rekey_clock_for_test(step);
+				server.wg.advance_rekey_clock_for_test(step);
+				rolled = true;
+			}
 			if received.len() == source.len() {
 				break;
 			}
 		}
+		assert!(rolled);
+		assert!(client.tcp.binding() == bindings[0] && server.tcp.binding() == bindings[1]);
 		assert_eq!(received, source);
 	}
 }

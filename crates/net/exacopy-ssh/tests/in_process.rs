@@ -9,6 +9,8 @@ use exacopy_endpoint::ssh_sftp::{
 };
 use exacopy_ssh::{Error, KnownHostTrust, Password, connect};
 
+#[path = "in_process/keepalive.rs"]
+mod keepalive;
 #[path = "in_process/key_auth.rs"]
 mod key_auth;
 #[path = "in_process/peer.rs"]

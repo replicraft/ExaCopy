@@ -4,15 +4,17 @@ use std::fmt;
 use std::net::{IpAddr, SocketAddr};
 use std::num::{NonZeroU64, NonZeroU128};
 
-use boringtun::noise::{Tunn, TunnResult};
+use boringtun::noise::{TransportKeyResult, Tunn, TunnResult};
 pub use boringtun::x25519::{PublicKey, StaticSecret};
 
 mod clock;
+mod lifecycle;
 mod packet;
 #[cfg(test)]
 mod tests;
 
 use clock::GenerationClock;
+use lifecycle::KeyLifetime;
 use packet::{addresses, admitted_counter, handshake_ephemeral, is_literal_unicast};
 
 /// Maximum inner packet size in this fixed-MTU experimental profile.
@@ -48,7 +50,7 @@ pub struct PeerBinding {
 pub struct SessionObservation {
 	/// The binding carried by this peer instance.
 	pub binding: PeerBinding,
-	/// Whether BoringTun currently has an active transport-key slot.
+	/// Whether the current outbound transport pair is admitted and confirmed.
 	pub has_session: bool,
 }
 
@@ -81,10 +83,9 @@ pub enum PacketOutput<'buffer> {
 
 /// Owns BoringTun protocol state for exactly one fixed peer.
 /// The caller drives timer progress and provides trusted route and key inputs.
-/// The experimental generation expires 120 seconds after construction and has
-/// a fixed operation budget. The deadline uses the same monotonic clock as
-/// BoringTun, with a margin below its 180-second key rejection age. The owner
-/// creates a new generation when a limit is reached.
+/// An authenticated selected key can renew the existing time and work bounds.
+/// Each retained key is independently fenced under the same monotonic clock
+/// as BoringTun. Rekey retains the route binding and surviving replay windows.
 /// Ownership of this value alone conveys no I/O or runtime qualification.
 pub struct ProtocolPeer {
 	binding: PeerBinding,
@@ -93,6 +94,7 @@ pub struct ProtocolPeer {
 	endpoints: PeerAddresses,
 	tunnel: Tunn,
 	clock: GenerationClock,
+	keys: KeyLifetime,
 	operations_remaining: u32,
 	handshakes_remaining: u16,
 }
@@ -144,6 +146,7 @@ impl ProtocolPeer {
 			endpoints,
 			tunnel,
 			clock,
+			keys: KeyLifetime::default(),
 			operations_remaining: MAX_GENERATION_OPERATIONS,
 			handshakes_remaining: MAX_INCOMING_HANDSHAKES,
 		})
@@ -181,8 +184,13 @@ impl ProtocolPeer {
 	}
 
 	#[cfg(feature = "experimental-udp")]
+	pub(super) fn check_output(&mut self, packet: &PacketOutput<'_>) -> Result<(), ProtocolError> {
+		self.check_output_key(packet)
+	}
+
+	#[cfg(feature = "experimental-udp")]
 	pub(super) fn has_session(&self) -> bool {
-		self.tunnel.time_since_last_handshake().is_some()
+		self.selected_is_admitted()
 	}
 
 	#[cfg(all(test, feature = "experimental-udp"))]
@@ -190,13 +198,22 @@ impl ProtocolPeer {
 		self.clock.expire_for_test();
 	}
 
+	#[cfg(all(test, feature = "experimental-tcp"))]
+	pub(crate) fn advance_rekey_clock_for_test(&mut self, delta: std::time::Duration) {
+		self.clock.advance_for_test(delta);
+	}
+
+	#[cfg(all(test, feature = "experimental-tcp"))]
+	pub(crate) fn selected_key_for_test(&self) -> boringtun::noise::TransportKeyId {
+		self.tunnel.current_transport_key().unwrap().id
+	}
+
 	/// Returns the current key-slot observation for this actor and generation.
 	#[must_use]
 	pub fn observation(&self) -> SessionObservation {
 		SessionObservation {
 			binding: self.binding,
-			has_session: self.require_active().is_ok()
-				&& self.tunnel.time_since_last_handshake().is_some(),
+			has_session: self.require_available().is_ok() && self.selected_is_admitted(),
 		}
 	}
 
@@ -208,8 +225,12 @@ impl ProtocolPeer {
 		output: &'buffer mut [u8; MAX_DATAGRAM_BYTES],
 	) -> Result<PacketOutput<'buffer>, ProtocolError> {
 		self.reserve_operation()?;
+		self.prepare_tunnel()?;
 		let result = self.tunnel.format_handshake_initiation(output, false);
-		self.translate(result)
+		self.translate(TransportKeyResult {
+			result,
+			key_use: None,
+		})
 	}
 
 	/// Progresses retransmit, rekey and expiry timers owned by BoringTun.
@@ -222,7 +243,8 @@ impl ProtocolPeer {
 		output: &'buffer mut [u8; MAX_DATAGRAM_BYTES],
 	) -> Result<PacketOutput<'buffer>, ProtocolError> {
 		self.reserve_operation()?;
-		let result = self.tunnel.update_timers(output);
+		let now = self.prepare_tunnel()?;
+		let result = self.tick_tunnel(output, now);
 		self.translate(result)
 	}
 
@@ -264,7 +286,13 @@ impl ProtocolPeer {
 			}
 			self.clock.advance()?;
 		}
-		let result = self.tunnel.decapsulate(Some(sender.ip()), datagram, output);
+		let started = self.prepare_tunnel()?;
+		let result =
+			self.tunnel
+				.decapsulate_with_transport_key(Some(sender.ip()), datagram, output);
+		if ephemeral.is_some() {
+			self.register_key_installation(started)?;
+		}
 		self.translate(result)
 	}
 
@@ -278,14 +306,16 @@ impl ProtocolPeer {
 		output: &'buffer mut [u8; MAX_DATAGRAM_BYTES],
 	) -> Result<PacketOutput<'buffer>, ProtocolError> {
 		self.require_active()?;
-		if self.tunnel.time_since_last_handshake().is_none() {
+		if !self.selected_is_admitted() {
 			return Err(ProtocolError::NoSession);
 		}
 		self.check_inner(packet, self.endpoints.local, self.endpoints.remote)?;
 		self.reserve_operation()?;
-		// This is the exact slot test used by BoringTun 0.7.1's encapsulate.
-		// No operation can mutate the tunnel between the check and this call.
-		let result = self.tunnel.encapsulate(packet, output);
+		self.prepare_tunnel()?;
+		if !self.selected_is_admitted() {
+			return Err(ProtocolError::NoSession);
+		}
+		let result = self.tunnel.encapsulate_with_transport_key(packet, output);
 		self.translate(result)
 	}
 
@@ -313,13 +343,19 @@ impl ProtocolPeer {
 
 	fn translate<'buffer>(
 		&mut self,
-		result: TunnResult<'buffer>,
+		tagged: TransportKeyResult<'buffer>,
 	) -> Result<PacketOutput<'buffer>, ProtocolError> {
 		if self.tunnel.is_expired() {
 			return Err(ProtocolError::Expired);
 		}
 		self.clock.advance()?;
-		match result {
+		if let TunnResult::WriteToTunnelV4(ref bytes, _)
+		| TunnResult::WriteToTunnelV6(ref bytes, _) = tagged.result
+		{
+			self.check_inner(bytes, self.endpoints.remote, self.endpoints.local)?;
+		}
+		self.admit_result(&tagged.result, tagged.key_use)?;
+		match tagged.result {
 			TunnResult::Done => Ok(PacketOutput::None),
 			TunnResult::Err(_) => Err(ProtocolError::Rejected),
 			TunnResult::WriteToNetwork(bytes) => Ok(PacketOutput::Outer {
@@ -327,7 +363,6 @@ impl ProtocolPeer {
 				bytes,
 			}),
 			TunnResult::WriteToTunnelV4(bytes, _) | TunnResult::WriteToTunnelV6(bytes, _) => {
-				self.check_inner(bytes, self.endpoints.remote, self.endpoints.local)?;
 				Ok(PacketOutput::Inner(bytes))
 			}
 		}

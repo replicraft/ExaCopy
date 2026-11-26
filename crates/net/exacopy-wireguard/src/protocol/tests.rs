@@ -437,3 +437,5 @@ fn expired_peer_does_not_charge_ephemeral_probe_budget() {
 	);
 	assert_eq!(server.handshakes_remaining, MAX_INCOMING_HANDSHAKES);
 }
+
+mod rekey;

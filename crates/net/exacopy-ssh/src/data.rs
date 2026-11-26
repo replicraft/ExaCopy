@@ -13,6 +13,7 @@ use tokio_util::sync::DropGuard;
 
 use crate::connection::SshAuthenticatedPeer;
 use crate::error::Error;
+use crate::fence::SshSessionCancellation;
 use crate::wire::Wire;
 
 mod source;
@@ -50,6 +51,7 @@ pub struct ReadOnlySftp {
 	session: Option<Session>,
 	capabilities: SftpCapabilities,
 	peer: SshAuthenticatedPeer,
+	cancellation: SshSessionCancellation,
 }
 
 type SshConnection = Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>;
@@ -66,10 +68,12 @@ impl ReadOnlySftp {
 		connection: SshConnection,
 		guard: DropGuard,
 		peer: SshAuthenticatedPeer,
+		cancellation: SshSessionCancellation,
 	) -> Self {
 		Self {
 			capabilities: wire.capabilities,
 			peer,
+			cancellation,
 			session: Some(Session {
 				wire,
 				connection,
@@ -82,6 +86,12 @@ impl ReadOnlySftp {
 	#[must_use]
 	pub const fn authenticated_peer(&self) -> &SshAuthenticatedPeer {
 		&self.peer
+	}
+
+	/// Returns a cancel-only capability tied to this exact session's transport.
+	#[must_use]
+	pub fn cancellation_handle(&self) -> SshSessionCancellation {
+		self.cancellation.clone()
 	}
 
 	/// Returns protocol support and extension advertisements.

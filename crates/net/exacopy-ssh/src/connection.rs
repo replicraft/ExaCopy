@@ -4,14 +4,12 @@ use std::time::Duration;
 
 use exacopy_endpoint::ssh_sftp::{
 	CredentialRequest, CredentialSource, HostKeyFingerprint, HostKeyRefusal, InteractionPolicy,
-	KnownHostStatus, SshAuthority, verify_host,
+	SshAuthority, verify_host,
 };
-use russh::client::{self, AuthResult, ChannelOpenHandle, Handler, Msg};
+use russh::client::{self, AuthResult};
 use russh::keys::ssh_key::private::{Ed25519Keypair, KeypairData};
-use russh::keys::{
-	Algorithm, HashAlg, PrivateKey, PrivateKeyWithHashAlg, PublicKey, PublicKeyOrCertificate,
-};
-use russh::{Channel, Names, Preferred, cipher, compression, kex, mac};
+use russh::keys::{Algorithm, PrivateKey, PrivateKeyWithHashAlg};
+use russh::{Preferred, cipher, compression, kex, mac};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::oneshot;
 use tokio::time::{Instant, timeout_at};
@@ -23,8 +21,12 @@ use crate::fence::FencedStream;
 use crate::known_hosts::KnownHostTrust;
 use crate::wire::Wire;
 
+mod host;
+mod keepalive;
 mod protected_key;
 mod subsystem;
+
+use host::HostCheck;
 
 pub use protected_key::MAX_OPENSSH_ED25519_BYTES;
 
@@ -130,148 +132,6 @@ impl Authentication for Ed25519Key {
 	) -> Result<AuthResult, russh::Error> {
 		let key = PrivateKeyWithHashAlg::new(Arc::new(self.0), None);
 		connection.authenticate_publickey(account, key).await
-	}
-}
-
-pub(crate) struct HostCheck {
-	authority: SshAuthority,
-	pin: HostKeyFingerprint,
-	trust: KnownHostTrust,
-	verified: Option<oneshot::Sender<(HostKeyFingerprint, KnownHostStatus)>>,
-	initial_complete: bool,
-}
-
-impl Handler for HostCheck {
-	type Error = Error;
-
-	async fn check_server_key(
-		&mut self,
-		presented: &PublicKeyOrCertificate,
-	) -> Result<bool, Error> {
-		let PublicKeyOrCertificate::PublicKey { key, .. } = presented else {
-			return Err(Error::HostCertificate);
-		};
-		let fingerprint = key
-			.fingerprint(HashAlg::Sha256)
-			.sha256()
-			.ok_or(Error::Protocol)?;
-		let fingerprint = HostKeyFingerprint::from_sha256(fingerprint);
-		let known = self.trust.status(&self.authority, fingerprint);
-		verify_host(&self.authority, fingerprint, known, Some(self.pin)).map_err(Error::HostKey)?;
-		self.verified
-			.take()
-			.ok_or(Error::Closed)?
-			.send((fingerprint, known))
-			.map_err(|_| Error::Closed)?;
-		Ok(true)
-	}
-
-	async fn check_server_key_on_rekey(
-		&mut self,
-		_presented: &PublicKeyOrCertificate,
-	) -> Result<bool, Error> {
-		Err(Error::Rekey)
-	}
-
-	async fn kex_done(
-		&mut self,
-		_shared_secret: Option<&[u8]>,
-		names: &Names,
-		_session: &mut client::Session,
-	) -> Result<(), Error> {
-		if self.initial_complete {
-			return Err(Error::Rekey);
-		}
-		if !names.strict_kex() {
-			return Err(Error::KeyExchange);
-		}
-		self.initial_complete = true;
-		Ok(())
-	}
-
-	// These known peer-initiated channels are accepted by russh's default
-	// callbacks. This profile has no forwarding or peer-initiated services.
-	async fn server_channel_open_forwarded_tcpip(
-		&mut self,
-		_channel: Channel<Msg>,
-		_connected_address: &str,
-		_connected_port: u32,
-		_originator_address: &str,
-		_originator_port: u32,
-		_reply: ChannelOpenHandle,
-		_session: &mut client::Session,
-	) -> Result<(), Error> {
-		Err(Error::UnsolicitedChannel)
-	}
-
-	async fn server_channel_open_forwarded_streamlocal(
-		&mut self,
-		_channel: Channel<Msg>,
-		_socket_path: &str,
-		_reply: ChannelOpenHandle,
-		_session: &mut client::Session,
-	) -> Result<(), Error> {
-		Err(Error::UnsolicitedChannel)
-	}
-
-	async fn server_channel_open_agent_forward(
-		&mut self,
-		_channel: Channel<Msg>,
-		_reply: ChannelOpenHandle,
-		_session: &mut client::Session,
-	) -> Result<(), Error> {
-		Err(Error::UnsolicitedChannel)
-	}
-
-	async fn server_channel_open_session(
-		&mut self,
-		_channel: Channel<Msg>,
-		_reply: ChannelOpenHandle,
-		_session: &mut client::Session,
-	) -> Result<(), Error> {
-		Err(Error::UnsolicitedChannel)
-	}
-
-	async fn server_channel_open_direct_tcpip(
-		&mut self,
-		_channel: Channel<Msg>,
-		_host_to_connect: &str,
-		_port_to_connect: u32,
-		_originator_address: &str,
-		_originator_port: u32,
-		_reply: ChannelOpenHandle,
-		_session: &mut client::Session,
-	) -> Result<(), Error> {
-		Err(Error::UnsolicitedChannel)
-	}
-
-	async fn server_channel_open_direct_streamlocal(
-		&mut self,
-		_channel: Channel<Msg>,
-		_socket_path: &str,
-		_reply: ChannelOpenHandle,
-		_session: &mut client::Session,
-	) -> Result<(), Error> {
-		Err(Error::UnsolicitedChannel)
-	}
-
-	async fn server_channel_open_x11(
-		&mut self,
-		_channel: Channel<Msg>,
-		_originator_address: &str,
-		_originator_port: u32,
-		_reply: ChannelOpenHandle,
-		_session: &mut client::Session,
-	) -> Result<(), Error> {
-		Err(Error::UnsolicitedChannel)
-	}
-
-	async fn openssh_ext_host_keys_announced(
-		&mut self,
-		_keys: Vec<PublicKey>,
-		_session: &mut client::Session,
-	) -> Result<(), Error> {
-		Ok(())
 	}
 }
 
@@ -396,14 +256,8 @@ where
 	let deadline = Instant::now() + CONNECT_DEADLINE;
 	timeout_at(deadline, async {
 		let (verified, checked) = oneshot::channel();
-		let handler = HostCheck {
-			authority: authority.clone(),
-			pin,
-			trust,
-			verified: Some(verified),
-			initial_complete: false,
-		};
-		let (stream, guard) = FencedStream::new(stream);
+		let handler = HostCheck::new(authority.clone(), pin, trust, verified);
+		let (stream, guard, cancellation) = FencedStream::new(stream);
 		let mut connection = client::connect_stream(Arc::new(config()), stream, handler).await?;
 		let (fingerprint, known) = checked.await.map_err(|_| Error::Closed)?;
 		let verified =
@@ -438,7 +292,14 @@ where
 			authority,
 			fingerprint,
 		};
-		Ok(ReadOnlySftp::new(wire, Box::pin(connection), guard, peer))
+		let (connection, guard) = keepalive::supervise(connection, guard);
+		Ok(ReadOnlySftp::new(
+			wire,
+			Box::pin(connection),
+			guard,
+			peer,
+			cancellation,
+		))
 	})
 	.await
 	.map_err(|_| Error::Timeout)?

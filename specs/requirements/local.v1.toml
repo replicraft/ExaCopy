@@ -1535,6 +1535,20 @@ target = "actual_boringtun_handshake_and_encryption_round_trip_both_families"
 
 [[coverage.evidence]]
 owner = "exacopy-wireguard"
+level = "obligation"
+state = "defined"
+path = "crates/net/exacopy-wireguard/verification/obligations.toml"
+target = "P-052"
+
+[[coverage.evidence]]
+owner = "exacopy-wireguard"
+level = "test"
+state = "defined"
+path = "crates/net/exacopy-wireguard/src/protocol/tests/rekey.rs"
+target = "one_bound_peer_pair_exchanges_payload_after_original_lifetime"
+
+[[coverage.evidence]]
+owner = "exacopy-wireguard"
 level = "documentation"
 state = "reported"
 path = "docs/architecture/wireguard-protocol.md"

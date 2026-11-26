@@ -9,7 +9,6 @@ use exacopy_ssh::{Ed25519Key, Error, connect_with_ed25519};
 use russh::keys::Algorithm;
 use russh::keys::ssh_key::private::Ed25519Keypair;
 use russh::server;
-use tokio::sync::oneshot;
 use zeroize::Zeroizing;
 
 use super::peer::{NAME, authority, fixture_trust, peer, peer_with_rekey};
@@ -121,10 +120,8 @@ async fn untrusted_host_or_mismatched_authority_does_not_receive_a_key_offer() {
 }
 
 #[tokio::test]
-async fn successful_authentication_does_not_authorize_a_second_key_exchange() {
-	let (terminated, disconnected) = oneshot::channel();
-	let (stream, pin, calls, _handle) =
-		peer_with_rekey(true, false, Duration::from_secs(1), Some(terminated));
+async fn same_host_rekey_keeps_the_authenticated_session() {
+	let (stream, pin, calls, _handle) = peer_with_rekey(true, false, Duration::from_secs(1), None);
 	let target = authority("transfer");
 	let mut session = connect_with_ed25519(
 		stream,
@@ -138,14 +135,12 @@ async fn successful_authentication_does_not_authorize_a_second_key_exchange() {
 	.unwrap();
 
 	assert_eq!(session.list(&[]).await.unwrap(), vec![NAME.to_vec()]);
-	tokio::time::timeout(Duration::from_secs(5), disconnected)
-		.await
-		.expect("rekey refusal should terminate the peer session")
-		.unwrap();
-
+	// The server's one-second stock timer initiates rekey.
+	tokio::time::sleep(Duration::from_millis(1250)).await;
 	let path = [UnixComponent::new(NAME).unwrap()];
-	assert!(matches!(session.stat(&path).await, Err(Error::Rekey)));
-	assert!(matches!(session.stat(&path).await, Err(Error::Closed)));
+	assert!(session.stat(&path).await.is_ok());
+	assert_eq!(session.authenticated_peer().authority(), &target);
+	assert_eq!(session.authenticated_peer().fingerprint(), pin);
 	assert_eq!(calls.key_auth.load(Ordering::Relaxed), 1);
 }
 

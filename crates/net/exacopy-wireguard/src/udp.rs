@@ -268,6 +268,10 @@ impl<R: RouteOwner> UdpPeer<R> {
 				require_connected_peer(&active.socket, destination, SocketPhase::Send)?;
 			}
 			ensure_binding(self.binding, current, &mut active.protocol)?;
+			active
+				.protocol
+				.check_output(&packet)
+				.map_err(UdpError::Protocol)?;
 			match packet {
 				PacketOutput::None => Ok(UdpProgress::Idle),
 				PacketOutput::Inner(packet) => Ok(UdpProgress::Inner(packet)),

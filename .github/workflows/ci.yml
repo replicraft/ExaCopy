@@ -95,13 +95,13 @@ jobs:
           bash .github/ci/capture.sh experimental-ssh cargo +1.100.0 nextest run --locked \
             -p exacopy-ssh --features experimental-ssh --profile ci-experimental-ssh --no-tests fail
           test -s target/nextest/ci-experimental-ssh/junit.xml
-      - name: Run opt-in WireGuard protocol and UDP loopback tests
+      - name: Run opt-in WireGuard protocol, TCP and UDP loopback tests
         if: ${{ !cancelled() && steps.nextest.outcome == 'success' }}
         env:
           CARGO_TARGET_DIR: target/experimental-wireguard
         run: |
           bash .github/ci/capture.sh experimental-wireguard cargo +1.100.0 nextest run --locked \
-            -p exacopy-wireguard --lib --no-default-features --features experimental-udp \
+            -p exacopy-wireguard --lib --no-default-features --features experimental-udp,experimental-tcp \
             --profile ci-experimental-wireguard --no-tests fail
           test -s target/nextest/ci-experimental-wireguard/junit.xml
       - name: Run opt-in SFTP source adapter tests

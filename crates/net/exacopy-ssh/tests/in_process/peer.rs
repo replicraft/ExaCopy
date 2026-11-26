@@ -27,6 +27,8 @@ pub(super) struct Calls {
 	pub(super) open: AtomicUsize,
 	pub(super) close: AtomicUsize,
 	pub(super) read: AtomicUsize,
+	pub(super) held_stat: AtomicUsize,
+	pub(super) named_stat: AtomicUsize,
 }
 
 struct Peer {
@@ -195,6 +197,7 @@ impl sftp_server::Handler for Files {
 
 	async fn lstat(&mut self, id: u32, path: sftp::SftpString) -> Result<sftp::Attrs, Self::Error> {
 		assert_eq!(path.as_bytes(), self.selected_name());
+		self.calls.named_stat.fetch_add(1, Ordering::Relaxed);
 		let changed = self
 			.generated
 			.as_ref()
@@ -209,6 +212,7 @@ impl sftp_server::Handler for Files {
 
 	async fn fstat(&mut self, id: u32, file: sftp::SftpHandle) -> Result<sftp::Attrs, Self::Error> {
 		assert_eq!(file.as_bytes(), &[0, 255]);
+		self.calls.held_stat.fetch_add(1, Ordering::Relaxed);
 		self.held_checks += 1;
 		let changed = self
 			.generated

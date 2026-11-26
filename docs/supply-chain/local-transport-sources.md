@@ -37,9 +37,12 @@ are local provenance records and are not upstream release commits.
   separate invariants.
 - Russh 0.65.4 adds an application callback for the verified host key on
   rekey, before installing the new encryption keys. The caller remains
-  responsible for applying its exact verified key policy. The initial source
-  adoption explicitly retains the adapter's typed rekey refusal. Continuing
-  a connection through rekey requires the separately reviewed caller policy.
+  responsible for applying its exact verified key policy. The selected
+  consumer rechecks the pinned key and the connection's selected trust
+  snapshot on every rekey before admitting new keys or pending data.
+  Credentials remain exclusive to initial authentication. A confirmed newer
+  WireGuard key can renew its bounded epoch without replacing the route or
+  TCP stream; each retained key still has its own age and work bounds.
 - Cargo Vet's path-dependency mode cannot bind the modified source bytes to
   an audit. The two version-scoped policies classify the path inputs for
   Cargo Vet only. The exact worktree, source review and activation profile

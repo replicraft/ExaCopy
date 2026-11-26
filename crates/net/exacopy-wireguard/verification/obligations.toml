@@ -1,0 +1,14 @@
+schema_version = 1
+
+[[obligation]]
+id = "P-052"
+requirement_ids = ["R-245"]
+source = "src/protocol/lifecycle.rs"
+symbols = ["ProtocolPeer::admit_result"]
+assumptions = [
+    "The two in-memory peers use synthetic configured keys and one fixed authorized binding per peer. The fixture exercises continuity of that binding during transport key renewal, with no configuration refresh.",
+    "The fixture injects elapsed time into the wrapper clock. BoringTun's cryptographic primitives, UTC and native timers are outside that injected clock and are assumed by this wrapper test.",
+    "This gate covers bounded in-memory protocol behavior. Socket egress, TCP streams, application route ownership, real suspend and independent peer or cryptographic qualification have separate evidence.",
+]
+gates = ["rust"]
+rust = { file = "src/protocol/tests/rekey.rs", test = "protocol::tests::rekey::one_bound_peer_pair_exchanges_payload_after_original_lifetime", features = ["experimental-protocol"], oracle = "Expect changed selected key identities, rejection of an old authenticated replay, exact new forward payload bytes and reverse admission after 122 seconds of injected wrapper time, unchanged authority bindings and removal of the expired original key." }

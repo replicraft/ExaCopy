@@ -20,4 +20,5 @@ pub use data::{
 	RemoteReadFile, RemoteReadWindow, WindowObservation,
 };
 pub use error::Error;
+pub use fence::SshSessionCancellation;
 pub use known_hosts::{KnownHostTrust, KnownHostsError};
