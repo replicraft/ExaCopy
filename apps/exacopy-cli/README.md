@@ -313,8 +313,11 @@ lease during backoff, and rechecks the exact retained files and journal
 under a fresh lease before dialing. Each attempt starts at byte zero in a
 distinct stage; prior bytes remain retained. Authentication, host-key and
 route refusals, uncertain storage outcomes, and prior publication intent
-stop automatic retries. Native timeout-to-redial commissioning remains
-open; the earlier hosted interruption campaign exercised explicit restart.
+stop automatic retries. A hosted direct-route campaign with synthetic
+fixture authority verified timeout-to-redial, grant expiry, revocation,
+the original retry budget and wrong-host-key refusal. Deployment
+qualification and embedded-route acceptance remain separate. See the
+[native evidence and limits](../../docs/engineering/remote-transfer-readiness.md#automatic-read-timeout-campaign).
 
 Ctrl-C revokes the foreground grant and cancels the active session. A
 confirmed cancellation can exit 10. Pending effects or uncertain evidence
