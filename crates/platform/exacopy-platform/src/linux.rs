@@ -13,6 +13,7 @@ pub(crate) mod protected_snapshot;
 mod publication_capabilities;
 mod recovery;
 mod recovery_capabilities;
+mod running_image;
 mod source;
 mod stage;
 mod staging_capabilities;
@@ -39,6 +40,7 @@ pub use recovery::{
 	FreshRecoveryStage, RecoveryFile, RecoveryInventory, RecoveryJob, RecoveryReadLease,
 	RecoveryReceiptDirectory, RecoveryStageDirectory, RecoveryWriteLease, RetainedStage,
 };
+pub use running_image::RunningExecutable;
 pub use source::{
 	ExtendedAttributes, ReadError, ReadRoot, SourceFile, SourceObservation, SourceTimestamp,
 };
