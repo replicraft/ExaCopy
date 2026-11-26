@@ -4,6 +4,31 @@ Status reviewed on 2026-11-26 at `b19190d`. The resumable SSH-over-WireGuard
 CLI is not enabled yet. A transport fixture or a decoded receipt does not
 establish that this complete operation is ready for release.
 
+Integration update through `8503dd3` on the same date: the generic finalizer
+now requires a clean full-lifecycle capture replay, matching qualification
+and exact native stage location before metadata effects. It accepts a fresh
+capture after recorded retirement; journal and transfer tests passed 304
+cases for that integration. The Linux publication bridge requires the final
+application grant guard across the exclusive rename. SSH sessions retain
+their actual authenticated authority and host-key fingerprint. Distinct
+signed owner profiles bind hostname authority to a concrete socket peer and
+preserve explicitly selected absolute SFTP paths, with independent vectors.
+These components still require application command and transport assembly.
+
+The release publisher now verifies and promotes the exact draft database ID
+and checks that `latest` selects it. Ten mocked release controls passed; no
+hosted release was published or qualified by those tests.
+
+The follow-up at `ac9e045` shares the packager's 257 MiB archive limit while
+retaining the 256 MiB raw executable limit; all 12 release controls passed.
+The integrated Rust sources through `8503dd3` passed 804 macOS workspace
+tests with 21 skips and workspace doc tests. Seven loopback tests initially
+failed under sandbox restrictions; the unchanged suite passed with loopback
+access. Workspace strict Linux cross-Clippy also passed. This run used the
+local APFS checkout `987ce56de4d41cac349d139418407024ebf9296e`, whose mounted
+crate has no diff against the pinned revision; it does not establish an
+exact-source-pin reproduction of the entire dependency workspace.
+
 | Area | Integrated behavior | Remaining acceptance |
 | --- | --- | --- |
 | SFTP source | An optional adapter owns one authenticated session and held read pass, checks connection generations, reads bounded positioned windows and confirms terminal observations, EOF and close. | Connect protected profile, credential and route admission to an actual CLI command. Confirm ordinary hostname and remote path behavior. |
@@ -23,6 +48,17 @@ The reproduced `15e3c4e` snapshot, using the exact pinned APFS source, passed
 739 native tests with 21 skips and all 21 gates declared at that revision.
 Later source additions have their own tests and additional obligations.
 That historical result does not qualify the newer integrated tip.
+
+An existing Docker Desktop ARM64 environment supplied additional native
+evidence: 887 baseline tests passed, three Plan tests refused its subtree
+mount, and 16 tests were ignored. A separate whole-overlay Plan run passed
+four tests with one ignored. The combined remote-adapter candidate passed
+86 affected native tests. These were separately recorded source snapshots,
+not a complete current-tip run. All five selected-stream publication cases
+stopped before rename because the guarded procfs boot-ID observation crossed
+Docker's `/proc/sys` mount (`EXDEV`). The whole-ext4 and original procfs
+qualification requirements remain enforced; this environment did not qualify
+publication, interruption recovery or power loss.
 
 Before advertising the complete operation, verify the actual command against
 an ordinary agentless SSH/SFTP server and its selected WireGuard route:
