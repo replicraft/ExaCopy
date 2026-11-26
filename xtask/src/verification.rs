@@ -61,6 +61,8 @@ pub(crate) struct Obligation {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RustLink {
+	#[serde(default)]
+	pub(crate) features: Vec<String>,
 	pub(crate) test: String,
 	pub(crate) file: PathBuf,
 	pub(crate) oracle: Option<String>,
@@ -169,6 +171,26 @@ pub(crate) fn check(
 					&ledger,
 					format_args!("duplicate obligation ID {}", entry.id),
 				);
+			}
+			if let Some(link) = &entry.rust {
+				let features = link.features.iter().collect::<BTreeSet<_>>();
+				if features.len() != link.features.len() {
+					findings.add(
+						&ledger,
+						format_args!("{} has duplicate Rust gate features", entry.id),
+					);
+				}
+				for feature in features {
+					if !package.features.contains_key(feature) {
+						findings.add(
+							&ledger,
+							format_args!(
+								"{} names an undeclared Rust gate feature {feature:?} of {}",
+								entry.id, package.name
+							),
+						);
+					}
+				}
 			}
 			check_obligation(root, &ledger, entry, findings);
 		}

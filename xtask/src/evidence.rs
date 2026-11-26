@@ -146,19 +146,25 @@ fn matches_command(
 ) -> bool {
 	if gate == Gate::Rust {
 		return entry.rust.as_ref().is_some_and(|link| {
-			record.redacted_command.iter().map(String::as_str).eq([
+			let mut command = vec![
 				"cargo",
 				"nextest",
 				"run",
 				"--locked",
 				"-p",
 				&project.package_name,
-				"--no-tests",
-				"fail",
-				"--",
-				"--exact",
-				&link.test,
-			])
+			];
+			let features = link.features.join(",");
+			if !link.features.is_empty() {
+				command.extend(["--no-default-features", "--features", &features]);
+			}
+			command.extend(["--no-tests", "fail", "--", "--exact", &link.test]);
+			record
+				.redacted_command
+				.iter()
+				.map(String::as_str)
+				.eq(command)
+				&& record.matches_features(&link.features)
 		});
 	}
 	let script = project.root.join("verification/check.sh");

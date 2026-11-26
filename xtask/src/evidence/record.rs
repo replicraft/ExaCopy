@@ -160,6 +160,10 @@ pub(super) fn read(path: &Path, findings: &mut Findings) -> Option<Record> {
 }
 
 impl Record {
+	pub(super) fn matches_features(&self, features: &[String]) -> bool {
+		self.profile.features == features
+	}
+
 	pub(super) fn validate(&self, path: &Path, findings: &mut Findings) -> bool {
 		let mut valid = true;
 		let mut require = |condition: bool, message: &str| {

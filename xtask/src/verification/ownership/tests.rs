@@ -150,3 +150,31 @@ fn rejects_a_missing_inventory_and_duplicate_owner_declarations() {
 	let (_, findings) = inspect(&fixture);
 	assert!(findings.to_string().contains("duplicate key"), "{findings}");
 }
+
+#[test]
+fn rust_gate_features_must_be_declared_by_the_owning_package() {
+	let fixture = workspace();
+	fixture.write(
+		"exacopy-first/Cargo.toml",
+		"[package]\nname = \"exacopy-first\"\nversion = \"0.0.0\"\nedition = \"2024\"\n[features]\nopt-in = []\n",
+	);
+	for (selector, expected) in [
+		(r#"["opt-in"]"#, ""),
+		(r#"[]"#, ""),
+		(r#"["opt-in", "opt-in"]"#, "duplicate Rust gate features"),
+		(r#"["missing"]"#, "undeclared Rust gate feature"),
+		(r#"["opt-in,missing"]"#, "undeclared Rust gate feature"),
+		(r#"["--all-features"]"#, "undeclared Rust gate feature"),
+	] {
+		let obligation =
+			OBLIGATION.replace("rust = {", &format!("rust = {{ features = {selector},"));
+		fixture.write("exacopy-first/verification/obligations.toml", &obligation);
+		let (_, findings) = inspect(&fixture);
+		let output = findings.to_string();
+		if expected.is_empty() {
+			assert!(findings.is_empty(), "{selector}: {output}");
+		} else {
+			assert!(output.contains(expected), "{selector}: {output}");
+		}
+	}
+}

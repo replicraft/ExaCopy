@@ -61,7 +61,22 @@ def workspace_obligations(gate_filter):
         for obligation in obligations:
             for gate in obligation["gates"]:
                 if gate_filter is None or gate == gate_filter:
+                    if gate == "rust":
+                        rust_features(package, obligation)
                     yield package["name"], crate_root, obligation, gate
+
+
+def rust_features(package, obligation):
+    features = obligation["rust"].get("features", [])
+    label = f'{package["name"]} {obligation["id"]}'
+    if not isinstance(features, list) or any(not isinstance(name, str) for name in features):
+        raise ValueError(f"{label}: Rust gate features must be a list of names")
+    if len(features) != len(set(features)):
+        raise ValueError(f"{label}: duplicate Rust gate features")
+    for name in features:
+        if name not in package["features"]:
+            raise ValueError(f"{label}: undeclared Rust gate feature {name!r}")
+    return features
 
 
 def tool_version(crate_root, gate):
@@ -80,10 +95,10 @@ def tool_version(crate_root, gate):
 
 def gate_command(package, crate_root, gate, link):
     if gate == "rust":
-        return [
-            "cargo", "nextest", "run", "--locked", "-p", package,
-            "--no-tests", "fail", "--", "--exact", link["test"],
-        ]
+        command = ["cargo", "nextest", "run", "--locked", "-p", package]
+        if features := link.get("features", []):
+            command += ["--no-default-features", "--features", ",".join(features)]
+        return command + ["--no-tests", "fail", "--", "--exact", link["test"]]
     script = crate_root / "verification/check.sh"
     return [script.relative_to(ROOT).as_posix(), gate]
 
@@ -205,7 +220,9 @@ def record_gate(output_dir, package, crate_root, obligation, gate, source_revisi
         "tool_version": version,
         "redacted_command": command,
         "profile": {
-            "features": ["proof-extraction"] if gate == "lean" else [],
+            "features": link.get("features", []) if gate == "rust" else (
+                ["proof-extraction"] if gate == "lean" else []
+            ),
             "target": target,
             "os": f"{platform.system()} {platform.release()}",
             "filesystem": None,
@@ -250,7 +267,10 @@ def main():
         line.removeprefix("host: ") for line in query("rustc", "-vV").splitlines()
         if line.startswith("host: ")
     )
-    work = list(workspace_obligations(args.gate))
+    try:
+        work = list(workspace_obligations(args.gate))
+    except ValueError as error:
+        parser.error(str(error))
     if not work:
         parser.error("The requested selection has no obligations")
     output.mkdir(parents=True, exist_ok=True)

@@ -194,3 +194,62 @@ rust = { test = "advances", file = "tests/transaction.rs" }
 	wrong_command["redacted_command"] = json!(["cargo", "nextest", "run", "--help", "advances"]);
 	assert!(verify(&wrong_command).contains("does not bind its declared rust gate"));
 }
+
+#[test]
+fn binds_optional_rust_gate_features_in_the_command_and_evidence_profile() {
+	let fixture = Fixture::new();
+	let entry = toml::from_str(
+		r#"
+id = "P-001"
+source = "src/transaction.rs"
+symbols = ["advance"]
+assumptions = []
+gates = ["rust"]
+rust = { test = "advances", file = "tests/transaction.rs", features = ["experimental", "strict"] }
+"#,
+	)
+	.expect("synthetic fixture obligation parses");
+	let project = crate::verification::Project {
+		package_name: "exacopy-model".into(),
+		root: fixture.root().to_path_buf(),
+		obligations: vec![entry],
+	};
+	let default_record = passing_json();
+	let mut selected = default_record.clone();
+	selected["profile"]["features"] = json!(["experimental", "strict"]);
+	selected["redacted_command"] = json!([
+		"cargo",
+		"nextest",
+		"run",
+		"--locked",
+		"-p",
+		"exacopy-model",
+		"--no-default-features",
+		"--features",
+		"experimental,strict",
+		"--no-tests",
+		"fail",
+		"--",
+		"--exact",
+		"advances"
+	]);
+	let matches = |value: &Value| {
+		let path = fixture.write("record.json", &value.to_string());
+		let parsed = record::read(&path, &mut Findings::default()).expect("record parses");
+		super::matches_command(
+			fixture.root(),
+			&project,
+			&project.obligations[0],
+			&parsed,
+			crate::verification::Gate::Rust,
+		)
+	};
+	assert!(matches(&selected));
+	assert!(!matches(&default_record));
+	let mut wrong_profile = selected.clone();
+	wrong_profile["profile"]["features"] = json!(["experimental"]);
+	assert!(!matches(&wrong_profile));
+	let mut wrong_command = selected;
+	wrong_command["redacted_command"][8] = json!("experimental");
+	assert!(!matches(&wrong_command));
+}
