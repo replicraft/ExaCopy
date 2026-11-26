@@ -128,3 +128,21 @@ controls, and immutable artifact output with native Linux failure fixtures.
 A durability claim requires distinct process-crash evidence. Qualified
 power-loss evidence remains separate. Exact acceptance cases and proposal
 ownership inform implementation review. [Verification](../verification.md)
+
+### Native ext4 platform evidence
+
+At `bbc261e`, the hosted Linux x64 ext4 fixture executed its exact ignored
+platform test under Rust 1.100.0. The raw transcript records one pass and
+zero ignored cases. The lockfile, manifest, Cargo test target and selector
+match the recorded source. The runner measured SHA-256 on the held test
+executable and retained the digest and logs. It removed the executable with
+the private build tree. Before and after observations matched the boot,
+mount and namespace identities, and cleanup confirmed that the fixture
+and private build were absent. [Native run](https://github.com/replicraft/ExaCopy/actions/runs/45906076231) · [Fixture manifest](../../crates/platform/exacopy-platform/verification/sync_history_ext4/fixture.toml)
+
+The result covers held ordered roots and raw subject names, bounded named
+member reads and exact EOF, and refusal after aliases, replacement and
+root-order changes. The observed ext4 mount used `nobarrier` and
+`data=writeback`. Durable publication, authenticated live preview admission,
+managed ownership and cooperation, baseline creation, CLI activation and
+sync mutation remain outside this result.
