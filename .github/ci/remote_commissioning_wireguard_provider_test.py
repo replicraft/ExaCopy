@@ -145,6 +145,88 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(report["config"]["status"], "unknown")
         self.assertEqual(report["config"]["parsed_status"], "module")
 
+    def test_cold_probe_result_cannot_replace_the_fresh_bounded_owner_query(self):
+        for condition, budgets, probe_status, owner_passed, expected in (
+            ("fresh-timeout", [5, 30, 5], "completed", False, "unknown"),
+            ("probe-timeout", [5, 30, 5, 5], "timeout", True, "packaged-but-unloaded"),
+            ("installed-mismatch", [5, 30, 5, 5], "completed", True, "unknown"),
+            ("undrained-probe", [5, 30], "child-undrained", None, "unknown"),
+            ("undrained-fresh", [5, 30, 5], "completed", None, "unknown"),
+            ("boot-changed", [5, 30], "completed", None, "unknown"),
+        ):
+            with self.subTest(condition=condition):
+                report, calls = self.cold_owner_report(condition)
+                self.assertEqual([bound for bound, _ in calls], budgets)
+                self.assertEqual(report["provider"], expected)
+                self.assertFalse(report["qualified"])
+                evidence = report["observations"]["cold_owner_measurement"]
+                self.assertEqual(evidence["initial_image_check"]["status"], "timeout")
+                self.assertEqual(evidence["probe"]["status"], probe_status)
+                self.assertGreaterEqual(evidence["probe"]["elapsed_ms"], 0)
+                self.assertEqual(evidence["probe"]["output_limit_bytes"], 4096)
+                self.assertEqual(evidence["fresh_image_check"].get("owner_passed"), owner_passed)
+                self.assertEqual(evidence["fresh_image_check"]["timeout_seconds"], 5)
+                self.assertNotIn("discard-this-output", json.dumps(report))
+
+    def test_cold_probe_refuses_unselected_or_non_timeout_boots(self):
+        for condition, enabled in (("foreign-build", True), ("initial-nonzero", True), ("disabled", False)):
+            with self.subTest(condition=condition):
+                report, calls = self.cold_owner_report(condition, enabled=enabled)
+                self.assertEqual(report["provider"], "unknown")
+                self.assertNotIn("cold_owner_measurement", report["observations"])
+                self.assertEqual([bound for bound, _ in calls], [5])
+
+    def cold_owner_report(self, condition, *, enabled=True):
+        profile = provider.AWS_1014
+        build = profile.build if condition != "foreign-build" else profile.build + " foreign"
+        native = os.uname_result(("Linux", "test-host", profile.release, build, "x86_64"))
+        boot = "synthetic-first-boot"
+        calls = []
+        image_owner = ("--search", "--", provider.AWS_1014_IMAGE_PATH)
+        image_show = ("--show", "--showformat=${Status}\\t${Version}\\t${Architecture}\\n", "--", profile.image)
+
+        def issue(seconds, *arguments):
+            nonlocal boot
+            calls.append((seconds, arguments))
+            attempt = len(calls)
+            self.assertEqual(arguments, image_owner if attempt < 4 else image_show)
+            if condition == "initial-nonzero":
+                raise subprocess.CalledProcessError(1, arguments, output=b"discard-this-output")
+            if attempt == 1 or condition == "probe-timeout" and attempt == 2 or condition == "fresh-timeout" and attempt == 3:
+                raise subprocess.TimeoutExpired(arguments, seconds, output=b"discard-this-output")
+            if condition == "undrained-probe" and attempt == 2 or condition == "undrained-fresh" and attempt == 3:
+                raise provider.QueryUndrained("discard-this-output")
+            if condition == "boot-changed" and attempt == 2:
+                boot = "synthetic-replacement-boot"
+            if attempt == 2:
+                return ["discard-this-output: " + provider.AWS_1014_IMAGE_PATH]
+            if attempt == 3:
+                return [f"{profile.image}: {provider.AWS_1014_IMAGE_PATH}"]
+            version = "different-install" if condition == "installed-mismatch" else profile.version
+            return [f"install ok installed\t{version}\tamd64"]
+
+        def read(path, _maximum, _parse):
+            return {"status": "missing" if str(path).startswith("/sys/") else "absent"}
+
+        def package_file(path, _release, version, _maximum, _parse):
+            if version != profile.version:
+                return {"status": "unknown"}
+            return {"status": "module" if path.is_relative_to("/boot") else "absent"}
+
+        with (
+            patch.dict(os.environ, {"GITHUB_SHA": "a" * 40}),
+            patch.object(provider.os, "uname", return_value=native),
+            patch.object(provider, "boot_id", side_effect=lambda: boot),
+            patch.object(provider, "run_dpkg_query", side_effect=issue),
+            patch.object(provider, "image_path_observation", return_value={"status": "observed"}),
+            patch.object(provider, "read_observation", side_effect=read),
+            patch.object(provider, "from_kernel_package", side_effect=package_file),
+            patch.object(provider, "installed_module", side_effect=lambda _, _release, version: {
+                "status": "packaged" if version == profile.version else "unknown",
+            }),
+        ):
+            return provider.report(measure_cold_owner=enabled), calls
+
     def test_package_query_handles_exact_bound_and_discards_stderr(self):
         source = "import os; os.write(2, b'e' * 100000); os.write(1, b'a' * 4096)"
         with patch.object(provider, "DPKG_QUERY", sys.executable):

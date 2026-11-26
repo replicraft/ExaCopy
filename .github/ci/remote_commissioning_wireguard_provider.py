@@ -16,6 +16,8 @@ import time
 from typing import NamedTuple
 from uuid import UUID
 
+from remote_commissioning_wireguard_provider_profiles import AWS_1014
+
 
 SCHEMA = "exacopy.hosted-wireguard-provider-observation.v2"
 REPORT = "exacopy-kernel-wireguard-provider"
@@ -27,7 +29,9 @@ MAX_METADATA = 2 * 1024 * 1024
 MAX_MODULE = 4 * 1024 * 1024
 PACKAGE_QUERY_BYTES = 4096
 PACKAGE_QUERY_SECONDS = 5
+OWNER_PROBE_SECONDS = 30
 PACKAGE_REAP_SECONDS = 2
+AWS_1014_IMAGE_PATH = "/boot/vmlinuz-7.0.0-1014-aws"
 TOOLS = {
     "ip": ("/usr/sbin/ip",),
     "ss": ("/usr/bin/ss", "/usr/sbin/ss"),
@@ -133,6 +137,10 @@ class QueryRefusal(ValueError):
     pass
 
 
+class QueryUndrained(RuntimeError):
+    pass
+
+
 def trusted_regular_file(info):
     return stat.S_ISREG(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o022
 
@@ -160,9 +168,9 @@ def read_observation(path, maximum, parse):
     return {"status": value, "read_status": "read", "parsed_status": value, "sha256": digest(data)}
 
 
-def dpkg_query(*arguments):
+def run_dpkg_query(seconds, *arguments):
     command = [DPKG_QUERY, *arguments]
-    deadline = time.monotonic() + PACKAGE_QUERY_SECONDS
+    deadline = time.monotonic() + seconds
     process = subprocess.Popen(
         command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         env={"PATH": "/usr/bin:/usr/sbin", "LC_ALL": "C"},
@@ -174,7 +182,7 @@ def dpkg_query(*arguments):
             while True:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0 or not readiness.select(remaining):
-                    raise subprocess.TimeoutExpired(command, PACKAGE_QUERY_SECONDS)
+                    raise subprocess.TimeoutExpired(command, seconds)
                 chunk = os.read(process.stdout.fileno(), PACKAGE_QUERY_BYTES + 1 - len(data))
                 if not chunk:
                     break
@@ -199,13 +207,17 @@ def dpkg_query(*arguments):
             except subprocess.TimeoutExpired as error:
                 # An unconfirmed child stops the report rather than causing
                 # another package query from the classifier.
-                raise RuntimeError("cannot confirm package query exit") from error
+                raise QueryUndrained("cannot confirm package query exit") from error
 
 
-def package_query(phase, *arguments):
+def dpkg_query(*arguments):
+    return run_dpkg_query(PACKAGE_QUERY_SECONDS, *arguments)
+
+
+def query_outcome(query, phase, *arguments):
     detail = {"phase": phase}
     try:
-        return dpkg_query(*arguments), detail
+        return query(*arguments), detail
     except subprocess.CalledProcessError as error:
         return None, detail | {"status": "nonzero-exit", "exit_status": error.returncode}
     except subprocess.TimeoutExpired:
@@ -214,6 +226,10 @@ def package_query(phase, *arguments):
         return None, detail | {"status": str(error)}
     except OSError as error:
         return None, detail | {"status": "io-error", "errno": error.errno}
+
+
+def package_query(phase, *arguments):
+    return query_outcome(dpkg_query, phase, *arguments)
 
 
 def package_owner(path, release, version):
@@ -371,7 +387,58 @@ def hosted_admission():
     return parent
 
 
-def report():
+def same_boot(native, first_boot):
+    return boot_id() == first_boot and os.uname() == native
+
+
+def cold_owner_probe():
+    started = time.monotonic()
+    try:
+        _, detail = query_outcome(
+            lambda *args: run_dpkg_query(OWNER_PROBE_SECONDS, *args),
+            "owner-probe", "--search", "--", AWS_1014_IMAGE_PATH,
+        )
+    except QueryUndrained:
+        detail = {"phase": "owner-probe", "status": "child-undrained"}
+    # Probe output is discarded even if it resembles an admitted owner record.
+    return {"status": "completed", **detail, "elapsed_ms": round((time.monotonic() - started) * 1000),
+            "timeout_seconds": OWNER_PROBE_SECONDS, "reap_timeout_seconds": PACKAGE_REAP_SECONDS,
+            "output_limit_bytes": PACKAGE_QUERY_BYTES, "output_used_for_admission": False}
+
+
+def after_owner_timeout(native, first_boot, original):
+    initial = original["booted_kernel_package_diagnostic"]
+    evidence = {
+        "initial_image_check": initial,
+        "probe": {"status": "not-run"},
+        "fresh_image_check": {"status": "not-run", "timeout_seconds": PACKAGE_QUERY_SECONDS},
+    }
+    if not same_boot(native, first_boot):
+        evidence["fresh_image_check"]["reason"] = "boot-changed"
+    else:
+        probe = evidence["probe"] = cold_owner_probe()
+        if probe["status"] == "child-undrained":
+            evidence["fresh_image_check"]["reason"] = "child-undrained"
+        elif not same_boot(native, first_boot):
+            evidence["fresh_image_check"]["reason"] = "boot-changed"
+        else:
+            try:
+                status, fresh = observe_provider(native.release, native.version)
+            except QueryUndrained:
+                evidence["fresh_image_check"].update(status="not-completed", reason="child-undrained")
+            else:
+                diagnostic = fresh["booted_kernel_package_diagnostic"]
+                evidence["fresh_image_check"] = {
+                    "status": "observed", "timeout_seconds": PACKAGE_QUERY_SECONDS,
+                    "performance_condition": "after-read-only-probe",
+                    "owner_passed": diagnostic.get("phase") == "installed",
+                    "image_verified": fresh["booted_kernel_package"] is not None,
+                }
+                return status, fresh | {"cold_owner_measurement": evidence}
+    return "unknown", original | {"cold_owner_measurement": evidence}
+
+
+def report(*, measure_cold_owner=False):
     native = os.uname()
     first_boot = boot_id()
     if (
@@ -381,7 +448,15 @@ def report():
         status, evidence = observe_provider(native.release, native.version)
     else:
         status, evidence = "unknown", {}
-    if boot_id() != first_boot or native != os.uname():
+    if measure_cold_owner and status == "unknown" and (native.release, native.version) == (AWS_1014.release, AWS_1014.build):
+        image = evidence.get("booted_kernel_package_diagnostic", {})
+        if (
+            image.get("path") == AWS_1014_IMAGE_PATH and image.get("expected_version") == AWS_1014.version
+            and image.get("phase") == "owner" and image.get("status") == "timeout"
+            and image.get("file") == {"status": "observed"}
+        ):
+            status, evidence = after_owner_timeout(native, first_boot, evidence)
+    if not same_boot(native, first_boot):
         status = "unknown"
     image = {
         name: value if re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", value) else None

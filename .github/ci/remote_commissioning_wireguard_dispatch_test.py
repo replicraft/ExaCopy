@@ -79,7 +79,7 @@ class DispatcherControls(unittest.TestCase):
                     patch.object(dispatch.enrollment, "main", return_value=0) as enrollment,
                 ):
                     self.assertEqual(dispatch.main(), exit_status)
-                    observe.assert_called_once()
+                    observe.assert_called_once_with(measure_cold_owner=True)
                     if expected is DispatchMode.OBSERVE:
                         enrollment.assert_called_once_with(dispatch.enrollment.EnrollmentContext.PROVIDER_B_OBSERVATION, selected)
                     else:
@@ -134,6 +134,34 @@ class DispatcherControls(unittest.TestCase):
                 record = json.loads((parent / enrollment.JOB / "report/provider.json").read_text())
                 self.assertEqual(record["context"], context.value)
                 self.assertFalse(record["qualified"])
+
+    def test_cold_owner_measurement_cannot_dispatch_after_source_drift(self):
+        selected = observation(AWS_1014)
+        selected["observations"]["cold_owner_measurement"] = {"initial_image_check": {"status": "timeout"}}
+        source = {"revision": REVISION, "git_tree": "b" * 40}
+        for changed in ({"revision": REVISION, "git_tree": "c" * 40}, ValueError("unavailable source")):
+            with self.subTest(changed=changed), tempfile.TemporaryDirectory() as scratch:
+                parent = Path(scratch).resolve()
+                output = parent / "output"
+                output.touch()
+                with (
+                    patch.dict(os.environ, {"GITHUB_SHA": REVISION, "GITHUB_RUN_ID": "123",
+                                            "GITHUB_RUN_ATTEMPT": "1", "GITHUB_OUTPUT": str(output)}),
+                    patch.object(provider_b, "hosted_scope"),
+                    patch.object(dispatch.provider, "hosted_admission", return_value=parent),
+                    patch.object(dispatch.direct, "hosted_parent", return_value=parent),
+                    patch.object(dispatch.direct.native, "source_identity", side_effect=[source, changed]),
+                    patch.object(dispatch.provider, "report", return_value=deepcopy(selected)),
+                    patch.object(dispatch, "select") as select,
+                ):
+                    self.assertEqual(dispatch.main(), 77)
+                    select.assert_not_called()
+                self.assertEqual(output.read_text(), "mode=blocked\n")
+                directory = parent / dispatch.provider.REPORT
+                record = json.loads((directory / "provider.json").read_text())
+                self.assertEqual(record["observations"]["cold_owner_measurement"], {
+                    "initial_image_check": {"status": "timeout"}, "source_recheck": "unconfirmed",
+                })
 
     def test_selection_output_refuses_foreign_symlink_or_nonempty_file(self):
         with tempfile.TemporaryDirectory() as scratch:

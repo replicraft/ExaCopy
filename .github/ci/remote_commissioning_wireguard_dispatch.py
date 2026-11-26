@@ -4,6 +4,7 @@
 import os
 from pathlib import Path
 import stat
+from subprocess import SubprocessError
 
 import remote_commissioning as direct
 from remote_commissioning_peer import Blocked
@@ -56,9 +57,20 @@ def main():
     run = provider_b.dispatch_run()
     directory = parent / provider.REPORT
     directory.mkdir(mode=0o700)
-    observed = provider.report()
+    observed = provider.report(measure_cold_owner=True)
+    measurement = observed.get("observations", {}).get("cold_owner_measurement")
+    source_matched = True
+    if measurement is not None:
+        try:
+            source_matched = direct.native.source_identity(direct.native.REPO) == source
+        except (OSError, ValueError, SubprocessError):
+            source_matched = False
+        measurement["source_recheck"] = "matched" if source_matched else "unconfirmed"
     provider.write_report(directory, observed)
-    mode, reason = select(observed, revision)
+    if source_matched:
+        mode, reason = select(observed, revision)
+    else:
+        mode, reason = DispatchMode.BLOCKED, "cold-owner measurement no longer matches the selected source"
     profile = known_profile(observed.get("kernel", {}))
     try:
         if profile is not None and mode is profile.mode:

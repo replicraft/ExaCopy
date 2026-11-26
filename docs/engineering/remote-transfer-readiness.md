@@ -74,6 +74,15 @@ provider observations and the independently authenticated Canonical Noble
 security archive. The AWS 1018 read-only enrollment also established the
 exact native dependency order. [AWS 1014 observation](https://github.com/replicraft/ExaCopy/actions/runs/45879217518) · [AWS 1018 enrollment](https://github.com/replicraft/ExaCopy/actions/runs/45905581642)
 
+After an initial AWS 1014 boot-image ownership timeout, the hosted
+provider-B dispatch can time one read-only search of the same path for up to
+30 seconds. It discards the output and records the initial timeout, probe
+duration and a fresh same-boot observation. The fresh ownership and installed
+package queries each retain their five-second bound. This measures dispatch
+after possible filesystem cache priming. The original first-query timeout
+remains visible. Unconfirmed subprocess exit, boot drift or a changed source
+checkout stops admission.
+
 Other kernels, missing tools, drift or uncertainty remain blocked. Previously live
 dependencies have name-only attribution; they do not inherit archive-byte
 provenance. The runner VM owns loaded module lifetime.
