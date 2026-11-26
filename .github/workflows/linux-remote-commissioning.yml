@@ -1,0 +1,121 @@
+name: Linux direct remote commissioning
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/linux-remote-commissioning.yml'
+      - '.github/ci/remote_commissioning*.py'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+  CARGO_BUILD_JOBS: "2"
+  EXPECTED_RUST_HOST: x86_64-unknown-linux-gnu
+
+jobs:
+  direct:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - name: Admit only the canonical hosted synthetic fixture
+        run: |
+          evidence="$RUNNER_TEMP/exacopy-evidence"
+          mkdir -p -- "$evidence"
+          status=blocked
+          if [[ "$GITHUB_SERVER_URL" == https://github.com &&
+                "${GITHUB_REPOSITORY,,}" == replicraft/exacopy &&
+                "$GITHUB_REF" == refs/heads/main &&
+                ( "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ) &&
+                "$GITHUB_ACTIONS" == true && "$RUNNER_ENVIRONMENT" == github-hosted &&
+                "$RUNNER_OS" == Linux && "$RUNNER_ARCH" == X64 &&
+                ! -v EXACOPY_REMOTE_DEPLOYMENT ]]; then
+            status=admitted
+          fi
+          printf '%s\n' 'policy=hosted-synthetic-direct-v1' "status=$status" \
+            "repository=$GITHUB_REPOSITORY" "event=$GITHUB_EVENT_NAME" "ref=$GITHUB_REF" \
+            "sha=$GITHUB_SHA" "ref_protected=${GITHUB_REF_PROTECTED:-unknown}" \
+            > "$evidence/commissioning-admission.log"
+          test "$status" = admitted
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify exact clean source
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA" && test -z "$(git status --porcelain)"
+      - name: Run portable commissioning controls
+        run: python3 -B .github/ci/remote_commissioning_test.py -v
+      - name: Prepare pinned source and tools
+        run: |
+          bash .github/ci/capture.sh apfs-source python3 -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source python3 -B tools/transport_source.py --fetch
+          bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
+          bash .github/ci/capture.sh locked-fetch cargo +1.100.0 fetch --locked
+      - name: Extract the independent digest tool from Ubuntu's signed package index
+        run: |
+          tool_dir="$RUNNER_TEMP/exacopy-commissioning-tools"
+          tool_marker="$RUNNER_TEMP/exacopy-evidence/direct-digest-tool.pending"
+          (
+            set -o noclobber
+            printf '%s/%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > "$tool_marker"
+          )
+          mkdir -m 700 "$tool_dir"
+          printf '%s/%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > "$tool_dir/fixture-owner"
+          cd "$tool_dir"
+          apt-get -o APT::Get::AllowUnauthenticated=false download b3sum
+          packages=(b3sum_*_amd64.deb)
+          test "${#packages[@]}" -eq 1
+          test "$(dpkg-deb --field "${packages[0]}" Package)" = b3sum
+          test "$(dpkg-deb --field "${packages[0]}" Architecture)" = amd64
+          dpkg-deb --extract "${packages[0]}" .
+          test -x "$tool_dir/usr/bin/b3sum"
+          printf '%s\n' "$tool_dir/usr/bin" >> "$GITHUB_PATH"
+      - name: Commission the direct CLI with synthetic fixture authority
+        run: python3 -B .github/ci/remote_commissioning.py
+      - name: Remove the job-owned digest tool after confirmed fixture cleanup
+        if: always()
+        run: |
+          tool_dir="$RUNNER_TEMP/exacopy-commissioning-tools"
+          tool_marker="$RUNNER_TEMP/exacopy-evidence/direct-digest-tool.pending"
+          uncertainty="$RUNNER_TEMP/exacopy-direct-commissioning/report/cleanup-unconfirmed.json"
+          if [[ -e "$uncertainty" || -L "$uncertainty" ]]; then
+            exit 0
+          fi
+          if [[ ! -e "$tool_marker" && ! -L "$tool_marker" ]]; then
+            test ! -e "$tool_dir"
+            test ! -L "$tool_dir"
+            exit 0
+          fi
+          test -f "$tool_marker"
+          test ! -L "$tool_marker"
+          test "$(cat -- "$tool_marker")" = "$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT"
+          if [[ -e "$tool_dir" || -L "$tool_dir" ]]; then
+            test -d "$tool_dir"
+            test ! -L "$tool_dir"
+            test "$(stat -c '%u:%a' -- "$tool_dir")" = "$(id -u):700"
+            test -f "$tool_dir/fixture-owner"
+            test ! -L "$tool_dir/fixture-owner"
+            test "$(cat -- "$tool_dir/fixture-owner")" = "$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT"
+            rm -r --one-file-system -- "$tool_dir"
+            test ! -e "$tool_dir"
+            test ! -L "$tool_dir"
+          fi
+          rm -- "$tool_marker"
+      - name: Retain allowlisted commissioning observations
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: exacopy-direct-commissioning-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-evidence/
+            ${{ runner.temp }}/exacopy-direct-commissioning/report/
+          if-no-files-found: error
+          retention-days: 90
