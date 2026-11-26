@@ -23,6 +23,7 @@ use super::{
 	RemoteEpochs, RemoteScopeDigest,
 };
 
+pub mod budget;
 mod receipt_ready;
 pub mod records;
 pub mod replay;

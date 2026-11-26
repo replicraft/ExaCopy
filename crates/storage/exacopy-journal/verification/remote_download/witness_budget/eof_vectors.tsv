@@ -1,0 +1,8 @@
+accepted_end	observed_eof	matches
+1	1	true
+4096	4095	false
+4096	4096	true
+4096	4097	false
+0	0	false
+67108864	67108864	true
+67108865	67108865	false

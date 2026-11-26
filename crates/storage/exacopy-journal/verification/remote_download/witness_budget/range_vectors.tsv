@@ -1,0 +1,9 @@
+name	retained_end	source_extent	ordinal	start	exclusive_end
+zero_tail	17	17	1	-	-
+first_single_byte	17	18	1	17	18
+past_single_byte	17	18	2	-	-
+first_full_chunk	17	67108882	1	17	67108881
+short_final_chunk	17	67108882	2	67108881	67108882
+past_short_final	17	67108882	3	-	-
+maximum_final_chunk	9223371761976868863	9223372036854775807	4096	9223372036787666943	9223372036854775807
+past_maximum	9223371761976868863	9223372036854775807	4097	-	-

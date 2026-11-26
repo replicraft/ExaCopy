@@ -1731,3 +1731,19 @@ state = "defined"
 owner = "exacopy-platform"
 path = "crates/platform/exacopy-platform/src/linux/recovery/writer/witness_reservation/tests.rs"
 target = "allocation_may_refresh_write_times_but_not_other_selected_fields"
+
+[[coverage]]
+id = "witnessed-whole-pass-capacity"
+status = "implemented"
+requirement_ids = ["R-253", "R-255"]
+acceptance_ids = ["A-253", "A-255"]
+invariant_ids = ["INV-013", "INV-019", "INV-032"]
+scope = "P-072 projects the bounded checkpoint schedule and independent journal byte, frame-slot and receipt maxima for one selected witnessed pass."
+limits = "Pure checked arithmetic over independently selected history and source facts. It neither authenticates those facts nor reserves native space, admits an effect, or qualifies recovery or durability."
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "obligation"
+state = "defined"
+path = "crates/storage/exacopy-journal/verification/obligations.toml"
+target = "P-072"

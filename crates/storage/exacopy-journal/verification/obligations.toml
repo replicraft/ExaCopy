@@ -265,3 +265,16 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/remote_continuation/witnessed_replay.rs", test = "witness_closeout::witnessed_replay::closed_witnessed_transcripts_bind_both_observation_channels_and_exact_receipt", oracle = "Validate independent live-observed and recovered selector-2 transcripts and reconstruct exact artifact bytes through the terminal commit. Preserve exact phase, global epochs, repeat and retirement boundaries; independently inspect current native artifacts before relying on historical receipt claims." }
+
+[[obligation]]
+id = "P-072"
+requirement_ids = ["R-253", "R-255"]
+source = "src/remote_download/witness/budget.rs"
+symbols = ["WitnessedPassBudget::plan", "WitnessedPassBudget::recheck_remaining", "WitnessedPassBudget::required_after_checkpoint"]
+assumptions = [
+    "The caller independently authenticates the selected journal origin and descendant heads, source extent, retained prefix, logical run count and exact frame/range progress against the held journal.",
+    "This projection is pure checked format and schedule arithmetic. It neither reserves physical resources nor admits live authority, source access, a write, publication, receipt promotion or durability.",
+    "The independent canonical width and phase-path oracle checks distinct byte and slot maxima. Format, replay, operating system and fault qualification are separate obligations.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_witness_budget.rs", test = "witnessed_whole_pass_matches_independent_capacity_paths", oracle = "Match independent whole-pass, suffix-phase and checkpoint-range vectors for separate byte, slot and receipt capacity. Exercise exact segment and sequence fit, one-unit shortages, zero tail, maximum ordinals, remaining capacity and final-run retirement refusal." }

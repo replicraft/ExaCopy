@@ -186,9 +186,11 @@ These tests exercise the adapter projection and isolated native primitives.
 Complete invocation with an eligible, qualified operation-2 destination,
 full authenticated replay from byte zero, true ENOSPC/quota and interruption
 campaigns, and writer or receipt activation each require further evidence.
-P-072 remains reserved for the independently checked portable whole-pass
-arithmetic. The width checker supplies structural arithmetic and does not
-supply a native reservation result.
+P-072 now checks the [portable whole-pass producer](../../crates/storage/exacopy-journal/src/remote_download/witness/budget.rs)
+against its [independent capacity oracle](../../crates/storage/exacopy-journal/verification/remote_download/witness_budget/oracle.py).
+The producer binds the selected boundary, source extent, logical run and
+checkpoint schedule, and checks byte and sequence limits before projecting
+the remaining reserve. It supplies no native reservation or effect authority.
 
 ## Source references
 

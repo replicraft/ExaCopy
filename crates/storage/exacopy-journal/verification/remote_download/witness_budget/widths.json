@@ -1,0 +1,729 @@
+{
+  "crc32c": 4,
+  "digest": 32,
+  "existing_fixture_observations": [
+    {
+      "file": "checkpoint.hex",
+      "label": "",
+      "length": 285,
+      "sequence_kind_payload_framed": [
+        [
+          7,
+          3,
+          193,
+          285
+        ]
+      ]
+    },
+    {
+      "file": "witness_closeout.hex",
+      "label": "zero-through-durability",
+      "length": 5037,
+      "sequence_kind_payload_framed": [
+        [
+          6,
+          40,
+          859,
+          951
+        ],
+        [
+          7,
+          41,
+          538,
+          630
+        ],
+        [
+          8,
+          4,
+          460,
+          552
+        ],
+        [
+          9,
+          5,
+          400,
+          492
+        ],
+        [
+          10,
+          6,
+          383,
+          475
+        ],
+        [
+          11,
+          7,
+          831,
+          923
+        ],
+        [
+          12,
+          8,
+          354,
+          446
+        ],
+        [
+          13,
+          9,
+          476,
+          568
+        ]
+      ]
+    },
+    {
+      "file": "witness_closeout.hex",
+      "label": "tail-prefix",
+      "length": 1521,
+      "sequence_kind_payload_framed": [
+        [
+          6,
+          40,
+          859,
+          951
+        ],
+        [
+          7,
+          3,
+          193,
+          285
+        ],
+        [
+          8,
+          3,
+          193,
+          285
+        ]
+      ]
+    },
+    {
+      "file": "witness_closeout.hex",
+      "kind": 41,
+      "label": "tail-witness",
+      "payload_length": 539
+    },
+    {
+      "file": "witness_closeout.hex",
+      "kind": 42,
+      "label": "ready",
+      "payload_length": 622
+    },
+    {
+      "file": "witness_closeout.hex",
+      "label": "receipt",
+      "length": 3965
+    },
+    {
+      "file": "witness_phase_records.hex",
+      "kind": 8,
+      "label": "observation-conflict",
+      "payload_length": 328
+    },
+    {
+      "file": "witness_phase_records.hex",
+      "kind": 8,
+      "label": "observation-uncertain",
+      "payload_length": 359
+    },
+    {
+      "file": "witness_phase_records.hex",
+      "kind": 8,
+      "label": "observation-recovered",
+      "payload_length": 392
+    },
+    {
+      "file": "witness_phase_records.hex",
+      "kind": 39,
+      "label": "retire-unwitnessed",
+      "payload_length": 727
+    },
+    {
+      "file": "witness_phase_records.hex",
+      "kind": 39,
+      "label": "retire-absent-at-intent",
+      "payload_length": 763
+    },
+    {
+      "file": "witness_phase_records.hex",
+      "kind": 39,
+      "label": "retire-preserved",
+      "payload_length": 830
+    },
+    {
+      "file": "witness_phase_records.hex",
+      "kind": 18,
+      "label": "commit-fixture-head",
+      "payload_length": 388
+    },
+    {
+      "file": "witnessed_replay.hex",
+      "label": "published",
+      "length": 7855,
+      "sequence_kind_payload_framed": [
+        [
+          1,
+          1,
+          116,
+          208
+        ],
+        [
+          2,
+          38,
+          230,
+          322
+        ],
+        [
+          3,
+          37,
+          402,
+          494
+        ],
+        [
+          4,
+          2,
+          223,
+          315
+        ],
+        [
+          5,
+          3,
+          193,
+          285
+        ],
+        [
+          6,
+          40,
+          859,
+          951
+        ],
+        [
+          7,
+          41,
+          538,
+          630
+        ],
+        [
+          8,
+          4,
+          460,
+          552
+        ],
+        [
+          9,
+          5,
+          400,
+          492
+        ],
+        [
+          10,
+          6,
+          383,
+          475
+        ],
+        [
+          11,
+          7,
+          831,
+          923
+        ],
+        [
+          12,
+          8,
+          354,
+          446
+        ],
+        [
+          13,
+          9,
+          476,
+          568
+        ],
+        [
+          14,
+          42,
+          622,
+          714
+        ],
+        [
+          15,
+          18,
+          388,
+          480
+        ]
+      ]
+    },
+    {
+      "file": "witnessed_replay.hex",
+      "label": "recovered-published",
+      "length": 7893,
+      "sequence_kind_payload_framed": [
+        [
+          1,
+          1,
+          116,
+          208
+        ],
+        [
+          2,
+          38,
+          230,
+          322
+        ],
+        [
+          3,
+          37,
+          402,
+          494
+        ],
+        [
+          4,
+          2,
+          223,
+          315
+        ],
+        [
+          5,
+          3,
+          193,
+          285
+        ],
+        [
+          6,
+          40,
+          859,
+          951
+        ],
+        [
+          7,
+          41,
+          538,
+          630
+        ],
+        [
+          8,
+          4,
+          460,
+          552
+        ],
+        [
+          9,
+          5,
+          400,
+          492
+        ],
+        [
+          10,
+          6,
+          383,
+          475
+        ],
+        [
+          11,
+          7,
+          831,
+          923
+        ],
+        [
+          12,
+          8,
+          392,
+          484
+        ],
+        [
+          13,
+          9,
+          476,
+          568
+        ],
+        [
+          14,
+          42,
+          622,
+          714
+        ],
+        [
+          15,
+          18,
+          388,
+          480
+        ]
+      ]
+    },
+    {
+      "file": "witnessed_replay.hex",
+      "label": "retire-preserved",
+      "length": 5646,
+      "sequence_kind_payload_framed": [
+        [
+          1,
+          1,
+          116,
+          208
+        ],
+        [
+          2,
+          38,
+          230,
+          322
+        ],
+        [
+          3,
+          37,
+          402,
+          494
+        ],
+        [
+          4,
+          2,
+          223,
+          315
+        ],
+        [
+          5,
+          3,
+          193,
+          285
+        ],
+        [
+          6,
+          40,
+          859,
+          951
+        ],
+        [
+          7,
+          41,
+          538,
+          630
+        ],
+        [
+          8,
+          4,
+          460,
+          552
+        ],
+        [
+          9,
+          5,
+          400,
+          492
+        ],
+        [
+          10,
+          6,
+          383,
+          475
+        ],
+        [
+          11,
+          39,
+          830,
+          922
+        ]
+      ]
+    },
+    {
+      "file": "witnessed_replay.hex",
+      "label": "fresh-unbound",
+      "length": 5902,
+      "sequence_kind_payload_framed": [
+        [
+          1,
+          1,
+          116,
+          208
+        ],
+        [
+          2,
+          38,
+          230,
+          322
+        ],
+        [
+          3,
+          37,
+          402,
+          494
+        ],
+        [
+          4,
+          2,
+          223,
+          315
+        ],
+        [
+          5,
+          3,
+          193,
+          285
+        ],
+        [
+          6,
+          40,
+          859,
+          951
+        ],
+        [
+          7,
+          41,
+          538,
+          630
+        ],
+        [
+          8,
+          4,
+          460,
+          552
+        ],
+        [
+          9,
+          5,
+          400,
+          492
+        ],
+        [
+          10,
+          6,
+          383,
+          475
+        ],
+        [
+          11,
+          39,
+          830,
+          922
+        ],
+        [
+          12,
+          37,
+          164,
+          256
+        ]
+      ]
+    },
+    {
+      "file": "witnessed_replay.hex",
+      "label": "conflict",
+      "length": 6067,
+      "sequence_kind_payload_framed": [
+        [
+          1,
+          1,
+          116,
+          208
+        ],
+        [
+          2,
+          38,
+          230,
+          322
+        ],
+        [
+          3,
+          37,
+          402,
+          494
+        ],
+        [
+          4,
+          2,
+          223,
+          315
+        ],
+        [
+          5,
+          3,
+          193,
+          285
+        ],
+        [
+          6,
+          40,
+          859,
+          951
+        ],
+        [
+          7,
+          41,
+          538,
+          630
+        ],
+        [
+          8,
+          4,
+          460,
+          552
+        ],
+        [
+          9,
+          5,
+          400,
+          492
+        ],
+        [
+          10,
+          6,
+          383,
+          475
+        ],
+        [
+          11,
+          7,
+          831,
+          923
+        ],
+        [
+          12,
+          8,
+          328,
+          420
+        ]
+      ]
+    },
+    {
+      "file": "witnessed_replay.hex",
+      "label": "uncertain",
+      "length": 6098,
+      "sequence_kind_payload_framed": [
+        [
+          1,
+          1,
+          116,
+          208
+        ],
+        [
+          2,
+          38,
+          230,
+          322
+        ],
+        [
+          3,
+          37,
+          402,
+          494
+        ],
+        [
+          4,
+          2,
+          223,
+          315
+        ],
+        [
+          5,
+          3,
+          193,
+          285
+        ],
+        [
+          6,
+          40,
+          859,
+          951
+        ],
+        [
+          7,
+          41,
+          538,
+          630
+        ],
+        [
+          8,
+          4,
+          460,
+          552
+        ],
+        [
+          9,
+          5,
+          400,
+          492
+        ],
+        [
+          10,
+          6,
+          383,
+          475
+        ],
+        [
+          11,
+          7,
+          831,
+          923
+        ],
+        [
+          12,
+          8,
+          359,
+          451
+        ]
+      ]
+    },
+    {
+      "file": "witnessed_replay.hex",
+      "label": "receipt",
+      "length": 3965
+    },
+    {
+      "file": "witnessed_replay.hex",
+      "label": "recovered-receipt",
+      "length": 4003
+    }
+  ],
+  "frame_overhead": 92,
+  "framed_ceiling": {
+    "2": 860,
+    "3": 860,
+    "4": 635,
+    "5": 567,
+    "6": 546,
+    "7": 1014,
+    "8": 568,
+    "9": 643,
+    "15": 860,
+    "18": 547,
+    "37": 860,
+    "39": 997,
+    "40": 1116,
+    "41": 697,
+    "42": 781
+  },
+  "header": 56,
+  "kind_39_payload_by_witness_state": {
+    "unwitnessed": 794,
+    "witness_absent": 838,
+    "witness_preserved": 905
+  },
+  "kind_8_payload_by_channel": {
+    "conflict": 395,
+    "live": 421,
+    "recovered": 467,
+    "uncertain": 476
+  },
+  "observed_max_framed": {
+    "3": 285,
+    "8": 484,
+    "39": 922,
+    "40": 951,
+    "41": 630,
+    "42": 714
+  },
+  "payload_ceiling": {
+    "2": 768,
+    "3": 768,
+    "4": 543,
+    "5": 475,
+    "6": 454,
+    "7": 922,
+    "8": 476,
+    "9": 551,
+    "15": 768,
+    "18": 455,
+    "37": 768,
+    "39": 905,
+    "40": 1024,
+    "41": 605,
+    "42": 689
+  },
+  "receipt_reservation": 6144,
+  "receipt_structural_ceiling": 4639
+}
