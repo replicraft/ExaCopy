@@ -481,9 +481,13 @@ needs its changed-source evidence. CI must supply the sibling checkout in
 the same relative layout, or use a separately reviewed commit-pinned source.
 Cargo dependency resolution needs the sibling manifest even when the
 current build target excludes macOS code. The isolated rebuild runner
-verifies and extracts both repositories into independent sibling layouts.
-The current macOS local-path pair differs in executable digest and retains
-a failed reproducibility result. On 2026-11-25, the public repository's HEAD
+verifies both repository archives. For macOS release builds it places each
+verified APFS archive at a fixed path inside that build's workspace. The
+Cargo manifest adjusts the dependency path for that build and excludes
+the package from workspace membership. The original external sibling
+builds differed in executable digest. The workspace-relative placement
+produced matching unsigned executable digests on the same runner.
+On 2026-11-25, the public repository's HEAD
 and main still resolved to `b5f0d82eaae6795e8a80108b5fdcda78f8a742c9`.
 A disposable fetch of the previous pin `8f19cd3` failed with
 `not our ref`. That result records remote provisioning for the previous

@@ -73,6 +73,12 @@ class ReleaseControls(unittest.TestCase):
         identity = {"commit": "b" * 40, "tree": "c" * 40, "archive_sha256": "d" * 64}
         pin.write_text("".join(f'{key} = "{value}"\n' for key, value in identity.items()), encoding="utf-8")
         target, tag, version = signed.APPLE, "v0.1.0", "0.1.0"
+        workspace = self.root / "Cargo.toml"
+        workspace.write_bytes(
+            b"[workspace]\n" + workspace.read_bytes()
+            + f'[workspace.dependencies]\napfs-mounted = {{ path = "{signed.apfs_source.WORKSPACE_PATH}" }}\n'.encode("ascii")
+        )
+        _, apfs_layout = signed.projected_apfs_manifest(workspace.read_bytes())
         repository = "replicraft/ExaCopy"
         build = self.root / "artifact"
         binary = build / "unsigned-cli/exacopy"
@@ -95,6 +101,7 @@ class ReleaseControls(unittest.TestCase):
             "tree": self.commit,
             "lockfile_sha256": signed.sha256(self.root / "Cargo.lock"),
             "apfs_source": apfs_source,
+            "apfs_build_layout": apfs_layout,
             "transport_sources": {},
             "runner": {"run_id": "12", "run_attempt": "1"},
             "binary": {"name": binary.name, "size": binary.stat().st_size, "sha256": signed.sha256(binary)},
@@ -113,6 +120,14 @@ class ReleaseControls(unittest.TestCase):
                     record.write_text(json.dumps(altered))
                     with self.assertRaisesRegex(ValueError, "does not match the admitted release source"):
                         signed.verified_build(build, target, self.commit, tag, version)
+            for field in ("original_manifest_sha256", "projected_manifest_sha256", "member_path"):
+                with self.subTest(layout_field=field):
+                    record.write_text(json.dumps(provenance | {"apfs_build_layout": apfs_layout | {field: "wrong"}}))
+                    with self.assertRaisesRegex(ValueError, "does not match the admitted release source"):
+                        signed.verified_build(build, target, self.commit, tag, version)
+            record.write_text(json.dumps({key: value for key, value in provenance.items() if key != "apfs_build_layout"}))
+            with self.assertRaisesRegex(ValueError, "does not match the admitted release source"):
+                signed.verified_build(build, target, self.commit, tag, version)
             del provenance["apfs_source"]
             record.write_text(json.dumps(provenance))
             with self.assertRaisesRegex(ValueError, "does not match the admitted release source"):

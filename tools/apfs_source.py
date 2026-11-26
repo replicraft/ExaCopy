@@ -105,11 +105,12 @@ def verify_checkout(source, pin):
         archive_apfs(source, pin, Path(temp) / "apfs.tar")
 
 
-def dependency_manifest_matches(package, source):
+def dependency_manifest_matches(package, source, *, member_path=None):
+    expected = sibling(source) / MEMBER if member_path is None else source / member_path
     return (
         package["source"] is None
         and f'{package["name"]}@{package["version"]}' == KEY
-        and Path(package["manifest_path"]).resolve() == sibling(source) / MEMBER / "Cargo.toml"
+        and Path(package["manifest_path"]).resolve() == expected / "Cargo.toml"
         and package["repository"] == REPOSITORY
         and package["license"] == "Apache-2.0"
     )

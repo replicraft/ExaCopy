@@ -106,25 +106,38 @@ archive of ExaCopy `HEAD` and the pinned
 changes before collecting revision-specific release evidence. Supply a clean
 checkout of that sibling revision on every target so Cargo can resolve its
 manifest. The runner verifies its tree and archive digest and unpacks both
-repositories separately for each build.
+repositories separately for each build. On macOS, release builds place the
+verified APFS archive at a fixed path inside each isolated workspace. The
+build-only Cargo manifest points the original dependency edge at that path
+and excludes the imported APFS package from workspace membership. Before
+compilation the runner compares the projected tree with the verified
+archive, including every entry's path, type, contents and safe extraction
+mode. The development checkout keeps the sibling dependency. The release record and
+SBOM include the original and projected manifest digests. Signing verifies
+both digests and the expected build path.
 
 The output directory must be new. CI retains compiler messages, both
 CycloneDX 1.6 inventories and the rebuild record with both source identities,
 compiler and native tool information. The SBOM lists Cargo build inputs,
 including build scripts and procedural macros, with their resolved features,
 declared licenses and source checksums. A compiled `apfs-mounted` component
-records its source commit, tree and archive digest. Cargo build messages bind
-the inventory to the selected binary. System libraries, link-level package relationships and
+records its source commit, tree and archive digest. The runner checks the APFS
+manifest and library source paths directly in Cargo's compiler artifact
+messages. Cargo build messages bind the inventory to the selected binary. System libraries, link-level package relationships and
 distribution packaging require their own inventories.
 
-The macOS local-path check built both unsigned CLIs from isolated copies of
-the pinned archives, then failed the executable digest comparison. Cargo
-reported different artifact suffixes for the sibling `apfs-mounted` and its
-`exacopy-platform` consumer across the two paths. The same native runner
-matched binary digests twice before the sibling dependency was introduced.
-This leaves macOS unsigned CLI reproducibility open for the local path
-integration. Linux and Windows resolve the sibling manifest without
-compiling `apfs-mounted`.
+The earlier macOS check with external sibling paths produced different
+executable digests. Cargo reported different artifact suffixes for
+`apfs-mounted` and its `exacopy-platform` consumer across the two paths.
+Cargo hashes an external path dependency's absolute package location before
+Rust applies path remapping. With the pinned APFS archive under the isolated
+workspace, Cargo hashes its workspace-relative path. Two fresh build
+directories on the same arm64 macOS 14.7.2 runner produced the same
+unsigned executable SHA-256
+`5bda2c9caadbb0432345ebd96d3730975280996888aab5684aefb47c0d5bb759`
+from ExaCopy `85cf6f2` with APFS `af97d38` and Rust 1.100.0.
+Linux and Windows resolve the sibling manifest without compiling
+`apfs-mounted`. [Cargo source ID hashing](https://doc.rust-lang.org/stable/nightly-rustc/src/cargo/workspace/source_id.rs.html#552-572)
 
 A passing gate establishes same-runner reproducibility for the unsigned CLI payload.
 Independent machine rebuilds and signed distribution artifacts require

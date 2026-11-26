@@ -102,7 +102,7 @@ def create_build(target, evidence, work, ref, commit, version):
     )
     pin = apfs_source.read_pin((ROOT / apfs_source.PIN).read_text(encoding="utf-8"))
     apfs_source.archive_apfs(ROOT, pin, apfs_archive)
-    source = sbom_release.extract_sources(work / "inputs", source_archive, apfs_archive)
+    source = sbom_release.extract_sources(work / "inputs", source_archive, apfs_archive, target=target)
     transport_pins = transport_source.read_pins(source)
     transport_source.verify_manifests(source)
     transport_archives = transport_source.archive_sources(ROOT, transport_pins, work)
@@ -112,10 +112,11 @@ def create_build(target, evidence, work, ref, commit, version):
         for path in ("Cargo.toml", apfs_source.CONSUMER_MANIFEST)
     ))
     epoch = git("show", "-s", "--format=%ct", commit)
-    env = sbom_release.build_environment(work, epoch)
-    if target == "aarch64-apple-darwin":
-        env["MACOSX_DEPLOYMENT_TARGET"] = "14.0"
+    apfs_layout = sbom_release.project_release_sources(source, target, apfs_archive)
+    env = sbom_release.build_environment(work, epoch, target)
     subprocess.run([*CARGO, "fetch", "--locked", "--target", target], cwd=source, env=env, check=True)
+    if apfs_layout is not None:
+        sbom_release.verify_projected_apfs_tree(source, apfs_archive)
     target_dir = work / "cargo-target"
     command = [
         *CARGO, "build", "--release", "--locked", "--offline", "--no-default-features",
@@ -127,7 +128,7 @@ def create_build(target, evidence, work, ref, commit, version):
     with messages.open("wb") as stream:
         subprocess.run(command, cwd=source, env=env, stdout=stream, check=True)
     with messages.open(encoding="utf-8") as stream:
-        units, (root_id, executable) = sbom_release.build_inputs(stream)
+        units, (root_id, executable), origins = sbom_release.build_inputs(stream)
     filename = installer_fixture.TARGETS[target][2]
     expected = target_dir / target / "release" / filename
     if executable.resolve() != expected.resolve() or executable.is_symlink() or not executable.is_file():
@@ -141,7 +142,10 @@ def create_build(target, evidence, work, ref, commit, version):
         raise ValueError("an experimental dependency feature entered the main CLI artifact")
     sbom = evidence / "exacopy.cdx.json"
     artifact_hash = sbom_release.sha256(executable)
-    sbom_release.write_sbom(source, env, sbom, target, commit, artifact_hash, units, root_id, pin, transport_pins)
+    sbom_release.write_sbom(
+        source, env, sbom, target, commit, artifact_hash, units, root_id, pin, transport_pins, apfs_layout,
+        origins=origins,
+    )
     provenance = evidence / "build-provenance.json"
     sbom_release.write_json(provenance, {
         "schema": "exacopy-ci-candidate-build-v1",
@@ -176,7 +180,7 @@ def create_build(target, evidence, work, ref, commit, version):
             "run_id": os.environ["GITHUB_RUN_ID"],
             "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
         },
-    })
+    } | ({"apfs_build_layout": apfs_layout} if apfs_layout is not None else {}))
     return executable, sbom, provenance
 
 

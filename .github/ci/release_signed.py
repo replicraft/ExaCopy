@@ -19,7 +19,7 @@ import transport_source
 
 from installer_fixture import TARGETS, bundle, encoded
 from release.package import MAX_ARCHIVE, MAX_EXECUTABLE
-from sbom_release import sha256, write_json
+from sbom_release import projected_apfs_manifest, sha256, write_json
 
 LINUX = "x86_64-unknown-linux-gnu"
 APPLE = "aarch64-apple-darwin"
@@ -62,7 +62,10 @@ def verified_build(directory, target, commit, tag, version):
             **apfs_source.read_pin((candidate.ROOT / apfs_source.PIN).read_text(encoding="utf-8")),
         },
         "transport_sources": transport_source.read_pins(candidate.ROOT),
+        "apfs_build_layout": None,
     }
+    if target == APPLE:
+        _, expected["apfs_build_layout"] = projected_apfs_manifest((candidate.ROOT / "Cargo.toml").read_bytes())
     if any(provenance.get(name) != value for name, value in expected.items()):
         raise ValueError(f"{target}: build record does not match the admitted release source")
     runner = provenance["runner"]
