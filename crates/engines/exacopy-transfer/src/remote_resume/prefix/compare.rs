@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use exacopy_content::StreamInputError;
-use exacopy_journal::remote_download::checkpoints::RemoteActiveCheckpoints;
+use exacopy_journal::remote_download::checkpoints::RemotePrefixHistory;
 
 use crate::remote_capture::{CapturedReadAt, SourceEpoch};
 
@@ -57,7 +57,7 @@ impl<'view, R: CapturedReadAt, L: RetainedPrefixView> Comparison<'view, R, L> {
 
 	pub(super) fn recheck_stage(
 		&self,
-		inventory: &RemoteActiveCheckpoints<'_>,
+		inventory: &RemotePrefixHistory<'_>,
 		extent: u64,
 	) -> Result<(), Error<R::Error, L::Error>> {
 		self.retained

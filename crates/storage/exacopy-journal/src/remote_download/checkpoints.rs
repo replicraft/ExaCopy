@@ -12,6 +12,11 @@ use super::{
 	RemoteScopeDigest, RemoteSourceObservation,
 };
 
+mod prefix;
+
+pub(super) use prefix::PrefixOwner;
+pub use prefix::{RemoteHistoricalRange, RemotePrefixHistory};
+
 /// One canonical checkpoint whose context, epochs and contiguous position passed replay.
 ///
 /// Verification here means journal admission. The bytes still need fresh source and
@@ -110,6 +115,21 @@ impl<'scan> RemoteActiveCheckpoints<'scan> {
 			rows,
 			qualification,
 		})
+	}
+
+	/// Returns the whole original coverage for current retained-byte verification.
+	///
+	/// # Errors
+	/// Retains a canonical scope encoding failure.
+	pub fn prefix_history(&self) -> Result<RemotePrefixHistory<'scan>, Error> {
+		RemotePrefixHistory::original(
+			PrefixOwner::from_owner(self.owner)?,
+			self.attempt,
+			self.prepared,
+			self.boundary(),
+			self.qualification,
+			self.rows,
+		)
 	}
 
 	/// Exact authenticated owner/job/entry context.

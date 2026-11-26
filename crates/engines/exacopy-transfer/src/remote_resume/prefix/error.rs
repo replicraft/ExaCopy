@@ -29,11 +29,11 @@ pub enum PrefixVerificationError<R, L> {
 		/// Exact end of accepted checkpoint ranges.
 		checkpoint: u64,
 	},
-	/// The file exceeds the extent the original capture was allowed to write.
+	/// The file exceeds the extent the prior active capture was allowed to write.
 	RetainedBeyondPrior {
 		/// Observed retained length.
 		extent: u64,
-		/// Extent authorized by the original observed capture.
+		/// Extent authorized by the prior active capture.
 		prior: u64,
 	},
 	/// The newly opened source is shorter than the proposed retained coverage.

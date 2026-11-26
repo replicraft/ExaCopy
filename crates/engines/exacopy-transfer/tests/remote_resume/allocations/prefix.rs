@@ -17,6 +17,9 @@ use super::{
 	owner_with_policy, ready,
 };
 
+#[path = "prefix/continued.rs"]
+mod continued;
+
 const STAGE: u64 = 15;
 const FRESH: u64 = OLD + 1;
 const OLD_BYTES: &[u8] = b"abcdxy";
@@ -83,6 +86,7 @@ impl Fixture {
 }
 
 struct Source<'data> {
+	reported_length: Option<u64>,
 	bytes: &'data [u8],
 	reads: Vec<(u64, usize)>,
 	checks: usize,
@@ -95,6 +99,7 @@ struct Source<'data> {
 impl<'data> Source<'data> {
 	fn new(bytes: &'data [u8]) -> Self {
 		Self {
+			reported_length: None,
 			bytes,
 			reads: Vec::new(),
 			checks: 0,
@@ -114,7 +119,8 @@ impl CapturedReadAt for Source<'_> {
 	}
 
 	fn length(&self) -> u64 {
-		u64::try_from(self.bytes.len()).unwrap()
+		self.reported_length
+			.unwrap_or_else(|| u64::try_from(self.bytes.len()).unwrap())
 	}
 
 	fn max_window_bytes(&self) -> NonZeroUsize {
@@ -149,6 +155,8 @@ impl CapturedReadAt for Source<'_> {
 }
 
 struct Stage<'data> {
+	name: &'data [u8],
+	file: u64,
 	bytes: &'data [u8],
 	length: u64,
 	reads: RefCell<Vec<(u64, usize)>>,
@@ -159,6 +167,8 @@ struct Stage<'data> {
 impl<'data> Stage<'data> {
 	fn new(bytes: &'data [u8]) -> Self {
 		Self {
+			name: b"attempt-1",
+			file: STAGE,
 			bytes,
 			length: u64::try_from(bytes.len()).unwrap(),
 			reads: RefCell::new(Vec::new()),
@@ -191,12 +201,12 @@ impl ReadView for Stage<'_> {
 impl RetainedPrefixView for Stage<'_> {
 	fn identity(&self) -> RetainedPrefixIdentity<'_> {
 		let native = if self.rebound && self.checks.get() > 1 {
-			STAGE + 1
+			self.file + 1
 		} else {
-			STAGE
+			self.file
 		};
 		RetainedPrefixIdentity {
-			name: UnixComponent::new(b"attempt-1").unwrap(),
+			name: UnixComponent::new(self.name).unwrap(),
 			directory: LinuxFileIdentity::new(DEVICE, STAGING),
 			file: LinuxFileIdentity::new(DEVICE, native),
 		}

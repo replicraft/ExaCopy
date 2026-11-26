@@ -25,3 +25,15 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/sync_genesis.rs", test = "independent_signed_workflow_closure_vectors_match_and_refuse", oracle = "An independent canonical CBOR, BLAKE3 and Ed25519 oracle builds signed one-root/two-endpoint/one-leaf closures. Three valid vectors bind exact scope and observations. Forty-three malformed, foreign, unselected, incomplete or inconsistent candidates refuse. Counted resolvers assert zero child opens for every root-local refusal." }
+
+[[obligation]]
+id = "P-064"
+requirement_ids = ["R-253", "R-255"]
+source = "src/remote_resume/prefix.rs"
+symbols = ["verify_continued_retained_prefix"]
+assumptions = [
+    "The caller independently binds the current authenticated peer, rooted source path, route, grant and qualification to the journal scope, and supplies the exact retained stage under its exclusive lease.",
+    "The selected continuation scanner only provides complete clean historical coverage. Historical claims, proof inputs and fresh byte comparisons carry no append or publication permit.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_resume/allocations/prefix/continued.rs", test = "allocations::prefix::continued::independent_aggregate_and_suffix_are_both_freshly_verified_from_zero", oracle = "Freshly compare every byte across the independently signed zero-based adopted aggregate and ordered suffix checkpoints. Alter every byte with and without equal corruption on the held stage. Require both live byte equality and recorded digest equality. Verify an ordinary fresh whole-prefix BLAKE3 digest, exact source borrow and original physical stage identities alongside the distinct continued lineage and extent." }

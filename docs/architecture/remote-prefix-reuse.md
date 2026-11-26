@@ -84,9 +84,19 @@ from the preceding history. It applies the 1,024-byte kind-40 payload cap
 before reading or allocating. Continued checkpoints use the explicit
 [1,0,15] required-version tuple; the old and new codecs mutually refuse.
 The adopted aggregate over `[0, adopted_end)` remains separate from the
-later suffix checkpoint rows. A historical range hash is not current
-byte verification. A later append verifier must freshly reread both
-regions, including the aggregate, before relying on them.
+later suffix checkpoint rows. The replay exposes the complete retained
+history only at a clean, unsealed continued capture boundary. That
+history keeps the original prepared inode and current kind-40 preparation
+separate, and supplies the latest coverage anchor, active epochs, source
+extent, grant and strategy qualification.
+
+The transfer verifier rereads the signed aggregate from offset zero,
+then every suffix checkpoint and any bounded uncheckpointed tail. Its
+read windows and current identity checks are shared with the original
+verifier. The returned source borrow carries the whole freshly measured
+BLAKE3 state. For a successful pass each remote byte is read once. A
+mismatch can require reading its entire historical digest range for
+classification, which may be the full adopted aggregate.
 
 The first scanner supports continued capture, zero suffix and explicit
 uncertainty. A further allocation, retirement, continuation or finalization

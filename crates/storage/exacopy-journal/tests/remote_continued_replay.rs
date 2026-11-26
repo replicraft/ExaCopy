@@ -235,6 +235,10 @@ fn empty_suffix_is_clear_and_every_partial_frame_retains_exact_prior_boundary() 
 			let replay = fixture.replay(&fixture.bytes[..cut]);
 			assert_eq!(replay.boundary(), fixture.boundary(sequence), "cut {cut}");
 			assert!(matches!(
+				replay.active_prefix_history(),
+				Err(Error::Binding)
+			));
+			assert!(matches!(
 				replay.state(),
 				RemoteContinuationState::ReconciliationRequired(_)
 			));
@@ -388,6 +392,7 @@ fn exact_recorded_failure_latches_and_other_suffixes_remain_reconciliation_cases
 	let scan = fixture.replay(bytes.as_slice());
 	assert_eq!(scan.boundary().head.sequence(), 7);
 	assert_eq!(scan.recorded_uncertainty().unwrap().boundary, failure);
+	assert!(matches!(scan.active_prefix_history(), Err(Error::Binding)));
 	assert!(matches!(
 		scan.state(),
 		RemoteContinuationState::ReconciliationRequired(RemoteReplayIssue::RecordedUncertainty),

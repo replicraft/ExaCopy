@@ -3,7 +3,9 @@
 use exacopy_content::{StreamInputError, validate_stream_input};
 use exacopy_endpoint::{ReadView, UnixComponent};
 use exacopy_journal::LinuxFileIdentity;
-use exacopy_journal::remote_download::checkpoints::RemoteActiveCheckpoints;
+use exacopy_journal::remote_download::checkpoints::{RemoteActiveCheckpoints, RemotePrefixHistory};
+use exacopy_journal::remote_download::continuation::replay::RemoteContinuationReplay;
+use exacopy_journal::remote_download::continuation::{CoverageBasis, PriorPreparation};
 use exacopy_journal::remote_download::replay::{RemotePreparedStage, RemoteReplayBoundary};
 use exacopy_journal::remote_download::{
 	MAX_REMOTE_CHECKPOINT_BYTES, RemoteDownloadContext, RemoteDownloadError, RemoteEpochs,
@@ -57,6 +59,9 @@ pub struct VerifiedRetainedPrefix<'source, R> {
 	qualification: [u8; 32],
 	stage: RemotePreparedStage,
 	previous: RemoteEpochs,
+	active: PriorPreparation,
+	coverage_basis: CoverageBasis,
+	recorded_grant: Option<[u8; 32]>,
 	boundary: RemoteReplayBoundary,
 }
 
@@ -115,6 +120,24 @@ impl<'source, R> VerifiedRetainedPrefix<'source, R> {
 		self.previous
 	}
 
+	/// Active historical preparation, distinct from the original held inode binding.
+	#[must_use]
+	pub const fn active_preparation(&self) -> PriorPreparation {
+		self.active
+	}
+
+	/// Latest historical checkpoint or signed aggregate coverage anchor.
+	#[must_use]
+	pub const fn coverage_basis(&self) -> CoverageBasis {
+		self.coverage_basis
+	}
+
+	/// Historical grant digest selected for a continued capture.
+	#[must_use]
+	pub const fn recorded_grant(&self) -> Option<[u8; 32]> {
+		self.recorded_grant
+	}
+
 	/// Last accepted journal boundary supplying the historical checkpoint set.
 	#[must_use]
 	pub const fn boundary(&self) -> RemoteReplayBoundary {
@@ -158,9 +181,53 @@ where
 	R: CapturedReadAt,
 	L: RetainedPrefixView,
 {
+	let history = inventory
+		.prefix_history()
+		.map_err(PrefixVerificationError::History)?;
+	verify_history(&history, source, epoch, retained, scratch).await
+}
+
+/// Checks the entire retained prefix of one clean continued capture.
+///
+/// Both the signed adopted aggregate from offset zero and all later checkpoint
+/// digests are checked against the fresh held remote and local reads. This
+/// evidence can only be obtained under the same live source and stage contracts
+/// as [`verify_retained_prefix`]. The operation does not inspect terminal EOF.
+///
+/// # Errors
+/// Refuses unclean or legacy replay, stale epochs, changed held observations,
+/// extents outside the active writer's bounds, and any mismatch or failed read.
+pub async fn verify_continued_retained_prefix<'source, R, L>(
+	replay: &RemoteContinuationReplay,
+	source: &'source mut R,
+	epoch: SourceEpoch,
+	retained: &L,
+	scratch: &mut [u8],
+) -> Result<VerifiedRetainedPrefix<'source, R>, PrefixVerificationError<R::Error, L::Error>>
+where
+	R: CapturedReadAt,
+	L: RetainedPrefixView,
+{
+	let history = replay
+		.active_prefix_history()
+		.map_err(PrefixVerificationError::History)?;
+	verify_history(&history, source, epoch, retained, scratch).await
+}
+
+async fn verify_history<'source, R, L>(
+	inventory: &RemotePrefixHistory<'_>,
+	source: &'source mut R,
+	epoch: SourceEpoch,
+	retained: &L,
+	scratch: &mut [u8],
+) -> Result<VerifiedRetainedPrefix<'source, R>, PrefixVerificationError<R::Error, L::Error>>
+where
+	R: CapturedReadAt,
+	L: RetainedPrefixView,
+{
 	use PrefixVerificationError as Error;
 
-	let scope = inventory.scope().map_err(Error::History)?;
+	let scope = inventory.scope();
 	let source_length = source.length();
 	validate_stream_input(source_length, scratch.len()).map_err(Error::Input)?;
 	if epoch.get() <= inventory.epochs().source.get() || source.epoch() != epoch {
@@ -211,22 +278,30 @@ where
 	comparison.recheck_source().await?;
 
 	let mut mismatch = None;
-	for checkpoint in inventory.checkpoints() {
-		let offset = checkpoint.offset();
-		let end = offset
-			.checked_add(checkpoint.length())
+	let mut cursor = 0;
+	for range in inventory.ranges() {
+		let end = range
+			.offset
+			.checked_add(range.length)
+			.filter(|end| {
+				range.offset == cursor && range.length > 0 && *end <= inventory.covered_extent()
+			})
 			.ok_or(Error::History(RemoteDownloadError::FrameBinding))?;
 		mismatch = comparison
-			.check(offset..end, Some(*checkpoint.digest().as_bytes()))
+			.check(cursor..end, Some(*range.digest.as_bytes()))
 			.await?;
+		cursor = end;
 		if mismatch.is_some() {
 			break;
 		}
 	}
-	if mismatch.is_none() && tail > 0 {
-		mismatch = comparison
-			.check(inventory.covered_extent()..extent, None)
-			.await?;
+	if mismatch.is_none() {
+		if cursor != inventory.covered_extent() {
+			return Err(Error::History(RemoteDownloadError::FrameBinding));
+		}
+		if tail > 0 {
+			mismatch = comparison.check(cursor..extent, None).await?;
+		}
 	}
 	comparison.recheck_source().await?;
 	comparison.recheck_stage(inventory, extent)?;
@@ -249,6 +324,9 @@ where
 		qualification: inventory.expected_qualification(),
 		stage: inventory.prepared(),
 		previous: inventory.epochs(),
+		active: inventory.active(),
+		coverage_basis: inventory.coverage_basis(),
+		recorded_grant: inventory.recorded_grant(),
 		boundary: inventory.boundary(),
 	})
 }

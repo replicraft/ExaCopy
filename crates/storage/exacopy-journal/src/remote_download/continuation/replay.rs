@@ -6,7 +6,9 @@ use crate::frame::{ChainHead, Frame};
 use crate::{StreamDigest, StreamLength};
 
 use super::{Error, RemoteBootstrapTrust, RemoteEpochs, RemoteSourceObservation};
-use crate::remote_download::checkpoints::RemoteVerifiedCheckpoint;
+use crate::remote_download::checkpoints::{
+	PrefixOwner, RemotePrefixHistory, RemoteVerifiedCheckpoint,
+};
 use crate::remote_download::finalization_policy::SftpDataOnlyV1;
 use crate::remote_download::finalization_replay::{FinalizationHistory, RemoteFinalizationPhase};
 use crate::remote_download::qualification::{
@@ -110,6 +112,9 @@ pub struct RemoteContinuationReplay {
 	prefix: RemoteDownloadReplay,
 	phase: RemoteFinalizationPhase,
 	continued: ContinuedHistory,
+	prefix_owner: PrefixOwner,
+	qualification: [u8; 32],
+	grant: [u8; 32],
 }
 
 impl RemoteContinuationReplay {
@@ -145,6 +150,27 @@ impl RemoteContinuationReplay {
 			.or_else(|| self.prefix.recorded_uncertainty())
 	}
 
+	/// Returns the complete coverage of a clean active continued capture.
+	///
+	/// # Errors
+	/// Refuses legacy, uncertain, torn or semantically rejected history.
+	pub fn active_prefix_history(&self) -> Result<RemotePrefixHistory<'_>, Error> {
+		let RemoteContinuationState::Continued(active) = self.state() else {
+			return Err(Error::Binding);
+		};
+		if self.recorded_uncertainty().is_some() || self.phase != RemoteFinalizationPhase::Capture {
+			return Err(Error::Binding);
+		}
+		RemotePrefixHistory::continued(
+			self.prefix_owner,
+			self.attempts().last().ok_or(Error::Binding)?,
+			self.boundary(),
+			self.qualification,
+			self.grant,
+			active,
+		)
+	}
+
 	/// Returns the historical classification and preserves any reconciliation reason.
 	#[must_use]
 	pub const fn state(&self) -> RemoteContinuationState<'_> {
@@ -176,10 +202,12 @@ pub fn replay_remote_continuation(
 	selection: &RemoteContinuationSelection<'_>,
 ) -> Result<RemoteContinuationReplay, Error> {
 	validate_selection(trust, selection)?;
+	let prefix_owner = PrefixOwner::from_owner(trust.owner())?;
+	let qualification = *selection.qualification.digest().as_bytes();
 	let mut legacy = FinalizationHistory::new(selection.legacy_qualification);
 	let mut continued = ContinuedHistory::new(
 		selection.legacy_qualification,
-		*selection.qualification.digest().as_bytes(),
+		qualification,
 		selection.grant_digest,
 	);
 	let prefix = scan_continuation(input, trust, &mut legacy, &mut continued)?;
@@ -187,6 +215,9 @@ pub fn replay_remote_continuation(
 		prefix,
 		phase: legacy.phase(),
 		continued,
+		prefix_owner,
+		qualification,
+		grant: selection.grant_digest,
 	})
 }
 
