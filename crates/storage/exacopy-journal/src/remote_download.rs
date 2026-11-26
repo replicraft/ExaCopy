@@ -14,6 +14,7 @@ pub mod replay;
 pub mod retirement;
 mod scope;
 mod wire;
+pub mod witness;
 
 pub use bootstrap::{
 	MAX_REMOTE_BOOTSTRAP_PAYLOAD_BYTES, RemoteBootstrapTrust, RemoteStageDirectoryPrepared,

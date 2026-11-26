@@ -217,6 +217,16 @@ pub(super) const BINDINGS: &[Binding] = &[
 		Marker::array("VERSION", 3),
 	),
 	Binding::new(
+		"linux-remote-witness-intent",
+		"crates/storage/exacopy-journal/src/remote_download/witness/wire.rs",
+		Marker::array("VERSION", 3),
+	),
+	Binding::new(
+		"linux-remote-witness-receipt-ready",
+		"crates/storage/exacopy-journal/src/remote_download/witness/wire.rs",
+		Marker::array("VERSION", 3),
+	),
+	Binding::new(
 		"linux-remote-stage-directory-bootstrap",
 		"crates/storage/exacopy-journal/src/remote_download/bootstrap.rs",
 		Marker::Scalar {

@@ -204,3 +204,40 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/remote_download/witness_qualification.rs", test = "witness::independently_signed_witness_vectors_require_exact_profile_and_route", oracle = "Authenticate independently encoded OpenSSL op2/coverage2 vectors under exact common scope and both route classes. The old verifier refuses them even if offered the witness selector, and the new verifier refuses V1/op1. A domain-bound digest identifies exact record bytes." }
+
+[[obligation]]
+id = "P-068"
+requirement_ids = ["R-253", "R-255"]
+source = "src/remote_download/continuation/replay.rs"
+symbols = ["replay_remote_witness_continuation"]
+assumptions = [
+    "The caller independently selects authenticated owner and stage-bootstrap trust, the archived initial V1 qualification digest, the attestor-verified op2 qualification, and the exact base grant commitment.",
+    "The supplied stream is the complete selected first segment from byte zero. Historical framed evidence cannot establish current names, held leases, native effects, approved retention, or publication.",
+    "Only one continued pass and its pre-closeout checkpoint or failure grammar are admitted; selector-2 finalization and receipt remain separate.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_continuation/witness_replay.rs", test = "witness_replay::independently_selected_witness_replay_refuses_other_profiles_and_keeps_exact_boundary", oracle = "Use independently OpenSSL-signed op2 qualification for the frozen owner/parent and the existing independent replay prefix. Bind a signed kind 40 and covered suffix to that exact op2 and base grant. Require op1 and op2 to refuse each other's history at the exact prior boundary, and reject wrong historical base-grant binding." }
+
+[[obligation]]
+id = "P-069"
+requirement_ids = ["R-253", "R-255"]
+source = "src/remote_download/witness.rs"
+symbols = ["RemoteBootstrapTrust::from_witness_intent_frame"]
+assumptions = [
+    "The caller independently selects the verified operation-2 qualification, authenticated owner, accepted continuation and latest coverage boundary, archived grant and explicit historical consent commitment.",
+    "Signed intent is historical evidence only. Current retention approval, native source closure, held custody, barriers and effect authority require separate admission.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_continuation/witness_closeout.rs", test = "witness_closeout::independent_owner_signed_intent_matches_zero_tail_and_ordinal_two", oracle = "Reproduce independently encoded and owner-signed intent under exact selector 2 for inherited-prefix and continued-checkpoint coverage, including zero-tail and ordinal-two cases. Refuse altered canonical bytes, profile, approval, route, owner or lineage." }
+
+[[obligation]]
+id = "P-070"
+requirement_ids = ["R-253", "R-255"]
+source = "src/remote_download/witness/receipt_ready.rs"
+symbols = ["RemoteReceiptReady"]
+assumptions = [
+    "The caller independently resolves the accepted metadata, positive publication and receipt records and exact authenticated witness intent under the same selected binding.",
+    "Canonical identity, length and digest declarations do not prove receipt creation, synchronization, current namespace, capacity or publication authority.",
+]
+gates = ["rust"]
+rust = { file = "tests/remote_continuation/witness_closeout.rs", test = "witness_closeout::receipt_ready_matches_canonical_artifact_and_exact_allocated_inode", oracle = "Match independent canonical receipt declarations to the exact phase, selected inode, derived pending/final basenames and bounded artifact digest and length. Refuse malformed, mismatched and wrong-profile declarations." }

@@ -401,3 +401,6 @@ fn signer_refuses_impossible_structural_claims_and_accepts_zero_tail() {
 		);
 	}
 }
+
+#[path = "remote_continuation/witness_closeout.rs"]
+mod witness_closeout;

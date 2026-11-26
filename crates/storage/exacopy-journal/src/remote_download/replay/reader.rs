@@ -17,7 +17,10 @@ use super::super::{
 	RemoteDownloadContext, RemoteDownloadError, RemoteDownloadOwner, RemoteDownloadOwnerRecord,
 	RemoteDownloadRecord, RemoteScopeDigest,
 };
-use super::{RemoteDownloadReplay, RemoteReplayBoundary, RemoteReplayIssue, RemoteReplayMismatch};
+use super::{
+	ContinuationReplayProfile, RemoteDownloadReplay, RemoteReplayBoundary, RemoteReplayIssue,
+	RemoteReplayMismatch,
+};
 
 pub(super) fn replay(
 	input: impl Read,
@@ -79,6 +82,7 @@ pub(super) fn scan_continuation(
 	trust: &RemoteBootstrapTrust<'_>,
 	history: &mut FinalizationHistory,
 	continued: &mut ContinuedHistory,
+	continuation_profile: ContinuationReplayProfile,
 	max_bytes: u64,
 	max_attempts: usize,
 ) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
@@ -90,6 +94,7 @@ pub(super) fn scan_continuation(
 			finalization: Some(history),
 			continued: Some(continued),
 			retain_checkpoints: true,
+			continuation_profile,
 		},
 		max_bytes,
 		max_attempts,
@@ -102,6 +107,7 @@ struct ScanProfile<'scan, 'owner> {
 	finalization: Option<&'scan mut FinalizationHistory>,
 	continued: Option<&'scan mut ContinuedHistory>,
 	retain_checkpoints: bool,
+	continuation_profile: ContinuationReplayProfile,
 }
 
 fn scan(
@@ -116,6 +122,7 @@ fn scan(
 		mut finalization,
 		mut continued,
 		retain_checkpoints,
+		continuation_profile,
 	} = profile;
 	let manifest = owner.manifest();
 	let validation = ReplayValidation {
@@ -147,7 +154,21 @@ fn scan(
 
 	loop {
 		let mut budget_payload = None;
+		let mut unsupported_kind = None;
 		let read = reader.next_frame_with_payload_limit(|kind| {
+			if continuation_profile == ContinuationReplayProfile::Witness
+				&& continued
+					.as_ref()
+					.is_some_and(|history| history.active().is_some())
+				&& !matches!(
+					kind,
+					FrameKind::RangeCheckpoint | FrameKind::FailureRecorded
+				) {
+				// The framed kind alone is sufficient to refuse a closeout or a
+				// second continuation. Do not allocate or read its payload.
+				unsupported_kind = Some(kind);
+				return 0;
+			}
 			let profile_limit = if bootstrap.is_some() && kind == FrameKind::StageDirectoryPrepared
 			{
 				MAX_REMOTE_BOOTSTRAP_PAYLOAD_BYTES
@@ -188,6 +209,21 @@ fn scan(
 			replay.issue = Some(RemoteReplayIssue::SegmentLimit);
 			break;
 		}
+		if let Some(kind) = unsupported_kind {
+			replay.issue = Some(RemoteReplayIssue::Record {
+				offset: replay.boundary.offset,
+				kind,
+				problem: if continued
+					.as_ref()
+					.is_some_and(|history| history.failure().is_some())
+				{
+					RemoteReplayMismatch::AfterUncertainty
+				} else {
+					RemoteReplayMismatch::UnsupportedKind
+				},
+			});
+			break;
+		}
 		let frame = match read {
 			Ok(Some(frame)) => frame,
 			Ok(None) => {
@@ -214,6 +250,19 @@ fn scan(
 			offset: reader.offset(),
 		};
 		let kind = frame.kind();
+		if continuation_profile == ContinuationReplayProfile::Witness {
+			if replay.boundary.head.sequence().checked_add(1) != Some(end.head.sequence()) {
+				replay.issue = Some(RemoteReplayIssue::Framing(FrameReadError::Corrupt {
+					offset: replay.boundary.offset,
+					problem: FrameProblem::Sequence(end.head.sequence()),
+				}));
+				break;
+			}
+			if kind == FrameKind::RemoteCaptureContinued && replay.attempts.len() >= max_attempts {
+				replay.issue = Some(RemoteReplayIssue::AttemptLimit);
+				break;
+			}
+		}
 		let accepted = if let (Some(continued), Some(trust), Some(history)) =
 			(continued.as_deref_mut(), bootstrap, finalization.as_ref())
 			&& (kind == FrameKind::RemoteCaptureContinued || continued.active().is_some())

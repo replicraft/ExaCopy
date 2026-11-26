@@ -1,22 +1,27 @@
-//! Read-only historical admission of the first continued capture profile.
+//! Read-only historical admission of explicitly selected continued capture profiles.
 
 use std::io::Read;
+
+use exacopy_endpoint::linux_remote_qualification::RemoteDestinationFacts;
 
 use crate::frame::{ChainHead, Frame};
 use crate::{StreamDigest, StreamLength};
 
-use super::{Error, RemoteBootstrapTrust, RemoteEpochs, RemoteSourceObservation};
+use super::{
+	Error, RemoteBootstrapTrust, RemoteCaptureContinued, RemoteEpochs, RemoteSourceObservation,
+};
 use crate::remote_download::checkpoints::{
 	PrefixOwner, RemotePrefixHistory, RemoteVerifiedCheckpoint,
 };
 use crate::remote_download::finalization_policy::SftpDataOnlyV1;
 use crate::remote_download::finalization_replay::{FinalizationHistory, RemoteFinalizationPhase};
 use crate::remote_download::qualification::{
-	RemoteQualificationRouteClass, continuation::VerifiedRemoteContinuationQualification,
+	RemoteQualificationRouteClass,
+	continuation::{VerifiedRemoteContinuationQualification, VerifiedRemoteWitnessQualification},
 };
 use crate::remote_download::replay::{
-	RemoteDownloadReplay, RemoteRecordedUncertainty, RemoteReplayAttempt, RemoteReplayBoundary,
-	RemoteReplayIssue, scan_continuation,
+	ContinuationReplayProfile, RemoteDownloadReplay, RemoteRecordedUncertainty,
+	RemoteReplayAttempt, RemoteReplayBoundary, RemoteReplayIssue, scan_continuation,
 };
 use crate::remote_download::{RemoteDownloadRoute, RemoteStageDirectoryPrepared};
 
@@ -35,6 +40,111 @@ pub struct RemoteContinuationSelection<'qualification> {
 	pub grant_digest: [u8; 32],
 }
 
+/// Independently selected historical trust for a witnessed continuation job.
+///
+/// This selection supports the original V1 prefix, one witnessed continuation
+/// and its continued checkpoints or recorded failure. Closeout and retirement
+/// of the witnessed pass require their own selected replay grammar.
+#[derive(Debug)]
+pub struct RemoteWitnessContinuationSelection<'qualification> {
+	/// Independently selected V1 qualification digest for the original history.
+	pub initial_v1_qualification: [u8; 32],
+	/// Authenticated historical witnessed-strategy qualification.
+	pub qualification: &'qualification VerifiedRemoteWitnessQualification,
+	/// Independently selected immutable base grant commitment.
+	pub grant_digest: [u8; 32],
+}
+
+/// Replay produced only by explicit witnessed-strategy selection.
+///
+/// This type carries no current grant, retention approval, lease or authorization.
+pub struct RemoteWitnessContinuationReplay(RemoteContinuationReplay);
+
+impl RemoteWitnessContinuationReplay {
+	/// Returns the bounded historical observations, including any exact refusal.
+	#[must_use]
+	pub const fn history(&self) -> &RemoteContinuationReplay {
+		&self.0
+	}
+
+	/// Borrows the actual terminal declaration at the supplied clean EOF.
+	///
+	/// Completeness means coverage of the signed pass extent in the scanned
+	/// bytes. Current native EOF, identity, and lease require separate checks.
+	///
+	/// # Errors
+	/// Refuses an incomplete capture, legacy state, uncertain suffix or any replay issue.
+	pub fn complete_coverage_predecessor(
+		&self,
+	) -> Result<RemoteWitnessCoveragePredecessor<'_>, Error> {
+		let history = &self.0;
+		let RemoteContinuationState::Continued(active) = history.state() else {
+			return Err(Error::Binding);
+		};
+		if history.phase != RemoteFinalizationPhase::Capture
+			|| history.recorded_uncertainty().is_some()
+			|| active.covered_end != active.source.length().get()
+		{
+			return Err(Error::Binding);
+		}
+		let frames = active.witness_frames.as_ref().ok_or(Error::Binding)?;
+		let (frame, boundary) = frames
+			.latest
+			.as_ref()
+			.map_or((&active.frame, active.admitted_at), |(frame, boundary)| {
+				(frame, *boundary)
+			});
+		if boundary != history.boundary() || frame.head() != boundary.head {
+			return Err(Error::FrameBinding);
+		}
+		Ok(RemoteWitnessCoveragePredecessor {
+			active,
+			frames,
+			frame,
+			boundary,
+		})
+	}
+}
+
+/// Exact selected kind-40 lineage and terminal coverage frame of one bounded scan.
+///
+/// This evidence has no writer, current grant, retention approval or lease.
+#[derive(Debug)]
+pub struct RemoteWitnessCoveragePredecessor<'scan> {
+	active: &'scan RemoteContinuedCapture,
+	frames: &'scan WitnessFrames,
+	frame: &'scan Frame,
+	boundary: RemoteReplayBoundary,
+}
+
+impl<'scan> RemoteWitnessCoveragePredecessor<'scan> {
+	/// Returns the exact accepted predecessor head and segment-relative offset.
+	#[must_use]
+	pub const fn boundary(&self) -> RemoteReplayBoundary {
+		self.boundary
+	}
+
+	pub(in crate::remote_download) fn authenticated(
+		&self,
+		trust: &RemoteBootstrapTrust<'_>,
+	) -> Result<(RemoteCaptureContinued<'scan>, &'scan Frame), Error> {
+		let continuation = trust.verify_continuation_frame(
+			&self.active.frame,
+			self.frames.original_boundary,
+			self.active.admitted_at,
+			self.frames.original_source_extent,
+		)?;
+		Ok((continuation, self.frame))
+	}
+}
+
+#[derive(Debug)]
+struct WitnessFrames {
+	original_boundary: RemoteReplayBoundary,
+	original_source_extent: StreamLength,
+	latest: Option<(Frame, RemoteReplayBoundary)>,
+}
+
 /// Accepted historical information for the one active continued pass.
 #[derive(Debug)]
 pub struct RemoteContinuedCapture {
@@ -46,6 +156,7 @@ pub struct RemoteContinuedCapture {
 	prefix_digest: StreamDigest,
 	checkpoints: Vec<RemoteVerifiedCheckpoint>,
 	covered_end: u64,
+	witness_frames: Option<WitnessFrames>,
 }
 
 impl RemoteContinuedCapture {
@@ -201,33 +312,101 @@ pub fn replay_remote_continuation(
 	trust: &RemoteBootstrapTrust<'_>,
 	selection: &RemoteContinuationSelection<'_>,
 ) -> Result<RemoteContinuationReplay, Error> {
-	validate_selection(trust, selection)?;
+	replay_selected(
+		input,
+		trust,
+		HistoricalSelection {
+			legacy_qualification: selection.legacy_qualification,
+			qualification: *selection.qualification.digest().as_bytes(),
+			grant: selection.grant_digest,
+			facts: selection.qualification.facts(),
+			route: selection.qualification.scope().common.route,
+			owner_matches: selection.qualification.matches_owner(trust.key()),
+		},
+		ContinuationReplayProfile::Original,
+	)
+}
+
+/// Inspects a bounded first segment under exact witnessed-strategy trust.
+///
+/// It requires consecutive frames throughout the selected history and counts
+/// the first continued pass within the existing job-wide attempt limit. The
+/// scanner accepts only the original capture grammar, one signed kind 40 and
+/// its matching continued checkpoints or recorded failure. It never interprets
+/// a later closeout, retirement or second continuation as a supported effect.
+///
+/// # Errors
+/// Refuses incompatible independent selection before reading. A framing or
+/// semantic refusal preserves the exact last accepted boundary in the history.
+pub fn replay_remote_witness_continuation(
+	input: impl Read,
+	trust: &RemoteBootstrapTrust<'_>,
+	selection: &RemoteWitnessContinuationSelection<'_>,
+) -> Result<RemoteWitnessContinuationReplay, Error> {
+	replay_selected(
+		input,
+		trust,
+		HistoricalSelection {
+			legacy_qualification: selection.initial_v1_qualification,
+			qualification: *selection.qualification.digest().as_bytes(),
+			grant: selection.grant_digest,
+			facts: selection.qualification.facts(),
+			route: selection.qualification.scope().common.route,
+			owner_matches: selection.qualification.matches_owner(trust.key()),
+		},
+		ContinuationReplayProfile::Witness,
+	)
+	.map(RemoteWitnessContinuationReplay)
+}
+
+struct HistoricalSelection<'facts> {
+	legacy_qualification: [u8; 32],
+	qualification: [u8; 32],
+	grant: [u8; 32],
+	facts: &'facts RemoteDestinationFacts,
+	route: RemoteQualificationRouteClass,
+	owner_matches: bool,
+}
+
+fn replay_selected(
+	input: impl Read,
+	trust: &RemoteBootstrapTrust<'_>,
+	selection: HistoricalSelection<'_>,
+	continuation_profile: ContinuationReplayProfile,
+) -> Result<RemoteContinuationReplay, Error> {
+	validate_selection(trust, &selection)?;
 	let prefix_owner = PrefixOwner::from_owner(trust.owner())?;
-	let qualification = *selection.qualification.digest().as_bytes();
 	let mut legacy = FinalizationHistory::new(selection.legacy_qualification);
 	let mut continued = ContinuedHistory::new(
 		selection.legacy_qualification,
-		qualification,
-		selection.grant_digest,
+		selection.qualification,
+		selection.grant,
+		continuation_profile == ContinuationReplayProfile::Witness,
 	);
-	let prefix = scan_continuation(input, trust, &mut legacy, &mut continued)?;
+	let prefix = scan_continuation(
+		input,
+		trust,
+		&mut legacy,
+		&mut continued,
+		continuation_profile,
+	)?;
 	Ok(RemoteContinuationReplay {
 		prefix,
 		phase: legacy.phase(),
 		continued,
 		prefix_owner,
-		qualification,
-		grant: selection.grant_digest,
+		qualification: selection.qualification,
+		grant: selection.grant,
 	})
 }
 
 fn validate_selection(
 	trust: &RemoteBootstrapTrust<'_>,
-	selection: &RemoteContinuationSelection<'_>,
+	selection: &HistoricalSelection<'_>,
 ) -> Result<(), Error> {
 	let owner_scope = &trust.owner().manifest().scope;
 	let parent = owner_scope.destination.parent();
-	let observed_parent = selection.qualification.facts().ids().root;
+	let observed_parent = selection.facts.ids().root;
 	let route = match owner_scope.source.route() {
 		RemoteDownloadRoute::ResolvedDirect { .. } => {
 			RemoteQualificationRouteClass::DirectPinnedTcpV1
@@ -238,11 +417,11 @@ fn validate_selection(
 		_ => return Err(Error::Scope),
 	};
 	if owner_scope.metadata_policy != SftpDataOnlyV1::digest()
-		|| selection.grant_digest == [0; 32]
+		|| selection.grant == [0; 32]
 		|| selection.legacy_qualification == [0; 32]
-		|| selection.legacy_qualification == *selection.qualification.digest().as_bytes()
-		|| !selection.qualification.matches_owner(trust.key())
-		|| selection.qualification.scope().common.route != route
+		|| selection.legacy_qualification == selection.qualification
+		|| !selection.owner_matches
+		|| selection.route != route
 		|| observed_parent.device != parent.device()
 		|| observed_parent.inode != parent.inode()
 	{

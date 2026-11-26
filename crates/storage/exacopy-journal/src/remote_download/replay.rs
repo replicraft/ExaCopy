@@ -264,17 +264,26 @@ pub(super) fn scan_finalization(
 	)
 }
 
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
+pub(super) enum ContinuationReplayProfile {
+	#[default]
+	Original,
+	Witness,
+}
+
 pub(super) fn scan_continuation(
 	input: impl Read,
 	trust: &RemoteBootstrapTrust<'_>,
 	history: &mut FinalizationHistory,
 	continued: &mut super::continuation::replay::ContinuedHistory,
+	continuation_profile: ContinuationReplayProfile,
 ) -> Result<RemoteDownloadReplay, RemoteDownloadError> {
 	reader::scan_continuation(
 		input,
 		trust,
 		history,
 		continued,
+		continuation_profile,
 		MAX_REMOTE_REPLAY_SEGMENT_BYTES,
 		MAX_REMOTE_REPLAY_ATTEMPTS,
 	)

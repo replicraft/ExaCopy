@@ -12,7 +12,7 @@ use super::super::checkpoint::RemoteContinuedCheckpoint;
 use super::{
 	Error, RemoteBootstrapTrust, RemoteContinuedCapture, RemoteDownloadReplay,
 	RemoteFinalizationPhase, RemoteRecordedUncertainty, RemoteReplayBoundary,
-	RemoteVerifiedCheckpoint, StreamLength,
+	RemoteVerifiedCheckpoint, StreamLength, WitnessFrames,
 };
 
 /// Explicitly selected historical continuation state for the common scan loop.
@@ -22,6 +22,7 @@ pub(in crate::remote_download) struct ContinuedHistory {
 	grant: [u8; 32],
 	active: Option<RemoteContinuedCapture>,
 	failure: Option<RemoteRecordedUncertainty>,
+	retain_witness_frames: bool,
 }
 
 impl ContinuedHistory {
@@ -29,6 +30,7 @@ impl ContinuedHistory {
 		legacy_qualification: [u8; 32],
 		qualification: [u8; 32],
 		grant: [u8; 32],
+		retain_witness_frames: bool,
 	) -> Self {
 		Self {
 			legacy_qualification,
@@ -36,6 +38,7 @@ impl ContinuedHistory {
 			grant,
 			active: None,
 			failure: None,
+			retain_witness_frames,
 		}
 	}
 
@@ -61,10 +64,11 @@ impl ContinuedHistory {
 		if let Some(active) = &mut self.active {
 			match frame.kind() {
 				FrameKind::RangeCheckpoint => {
-					active.accept_checkpoint(trust, prior.boundary(), &frame)
+					active.accept_checkpoint(trust, prior.boundary(), frame, end)
 				}
 				FrameKind::FailureRecorded => {
 					self.failure = Some(active.accept_failure(trust, prior.boundary(), &frame)?);
+					active.witness_frames = None;
 					Ok(())
 				}
 				_ => Err(Mismatch::UnsupportedKind),
@@ -101,8 +105,9 @@ impl ContinuedHistory {
 		let latest = old.checkpoints().last().ok_or(Mismatch::Checkpoint)?;
 		let expected_head = old.prepared();
 		let previous = old.boundary();
+		let original_source_extent = old.source().length();
 		let claims = trust
-			.verify_continuation_frame(&frame, previous, end, old.source().length())
+			.verify_continuation_frame(&frame, previous, end, original_source_extent)
 			.map_err(Mismatch::Payload)?
 			.claims();
 
@@ -149,6 +154,11 @@ impl ContinuedHistory {
 			prefix_digest,
 			checkpoints: Vec::new(),
 			covered_end: adopted_end.get(),
+			witness_frames: self.retain_witness_frames.then_some(WitnessFrames {
+				original_boundary: previous,
+				original_source_extent,
+				latest: None,
+			}),
 		})
 	}
 }
@@ -158,9 +168,11 @@ impl RemoteContinuedCapture {
 		&mut self,
 		trust: &RemoteBootstrapTrust<'_>,
 		previous: RemoteReplayBoundary,
-		frame: &Frame,
+		frame: Frame,
+		boundary: RemoteReplayBoundary,
 	) -> Result<(), Mismatch> {
-		let checkpoint = RemoteContinuedCheckpoint::from_frame(frame).map_err(Mismatch::Payload)?;
+		let checkpoint =
+			RemoteContinuedCheckpoint::from_frame(&frame).map_err(Mismatch::Payload)?;
 		let range = checkpoint.range();
 		if checkpoint.context()
 			!= crate::remote_download::RemoteDownloadContext::for_owner(trust.owner())
@@ -190,6 +202,9 @@ impl RemoteContinuedCapture {
 			range.digest,
 		));
 		self.covered_end = end;
+		if let Some(frames) = &mut self.witness_frames {
+			frames.latest = Some((frame, boundary));
+		}
 		Ok(())
 	}
 

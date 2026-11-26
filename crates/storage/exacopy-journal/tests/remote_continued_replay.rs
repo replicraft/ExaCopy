@@ -37,6 +37,9 @@ use exacopy_journal::{OwnerDigest, OwnerProfileId, StreamDigest};
 #[path = "remote_continuation/replay_controls.rs"]
 mod replay_controls;
 
+#[path = "remote_continuation/witness_replay.rs"]
+mod witness_replay;
+
 const LEGACY_QUALIFICATION: [u8; 32] = [0x71; 32];
 const GRANT: [u8; 32] = [0x72; 32];
 const QUALIFICATION: &str = include_str!("remote_continuation/replay_qualification.hex");

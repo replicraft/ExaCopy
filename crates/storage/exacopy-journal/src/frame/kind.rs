@@ -82,6 +82,10 @@ pub enum FrameKind {
 	RemoteCaptureRetired = 39,
 	/// Signed verified-prefix declaration for a continued private capture.
 	RemoteCaptureContinued = 40,
+	/// Signed consent and durable fence for the protected witness basename.
+	RemoteWitnessIntent = 41,
+	/// Durable sealed receipt is ready for exclusive promotion.
+	RemoteReceiptReady = 42,
 }
 
 impl FrameKind {
@@ -135,6 +139,8 @@ impl FrameKind {
 			code if code == Self::StageDirectoryPrepared.code() => Self::StageDirectoryPrepared,
 			code if code == Self::RemoteCaptureRetired.code() => Self::RemoteCaptureRetired,
 			code if code == Self::RemoteCaptureContinued.code() => Self::RemoteCaptureContinued,
+			code if code == Self::RemoteWitnessIntent.code() => Self::RemoteWitnessIntent,
+			code if code == Self::RemoteReceiptReady.code() => Self::RemoteReceiptReady,
 			_ => return None,
 		})
 	}

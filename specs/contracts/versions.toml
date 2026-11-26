@@ -246,6 +246,24 @@ owner = "crates/storage/exacopy-journal/src/remote_download/finalization/wire.rs
 notes = "Canonical PublishedWithOmissions artifact sharing the remote finalization profile marker. It has its own receipt commitment digest domain and requires the validated selected journal."
 
 [[contract]]
+id = "linux-remote-witness-intent"
+kind = "transfer_journal"
+status = "implemented_private"
+version = "1.0"
+required_features = 15
+owner = "crates/storage/exacopy-journal/src/remote_download/witness/wire.rs"
+notes = "Kind 41, exact selector 2. Owner-signed canonical historical witness intent and retention commitment; claims at most 533 bytes and payload at most 605. Independent expected lineage, grant and consent selection required. No live consent, writer, scanner or native authority."
+
+[[contract]]
+id = "linux-remote-witness-receipt-ready"
+kind = "transfer_journal"
+status = "implemented_private"
+version = "1.0"
+required_features = 15
+owner = "crates/storage/exacopy-journal/src/remote_download/witness/wire.rs"
+notes = "Kind 42, exact selector 2. Canonical 689-byte maximum payload binding independently selected signed witness and receipt history to derived job-root names and a 1 through 6144 byte artifact declaration. No native receipt custody, durability, replay promotion or effect authority."
+
+[[contract]]
 id = "darwin-managed-apfs-owner"
 kind = "transfer_journal"
 status = "implemented_private"
