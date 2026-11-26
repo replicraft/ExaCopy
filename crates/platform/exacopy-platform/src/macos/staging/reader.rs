@@ -3,10 +3,11 @@ use std::fs::File;
 use std::io;
 use std::os::unix::fs::FileExt as _;
 
+use apfs_mounted::metadata::Metadata;
 use apfs_mounted::writer::ReadBack;
 use exacopy_endpoint::{MAX_INTERRUPTED_RETRIES, ReadView};
 
-use super::super::with_materialization_disabled;
+use super::super::{metadata, with_materialization_disabled};
 use super::file::{bounded_end, check_stage_view_acl};
 use super::{ClosedStage, StageError};
 
@@ -36,6 +37,16 @@ pub struct StageReader<'stage> {
 }
 
 impl StageReader<'_> {
+	pub(super) fn observe_selected_metadata_with_policy(&self) -> Result<Metadata, StageError> {
+		self.stage.location.check_current()?;
+		let (stat, inventory) = self
+			.read_back
+			.with_metadata(|view| Ok((view.stat()?, metadata::check_view_inventory(&view))))?;
+		inventory?;
+		self.stage.location.check_current()?;
+		Ok(stat)
+	}
+
 	/// Reads the exact requested stage range using at most 1 MiB per call.
 	///
 	/// # Errors

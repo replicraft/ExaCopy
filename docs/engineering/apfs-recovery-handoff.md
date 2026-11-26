@@ -86,3 +86,30 @@ inode's current birth time with the exact accepted identity even when its
 inode number matches. A changed birth time requires reconciliation. Treating
 the new birth time as the prepared identity would change the journal and
 replay contract and requires separate review.
+
+## Mutation-free seal for fresh selected streams
+
+The independently read-back stage for an SFTP data-only capture does not
+need source timestamps installed. The companion currently creates a
+`MetadataReadyFile` through its checked timestamp operation. Add a separate
+checked transition from the live `ClosedFile` that seals its current local
+metadata without applying timestamps. An illustrative API name is
+`seal_existing_metadata_checked`; it remains an upstream request.
+
+Use the original closed-writer capability, private name, lease and event
+anchor. Obtain and retain the companion's own checked read-only descriptor,
+observe the live metadata, run a bounded caller policy callback, perform the
+required file barrier, and revalidate the same identity, name, extent and
+metadata before and after the post-barrier callback. Preserve the exact
+observed access and modification times and require stable change time during
+this transition. Retain the private entry on any incomplete observation or
+barrier result. Issue the ordinary metadata-ready capability only after all
+checks succeed, so its existing post-rename held view can be reused.
+
+The callback lets ExaCopy require local mode 0600, admitted ownership, one
+link, zero flags and its explicit ACL/fork/xattr policy. The companion must
+not embed SFTP policy, digest comparison, grant, journal or receipt semantics.
+ExaCopy still requires writer quiescence, complete independent read-back,
+durable intent, qualification and one no-clobber permit before publication.
+No duplicate consumer descriptor, raw barrier fallback or timestamp mutation
+is needed for this seal.

@@ -13,6 +13,7 @@ mod file;
 mod identity;
 mod metadata;
 mod reader;
+mod selected_stream;
 
 #[cfg(test)]
 mod tests;
@@ -25,3 +26,4 @@ pub use file::{ClosedStage, MAX_STAGE_IO_BYTES, ManagedStageName, WriteStage};
 pub use identity::{StageBindingContext, StageIdentity};
 pub use metadata::MetadataReadyStage;
 pub use reader::StageReader;
+pub use selected_stream::{SelectedStreamObservation, SelectedStreamReader};

@@ -279,7 +279,11 @@ pub(in super::super) struct StageLocation<'stage> {
 	pub(super) length: u64,
 }
 
-impl StageLocation<'_> {
+impl<'stage> StageLocation<'stage> {
+	pub(super) fn component(&self) -> UnixComponent<'stage> {
+		self.name.component()
+	}
+
 	pub(in super::super) fn mounted_name(&self) -> &EntryName {
 		&self.name.mounted
 	}
