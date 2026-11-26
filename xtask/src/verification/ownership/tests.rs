@@ -100,7 +100,7 @@ fn rejects_omission_of_the_entire_registered_verification_directory() {
 	fs::remove_dir_all(fixture.root().join(OWNER).join("verification"))
 		.expect("remove fixture verification directory");
 	let (projects, findings) = inspect(&fixture);
-	let output = findings.to_string();
+	let output = findings.to_string().replace('\\', "/");
 	assert!(projects.is_empty());
 	assert!(output.contains("verification/obligations.toml"), "{output}");
 	assert!(output.contains("verification/check.sh"), "{output}");
