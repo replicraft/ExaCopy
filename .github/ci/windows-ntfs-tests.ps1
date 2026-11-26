@@ -61,5 +61,18 @@ try {
     Assert-SourceRefused -Name 'untracked-source' -StatusLine '(?m)^\?\? config\.toml\r?$'
 } finally {
     # Only synthetic files created by this test live here. Keep the run logs.
-    [IO.Directory]::Delete($fixture.FullName, $true)
+    # Git creates read-only loose objects on Windows. Refuse reparse entries
+    # before force-removing this exclusively created disposable source tree.
+    $fixture.Refresh()
+    if (-not $fixture.Exists -or ($fixture.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw 'Synthetic source fixture root changed; retain it for inspection.'
+    }
+    $entries = @(Get-ChildItem -LiteralPath $fixture.FullName -Recurse -Force -ErrorAction Stop)
+    if ($entries | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }) {
+        throw 'Synthetic source fixture contains a reparse point; retain it for inspection.'
+    }
+    Remove-Item -LiteralPath $fixture.FullName -Recurse -Force -ErrorAction Stop
+    if (Test-Path -LiteralPath $fixture.FullName) {
+        throw 'Synthetic source fixture cleanup did not remove the owned tree.'
+    }
 }
