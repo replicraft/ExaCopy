@@ -42,7 +42,7 @@ CASES = (
 PEER_FILES = {f"campaign/{case}.openssh.log": MAX_SUMMARY for case in CASES}
 
 
-def hosted_parent():
+def hosted_parent(program="remote_commissioning.py", events=("push", "workflow_dispatch")):
     if (
         sys.platform != "linux" or os.geteuid() == 0 or os.getuid() != os.geteuid()
         or os.getenv("GITHUB_ACTIONS") != "true" or os.getenv("RUNNER_ENVIRONMENT") != "github-hosted"
@@ -50,13 +50,13 @@ def hosted_parent():
         or os.getenv("GITHUB_SERVER_URL") != "https://github.com"
         or os.getenv("GITHUB_REPOSITORY", "").lower() != "replicraft/exacopy"
         or os.getenv("GITHUB_REF") != "refs/heads/main"
-        or os.getenv("GITHUB_EVENT_NAME") not in {"push", "workflow_dispatch"}
+        or os.getenv("GITHUB_EVENT_NAME") not in events
         or "EXACOPY_REMOTE_DEPLOYMENT" in os.environ
         or len(sys.argv) != 1
     ):
         raise Blocked("commissioning requires the closed GitHub-hosted Ubuntu job")
     # The workflow intentionally provisions no named deployment or authority input.
-    if not sys.argv[0].endswith("remote_commissioning.py") or Path.cwd() != native.REPO:
+    if Path(sys.argv[0]).name != program or Path.cwd() != native.REPO:
         raise Blocked("commissioning must run from the selected source checkout")
     os_release = Path("/etc/os-release").read_text(encoding="ascii").splitlines()
     if not {'ID=ubuntu', 'VERSION_ID="24.04"'} <= set(os_release):
@@ -100,13 +100,23 @@ def capture_file(work, output, relative, maximum):
     return hashlib.sha256(data).hexdigest()
 
 
-def export(work, output):
+def export(work, output, case_files=PEER_FILES):
     hashes = {}
-    for relative, maximum in (BASE_FILES | PEER_FILES).items():
+    for relative, maximum in (BASE_FILES | case_files).items():
         digest = capture_file(work, output, relative, maximum)
         if digest is not None:
             hashes[relative] = digest
     return hashes
+
+
+def check_case_exports(report, hashes, case_files):
+    summary = read_json(report / "campaign/summary.json", MAX_SUMMARY)
+    declared = summary.get("artifacts_sha256") if isinstance(summary, dict) else None
+    if not isinstance(declared, dict) or any(
+        relative not in hashes or hashes[relative] != declared.get(Path(relative).name)
+        for relative in case_files
+    ):
+        raise EvidenceFailed("successful campaign lacks its complete exact exported transcripts")
 
 
 def read_build_manifest(manifest):
@@ -141,7 +151,11 @@ def observations(fixture, build, binary, env, work, verify_build):
     verify_build()
 
 
-def run_fixture(fixture, work, binary, manifest, env, b3sum, evidence, verify_build):
+def direct_campaign(fixture, paths, binary, work):
+    return native.run_campaign(paths, native.DIRECT, binary, work)
+
+
+def run_fixture(fixture, work, binary, manifest, env, b3sum, evidence, verify_build, campaign):
     verify_build()
     fixture.make_root()
     observations(fixture, manifest, binary, env, work, verify_build)
@@ -171,11 +185,11 @@ def run_fixture(fixture, work, binary, manifest, env, b3sum, evidence, verify_bu
     evidence["peer"] = peer
     checkpoint()
     verify_build()
-    result = native.run_campaign({
+    result = campaign(fixture, {
         "destination": fixture.destination, "owner_profile": owner, "ssh_profile": profile,
         "qualification": record, "trust": trust, "source_small": small,
         "source_interrupt": large, "sshd_log": peer_log,
-    }, native.DIRECT, binary, work)
+    }, binary, work)
     summary_file = work / "campaign/summary.json"
     if summary_file.exists():
         summary = read_json(summary_file, MAX_SUMMARY)
@@ -195,7 +209,7 @@ def run_fixture(fixture, work, binary, manifest, env, b3sum, evidence, verify_bu
     return result
 
 
-def execute(parent, report, work, evidence):
+def execute(parent, report, work, evidence, fixture_kind=None, campaign=direct_campaign):
     evidence["host_preflight"] = {}
     gid = preflight(evidence["host_preflight"])
     b3sum = shutil.which("b3sum")
@@ -219,7 +233,7 @@ def execute(parent, report, work, evidence):
     evidence["source"] = source
     sshd_digest = file_digest(Path(SSHD))
     evidence["b3sum_sha256"] = file_digest(Path(b3sum))
-    fixture = Fixture(evidence["fixture_id"], gid)
+    fixture = (fixture_kind or Fixture)(evidence["fixture_id"], gid)
     target = parent / "private-build"
     env = native.build_environment(target)
     env["CARGO_BUILD_JOBS"] = "2"
@@ -244,7 +258,7 @@ def execute(parent, report, work, evidence):
                     raise EvidenceFailed("source changed during commissioning")
                 verify_build_custody(manifest, binary, build, digest)
 
-            outcome = run_fixture(fixture, work, binary, manifest, env, b3sum, evidence, verify_build)
+            outcome = run_fixture(fixture, work, binary, manifest, env, b3sum, evidence, verify_build, campaign)
             if evidence["peer"] is not None:
                 if file_digest(Path(SSHD)) != sshd_digest:
                     raise EvidenceFailed("independent OpenSSH executable changed during commissioning")
@@ -284,19 +298,21 @@ def execute(parent, report, work, evidence):
     return outcome
 
 
-def main():
+def main(*, fixture_kind=None, campaign=direct_campaign, program="remote_commissioning.py",
+         report_name="exacopy-direct-commissioning", case_files=PEER_FILES, require_case_exports=False,
+         events=("push", "workflow_dispatch")):
     if len(sys.argv) != 1:
         print("The hosted commissioning job accepts no arguments.", file=sys.stderr)
         return 77
     try:
-        fixed_parent = hosted_parent()
+        fixed_parent = hosted_parent(program, events)
     except (Blocked, OSError, KeyError) as error:
         print(f"Direct commissioning blocked: {error}", file=sys.stderr)
         return 77
     os.umask(0o077)
     signal.signal(signal.SIGTERM, interrupted)
     signal.signal(signal.SIGINT, interrupted)
-    parent = fixed_parent / "exacopy-direct-commissioning"
+    parent = fixed_parent / report_name
     try:
         parent.mkdir(mode=0o700)
     except OSError:
@@ -316,7 +332,7 @@ def main():
     }
     result = 77
     try:
-        result = execute(parent, report, work, evidence)
+        result = execute(parent, report, work, evidence, fixture_kind, campaign)
     except CleanupUnconfirmed:
         evidence["reason"] = "owned fixture cleanup is unconfirmed"
         evidence["cleanup"] = {"owned_groups": "unconfirmed", "fixture_state": "retained-uncertain"}
@@ -324,13 +340,21 @@ def main():
         evidence["reason"] = str(error) if isinstance(error, Blocked) else type(error).__name__
     finally:
         try:
-            evidence["artifacts_sha256"] = export(work, report)
+            evidence["artifacts_sha256"] = export(work, report, case_files)
             if evidence["cleanup"]["fixture_state"] != "retained-uncertain":
                 shutil.rmtree(work)
         except (OSError, Blocked):
             if result == 0:
                 result = 77
             evidence["reason"] = "allowlisted evidence export or private scratch removal failed"
+        if result == 0 and require_case_exports:
+            try:
+                check_case_exports(report, evidence["artifacts_sha256"], case_files)
+            except (Blocked, EvidenceFailed, OSError, ValueError, TypeError) as error:
+                result = 1
+                evidence["reason"] = (
+                    str(error) if isinstance(error, EvidenceFailed) else "successful campaign summary cannot be read"
+                )
         evidence["exit_status"] = result
         evidence["status"] = {0: "pass", 1: "fail", 77: "blocked"}[result]
         write_json(report / "commissioning.json", evidence)

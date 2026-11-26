@@ -393,6 +393,12 @@ class Fixture:
                 os.fchmod(output.fileno(), 0o444)
         return small, large
 
+    def sshd_config(self, port):
+        return sshd_configuration(self, port)
+
+    def sshd_properties(self):
+        return unit_properties(self)
+
     def observe_account(self):
         current = local_account(self.account)
         if current is None:
@@ -461,7 +467,7 @@ class Fixture:
         known.chmod(0o600)
         config_source = self.private / "sshd_config"
         config = self.root / "sshd_config"
-        config_source.write_text(sshd_configuration(self, port), encoding="ascii")
+        config_source.write_text(self.sshd_config(port), encoding="ascii")
         checkpoint()
         run([INSTALL, "-m", "0600", "--", config_source, config],
             privileged=True, operation="root-owned fixture OpenSSH configuration")
@@ -478,7 +484,7 @@ class Fixture:
         profile.chmod(0o600)
         checkpoint()
         self.unit_attempted = True
-        properties = unit_properties(self)
+        properties = self.sshd_properties()
         run(
             [SYSTEMD_RUN, "--quiet", "--unit", self.unit,
              *(f"--property={key}={value}" for key, value in properties.items()),

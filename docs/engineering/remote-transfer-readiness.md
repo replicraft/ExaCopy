@@ -1,5 +1,24 @@
 # Remote transfer release readiness
 
+## Automatic read-timeout campaign
+
+The direct commissioning workflow has a separate canonical-main matrix
+case for an ordinary CLI invocation against stock OpenSSH authentication
+and an isolated, bounded read-only SFTP fault helper. It withholds a data
+READ after a 64 KiB stage prefix, observes the old connection closing,
+and checks a newly authenticated source starting at offset zero into a
+distinct empty held stage. The original stage inode and bytes remain pinned
+through verified publication. Expiry, Ctrl-C, the original grant's total
+retry bound, and wrong host-key refusal have separate cases.
+
+The parent requires all seven event/peer transcripts and their exact
+digests before accepting success. Cleanup uncertainty is bound to the
+retry job's own marker and preserves partial evidence. Portable helper,
+provider, existing direct-fixture controls and workflow validation passed.
+Hosted native timeout recovery is pending. This direct-route campaign does
+not qualify embedded WireGuard, efficient prefix reuse, production
+destination authority or power-loss behavior.
+
 ## Hosted direct OpenSSH commissioning
 
 The ordinary main-push commissioning run at `69aecff` passed all seven
