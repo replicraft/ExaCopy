@@ -10,6 +10,8 @@ use super::artifact_text;
 use crate::finding::Findings;
 use crate::workspace::APP_VERSION;
 
+mod integration;
+
 const FIXTURE_MANIFEST: &str = "fixture.toml";
 const RESULT: &str = "result.json";
 
@@ -35,6 +37,8 @@ enum Profile {
 	HostedRootSetupUnprivilegedObserver,
 	#[serde(rename = "linux-unprivileged-tmpfs-sync-preview-v1")]
 	UnprivilegedTmpfsSyncPreview,
+	#[serde(rename = "linux-unprivileged-whole-ext4-sync-history-v1")]
+	UnprivilegedWholeExt4SyncHistory,
 }
 
 impl Profile {
@@ -42,7 +46,8 @@ impl Profile {
 		match self {
 			Self::UnprivilegedSameDeviceBind
 			| Self::HostedRootSetupUnprivilegedObserver
-			| Self::UnprivilegedTmpfsSyncPreview => Target::LinuxX86_64Gnu,
+			| Self::UnprivilegedTmpfsSyncPreview
+			| Self::UnprivilegedWholeExt4SyncHistory => Target::LinuxX86_64Gnu,
 		}
 	}
 }
@@ -68,6 +73,7 @@ struct Fixture {
 enum CaseKind {
 	#[default]
 	RustUnit,
+	RustIntegration,
 	Command,
 }
 
@@ -77,6 +83,7 @@ struct Case {
 	#[serde(default)]
 	kind: CaseKind,
 	owner: Option<String>,
+	test_target: Option<String>,
 	selector: String,
 	source: PathBuf,
 	ignored: bool,
@@ -167,7 +174,7 @@ fn check_manifest(
 		&fixture,
 		findings,
 	);
-	check_cases(metadata, package, &path, &fixture, findings);
+	check_cases(metadata, package, root, &path, &fixture, findings);
 }
 
 fn check_custody(
@@ -234,6 +241,7 @@ fn check_custody(
 fn check_cases(
 	metadata: &Metadata,
 	package: &Package,
+	root: &Path,
 	manifest: &Path,
 	fixture: &Fixture,
 	findings: &mut Findings,
@@ -250,7 +258,31 @@ fn check_cases(
 			);
 			continue;
 		}
+		if !matches!(case.kind, CaseKind::RustIntegration) && case.test_target.is_some() {
+			findings.add(
+				manifest,
+				"test_target is only valid for a native Rust integration case",
+			);
+			continue;
+		}
+		if matches!(fixture.profile, Profile::UnprivilegedWholeExt4SyncHistory)
+			!= matches!(case.kind, CaseKind::RustIntegration)
+		{
+			findings.add(
+				manifest,
+				"native Rust integration cases require the whole-ext4 sync-history profile",
+			);
+			continue;
+		}
 		match case.kind {
+			CaseKind::RustIntegration => integration::check(
+				metadata.workspace_root.as_std_path(),
+				package,
+				root,
+				manifest,
+				case,
+				findings,
+			),
 			CaseKind::RustUnit => check_rust_case(metadata, package, manifest, case, findings),
 			CaseKind::Command => {
 				if case.owner.is_some()

@@ -470,3 +470,5 @@ mod linux;
 		assert!(findings.to_string().contains(expected), "{old}: {findings}");
 	}
 }
+
+mod integration_tests;
