@@ -84,6 +84,58 @@ fn refuses_native_reparse_leaf_and_parent() {
 	assert_eq!(fs::read(regular).unwrap(), b"source");
 }
 
+#[test]
+#[ignore = "requires an explicitly provisioned fixed local NTFS root"]
+fn ordinary_ntfs_compares_hard_link_aliases_read_only() {
+	let fixture = Fixture::new();
+	let source = fixture.0.join("source");
+	let alias = fixture.0.join("alias");
+	let payload = b"source\0\xFF";
+	fs::write(&source, payload).expect("create the synthetic file");
+	fs::hard_link(&source, &alias).expect("create a real NTFS hard-link alias");
+	let before = fs::metadata(&source).expect("observe synthetic source");
+	let outcome = compare(&source, &alias, &["--workers", "3"]);
+	assert_eq!(outcome.status.code(), Some(0));
+	let report: Value = serde_json::from_slice(&outcome.stdout).expect("read alias report");
+	assert_eq!(report["result"], "equal");
+	assert_eq!(report["complete"], true);
+	assert_eq!(report["consistency"], "live_observed");
+	assert_eq!(report["length"], payload.len().to_string());
+	for path in [source, alias] {
+		assert_eq!(fs::read(&path).expect("read a synthetic alias"), payload);
+		let after = fs::metadata(path).expect("observe alias after comparison");
+		assert_eq!(after.modified().unwrap(), before.modified().unwrap());
+		assert_eq!(after.created().unwrap(), before.created().unwrap());
+	}
+}
+
+#[test]
+#[ignore = "requires an explicitly provisioned fixed local NTFS root"]
+fn ordinary_ntfs_refuses_raw_stream_dot_and_verbatim_operands() {
+	let fixture = Fixture::new();
+	let source = fixture.0.join("source");
+	fs::write(&source, b"source").expect("create the synthetic source");
+	let source_text = source.to_str().expect("hosted fixture path is Unicode");
+	let parent = fixture.0.to_str().expect("hosted fixture path is Unicode");
+	for ambiguous in [
+		format!("{source_text}:stream"),
+		format!(r"{parent}\.\source"),
+		format!(r"\\?\{source_text}"),
+	] {
+		let outcome = compare(&source, Path::new(&ambiguous), &[]);
+		assert_eq!(outcome.status.code(), Some(2), "{ambiguous}");
+		let report: Value = serde_json::from_slice(&outcome.stdout).expect("read path refusal");
+		assert_eq!(report["result"], "inconclusive");
+		assert_eq!(report["complete"], false);
+		assert_eq!(report["error"]["code"], "E_INVALID_PATH");
+		assert!(report.get("consistency").is_none());
+	}
+	assert_eq!(
+		fs::read(source).expect("read preserved synthetic source"),
+		b"source"
+	);
+}
+
 fn compare(left: &Path, right: &Path, options: &[&str]) -> Output {
 	exacopy()
 		.arg("diff")

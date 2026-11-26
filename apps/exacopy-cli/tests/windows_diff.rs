@@ -5,7 +5,16 @@ use std::process::Command;
 use serde_json::Value;
 
 fn exacopy() -> Command {
-	Command::new(env!("CARGO_BIN_EXE_exacopy"))
+	let executable = env!("CARGO_BIN_EXE_exacopy");
+	#[cfg(all(target_os = "windows", feature = "experimental-windows-diff"))]
+	if let Some(qualified) = std::env::var_os("EXACOPY_WINDOWS_QUALIFIED_CLI") {
+		assert_eq!(
+			std::fs::canonicalize(executable).expect("resolve Cargo's CLI executable"),
+			std::fs::canonicalize(qualified).expect("resolve the qualified CLI executable"),
+			"the CLI integration test must execute the selected Cargo artifact"
+		);
+	}
+	Command::new(executable)
 }
 
 #[test]
