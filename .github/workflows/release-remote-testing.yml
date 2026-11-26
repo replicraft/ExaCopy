@@ -1,0 +1,52 @@
+name: Linux experimental CLI user-testing asset
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    env:
+      EXPECTED_RUST_HOST: x86_64-unknown-linux-gnu
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.14.7"
+      - name: Verify exact release tag and locked source
+        run: bash .github/ci/capture.sh remote-test-source python -B .github/ci/release_candidate.py check-source
+      - name: Prepare pinned native tools and sources
+        run: |
+          bash .github/ci/capture.sh remote-test-apfs python -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh remote-test-transport python -B tools/transport_source.py --fetch
+          bash .github/ci/capture.sh remote-test-rust bash .github/ci/install.sh rust
+          bash .github/ci/capture.sh remote-test-fetch cargo +1.100.0 fetch --locked --target "$EXPECTED_RUST_HOST"
+      - name: Build and smoke-test the experimental CLI
+        run: |
+          bash .github/ci/capture.sh remote-test-build python -B .github/ci/testing_remote_asset.py \
+            --output "$RUNNER_TEMP/exacopy-remote-testing-assets" --evidence "$RUNNER_TEMP/exacopy-remote-testing-build"
+      - name: Retain experimental build evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: exacopy-remote-testing-evidence-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-evidence/
+            ${{ runner.temp }}/exacopy-remote-testing-build/
+          if-no-files-found: error
+      - name: Retain unsigned user-testing archive and checksum
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: exacopy-remote-testing-assets-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-remote-testing-assets/
+          if-no-files-found: error
