@@ -66,24 +66,102 @@ class ProviderTests(unittest.TestCase):
     def test_exact_package_ownership_rejects_other_binary_or_build(self):
         pkg = f"linux-modules-{RELEASE}"
         listing = [f"{pkg}: {KERNEL_METADATA}"]
-        for package_lines, installed_lines, expected in (
-            (listing, [f"install ok installed\t{VERSION}\tamd64"], pkg),
-            (listing, [f"install ok installed\t{VERSION}\tarm64"], None),
-            (listing, [f"deinstall ok config-files\t{VERSION}\tamd64"], None),
-            (listing, ["install ok installed\t7.0.0-1020.20~24.04.2\tamd64"], None),
-            (listing + listing, [], None),
-            ([f"unrelated: {KERNEL_METADATA}"], [], None),
-            ([f"{pkg}: /usr/bin/other"], [], None),
+        for package_lines, installed_lines, expected, status in (
+            (listing, [f"install ok installed\t{VERSION}\tamd64"], pkg, "verified"),
+            (listing, [f"install ok installed\t{VERSION}\tarm64"], None, "installed-record-mismatch"),
+            (listing, [f"deinstall ok config-files\t{VERSION}\tamd64"], None, "installed-record-mismatch"),
+            (listing, ["install ok installed\t7.0.0-1020.20~24.04.2\tamd64"], None, "installed-record-mismatch"),
+            (listing + listing, [], None, "ambiguous-owner-record"),
+            ([f"unrelated: {KERNEL_METADATA}"], [], None, "package-not-admitted"),
+            ([f"{pkg}: /usr/bin/other"], [], None, "owner-path-mismatch"),
         ):
             with self.subTest(installed=installed_lines, results=package_lines):
                 with patch.object(provider, "dpkg_query", side_effect=[package_lines, installed_lines]):
-                    actual = provider.package_owner(KERNEL_METADATA, RELEASE, VERSION)
+                    actual, detail = provider.package_owner(KERNEL_METADATA, RELEASE, VERSION)
                 self.assertEqual(actual and actual["package"], expected)
+                self.assertEqual(detail["status"], status)
+
+    def test_package_query_failures_separate_phase_without_query_output(self):
+        owner_args = [f"linux-modules-{RELEASE}: {KERNEL_METADATA}"]
+        for error, status, extra in (
+            (subprocess.CalledProcessError(1, ("hidden",), output=b"hidden"), "nonzero-exit", {"exit_status": 1}),
+            (subprocess.TimeoutExpired(("hidden",), 5, output=b"hidden"), "timeout", {}),
+            (provider.QueryRefusal("output-limit"), "output-limit", {}),
+            (provider.QueryRefusal("non-ascii-output"), "non-ascii-output", {}),
+            (provider.QueryRefusal("empty-output"), "empty-output", {}),
+            (OSError(13, "hidden"), "io-error", {"errno": 13}),
+        ):
+            for phase, results in (("owner", [error]), ("installed", [owner_args, error])):
+                with self.subTest(status=status, phase=phase), patch.object(provider, "dpkg_query", side_effect=results):
+                    package, detail = provider.package_owner(KERNEL_METADATA, RELEASE, VERSION)
+                    self.assertIsNone(package)
+                    self.assertEqual(detail, {"path": str(KERNEL_METADATA), "phase": phase, "status": status} | extra)
+
+    def test_file_and_package_statuses_are_independent(self):
+        data = b"CONFIG_WIREGUARD=m\n"
+        for error, reason in (
+            (FileNotFoundError(), "missing"),
+            (provider.FileRefusal("extent-limit"), "extent-limit"),
+            (provider.FileRefusal("changed-during-read"), "changed-during-read"),
+            (OSError(13, "hidden"), "io-error"),
+        ):
+            with self.subTest(reason=reason), patch.object(provider, "read_root_file", side_effect=error):
+                detail = provider.read_observation(KERNEL_METADATA, 128, provider.config_selection)
+                self.assertEqual(detail["read_status"], reason)
+                self.assertNotIn("sha256", detail)
+        with (
+            patch.object(provider, "read_root_file", return_value=data),
+            patch.object(provider, "package_owner") as search,
+        ):
+            detail = provider.from_kernel_package(KERNEL_METADATA, RELEASE, None, 128, provider.config_selection)
+            self.assertEqual(detail, {
+                "status": "unknown", "read_status": "read", "parsed_status": "module",
+                "sha256": provider.digest(data), "package_status": "skipped-unbound-image",
+            })
+            search.assert_not_called()
+
+    def test_exact_image_refusal_is_reported_and_classifier_remains_unknown(self):
+        image = Path("/boot") / f"vmlinuz-{RELEASE}"
+        data = b"CONFIG_WIREGUARD=m\n"
+        expected = {"path": str(image), "phase": "owner", "status": "nonzero-exit", "exit_status": 1}
+        with (
+            patch.object(provider, "read_observation", side_effect=[
+                {"status": "absent"},
+                {"status": "module", "read_status": "read", "parsed_status": "module", "sha256": provider.digest(data)},
+                {"status": "absent", "read_status": "read", "parsed_status": "absent", "sha256": provider.digest(b"")},
+                {"status": "missing"}, {"status": "absent"},
+            ]),
+            patch.object(provider, "image_path_observation", return_value={"status": "observed"}),
+            patch.object(provider, "package_owner", return_value=(None, expected)) as owner,
+            patch.object(provider, "installed_module", return_value={"status": "unknown"}),
+        ):
+            status, report = provider.observe_provider(RELEASE, BUILD)
+        owner.assert_called_once_with(image, RELEASE, VERSION)
+        self.assertEqual(status, "unknown")
+        self.assertIsNone(report["booted_kernel_package"])
+        self.assertEqual(report["booted_kernel_package_diagnostic"], expected | {
+            "expected_version": VERSION, "file": {"status": "observed"},
+        })
+        self.assertEqual(report["config"]["status"], "unknown")
+        self.assertEqual(report["config"]["parsed_status"], "module")
 
     def test_package_query_handles_exact_bound_and_discards_stderr(self):
         source = "import os; os.write(2, b'e' * 100000); os.write(1, b'a' * 4096)"
         with patch.object(provider, "DPKG_QUERY", sys.executable):
             self.assertEqual(provider.dpkg_query("-c", source), ["a" * 4096])
+
+    def test_package_query_records_real_empty_invalid_and_nonzero_outcomes(self):
+        for source, expected in (
+            ("pass", {"status": "empty-output"}),
+            ("import os; os.write(1, bytes([255]))", {"status": "non-ascii-output"}),
+            ("import sys; sys.exit(9)", {"status": "nonzero-exit", "exit_status": 9}),
+        ):
+            with self.subTest(expected=expected), patch.object(provider, "DPKG_QUERY", sys.executable):
+                self.assertEqual(provider.package_query("owner", "-c", source), (None, {"phase": "owner"} | expected))
+
+        with patch.object(provider, "dpkg_query", side_effect=RuntimeError("cannot confirm package query exit")):
+            with self.assertRaisesRegex(RuntimeError, "cannot confirm package query exit"):
+                provider.package_owner(KERNEL_METADATA, RELEASE, VERSION)
 
     def test_package_query_kills_and_reaps_flooding_or_stalled_child(self):
         cases = (
@@ -160,21 +238,21 @@ class ProviderTests(unittest.TestCase):
             root = Path(scratch)
             module = root / provider.MODULE
             module.parent.mkdir(parents=True)
-            self.assertEqual(provider.installed_module(root, RELEASE, VERSION), {"status": "absent"})
+            self.assertEqual(provider.installed_module(root, RELEASE, VERSION), {"status": "absent", "read_status": "no-candidate"})
             compressed = module.with_suffix(".ko.zst")
             compressed.touch()
             with patch.object(provider, "from_kernel_package", return_value={"status": "packaged"}) as check:
                 self.assertEqual(provider.installed_module(root, RELEASE, VERSION), {"status": "packaged"})
                 self.assertEqual(check.call_args.args[0], compressed)
             module.touch()
-            self.assertEqual(provider.installed_module(root, RELEASE, VERSION), {"status": "unknown"})
+            self.assertEqual(provider.installed_module(root, RELEASE, VERSION), {"status": "unknown", "read_status": "multiple-candidates"})
 
     def test_inconsistent_observed_module_history_is_unknown(self):
         with (
             patch.object(provider, "read_observation", side_effect=[
                 {"status": "live"}, {"status": "live"}, {"status": "absent"},
             ]),
-            patch.object(provider, "package_owner", return_value={"package": "kernel", "version": VERSION}),
+            patch.object(provider, "package_owner", return_value=({"package": "kernel", "version": VERSION}, {"status": "verified"})),
             patch.object(provider, "from_kernel_package", side_effect=[
                 {"status": "module"}, {"status": "absent"},
             ]),

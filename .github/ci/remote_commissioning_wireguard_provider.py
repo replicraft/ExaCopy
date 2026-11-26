@@ -17,7 +17,7 @@ from typing import NamedTuple
 from uuid import UUID
 
 
-SCHEMA = "exacopy.hosted-wireguard-provider-observation.v1"
+SCHEMA = "exacopy.hosted-wireguard-provider-observation.v2"
 REPORT = "exacopy-kernel-wireguard-provider"
 DPKG_QUERY = "/usr/bin/dpkg-query"
 MODULE = Path("kernel/drivers/net/wireguard/wireguard.ko")
@@ -110,27 +110,54 @@ def classify(facts):
 def read_root_file(path, maximum):
     with os.fdopen(os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC), "rb") as source:
         info = os.fstat(source.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
-            raise ValueError("untrusted file ownership")
+        if not trusted_regular_file(info):
+            raise FileRefusal("untrusted-file")
         data = source.read(maximum + 1)
         after = os.fstat(source.fileno())
-        if len(data) > maximum or (
+        if len(data) > maximum:
+            raise FileRefusal("extent-limit")
+        if (
             info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
         ) != (
             after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns
         ):
-            raise ValueError("observation exceeded its bound or changed")
+            raise FileRefusal("changed-during-read")
         return data
+
+
+class FileRefusal(ValueError):
+    pass
+
+
+class QueryRefusal(ValueError):
+    pass
+
+
+def trusted_regular_file(info):
+    return stat.S_ISREG(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o022
+
+
+def image_path_observation(path):
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return {"status": "missing"}
+    except OSError as error:
+        return {"status": "io-error", "errno": error.errno}
+    return {"status": "observed" if trusted_regular_file(info) else "untrusted-file"}
 
 
 def read_observation(path, maximum, parse):
     try:
         data = read_root_file(path, maximum)
     except FileNotFoundError:
-        return {"status": "missing"}
-    except (OSError, ValueError):
-        return {"status": "unknown"}
-    return {"status": parse(data), "sha256": digest(data)}
+        return {"status": "missing", "read_status": "missing"}
+    except FileRefusal as error:
+        return {"status": "unknown", "read_status": str(error)}
+    except OSError as error:
+        return {"status": "unknown", "read_status": "io-error", "errno": error.errno}
+    value = parse(data)
+    return {"status": value, "read_status": "read", "parsed_status": value, "sha256": digest(data)}
 
 
 def dpkg_query(*arguments):
@@ -153,13 +180,16 @@ def dpkg_query(*arguments):
                     break
                 data.extend(chunk)
                 if len(data) > PACKAGE_QUERY_BYTES:
-                    raise ValueError("package query output exceeds its bound")
+                    raise QueryRefusal("output-limit")
         result = process.wait(timeout=max(0, deadline - time.monotonic()))
         if result != 0:
             raise subprocess.CalledProcessError(result, command)
         if not data:
-            raise ValueError("unavailable package record")
-        return data.decode("ascii").splitlines()
+            raise QueryRefusal("empty-output")
+        try:
+            return data.decode("ascii").splitlines()
+        except UnicodeDecodeError as error:
+            raise QueryRefusal("non-ascii-output") from error
     finally:
         process.stdout.close()
         if process.poll() is None:
@@ -172,29 +202,47 @@ def dpkg_query(*arguments):
                 raise RuntimeError("cannot confirm package query exit") from error
 
 
-def package_owner(path, release, version):
-    if version is None:
-        return None
+def package_query(phase, *arguments):
+    detail = {"phase": phase}
     try:
-        lines = dpkg_query("--search", "--", str(path))
-        if len(lines) != 1:
-            return None
-        package, separator, named = lines[0].partition(": ")
-        if not separator or named != str(path):
-            return None
-        allowed = {
-            f"{prefix}-{release}" for prefix in (
-                "linux-image", "linux-image-unsigned", "linux-modules", "linux-modules-extra",
-            )
-        }
-        if package not in allowed and package not in {f"{name}:amd64" for name in allowed}:
-            return None
-        installed = dpkg_query("--show", "--showformat=${Status}\\t${Version}\\t${Architecture}\\n", "--", package)
-        if installed != [f"install ok installed\t{version}\tamd64"]:
-            return None
-        return {"package": package, "version": version, "architecture": "amd64"}
-    except (OSError, ValueError, subprocess.SubprocessError):
-        return None
+        return dpkg_query(*arguments), detail
+    except subprocess.CalledProcessError as error:
+        return None, detail | {"status": "nonzero-exit", "exit_status": error.returncode}
+    except subprocess.TimeoutExpired:
+        return None, detail | {"status": "timeout"}
+    except QueryRefusal as error:
+        return None, detail | {"status": str(error)}
+    except OSError as error:
+        return None, detail | {"status": "io-error", "errno": error.errno}
+
+
+def package_owner(path, release, version):
+    detail = {"path": str(path)}
+    if version is None:
+        return None, detail | {"status": "version-unbound"}
+    lines, owner = package_query("owner", "--search", "--", str(path))
+    if lines is None:
+        return None, detail | owner
+    if len(lines) != 1:
+        return None, detail | owner | {"status": "ambiguous-owner-record"}
+    package, separator, named = lines[0].partition(": ")
+    if not separator or named != str(path):
+        return None, detail | owner | {"status": "owner-path-mismatch"}
+    allowed = {
+        f"{prefix}-{release}" for prefix in (
+            "linux-image", "linux-image-unsigned", "linux-modules", "linux-modules-extra",
+        )
+    }
+    if package not in allowed and package not in {f"{name}:amd64" for name in allowed}:
+        return None, detail | owner | {"status": "package-not-admitted"}
+    installed, check = package_query(
+        "installed", "--show", "--showformat=${Status}\\t${Version}\\t${Architecture}\\n", "--", package,
+    )
+    if installed is None:
+        return None, detail | check
+    if installed != [f"install ok installed\t{version}\tamd64"]:
+        return None, detail | check | {"status": "installed-record-mismatch"}
+    return {"package": package, "version": version, "architecture": "amd64"}, detail | check | {"status": "verified"}
 
 
 def from_kernel_package(path, release, version, maximum, parse):
@@ -202,12 +250,16 @@ def from_kernel_package(path, release, version, maximum, parse):
     if observed["status"] in {"missing", "unknown"}:
         return observed
     # Ubuntu's usrmerge can store package paths with either original spelling.
-    package = package_owner(path, release, version)
+    if version is None:
+        return observed | {"status": "unknown", "package_status": "skipped-unbound-image"}
+    package, detail = package_owner(path, release, version)
+    attempts = [detail]
     if package is None and path.is_relative_to("/lib"):
-        package = package_owner(Path("/usr") / path.relative_to("/"), release, version)
+        package, detail = package_owner(Path("/usr") / path.relative_to("/"), release, version)
+        attempts.append(detail)
     if package is None:
-        return {"status": "unknown", "sha256": observed["sha256"]}
-    return observed | package
+        return observed | {"status": "unknown", "package_attempts": attempts}
+    return observed | package | {"package_attempts": attempts}
 
 
 def installed_module(root, release, version):
@@ -218,13 +270,13 @@ def installed_module(root, release, version):
             path.lstat()
         except FileNotFoundError:
             continue
-        except OSError:
-            return {"status": "unknown"}
+        except OSError as error:
+            return {"status": "unknown", "read_status": "candidate-io-error", "errno": error.errno}
         paths.append(path)
     if not paths:
-        return {"status": "absent"}
+        return {"status": "absent", "read_status": "no-candidate"}
     if len(paths) != 1:
-        return {"status": "unknown"}
+        return {"status": "unknown", "read_status": "multiple-candidates"}
     return from_kernel_package(paths[0], release, version, MAX_MODULE, lambda _: "packaged")
 
 
@@ -232,7 +284,9 @@ def observe_provider(release, build):
     version = kernel_package_version(release, build)
     root = Path("/lib/modules") / release
     first = read_observation(Path("/proc/modules"), MAX_METADATA, module_listing)
-    image = package_owner(Path("/boot") / f"vmlinuz-{release}", release, version)
+    image_path = Path("/boot") / f"vmlinuz-{release}"
+    image, image_detail = package_owner(image_path, release, version)
+    image_diagnostic = image_detail | {"expected_version": version, "file": image_path_observation(image_path)}
     # Exact package owners must match the booted Ubuntu build independently.
     if image is None:
         version = None
@@ -250,7 +304,7 @@ def observe_provider(release, build):
         "absent" if initstate["status"] == "missing" else initstate["status"], installed["status"],
     )
     return classify(facts), {
-        "booted_kernel_package": image,
+        "booted_kernel_package": image, "booted_kernel_package_diagnostic": image_diagnostic,
         "config": config, "builtin_inventory": builtin, "module_file": installed,
         "module_listing_before": first, "module_listing_after": final, "module_initstate": initstate,
     }
