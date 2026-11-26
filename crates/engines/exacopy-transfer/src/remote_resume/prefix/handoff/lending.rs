@@ -1,6 +1,9 @@
 use std::convert::Infallible;
 
 use exacopy_content::{StreamInputError, validate_stream_input};
+use exacopy_journal::remote_download::replay::RemotePreparedStage;
+use exacopy_journal::remote_download::witness::RemoteWitnessBinding;
+use exacopy_journal::remote_download::{RemoteDownloadContext, RemoteScopeDigest};
 
 use crate::remote_capture::{CapturedReadAt, SourceEpoch};
 
@@ -112,6 +115,9 @@ impl<'held, R: CapturedReadAt, L> LentRetainedSuffix<'held, '_, R, L> {
 			.map_err(Error::SourceFinish)?;
 		check_source(self.prefix)?;
 		Ok(SuffixSourceObservation {
+			context: self.prefix.context,
+			scope: self.prefix.scope,
+			stage: self.prefix.stage,
 			epoch: self.prefix.epoch,
 			length,
 			digest: self.prefix.digest(),
@@ -123,12 +129,24 @@ impl<'held, R: CapturedReadAt, L> LentRetainedSuffix<'held, '_, R, L> {
 #[derive(Debug)]
 #[must_use]
 pub struct SuffixSourceObservation {
+	context: RemoteDownloadContext,
+	scope: RemoteScopeDigest,
+	stage: RemotePreparedStage,
 	epoch: SourceEpoch,
 	length: u64,
 	digest: [u8; 32],
 }
 
 impl SuffixSourceObservation {
+	pub(crate) fn matches_witness(&self, binding: RemoteWitnessBinding) -> bool {
+		self.context == binding.context()
+			&& self.scope == binding.scope()
+			&& self.stage.head == binding.prepared()
+			&& self.stage.file == binding.stage()
+			&& self.epoch.get() == binding.epochs().source.get()
+			&& self.length == binding.coverage().end().get()
+	}
+
 	/// Original fresh source epoch.
 	#[must_use]
 	pub const fn epoch(&self) -> SourceEpoch {

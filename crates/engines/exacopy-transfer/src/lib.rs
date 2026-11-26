@@ -24,6 +24,8 @@ pub mod remote_capture;
 
 pub mod remote_resume;
 
+pub mod remote_witnessed_finalization;
+
 pub mod remote_metadata;
 
 #[cfg(any(

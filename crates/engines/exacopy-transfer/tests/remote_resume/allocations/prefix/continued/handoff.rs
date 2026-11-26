@@ -14,6 +14,9 @@ use super::{
 	source, stage,
 };
 
+#[path = "handoff/prepublication.rs"]
+mod prepublication;
+
 struct Reader<'data> {
 	stage: Stage<'data>,
 	alive: &'data Cell<bool>,
