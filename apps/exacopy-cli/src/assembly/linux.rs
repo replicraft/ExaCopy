@@ -15,8 +15,8 @@ mod crash_tests;
 #[cfg(feature = "experimental-linux-managed-sync")]
 pub mod managed_sync;
 mod public_plan;
-#[cfg(test)]
-mod public_stage;
+#[cfg(any(test, feature = "experimental-linux-public-apply"))]
+pub(crate) mod public_stage;
 mod recovery;
 #[cfg(all(test, feature = "experimental-ssh-capture"))]
 #[expect(

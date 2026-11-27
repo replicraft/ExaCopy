@@ -25,7 +25,31 @@ Results carry historical evidence and point-in-time observations, never a
 publication permit. Expiry is inspectable historical data. Legacy mutating
 recovery continues to refuse the public owner form; a future public-aware
 publication/recovery path needs its own fresh gate and supported intent rules.
-The library inspector is not yet exposed as a CLI command.
+## Experimental CLI selection
+
+On Linux, the default-off workspace feature
+`experimental-linux-public-apply` exposes the explicit read-only command.
+
+```text
+exacopy recover inspect-public-stage JOB --owner-key HEX [--format human|json]
+```
+
+Supply the independently selected 64-character lowercase Ed25519 public
+key. ExaCopy validates it and derives the existing CLI owner's profile ID
+before opening the selected job. The shared read lease protects cooperative
+inspection. The command reads no signing profile or seed. Its historical
+digests describe the authenticated retained record and the current
+namespace evidence is a point-in-time observation.
+
+JSON uses `exacopy.public_stage_inspection` version `1.0`. A clean verified
+stage exits 0. An observed unexpected target exits 3, which describes
+current occupancy. An observed missing owner, Plan or journal, unfinished
+private stage, unexpected receipt, or reconciliation result exits 9.
+Other refusals use the existing argument, I/O, integrity and profile
+error exit classes. All reports carry `authority: none`. The existing
+`recover inspect` and mutating recovery selectors keep their separate
+legacy owner route. Both registry package profiles omit the workspace
+feature.
 
 Ninety portable transfer tests passed in the separately labeled macOS
 capability harness, including five public inspection cases. Three deliberate

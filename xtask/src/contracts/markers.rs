@@ -75,6 +75,11 @@ pub(super) const BINDINGS: &[Binding] = &[
 		Marker::Report,
 	),
 	Binding::new(
+		"exacopy.public_stage_inspection",
+		"apps/exacopy-cli/src/public_stage_inspect.rs",
+		Marker::Report,
+	),
+	Binding::new(
 		"portable-manifests",
 		"crates/formats/exacopy-manifest/src/manifest/json.rs",
 		Marker::Manifest,

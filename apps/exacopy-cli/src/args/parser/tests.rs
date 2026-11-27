@@ -176,3 +176,66 @@ fn plan_accepts_one_explicit_profile_and_output_and_refuses_unknown_policy() {
 		assert!(parse(args.iter().copied().map(OsString::from)).is_err());
 	}
 }
+
+#[test]
+fn public_stage_command_availability_follows_its_exact_feature() {
+	let Ok(Command::Help(help)) = from_args(&["recover", "--help"]) else {
+		panic!("expected recovery help");
+	};
+	let enabled = cfg!(all(
+		target_os = "linux",
+		feature = "experimental-linux-public-apply"
+	));
+	assert_eq!(help.contains("inspect-public-stage"), enabled);
+	let key = "01".repeat(32);
+	let selected = from_args(&[
+		"recover",
+		"inspect-public-stage",
+		"job",
+		"--owner-key",
+		&key,
+	]);
+	assert_eq!(selected.is_ok(), enabled);
+}
+
+#[cfg(all(target_os = "linux", feature = "experimental-linux-public-apply"))]
+#[test]
+fn public_stage_selection_keeps_owner_key_separate_from_legacy_recovery() {
+	let key = "ab".repeat(32);
+	let args = [
+		"recover",
+		"inspect-public-stage",
+		"job",
+		"--owner-key",
+		&key,
+		"--format",
+		"json",
+	];
+	let Ok(Command::InspectPublicStage(command)) = from_args(&args) else {
+		panic!("expected explicit public-stage command");
+	};
+	assert_eq!(command.owner_key, [0xab; 32]);
+	assert_eq!(command.job, Path::new("job"));
+	assert!(matches!(command.format, Format::Json));
+
+	for extra in [["--profile", "private"], ["--source-root", "source"]] {
+		let with_extra: Vec<_> = args.into_iter().chain(extra).collect();
+		assert!(from_args(&with_extra).is_err(), "{extra:?}");
+	}
+	assert!(from_args(&args[..3]).is_err());
+	for invalid in [
+		"a".repeat(63),
+		"a".repeat(65),
+		"AB".repeat(32),
+		"g0".repeat(32),
+	] {
+		let mut args = args;
+		args[4] = &invalid;
+		assert!(from_args(&args).is_err(), "{invalid:?}");
+	}
+	assert!(from_args(&["recover", "inspect", "job", "--owner-key", &key]).is_err());
+	assert!(matches!(
+		from_args(&["recover", "inspect", "job", "--profile", "private"]),
+		Ok(Command::Recover(_))
+	));
+}

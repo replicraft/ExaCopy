@@ -1,14 +1,20 @@
 use exacopy_endpoint::UnixComponent;
 use exacopy_platform::linux::DestinationRoot;
 use exacopy_transfer::linux::{
-	InspectionError, PublicApplyStage, PublicApplyStageRequest, PublicStageInspection,
-	RecoveryProfile, RecoveryStep, inspect_public_stage_with_job, stage_public_apply,
+	InspectionError, PublicStageInspection, RecoveryProfile, RecoveryStep,
+	inspect_public_stage_with_job,
 };
+#[cfg(test)]
+use exacopy_transfer::linux::{PublicApplyStage, PublicApplyStageRequest, stage_public_apply};
 
-use super::{CopyRoots, LocalCopyError, RecoveryInspectError};
+use super::RecoveryInspectError;
+#[cfg(test)]
+use super::{CopyRoots, LocalCopyError};
 
+#[cfg(test)]
 mod tests;
 
+#[cfg(test)]
 fn stage(
 	roots: CopyRoots<'_>,
 	request: PublicApplyStageRequest<'_, '_, '_>,
@@ -17,7 +23,7 @@ fn stage(
 	stage_public_apply(roots, request, scratch, |_| {})
 }
 
-fn inspect(
+pub(crate) fn inspect(
 	destination: &DestinationRoot,
 	name: UnixComponent<'_>,
 	profile: RecoveryProfile<'_>,

@@ -19,6 +19,7 @@ VERIFY = "exacopy.cli.verify"
 JSON_FLAGS = ("--format", "json")
 VERSION_DIAGNOSTIC = "exacopy.cli.version"
 JSON_REPORTS = frozenset((DIFF, COPY, RECOVERY, VERIFY))
+OPT_IN_JSON_REPORTS = frozenset(("exacopy.public_stage_inspection",))
 
 
 def run(cli, directory, *args):
@@ -86,13 +87,13 @@ def report_versions(inventory):
         identity = contract["id"]
         if identity == VERSION_DIAGNOSTIC:
             continue
-        if identity not in JSON_REPORTS or identity in versions:
+        if identity not in JSON_REPORTS | OPT_IN_JSON_REPORTS or identity in versions:
             raise ValueError(f"unexpected or duplicate CLI report contract: {identity}")
         version = contract["version"]
         if not isinstance(version, str) or not version:
             raise ValueError(f"missing version for CLI report: {identity}")
         versions[identity] = version
-    if versions.keys() != JSON_REPORTS:
+    if versions.keys() != JSON_REPORTS | OPT_IN_JSON_REPORTS:
         raise ValueError("CLI JSON report contract inventory is incomplete")
     return versions
 

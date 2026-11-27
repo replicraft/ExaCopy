@@ -51,6 +51,14 @@
       "targets": ["x86_64-unknown-linux-gnu"],
       "purpose": "Check the opt-in held ext4 mount attribute adapter and its separately qualified native integration test."
     },
+    "experimental-linux-public-apply": {
+      "defaults": false,
+      "check_cli": false,
+      "feature_statuses": [],
+      "exact_features": ["exacopy-cli/experimental-linux-public-apply"],
+      "targets": ["x86_64-unknown-linux-gnu"],
+      "purpose": "Compile the explicit Linux read-only public-stage inspection command."
+    },
     "experimental-linux-managed-sync-preview": {
       "defaults": false,
       "check_cli": false,
@@ -210,6 +218,13 @@
       }
     },
     "exacopy-cli": {
+      "experimental-linux-public-apply": {
+        "status": "experimental",
+        "targets": ["x86_64-unknown-linux-gnu"],
+        "enables": [],
+        "resolution_probe": [],
+        "purpose": "Expose read-only public-stage inspection under an independently selected public owner key."
+      },
       "experimental-linux-managed-sync": {
         "status": "experimental",
         "targets": ["x86_64-unknown-linux-gnu"],

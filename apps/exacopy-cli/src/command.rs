@@ -76,6 +76,12 @@ pub fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
 			};
 			ExitCode::from(code)
 		}
+		#[cfg(all(target_os = "linux", feature = "experimental-linux-public-apply"))]
+		Command::InspectPublicStage(command) => ExitCode::from(crate::public_stage_inspect::run(
+			&command,
+			&mut stdout,
+			&mut stderr,
+		)),
 		Command::Recover(recovery) => {
 			let outcome = execute_recovery(&recovery);
 			match outcome.write(recovery.format, &mut stdout, &mut stderr) {

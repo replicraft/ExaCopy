@@ -30,6 +30,8 @@ const SOURCE_ROOT: &str = "source-root";
 const WORKERS: &str = "workers";
 const MANAGED_MACOS: &str = "managed-macos";
 const LOCAL_NTFS: &str = "local-ntfs";
+#[cfg(all(target_os = "linux", feature = "experimental-linux-public-apply"))]
+mod public_stage;
 #[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
 mod remote;
 #[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
@@ -221,6 +223,8 @@ fn recovery_commands() -> Cli {
 			"Retry publication of a verified stage.",
 		))
 		.subcommand(source_recovery(RESUME, "Resume an interrupted copy."));
+	#[cfg(all(target_os = "linux", feature = "experimental-linux-public-apply"))]
+	let cli = cli.subcommand(public_stage::definition());
 	#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
 	let cli = cli.subcommand(remote::resume_subcommand());
 	cli
@@ -448,6 +452,8 @@ fn recovery_command(mut command: ArgMatches) -> Option<Command> {
 	let action = match name.as_str() {
 		#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
 		remote::REMOTE_RESUME => return remote::resume(&mut args),
+		#[cfg(all(target_os = "linux", feature = "experimental-linux-public-apply"))]
+		public_stage::NAME => return public_stage::command(&mut args),
 		INSPECT => RecoveryAction::Inspect,
 		FINISH => RecoveryAction::Finish,
 		RETRY | RESUME => RecoveryAction::FromSource {

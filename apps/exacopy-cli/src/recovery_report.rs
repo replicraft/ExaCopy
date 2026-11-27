@@ -145,7 +145,7 @@ impl RecoveryOutcome {
 }
 
 #[cfg(target_os = "linux")]
-fn issue_code(issue: exacopy_transfer::linux::RecoveryIssue) -> &'static str {
+pub(crate) fn issue_code(issue: exacopy_transfer::linux::RecoveryIssue) -> &'static str {
 	use exacopy_transfer::linux::RecoveryIssue;
 
 	match issue {

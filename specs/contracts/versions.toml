@@ -37,6 +37,14 @@ version = "1.0"
 owner = "apps/exacopy-cli/src/recovery_report.rs"
 
 [[contract]]
+id = "exacopy.public_stage_inspection"
+kind = "cli_output"
+status = "implemented"
+version = "1.0"
+owner = "apps/exacopy-cli/src/public_stage_inspect.rs"
+notes = "Only the experimental-linux-public-apply workspace feature exposes this Linux read-only inspection report."
+
+[[contract]]
 id = "portable-manifests"
 kind = "manifest"
 status = "implemented"

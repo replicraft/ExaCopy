@@ -25,6 +25,8 @@ mod manifest_report;
 mod plan;
 #[cfg(target_os = "linux")]
 mod profile;
+#[cfg(all(target_os = "linux", feature = "experimental-linux-public-apply"))]
+mod public_stage_inspect;
 #[cfg(target_os = "linux")]
 mod recovery;
 mod recovery_report;

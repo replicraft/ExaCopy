@@ -25,6 +25,8 @@ pub(crate) enum Command {
 	},
 	Verify(VerifyCommand),
 	Recover(RecoveryCommand),
+	#[cfg(all(target_os = "linux", feature = "experimental-linux-public-apply"))]
+	InspectPublicStage(PublicStageInspectCommand),
 	#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
 	Remote(RemoteCommand),
 	InitProfile(PathBuf),
@@ -92,6 +94,13 @@ pub(crate) struct ManagedSyncInitArgs {
 pub(crate) struct VerifyCommand {
 	pub(crate) path: PathBuf,
 	pub(crate) manifest: PathBuf,
+	pub(crate) format: Format,
+}
+
+#[cfg(all(target_os = "linux", feature = "experimental-linux-public-apply"))]
+pub(crate) struct PublicStageInspectCommand {
+	pub(crate) job: PathBuf,
+	pub(crate) owner_key: [u8; 32],
 	pub(crate) format: Format,
 }
 

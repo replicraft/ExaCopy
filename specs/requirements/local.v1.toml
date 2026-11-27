@@ -1192,7 +1192,7 @@ requirement_ids = ["R-155", "R-182"]
 acceptance_ids = ["A-155", "A-182"]
 invariant_ids = ["INV-013", "INV-018", "INV-019"]
 scope = "Read-only authenticated public-stage replay and actual stage verification, with explicit checked absence and refusal of unsupported publication/recovery suffixes."
-limits = "No mutating continuation or CLI entrypoint. Native Linux fixture source is cross-checked but unexecuted; portable tests do not qualify native I/O."
+limits = "Read-only evidence carries no mutation or publication authority. Native Linux whole-ext4 private staging and assembly inspection passed at 09b96f5 and 993668d. The feature-enabled CLI command and its native report marker await a separate native run."
 
 [[coverage.evidence]]
 owner = "exacopy-transfer"
