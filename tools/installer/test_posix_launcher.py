@@ -207,6 +207,25 @@ def test_launcher(temporary, release):
         subprocess.run(["/usr/bin/xattr", "-d", attribute, case.record],
                        check=True, capture_output=True, timeout=5)
 
+        history = case.store / ".high-water"
+        original_history = history.read_bytes()
+        history_identity = history.stat().st_ino
+        subprocess.run(["/usr/bin/xattr", "-wx", attribute, contents, history],
+                       check=True, capture_output=True, timeout=5)
+        for options in (("--dry-run",), ()):
+            case.run("install", "preserve a resource fork attached to release history", new,
+                     *options, error="resource fork")
+            actual = subprocess.check_output(["/usr/bin/xattr", "-px", attribute, history],
+                                             timeout=5)
+            assert bytes.fromhex(actual.decode()) == bytes.fromhex(contents)
+            assert history.stat().st_ino == history_identity
+            assert history.read_bytes() == original_history
+            assert case.record.read_bytes() == initial_record
+            assert case.launcher.lstat().st_ino == initial_inode
+            assert not case.executable(new).exists()
+        subprocess.run(["/usr/bin/xattr", "-d", attribute, history],
+                       check=True, capture_output=True, timeout=5)
+
     case.expect_crash("install", new, "tools/installer/launcher.sh",
                       '\tpublish_launcher_intent "$next_launcher"')
     case.assert_selection(old)

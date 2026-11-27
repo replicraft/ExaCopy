@@ -160,6 +160,11 @@ install_file() {
 		report_launcher
 		return
 	fi
+	# A new version replaces the high-water inode. A separately attached
+	# resource fork is outside the verified sequence record.
+	if [ -n "$previous_sequence" ]; then
+		verify_removal_resource_forks "$high_water"
+	fi
 	if [ "$dry_run" = yes ]; then
 		printf 'Verified release. Would install: %s\n' "$version_dir/exacopy"
 		report_launcher
@@ -178,6 +183,7 @@ install_file() {
 	printf '%s\n%s\n%s\n' "$sequence" "$version" "$manifest_hash" > "$record_stage" ||
 		fail 'cannot write release sequence'
 	sync || fail 'cannot flush staged install'
+	verify_removal_resource_forks "$high_water"
 	mv "$record_stage" "$high_water" || fail 'cannot publish release sequence'
 	record_stage=
 	sync || fail 'cannot flush release sequence'
@@ -200,7 +206,7 @@ verify_removal_resource_forks() {
 		(ulimit -f 64 && /usr/bin/xattr -s "$installed_path") > "$scratch/attribute-names" ||
 			fail 'cannot inspect installed resource fork'
 		if grep -Fqx 'com.apple.ResourceFork' "$scratch/attribute-names"; then
-			fail 'version has a resource fork; preserve it before removal'
+			fail 'installer-owned path has a resource fork; preserve it before replacement or removal'
 		elif [ "$?" -ne 1 ]; then
 			fail 'cannot inspect installed resource fork'
 		fi
