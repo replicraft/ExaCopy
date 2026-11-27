@@ -1,12 +1,18 @@
+use std::num::NonZeroU64;
+
 use exacopy_journal::NamespaceObservation;
 use exacopy_journal::frame::FrameKind;
 use exacopy_journal::remote_download::finalization::RemotePublishTarget;
 use exacopy_journal::remote_download::finalization_replay::RemoteFinalizationPhase;
+use exacopy_journal::remote_download::replay::MAX_REMOTE_REPLAY_ATTEMPTS;
 use exacopy_journal::remote_download::retirement::{
 	RemoteCaptureRetired, RemoteRetirementObservation,
 };
+use exacopy_journal::remote_download::{RemoteDownloadBody, RemoteSourceObservation};
 
 use super::super::ledger::append_payload_admitted;
+use super::super::next_epochs;
+use super::retry::{check_preparation_capacity, preview_frame};
 
 use super::{
 	CheckedCandidate, Error, PreservedCapture, RemoteJobJournal, RemoteJobLease, check_current,
@@ -15,9 +21,12 @@ use super::{
 
 impl RemoteJobLease<'_> {
 	/// Retires one sealed capture and hands off its still-locked retired writer.
-	pub(in crate::assembly::linux) fn retire_and_open_writer(
+	pub(in crate::assembly::linux::remote_journal) fn retire_and_open_writer(
 		&self,
 		candidate: &CheckedCandidate<'_>,
+		source_epoch: NonZeroU64,
+		observation: RemoteSourceObservation,
+		nonce: [u8; 16],
 	) -> Result<RemoteJobJournal<'_>, Error> {
 		use RemoteFinalizationPhase as Phase;
 		if !matches!(
@@ -70,6 +79,34 @@ impl RemoteJobLease<'_> {
 		if expected.predecessor() != self.boundary.head {
 			return Err(Error::Binding);
 		}
+		let previous = Some(attempt.epochs());
+		let next = next_epochs(previous, source_epoch)?;
+		if observation.length().get() > scope.maximum_extent.get()
+			|| nonce == [0; 16]
+			|| replay.attempts().len() >= MAX_REMOTE_REPLAY_ATTEMPTS
+			|| replay
+				.attempts()
+				.iter()
+				.any(|item| item.name() == candidate.name.as_bytes() || *item.nonce() == nonce)
+		{
+			return Err(Error::Attempt);
+		}
+		let payload = expected.encode()?;
+		let retired_boundary =
+			preview_frame(self.boundary, FrameKind::RemoteCaptureRetired, &payload)?;
+		check_preparation_capacity(
+			retired_boundary,
+			self.context(),
+			RemoteDownloadBody::StageAllocated {
+				previous,
+				next,
+				name: candidate.name,
+				nonce,
+				source: observation,
+			},
+			prepared.directory,
+			prepared.file,
+		)?;
 		let mut writer = self.resume_writer()?;
 		inventory.recheck()?;
 		candidate.inventory.recheck()?;
@@ -85,7 +122,7 @@ impl RemoteJobLease<'_> {
 			&mut writer,
 			self.boundary,
 			FrameKind::RemoteCaptureRetired,
-			expected.encode()?,
+			payload,
 			|| {
 				self.activation
 					.enter_effect()
@@ -104,7 +141,8 @@ impl RemoteJobLease<'_> {
 			boundary,
 			exacopy_journal::remote_download::retirement::MAX_REMOTE_RETIREMENT_BYTES,
 		)?;
-		if declared.payload() != actual.payload()
+		if retired_boundary != boundary
+			|| declared.payload() != actual.payload()
 			|| RemoteCaptureRetired::from_frame(&actual)? != expected
 			|| planned.validate_synced(&synced)? != boundary.head
 		{

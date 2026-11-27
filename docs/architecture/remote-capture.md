@@ -81,3 +81,15 @@ This restart path rereads the source from byte zero and preserves all earlier
 stages. Efficient range reuse, qualified native publication and required
 metadata remain separate. Tests cover interrupted allocation sequences,
 exhaustion and head mismatches alongside the existing private capture protocol.
+
+Before retiring a sealed, verified or metadata-ready capture for an explicit
+fresh restart, the application checks the proposed epoch, name, nonce and
+source extent under the original exclusive lease. It previews the exact
+retirement, allocation and preparation frame sizes, including sequence
+encoding, against the first-segment limit. An already inadmissible attempt
+therefore leaves the old journal unchanged. The appended retirement must
+match the previewed head and offset before allocation can proceed. This
+preflight covers those three records, rather than reserving the later
+checkpoint and receipt history. Automatic retry keeps its existing admission
+path. The added native regressions require Linux execution; this ordering
+change does not qualify crash recovery or efficient prefix reuse.

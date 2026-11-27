@@ -180,9 +180,8 @@ pub(super) async fn capture_direct_seed(
 		let stage_name = format!("capture-{}", Uuid::from_bytes(nonce));
 		let name = component(stage_name.as_bytes()).map_err(Error::other)?;
 		let candidate = lease.candidate(name).map_err(Error::other)?;
-		let mut ledger = lease.open_fresh_capture(&candidate).map_err(Error::other)?;
-		let mut allocation = ledger
-			.allocate(&candidate, NonZeroU64::MIN, observation, nonce)
+		let (mut ledger, mut allocation) = lease
+			.allocate_fresh_capture(&candidate, NonZeroU64::MIN, observation, nonce)
 			.map_err(Error::other)?;
 		let bound = allocation.create(&mut ledger).map_err(Error::other)?;
 		let stage_id = bound.prefix_scope.stage;

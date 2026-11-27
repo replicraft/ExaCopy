@@ -1,14 +1,14 @@
-use exacopy_journal::JournalJobId;
-use exacopy_journal::MAX_FIRST_SEGMENT_BYTES;
-use exacopy_journal::frame::{ChainHead, FRAME_OVERHEAD_BYTES};
+use exacopy_journal::frame::{FRAME_OVERHEAD_BYTES, FrameKind, FrameWriter};
 use exacopy_journal::remote_download::finalization_replay::{
 	RemoteFinalizationPhase, RemoteFinalizationReplay,
 };
 use exacopy_journal::remote_download::replay::MAX_REMOTE_REPLAY_ATTEMPTS;
 use exacopy_journal::remote_download::replay::RemoteReplayBoundary;
 use exacopy_journal::remote_download::{
-	RemoteDownloadBody, RemoteDownloadRecord, RemoteEpochs, RemoteSourceObservation,
+	RemoteDownloadBody, RemoteDownloadContext, RemoteDownloadRecord, RemoteEpochs,
+	RemoteSourceObservation,
 };
+use exacopy_journal::{JournalJobId, LinuxFileIdentity, MAX_FIRST_SEGMENT_BYTES};
 use exacopy_platform::linux::RecoveryFile;
 
 use crate::profile::LocalProfile;
@@ -228,10 +228,9 @@ pub(in crate::assembly::linux::remote_journal) fn check_capacity(
 ) -> Result<RemoteEpochs, Error> {
 	let source = stamp.epochs.source.checked_add(1).ok_or(Error::Attempt)?;
 	let next = next_epochs(Some(stamp.epochs), source)?;
-	let prior = stamp.boundary.head;
-	let allocation = RemoteDownloadRecord::new(
+	check_preparation_capacity(
+		stamp.boundary,
 		stamp.context,
-		Some(prior),
 		RemoteDownloadBody::StageAllocated {
 			previous: Some(stamp.epochs),
 			next,
@@ -239,30 +238,62 @@ pub(in crate::assembly::linux::remote_journal) fn check_capacity(
 			nonce: fresh_nonce,
 			source: stamp.source,
 		},
+		record_identity(stamp.directory),
+		record_identity(stamp.file),
 	)?;
-	let next_sequence = prior.sequence().checked_add(1).ok_or(Error::Attempt)?;
-	next_sequence.checked_add(1).ok_or(Error::Attempt)?;
-	// Preview encoded size only. The digest and native identity fields use
-	// fixed byte widths, so the old stage's identity yields the same length.
-	let reserved_head = ChainHead::after(next_sequence, [0xff; 32]).ok_or(Error::Attempt)?;
-	let directory = record_identity(stamp.directory);
+	Ok(next)
+}
+
+pub(in crate::assembly::linux::remote_journal) fn check_preparation_capacity(
+	boundary: RemoteReplayBoundary,
+	context: RemoteDownloadContext,
+	allocation: RemoteDownloadBody<'_>,
+	directory: LinuxFileIdentity,
+	prior_stage: LinuxFileIdentity,
+) -> Result<(), Error> {
+	let RemoteDownloadBody::StageAllocated { next, nonce, .. } = allocation else {
+		return Err(Error::Binding);
+	};
+	let allocation = RemoteDownloadRecord::new(context, Some(boundary.head), allocation)?;
+	let allocated = preview_frame(
+		boundary,
+		FrameKind::RemoteStageAllocated,
+		&allocation.encode()?,
+	)?;
+	// The native identities use fixed-width byte strings. Use the known old
+	// stage only to size the future preparation before its own inode exists.
 	let prepared = RemoteDownloadRecord::new(
-		stamp.context,
-		Some(reserved_head),
+		context,
+		Some(allocated.head),
 		RemoteDownloadBody::EntryPrepared {
-			allocation: reserved_head,
+			allocation: allocated.head,
 			epochs: next,
-			nonce: fresh_nonce,
+			nonce,
 			stage_directory: directory,
-			stage: record_identity(stamp.file),
+			stage: prior_stage,
 		},
 	)?;
-	let needed = 2 * FRAME_OVERHEAD_BYTES + allocation.encode()?.len() + prepared.encode()?.len();
-	stamp
-		.boundary
-		.offset
-		.checked_add(u64::try_from(needed).map_err(|_| Error::Attempt)?)
+	frame_end(allocated.offset, prepared.encode()?.len())?;
+	Ok(())
+}
+
+pub(in crate::assembly::linux::remote_journal) fn preview_frame(
+	boundary: RemoteReplayBoundary,
+	kind: FrameKind,
+	payload: &[u8],
+) -> Result<RemoteReplayBoundary, Error> {
+	let offset = frame_end(boundary.offset, payload.len())?;
+	let head = FrameWriter::new(std::io::sink(), boundary.head)
+		.append(kind, payload)
+		.map_err(|_| Error::Attempt)?;
+	Ok(RemoteReplayBoundary { head, offset })
+}
+
+fn frame_end(offset: u64, payload_size: usize) -> Result<u64, Error> {
+	FRAME_OVERHEAD_BYTES
+		.checked_add(payload_size)
+		.and_then(|width| u64::try_from(width).ok())
+		.and_then(|width| offset.checked_add(width))
 		.filter(|end| *end <= MAX_FIRST_SEGMENT_BYTES)
-		.ok_or(Error::Attempt)?;
-	Ok(next)
+		.ok_or(Error::Attempt)
 }

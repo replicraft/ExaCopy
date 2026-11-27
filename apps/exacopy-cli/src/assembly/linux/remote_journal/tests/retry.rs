@@ -1,4 +1,5 @@
-use super::super::{RemoteRetryLease, RetryCaptureStamp, lease::retry::check_capacity};
+use super::super::lease::retry::{check_capacity, check_preparation_capacity, preview_frame};
+use super::super::{RemoteRetryLease, RetryCaptureStamp};
 use super::{
 	Error, Fixture, NONCE, RemoteJobLease, RemoteSourceObservation, STAGE, StageError, component,
 	epoch, observation,
@@ -201,6 +202,72 @@ fn retry_capacity_requires_space_for_a_fresh_preparation_and_a_new_epoch() {
 }
 
 #[test]
+fn retirement_budget_counts_all_three_frames_at_the_segment_limit() {
+	use super::super::record_identity;
+	use exacopy_journal::MAX_FIRST_SEGMENT_BYTES;
+	use exacopy_journal::frame::{ChainHead, FrameKind, FrameWriter};
+	use exacopy_journal::remote_download::replay::RemoteReplayBoundary;
+	use exacopy_journal::remote_download::{
+		RemoteDownloadBody as Body, RemoteDownloadRecord, RemoteEpochs,
+	};
+
+	let fixture = Fixture::new();
+	let issued = stamp(&fixture);
+	let directory = record_identity(issued.directory);
+	let prior_stage = record_identity(issued.file);
+	// The next sequence crosses a CBOR integer width. Build all three
+	// frames independently so no preview offset or size is the expected value.
+	let previous = ChainHead::after(23, issued.boundary.head.digest()).unwrap();
+	let retirement = b"bounded retirement payload";
+	let mut frames = FrameWriter::new(Vec::new(), previous);
+	let retired = frames
+		.append(FrameKind::RemoteCaptureRetired, retirement)
+		.unwrap();
+	let next = RemoteEpochs {
+		run: epoch(2),
+		source: epoch(2),
+	};
+	let allocation = Body::StageAllocated {
+		previous: Some(issued.epochs),
+		next,
+		name: component(FRESH).unwrap(),
+		nonce: FRESH_NONCE,
+		source: issued.source,
+	};
+	let record = |predecessor, body| {
+		RemoteDownloadRecord::new(issued.context, Some(predecessor), body)
+			.unwrap()
+			.encode()
+			.unwrap()
+	};
+	let allocated = frames
+		.append(allocation.kind(), &record(retired, allocation))
+		.unwrap();
+	let preparation = Body::EntryPrepared {
+		allocation: allocated,
+		epochs: next,
+		nonce: FRESH_NONCE,
+		stage_directory: directory,
+		stage: prior_stage,
+	};
+	let _ = frames
+		.append(preparation.kind(), &record(allocated, preparation))
+		.unwrap();
+	let width = u64::try_from(frames.into_inner().len()).unwrap();
+	let fits = MAX_FIRST_SEGMENT_BYTES - width;
+	let reserve = |offset| {
+		let boundary = RemoteReplayBoundary {
+			head: previous,
+			offset,
+		};
+		let retired = preview_frame(boundary, FrameKind::RemoteCaptureRetired, retirement)?;
+		check_preparation_capacity(retired, issued.context, allocation, directory, prior_stage)
+	};
+	reserve(fits).unwrap();
+	assert!(matches!(reserve(fits + 1), Err(Error::Attempt)));
+}
+
+#[test]
 fn retry_refuses_a_rebound_stage_directory_and_an_occupied_fresh_name() {
 	let fixture = Fixture::new();
 	let issued = stamp(&fixture);
@@ -238,7 +305,7 @@ fn retry_consumes_the_exact_successor_and_preserves_the_previous_stage() {
 	let prior = fixture.replay().boundary();
 	let (lease, preview, _pins) = retry.consume(observation(), epoch(2)).unwrap();
 	let wrong = lease.candidate(component(b"other-slot").unwrap()).unwrap();
-	let mut ledger = lease.open_fresh_capture(&wrong).unwrap();
+	let mut ledger = lease.open_writer(&wrong).unwrap();
 	assert!(matches!(
 		ledger.allocate_retry(&wrong, &preview, observation()),
 		Err(Error::Binding)
@@ -248,7 +315,7 @@ fn retry_consumes_the_exact_successor_and_preserves_the_previous_stage() {
 	assert!(!fixture.stage("other-slot").exists());
 
 	let candidate = lease.candidate(component(preview.name()).unwrap()).unwrap();
-	let mut ledger = lease.open_fresh_capture(&candidate).unwrap();
+	let mut ledger = lease.open_writer(&candidate).unwrap();
 	let mut allocation = ledger
 		.allocate_retry(&candidate, &preview, observation())
 		.unwrap();
@@ -278,7 +345,7 @@ fn retry_refuses_revocation_after_allocation_before_stage_creation() {
 	let retry = reopen(&fixture, stamp(&fixture)).unwrap();
 	let (lease, preview, _pins) = retry.consume(observation(), epoch(2)).unwrap();
 	let candidate = lease.candidate(component(preview.name()).unwrap()).unwrap();
-	let mut ledger = lease.open_fresh_capture(&candidate).unwrap();
+	let mut ledger = lease.open_writer(&candidate).unwrap();
 	let mut allocation = ledger
 		.allocate_retry(&candidate, &preview, observation())
 		.unwrap();

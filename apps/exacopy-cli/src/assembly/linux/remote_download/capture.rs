@@ -236,16 +236,14 @@ async fn download_prepared(
 	};
 	let stage_name = component(name)?;
 	let candidate = lease.candidate(stage_name)?;
-	let mut ledger = if preview.is_some() {
-		// A retained retry only opens the accepted Capture head. It cannot
-		// retire a finalized predecessor through the explicit-resume path.
-		lease.open_writer(&candidate)?
-	} else {
-		lease.open_fresh_capture(&candidate)?
-	};
-	let mut allocation = match &preview {
-		Some(seed) => ledger.allocate_retry(&candidate, seed, observation)?,
-		None => ledger.allocate(&candidate, allocated_epoch, observation, nonce)?,
+	let (mut ledger, mut allocation) = match &preview {
+		Some(seed) => {
+			// Automatic retry can only allocate from its accepted Capture head.
+			let mut ledger = lease.open_writer(&candidate)?;
+			let allocation = ledger.allocate_retry(&candidate, seed, observation)?;
+			(ledger, allocation)
+		}
+		None => lease.allocate_fresh_capture(&candidate, allocated_epoch, observation, nonce)?,
 	};
 	let bound = allocation.create(&mut ledger)?;
 	let barrier = PrefixBarrier::new(bound.prefix_scope);

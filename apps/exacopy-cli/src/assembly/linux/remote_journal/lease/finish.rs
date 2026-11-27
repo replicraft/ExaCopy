@@ -7,9 +7,12 @@ use exacopy_journal::remote_download::finalization_replay::{
 	RemoteFinalizationPhase, RemoteFinalizationReplay, RemoteReceiptAssociation,
 	replay_remote_finalization,
 };
-use exacopy_journal::remote_download::{RemoteDownloadContext, RemoteDownloadOwnerRecord};
+use exacopy_journal::remote_download::{
+	RemoteDownloadContext, RemoteDownloadOwnerRecord, RemoteSourceObservation,
+};
 use exacopy_transfer::remote_finalization::CommittedRemoteReceipt;
 
+use super::super::ledger::AllocatedStage;
 use super::super::receipt::{HeldReceiptWorkspace, read_receipt};
 use super::{CheckedCandidate, Error, RemoteJobJournal, RemoteJobLease, context};
 
@@ -21,22 +24,30 @@ pub(in crate::assembly::linux) struct FinalizationHistory<'owner> {
 }
 
 impl RemoteJobLease<'_> {
-	pub(in crate::assembly::linux) fn open_fresh_capture(
-		&self,
-		candidate: &CheckedCandidate<'_>,
-	) -> Result<RemoteJobJournal<'_>, Error> {
+	pub(in crate::assembly::linux) fn allocate_fresh_capture<'lease, 'stage>(
+		&'lease self,
+		candidate: &'stage CheckedCandidate<'stage>,
+		source_epoch: NonZeroU64,
+		observation: RemoteSourceObservation,
+		nonce: [u8; 16],
+	) -> Result<(RemoteJobJournal<'lease>, AllocatedStage<'stage>), Error>
+	where
+		'lease: 'stage,
+	{
 		use RemoteFinalizationPhase as Phase;
-		match self.phase {
+		let mut writer = match self.phase {
 			Phase::Capture | Phase::Retired => self.open_writer(candidate),
 			Phase::Sealed | Phase::Verified | Phase::MetadataReady => {
-				self.retire_and_open_writer(candidate)
+				self.retire_and_open_writer(candidate, source_epoch, observation, nonce)
 			}
 			_ => Err(Error::Lifecycle {
 				phase: self.phase,
 				boundary: self.boundary,
 				issue: None,
 			}),
-		}
+		}?;
+		let allocation = writer.allocate(candidate, source_epoch, observation, nonce)?;
+		Ok((writer, allocation))
 	}
 
 	pub(in crate::assembly::linux) fn next_source_epoch(&self) -> Result<NonZeroU64, Error> {

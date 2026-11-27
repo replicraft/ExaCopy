@@ -113,9 +113,8 @@ fn a_synced_retirement_is_required_before_a_fresh_allocation() {
 			..
 		})
 	));
-	let mut writer = lease.retire_and_open_writer(&candidate).unwrap();
-	let new = writer
-		.allocate(&candidate, epoch(2), observation(), [0x62; 16])
+	let (writer, new) = lease
+		.allocate_fresh_capture(&candidate, epoch(2), observation(), [0x62; 16])
 		.unwrap();
 	drop(new);
 	drop(writer);
@@ -141,13 +140,45 @@ fn a_synced_retirement_is_required_before_a_fresh_allocation() {
 }
 
 #[test]
+fn an_inadmissible_fresh_attempt_leaves_the_sealed_journal_unchanged() {
+	let fixture = Fixture::new();
+	prepare(&fixture, false);
+	let lease = reopen(&fixture).unwrap();
+	let candidate = lease.candidate(component(FRESH).unwrap()).unwrap();
+	let sealed = fs::read(fixture.segment()).unwrap();
+	let oversized = super::RemoteSourceObservation::new(
+		StreamLength::new(fixture.scope.maximum_extent.get() + 1).unwrap(),
+		observation().mode(),
+		observation().modified_seconds(),
+	)
+	.unwrap();
+	for (source_epoch, source, nonce) in [
+		(epoch(1), observation(), [0x62; 16]),
+		(epoch(2), observation(), NONCE),
+		(epoch(2), observation(), [0; 16]),
+		(epoch(2), oversized, [0x62; 16]),
+	] {
+		let result = lease.allocate_fresh_capture(&candidate, source_epoch, source, nonce);
+		assert!(matches!(result, Err(Error::Attempt)));
+		assert_eq!(fs::read(fixture.segment()).unwrap(), sealed);
+		assert_eq!(fs::read(fixture.stage("capture-1")).unwrap(), DATA);
+		assert!(!fixture.stage("capture-next").exists());
+		assert!(!fixture.target().exists());
+	}
+}
+
+#[test]
 fn a_retired_job_requires_the_same_live_grant_before_any_allocation() {
 	let fixture = Fixture::new();
 	prepare(&fixture, false);
 	{
 		let lease = reopen(&fixture).unwrap();
 		let candidate = lease.candidate(component(FRESH).unwrap()).unwrap();
-		drop(lease.retire_and_open_writer(&candidate).unwrap());
+		drop(
+			lease
+				.retire_and_open_writer(&candidate, epoch(2), observation(), [0x62; 16])
+				.unwrap(),
+		);
 	}
 	let ledger = fs::read(fixture.segment()).unwrap();
 	fixture.grant.digest.set([0x19; 32]);
@@ -175,7 +206,7 @@ fn retirement_refuses_a_rebound_old_allocated_name_under_the_same_lease() {
 		.unwrap();
 	std::io::Write::write_all(&mut substitute, DATA).unwrap();
 	assert!(matches!(
-		lease.retire_and_open_writer(&candidate),
+		lease.retire_and_open_writer(&candidate, epoch(2), observation(), [0x62; 16]),
 		Err(Error::UnknownStage)
 	));
 	assert_eq!(fs::read(fixture.segment()).unwrap(), ledger);
@@ -314,7 +345,7 @@ fn explicit_retirement_checks_grant_after_the_resume_barrier() {
 	let before = fs::read(fixture.segment()).unwrap();
 	fixture.grant.refuse_after(1);
 	assert!(matches!(
-		lease.retire_and_open_writer(&candidate),
+		lease.retire_and_open_writer(&candidate, epoch(2), observation(), [0x62; 16]),
 		Err(Error::Grant(_))
 	));
 	assert_eq!(fs::read(fixture.segment()).unwrap(), before);

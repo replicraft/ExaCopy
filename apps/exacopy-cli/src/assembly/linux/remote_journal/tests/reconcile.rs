@@ -99,9 +99,8 @@ fn a_new_reader_reconciles_bounded_unacknowledged_old_bytes_and_writes_at_zero_e
 
 		let lease = reopen(&fixture).unwrap();
 		let candidate = lease.candidate(component(FRESH).unwrap()).unwrap();
-		let mut ledger = lease.open_fresh_capture(&candidate).unwrap();
-		let mut allocation = ledger
-			.allocate(&candidate, epoch(2), observation(), [0x62; 16])
+		let (mut ledger, mut allocation) = lease
+			.allocate_fresh_capture(&candidate, epoch(2), observation(), [0x62; 16])
 			.unwrap();
 		let mut bound = allocation.create(&mut ledger).unwrap();
 		assert_eq!(
@@ -144,9 +143,8 @@ fn a_preserved_inode_is_rechecked_between_allocation_and_fresh_creation() {
 	leave_old_stage(&fixture, 4, 8);
 	let lease = reopen(&fixture).unwrap();
 	let candidate = lease.candidate(component(FRESH).unwrap()).unwrap();
-	let mut ledger = lease.open_fresh_capture(&candidate).unwrap();
-	let mut allocation = ledger
-		.allocate(&candidate, epoch(2), observation(), [0x62; 16])
+	let (mut ledger, mut allocation) = lease
+		.allocate_fresh_capture(&candidate, epoch(2), observation(), [0x62; 16])
 		.unwrap();
 	let before = fs::read(fixture.segment()).unwrap();
 	let old = fixture.stage("capture-1");
