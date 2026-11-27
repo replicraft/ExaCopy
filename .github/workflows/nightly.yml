@@ -19,46 +19,7 @@ env:
 
 jobs:
   coverage:
-    name: Model and endpoint coverage (Linux x86_64)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Provision pinned Pomologie APFS checkout
-        shell: bash
-        run: |
-          apfs_python=python3
-          if [[ "$RUNNER_OS" == Windows ]]; then apfs_python=python; fi
-          bash .github/ci/capture.sh apfs-source "$apfs_python" -B tools/apfs_source.py --fetch
-          bash .github/ci/capture.sh transport-source "$apfs_python" -B tools/transport_source.py --fetch
-      - name: Install Rust 1.100.0
-        run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
-      - name: Install nextest
-        run: bash .github/ci/capture.sh nextest-setup bash .github/ci/install.sh nextest
-      - name: Install coverage tools
-        id: coverage_tools
-        run: bash .github/ci/capture.sh coverage-setup bash .github/ci/install.sh coverage
-      - name: Require 95 percent line and 90 percent branch coverage
-        timeout-minutes: 20
-        run: bash .github/ci/capture.sh coverage bash .github/ci/assurance.sh coverage
-      - name: Install Rust 1.100.0 LLVM tools
-        id: endpoint_tools
-        if: ${{ !cancelled() && steps.coverage_tools.outcome == 'success' }}
-        run: bash .github/ci/capture.sh endpoint-coverage-setup rustup component add --toolchain 1.100.0 llvm-tools
-      - name: Require 85 percent line coverage in each endpoint crate
-        if: ${{ !cancelled() && steps.endpoint_tools.outcome == 'success' }}
-        timeout-minutes: 20
-        run: bash .github/ci/capture.sh endpoint-coverage bash .github/ci/assurance.sh endpoint-coverage
-      - name: Retain coverage reports
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: coverage-linux-x86_64-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/exacopy-evidence/
-          if-no-files-found: error
-          retention-days: 90
+    uses: ./.github/workflows/coverage.yml
 
   fuzz:
     name: Unix component ASan fuzzing (Linux x86_64)

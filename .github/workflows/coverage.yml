@@ -1,0 +1,132 @@
+name: Coverage
+
+on:
+  workflow_call:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/coverage.yml'
+      - '.github/ci/assurance.sh'
+      - '.github/ci/model_coverage*.py'
+      - '.github/ci/capture.sh'
+      - '.github/ci/common.sh'
+      - '.github/ci/install.sh'
+      - '.cargo/**'
+      - '.config/nextest.toml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'tools/apfs_source.py'
+      - 'tools/transport_source.py'
+      - 'specs/dependencies/apfs-source.toml'
+      - 'specs/dependencies/transport-source.toml'
+      - 'specs/dependencies/transport-source/**'
+      - 'crates/foundation/exacopy-core/Cargo.toml'
+      - 'crates/foundation/exacopy-core/src/**'
+      - 'crates/foundation/exacopy-core/tests/**'
+      - 'crates/foundation/exacopy-model/Cargo.toml'
+      - 'crates/foundation/exacopy-model/src/**'
+      - 'crates/foundation/exacopy-model/tests/**'
+      - 'crates/interfaces/exacopy-endpoint/Cargo.toml'
+      - 'crates/interfaces/exacopy-endpoint/src/**'
+      - 'crates/interfaces/exacopy-endpoint/tests/**'
+      - 'crates/platform/exacopy-platform/Cargo.toml'
+      - 'crates/platform/exacopy-platform/src/**'
+      - 'crates/platform/exacopy-platform/tests/**'
+      - 'crates/foundation/exacopy-model/verification/tla/SyncBaseline.classifier.tsv'
+      - 'crates/foundation/exacopy-model/verification/sync_genesis/**'
+      - 'crates/platform/exacopy-platform/verification/sync_genesis_publication/**'
+  pull_request:
+    paths:
+      - '.github/workflows/coverage.yml'
+      - '.github/ci/assurance.sh'
+      - '.github/ci/model_coverage*.py'
+      - '.github/ci/capture.sh'
+      - '.github/ci/common.sh'
+      - '.github/ci/install.sh'
+      - '.cargo/**'
+      - '.config/nextest.toml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'tools/apfs_source.py'
+      - 'tools/transport_source.py'
+      - 'specs/dependencies/apfs-source.toml'
+      - 'specs/dependencies/transport-source.toml'
+      - 'specs/dependencies/transport-source/**'
+      - 'crates/foundation/exacopy-core/Cargo.toml'
+      - 'crates/foundation/exacopy-core/src/**'
+      - 'crates/foundation/exacopy-core/tests/**'
+      - 'crates/foundation/exacopy-model/Cargo.toml'
+      - 'crates/foundation/exacopy-model/src/**'
+      - 'crates/foundation/exacopy-model/tests/**'
+      - 'crates/interfaces/exacopy-endpoint/Cargo.toml'
+      - 'crates/interfaces/exacopy-endpoint/src/**'
+      - 'crates/interfaces/exacopy-endpoint/tests/**'
+      - 'crates/platform/exacopy-platform/Cargo.toml'
+      - 'crates/platform/exacopy-platform/src/**'
+      - 'crates/platform/exacopy-platform/tests/**'
+      - 'crates/foundation/exacopy-model/verification/tla/SyncBaseline.classifier.tsv'
+      - 'crates/foundation/exacopy-model/verification/sync_genesis/**'
+      - 'crates/platform/exacopy-platform/verification/sync_genesis_publication/**'
+
+permissions:
+  contents: read
+
+# Only pushes share a group. PRs and Nightly calls keep independent evidence.
+concurrency:
+  group: ${{ github.event_name == 'push' && format('coverage-push-{0}', github.ref) || format('coverage-{0}-{1}', github.run_id, github.run_attempt) }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+  EXPECTED_RUST_HOST: x86_64-unknown-linux-gnu
+
+jobs:
+  coverage:
+    name: Model and endpoint coverage (Linux x86_64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Provision pinned Pomologie APFS checkout
+        shell: bash
+        run: |
+          apfs_python=python3
+          if [[ "$RUNNER_OS" == Windows ]]; then apfs_python=python; fi
+          bash .github/ci/capture.sh apfs-source "$apfs_python" -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source "$apfs_python" -B tools/transport_source.py --fetch
+      - name: Install Rust 1.100.0
+        run: bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
+      - name: Install nextest
+        run: bash .github/ci/capture.sh nextest-setup bash .github/ci/install.sh nextest
+      - name: Install coverage tools
+        id: coverage_tools
+        run: bash .github/ci/capture.sh coverage-setup bash .github/ci/install.sh coverage
+      - name: Require 95 percent line and 90 percent branch coverage
+        timeout-minutes: 20
+        run: bash .github/ci/capture.sh coverage bash .github/ci/assurance.sh coverage
+      - name: Install Rust 1.100.0 LLVM tools
+        id: endpoint_tools
+        if: ${{ !cancelled() && steps.coverage_tools.outcome == 'success' }}
+        run: bash .github/ci/capture.sh endpoint-coverage-setup rustup component add --toolchain 1.100.0 llvm-tools
+      - name: Require 85 percent line coverage in each endpoint crate
+        if: ${{ !cancelled() && steps.endpoint_tools.outcome == 'success' }}
+        timeout-minutes: 20
+        run: bash .github/ci/capture.sh endpoint-coverage bash .github/ci/assurance.sh endpoint-coverage
+      - name: Retain coverage reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-linux-x86_64-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-evidence/
+          if-no-files-found: error
+          retention-days: 90
