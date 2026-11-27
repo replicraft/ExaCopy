@@ -13,6 +13,7 @@ mod publication_records;
 mod recovery_records;
 pub mod remote_download;
 mod verification_records;
+pub mod windows_bootstrap;
 
 pub use darwin_phases::{
 	DarwinDurabilityRecorded, DarwinMetadataRecorded, DarwinNamespaceObservation,

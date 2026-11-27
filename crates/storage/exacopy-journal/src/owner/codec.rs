@@ -25,6 +25,7 @@ pub(crate) enum OwnerDomain {
 	DarwinManagedApfs,
 	LinuxPublicApply,
 	LinuxRemoteDownload,
+	WindowsFixedNtfsBootstrap,
 }
 
 impl OwnerDomain {
@@ -34,6 +35,9 @@ impl OwnerDomain {
 			Self::DarwinManagedApfs => (2, b"ExaCopy/owner/darwin-managed-apfs/v1\0"),
 			Self::LinuxPublicApply => (3, b"ExaCopy/owner/linux-public-apply/v1\0"),
 			Self::LinuxRemoteDownload => (4, b"ExaCopy/owner/linux-remote-download/v1\0"),
+			Self::WindowsFixedNtfsBootstrap => {
+				(5, b"ExaCopy/owner/windows-fixed-ntfs-bootstrap/v1\0")
+			}
 		}
 	}
 
@@ -294,27 +298,27 @@ pub(crate) fn encoded_bytes<const N: usize>(encoded: &Cursor<[u8; N]>) -> &[u8] 
 	&encoded.get_ref()[..encoded.position()]
 }
 
-pub(super) fn map(decoder: &mut Decoder<'_>, fields: u64) -> Result<(), OwnerError> {
+pub(crate) fn map(decoder: &mut Decoder<'_>, fields: u64) -> Result<(), OwnerError> {
 	if decoder.map()? != Some(fields) {
 		return Err(OwnerError::InvalidCbor);
 	}
 	Ok(())
 }
 
-pub(super) fn key(decoder: &mut Decoder<'_>, field: u64) -> Result<(), OwnerError> {
+pub(crate) fn key(decoder: &mut Decoder<'_>, field: u64) -> Result<(), OwnerError> {
 	if decoder.u64()? != field {
 		return Err(OwnerError::InvalidCbor);
 	}
 	Ok(())
 }
 
-pub(super) fn fixed_bytes<const N: usize>(
+pub(crate) fn fixed_bytes<const N: usize>(
 	decoder: &mut Decoder<'_>,
 ) -> Result<[u8; N], OwnerError> {
 	decoder.bytes()?.try_into().map_err(|_| OwnerError::Length)
 }
 
-pub(super) fn finish(decoder: Decoder<'_>) -> Result<(), OwnerError> {
+pub(crate) fn finish(decoder: Decoder<'_>) -> Result<(), OwnerError> {
 	if decoder.position() != decoder.input().len() {
 		return Err(OwnerError::TrailingBytes);
 	}

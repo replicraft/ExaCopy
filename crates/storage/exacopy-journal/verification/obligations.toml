@@ -302,3 +302,27 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/remote_continuation/continued_coverage.rs", test = "witness_closeout::witnessed_replay::continued_coverage::mixed_coverage_predecessor_requires_exact_complete_active_history", oracle = "Match independent kind-41 bytes for zero-tail and multi-checkpoint coverage and exact current repeated continuation. Refuse incomplete coverage, stale predecessor, torn or uncertain history, and every other lifecycle phase." }
+
+[[obligation]]
+id = "P-079"
+requirement_ids = ["R-039", "R-041", "R-044"]
+source = "src/windows_bootstrap/record.rs"
+symbols = ["authenticate_owner", "require_canonical_strong"]
+assumptions = [
+    "The caller independently selects profile, canonical strong verification key, job and admitted root; Ed25519 and BLAKE3 meet their stated cryptographic assumptions.",
+    "Signed role declarations and supplied identity values do not establish native custody, actual EOF, protection from ID reuse or effect authority.",
+]
+gates = ["rust"]
+rust = { file = "tests/windows_bootstrap.rs", test = "independent_trust_selection_and_signature_domain_are_mandatory", oracle = "A separately selected key, profile, job or root must match the signed owner. Refuse weak and noncanonical verification keys, mismatching key copies, an invalid signature and a signature from a different owner domain before accepting a prepared prefix." }
+
+[[obligation]]
+id = "P-080"
+requirement_ids = ["R-039", "R-040", "R-044"]
+source = "src/windows_bootstrap/inspect.rs"
+symbols = ["inspect", "WindowsBootstrapEvidence", "WindowsBootstrapPrefix"]
+assumptions = [
+    "Owner authentication and the five observed role values use the independently selected trust context. The reader supplies truthful logical byte and EOF observations.",
+    "Real I/O requires separately admitted bounded native readers, finite interruption handling, physical EOF and final held-role rechecks. The evidence carries no writer or durability authority.",
+]
+gates = ["rust"]
+rust = { file = "tests/windows_bootstrap.rs", test = "terminal_io_and_suffixes_preserve_only_the_first_boundary", oracle = "Accept only the single exact prepared frame followed by clean logical EOF. Terminal I/O failure, a byte suffix, an extra zero-payload frame or a nonzero extra frame must return failure with only the first validated head and offset retained diagnostically; cap the terminal payload before reading its body." }
