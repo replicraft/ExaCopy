@@ -23,13 +23,18 @@ pub(super) async fn authenticate(
 	let authority = &profile.authority;
 	match profile.credential_source() {
 		CredentialSource::SuppliedPassword => {
-			exacopy_ssh::connect(
+			exacopy_ssh::connect_with_password_checked(
 				stream,
 				authority,
 				profile.pin,
 				trust,
 				authority,
 				|request| profile.password(request, || route_current() && offer.0.current()),
+				|| {
+					(route_current() && offer.0.current())
+						.then_some(())
+						.ok_or(SshError::Password)
+				},
 			)
 			.await
 		}

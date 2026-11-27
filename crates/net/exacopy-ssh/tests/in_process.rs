@@ -13,6 +13,8 @@ use exacopy_ssh::{Error, KnownHostTrust, Password, connect};
 mod keepalive;
 #[path = "in_process/key_auth.rs"]
 mod key_auth;
+#[path = "in_process/password_offer.rs"]
+mod password_offer;
 #[path = "in_process/peer.rs"]
 mod peer;
 #[path = "in_process/positioned.rs"]

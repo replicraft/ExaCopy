@@ -157,6 +157,41 @@ where
 	S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 	B: FnOnce(CredentialRequest<'_>) -> Result<Password, Error>,
 {
+	connect_with_password_checked(
+		stream,
+		authority,
+		pin,
+		trust,
+		credential_authority,
+		broker,
+		|| Ok(()),
+	)
+	.await
+}
+
+/// Connects to a pinned SFTP peer with a password and a checked offer.
+///
+/// The broker runs after host and credential authority verification. A successful
+/// broker result is followed by the caller's liveness check immediately before
+/// the password is offered for this connection. Supply a bounded, nonblocking
+/// check and keep the route-owned stream fenced throughout the operation.
+///
+/// # Errors
+/// Returns the original broker failure or a refusal of the live offer, peer,
+/// or SFTP setup. A refused offer ends the attempt before authentication.
+pub async fn connect_with_password_checked<S, B>(
+	stream: S,
+	authority: &SshAuthority,
+	pin: HostKeyFingerprint,
+	trust: KnownHostTrust,
+	credential_authority: &SshAuthority,
+	broker: B,
+	offer_current: impl FnOnce() -> Result<(), Error>,
+) -> Result<ReadOnlySftp, Error>
+where
+	S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+	B: FnOnce(CredentialRequest<'_>) -> Result<Password, Error>,
+{
 	connect_with_credential(
 		stream,
 		authority,
@@ -164,7 +199,7 @@ where
 		trust,
 		credential_authority,
 		async move |request| broker(request),
-		|| Ok(()),
+		offer_current,
 	)
 	.await
 }

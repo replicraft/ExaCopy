@@ -13,7 +13,7 @@ mod wire;
 pub use connection::MAX_OPENSSH_ED25519_BYTES;
 pub use connection::{
 	Ed25519Key, Password, SshAuthenticatedPeer, connect, connect_with_ed25519,
-	connect_with_ed25519_async,
+	connect_with_ed25519_async, connect_with_password_checked,
 };
 pub use data::{
 	FileObservation, MAX_READ_CHUNK_BYTES, MAX_STREAM_BYTES, ReadOnlySftp, RemotePositionedRead,
