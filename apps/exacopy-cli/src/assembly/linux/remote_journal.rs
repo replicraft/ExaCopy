@@ -31,6 +31,12 @@ mod retry;
 	reason = "private selector-2 inspector awaits native qualification and application dispatch"
 )]
 pub(super) mod witnessed_inspection;
+#[cfg(test)]
+#[expect(
+	dead_code,
+	reason = "private recovery SDK awaits authenticated native qualification and dispatch"
+)]
+pub(super) mod witnessed_recovery;
 
 pub(super) use admission::{CurrentGrant, RemoteActivation};
 pub use lease::RemoteRetryLease;

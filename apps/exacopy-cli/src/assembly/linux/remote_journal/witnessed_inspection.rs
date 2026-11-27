@@ -342,7 +342,7 @@ fn native_selection<'name>(
 	})
 }
 
-fn public_selection<'name>(
+pub(super) fn public_selection<'name>(
 	inspection: &'name RemoteWitnessedPublicExpectation<'_>,
 ) -> Result<WitnessedPublishedSelection<'name>, Error> {
 	let stage = inspection.stage();

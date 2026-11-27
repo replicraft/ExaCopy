@@ -89,7 +89,10 @@ impl RemoteGrant {
 			notification.await;
 		}
 	}
-	pub(super) fn remaining_from(&self, start: Instant) -> Result<Duration, RetryError> {
+	pub(in crate::assembly::linux) fn remaining_from(
+		&self,
+		start: Instant,
+	) -> Result<Duration, RetryError> {
 		self.deadline
 			.checked_duration_since(start)
 			.filter(|duration| !duration.is_zero())
