@@ -58,7 +58,8 @@ if ! run_tlc ProtectedReplacement >"$positive" 2>&1 ||
     fail 'ProtectedReplacement safety check did not complete'
 fi
 
-for action in RejectHistoricalAdmission RebindBeforeCapture OccupyPrivateSlot CaptureActual CaptureBlocked \
+for action in AdmitReplacement RejectHistoricalAdmission RejectUnauthorizedAdmission RecordCaptureIntent \
+    RebindBeforeCapture OccupyPrivateSlot CaptureActual CaptureBlocked \
     LatePublicArrival SyncPublic SyncPrivate PostBarrierObservation CommitCaptureEvidence \
     RefuseWrongObservation VerifyIndependentImage RefuseImage GrantPublication PlaceStage \
     PublicationConflict LoseReplyBeforeEffect Interrupt; do
@@ -94,4 +95,9 @@ check_mutant TrustPost PublicationRequiresDurableApprovedCapture GrantPublicatio
 check_mutant SkipImage PublicationRequiresDurableApprovedCapture GrantPublication
 check_mutant ClobberArrival NoPublicClobber PlaceStage
 check_mutant RetryUnknown OneShot RetryUnknown
-check_mutant AdmitPriorHistory FreshAdmission RecordCaptureIntent
+check_mutant AdmitPriorHistory FreshAdmission AdmitReplacement
+check_mutant SkipApproval AuthorizedAdmission AdmitReplacement
+check_mutant SkipDisclosure AuthorizedAdmission AdmitReplacement
+check_mutant SkipCaptureGrant AuthorizedAdmission AdmitReplacement
+check_mutant SkipPublicationGrant AuthorizedAdmission AdmitReplacement
+check_mutant TrustReplay FreshAdmission AdmitReplacement

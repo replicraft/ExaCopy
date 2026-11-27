@@ -17,13 +17,27 @@ Fresh == "fresh pre-intent history"
 Prior == "prior intent"
 Indeterminate == "ambiguous replay"
 
-Terminal == {"reconcile", "stale", "conflict", "seen-placement", "cancelled"}
+ValidAdmission == "valid admission"
+MissingApproval == "missing or mismatched approval"
+MissingDisclosure == "missing visibility disclosure"
+InvalidCaptureGrant == "invalid capture grant"
+InvalidPublicationGrant == "invalid publication grant"
+DivergentReplay == "divergent held replay evidence"
+
+AdmissionCases == {ValidAdmission, MissingApproval, MissingDisclosure,
+                   InvalidCaptureGrant, InvalidPublicationGrant, DivergentReplay}
+
+Terminal == {"reconcile", "refused", "stale", "conflict", "seen-placement", "cancelled"}
 
 Init ==
-	\E imageRequired \in BOOLEAN, history \in {Fresh, Prior, Indeterminate}:
-		state = [
-			phase |-> "prepared",
+	\E imageRequired \in BOOLEAN, history \in {Fresh, Prior, Indeterminate},
+	   admission \in AdmissionCases:
+		/\ history = Fresh \/ admission = ValidAdmission
+		/\ state = [
+			phase |-> "admission",
 			history |-> history,
+			admission |-> admission,
+			admitted |-> FALSE,
 			source |-> Source,
 			target |-> Approved,
 			private |-> Empty,
@@ -45,16 +59,32 @@ Init ==
 			uncertain |-> FALSE
 		]
 
-RecordCaptureIntent ==
-	/\ state.phase = "prepared"
+AdmitReplacement ==
+	/\ state.phase = "admission"
 	/\ state.history = Fresh \/ Mutation = "admit-prior-history"
-	/\ state.target = Approved
-	/\ state' = [state EXCEPT !.phase = "intent", !.captureIntent = TRUE]
+	/\ state.admission # MissingApproval \/ Mutation = "skip-approval"
+	/\ state.admission # MissingDisclosure \/ Mutation = "skip-disclosure"
+	/\ state.admission # InvalidCaptureGrant \/ Mutation = "skip-capture-grant"
+	/\ state.admission # InvalidPublicationGrant \/ Mutation = "skip-publication-grant"
+	/\ state.admission # DivergentReplay \/ Mutation = "trust-replay"
+	/\ state' = [state EXCEPT !.phase = "prepared", !.admitted = TRUE]
 
 RejectHistoricalAdmission ==
-	/\ state.phase = "prepared"
-	/\ state.history # Fresh
+	/\ state.phase = "admission"
+	/\ state.history # Fresh \/ state.admission = DivergentReplay
 	/\ state' = [state EXCEPT !.phase = "reconcile"]
+
+RejectUnauthorizedAdmission ==
+	/\ state.phase = "admission"
+	/\ state.history = Fresh
+	/\ state.admission \in {MissingApproval, MissingDisclosure,
+	                       InvalidCaptureGrant, InvalidPublicationGrant}
+	/\ state' = [state EXCEPT !.phase = "refused"]
+
+RecordCaptureIntent ==
+	/\ state.phase = "prepared"
+	/\ state.target = Approved
+	/\ state' = [state EXCEPT !.phase = "intent", !.captureIntent = TRUE]
 
 GrantCapture ==
 	/\ state.phase = "intent"
@@ -165,7 +195,7 @@ LoseReplyBeforeEffect ==
 
 Interrupt ==
 	/\ state.phase \notin Terminal
-	/\ state.phase # "prepared" \/ state.history = Fresh
+	/\ state.phase # "admission"
 	/\ state' =
 		IF state.phase = "prepared"
 		THEN [state EXCEPT !.phase = "cancelled"]
@@ -178,8 +208,10 @@ RetryUnknown ==
 	/\ state' = [state EXCEPT !.phase = "capture", !.captureCount = @ + 1]
 
 Next ==
-	\/ RecordCaptureIntent
+	\/ AdmitReplacement
 	\/ RejectHistoricalAdmission
+	\/ RejectUnauthorizedAdmission
+	\/ RecordCaptureIntent
 	\/ GrantCapture
 	\/ RebindBeforeCapture
 	\/ OccupyPrivateSlot
@@ -227,10 +259,17 @@ PublicationRequiresDurableApprovedCapture ==
 		/\ ~state.imageRequired \/ state.imageReady
 
 FreshAdmission ==
-	state.history # Fresh =>
+	state.history # Fresh \/ state.admission = DivergentReplay =>
+		/\ ~state.admitted
 		/\ ~state.captureIntent
 		/\ state.captureCount = 0
 		/\ state.publishCount = 0
+
+AuthorizedAdmission ==
+	state.admitted => state.admission = ValidAdmission
+
+IntentFollowsAdmission ==
+	state.captureIntent => state.admitted
 
 OneShot ==
 	/\ state.captureCount <= 1
