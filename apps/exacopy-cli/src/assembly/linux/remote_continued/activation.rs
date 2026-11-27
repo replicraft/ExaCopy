@@ -23,10 +23,22 @@ use exacopy_transfer::remote_resume::prefix::{LentRetainedSuffix, VerifiedRetain
 #[derive(Debug)]
 pub(super) enum AdmissionError<E> {
 	Binding,
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Format(RemoteDownloadError),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Frame(FrameWriteError),
 	Observation(E),
 	Gate(E),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Native(Box<ContinuationReservationError<Self>>),
 }
 

@@ -49,23 +49,74 @@ pub(super) mod zero_tail;
 pub(super) enum WitnessFailure<R> {
 	Binding,
 	Source(PrefixVerificationError<R, Infallible>),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Route(RemoteRouteCloseError),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Stage(StageError),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Custody(WitnessReservationObservationError),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Journal(ContinuationReservationError<WitnessAdmissionError>),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Link(ProtectedWitnessError<WitnessAdmissionError>),
+	#[cfg(test)]
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	WitnessedVerification(StageError),
+	#[cfg(test)]
 	WitnessedDigestMismatch,
 }
 
 #[derive(Debug)]
 pub(super) enum WitnessAdmissionError {
 	Binding,
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Format(RemoteDownloadError),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Consent(ConsentRefusal),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Model(exacopy_model::witnessed_publication::Refusal),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Route(RetryError),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Custody(WitnessReservationObservationError),
+	#[cfg(test)]
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Stage(StageError),
 }
 
@@ -92,6 +143,7 @@ pub(super) struct LinkedWitnessedStage<'view, 'lease, 'scope, 'name> {
 	logical: LinkedPublication,
 }
 
+#[cfg(test)]
 impl LinkedWitnessedStage<'_, '_, '_, '_> {
 	fn confirm_digest<R>(&self, scratch: &mut [u8]) -> Result<(), WitnessFailure<R>> {
 		if hash_stage(self.chain.stage(), scratch).map_err(WitnessFailure::WitnessedVerification)?

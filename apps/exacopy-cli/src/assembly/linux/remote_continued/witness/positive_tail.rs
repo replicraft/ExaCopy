@@ -51,6 +51,13 @@ pub(in crate::assembly::linux::remote_continued) enum PositiveTailFailure {
 	/// artifacts and reconcile before reuse. The head is capture evidence only.
 	Reconcile {
 		last_confirmed_capture: Head,
+		#[cfg_attr(
+			feature = "experimental-verified-prefix-resume",
+			expect(
+				dead_code,
+				reason = "retains the cause beside the confirmed capture boundary"
+			)
+		)]
 		cause: Box<PositiveTailCause>,
 	},
 }
@@ -58,18 +65,66 @@ pub(in crate::assembly::linux::remote_continued) enum PositiveTailFailure {
 #[derive(Debug)]
 pub(in crate::assembly::linux::remote_continued) enum PositiveTailCause {
 	Binding,
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Input(StreamInputError),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Prior(prior::OriginalCaptureError),
 	Gate(WitnessAdmissionError),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Model(Refusal),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Reservation(WitnessReservationError<WitnessAdmissionError>),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	PendingReservation(WitnessReservationError),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Prefix(SuffixError<WitnessAdmissionError>),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Continuation(AdmissionError<WitnessAdmissionError>),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Checkpoint(CheckpointFailure<SftpSourceError, WitnessAdmissionError>),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Stage(StageError),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Link(WitnessFailure<SftpSourceError>),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Prepublication(Box<WitnessedPrepublicationFailure<WitnessedAdapterError>>),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Publication(WitnessedSubmitError),
 }
 

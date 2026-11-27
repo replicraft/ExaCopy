@@ -38,20 +38,48 @@ use super::activation::{model_head, reservation_plan};
 #[derive(Debug)]
 pub(super) enum CheckpointFailure<R, E> {
 	Binding,
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Format(RemoteDownloadError),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Frame(FrameWriteError),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Model(Refusal),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Budget(WitnessedPassBudgetError),
 	Source(PrefixVerificationError<R, Infallible>),
 	Stage(SuffixError<CheckpointStageError<E>>),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Observation(StageError),
 	PreEffectObservation(E),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Custody(WitnessReservationObservationError),
 	Journal(ContinuationReservationError<CheckpointGateError<E>>),
 }
 
 #[derive(Debug)]
 pub(super) enum CheckpointStageError<E> {
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Custody(WitnessReservationObservationError),
 	Observation(E),
 	Authority(E),
@@ -60,6 +88,10 @@ pub(super) enum CheckpointStageError<E> {
 #[derive(Debug)]
 pub(super) enum CheckpointGateError<E> {
 	Binding,
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Format(RemoteDownloadError),
 	Observation(E),
 	Authority(E),

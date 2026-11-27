@@ -25,6 +25,10 @@ use super::{SubmittedPublication, WitnessAdmissionError, WitnessPass, model_head
 #[derive(Debug)]
 pub(in crate::assembly::linux::remote_continued) enum WitnessedDurabilityError {
 	Binding,
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Native(WitnessDurabilityError<WitnessAdmissionError>),
 }
 

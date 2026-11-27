@@ -1,33 +1,19 @@
 use crate::assembly::linux::remote_continued::prefix::WitnessPrefix;
 use std::io::{Cursor, Read as _};
 
-use exacopy_content::{StreamInputError, validate_stream_input};
+use super::{LinkedWitnessedStage, WitnessAdmissionError, WitnessFailure, WitnessPass};
+use crate::assembly::linux::remote_continued::activation::{
+	AdmissionError, Kind40Admission, confirm_selected, reservation_plan,
+};
+use crate::assembly::linux::remote_download::BoundRouteRetirement;
 use exacopy_endpoint::connection_retry::{ConnectionBinding, RetryError};
 use exacopy_journal::remote_download::continuation::RemoteContinuationExpectation;
-use exacopy_journal::remote_download::replay::RemoteReplayBoundary;
 use exacopy_platform::linux::{
 	RecoveryFile, RecoveryWriteLease, RemoteDestinationEligibility, StageError, SuffixError,
 	WitnessCredentialLane, WitnessReservationAuthority, WitnessReservationError,
 };
 use exacopy_sftp::{SftpSource, SftpSourceError};
 use exacopy_transfer::remote_resume::prefix::VerifiedHeldRetainedPrefix;
-use exacopy_transfer::remote_witnessed_finalization::{
-	WitnessedPrepublicationFailure, WitnessedPublicationIntent,
-};
-
-use super::prepublication::WitnessedAdapterError;
-use super::publication::{
-	self, SubmittedPublication, WitnessedDurabilityError, WitnessedObservationError,
-	WitnessedSubmitError,
-};
-
-use super::publication::receipt::{WitnessedReceiptCompletion, WitnessedReceiptError};
-
-use super::{LinkedWitnessedStage, WitnessAdmissionError, WitnessFailure, WitnessPass};
-use crate::assembly::linux::remote_continued::activation::{
-	AdmissionError, Kind40Admission, confirm_selected, reservation_plan,
-};
-use crate::assembly::linux::remote_download::BoundRouteRetirement;
 
 pub(in crate::assembly::linux::remote_continued) struct ZeroTailWitness<'scope> {
 	pub(in crate::assembly::linux::remote_continued) lease: &'scope RecoveryWriteLease<'scope>,
@@ -43,15 +29,36 @@ pub(in crate::assembly::linux::remote_continued) struct ZeroTailWitness<'scope> 
 #[derive(Debug)]
 pub(in crate::assembly::linux::remote_continued) enum ZeroTailWitnessFailure {
 	Binding,
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the hosted fixture failure cause")
+	)]
 	Preflight(StageError),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the hosted fixture failure cause")
+	)]
 	Reservation(WitnessReservationError<WitnessAdmissionError>),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the hosted fixture failure cause")
+	)]
 	PendingReservation(WitnessReservationError),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the hosted fixture failure cause")
+	)]
 	Prefix(SuffixError<WitnessAdmissionError>),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the hosted fixture failure cause")
+	)]
 	Continuation(AdmissionError<WitnessAdmissionError>),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the hosted fixture failure cause")
+	)]
 	Link(WitnessFailure<SftpSourceError>),
-	PrepublicationInput(StreamInputError),
-	Prepublication(Box<WitnessedPrepublicationFailure<WitnessedAdapterError>>),
-	Publication(Box<WitnessedSubmitError>),
 }
 
 impl<'scope, 'name> WitnessPass<'scope, 'name> {
@@ -71,129 +78,6 @@ impl<'scope, 'name> WitnessPass<'scope, 'name> {
 				.confirm_digest(scratch)
 				.map_err(ZeroTailWitnessFailure::Link)?;
 			Ok(finish(linked))
-		})
-		.await
-	}
-
-	/// Keeps the originating held stage and original OP2 reservation through checked kind 7.
-	/// The caller supplies the native eligibility matched to the same independently selected OP2.
-	pub(in crate::assembly::linux::remote_continued) async fn run_zero_tail_prepublication<
-		Check,
-		T,
-	>(
-		&self,
-		proof: VerifiedHeldRetainedPrefix<'_, SftpSource<'_, Check>, WitnessPrefix<'_>>,
-		run: ZeroTailWitness<'_>,
-		finish: impl for<'view, 'lease> FnOnce(
-			WitnessedPublicationIntent<LinkedWitnessedStage<'view, 'lease, 'scope, 'name>>,
-		) -> T,
-	) -> Result<T, ZeroTailWitnessFailure>
-	where
-		Check: FnMut(ConnectionBinding) -> Result<(), RetryError>,
-	{
-		validate_stream_input(self.names.source_extent, run.scratch.len())
-			.map_err(ZeroTailWitnessFailure::PrepublicationInput)?;
-		self.with_zero_tail_link(proof, run, |linked, scratch| {
-			linked
-				.prepare_publication(scratch)
-				.map(finish)
-				.map_err(ZeroTailWitnessFailure::Prepublication)
-		})
-		.await
-	}
-
-	/// Runs the private live compositor through a single witnessed publication.
-	pub(in crate::assembly::linux::remote_continued) async fn run_zero_tail_publication<Check, T>(
-		&self,
-		proof: VerifiedHeldRetainedPrefix<'_, SftpSource<'_, Check>, WitnessPrefix<'_>>,
-		run: ZeroTailWitness<'_>,
-		finish: impl for<'view, 'lease> FnOnce(SubmittedPublication<'view, 'lease, 'scope, 'name>) -> T,
-	) -> Result<T, ZeroTailWitnessFailure>
-	where
-		Check: FnMut(ConnectionBinding) -> Result<(), RetryError>,
-	{
-		self.run_zero_tail_prepublication(proof, run, |prepared| {
-			publication::submit(prepared)
-				.map(finish)
-				.map_err(|cause| ZeroTailWitnessFailure::Publication(Box::new(cause)))
-		})
-		.await?
-	}
-
-	/// Records the one live outcome while keeping its original custody and diagnostic.
-	/// A kind-8 journal failure is reported beside the actual native result.
-	pub(in crate::assembly::linux::remote_continued) async fn run_zero_tail_observation<Check, T>(
-		&self,
-		proof: VerifiedHeldRetainedPrefix<'_, SftpSource<'_, Check>, WitnessPrefix<'_>>,
-		run: ZeroTailWitness<'_>,
-		finish: impl for<'view, 'lease> FnOnce(
-			SubmittedPublication<'view, 'lease, 'scope, 'name>,
-			Result<
-				exacopy_journal::remote_download::replay::RemoteReplayBoundary,
-				WitnessedObservationError,
-			>,
-		) -> T,
-	) -> Result<T, ZeroTailWitnessFailure>
-	where
-		Check: FnMut(ConnectionBinding) -> Result<(), RetryError>,
-	{
-		self.run_zero_tail_publication(proof, run, |mut submitted| {
-			let recorded = submitted.record_observation();
-			finish(submitted, recorded)
-		})
-		.await
-	}
-
-	/// Completes the witnessed inode and directory barriers after a positive kind 8.
-	/// The note and later barrier result remain separate from the actual submission.
-	pub(in crate::assembly::linux::remote_continued) async fn run_zero_tail_durability<Check, T>(
-		&self,
-		proof: VerifiedHeldRetainedPrefix<'_, SftpSource<'_, Check>, WitnessPrefix<'_>>,
-		run: ZeroTailWitness<'_>,
-		finish: impl for<'view, 'lease> FnOnce(
-			SubmittedPublication<'view, 'lease, 'scope, 'name>,
-			Result<RemoteReplayBoundary, WitnessedObservationError>,
-			Option<Result<RemoteReplayBoundary, WitnessedDurabilityError>>,
-		) -> T,
-	) -> Result<T, ZeroTailWitnessFailure>
-	where
-		Check: FnMut(ConnectionBinding) -> Result<(), RetryError>,
-	{
-		self.run_zero_tail_observation(proof, run, |mut submitted, recorded| {
-			let durable = recorded
-				.as_ref()
-				.ok()
-				.filter(|_| {
-					matches!(
-						submitted.observation(),
-						exacopy_platform::linux::WitnessPublicationObservation::Published(_)
-					)
-				})
-				.copied()
-				.map(|kind8| submitted.record_durability(kind8));
-			finish(submitted, recorded, durable)
-		})
-		.await
-	}
-
-	/// Completes one live zero-tail witnessed download and its original receipt.
-	pub(in crate::assembly::linux::remote_continued) async fn run_zero_tail_receipt<Check, T>(
-		&self,
-		proof: VerifiedHeldRetainedPrefix<'_, SftpSource<'_, Check>, WitnessPrefix<'_>>,
-		run: ZeroTailWitness<'_>,
-		finish: impl for<'view, 'lease> FnOnce(
-			SubmittedPublication<'view, 'lease, 'scope, 'name>,
-			Result<RemoteReplayBoundary, WitnessedObservationError>,
-			Option<Result<RemoteReplayBoundary, WitnessedDurabilityError>>,
-			Option<Result<WitnessedReceiptCompletion, WitnessedReceiptError>>,
-		) -> T,
-	) -> Result<T, ZeroTailWitnessFailure>
-	where
-		Check: FnMut(ConnectionBinding) -> Result<(), RetryError>,
-	{
-		self.run_zero_tail_publication(proof, run, |mut submitted| {
-			let (recorded, durable, receipt) = publication::complete_receipt(&mut submitted);
-			finish(submitted, recorded, durable, receipt)
 		})
 		.await
 	}

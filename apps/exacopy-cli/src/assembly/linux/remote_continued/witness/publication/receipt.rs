@@ -168,10 +168,24 @@ impl LiveReceipt<'_, '_> {
 pub(in crate::assembly::linux::remote_continued) enum WitnessedReceiptError {
 	Binding,
 	Pending {
+		#[cfg_attr(
+			feature = "experimental-verified-prefix-resume",
+			expect(
+				dead_code,
+				reason = "preserves the private receipt failure and its observed placement"
+			)
+		)]
 		placement: WitnessReceiptPlacement,
 		cause: WitnessReceiptError<Error>,
 	},
 	Commit {
+		#[cfg_attr(
+			feature = "experimental-verified-prefix-resume",
+			expect(
+				dead_code,
+				reason = "preserves the private receipt failure and its observed placement"
+			)
+		)]
 		ready: RemoteReplayBoundary,
 		placement: WitnessReceiptPlacement,
 		cause: WitnessReceiptError<Error>,
@@ -180,8 +194,6 @@ pub(in crate::assembly::linux::remote_continued) enum WitnessedReceiptError {
 
 #[derive(Debug)]
 pub(in crate::assembly::linux::remote_continued) struct WitnessedReceiptCompletion {
-	#[cfg(test)]
-	pub(in crate::assembly::linux::remote_continued) ready: RemoteReplayBoundary,
 	#[cfg(feature = "experimental-verified-prefix-resume")]
 	pub(in crate::assembly::linux::remote_continued) digest: [u8; 32],
 	pub(in crate::assembly::linux::remote_continued) committed: RemoteReplayBoundary,
@@ -303,8 +315,6 @@ impl SubmittedPublication<'_, '_, '_, '_> {
 			return Err(Failure::Binding);
 		}
 		Ok(WitnessedReceiptCompletion {
-			#[cfg(test)]
-			ready: ready.boundary(),
 			#[cfg(feature = "experimental-verified-prefix-resume")]
 			digest: ready.digest(),
 			committed,

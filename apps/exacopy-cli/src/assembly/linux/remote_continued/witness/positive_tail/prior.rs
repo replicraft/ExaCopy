@@ -30,10 +30,30 @@ use crate::assembly::linux::remote_witness_authority::BoundWitnessStage;
 #[derive(Debug)]
 pub(in crate::assembly::linux::remote_continued) enum OriginalCaptureError {
 	Binding,
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Stage(StageError),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Format(RemoteDownloadError),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Frame(FrameReadError),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Proposed(AdmissionError<WitnessAdmissionError>),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Model(Refusal),
 }
 

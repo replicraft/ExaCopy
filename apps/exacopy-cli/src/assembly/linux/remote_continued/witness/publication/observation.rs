@@ -24,6 +24,10 @@ use super::{LinkedPublication, SubmittedPublication, WitnessAdmissionError, mode
 
 #[derive(Debug)]
 pub(in crate::assembly::linux::remote_continued) enum WitnessedObservationError {
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Journal(ContinuationReservationError<WitnessAdmissionError>),
 }
 

@@ -282,7 +282,15 @@ impl SubmittedPublication<'_, '_, '_, '_> {
 
 #[derive(Debug)]
 pub(in crate::assembly::linux::remote_continued) enum WitnessedSubmitError {
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Origin(WitnessedAdapterError),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Native(WitnessPublicationError<WitnessAdmissionError>),
 }
 

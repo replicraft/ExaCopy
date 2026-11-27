@@ -235,7 +235,6 @@ mod tests {
 	fn confirmed_receipt_is_returned_only_for_the_actual_published_result() {
 		let end = boundary();
 		let completion = WitnessedReceiptCompletion {
-			ready: end,
 			committed: end,
 			bytes: vec![2, 3],
 			digest: [3; 32],

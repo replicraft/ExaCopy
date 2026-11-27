@@ -29,9 +29,25 @@ use super::{LinkedWitnessedStage, WitnessAdmissionError, model_head, reservation
 #[derive(Debug)]
 pub(in crate::assembly::linux::remote_continued) enum WitnessedAdapterError {
 	Binding,
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Stage(StageError),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Custody(WitnessReservationObservationError),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Admission(WitnessAdmissionError),
+	#[cfg_attr(
+		feature = "experimental-verified-prefix-resume",
+		expect(dead_code, reason = "retains the exact private error cause")
+	)]
 	Journal(ContinuationReservationError<WitnessAdmissionError>),
 }
 
