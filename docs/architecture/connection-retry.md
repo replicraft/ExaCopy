@@ -24,3 +24,14 @@ expiry, waiting-state revocation and ambiguity preservation. Ten compiling
 guard-removal controls failed their targeted assertions. This is scheduler
 test evidence; P-020's extracted proof, real transport recovery, persistent
 jobs, credential reacquisition and verified range resume remain open.
+
+The experimental Linux embedded transport explicitly stops and observes its
+bounded route worker after every returned post-spawn authentication, binding
+or consumer outcome. Authentication refusal and cancellation are selected
+before waiting for cleanup; a later interrupt cannot replace that primary
+diagnosis. An unconfirmed worker retirement blocks redial and adds a fixed
+diagnostic to the existing version-1 report. It does not erase known
+publication or the retained job. Drop remains a last-resort fence and is
+not evidence of observed worker termination. These checks implement the
+application lifetime portion of R-255–257 and INV-021–023; native execution
+of the added refusal and drain controls remains a separate gate.

@@ -27,13 +27,17 @@ use super::authentication::{OfferLease, authenticate};
 use super::route_lifetime::{RouteLease, RouteTask, RouteWake};
 use super::{
 	ConnectedRemoteSource, ConnectingRemoteSource, CurrentEmbeddedStream,
-	EmbeddedStreamObservation, RemoteGrant, RemoteRoutePeer, kernel_random, route_refusal,
+	EmbeddedStreamObservation, RemoteGrant, RemoteRouteCloseError, RemoteRoutePeer, kernel_random,
+	route_refusal,
 };
 
 mod key;
 mod owner;
 
 use owner::EmbeddedOwner;
+
+#[cfg(test)]
+mod tests;
 
 const RECEIVE_SLICE: Duration = Duration::from_millis(250);
 const HANDSHAKE_STEPS: usize = 1024;
@@ -45,11 +49,12 @@ impl ConnectingRemoteSource<'_> {
 		mut self,
 		profile: &SshProfile,
 		admission: AttemptAdmission<'held>,
+		is_cancelled: impl FnOnce() -> bool,
 		consume: impl for<'route> AsyncFnOnce(
 			ConnectedRemoteSource<'route>,
 			AttemptAdmission<'held>,
 		) -> T,
-	) -> Result<T, EmbeddedConnectError> {
+	) -> Result<EmbeddedOutcome<T>, EmbeddedConnectFailure> {
 		let approved = self.selected_embedded_route(profile)?;
 		let grant = Arc::clone(&self.supervisor.grant);
 		let deadline = self
@@ -94,27 +99,28 @@ impl ConnectingRemoteSource<'_> {
 					live_route,
 					original: binding,
 				};
-				let offer = OfferLease::new(Arc::clone(&grant), scope, deadline);
-				let connected = bounded(&grant, scope, deadline, async {
-					check(&mut self, deadline)?;
-					let session =
-						authenticate(stream, profile, trust, &offer, || route.observe().is_some())
-							.await;
-					check(&mut self, deadline)?;
-					let session = session.map_err(EmbeddedConnectError::Ssh)?;
-					self.bind_authenticated(
-						session,
-						RemoteRoutePeer::Embedded(&route),
-						Arc::clone(&guard),
-					)
-					.map_err(EmbeddedConnectError::Retry)
-				})
-				.await?;
-				drop(offer);
-				let outcome = consume(connected, admission).await;
-				guard.stop();
-				let _ = guard.join().await;
-				Ok(outcome)
+				let use_route = async {
+					let offer = OfferLease::new(Arc::clone(&grant), scope, deadline);
+					let connected = bounded(&grant, scope, deadline, async {
+						check(&mut self, deadline)?;
+						let session = authenticate(stream, profile, trust, &offer, || {
+							route.observe().is_some()
+						})
+						.await;
+						check(&mut self, deadline)?;
+						let session = session.map_err(EmbeddedConnectError::Ssh)?;
+						self.bind_authenticated(
+							session,
+							RemoteRoutePeer::Embedded(&route),
+							Arc::clone(&guard),
+						)
+						.map_err(EmbeddedConnectError::Retry)
+					})
+					.await?;
+					drop(offer);
+					Ok(consume(connected, admission).await)
+				};
+				run_then_retire(&guard, use_route, is_cancelled).await
 			})
 			.await
 	}
@@ -143,6 +149,35 @@ impl ConnectingRemoteSource<'_> {
 			return Err(EmbeddedConnectError::Authority);
 		}
 		Ok(approved)
+	}
+}
+
+/// Result from the route consumer and the final observation of its transport worker.
+pub(crate) struct EmbeddedOutcome<T> {
+	pub(crate) outcome: T,
+	pub(crate) retirement: Result<(), RemoteRouteCloseError>,
+}
+
+async fn run_then_retire<T>(
+	guard: &RouteTask,
+	use_route: impl Future<Output = Result<T, EmbeddedConnectError>>,
+	is_cancelled: impl FnOnce() -> bool,
+) -> Result<EmbeddedOutcome<T>, EmbeddedConnectFailure> {
+	let outcome = use_route.await.map_err(|cause| (cause, is_cancelled()));
+	guard.stop();
+	let retirement = guard.join().await;
+	match outcome {
+		// The consumer may already have used the exact binding's retirement.
+		// Reobserving the worker returns its cached result independently.
+		Ok(outcome) => Ok(EmbeddedOutcome {
+			outcome,
+			retirement,
+		}),
+		Err((cause, cancelled)) => Err(EmbeddedConnectFailure {
+			cause,
+			cancelled_at_refusal: Some(cancelled),
+			route_failure: retirement.err(),
+		}),
 	}
 }
 
@@ -326,6 +361,39 @@ impl CurrentEmbeddedStream for HeldRoute<'_> {
 			revision: binding.revision,
 			inner: peer.inner(),
 		})
+	}
+}
+
+#[derive(Debug)]
+pub(crate) struct EmbeddedConnectFailure {
+	pub(crate) cause: EmbeddedConnectError,
+	pub(crate) cancelled_at_refusal: Option<bool>,
+	pub(crate) route_failure: Option<RemoteRouteCloseError>,
+}
+
+impl From<EmbeddedConnectError> for EmbeddedConnectFailure {
+	fn from(cause: EmbeddedConnectError) -> Self {
+		Self {
+			cause,
+			cancelled_at_refusal: None,
+			route_failure: None,
+		}
+	}
+}
+
+impl fmt::Display for EmbeddedConnectFailure {
+	fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
+		self.cause.fmt(out)?;
+		if let Some(route) = self.route_failure {
+			write!(out, " (route retirement unconfirmed: {route})")?;
+		}
+		Ok(())
+	}
+}
+
+impl std::error::Error for EmbeddedConnectFailure {
+	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+		Some(&self.cause)
 	}
 }
 

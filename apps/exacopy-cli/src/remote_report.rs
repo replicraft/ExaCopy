@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::io;
 use std::path::PathBuf;
 
@@ -13,6 +14,8 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::args::Format;
+#[cfg(feature = "experimental-ssh-wireguard")]
+use crate::assembly::linux::remote_download::RemoteRouteCloseError;
 
 const PUBLISHED_WITH_OMISSIONS: u8 = 11;
 
@@ -122,7 +125,7 @@ struct RemoteFailure {
 	code: RemoteFailureKind,
 	#[serde(skip)]
 	publication: RemotePublication,
-	message: &'static str,
+	message: Cow<'static, str>,
 	#[serde(flatten)]
 	job: Option<JobReport>,
 }
@@ -173,6 +176,21 @@ impl RemoteOutcome {
 		Self::failure(RemoteFailureKind::RecoveryRequired, publication, Some(job))
 	}
 
+	#[cfg(feature = "experimental-ssh-wireguard")]
+	pub(crate) fn with_unconfirmed_route_retirement(self, _cause: RemoteRouteCloseError) -> Self {
+		let mut error = match self.0 {
+			Outcome::Failed { error } => error,
+			Outcome::PublishedWithOmissions { receipt } => RemoteFailure {
+				code: RemoteFailureKind::RecoveryRequired,
+				publication: RemotePublication::Published,
+				message: RemoteFailureKind::RecoveryRequired.message().into(),
+				job: Some(receipt.job),
+			},
+		};
+		error.message = format!("{} (transport retirement unconfirmed)", error.message).into();
+		Self(Outcome::Failed { error })
+	}
+
 	fn failure(
 		code: RemoteFailureKind,
 		publication: RemotePublication,
@@ -182,7 +200,7 @@ impl RemoteOutcome {
 			error: RemoteFailure {
 				code,
 				publication,
-				message: code.message(),
+				message: code.message().into(),
 				job: job.map(Into::into),
 			},
 		})

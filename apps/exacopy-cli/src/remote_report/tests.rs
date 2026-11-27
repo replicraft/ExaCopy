@@ -79,6 +79,24 @@ fn cancellation_retains_its_status_and_success_output_failure_retains_receipt_lo
 	assert!(output.contains("6a6f622dff"));
 }
 
+#[cfg(feature = "experimental-ssh-wireguard")]
+#[test]
+fn unconfirmed_route_retirement_preserves_known_publication_and_job() {
+	let outcome = published_report_fixture()
+		.with_unconfirmed_route_retirement(RemoteRouteCloseError::WorkerFailed);
+	let json = serde_json::to_value(outcome.report()).unwrap();
+	assert_eq!(outcome.exit_code(), 9);
+	assert_eq!(json["result"], "failed");
+	assert_eq!(json["publication"], "published");
+	assert_eq!(json["completed"], 0);
+	assert_eq!(json["error"]["code"], "E_RECOVERY_REQUIRED");
+	assert_eq!(
+		json["error"]["message"],
+		"remote download requires reconciliation (transport retirement unconfirmed)",
+	);
+	assert_eq!(json["error"]["job_directory_bytes_hex"], "6a6f622dff");
+}
+
 // Tests formatting only. Live construction requires the committed typed receipt and
 // matching canonical evidence through RemoteOutcome::published.
 fn published_report_fixture() -> RemoteOutcome {

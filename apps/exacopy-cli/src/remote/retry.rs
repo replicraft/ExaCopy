@@ -9,6 +9,8 @@ use crate::assembly::linux::remote_download::{
 	RemoteDownloadFailure, RemoteDownloadRequest, RemoteRetryStamp, SourceInvocation,
 	download_remote, download_retry,
 };
+#[cfg(feature = "experimental-ssh-wireguard")]
+use crate::assembly::linux::remote_download::{EmbeddedConnectError, RemoteRouteCloseError};
 use crate::remote_frontdoor::{ApprovedRoute, SshProfile};
 use crate::remote_report::{RemoteFailureKind as Failure, RemoteJob, RemoteOutcome};
 
@@ -17,6 +19,11 @@ use super::{Interrupt, outcome};
 pub(super) enum AttemptError {
 	Foreground(Failure),
 	Download(Box<RemoteDownloadFailure>),
+	#[cfg(feature = "experimental-ssh-wireguard")]
+	EmbeddedRetirement {
+		outcome: Box<Result>,
+		cause: RemoteRouteCloseError,
+	},
 }
 
 impl AttemptError {
@@ -39,22 +46,28 @@ pub(super) async fn attempt(
 		ApprovedRoute::EmbeddedWireGuard(_) => {
 			#[cfg(feature = "experimental-ssh-wireguard")]
 			{
-				use crate::assembly::linux::remote_download::EmbeddedConnectError;
-
-				connecting
-					.with_embedded(ssh, admission, async |connected, admission| {
-						transfer(connected, request, interrupted, admission).await
-					})
+				match connecting
+					.with_embedded(
+						ssh,
+						admission,
+						|| interrupted.cancelled(),
+						async |connected, admission| {
+							transfer(connected, request, interrupted, admission).await
+						},
+					)
 					.await
-					.map_err(|error| match error {
-						EmbeddedConnectError::Native(error) => {
-							AttemptError::download(RemoteDownloadFailure::ResumeAdmission(error))
-						}
-						error => AttemptError::Foreground(outcome::embedded_error(
-							error,
-							interrupted.cancelled(),
+				{
+					Ok(scoped) => with_embedded_retirement(scoped.outcome, scoped.retirement.err()),
+					Err(failure) => with_embedded_retirement(
+						Err(embedded_connect_failure(
+							failure.cause,
+							failure
+								.cancelled_at_refusal
+								.unwrap_or_else(|| interrupted.cancelled()),
 						)),
-					})?
+						failure.route_failure,
+					),
+				}
 			}
 			#[cfg(not(feature = "experimental-ssh-wireguard"))]
 			Err(AttemptError::Foreground(Failure::Unsupported))
@@ -74,6 +87,30 @@ pub(super) async fn attempt(
 				})?;
 			transfer(connected, request, interrupted, admission).await
 		}
+	}
+}
+
+#[cfg(feature = "experimental-ssh-wireguard")]
+fn embedded_connect_failure(error: EmbeddedConnectError, cancelled: bool) -> AttemptError {
+	match error {
+		EmbeddedConnectError::Native(error) => {
+			AttemptError::download(RemoteDownloadFailure::ResumeAdmission(error))
+		}
+		error => AttemptError::Foreground(outcome::embedded_error(error, cancelled)),
+	}
+}
+
+#[cfg(feature = "experimental-ssh-wireguard")]
+fn with_embedded_retirement(
+	outcome: Result,
+	route_failure: Option<RemoteRouteCloseError>,
+) -> Result {
+	match route_failure {
+		Some(cause) => Err(AttemptError::EmbeddedRetirement {
+			outcome: Box::new(outcome),
+			cause,
+		}),
+		None => outcome,
 	}
 }
 
@@ -137,19 +174,23 @@ pub(super) struct Attempts {
 
 impl Attempts {
 	pub(super) fn finish(self, job: RemoteJob, cancelled: bool) -> RemoteOutcome {
-		let result = match self.current {
-			Err(AttemptError::Foreground(code)) => {
-				RemoteOutcome::failed(code, self.had_job.then_some(job))
-			}
-			Err(AttemptError::Download(error)) => {
-				outcome::finish(Err(*error), job, cancelled, self.had_job)
-			}
-			Ok(outcome) => outcome::finish(Ok(outcome), job, cancelled, self.had_job),
-		};
+		let result = project(self.current, job, cancelled, self.had_job);
 		// The public report projects just the active terminal outcome. Retain
 		// the original typed read through this projection.
 		drop(self.prior_read);
 		result
+	}
+}
+
+fn project(current: Result, job: RemoteJob, cancelled: bool, had_job: bool) -> RemoteOutcome {
+	match current {
+		Err(AttemptError::Foreground(code)) => RemoteOutcome::failed(code, had_job.then_some(job)),
+		Err(AttemptError::Download(error)) => outcome::finish(Err(*error), job, cancelled, had_job),
+		#[cfg(feature = "experimental-ssh-wireguard")]
+		Err(AttemptError::EmbeddedRetirement { outcome, cause }) => {
+			project(*outcome, job, cancelled, had_job).with_unconfirmed_route_retirement(cause)
+		}
+		Ok(outcome) => outcome::finish(Ok(outcome), job, cancelled, had_job),
 	}
 }
 
@@ -294,5 +335,71 @@ mod tests {
 			assert!(outcome.prior_read.is_none());
 		}
 		assert_eq!(calls.get(), 0);
+	}
+
+	#[cfg(feature = "experimental-ssh-wireguard")]
+	#[tokio::test]
+	async fn unconfirmed_retirement_reports_the_primary_refusal_without_redial() {
+		use std::path::PathBuf;
+
+		use exacopy_journal::JournalJobId;
+		use uuid::Uuid;
+
+		use crate::args::Format;
+
+		let id = Uuid::parse_str("018d0454-2082-7444-8f45-7c4617e17ea2").unwrap();
+		for (cancelled, code, exit, message) in [
+			(
+				false,
+				"E_AUTHORIZATION",
+				8,
+				"the selected remote download authority was refused (transport retirement unconfirmed)",
+			),
+			(
+				true,
+				"E_CANCELLED",
+				10,
+				"remote download was cancelled (transport retirement unconfirmed)",
+			),
+		] {
+			let error = embedded_connect_failure(
+				EmbeddedConnectError::Ssh(exacopy_ssh::Error::Authentication),
+				cancelled,
+			);
+			let current =
+				with_embedded_retirement(Err(error), Some(RemoteRouteCloseError::WorkerTimeout));
+			let attempts = follow_stopped_reads(current, false, async |_| {
+				panic!("an embedded refusal must never call the redial path")
+			})
+			.await;
+			let result = attempts.finish(
+				RemoteJob {
+					id: JournalJobId::from_bytes(id.into_bytes()).unwrap(),
+					directory: PathBuf::from(".exacopy-unused"),
+				},
+				true,
+			);
+			assert_eq!(result.exit_code(), exit);
+			let mut json = Vec::new();
+			result
+				.write(Format::Json, &mut json, &mut Vec::new())
+				.unwrap();
+			let json: serde_json::Value = serde_json::from_slice(&json).unwrap();
+			assert_eq!(json["schema_version"], "1.0");
+			assert_eq!(json["result"], "failed");
+			assert_eq!(json["publication"], "not_published");
+			assert_eq!(
+				json["error"],
+				serde_json::json!({"code": code, "message": message}),
+			);
+			let mut human = Vec::new();
+			result
+				.write(Format::Human, &mut Vec::new(), &mut human)
+				.unwrap();
+			assert_eq!(
+				String::from_utf8(human).unwrap(),
+				format!("exacopy: {message}\n")
+			);
+		}
 	}
 }

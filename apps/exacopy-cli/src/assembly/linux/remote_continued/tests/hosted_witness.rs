@@ -443,14 +443,18 @@ async fn hosted_pass() -> Result<serde_json::Value, Stop> {
 	} else {
 		#[cfg(feature = "experimental-ssh-wireguard")]
 		{
-			connecting
+			let scoped = connecting
 				.with_embedded(
 					&ssh,
 					AttemptAdmission::Initial(None),
+					|| false,
 					async |connected, _| consume(connected).await,
 				)
 				.await
-				.map_err(|_| Stop::Prefix)??
+				.map_err(|_| Stop::Prefix)?;
+			let intent = scoped.outcome?;
+			scoped.retirement.map_err(|_| Stop::Closeout)?;
+			intent
 		}
 		#[cfg(not(feature = "experimental-ssh-wireguard"))]
 		{
