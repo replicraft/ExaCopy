@@ -231,6 +231,23 @@ function Assert-ReadDiffExactResult {
     }
 }
 
+function Convert-ReadDiffExecutableSeparators {
+    param([string] $Reported)
+    return $Reported.Replace([char]47, [char]92)
+}
+
+function Resolve-ReadDiffExecutablePath {
+    param([string] $Reported, [string] $Build)
+    # Cargo can mix separators in the hashed build directory. Preserve all
+    # other spelling so the canonical and containment checks still refuse it.
+    $path = Convert-ReadDiffExecutableSeparators $Reported
+    if ($path -cnotmatch '\A[A-Za-z]:\\[^:]*\z' -or ![IO.Path]::IsPathFullyQualified($path) -or
+        [IO.Path]::GetFullPath($path) -cne $path -or !(Test-ExaCopyUnderPath $path $Build)) {
+        throw 'A selected executable escaped the private build directory.'
+    }
+    return $path
+}
+
 function Invoke-ExactReadDiff {
     param([string] $Mode, [string] $Build, [string] $EvidencePath, [string] $Repository)
     $selection = Get-ReadDiffProfile $Mode
@@ -252,26 +269,22 @@ function Invoke-ExactReadDiff {
     $harness = @($events | Where-Object { $_.target.name -ceq $selection.Target -and
         $_.target.kind.Count -eq 1 -and $_.target.kind[0] -ceq 'test' -and $_.profile.test })
     if ($harness.Count -ne 1) { throw 'Expected exactly one selected Cargo test executable.' }
-    $executables = @($harness[0].executable)
+    $binary = Resolve-ReadDiffExecutablePath $harness[0].executable $Build
+    $executables = @($binary)
     if ($Mode -eq 'Diff') {
         $cli = @($events | Where-Object { $_.target.name -ceq 'exacopy' -and
             $_.target.kind.Count -eq 1 -and $_.target.kind[0] -ceq 'bin' -and !$_.profile.test })
         if ($cli.Count -ne 1) { throw 'Expected exactly one selected Cargo CLI executable.' }
-        $executables += $cli[0].executable
+        $executables += Resolve-ReadDiffExecutablePath $cli[0].executable $Build
     }
     $fingerprints = [ordered]@{}
     foreach ($path in $executables) {
-        if (![IO.Path]::IsPathFullyQualified($path) -or [IO.Path]::GetFullPath($path) -cne $path -or
-            !(Test-ExaCopyUnderPath $path $Build)) {
-            throw 'A selected executable escaped the private build directory.'
-        }
         [void](Confirm-ExaCopyPath $path -File)
         $fingerprints[$path] = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash
     }
     $fingerprints | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $EvidencePath 'executables.json')
-    if ($Mode -eq 'Diff') { $env:EXACOPY_WINDOWS_QUALIFIED_CLI = $cli[0].executable }
+    if ($Mode -eq 'Diff') { $env:EXACOPY_WINDOWS_QUALIFIED_CLI = $executables[1] }
 
-    $binary = $harness[0].executable
     $tests = @($selection.Ordinary) + @($selection.Native)
     if ((Invoke-Lane -Name 'exact_inventory' -Program $binary -Arguments @('--list', '--format', 'terse')) -ne 0) {
         throw 'The selected native test inventory was unavailable.'
