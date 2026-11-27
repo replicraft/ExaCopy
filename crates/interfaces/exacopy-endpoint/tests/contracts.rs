@@ -161,3 +161,209 @@ fn interrupted_retry_budget_resets_after_progress_and_refuses_a_signal_storm() {
 	);
 	assert_eq!(interrupted, MAX_INTERRUPTED_RETRIES + 1);
 }
+
+const HISTORY_BYTES: &[u8; 4] = b"abcd";
+const HISTORY_START: u64 = MAX_FILE_LENGTH - 4;
+const UNTOUCHED: u8 = b'.';
+
+#[derive(Clone, Copy, Debug)]
+enum Terminal {
+	Complete,
+	NoProgress,
+	Overreported(usize),
+	SystemError,
+	Interrupted,
+}
+
+#[test]
+fn checks_bounded_positioned_histories_against_scripted_suffixes() {
+	for prefix in 0..=HISTORY_BYTES.len() {
+		// Each mask selects the internal boundaries of one partition of the confirmed prefix.
+		for cuts in 0..(1 << prefix.saturating_sub(1)) {
+			let mut steps = Vec::new();
+			let mut start = 0;
+			for end in 1..=prefix {
+				if end == prefix || cuts & (1 << (end - 1)) != 0 {
+					steps.push((start, Err(io::ErrorKind::Interrupted)));
+					steps.push((start, Ok(end - start)));
+					start = end;
+				}
+			}
+
+			if prefix == HISTORY_BYTES.len() {
+				check_positioned_history(&steps, prefix, Terminal::Complete);
+				continue;
+			}
+
+			let excess = HISTORY_BYTES.len() - prefix + 1;
+			for (terminal, response, attempts) in [
+				(Terminal::NoProgress, Ok(0), 1),
+				(Terminal::Overreported(excess), Ok(excess), 1),
+				(Terminal::Overreported(usize::MAX), Ok(usize::MAX), 1),
+				(Terminal::SystemError, Err(io::ErrorKind::StorageFull), 1),
+				(
+					Terminal::Interrupted,
+					Err(io::ErrorKind::Interrupted),
+					MAX_INTERRUPTED_RETRIES + 1,
+				),
+			] {
+				steps.extend(std::iter::repeat_n(
+					(prefix, response),
+					usize::from(attempts),
+				));
+				check_positioned_history(&steps, prefix, terminal);
+				steps.truncate(steps.len() - usize::from(attempts));
+			}
+		}
+	}
+}
+
+fn check_positioned_history(
+	steps: &[(usize, Result<usize, io::ErrorKind>)],
+	prefix: usize,
+	terminal: Terminal,
+) {
+	let context = (steps, terminal);
+	let mut read_steps = steps.iter().copied();
+	let mut output = [UNTOUCHED; HISTORY_BYTES.len()];
+	let read_result = read_exact_at(HISTORY_START, &mut output, |position, buffer| {
+		let (start, response) = read_steps.next().expect("unscripted read callback");
+		assert_eq!(
+			position,
+			HISTORY_START + u64::try_from(start).unwrap(),
+			"{context:?}"
+		);
+		let expected = &HISTORY_BYTES[start..];
+		assert_eq!(buffer.len(), expected.len(), "{context:?}");
+		assert!(buffer.iter().all(|&byte| byte == UNTOUCHED), "{context:?}");
+		if let Ok(count) = response
+			&& let Some(bytes) = expected.get(..count)
+		{
+			buffer[..count].copy_from_slice(bytes);
+		}
+		response.map_err(io::Error::from)
+	});
+	assert_eq!(read_steps.len(), 0, "{context:?}");
+
+	let mut write_steps = steps.iter().copied();
+	let mut written = [UNTOUCHED; HISTORY_BYTES.len()];
+	let write_result = write_all_at(HISTORY_START, HISTORY_BYTES, |position, buffer| {
+		let (start, response) = write_steps.next().expect("unscripted write callback");
+		assert_eq!(
+			position,
+			HISTORY_START + u64::try_from(start).unwrap(),
+			"{context:?}"
+		);
+		assert_eq!(buffer, &HISTORY_BYTES[start..], "{context:?}");
+		if let Ok(count) = response
+			&& let Some(bytes) = buffer.get(..count)
+		{
+			written[start..start + count].copy_from_slice(bytes);
+		}
+		response.map_err(io::Error::from)
+	});
+	assert_eq!(write_steps.len(), 0, "{context:?}");
+
+	let mut expected = [UNTOUCHED; HISTORY_BYTES.len()];
+	expected[..prefix].copy_from_slice(&HISTORY_BYTES[..prefix]);
+	assert_eq!(output, expected, "{context:?}");
+	assert_eq!(written, expected, "{context:?}");
+
+	let offset = HISTORY_START + u64::try_from(prefix).unwrap();
+	match terminal {
+		Terminal::Complete => {
+			read_result.unwrap();
+			write_result.unwrap();
+		}
+		Terminal::NoProgress => {
+			assert!(
+				matches!(read_result, Err(IoError::UnexpectedEof { offset: actual }) if actual == offset),
+				"{context:?}"
+			);
+			assert!(
+				matches!(write_result, Err(IoError::WriteZero { offset: actual }) if actual == offset),
+				"{context:?}"
+			);
+		}
+		Terminal::Overreported(reported) => {
+			for result in [read_result, write_result] {
+				assert!(
+					matches!(
+						result,
+						Err(IoError::InvalidTransferCount {
+							offset: actual,
+							count,
+							remaining,
+						}) if actual == offset && count == reported && remaining == HISTORY_BYTES.len() - prefix
+					),
+					"{context:?}"
+				);
+			}
+		}
+		Terminal::SystemError | Terminal::Interrupted => {
+			let expected = match terminal {
+				Terminal::Interrupted => io::ErrorKind::Interrupted,
+				_ => io::ErrorKind::StorageFull,
+			};
+			for result in [read_result, write_result] {
+				assert!(
+					matches!(
+						result,
+						Err(IoError::System { offset: actual, source })
+							if actual == offset && source.kind() == expected
+					),
+					"{context:?}"
+				);
+			}
+		}
+	}
+}
+
+#[test]
+fn compares_positioned_range_admission_with_a_wider_sum() {
+	let ceiling = i64::MAX.cast_unsigned();
+	for offset in [0, ceiling - 2, ceiling - 1, ceiling, ceiling + 1, u64::MAX] {
+		for length in 0..=HISTORY_BYTES.len() {
+			let admitted =
+				u128::from(offset) + u128::try_from(length).unwrap() <= u128::from(ceiling);
+			let mut output = [UNTOUCHED; HISTORY_BYTES.len()];
+			let mut read_calls = 0;
+			let mut write_calls = 0;
+			let read_result = read_exact_at(offset, &mut output[..length], |position, buffer| {
+				assert_eq!((position, buffer.len()), (offset, length));
+				read_calls += 1;
+				buffer.copy_from_slice(&HISTORY_BYTES[..length]);
+				Ok(buffer.len())
+			});
+			let write_result =
+				write_all_at(offset, &HISTORY_BYTES[..length], |position, buffer| {
+					assert_eq!((position, buffer.len()), (offset, length));
+					write_calls += 1;
+					Ok(buffer.len())
+				});
+
+			let calls = usize::from(admitted && length != 0);
+			assert_eq!(
+				(read_calls, write_calls),
+				(calls, calls),
+				"{offset}, {length}"
+			);
+			for result in [read_result, write_result] {
+				if admitted {
+					result.unwrap();
+				} else {
+					assert!(
+						matches!(
+							result,
+							Err(IoError::InvalidRange {
+								offset: actual_offset,
+								length: actual_length,
+							}) if (actual_offset, actual_length) == (offset, length)
+						),
+						"{offset}, {length}"
+					);
+				}
+			}
+		}
+	}
+}
