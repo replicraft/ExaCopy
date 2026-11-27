@@ -2345,7 +2345,7 @@
         }
       },
       {
-        "profiles": ["experimental-ssh-capture"],
+        "profiles": ["experimental-ssh-capture", "experimental-verified-prefix-resume"],
         "inputs": {
           "aead@0.6.1": {"parents": ["aes-gcm@0.11.1", "ssh-cipher@0.3.0"], "features": ["rand_core"]},
           "aes-gcm@0.11.1": {"parents": ["pkcs5@0.8.1", "ssh-cipher@0.3.0"], "features": ["aes", "zeroize"]},

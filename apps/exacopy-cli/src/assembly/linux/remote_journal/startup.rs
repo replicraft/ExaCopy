@@ -9,6 +9,12 @@ use exacopy_platform::linux::{RecoveryFile, RecoveryJob, RecoveryReadLease};
 use super::lease::{check_record, inspect_capture};
 use super::{Error, ResumeCapacity, record_identity};
 
+#[cfg(feature = "experimental-verified-prefix-resume")]
+mod witnessed;
+
+#[cfg(feature = "experimental-verified-prefix-resume")]
+pub(crate) use witnessed::CheckedOriginalWitnessStartup;
+
 /// The exact ordinary replay selected under the shared startup lease.
 pub(crate) struct CheckedResumeStartup<'held> {
 	lease: RecoveryReadLease<'held>,

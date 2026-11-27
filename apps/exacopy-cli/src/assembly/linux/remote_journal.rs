@@ -44,6 +44,8 @@ pub use lease::RemoteRetryLease;
 pub(super) use lease::{RemoteJobLease, bootstrap};
 pub(super) use ledger::IntentReadback;
 pub(super) use retry::RetryCaptureStamp;
+#[cfg(feature = "experimental-verified-prefix-resume")]
+pub(crate) use startup::CheckedOriginalWitnessStartup;
 pub(crate) use startup::{CheckedResumeStartup, check_resume_startup};
 
 /// A clean ordinary resume cannot allocate any further attempts.

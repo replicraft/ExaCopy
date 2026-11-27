@@ -24,6 +24,7 @@ experimental-ssh-wireguard = [
 	"exacopy-wireguard?/experimental-udp",
 	"exacopy-wireguard?/experimental-tcp",
 ]
+experimental-verified-prefix-resume = ["experimental-ssh-capture"]
 experimental-apfs-copy = ["dep:exacopy-content", "dep:exacopy-journal", "dep:exacopy-model", "dep:exacopy-transfer", "exacopy-transfer/experimental-apfs-copy"]
 experimental-windows-diff = ["dep:exacopy-diff", "dep:exacopy-endpoint", "dep:exacopy-platform", "exacopy-platform/experimental-windows-read"]
 

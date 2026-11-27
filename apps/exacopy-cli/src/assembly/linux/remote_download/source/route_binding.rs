@@ -19,12 +19,12 @@ pub(in crate::assembly::linux) struct BoundRouteRetirement {
 #[must_use]
 pub(in crate::assembly::linux) struct RetiredBoundRoute {
 	binding: ConnectionBinding,
-	#[cfg(test)]
+	#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 	grant: Arc<RemoteGrant>,
 }
 
 impl RetiredBoundRoute {
-	#[cfg(test)]
+	#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 	pub(in crate::assembly::linux) fn matches_invocation(&self, grant: &RemoteGrant) -> bool {
 		std::ptr::eq(self.grant.as_ref(), grant)
 	}
@@ -35,7 +35,7 @@ impl RetiredBoundRoute {
 }
 
 impl BoundRouteRetirement {
-	#[cfg(test)]
+	#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 	pub(in crate::assembly::linux) const fn binding(&self) -> ConnectionBinding {
 		self.binding
 	}
@@ -52,7 +52,7 @@ impl BoundRouteRetirement {
 		self.confirm().await?;
 		Ok(RetiredBoundRoute {
 			binding: self.binding,
-			#[cfg(test)]
+			#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 			grant: Arc::clone(&self.grant),
 		})
 	}

@@ -18,10 +18,16 @@ mod public_plan;
 #[cfg(any(test, feature = "experimental-linux-public-apply"))]
 pub(crate) mod public_stage;
 mod recovery;
-#[cfg(all(test, feature = "experimental-ssh-capture"))]
-#[expect(
-	dead_code,
-	reason = "private application handoff has no live qualification or command dispatch"
+#[cfg(all(
+	feature = "experimental-ssh-capture",
+	any(test, feature = "experimental-verified-prefix-resume")
+))]
+#[cfg_attr(
+	not(feature = "experimental-verified-prefix-resume"),
+	expect(
+		dead_code,
+		reason = "private handoff has no qualified command dispatch"
+	)
 )]
 mod remote_continued;
 #[cfg(feature = "experimental-ssh-capture")]
@@ -30,8 +36,21 @@ pub mod remote_download;
 mod remote_journal;
 #[cfg(feature = "experimental-ssh-capture")]
 mod remote_stage;
-#[cfg(all(test, feature = "experimental-ssh-capture"))]
+#[cfg(all(
+	feature = "experimental-ssh-capture",
+	any(test, feature = "experimental-verified-prefix-resume")
+))]
 mod remote_witness_authority;
+
+#[cfg(feature = "experimental-verified-prefix-resume")]
+pub(crate) use remote_continued::{
+	OriginalWitnessError, OriginalWitnessResult, OriginalWitnessResume, continue_original_capture,
+	hold_original_witness_startup,
+};
+#[cfg(feature = "experimental-verified-prefix-resume")]
+pub(crate) use remote_journal::CheckedOriginalWitnessStartup;
+#[cfg(feature = "experimental-verified-prefix-resume")]
+pub(crate) use remote_witness_authority::ExplicitWitnessSelection;
 
 pub use public_plan::{NativePlanningError, plan_public_new_file};
 

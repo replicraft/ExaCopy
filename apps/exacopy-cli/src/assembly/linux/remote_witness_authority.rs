@@ -1,6 +1,8 @@
 //! Live invocation consent, independently selected from archived commitments.
 
-use std::sync::{Mutex, MutexGuard, PoisonError};
+#[cfg(test)]
+use std::sync::PoisonError;
+use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
 use exacopy_endpoint::ReadView;
@@ -14,10 +16,10 @@ use exacopy_platform::linux::{RecoveryWriteLease, RetainedPrefixRead, RetainedPr
 use super::remote_download::{RemoteGrant, WitnessDeadline};
 
 /// Private projection of two separately validated explicit user arguments.
-pub(super) struct ExplicitWitnessSelection(());
+pub(crate) struct ExplicitWitnessSelection(());
 
 impl ExplicitWitnessSelection {
-	pub(super) fn select(verified_prefix: bool, allow_retention: bool) -> Option<Self> {
+	pub(crate) fn select(verified_prefix: bool, allow_retention: bool) -> Option<Self> {
 		(verified_prefix && allow_retention).then_some(Self(()))
 	}
 }
@@ -144,6 +146,7 @@ impl<'grant, 'name> WitnessRetentionApproval<'grant, 'name> {
 	}
 
 	/// Irreversibly stops this approval while retaining its archival projection.
+	#[cfg(test)]
 	pub(super) fn revoke(&self) {
 		self.state
 			.lock()

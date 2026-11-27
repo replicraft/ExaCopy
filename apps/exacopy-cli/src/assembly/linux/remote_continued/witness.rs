@@ -42,6 +42,7 @@ pub(super) mod positive_tail;
 pub(super) mod prepublication;
 pub(super) mod publication;
 use publication::{LinkedPublication, WitnessModel};
+#[cfg(test)]
 pub(super) mod zero_tail;
 
 #[derive(Debug)]
@@ -83,6 +84,7 @@ pub(super) struct WitnessPass<'scope, 'name> {
 pub(super) struct LinkedWitnessedStage<'view, 'lease, 'scope, 'name> {
 	pub(super) chain: SealedProtectedWitness<'view, 'lease>,
 	pub(super) intent: RemoteWitnessIntent,
+	#[cfg(test)]
 	pub(super) digest: [u8; 32],
 	source: SuffixSourceObservation,
 	route: RetiredBoundRoute,
@@ -286,6 +288,7 @@ impl<'scope, 'name> WitnessPass<'scope, 'name> {
 		Ok(LinkedWitnessedStage {
 			chain,
 			intent,
+			#[cfg(test)]
 			digest: source.digest(),
 			source,
 			route,

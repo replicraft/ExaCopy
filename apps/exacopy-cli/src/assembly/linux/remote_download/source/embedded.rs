@@ -255,6 +255,13 @@ async fn prepare_carrier(
 	if approved.remote_inner.is_ipv6() && mtu.bytes() < IPV6_INNER_MIN {
 		return Err(EmbeddedConnectError::Mtu);
 	}
+	#[cfg(feature = "experimental-verified-prefix-resume")]
+	if matches!(admission, AttemptAdmission::Witnessed(_)) {
+		admission
+			.check_before_dial()
+			.map_err(EmbeddedConnectError::Native)?;
+		check(source, deadline)?;
+	}
 	let local_private = key::read_private(&approved.private_key_file, approved.local_public_key)?;
 	check(source, deadline)?;
 	let protocol = ProtocolPeer::new(

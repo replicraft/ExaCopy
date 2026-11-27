@@ -13,9 +13,9 @@ use tokio::sync::Notify;
 
 use super::super::remote_journal::{CurrentGrant, Error, RemoteActivation, component};
 
-#[cfg(test)]
+#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 mod witness_clock;
-#[cfg(test)]
+#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 pub(in crate::assembly::linux) use witness_clock::WitnessDeadline;
 
 /// Foreground invoker authorization for a fixed request and monotonic lease.
@@ -25,9 +25,9 @@ pub struct RemoteGrant {
 	scope: RemoteScopeDigest,
 	digest: [u8; 32],
 	deadline: Instant,
-	#[cfg(test)]
+	#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 	wall_anchor: Option<witness_clock::ClockSample>,
-	#[cfg(test)]
+	#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 	witness_issued: std::sync::atomic::AtomicBool,
 	active: Mutex<bool>,
 	revoked: Notify,
@@ -42,9 +42,9 @@ impl RemoteGrant {
 			scope,
 			digest,
 			deadline,
-			#[cfg(test)]
+			#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 			wall_anchor: witness_clock::ClockSample::now(),
-			#[cfg(test)]
+			#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 			witness_issued: std::sync::atomic::AtomicBool::new(false),
 			active: Mutex::new(true),
 			revoked: Notify::new(),
@@ -64,7 +64,7 @@ impl RemoteGrant {
 		self.deadline
 	}
 
-	#[cfg(test)]
+	#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 	pub(in crate::assembly::linux) fn issue_witness(
 		&self,
 		scope: RemoteScopeDigest,
@@ -76,7 +76,7 @@ impl RemoteGrant {
 			.swap(true, std::sync::atomic::Ordering::Relaxed))
 	}
 
-	#[cfg(test)]
+	#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 	pub(in crate::assembly::linux) fn witness_deadline(&self) -> Option<WitnessDeadline> {
 		self.wall_anchor?.deadline(self.deadline)
 	}

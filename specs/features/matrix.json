@@ -157,6 +157,22 @@
       "targets": ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"],
       "purpose": "Check opt-in direct Linux SSH/SFTP get and remote-resume with independent destination qualification, and portable private capture from a held SFTP source."
     },
+    "experimental-verified-prefix-resume": {
+      "defaults": false,
+      "check_cli": false,
+      "feature_statuses": [],
+      "exact_features": [
+        "exacopy-cli/experimental-verified-prefix-resume",
+        "exacopy-cli/experimental-ssh-capture",
+        "exacopy-sftp/experimental-sftp",
+        "exacopy-ssh/experimental-ssh"
+      ],
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "purpose": "Compile the default-off first witnessed verified-prefix resume path with independently selected qualifications and current explicit retention authorization."
+    },
+
     "experimental-ssh-wireguard": {
       "defaults": false,
       "check_cli": false,
@@ -246,6 +262,22 @@
         "resolution_probe": ["exacopy-sftp", "exacopy-ssh", "russh"],
         "purpose": "Expose held SFTP private capture and the opt-in direct Linux command with a scoped Tokio runtime."
       },
+      "experimental-verified-prefix-resume": {
+        "status": "experimental",
+        "targets": [
+          "x86_64-unknown-linux-gnu"
+        ],
+        "enables": [
+          "experimental-ssh-capture"
+        ],
+        "resolution_probe": [
+          "exacopy-sftp",
+          "exacopy-ssh",
+          "russh"
+        ],
+        "purpose": "Select the default-off first witnessed resume front door; native production qualification remains separate."
+      },
+
       "experimental-ssh-wireguard": {
         "status": "experimental",
         "targets": ["x86_64-unknown-linux-gnu"],

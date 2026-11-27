@@ -25,7 +25,7 @@ pub(crate) use super::remote_journal::{
 use super::remote_stage::{NativeCaptureStageError, StageFinalizationError};
 
 mod authority;
-#[cfg(test)]
+#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 pub(in crate::assembly::linux) use authority::WitnessDeadline;
 mod build;
 mod capture;
@@ -38,9 +38,9 @@ pub(super) use authority::native_authority;
 pub use build::measure_running_executable;
 pub(crate) use retry::ReadyRetry;
 pub use retry::{RemoteRetryLease, RemoteRetryStamp};
-#[cfg(test)]
+#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 pub(in crate::assembly::linux) use source::BoundRouteRetirement;
-#[cfg(test)]
+#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 pub(in crate::assembly::linux) use source::RetiredBoundRoute;
 
 pub(crate) use source::DirectConnectError;
@@ -69,6 +69,8 @@ pub enum RemoteJobAction {
 pub(crate) enum AttemptAdmission<'held> {
 	Initial(Option<Box<CheckedResumeStartup<'held>>>),
 	Retry(ReadyRetry<'held>),
+	#[cfg(feature = "experimental-verified-prefix-resume")]
+	Witnessed(Box<super::remote_journal::CheckedOriginalWitnessStartup<'held>>),
 }
 
 impl AttemptAdmission<'_> {
@@ -76,6 +78,8 @@ impl AttemptAdmission<'_> {
 		match self {
 			Self::Initial(_) => Ok(()),
 			Self::Retry(ready) => ready.lease.recheck(),
+			#[cfg(feature = "experimental-verified-prefix-resume")]
+			Self::Witnessed(startup) => startup.recheck(),
 		}
 	}
 }

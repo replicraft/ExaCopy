@@ -180,7 +180,10 @@ pub(in crate::assembly::linux::remote_continued) enum WitnessedReceiptError {
 
 #[derive(Debug)]
 pub(in crate::assembly::linux::remote_continued) struct WitnessedReceiptCompletion {
+	#[cfg(test)]
 	pub(in crate::assembly::linux::remote_continued) ready: RemoteReplayBoundary,
+	#[cfg(feature = "experimental-verified-prefix-resume")]
+	pub(in crate::assembly::linux::remote_continued) digest: [u8; 32],
 	pub(in crate::assembly::linux::remote_continued) committed: RemoteReplayBoundary,
 	pub(in crate::assembly::linux::remote_continued) bytes: Vec<u8>,
 }
@@ -300,7 +303,10 @@ impl SubmittedPublication<'_, '_, '_, '_> {
 			return Err(Failure::Binding);
 		}
 		Ok(WitnessedReceiptCompletion {
+			#[cfg(test)]
 			ready: ready.boundary(),
+			#[cfg(feature = "experimental-verified-prefix-resume")]
+			digest: ready.digest(),
 			committed,
 			bytes: pending.bytes,
 		})

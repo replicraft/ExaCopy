@@ -24,11 +24,11 @@ mod authentication;
 mod direct;
 #[cfg(feature = "experimental-ssh-wireguard")]
 mod embedded;
-#[cfg(test)]
+#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 mod route_binding;
-#[cfg(test)]
+#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 pub(in crate::assembly::linux) use route_binding::BoundRouteRetirement;
-#[cfg(test)]
+#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 pub(in crate::assembly::linux) use route_binding::RetiredBoundRoute;
 mod read_health;
 mod retirement;
@@ -235,7 +235,7 @@ impl<'authorization> ConnectingRemoteSource<'authorization> {
 				attempt: self.attempt,
 				route,
 				transport,
-				#[cfg(test)]
+				#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 				retirement_issued: false,
 			},
 		})
@@ -360,7 +360,7 @@ pub(in crate::assembly::linux) struct SourceOwner<'authorization> {
 	attempt: ConnectionAttempt,
 	route: BoundRoute<'authorization>,
 	transport: Arc<RouteTask>,
-	#[cfg(test)]
+	#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 	retirement_issued: bool,
 }
 

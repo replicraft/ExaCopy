@@ -14,9 +14,9 @@ use super::RemoteGrant;
 
 #[cfg(feature = "experimental-ssh-wireguard")]
 mod drain;
-#[cfg(test)]
+#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 mod gated;
-#[cfg(test)]
+#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
 pub(in crate::assembly::linux) use gated::HeldRouteEffect;
 
 const TRANSPORT_CLOSE_LIMIT: Duration = Duration::from_secs(2);

@@ -344,4 +344,15 @@ pub(in crate::assembly::linux::remote_continued) fn check_original_vector(
 	assert!(select_original(&read(usize::try_from(kind40.offset).unwrap()), prior).is_err());
 	let before_checkpoint = read(usize::try_from(prepared.end).unwrap());
 	assert!(select_original(&before_checkpoint, before_checkpoint.boundary()).is_err());
+	#[cfg(feature = "experimental-verified-prefix-resume")]
+	{
+		use crate::assembly::linux::remote_continued::preflight_original;
+
+		assert!(preflight_original(&original, prior).is_ok());
+		assert!(preflight_original(&read(old_end - 1), prior).is_err());
+		let witnessed = read(usize::try_from(kind40.offset).unwrap());
+		assert!(preflight_original(&witnessed, witnessed.boundary()).is_err());
+		assert!(preflight_original(&before_checkpoint, before_checkpoint.boundary()).is_err());
+		assert!(preflight_original(&original, before_checkpoint.boundary()).is_err());
+	}
 }
