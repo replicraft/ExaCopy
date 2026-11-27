@@ -237,9 +237,10 @@ def check_coverage_host(revision):
                  "coverage requires the canonical GitHub-hosted main push")
 
 
-def qualify(revision, temp, evidence, report):
+def qualify(revision, temp, evidence, report, *, ordinary=None):
     coverage = report.get("coverage")
     collecting = coverage is not None
+    ext4.require(ordinary is None or collecting, "ordinary witness requires measured profiles")
     if collecting:
         check_coverage_host(revision)
     ext4.check_revision(revision, evidence, "before")
@@ -265,7 +266,9 @@ def qualify(revision, temp, evidence, report):
                  "unexpected native Rust compiler")
     tools = None
     if collecting:
-        coverage.update(compiler=compiler, tools={}, instrumentation=coverage_profile.INSTRUMENTATION)
+        coverage.update(compiler=compiler, tools={})
+        if ordinary is None:
+            coverage["instrumentation"] = coverage_profile.INSTRUMENTATION
         tools = coverage_profile.pinned_tools(ext4, evidence, compiler, coverage["tools"])
     work = Path(tempfile.mkdtemp(prefix=f"{ID}-work-", dir=temp))
     report.update(cleanup="pending", owned_work_basename=work.name)
@@ -284,24 +287,29 @@ def qualify(revision, temp, evidence, report):
         ext4.require({key: value for key, value in before.items() if key != "parent"} ==
                      {key: value for key, value in report["substrate"].items() if key != "parent"},
                      "owned fixture escaped the observed runner mount or actor")
-        target = work / "target"
-        env = {
-            **os.environ, "CARGO_TARGET_DIR": str(target), "CARGO_BUILD_BUILD_DIR": str(target),
-            "CARGO_INCREMENTAL": "0", "CARGO_PROFILE_TEST_DEBUG": "0", "LC_ALL": "C",
-            "TMPDIR": str(work),
-        }
-        args = ["cargo", f"+{TOOLCHAIN}", "test", "--locked", "--offline", "--jobs", "2",
-                "--target", TARGET, "-p", "exacopy-platform", "--no-default-features",
-                "--lib", "--no-run", "--message-format=json"]
-        if collecting:
-            env["CARGO_ENCODED_RUSTFLAGS"] = coverage_profile.INSTRUMENTATION
-            coverage["build_command"] = args
-        output = ext4.command(evidence, "cargo", args, env=env, timeout=900)
-        binary = artifact(output, target, coverage=coverage)
-        if collecting:
+        if ordinary is not None:
             profiles = coverage_profile.Profiles(ext4, stack, work, evidence, coverage)
             profiles.prepare()
-        execute(evidence, binary, fixture, fixture_fd, report, profiles=profiles, tools=tools)
+            ordinary(fixture, fixture_fd, profiles, tools)
+        else:
+            target = work / "target"
+            env = {
+                **os.environ, "CARGO_TARGET_DIR": str(target), "CARGO_BUILD_BUILD_DIR": str(target),
+                "CARGO_INCREMENTAL": "0", "CARGO_PROFILE_TEST_DEBUG": "0", "LC_ALL": "C",
+                "TMPDIR": str(work),
+            }
+            args = ["cargo", f"+{TOOLCHAIN}", "test", "--locked", "--offline", "--jobs", "2",
+                    "--target", TARGET, "-p", "exacopy-platform", "--no-default-features",
+                    "--lib", "--no-run", "--message-format=json"]
+            if collecting:
+                env["CARGO_ENCODED_RUSTFLAGS"] = coverage_profile.INSTRUMENTATION
+                coverage["build_command"] = args
+            output = ext4.command(evidence, "cargo", args, env=env, timeout=900)
+            binary = artifact(output, target, coverage=coverage)
+            if collecting:
+                profiles = coverage_profile.Profiles(ext4, stack, work, evidence, coverage)
+                profiles.prepare()
+            execute(evidence, binary, fixture, fixture_fd, report, profiles=profiles, tools=tools)
         try:
             after = ext4.observe(fixture, fixture_fd, evidence, "fixture-after")
         except ext4.Blocked as error:

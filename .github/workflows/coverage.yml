@@ -37,6 +37,9 @@ on:
       - 'crates/foundation/exacopy-model/verification/tla/SyncBaseline.classifier.tsv'
       - 'crates/foundation/exacopy-model/verification/sync_genesis/**'
       - 'crates/platform/exacopy-platform/verification/sync_genesis_publication/**'
+      - 'crates/platform/exacopy-platform/verification/witnessed_components_ext4/**'
+      - 'crates/platform/exacopy-platform/verification/sync_history_ext4/run.py'
+      - 'tools/qualification/native_supervision.py'
   pull_request:
     paths:
       - '.github/workflows/coverage.yml'
@@ -71,6 +74,9 @@ on:
       - 'crates/foundation/exacopy-model/verification/tla/SyncBaseline.classifier.tsv'
       - 'crates/foundation/exacopy-model/verification/sync_genesis/**'
       - 'crates/platform/exacopy-platform/verification/sync_genesis_publication/**'
+      - 'crates/platform/exacopy-platform/verification/witnessed_components_ext4/**'
+      - 'crates/platform/exacopy-platform/verification/sync_history_ext4/run.py'
+      - 'tools/qualification/native_supervision.py'
 
 permissions:
   contents: read
@@ -124,11 +130,31 @@ jobs:
         id: endpoint_capture_controls
         if: ${{ !cancelled() && steps.endpoint_tools.outcome == 'success' }}
         run: bash .github/ci/capture.sh endpoint-export-controls python3 -B .github/ci/endpoint_llvm_export_capture_test.py -v
+      - name: Check ordinary witness coverage controls
+        id: endpoint_witness_controls
+        if: ${{
+          !cancelled() && steps.endpoint_capture_controls.outcome == 'success' &&
+          github.repository == 'replicraft/ExaCopy' && github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          github.workflow_ref == 'replicraft/ExaCopy/.github/workflows/coverage.yml@refs/heads/main' &&
+          github.workflow_sha == github.sha }}
+        run: |
+          bash .github/ci/capture.sh ordinary-witness-image-controls python3 -B -Werror \
+            crates/platform/exacopy-platform/verification/witnessed_components_ext4/test_ordinary_coverage_image.py -v
+          bash .github/ci/capture.sh ordinary-witness-controls python3 -B -Werror \
+            crates/platform/exacopy-platform/verification/witnessed_components_ext4/test_ordinary_coverage.py -v
       - name: Require 85 percent line coverage in each endpoint crate
         if: ${{ !cancelled() && steps.endpoint_tools.outcome == 'success' }}
         timeout-minutes: 20
         env:
           EXACOPY_CAPTURE_ENDPOINT_LLVM_EXPORT: ${{ steps.endpoint_capture_controls.outcome == 'success' && '1' || '0' }}
+          EXACOPY_MEASURE_ORDINARY_WITNESS: ${{
+            github.repository == 'replicraft/ExaCopy' && github.event_name == 'push' &&
+            github.ref == 'refs/heads/main' &&
+            github.workflow_ref == 'replicraft/ExaCopy/.github/workflows/coverage.yml@refs/heads/main' &&
+            steps.endpoint_capture_controls.outcome == 'success' &&
+            steps.endpoint_witness_controls.outcome == 'success' &&
+            github.workflow_sha == github.sha && '1' || '0' }}
         run: bash .github/ci/capture.sh endpoint-coverage bash .github/ci/assurance.sh endpoint-coverage
       - name: Retain coverage reports
         if: always()

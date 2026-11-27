@@ -95,16 +95,19 @@ def verify_capture(collector, raw, tool, target):
 
 
 @contextmanager
-def held_listed_image(revision, before_build, collector, temp, evidence, fixture, fixture_fd, profiles):
+def held_listed_image(revision, before_build, collector, temp, evidence, fixture, fixture_fd, profiles,
+                      *, pinned_exporter=None):
     """Yield the same held image after all ordinary and ignored listings."""
     run.check_coverage_host(revision)
     require = run.ext4.require
     require(source_snapshot(revision, evidence, "ordinary-before-listing") == before_build,
             "ordinary coverage source changed since before build")
-    compiler = run.ext4.command(evidence, "ordinary-rustc", ["rustc", f"+{run.TOOLCHAIN}", "-vV"]).splitlines()
-    require(f"release: {run.TOOLCHAIN}" in compiler and f"host: {run.TARGET}" in compiler,
-            "unexpected ordinary coverage compiler")
-    tool = run.coverage_profile.pinned_tools(run.ext4, evidence, compiler, {})["llvm-cov"]
+    if pinned_exporter is None:
+        compiler = run.ext4.command(evidence, "ordinary-rustc", ["rustc", f"+{run.TOOLCHAIN}", "-vV"]).splitlines()
+        require(f"release: {run.TOOLCHAIN}" in compiler and f"host: {run.TARGET}" in compiler,
+                "unexpected ordinary coverage compiler")
+        pinned_exporter = run.coverage_profile.pinned_tools(run.ext4, evidence, compiler, {})["llvm-cov"]
+    tool = pinned_exporter
     target = run.ROOT / "target/llvm-cov-target"
     directory = temp / "exacopy-evidence/endpoint-llvm-export"
     with held_capture_pair(directory) as read_pair, ExitStack() as stack:

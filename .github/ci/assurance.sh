@@ -33,8 +33,32 @@ case "$1" in
 				"EXACOPY_ENDPOINT_LLVM_TARGET=$PWD/target/llvm-cov-target" \
 				"EXACOPY_ENDPOINT_LLVM_EVIDENCE=$evidence/endpoint-llvm-export"
 		fi
+		ordinary_report="$report"
+		witness_prepared=0
+		witness_blocked=0
+		if [[ "${EXACOPY_MEASURE_ORDINARY_WITNESS:-}" == 1 ]]; then
+			witness=crates/platform/exacopy-platform/verification/witnessed_components_ext4/ordinary_coverage.py
+			if (( $# > 0 )) && python3 -B -Werror "$witness" prepare; then
+				witness_prepared=1
+				ordinary_report="$evidence/endpoint-coverage-ordinary.json"
+			else
+				witness_blocked=1
+			fi
+		fi
 		"$@" cargo +1.100.0 llvm-cov nextest --locked -p exacopy-core -p exacopy-endpoint -p exacopy-platform \
-			--json --show-missing-lines --output-path "$report" --no-tests fail
+			--json --show-missing-lines --output-path "$ordinary_report" --no-tests fail
+		if (( witness_prepared )); then
+			witness_evidence="$evidence/endpoint-ordinary-witness"
+			if ! { (umask 077; set -o noclobber; printf '0\n' > "$witness_evidence/ordinary-producer.exit") &&
+				python3 -B -Werror "$witness" combine &&
+				ln -T -- "$witness_evidence/combined-llvm.json" "$report"; }; then
+				report="$ordinary_report"
+				witness_blocked=1
+			fi
+		fi
+		if (( witness_blocked )); then
+			printf 'Ordinary witness coverage blocked. Evaluating ordinary coverage.\n' >&2
+		fi
 		jq '
 			def source_lines($path):
 				[.data[0].files[] |
@@ -51,6 +75,7 @@ case "$1" in
 		jq -e --argjson minimum "$minimum_line_coverage" '
 			all(.[]; .count > 0 and .covered * 100 >= .count * $minimum)
 		' "$summary"
+		if (( witness_blocked )); then exit 1; fi
 		;;
 	mutation)
 		# cargo-mutants 27.1.0 leaves [workspace.dependencies] paths relative

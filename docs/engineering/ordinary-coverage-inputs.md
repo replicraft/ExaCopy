@@ -27,7 +27,23 @@ slots can prevent an additional receipt without suppressing LLVM.
 These are observations before LLVM executes. They do not establish export
 success, select or authorize a test executable, or admit additional profiles.
 Correlate them with the ordinary command's retained exit status and report.
-Separate witnessed coverage summaries remain separate. A future combined
-campaign must use the same objects, source inventory and line denominators
-and retain exact case attendance and cleanup evidence before admitting raw
-profiles. No such combined campaign is activated here.
+Separate witnessed coverage summaries remain separate.
+
+Canonical main pushes from the Coverage workflow now request seven native
+witness cases in the same ordinary campaign. Source, workflow, job and run
+identity are checked before the ordinary build. The ordinary command must
+finish successfully before the native contribution can proceed. The runner
+holds the original indexed profile, LLVM tools, ordered objects and selected
+test executable, and retains the ordinary report independently.
+
+Only the seven measured run profiles join the original index, after exact
+attendance and verified fixture cleanup. Fourteen listing profiles are
+discarded. The combined export must preserve the ordinary filename filter,
+file inventory and every file's line denominator, with no decrease in covered
+lines. The existing per-crate 85% gate then evaluates the combined report.
+
+If native admission or measurement fails, the gate evaluates the ordinary
+report and the requested witness lane still fails. Failed capture or witness
+controls preserve the ordinary run and fail their own CI steps. This source
+integration has not yet executed in hosted CI; it grants no new filesystem
+or recovery qualification.
