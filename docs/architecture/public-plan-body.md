@@ -29,8 +29,11 @@ including the body. Duplicate or out-of-order keys, non-preferred encodings,
 floats, byte strings, tags and indefinite containers are refused.
 Extensions never override policy or grant authority.
 
-Admission checks input size before hashing, requires the caller's expected
-digest, decodes bounded fields, and checks exact canonical re-encoding.
+Admission checks input size before hashing and requires the caller's expected
+digest. A nonempty definite map with key 0 first and a supported-shape
+version pair permits a version diagnosis before the v1 map field count is
+checked. Supported v1 then requires bounded fields and exact canonical
+re-encoding.
 The digest is ordinary BLAKE3 over `ExaCopy/plan/v1` plus NUL and those
 body bytes. A new constructor validates bounded fields before encoding,
 then enforces the encoded-size cap. Its transient encoding allocation can

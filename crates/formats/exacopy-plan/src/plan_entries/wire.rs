@@ -5,7 +5,9 @@ use minicbor::{Decoder, Encoder};
 use uuid::Uuid;
 
 use crate::cbor::{BodyBytes, EncodeError, canonical_bytes};
-use crate::document::{DocumentError, DocumentPageKind, expect_key, expect_map, fixed_bytes};
+use crate::document::{
+	DocumentError, DocumentPageKind, expect_key, expect_map, expect_versioned_map, fixed_bytes,
+};
 use crate::plan_identity::{read_identity, write_identity};
 use crate::portable::{BLAKE3_CODE, REGULAR_CODE, UNIX_BYTES_CODE};
 
@@ -94,11 +96,7 @@ fn write_path(encoder: &mut Encoder<BodyBytes>, path: PlanPath<'_>) -> Result<()
 
 pub(super) fn decode(input: &[u8]) -> Result<PlanEntry<'_>, DocumentError> {
 	let mut decoder = Decoder::new(input);
-	expect_map(&mut decoder, 6)?;
-	expect_key(&mut decoder, 0)?;
-	expect_array(&mut decoder, 2)?;
-	expect_code(&mut decoder, VERSION[0])?;
-	expect_code(&mut decoder, VERSION[1])?;
+	expect_versioned_map(&mut decoder, 6, VERSION)?;
 	expect_key(&mut decoder, 1)?;
 	if decoder.u16()? != DocumentPageKind::PlanEntries as u16 {
 		return Err(DocumentError::WrongKind);

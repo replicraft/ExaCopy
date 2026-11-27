@@ -142,7 +142,7 @@ fn fresh_digest_cannot_make_malformed_or_noncanonical_input_admissible() {
 fn page_format_and_profile_mismatches_are_fail_closed() {
 	assert_eq!(&EMPTY_PAGE[..10], &[0xa6, 0, 0x82, 1, 0, 1, 1, 2, 0, 3]);
 	for (offset, byte, expected) in [
-		(3, 2, DocumentError::Unsupported),     // Format major.
+		(3, 2, DocumentError::Version),         // Format major.
 		(6, 2, DocumentError::WrongKind),       // Encoded page kind.
 		(8, 1, DocumentError::Unsupported),     // Tree level.
 		(10, 0x80, DocumentError::Unsupported), // Entries array.
@@ -170,6 +170,29 @@ fn page_format_and_profile_mismatches_are_fail_closed() {
 		assert_eq!(
 			PlanEntriesPage::from_canonical_cbor(matching_test_ref(&input, 1), &input),
 			Err(DocumentError::Unsupported)
+		);
+	}
+}
+
+#[test]
+fn page_version_dispatch_precedes_v1_map_cardinality() {
+	let future = b"\xa2\x00\x82\x01\x01\x06\xf6";
+	assert_eq!(
+		PlanEntriesPage::from_canonical_cbor(matching_test_ref(future, 1), future),
+		Err(DocumentError::Version)
+	);
+	assert_eq!(
+		PlanEntriesPage::from_canonical_cbor(matching_test_ref(future, 2), future),
+		Err(DocumentError::CountMismatch)
+	);
+	for malformed in [
+		&b"\xa2\x00\x82\x01\x00\x06\xf6"[..],
+		&b"\xa1\x00\x82\x02"[..],
+		&b"\xa1\x00\x82\x02\xf6"[..],
+	] {
+		assert_eq!(
+			PlanEntriesPage::from_canonical_cbor(matching_test_ref(malformed, 1), malformed),
+			Err(DocumentError::Malformed)
 		);
 	}
 }

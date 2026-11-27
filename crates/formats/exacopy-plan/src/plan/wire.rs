@@ -6,7 +6,7 @@ use minicbor::{Decoder, Encoder};
 use uuid::Uuid;
 
 use crate::cbor::{BodyBytes, EncodeError, canonical_bytes};
-use crate::document::{DocumentRef, expect_key, expect_map, fixed_bytes};
+use crate::document::{DocumentRef, expect_key, expect_versioned_map, fixed_bytes};
 
 use super::{
 	MAX_GRANTS, MAX_PAGES, MAX_ROOTS, MAX_SOURCE_VIEWS, PlanBodyFields, PlanError, PlanExtensions,
@@ -90,12 +90,7 @@ fn write_body(
 
 pub(super) fn decode(input: &[u8]) -> Result<PlanBodyFields<'_>, PlanError> {
 	let mut decoder = Decoder::new(input);
-	expect_map(&mut decoder, PLAN_FIELDS)?;
-	expect_key(&mut decoder, 0)?;
-	expect_array(&mut decoder, 2)?;
-	if [decoder.u8()?, decoder.u8()?] != VERSION {
-		return Err(PlanError::Unsupported);
-	}
+	expect_versioned_map(&mut decoder, PLAN_FIELDS, VERSION)?;
 	expect_key(&mut decoder, 1)?;
 	let plan_id = read_uuid(&mut decoder)?;
 	expect_key(&mut decoder, 2)?;

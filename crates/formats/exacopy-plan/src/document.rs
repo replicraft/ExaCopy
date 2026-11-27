@@ -188,7 +188,9 @@ pub enum DocumentError {
 	Size,
 	/// The input has invalid CBOR types, fields, order, or required structure.
 	Malformed,
-	/// The required page version, kind, or entry shape is unsupported.
+	/// The document page version is unsupported.
+	Version,
+	/// The required page kind or entry shape is unsupported.
 	Unsupported,
 	/// The parent reference names a different document page kind.
 	WrongKind,
@@ -209,7 +211,8 @@ impl fmt::Display for DocumentError {
 		formatter.write_str(match self {
 			Self::Size => "document exceeds its encoded byte limits",
 			Self::Malformed => "document has malformed required fields",
-			Self::Unsupported => "document version or selected shape is unsupported",
+			Self::Version => "unsupported document page version",
+			Self::Unsupported => "document kind or selected shape is unsupported",
 			Self::WrongKind => "document reference has the wrong kind",
 			Self::LengthMismatch => "document page length differs from its reference",
 			Self::DigestMismatch => "document page digest differs from its reference",
@@ -234,6 +237,29 @@ pub(crate) fn expect_map(decoder: &mut Decoder<'_>, fields: u64) -> Result<(), D
 	} else {
 		Err(DocumentError::Malformed)
 	}
+}
+
+// The version prefix is stable even when the map layout changes.
+pub(crate) fn expect_versioned_map(
+	decoder: &mut Decoder<'_>,
+	expected_fields: u64,
+	version: [u8; 2],
+) -> Result<(), DocumentError> {
+	let fields = decoder
+		.map()?
+		.filter(|&fields| fields > 0)
+		.ok_or(DocumentError::Malformed)?;
+	expect_key(decoder, 0)?;
+	if decoder.array()? != Some(2) {
+		return Err(DocumentError::Malformed);
+	}
+	if [decoder.u8()?, decoder.u8()?] != version {
+		return Err(DocumentError::Version);
+	}
+	if fields != expected_fields {
+		return Err(DocumentError::Malformed);
+	}
+	Ok(())
 }
 
 pub(crate) fn expect_key(decoder: &mut Decoder<'_>, key: u8) -> Result<(), DocumentError> {

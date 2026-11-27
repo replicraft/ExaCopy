@@ -5,6 +5,9 @@ use exacopy_plan::{
 };
 use serde_json::{Value, json};
 
+#[path = "plan_json/version.rs"]
+mod version;
+
 const COMPLETE_JSON: &[u8] =
 	include_bytes!("../verification/plan_json/vectors/complete-protected.json");
 const COMPLETE_CBOR: &[u8] =

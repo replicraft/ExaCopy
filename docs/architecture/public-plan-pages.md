@@ -26,8 +26,10 @@ BLAKE3 digest over `ExaCopy/document-page/v1` plus NUL, kind u16 LE,
 encoded length u64 LE, and canonical page bytes. They are independent of
 repository keys. Reference parsing does not establish that a page exists.
 Page admission checks the 256 KiB byte bound, kind, length and digest
-before fixed-shape decoding, then requires count one and exact canonical
-re-encoding. Indefinite containers, trailing bytes, unknown fields and
+before fixed-shape decoding and requires reference count one. A nonempty
+definite map with key 0 first and a supported-shape version pair permits a
+version diagnosis before the v1 map field count is checked. Supported v1
+requires exact canonical re-encoding. Indefinite containers, trailing bytes, unknown fields and
 unsupported profiles fail. Parsing borrows input bytes and has no
 input-dependent recursion or child-page retrieval.
 

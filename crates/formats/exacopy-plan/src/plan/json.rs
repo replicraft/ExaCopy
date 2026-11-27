@@ -6,7 +6,10 @@ mod extensions;
 mod limits;
 mod schema;
 
+use std::borrow::Cow;
+
 use serde::Deserialize;
+use serde::de::IgnoredAny;
 use serde_json::value::RawValue;
 
 use super::{PlanBody, PlanError};
@@ -62,6 +65,13 @@ impl PublicPlan {
 	/// An attached approval is outside this profile.
 	pub fn from_json(input: &[u8]) -> Result<Self, PlanJsonError> {
 		limits::check(input)?;
+		let limits::Object(header): limits::Object<VersionEnvelope<'_>> =
+			serde_json::from_slice(input).map_err(|_| PlanJsonError::Json)?;
+		if header.body.0.schema_version != VERSION {
+			// Ignored payload values do not require UTF-8 in Serde's byte parser.
+			core::str::from_utf8(input).map_err(|_| PlanJsonError::Json)?;
+			return Err(PlanJsonError::Version);
+		}
 		let limits::Object(envelope): limits::Object<Envelope<'_>> =
 			serde_json::from_slice(input).map_err(|_| PlanJsonError::Json)?;
 		if envelope.approval.is_some() {
@@ -69,9 +79,6 @@ impl PublicPlan {
 		}
 		let expected = schema::digest(&envelope.digest)?;
 		let body = envelope.body.0;
-		if body.schema_version != VERSION {
-			return Err(PlanJsonError::Version);
-		}
 		let decoded_views = schema::decode_views(&body.source_views.0)?;
 		let extensions = extensions::from_json(body.extensions)?;
 		let fields = body.fields(&decoded_views, &extensions)?;
@@ -127,6 +134,23 @@ impl core::fmt::Debug for PublicPlan {
 			.field("digest", &self.digest)
 			.finish_non_exhaustive()
 	}
+}
+
+// Only the routing fields are interpreted for an unsupported version.
+#[derive(Deserialize)]
+struct VersionEnvelope<'input> {
+	#[serde(borrow)]
+	body: limits::Object<VersionBody<'input>>,
+	#[serde(default, rename = "digest")]
+	_digest: IgnoredAny,
+	#[serde(default, rename = "approval")]
+	_approval: IgnoredAny,
+}
+
+#[derive(Deserialize)]
+struct VersionBody<'input> {
+	#[serde(borrow)]
+	schema_version: Cow<'input, str>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]

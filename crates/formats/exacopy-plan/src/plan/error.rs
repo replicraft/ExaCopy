@@ -10,7 +10,9 @@ pub enum PlanError {
 	Size,
 	/// Required CBOR fields have invalid types or structure.
 	Malformed,
-	/// A requested version, feature, code, or extension is unsupported.
+	/// The canonical Plan body version is unsupported.
+	Version,
+	/// A requested feature, code, or extension is unsupported.
 	Unsupported,
 	/// A count, text, identity atom, timestamp fraction, or I/O value exceeds its bound.
 	Bounds,
@@ -31,6 +33,7 @@ impl fmt::Display for PlanError {
 		formatter.write_str(match self {
 			Self::Size => "plan exceeds the encoded byte limit",
 			Self::Malformed => "plan has malformed required fields",
+			Self::Version => "unsupported canonical plan body version",
 			Self::Unsupported => "plan uses an unsupported representation",
 			Self::Bounds => "plan exceeds a field limit",
 			Self::Identifier => "plan has an invalid identifier",
@@ -53,6 +56,7 @@ impl From<minicbor::decode::Error> for PlanError {
 impl From<DocumentError> for PlanError {
 	fn from(error: DocumentError) -> Self {
 		match error {
+			DocumentError::Version => Self::Version,
 			DocumentError::Unsupported => Self::Unsupported,
 			DocumentError::Size | DocumentError::WrongKind => Self::PageReference,
 			_ => Self::Malformed,

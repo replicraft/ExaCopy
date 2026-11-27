@@ -191,7 +191,30 @@ fn freshly_addressed_truncation_unpreferred_cbor_and_unknown_required_fields_fai
 
 		let mut future = canonical.to_vec();
 		future[3] = 2;
-		assert_eq!(evaluate(&future), Err(PlanError::Unsupported));
+		assert_eq!(evaluate(&future), Err(PlanError::Version));
+	}
+}
+
+#[test]
+fn version_dispatch_precedes_v1_map_cardinality() {
+	let future = b"\xa2\x00\x82\x02\x00\x11\xf6";
+	assert_eq!(evaluate(future), Err(PlanError::Version));
+	assert_eq!(
+		PlanBody::from_canonical_cbor(COMPLETE_DIGEST, future),
+		Err(PlanError::Integrity)
+	);
+	for malformed in [
+		&b"\xa2\x00\x82\x01\x00\x11\xf6"[..],
+		&b"\xa0\x00\x82\x02\x00"[..],
+		&b"\xa1\x01\x82\x02\x00"[..],
+		&b"\xa1\x00\x81\x02"[..],
+		&b"\xa1\x00\x82\x02"[..],
+	] {
+		assert_eq!(
+			evaluate(malformed),
+			Err(PlanError::Malformed),
+			"{malformed:?}"
+		);
 	}
 }
 
@@ -412,7 +435,7 @@ fn admission_diagnostics_keep_source_evidence_and_grants_private() {
 	for (result, expected) in [
 		(evaluate(&trailing), PlanError::NonCanonical),
 		(evaluate(malformed), PlanError::Malformed),
-		(evaluate(&future), PlanError::Unsupported),
+		(evaluate(&future), PlanError::Version),
 		(
 			PlanBody::from_canonical_cbor(COMPLETE_DIGEST, valid.canonical_cbor()),
 			PlanError::Integrity,

@@ -6,7 +6,13 @@ body digest and compares it with the declared digest. Serialization emits
 the same semantic body with normalized UTC timestamps. This is a codec,
 not approval verification, page loading, root authorization or execution.
 
-Every required field must appear. Typed records must be JSON objects;
+The reader checks size, depth, complete JSON syntax and a unique
+`body.schema_version` before interpreting v1 fields. The envelope and body
+must be objects. Duplicate `body`, `schema_version`, `digest` or `approval`
+members fail structurally. A recognized unsupported version receives a
+version refusal even when its body fields or digest representation differ.
+
+In v1, every required field must appear. Typed records must be JSON objects;
 missing, duplicate, unknown and trailing fields are rejected. Any attached
 `approval` field, including null, is refused. `approval_required` remains
 an intent field and grants no authority. Extensions preserve accepted
