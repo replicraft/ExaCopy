@@ -19,6 +19,8 @@ mod peer;
 mod positioned;
 #[path = "in_process/streaming.rs"]
 mod streaming;
+#[path = "in_process/version.rs"]
+mod version;
 
 use peer::{CONTENT, NAME, SECRET, authority, fixture_key, fixture_trust, peer, peer_with_handle};
 

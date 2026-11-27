@@ -7,6 +7,7 @@ use exacopy_ssh::{
 	Error, MAX_STREAM_BYTES, Password, ReadOnlySftp, RemotePositionedRead, WindowObservation,
 	connect,
 };
+use russh_sftp::protocol::StatusCode;
 use tokio::sync::Notify;
 
 use super::peer::{
@@ -81,6 +82,50 @@ async fn reads_out_of_order_windows_above_four_gib_on_one_handle() {
 	assert_eq!(calls.read.load(Ordering::Relaxed), 10);
 	assert_eq!(calls.close.load(Ordering::Relaxed), 1);
 	assert_eq!(session.stat(&path()).await.unwrap(), file);
+}
+
+#[tokio::test]
+async fn refused_close_after_positioned_eof_fences_the_session() {
+	let mut generated = Generated::new(HIGH_OFFSET + 4);
+	generated.refuse_close = true;
+	let (mut session, calls) = open(generated).await;
+	let path = path();
+	let mut source = session.open_positioned(&path).await.unwrap();
+	read_window(&mut source, HIGH_OFFSET, 4).await;
+	assert_eq!(calls.read.load(Ordering::Relaxed), 1, "window DATA request");
+	assert_eq!(
+		calls.close.load(Ordering::Relaxed),
+		0,
+		"handle is still open"
+	);
+
+	let named_checks = calls.named_stat.load(Ordering::Relaxed);
+	assert!(matches!(
+		source.finish().await,
+		Err(Error::Status(StatusCode::Failure))
+	));
+	assert!(matches!(session.stat(&path).await, Err(Error::Closed)));
+	assert!(matches!(
+		session.open_positioned(&path).await,
+		Err(Error::Closed)
+	));
+	assert_eq!(
+		calls.read.load(Ordering::Relaxed),
+		2,
+		"one terminal EOF probe"
+	);
+	assert_eq!(
+		calls.eof_before_close.load(Ordering::Relaxed),
+		1,
+		"one-byte EOF probe at the actual extent before CLOSE"
+	);
+	assert_eq!(calls.close.load(Ordering::Relaxed), 1, "one refused CLOSE");
+	assert_eq!(calls.open.load(Ordering::Relaxed), 1, "no second OPEN");
+	assert_eq!(
+		calls.named_stat.load(Ordering::Relaxed),
+		named_checks,
+		"no LSTAT after refused CLOSE"
+	);
 }
 
 #[tokio::test]

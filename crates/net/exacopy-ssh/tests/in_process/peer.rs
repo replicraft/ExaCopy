@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::num::NonZeroU16;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -23,12 +24,14 @@ pub(super) struct Calls {
 	pub(super) auth: AtomicUsize,
 	pub(super) key_auth: AtomicUsize,
 	pub(super) subsystem: AtomicUsize,
+	pub(super) init: AtomicUsize,
 	pub(super) unsupported: AtomicUsize,
 	pub(super) open: AtomicUsize,
 	pub(super) close: AtomicUsize,
 	pub(super) read: AtomicUsize,
 	pub(super) held_stat: AtomicUsize,
 	pub(super) named_stat: AtomicUsize,
+	pub(super) eof_before_close: AtomicUsize,
 }
 
 struct Peer {
@@ -37,6 +40,7 @@ struct Peer {
 	subsystem: bool,
 	early_eof: bool,
 	generated: Option<Generated>,
+	sftp_version: u32,
 }
 
 impl server::Handler for Peer {
@@ -93,6 +97,7 @@ impl server::Handler for Peer {
 			early_eof: self.early_eof,
 			generated: self.generated.take(),
 			held_checks: 0,
+			sftp_version: self.sftp_version,
 		};
 		sftp_server::run(self.channel.take().unwrap().into_stream(), state).await;
 		Ok(())
@@ -115,6 +120,7 @@ struct Files {
 	early_eof: bool,
 	generated: Option<Generated>,
 	held_checks: usize,
+	sftp_version: u32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -196,6 +202,19 @@ impl sftp_server::Handler for Files {
 	fn unimplemented(&self) -> Self::Error {
 		self.calls.unsupported.fetch_add(1, Ordering::Relaxed);
 		sftp::StatusCode::OpUnsupported
+	}
+
+	async fn init(
+		&mut self,
+		version: u32,
+		_extensions: HashMap<String, String>,
+	) -> Result<sftp::Version, Self::Error> {
+		assert_eq!(version, sftp::VERSION, "client must send an SFTP v3 INIT");
+		self.calls.init.fetch_add(1, Ordering::Relaxed);
+		Ok(sftp::Version {
+			version: self.sftp_version,
+			extensions: HashMap::new(),
+		})
 	}
 
 	async fn lstat(&mut self, id: u32, path: sftp::SftpString) -> Result<sftp::Attrs, Self::Error> {
@@ -294,6 +313,12 @@ impl sftp_server::Handler for Files {
 			let remaining = generated.actual_length.saturating_sub(offset);
 			let count = remaining.min(u64::from(len.min(generated.max_reply)));
 			if count == 0 {
+				if offset == generated.actual_length
+					&& len == 1
+					&& self.calls.close.load(Ordering::Relaxed) == 0
+				{
+					self.calls.eof_before_close.fetch_add(1, Ordering::Relaxed);
+				}
 				return Err(sftp::StatusCode::Eof);
 			}
 			let data = (offset..offset + count)
@@ -370,7 +395,14 @@ pub(super) fn peer_with_rekey(
 	Arc<Calls>,
 	oneshot::Receiver<server::Handle>,
 ) {
-	configured_peer(subsystem, early_eof, rekey_time_limit, terminated, None)
+	configured_peer(
+		subsystem,
+		early_eof,
+		rekey_time_limit,
+		terminated,
+		None,
+		sftp::VERSION,
+	)
 }
 
 pub(super) fn generated_peer(
@@ -382,8 +414,23 @@ pub(super) fn generated_peer(
 		server::Config::default().limits.rekey_time_limit,
 		None,
 		Some(generated),
+		sftp::VERSION,
 	);
 	(stream, fingerprint, calls)
+}
+
+pub(super) fn peer_with_sftp_version(
+	version: u32,
+) -> (DuplexStream, HostKeyFingerprint, Arc<Calls>) {
+	let (stream, pin, calls, _) = configured_peer(
+		true,
+		false,
+		server::Config::default().limits.rekey_time_limit,
+		None,
+		None,
+		version,
+	);
+	(stream, pin, calls)
 }
 
 fn configured_peer(
@@ -392,6 +439,7 @@ fn configured_peer(
 	rekey_time_limit: Duration,
 	terminated: Option<oneshot::Sender<()>>,
 	generated: Option<Generated>,
+	sftp_version: u32,
 ) -> (
 	DuplexStream,
 	HostKeyFingerprint,
@@ -413,6 +461,7 @@ fn configured_peer(
 		subsystem,
 		early_eof,
 		generated,
+		sftp_version,
 	};
 	let config = server::Config {
 		keys: vec![key],
