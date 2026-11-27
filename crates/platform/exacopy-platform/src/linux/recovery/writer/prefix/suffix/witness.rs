@@ -13,6 +13,9 @@ use super::{
 
 mod lane;
 mod publication;
+#[cfg(test)]
+#[path = "../../../../../../tests/unit/linux/recovery/suffix_witness.rs"]
+mod tests;
 use crate::linux::WitnessReservationObservationError;
 use crate::linux::handle::mount_id;
 use crate::linux::recovery::{check_absent, open_path};

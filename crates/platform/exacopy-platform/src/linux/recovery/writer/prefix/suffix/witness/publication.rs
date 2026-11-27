@@ -288,3 +288,7 @@ fn same_after_rename(before: SourceObservation, after: SourceObservation) -> boo
 		&& after.modified_at() == before.modified_at()
 		&& after.link_count() == before.link_count()
 }
+
+#[cfg(test)]
+#[path = "../../../../../../../tests/unit/linux/witness_publication.rs"]
+mod tests;

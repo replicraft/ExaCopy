@@ -91,6 +91,10 @@ fn stable_unprivileged(status: &[u8], uid: u32, gid: u32) -> bool {
 }
 
 #[cfg(test)]
+#[path = "../../../../../../../tests/unit/witness_lane_admission.rs"]
+mod admission_tests;
+
+#[cfg(test)]
 mod tests {
 	use super::stable_unprivileged;
 

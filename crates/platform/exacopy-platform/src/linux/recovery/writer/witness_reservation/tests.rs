@@ -16,6 +16,9 @@ use super::{
 	WitnessReservationPlan, native, submit,
 };
 
+#[path = "../../../../../tests/unit/linux/recovery/writer/witness_reservation.rs"]
+mod coverage;
+
 const LIMIT: u64 = 64 * 1024 * 1024;
 const HEAD: Head = Head {
 	digest: [0x42; 32],
