@@ -7,18 +7,11 @@ case "$1" in
 	coverage)
 		report="$evidence/coverage.json"
 		cargo +nightly-2026-11-04 llvm-cov nextest --locked -p exacopy-core -p exacopy-model \
-			--branch --json --summary-only --output-path "$report" \
+			--branch --json --output-path "$report" \
 			--ignore-filename-regex '(^|/)(tests|verification)/|/exacopy-core/src/component\.rs$' \
 			--no-tests fail
-		jq '.data[0].totals | {lines, branches}' "$report"
-		jq -e '
-			(.data | length == 1) and
-			([.data[0].files[].filename | split("/") | last] | sort ==
-				["binding.rs", "identity.rs", "range.rs", "sync.rs", "transaction.rs"]) and
-			(.data[0].totals |
-				.lines.count > 0 and .lines.covered * 100 >= .lines.count * 95 and
-				.branches.count > 0 and .branches.covered * 100 >= .branches.count * 90)
-		' "$report"
+		python3 -B -Werror .github/ci/model_coverage_test.py
+		python3 -B -Werror .github/ci/model_coverage.py "$report"
 		;;
 	endpoint-coverage)
 		report="$evidence/endpoint-coverage.json"
