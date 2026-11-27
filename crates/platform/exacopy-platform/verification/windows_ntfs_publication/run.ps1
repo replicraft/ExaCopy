@@ -43,6 +43,30 @@ function New-PublicationEnvironment {
     return [string[]]@($safe.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" })
 }
 
+function Get-PublicationLaunchFacts {
+    param([string] $Name, [string] $Program, [string] $WorkingDirectory, [string[]] $Arguments,
+        [string[]] $Environment)
+    # Record only the known setup oracles and the exact failing setup call.
+    # Environment values remain private, including those accepted by the allowlist.
+    if ($Name -cnotin @('launch-pwsh', 'launch-python', 'apfs-source')) { return }
+    $keys = @($Environment | ForEach-Object { $_.Split('=', 2)[0] } | Sort-Object -CaseSensitive)
+    $units = 1
+    foreach ($entry in $Environment) { $units += $entry.Length + 1 }
+    [ordered]@{
+        application = if ($Program.Length -le 260) { $Program }
+        application_units = $Program.Length
+        working_directory = if ($WorkingDirectory.Length -le 260) { $WorkingDirectory }
+        working_directory_units = $WorkingDirectory.Length
+        arguments = @($Arguments | Select-Object -First 4 | ForEach-Object {
+            if ($_.Length -le 128) { $_ } else { $null }
+        })
+        argument_count = $Arguments.Count
+        environment_keys = @($keys | Select-Object -First 64)
+        environment_count = $Environment.Count
+        environment_utf16_units = $units
+    }
+}
+
 function Write-PublicationEvidenceDiagnostic {
     # Emit one bounded line from process-owned memory when the evidence path
     # cannot be handed to the uploader. Base64 prevents workflow commands
@@ -53,6 +77,7 @@ function Write-PublicationEvidenceDiagnostic {
         cleanup = $state.cleanup
         receipt = $diagnostic.receipt
     }
+    if ($null -ne $diagnostic.launch) { $payload.launch = $diagnostic.launch }
     $serialized = $payload | ConvertTo-Json -Depth 4 -Compress
     $bytes = [Text.Encoding]::UTF8.GetBytes($serialized)
     $logged = [Math]::Min($bytes.Length, 4096)
@@ -65,6 +90,7 @@ function Invoke-PublicationChild {
     param([string] $Name, [string] $Program, [string[]] $Arguments, [int] $Timeout)
     $diagnostic.phase = $Name
     $diagnostic.receipt = $null
+    $diagnostic.launch = Get-PublicationLaunchFacts $Name $Program $repo $Arguments $childEnvironment
     $state.process_drained = $false
     $stdout = Join-Path $evidence ($Name + '.stdout.log')
     $stderr = Join-Path $evidence ($Name + '.stderr.log')
@@ -73,6 +99,10 @@ function Invoke-PublicationChild {
         $Program, $Arguments, $repo, $childEnvironment, $stdout, $stderr, $Timeout)
     $diagnostic.receipt = $child
     $child | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $record -Encoding utf8
+    if ($null -ne $diagnostic.launch) {
+        $diagnostic.launch | ConvertTo-Json -Depth 4 |
+            Set-Content -LiteralPath (Join-Path $evidence ($Name + '.launch.json')) -Encoding utf8
+    }
     $state.process_drained = (!$child.Started -and !$child.CreationAttempted) -or
         ($child.Drained -and $child.RootSignaled -and $null -ne $child.ActiveProcesses -and
             $child.ActiveProcesses -eq 0)
@@ -157,7 +187,7 @@ $ancestors = $evidencePin = $fixturePin = $fixtureGuard = $buildPin = $image = $
 $fixture = $evidence = $null
 $fixtureCustodied = $false
 $evidenceExported = $false
-$diagnostic = @{ phase = 'fixture-admission'; receipt = $null }
+$diagnostic = @{ phase = 'fixture-admission'; receipt = $null; launch = $null }
 $state = @{
     profile = $qualification; source_revision = $env:GITHUB_SHA; status = 'fail'; process_drained = $true
     target = $selected; windows = $windows.Caption; build_number = $windows.BuildNumber
@@ -255,6 +285,18 @@ try {
     $nativeControls = Join-Path $evidence 'native-process-controls'
     New-StagePrivateFixture $nativeControls $owner
     Assert-ReadDiffTreeSecurity $nativeControls $owner
+    # Compare a known current host image and the selected Python under one
+    # unchanged supervisor, working directory and environment before APFS I/O.
+    if ((Invoke-PublicationChild 'launch-pwsh' $powershell @(
+        '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', "Write-Output 'qualification-pwsh'") 30000) -ne 0 -or
+        (Get-Content -Raw -LiteralPath (Join-Path $evidence 'launch-pwsh.stdout.log')).TrimEnd() -cne 'qualification-pwsh') {
+        throw 'The known hosted PowerShell image did not complete the contained launch oracle.'
+    }
+    if ((Invoke-PublicationChild 'launch-python' $python @(
+        '-B', '-c', 'print("qualification-python")') 30000) -ne 0 -or
+        (Get-Content -Raw -LiteralPath (Join-Path $evidence 'launch-python.stdout.log')).TrimEnd() -cne 'qualification-python') {
+        throw 'The selected Python image did not complete the contained launch oracle.'
+    }
     foreach ($setup in @(
         @{ Name = 'apfs-source'; Program = $python; Args = @('-B', 'tools/apfs_source.py', '--fetch') },
         @{ Name = 'transport-source'; Program = $python; Args = @('-B', 'tools/transport_source.py', '--fetch') },

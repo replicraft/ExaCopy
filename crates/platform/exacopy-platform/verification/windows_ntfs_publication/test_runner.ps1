@@ -211,6 +211,38 @@ $fallback = $runner.Find({
 }, $false)
 Require ($null -ne $fallback) 'The runner diagnostic must be defined.'
 . ([scriptblock]::Create($fallback.Extent.Text))
+$launchFacts = $runner.Find({
+    param($Node)
+    $Node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        $Node.Name -ceq 'Get-PublicationLaunchFacts'
+}, $false)
+Require ($null -ne $launchFacts) 'The bounded launch diagnostic must be defined.'
+. ([scriptblock]::Create($launchFacts.Extent.Text))
+
+$python = 'C:\Program Files\Hosted Python\python.exe'
+$cwd = 'D:\a\ExaCopy\ExaCopy'
+$argsForApfs = @('-B', 'tools/apfs_source.py', '--fetch')
+$environment = @('Path=secret-value-that-must-not-be-retained', 'USERPROFILE=C:\fixture', 'TMP=C:\temp')
+$launch = Get-PublicationLaunchFacts 'apfs-source' $python $cwd $argsForApfs $environment
+Require ($launch.application -ceq $python -and $launch.working_directory -ceq $cwd -and
+    ($launch.arguments -join [char]0) -ceq ($argsForApfs -join [char]0)) 'Keep the exact application, cwd and fixed arguments.'
+Require ($launch.environment_count -eq 3 -and
+    ($launch.environment_keys -join ',') -ceq 'Path,TMP,USERPROFILE' -and
+    $launch.environment_utf16_units -eq (($environment -join [char]0).Length + 2)) 'Only record explicit environment metadata.'
+$encodedLaunch = $launch | ConvertTo-Json -Depth 4 -Compress
+Require (!$encodedLaunch.Contains('secret-value-that-must-not-be-retained') -and
+    !$encodedLaunch.Contains('C:\\fixture')) 'Never retain environment values in a launch diagnostic.'
+Require ($null -eq (Get-PublicationLaunchFacts 'other' $python $cwd @('other') $environment)) 'Unselected phases must not record raw arguments.'
+$long = Get-PublicationLaunchFacts 'apfs-source' ('x' * 261) $cwd @('a' * 129) $environment
+Require ($null -eq $long.application -and $long.application_units -eq 261 -and
+    $null -eq $long.arguments[0]) 'Do not emit out-of-bound text.'
+$sourceText = $runner.Extent.Text
+$knownOffset = $sourceText.IndexOf("Invoke-PublicationChild 'launch-pwsh'", [StringComparison]::Ordinal)
+$pythonOffset = $sourceText.IndexOf("Invoke-PublicationChild 'launch-python' `$python", [StringComparison]::Ordinal)
+$apfsOffset = $sourceText.IndexOf("Name = 'apfs-source'; Program = `$python", [StringComparison]::Ordinal)
+Require ($knownOffset -ge 0 -and $knownOffset -lt $pythonOffset -and $pythonOffset -lt $apfsOffset) (
+    'The known image and the exact selected Python must pass the same containment path before APFS setup.'
+)
 
 $payload = [ordered]@{
     phase = 'process-controls'
@@ -219,7 +251,8 @@ $payload = [ordered]@{
     receipt = [ordered]@{ Started = $true; Drained = $false; NativeError = 5; Error = '' }
 }
 $state = @{ process_drained = $payload.process_drained; cleanup = $payload.cleanup }
-$diagnostic = @{ phase = $payload.phase; receipt = $payload.receipt }
+$payload.launch = $launch
+$diagnostic = @{ phase = $payload.phase; receipt = $payload.receipt; launch = $launch }
 foreach ($errorText in @("synthetic failure`n::error::injected`r`n##[error]other", ('λ' * 5000))) {
     $payload.receipt.Error = $errorText
     $messages = @(Write-PublicationEvidenceDiagnostic 6>&1)
