@@ -231,6 +231,7 @@ fn committed_receipt_refuses_pending_name_before_invalid_public_artifacts() {
 	let pending = fixture.path(PENDING);
 	let extra = fixture.scratch.path("third-public-link");
 	write_fixture(&pending, b"unexpected pending receipt");
+	let pending_id = identity(&pending);
 	fs::hard_link(fixture.scratch.path(TARGET), &extra).unwrap();
 
 	assert!(matches!(
@@ -241,7 +242,7 @@ fn committed_receipt_refuses_pending_name_before_invalid_public_artifacts() {
 		records.inspect(selection),
 		Err(StageError::IdentityChanged)
 	));
-	assert_eq!(fs::read(&pending).unwrap(), b"unexpected pending receipt");
+	assert_file(&pending, pending_id, b"unexpected pending receipt");
 	assert_file(&fixture.scratch.path(TARGET), selection.stage.file, DATA);
 	assert_file(&fixture.path(WITNESS), selection.stage.file, DATA);
 	assert_file(&extra, selection.stage.file, DATA);
