@@ -31,3 +31,15 @@ Exact local NTFS effectiveness with these rights is unqualified. Microsoft's
 describes an additional write-attributes requirement. The hosted trial keeps
 its existing access shape and retains a native refusal instead of requesting
 wider rights or changing attributes after failure.
+
+Hosted run `45953198194` at `8d0a5a5` reported `cleanup=deleted` and no
+cleanup error for this owned build fixture with the unchanged access
+rights. The nested process control still failed before publication cases.
+This cleanup result does not qualify the NTFS publication adapter.
+
+The hosted runner separately enables bounded process diagnostics to
+investigate the nested-control process count. Observer errors are ancillary
+to launch, accounting, timeout and drain decisions. Notifications and
+PID-to-image-basename samples can be delayed, missing or stale; they grant
+no process authority. The exact process-count assertion stays in place.
+The added observer-refusal controls require native Windows execution.

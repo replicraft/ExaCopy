@@ -314,7 +314,7 @@ try {
             Args = @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', (Join-Path $PSScriptRoot 'test_runner.ps1')) },
         @{ Name = 'process-controls'; Program = $powershell;
             Args = @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', (Join-Path $PSScriptRoot 'process-controls.ps1'),
-                '-NativeOutputDirectory', $nativeControls) }
+                '-NativeOutputDirectory', $nativeControls, '-ObserveHostedJobProcesses') }
     )) {
         if ((Invoke-PublicationChild $setup.Name $setup.Program $setup.Args 240000) -ne 0) {
             throw "Pinned qualification setup failed: $($setup.Name)"

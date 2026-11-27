@@ -2,6 +2,7 @@
 param(
     [string] $Helper = (Join-Path $PSScriptRoot 'process.cs'),
     [string] $NativeOutputDirectory,
+    [switch] $ObserveHostedJobProcesses,
     [switch] $OwnerDeathController
 )
 
@@ -135,30 +136,90 @@ function Encode-Script([string] $ScriptText) {
     [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($ScriptText))
 }
 
-function New-GrandchildLaunch([string] $ChildScript) {
+function New-FixturePidObservation([string] $Name, [string] $ChildPid) {
+    if (!$ObserveHostedJobProcesses) { return }
+    $path = Quote-Literal (Join-Path $directory "$Name.pid-observation")
+    @"
+try {
+    `$image = [IO.Path]::GetFileName([Environment]::ProcessPath)
+    if (`$image.Length -gt 255 -or `$image.Contains(' ')) {
+        throw 'Unrepresentable synthetic image basename.'
+    }
+    `$file = [IO.File]::Open($path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write)
+    try {
+        `$bytes = [Text.Encoding]::UTF8.GetBytes("`$PID `$image $ChildPid")
+        `$file.Write(`$bytes, 0, `$bytes.Length)
+    } finally {
+        `$file.Dispose()
+    }
+} catch {
+    # The receipt reports unavailable observation independently of the fixture.
+}
+"@
+}
+
+function Read-FixturePidObservation([string] $Name) {
+    try {
+        $path = Join-Path $directory "$Name.pid-observation"
+        $info = Get-Item -LiteralPath $path
+        if ($info.Length -gt 1024) { throw 'Oversized synthetic observation.' }
+        $text = [IO.File]::ReadAllText($path)
+        $atoms = $text.Split(' ')
+        if ($atoms.Length -ne 3 -or $atoms[0] -cnotmatch '\A[1-9][0-9]{0,9}\z' -or
+            $atoms[1] -ine [IO.Path]::GetFileName($application) -or
+            $atoms[2] -cnotmatch '\A(0|[1-9][0-9]{0,9})\z') {
+            throw 'Malformed synthetic observation.'
+        }
+        return @{ pid = [uint32]$atoms[0]; image = $atoms[1]; child_pid = [uint32]$atoms[2] }
+    } catch {
+        return @{ error = "$($_.Exception.GetType().Name)" }
+    }
+}
+
+function New-GrandchildLaunch([string] $ChildScript, [string] $Observation) {
     $encoded = Encode-Script $ChildScript
     $selected = Quote-Literal $application
+    $observe = if ($Observation) { New-FixturePidObservation $Observation '$($child.Id)' }
     @"
 `$start = [Diagnostics.ProcessStartInfo]::new($selected)
 `$start.UseShellExecute = `$false
 `$start.CreateNoWindow = `$true
 `$start.Arguments = '-NoLogo -NoProfile -NonInteractive -EncodedCommand $encoded'
 `$child = [Diagnostics.Process]::Start(`$start)
+$observe
 `$child.Dispose()
 "@
 }
 
-function Invoke-ContainmentControl([string] $Name, [string] $ScriptText, [int] $Timeout) {
+function Invoke-ContainmentControl([string] $Name, [string] $ScriptText, [int] $Timeout,
+    [switch] $ObserveJob, [switch] $RefuseObserver) {
     $arguments = [string[]] @('-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', (Encode-Script $ScriptText))
     $stdout = Join-Path $directory "$Name.stdout.log"
     $stderr = Join-Path $directory "$Name.stderr.log"
-    $result = [ExaCopyQualification.PublicationProcess]::Run(
-        $application, $arguments, $directory, $allowed, $stdout, $stderr, $Timeout
-    )
+    if ($RefuseObserver) {
+        $method = [ExaCopyQualification.PublicationProcess].GetMethod('Run',
+            [Reflection.BindingFlags]'NonPublic,Static')
+        $result = $method.Invoke($null, [object[]]@(
+            $application, $arguments, $directory, $allowed, $stdout, $stderr, $Timeout, $true, $true))
+    } else {
+        $result = [ExaCopyQualification.PublicationProcess]::Run(
+            $application, $arguments, $directory, $allowed, $stdout, $stderr, $Timeout, [bool]$ObserveJob)
+    }
+    if ($ObserveJob) {
+        $root = Read-FixturePidObservation "$Name-launch"
+        $leaf = Read-FixturePidObservation "$Name-child"
+        $finish = if ($Name -ceq 'nested-completed') { Read-FixturePidObservation "$Name-finish" }
+        $sameChild = $root.pid -eq $result.ProcessId -and $root.child_pid -gt 0 -and
+            $root.child_pid -ne $root.pid -and $root.child_pid -eq $leaf.pid
+        $result | Add-Member -NotePropertyName FixtureObservation -NotePropertyValue @{
+            root = $root; child = $leaf; finish = $finish; same_child = $sameChild
+            finish_matches_child = $sameChild -and $null -ne $finish -and $leaf.pid -eq $finish.pid
+        }
+    }
     $receipt = Join-Path $directory "$Name.json"
     $output = [IO.File]::Open($receipt, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write)
     try {
-        $bytes = [Text.Encoding]::UTF8.GetBytes(($result | ConvertTo-Json -Compress))
+        $bytes = [Text.Encoding]::UTF8.GetBytes(($result | ConvertTo-Json -Compress -Depth 5))
         $output.Write($bytes)
     } finally {
         $output.Dispose()
@@ -266,50 +327,66 @@ try {
     $controller.Dispose()
 }
 
+if ($ObserveHostedJobProcesses) {
+    $refused = Invoke-ContainmentControl 'observer-refusal-completed' 'exit 0' 15000 -RefuseObserver
+    Assert-Equal $refused.ExitCode 0
+    Assert-Equal $refused.TimedOut $false
+    Assert-Equal $refused.JobProcessObservationError 'Job observer setup: Synthetic job observer setup refusal.'
+    $refused = Invoke-ContainmentControl 'observer-refusal-timeout' 'Start-Sleep -Seconds 20' 3000 -RefuseObserver
+    Assert-Equal $refused.TimedOut $true
+    Assert-Equal $refused.JobProcessObservationError 'Job observer setup: Synthetic job observer setup refusal.'
+}
+
 # The launcher must wait for the job even after the original process exits.
 $done = Join-Path $directory 'grandchild-finished'
 $doneLiteral = Quote-Literal $done
+$childStart = New-FixturePidObservation 'nested-completed-child' '0'
+$childFinish = New-FixturePidObservation 'nested-completed-finish' '0'
 $child = @"
+$childStart
 Start-Sleep -Milliseconds 1000
 `$file = [IO.File]::Open($doneLiteral, [IO.FileMode]::CreateNew)
 `$file.Dispose()
+$childFinish
 "@
 $oldSentinel = [Environment]::GetEnvironmentVariable('EXACOPY_FIXTURE_UNSELECTED_ENVIRONMENT')
 [Environment]::SetEnvironmentVariable('EXACOPY_FIXTURE_UNSELECTED_ENVIRONMENT', 'synthetic-not-selected')
 try {
-    $launch = New-GrandchildLaunch $child
+    $launch = New-GrandchildLaunch $child 'nested-completed-launch'
     $script = @"
 if (`$null -ne `$env:EXACOPY_FIXTURE_UNSELECTED_ENVIRONMENT) { exit 89 }
 $launch
 "@
-    $completed = Invoke-ContainmentControl 'nested-completed' $script 15000
+    $completed = Invoke-ContainmentControl 'nested-completed' $script 15000 -ObserveJob:$ObserveHostedJobProcesses
 } finally {
     [Environment]::SetEnvironmentVariable('EXACOPY_FIXTURE_UNSELECTED_ENVIRONMENT', $oldSentinel)
 }
-Assert-Equal $completed.ExitCode 0
-Assert-Equal $completed.TimedOut $false
-if ($completed.TotalProcesses -ne 2) {
-    throw "Nested completion expected two owned processes, observed $($completed.TotalProcesses)."
-}
-if ($completed.RootSignaledWithActiveMilliseconds -lt 100) {
-    throw 'The job did not show a sustained active descendant after the held root signaled.'
-}
-Assert-Equal ([IO.File]::Exists($done)) $true
 
 # The delayed descendant belongs to the job. It must be stopped before cleanup.
 $late = Join-Path $directory 'grandchild-unexpected-write'
 $lateLiteral = Quote-Literal $late
+$childStart = New-FixturePidObservation 'nested-timeout-child' '0'
 $child = @"
+$childStart
 Start-Sleep -Seconds 20
 `$file = [IO.File]::Open($lateLiteral, [IO.FileMode]::CreateNew)
 `$file.Dispose()
 "@
-$timed = Invoke-ContainmentControl 'nested-timeout' (New-GrandchildLaunch $child) 6000
-Assert-Equal $timed.TimedOut $true
-if ($timed.TotalProcesses -ne 2) {
-    throw "Nested timeout expected two owned processes, observed $($timed.TotalProcesses)."
+$launch = New-GrandchildLaunch $child 'nested-timeout-launch'
+$timed = Invoke-ContainmentControl 'nested-timeout' $launch 6000 -ObserveJob:$ObserveHostedJobProcesses
+
+# Preserve both receipts before reporting a nested accounting mismatch.
+Assert-Equal $completed.ExitCode 0
+Assert-Equal $completed.TimedOut $false
+if ($completed.RootSignaledWithActiveMilliseconds -lt 100) {
+    throw 'The job did not show a sustained active descendant after the held root signaled.'
 }
+Assert-Equal ([IO.File]::Exists($done)) $true
+Assert-Equal $timed.TimedOut $true
 Assert-Equal ([IO.File]::Exists($late)) $false
+if ($completed.TotalProcesses -ne 2 -or $timed.TotalProcesses -ne 2) {
+    throw "Expected exactly two processes in each nested job. Completion observed $($completed.TotalProcesses), timeout observed $($timed.TotalProcesses)."
+}
 
 $limit = [ExaCopyQualification.PublicationProcess]::StreamLimitBytes
 $flood = @"
