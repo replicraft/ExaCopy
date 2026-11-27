@@ -135,6 +135,23 @@ CLI for exact equal and differing bytes, raw-path refusals, file and
 directory reparse refusals and an equal hard-link alias. The results make
 only the live-observation claim.
 
+The hosted `main` run at `441ecfc38a525a503ac2cafb06c899b8311d9b90`
+passed on Windows Server 2025 Datacenter x64 (build 26100), on the fixed local
+`C:` NTFS volume under the runner's administrator token. Read passed 17 exact
+selectors (four parser controls and 13 native cases) and Diff passed five
+(one profile control and four native cases). Both jobs passed the selector
+attendance controls and refused tracked and untracked source changes before
+reaching the compiler. The run retains separate setup, control and native
+artifacts by mode. The native records include the source revision, lockfile
+hash, executable fingerprints and individual case logs. Both
+`fixture-cleanup.json` records confirm removal of the original identified
+fixture. This qualifies live observation on the tested host profile.
+Ordinary-user access, UNC, another volume, staging, publication, crash
+recovery and power-loss durability require separate evidence.
+[Hosted run](https://github.com/replicraft/ExaCopy/actions/runs/45914884798) ·
+[Read job](https://github.com/replicraft/ExaCopy/actions/runs/45914884798/job/140231608400) ·
+[Diff job](https://github.com/replicraft/ExaCopy/actions/runs/45914884798/job/140231608574)
+
 The manual workflow's `Diff` mode exercises the opt-in CLI with absolute paths
 on the verified NTFS fixture. It checks path refusal, equal bytes, first
 difference, unequal lengths, worker selection, and preserved input bytes. The
