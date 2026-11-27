@@ -57,7 +57,7 @@ pub(super) fn fresh_endpoints<'view>(
 	])
 }
 
-fn fresh_endpoint<'view>(
+pub(super) fn fresh_endpoint<'view>(
 	selected: EndpointFacts<'view>,
 	actual: SyncHistoryLocation<'view>,
 ) -> Result<EndpointFacts<'view>, ManagedSyncPreviewError> {

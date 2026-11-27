@@ -35,6 +35,11 @@ name = "linux_managed_sync_production"
 path = "tests/linux_managed_sync_production.rs"
 required-features = ["experimental-linux-managed-sync"]
 
+[[test]]
+name = "linux_managed_sync_genesis_production"
+path = "tests/linux_managed_sync_genesis_production.rs"
+required-features = ["experimental-linux-managed-sync"]
+
 [dependencies]
 clap.workspace = true
 serde.workspace = true

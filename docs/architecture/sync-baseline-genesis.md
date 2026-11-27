@@ -4,6 +4,10 @@
 and P-041 are implemented. This decision defines the next read-only
 planning slice. It requires no new wire allocations or enabled commands.
 
+The [experimental Linux genesis producer](../engineering/linux-managed-sync-genesis-production.md)
+implements the private generation-one publication path under the scope and
+qualification recorded there.
+
 ## Context
 
 A two-way preview needs a common ancestor for the exact pair and selected

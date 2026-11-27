@@ -29,6 +29,7 @@ use crate::sync_preview::managed_policy::{
 };
 
 mod acknowledgement;
+pub mod genesis;
 mod history;
 mod scope;
 
