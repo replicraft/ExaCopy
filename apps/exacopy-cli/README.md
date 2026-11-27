@@ -241,10 +241,12 @@ Build with `experimental-ssh-capture` to expose `get` and
 `recover remote-resume` for direct SSH. The `experimental-ssh-wireguard`
 feature includes that CLI and adds the embedded WireGuard route. Your
 protected SSH profile selects the route. These commands are Linux-only
-and default builds omit them. The unsigned v0.1.0 testing prerelease
-has a [separate experimental Linux x64 archive](../../docs/releases/v0.1.0.md#experimental-remote-testing)
-with a known embedded WireGuard trust parser issue. Native qualification
-and production release evidence remain pending. See [remote transfer readiness](../../docs/engineering/remote-transfer-readiness.md).
+and default builds omit them. The unsigned
+[v0.1.0-preview.2 Linux x64 archive](../../docs/releases/v0.1.0-preview.2.md)
+contains both features and passed the direct and independent kernel
+WireGuard campaigns using the same distributed ELF. Each deployment still
+requires its own approved qualification. See
+[remote transfer readiness](../../docs/engineering/remote-transfer-readiness.md).
 
 Use paths to already provisioned authority files in the following examples.
 The destination parent must be an admitted Linux directory and the final

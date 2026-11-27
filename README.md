@@ -22,8 +22,13 @@ Unsigned archives for Linux, Apple Silicon macOS and Windows are available
 in the [v0.1.0 testing prerelease](https://github.com/replicraft/ExaCopy/releases/tag/v0.1.0).
 Verify the archive checksum, extract it into a fresh test directory, and
 run the extracted executable directly. The [testing guide](docs/releases/v0.1.0.md)
-identifies the separate experimental Linux SSH/WireGuard archive and its
-known embedded trust parser issue.
+records each platform's scope.
+
+For Linux SSH/SFTP and embedded BoringTun WireGuard, use the
+[v0.1.0-preview.2 testing archive](https://github.com/replicraft/ExaCopy/releases/tag/v0.1.0-preview.2).
+Both native route campaigns ran the exact distributed ELF. The
+[preview guide](docs/releases/v0.1.0-preview.2.md) includes checksums,
+configuration prerequisites and the remaining qualification limits.
 
 For a prebuilt installation without installing Rust, use
 [`install.sh`](docs/architecture/posix-offline-install.md) on macOS/Linux or

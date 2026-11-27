@@ -1,5 +1,36 @@
 # Remote transfer release readiness
 
+## Exact published testing archive
+
+The [v0.1.0-preview.2 Linux testing release](../releases/v0.1.0-preview.2.md)
+contains the source at `59c26be`. One Ubuntu 22.04 build supplied Actions
+artifact `15183706531` to both native routes in
+[run 45967331373](https://github.com/replicraft/ExaCopy/actions/runs/45967331373).
+Direct OpenSSH passed all seven cases. Embedded WireGuard against an
+independent Linux kernel peer passed all seven cases and carrier-down.
+Both campaigns confirmed the same held executable before and after the
+operation and confirmed fixture removal and process drainage.
+
+The archive SHA-256 is
+`4ca823bb94f5d99e1e5c46fdabaa04006e7e809d0b9b2830342d69668ec12546`;
+its ELF SHA-256 is
+`7eaa8c36c05545e2650400234455382ed61132969418de2144e92551d7edb1b0`.
+The WireGuard campaign observed 22.721 seconds of quiet after fresh resume,
+zero post-intent SSH/carrier activity, and the expected unpublished I/O
+refusal with the carrier down. Its report SHA-256 is
+`f1561108afae77eea024ab43932d682d841499a98cb7f531023f09639340b8ed`.
+The direct report SHA-256 is
+`b563dfff25c561d57f788b20b9a6bbe54da58587059155db49dd441dd2d86e58`.
+
+All six published producer assets were downloaded and rehashed after
+publication. The exact source also passed 143 selected Linux command and
+resume tests and all 56 declared formal evidence records. Cargo Vet
+reported 166 missing reviews. This is an unsigned synthetic-fixture
+testing result, with separately approved deployment qualification still
+required. Explicit resume reads from byte zero into a fresh stage and
+retains the old attempt. Efficient range reuse, mutating post-intent
+recovery, and power-loss qualification remain open.
+
 ## Automatic read-timeout campaign
 
 The direct commissioning workflow has a separate canonical-main matrix

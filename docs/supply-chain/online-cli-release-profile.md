@@ -173,11 +173,13 @@ each require their own evidence before claiming the corresponding property.
 
 ## Unsigned Linux remote preview
 
-The separate `v0.1.0-preview.2` pipeline is inactive until the canonical
-`main` push selects a changed `.github/ci/remote-preview-candidate.json` in
-its head commit. The `v0.1.0` testing release and its assets retain their
-existing identity. The preview uses a distinct tag and manual extraction.
-Its synthetic fixture authority is scoped to the commissioning campaigns.
+The separate preview pipeline activates only when the canonical `main`
+push selects a changed `.github/ci/remote-preview-candidate.json` in its
+head commit. The published `v0.1.0-preview.2` uses the exact archive built
+and tested at `59c26be`. The `v0.1.0` testing release and its assets retain
+their existing identity. The preview uses a distinct tag and manual
+extraction. Its synthetic fixture authority is scoped to the commissioning
+campaigns.
 
 The Ubuntu 22.04 producer packages one Linux x86-64 ELF. The direct OpenSSH
 and provider B kernel WireGuard jobs run on Ubuntu 24.04. They consume the
@@ -202,5 +204,9 @@ repository permissions.
 
 Source-packet validation on macOS passed 220 of 223 portable checks. Three
 GNU/Linux cleanup controls were skipped locally and remain in the Ubuntu
-jobs. Native candidate production, both hosted route campaigns and preview
-publication are pending.
+jobs. Native candidate production and both exact-ELF campaigns passed in
+[run 45967331373](https://github.com/replicraft/ExaCopy/actions/runs/45967331373).
+The [published preview](https://github.com/replicraft/ExaCopy/releases/tag/v0.1.0-preview.2)
+contains the six unchanged producer outputs. Download verification matched
+all six hashes after publication. This testing result does not provision
+production signing, deployment qualification or registry publication.
