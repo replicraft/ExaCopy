@@ -174,7 +174,7 @@ jobs:
             TMPDIR="$fixture" cargo +1.100.0 test --locked -p exacopy-platform --lib -- \
               linux::recovery::writer::witness_reservation::tests:: --include-ignored --test-threads=1 --show-output \
               | tee "$fixture/tests.log"
-            grep -Eq "^test result: ok[.] 5 passed; 0 failed; 0 ignored;" "$fixture/tests.log"
+            python3 -B .github/ci/p071_attendance.py "$fixture/tests.log"
           '
       - name: Run opt-in managed APFS transfer tests
         if: ${{ !cancelled() && steps.nextest.outcome == 'success' && runner.os == 'macOS' }}
@@ -272,6 +272,9 @@ jobs:
       - name: Run Linux CLI opt-in attendance controls
         if: ${{ !cancelled() }}
         run: bash .github/ci/capture.sh cli-opt-in-attendance-controls python3 -B .github/ci/cli_opt_in_attendance_test.py -v
+      - name: Run P-071 reservation attendance controls
+        if: ${{ !cancelled() }}
+        run: bash .github/ci/capture.sh p071-attendance-controls python3 -B .github/ci/p071_attendance_test.py -v
       - name: Run Linux remote qualification wrapper controls
         if: ${{ !cancelled() }}
         run: |
