@@ -417,6 +417,19 @@ fn check_live_kind9_proposal(
 			.prepare(&full[..frames.offset() as usize])
 			.is_err()
 	);
+	receipt::check_exact_receipt_successors(
+		full,
+		&super::witness::publication::receipt::LiveReceipt {
+			trust,
+			selection: selection.selection,
+			budget,
+			witness,
+			durable: canonical.successor(),
+			target: witness.binding().stage(),
+		},
+		frames,
+	);
 }
 
 mod hosted_witness;
+mod receipt;

@@ -4,9 +4,11 @@ The selector-2 Linux components preserve a protected same-inode witness
 through one live no-replace rename. Model binding `eba6c7d` and platform
 component `3f61996` bring this path through a typed native observation.
 Private application composition now carries this same model and native holder
-through submission. The same held outcome can now record kind 8 once. The same positive holder can also request freshly authorized durability
-barriers and record kind 9. Receipt publication, complete native application
-qualification and CLI dispatch remain open. [Witnessed closeout design](../architecture/remote-witnessed-closeout.md) ·
+through submission. The held outcome can record kind 8 once. The positive
+holder can request freshly authorized durability barriers and record kind 9.
+Private live receipt composition implements kinds 42 and 18 on that same
+held path. Complete native application qualification and CLI dispatch remain
+open. [Witnessed closeout design](../architecture/remote-witnessed-closeout.md) ·
 [Remote transfer release readiness](remote-transfer-readiness.md)
 
 ## From closed capture to one rename
@@ -141,11 +143,56 @@ under the selected native profile, not power-loss qualification.
 [Native barrier capability](../../crates/platform/exacopy-platform/src/linux/recovery/writer/witness_reservation/continuation/witness/publication/durability.rs) ·
 [Application checks](../../apps/exacopy-cli/src/assembly/linux/remote_continued/witness/publication/durability.rs)
 
-The package-owned [ext4 component profile](../../crates/platform/exacopy-platform/verification/witnessed_components_ext4/README.md)
-selects six existing lower-level tests for witness links, exclusive rename,
-barriers, reservation and exact journal append/readback. Its canonical hosted
-workflow is newly registered; execution remains pending. Its result cannot mint
-OP2 qualification, an authenticated application closeout, or receipt authority.
+The [hosted execution at `b82e95d`](https://github.com/replicraft/ExaCopy/actions/runs/45928809419)
+passed the [ext4 component profile](../../crates/platform/exacopy-platform/verification/witnessed_components_ext4/README.md)'s
+six exact native selectors. The cases covered the exclusive witness link,
+preservation on occupied witness or refused barrier, native no-replace
+rename and both incumbent classes, native reservation with unchanged
+anonymous EOF, one-shot allocation latching, and exact reserved journal
+append and reread. The supervised inventory confirmed each ignored selector
+and one executed pass per case, drained all 18 process groups for listing
+and execution, and verified owned fixture/build removal. All 13 input
+digests matched the pushed source. The run used unprivileged UID 1001 and
+whole ext4 on Linux `7.0.0-1020-azure`, with `nobarrier` and
+`data=writeback`. The held ELF SHA-256 was
+`2abd77125e81f4a55d448dc5a7fd8b7fe8886fcc18c4aa789ba607b97fc75e46`.
+The result JSON SHA-256 was
+`1d80567f399c8b8fde7be43b3bf7a7e2b8714026c2105646831b1c5edc855a75`.
+Raw evidence for both hosted fixtures is retained in
+`target/agent-evidence/hosted-b82e95d/`.
+
+The component profile now registers a seventh selector for sealing, linking
+and promoting the original anonymous receipt inode through a separately
+reopened read-only descriptor after the writer closes. That selector was
+outside the six-case `b82e95d` run. Its native execution remains pending.
+The six-case run used component-level effect callbacks
+and literal journal bytes. Authenticated application kind-8/9 recording,
+receipt closeout and operational OP2 qualification require their own
+execution evidence.
+
+## Live receipt closeout
+
+After confirmed kind 9, private receipt composition selects the canonical
+seven-phase artifact from the original held journal and checks the remaining
+byte and sequence capacity. It writes the bounded receipt into the original
+anonymous reservation, syncs and independently rereads it, and closes the
+writer. It links the exact sealed inode at the protected pending name,
+confirms sole custody and final-name absence, and completes the pending file
+and job-directory barriers before committing and rereading kind 42. Kind 42
+binds the pending inode and canonical bytes.
+
+After confirming the actual kind-42 predecessor, the holder submits one
+same-directory no-replace promotion, independently confirms final identity
+and pending absence, and performs the final file and job-directory barriers.
+It then appends and independently confirms kind 18. Each write, barrier,
+link, promotion and journal append requires fresh admission of the original
+grant and matching witness consent. A failure preserves the observed
+publication, any known receipt namespace result and the last accepted
+journal boundary. The path has no live retry after a spent phase and no
+receipt reconstruction from a digest. Receipt restart and public receipt
+dispatch remain open.
+[Native receipt holder](../../crates/platform/exacopy-platform/src/linux/recovery/writer/witness_reservation/continuation/witness/publication/receipt.rs) ·
+[Application receipt binding](../../apps/exacopy-cli/src/assembly/linux/remote_continued/witness/publication/receipt.rs)
 
 ## Executed evidence and remaining qualification
 
@@ -177,6 +224,6 @@ Operation-2 deployment qualification still requires the complete admitted
 application path, retained approval and expiry controls, restart
 observations, actual kind-8 recording, post-rename barriers and later journal
 and receipt phases, and the full closed native campaign. Its coverage mask requires
-all 24 case families on the exact selected native profile. This tmpfs
-component run supplies no production mount, process-crash or power-loss
-qualification. [Operation-2 evidence contract](../architecture/remote-witnessed-closeout.md#exact-v2-qualification-extension)
+all 24 case families on the exact selected native profile. Both the tmpfs
+and hosted ext4 component observations leave combined lifecycle,
+process-crash and power-loss qualification open. [Operation-2 evidence contract](../architecture/remote-witnessed-closeout.md#exact-v2-qualification-extension)

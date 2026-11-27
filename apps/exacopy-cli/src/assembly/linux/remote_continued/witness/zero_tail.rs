@@ -21,6 +21,8 @@ use super::publication::{
 	WitnessedSubmitError,
 };
 
+use super::publication::receipt::{WitnessedReceiptCompletion, WitnessedReceiptError};
+
 use super::{LinkedWitnessedStage, WitnessAdmissionError, WitnessFailure, WitnessPass};
 use crate::assembly::linux::remote_continued::activation::{
 	AdmissionError, Kind40Admission, confirm_selected, reservation_plan,
@@ -169,6 +171,32 @@ impl<'scope, 'name> WitnessPass<'scope, 'name> {
 				.copied()
 				.map(|kind8| submitted.record_durability(kind8));
 			finish(submitted, recorded, durable)
+		})
+		.await
+	}
+
+	/// Completes one live zero-tail witnessed download and its original receipt.
+	pub(in crate::assembly::linux::remote_continued) async fn run_zero_tail_receipt<Check, T>(
+		&self,
+		proof: VerifiedHeldRetainedPrefix<'_, SftpSource<'_, Check>, WitnessPrefix<'_>>,
+		run: ZeroTailWitness<'_>,
+		finish: impl for<'view, 'lease> FnOnce(
+			SubmittedPublication<'view, 'lease, 'scope, 'name>,
+			Result<RemoteReplayBoundary, WitnessedObservationError>,
+			Option<Result<RemoteReplayBoundary, WitnessedDurabilityError>>,
+			Option<Result<WitnessedReceiptCompletion, WitnessedReceiptError>>,
+		) -> T,
+	) -> Result<T, ZeroTailWitnessFailure>
+	where
+		Check: FnMut(ConnectionBinding) -> Result<(), RetryError>,
+	{
+		self.run_zero_tail_durability(proof, run, |mut submitted, recorded, durable| {
+			let receipt = durable
+				.as_ref()
+				.and_then(|result| result.as_ref().ok())
+				.copied()
+				.map(|kind9| submitted.record_receipt(kind9));
+			finish(submitted, recorded, durable, receipt)
 		})
 		.await
 	}

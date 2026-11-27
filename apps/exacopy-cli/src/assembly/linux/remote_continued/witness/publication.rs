@@ -21,6 +21,7 @@ use super::{LinkedWitnessedStage, WitnessAdmissionError, WitnessPass, model_head
 
 pub(in crate::assembly::linux::remote_continued) mod durability;
 mod observation;
+pub(in crate::assembly::linux::remote_continued) mod receipt;
 use crate::assembly::linux::remote_witness_authority::WitnessMutationGuard;
 pub(in crate::assembly::linux::remote_continued) use durability::WitnessedDurabilityError;
 pub(in crate::assembly::linux::remote_continued) use observation::WitnessedObservationError;
