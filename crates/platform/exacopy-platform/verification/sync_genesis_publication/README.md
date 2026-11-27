@@ -15,3 +15,12 @@ selection mismatch for the 11 structurally valid substitutions. It also
 derives all 364 shorter prefixes from the canonical row. The offered
 binding cases can parse as data and still differ from the independently
 selected intent. These are portable intent format controls.
+
+The managed-sync genesis qualification runner builds the platform libtest with
+`experimental-linux-managed-sync` in the private qualification target and
+requires the four exact ordinary intent codec cases to pass before building
+and running the SDK fixture. The native fixture manifest still declares the
+single ignored SDK integration case. The runner reports the codec image,
+source and corpus digests, case attendance, and separate transcripts under
+`format_controls`. A missing, ignored or failed codec case prevents the SDK
+fixture from running.

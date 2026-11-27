@@ -1,0 +1,17 @@
+schema_version = 1
+id = "linux-managed-sync-genesis-production"
+target = "x86_64-unknown-linux-gnu"
+profile = "linux-unprivileged-whole-ext4-managed-sync-genesis-production-v1"
+rust_toolchain = "1.100.0"
+runner = "verification/managed_sync_genesis_production/run.py"
+controls = "verification/managed_sync_genesis_production/test_runner.py"
+workflow = ".github/workflows/linux-managed-sync-genesis-production-qualification.yml"
+result = "result.json"
+
+[[case]]
+kind = "rust-integration"
+test_target = "linux_managed_sync_genesis_production"
+selector = "production_managed_genesis_publishes_and_previews_exact_p063_history"
+source = "tests/linux_managed_sync_genesis_production.rs"
+required_feature = "experimental-linux-managed-sync"
+ignored = true

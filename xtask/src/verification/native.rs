@@ -11,6 +11,8 @@ use crate::finding::Findings;
 use crate::workspace::APP_VERSION;
 
 mod closed_ext4;
+mod custody;
+mod genesis;
 mod integration;
 mod managed_sync;
 mod public_stage;
@@ -49,6 +51,8 @@ enum Profile {
 	UnprivilegedWholeExt4SyncStatmount,
 	#[serde(rename = "linux-unprivileged-whole-ext4-managed-sync-production-v1")]
 	UnprivilegedWholeExt4ManagedSyncProduction,
+	#[serde(rename = "linux-unprivileged-whole-ext4-managed-sync-genesis-production-v1")]
+	UnprivilegedWholeExt4ManagedSyncGenesisProduction,
 	#[serde(rename = "linux-unprivileged-whole-ext4-public-stage-v1")]
 	UnprivilegedWholeExt4PublicStage,
 }
@@ -63,6 +67,7 @@ impl Profile {
 			| Self::UnprivilegedWholeExt4WitnessedComponents
 			| Self::UnprivilegedWholeExt4SyncStatmount
 			| Self::UnprivilegedWholeExt4ManagedSyncProduction
+			| Self::UnprivilegedWholeExt4ManagedSyncGenesisProduction
 			| Self::UnprivilegedWholeExt4PublicStage => Target::LinuxX86_64Gnu,
 		}
 	}
@@ -73,13 +78,15 @@ impl Profile {
 			Self::UnprivilegedWholeExt4SyncHistory
 				| Self::UnprivilegedWholeExt4SyncStatmount
 				| Self::UnprivilegedWholeExt4ManagedSyncProduction
+				| Self::UnprivilegedWholeExt4ManagedSyncGenesisProduction
 		)
 	}
 
 	fn required_feature(self) -> Option<&'static str> {
 		match self {
 			Self::UnprivilegedWholeExt4SyncStatmount => Some(STATMOUNT_FEATURE),
-			Self::UnprivilegedWholeExt4ManagedSyncProduction => Some(managed_sync::FEATURE),
+			Self::UnprivilegedWholeExt4ManagedSyncProduction
+			| Self::UnprivilegedWholeExt4ManagedSyncGenesisProduction => Some(managed_sync::FEATURE),
 			_ => None,
 		}
 	}
@@ -202,13 +209,14 @@ fn check_manifest(
 	}
 
 	if !managed_sync::check(package, manifest, &path, &fixture, findings)
+		|| !genesis::check(package, manifest, &path, &fixture, findings)
 		|| !closed_ext4::check(package, manifest, &path, &fixture, findings)
 		|| !public_stage::check(package, manifest, &path, &fixture, findings)
 	{
 		return;
 	}
 
-	check_custody(
+	custody::check(
 		metadata.workspace_root.as_std_path(),
 		root,
 		manifest,
@@ -216,67 +224,6 @@ fn check_manifest(
 		findings,
 	);
 	check_cases(metadata, package, root, &path, &fixture, findings);
-}
-
-fn check_custody(
-	workspace: &Path,
-	root: &Path,
-	manifest: &Path,
-	fixture: &Fixture,
-	findings: &mut Findings,
-) {
-	if fixture.runner == fixture.controls {
-		findings.add(
-			&root.join(manifest),
-			"native fixture runner and controls must be distinct",
-		);
-	}
-	for python in [&fixture.runner, &fixture.controls] {
-		if python.parent() != manifest.parent() || python.extension() != Some(OsStr::new("py")) {
-			findings.add(
-				&root.join(python),
-				"expected Python fixture source beside the manifest",
-			);
-		} else {
-			artifact_text(root, python, findings);
-		}
-	}
-	let workflow = &fixture.workflow;
-	if workflow.parent() != Some(Path::new(".github/workflows"))
-		|| workflow.extension() != Some(OsStr::new("yml"))
-	{
-		findings.add(
-			&workspace.join(workflow),
-			"native workflow must be under .github/workflows",
-		);
-		return;
-	}
-	let Some(contents) = artifact_text(workspace, workflow, findings) else {
-		return;
-	};
-	let expected_host = format!("EXPECTED_RUST_HOST: {}", fixture.target.triple());
-	let referenced = |file: &Path| {
-		let path = root.join(file);
-		path.strip_prefix(workspace).is_ok_and(|path| {
-			let posix = path
-				.to_string_lossy()
-				.replace(std::path::MAIN_SEPARATOR, "/");
-			contents
-				.lines()
-				.filter(|line| !line.trim_start().starts_with('#'))
-				.flat_map(str::split_whitespace)
-				.any(|token| token.trim_matches(['\'', '"']) == posix.as_str())
-		})
-	};
-	if !contents.lines().any(|line| line.trim() == expected_host)
-		|| !referenced(&fixture.runner)
-		|| !referenced(&fixture.controls)
-	{
-		findings.add(
-			&workspace.join(workflow),
-			"native workflow must reference the declared target, runner and controls",
-		);
-	}
 }
 
 fn check_cases(

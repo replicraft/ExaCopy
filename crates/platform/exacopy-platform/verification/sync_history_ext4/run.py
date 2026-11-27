@@ -37,6 +37,8 @@ PROFILE = "linux-unprivileged-whole-ext4-sync-history-v1"
 MARKER = "EXACOPY_SYNC_HISTORY_EXT4_RESULT "
 OUTPUT_LIMIT = 8 * 1024 * 1024
 MANAGED_CLI_LIMIT = 128 * 1024 * 1024
+GENESIS_TRANSCRIPT_LIMIT = 128 * 1024
+GENESIS_FRAME_LIMIT = 64 * 1024
 FD_FLAGS = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
 DIR_FLAGS = FD_FLAGS | os.O_DIRECTORY
 UNAVAILABLE = {errno.ENOENT, errno.ENODEV, errno.ENOSYS, errno.EINVAL, errno.EOPNOTSUPP,
@@ -74,7 +76,17 @@ MANAGED = FixtureProfile(
     ".github/workflows/linux-managed-sync-production-qualification.yml",
     "experimental-linux-managed-sync", CLI_PACKAGE,
 )
+GENESIS = FixtureProfile(
+    "linux-managed-sync-genesis-production", "linux-unprivileged-whole-ext4-managed-sync-genesis-production-v1",
+    CLI_PACKAGE / "verification/managed_sync_genesis_production/fixture.toml", "linux_managed_sync_genesis_production",
+    "production_managed_genesis_publishes_and_previews_exact_p063_history",
+    "EXACOPY_MANAGED_SYNC_GENESIS_FIXTURE_PARENT",
+    ".github/workflows/linux-managed-sync-genesis-production-qualification.yml",
+    "experimental-linux-managed-sync", CLI_PACKAGE,
+)
 MANAGED_MARKER = "managed_sync_production="
+GENESIS_MARKER = "managed_sync_genesis_production="
+GENESIS_FRAME = "managed_sync_genesis_evidence="
 STATMOUNT_MARKER = "EXACOPY_SYNC_HISTORY_STATMOUNT_RESULT "
 SIDES = ("left", "right")
 
@@ -88,7 +100,8 @@ def require(condition, message):
         raise ValueError(message)
 
 
-def command(evidence, label, args, *, env=None, held=(), executable=None, timeout=20, observe_exit=False):
+def command(evidence, label, args, *, env=None, held=(), executable=None, timeout=20,
+            observe_exit=False, output_limit=OUTPUT_LIMIT, started=None):
     args = list(map(os.fspath, args))
     marker = evidence / f"{label}.drain"
     with marker.open("x", encoding="ascii") as state:
@@ -111,7 +124,9 @@ def command(evidence, label, args, *, env=None, held=(), executable=None, timeou
             raise
         try:
             try:
-                capture(process, output, label, timeout)
+                if started is not None:
+                    started(process.pid)
+                capture(process, output, label, timeout, output_limit)
             except supervision.CleanupUnconfirmed:
                 raise
             except BaseException:
@@ -139,7 +154,7 @@ def command(evidence, label, args, *, env=None, held=(), executable=None, timeou
     return bytes(output[0]).decode("utf-8", errors="strict")
 
 
-def capture(process, output, label, timeout):
+def capture(process, output, label, timeout, output_limit=OUTPUT_LIMIT):
     limit = time.monotonic() + timeout
     with selectors.DefaultSelector() as readers:
         readers.register(process.stdout, selectors.EVENT_READ, 0)
@@ -160,7 +175,7 @@ def capture(process, output, label, timeout):
                     readers.unregister(key.fileobj)
                     continue
                 stream = output[key.data]
-                room = OUTPUT_LIMIT - len(stream)
+                room = output_limit - len(stream)
                 stream.extend(data[:room])
                 require(len(data) <= room, f"{label} exceeded the evidence bound")
 
@@ -275,6 +290,10 @@ def unique_mount(fd):
     return identity
 
 
+def has_managed_substrate(profile):
+    return profile is MANAGED or profile is GENESIS
+
+
 def observe(parent, parent_fd, evidence, phase, profile=HISTORY):
     if platform.system() != "Linux" or platform.machine() != "x86_64":
         raise Blocked("native Linux x86-64 is required")
@@ -304,7 +323,7 @@ def observe(parent, parent_fd, evidence, phase, profile=HISTORY):
             values = re.findall(rb"(?m)^" + field + rb":\s*([0-9a-f]+)$", status)
             if len(values) != 1 or int(values[0], 16) != 0:
                 raise Blocked("fixture requires zero live inheritable, permitted, effective and ambient capabilities")
-        actor = managed_actor(status, read, thread, proc, evidence, phase) if profile is MANAGED else {}
+        actor = managed_actor(status, read, thread, proc, evidence, phase) if has_managed_substrate(profile) else {}
         mount = fd_mount(stack, parent_fd, fdinfo, proc_node.st_dev)
         mountinfo = read(thread, "mountinfo", 1024 * 1024)
         (evidence / f"{phase}.mountinfo").write_bytes(mountinfo)
@@ -330,7 +349,7 @@ def observe(parent, parent_fd, evidence, phase, profile=HISTORY):
     require(re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", boot) is not None,
             "invalid boot ID")
     unique = unique_mount(parent_fd)
-    if profile is MANAGED:
+    if has_managed_substrate(profile):
         root_fd = os.open("/", DIR_FLAGS)
         try:
             if row.split(b" ")[4] != b"/" or unique_mount(root_fd) != unique:
@@ -381,9 +400,16 @@ def check_revision(revision, evidence, phase):
 
 def artifact(output, target_root, profile=HISTORY):
     paths = []
+    genesis_candidates = 0
+    if profile is GENESIS:
+        version = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
+        genesis_package = f"path+{CLI_PACKAGE.as_uri()}#{version}"
     for row in output.splitlines():
         event = json.loads(row)
         target = event.get("target", {})
+        if (profile is GENESIS and event.get("reason") == "compiler-artifact"
+                and target.get("name") == profile.test):
+            genesis_candidates += 1
         if (event.get("reason") == "compiler-artifact" and target.get("name") == profile.test
                 and target.get("kind") == ["test"] and event.get("profile", {}).get("test") is True
                 and event.get("manifest_path") == str(profile.package_root / "Cargo.toml")
@@ -391,11 +417,25 @@ def artifact(output, target_root, profile=HISTORY):
                 and (profile.required_feature is None
                      or event.get("features") == [profile.required_feature])
                 and event.get("executable")):
+            if profile is GENESIS:
+                require(event.get("package_id") == genesis_package and event.get("fresh") is False
+                        and target.get("edition") == "2024" and target.get("crate_types") == ["bin"],
+                        "genesis integration artifact lacks exact private build provenance")
             paths.append(Path(event["executable"]))
     require(len(paths) == 1, "expected exactly one matching native Cargo integration test artifact")
     path = paths[0]
     require(path.is_absolute() and path.resolve(strict=True) == path and path.is_relative_to(target_root),
             "native binary escaped private target custody")
+    if profile is GENESIS:
+        debug = target_root / TARGET / "debug"
+        require(genesis_candidates == 1 and path.is_relative_to(debug),
+                "genesis integration image lacks unique native debug target custody")
+        parts = path.relative_to(debug).parts
+        image = re.fullmatch(rf"{profile.test}-[0-9a-f]{{16}}", path.name)
+        cargo_build = (len(parts) == 5 and parts[:2] == ("build", profile.package_root.name)
+                       and re.fullmatch(r"[0-9a-f]{16}", parts[2]) and parts[3] == "out")
+        require(image is not None and (parts[:-1] == ("deps",) or cargo_build),
+                "unexpected selected genesis Cargo artifact layout")
     return path
 
 
@@ -572,7 +612,65 @@ def checked_managed_result(output, code, facts, anchors, cli_sha256):
             "cli_controls": 15, "cli_sha256": cli_sha256, "cleanup": "verified"}
 
 
-def execute(evidence, binary, env, facts, report, profile=HISTORY, sides=None, cli=None):
+def checked_genesis_result(output, code, facts, anchors, fixture_parent, pid, oracle, parse_frame, *, report=None):
+    require(type(pid) is int and pid > 0, "missing exact genesis process identity")
+    lines = output.split("\n")
+    markers = [line.removeprefix(GENESIS_MARKER) for line in lines if line.startswith(GENESIS_MARKER)]
+    frames = [line.removeprefix(GENESIS_FRAME) for line in lines if line.startswith(GENESIS_FRAME)]
+    case = [index for index, line in enumerate(lines) if line.strip() == f"test {GENESIS.case} ..."]
+    summaries = [index for index, line in enumerate(lines) if line.startswith("test result: ")]
+    require(len(markers) == len(case) == len(summaries) == 1 and lines.count("running 1 test") == 1,
+            "genesis fixture did not report its exact executed case")
+    summary, = summaries
+    duration = r"(?: finished in [0-9]+\.[0-9]{2}s)?"
+    start = lines.index("running 1 test")
+    marker = lines.index(GENESIS_MARKER + markers[0])
+    base = {"schema_version": 1, "feature": GENESIS.required_feature, "pid": pid}
+    if markers[0].startswith("blocked reason="):
+        reason = markers[0].removeprefix("blocked reason=")
+        require(reason in {"statmount-attributes-unavailable", "idmapped-history-mount"}
+                and not frames and code == 101 and lines.count("FAILED") == 1 and not lines.count("ok")
+                and re.fullmatch(r"test result: FAILED\. 0 passed; 1 failed; 0 ignored; 0 measured; "
+                                 rf"0 filtered out;{duration}", lines[summary]),
+                "invalid typed genesis blockage")
+        require(start < case[0] < marker < lines.index("FAILED") < summary,
+                "genesis blockage was reported out of order")
+        return {**base, "outcome": "blocked", "reason": reason}
+    require(markers == ["passed controls=8 cleanup=verified"] and code == 0 and len(frames) == 1
+            and lines.count("ok") == 1 and not lines.count("FAILED")
+            and re.fullmatch(r"test result: ok\. 1 passed; 0 failed; 0 ignored; 0 measured; "
+                             rf"0 filtered out;{duration}", lines[summary]),
+            "invalid exact genesis passing result")
+    frame = lines.index(GENESIS_FRAME + frames[0])
+    require(start < case[0] < frame < marker < lines.index("ok") < summary,
+            "genesis success was reported out of order")
+    raw = frames[0].encode("utf-8")
+    require(0 < len(raw) <= GENESIS_FRAME_LIMIT, "missing or oversized genesis evidence frame")
+    frame_sha256 = hashlib.sha256(raw).hexdigest()
+    if report is not None:
+        report["frame_sha256"] = frame_sha256
+    expected = {
+        "fixture_parent": fixture_parent, "pid": pid, "boot": facts["boot"],
+        "mount_namespace": facts["mount_namespace"], "user_namespace": facts["user_namespace"],
+        "mount": facts["mount"], "unique_mount": facts["unique_mount"], "parent": facts["parent"],
+        "actor": (facts["effective_uid"], facts["effective_gid"]),
+        "anchors": (anchors["left"], anchors["right"]),
+    }
+    verified = oracle.verify_frame(parse_frame(raw), expected)
+    digests = {"root_sha256", "root_digest", "intent_sha256"}
+    require(type(verified) is dict
+            and verified.keys() == {"schema_version", "outcome", "member_count", *digests}
+            and type(verified["schema_version"]) is int and verified["schema_version"] == 1
+            and verified["outcome"] == "pass"
+            and type(verified["member_count"]) is int and verified["member_count"] == 4
+            and all(type(verified[key]) is str and re.fullmatch(r"[0-9a-f]{64}", verified[key])
+                    for key in digests),
+            "missing exact independent genesis oracle receipt")
+    return {**base, "outcome": "passed", "controls": 8, "cleanup": "verified",
+            "frame_sha256": frame_sha256, "oracle": verified}
+
+
+def execute(evidence, binary, env, facts, report, profile=HISTORY, sides=None, cli=None, *, genesis=None):
     with os.fdopen(os.open(binary, FD_FLAGS | os.O_NONBLOCK), "rb", buffering=0) as held:
         node = os.fstat(held.fileno())
         require(stat.S_ISREG(node.st_mode) and node.st_mode & 0o111
@@ -581,7 +679,7 @@ def execute(evidence, binary, env, facts, report, profile=HISTORY, sides=None, c
         require(header[:6] == b"\x7fELF\x02\x01" and header[18:20] == b"\x3e\x00",
                 "expected a Linux x86-64 ELF test image")
         pinned = f"/proc/self/fd/{held.fileno()}"
-        before_managed = held_managed_image(binary, held.fileno()) if profile is MANAGED else None
+        before_managed = held_managed_image(binary, held.fileno()) if has_managed_substrate(profile) else None
         report["executable_sha256"] = before_managed[1] if before_managed else digest_file(held)
         for label, options in (("listed", []), ("ignored", ["--ignored"])):
             listed = command(evidence, label, [binary, "--list", "--format=terse", *options],
@@ -610,13 +708,43 @@ def execute(evidence, binary, env, facts, report, profile=HISTORY, sides=None, c
                             "held managed executable changed after execution")
                 report["cli_executable"] = cli_facts
                 report["case"] = checked_managed_result(output, code, facts, sides, cli_facts["sha256"])
+        elif profile is GENESIS:
+            require(cli is None and genesis is not None, "genesis requires its exact oracle without a CLI companion")
+            fixture_parent, oracle, parse_frame, cleanup_error = genesis
+            require(held_managed_image(binary, held.fileno()) == before_managed,
+                    "held genesis harness changed before execution")
+            launched = None
+
+            def record_launch(pid):
+                nonlocal launched
+                require(launched is None and type(pid) is int and pid > 0,
+                        "invalid exact genesis launch identity")
+                launched = pid
+                report["launch_pid"] = pid
+
+            try:
+                output, code = command(
+                    evidence, "run", args, observe_exit=True, **options,
+                    output_limit=GENESIS_TRANSCRIPT_LIMIT, started=record_launch,
+                )
+            finally:
+                require(held_managed_image(binary, held.fileno()) == before_managed,
+                        "held genesis harness changed after execution")
+            require(launched is not None, "genesis did not observe exactly one launch")
+            try:
+                report["case"] = checked_genesis_result(
+                    output, code, facts, sides, fixture_parent, launched, oracle, parse_frame, report=report,
+                )
+            except cleanup_error:
+                report.update(oracle_cleanup="unconfirmed", cleanup="cleanup_failed")
+                raise
         elif profile is STATMOUNT:
             output, code = command(evidence, "run", args, observe_exit=True, **options)
             report["case"] = checked_statmount_result(output, code, facts, sides)
         else:
             result = command(evidence, "run", args, **options)
             report["case"] = checked_result(result, facts)
-        if profile is not MANAGED:
+        if not has_managed_substrate(profile):
             after = binary.stat(follow_symlinks=False)
             require((node.st_dev, node.st_ino) == (after.st_dev, after.st_ino)
                     and report["executable_sha256"] == digest_file(held),
@@ -651,17 +779,17 @@ def sibling_facts(parent_fd, held, parent_facts, profile=STATMOUNT):
         require((node.st_dev, node.st_ino) == (named.st_dev, named.st_ino)
                 and stat.S_ISDIR(node.st_mode) and stat.S_IMODE(node.st_mode) == 0o700
                 and node.st_uid == os.geteuid() and not os.listdir(fd)
-                and (profile is not MANAGED or node.st_gid == os.getegid())
+                and (not has_managed_substrate(profile) or node.st_gid == os.getegid())
                 and unique_mount(fd) == parent_facts["unique_mount"],
-                "held managed admission anchor changed" if profile is MANAGED else "held statmount sibling changed")
+                "held managed admission anchor changed" if has_managed_substrate(profile) else "held statmount sibling changed")
         result[side] = identity
     require(len({parent_facts["parent"], *result.values()}) == len(result) + 1,
-            "managed admission anchors must have distinct identities" if profile is MANAGED
+            "managed admission anchors must have distinct identities" if has_managed_substrate(profile)
             else "statmount siblings must have distinct identities")
     return result
 
 
-def qualify(revision, temp, evidence, report, profile=HISTORY):
+def qualify(revision, temp, evidence, report, profile=HISTORY, *, genesis_oracle=None):
     check_revision(revision, evidence, "before")
     report["fixture_manifest_sha256"] = manifest_digest(profile)
     parent_fd = os.open(temp, DIR_FLAGS)
@@ -672,13 +800,33 @@ def qualify(revision, temp, evidence, report, profile=HISTORY):
         report["substrate"] = observe(temp, parent_fd, evidence, "before", profile)
     finally:
         os.close(parent_fd)
+    with ExitStack() as stack:
+        genesis = None
+        if profile is GENESIS:
+            require(genesis_oracle is not None, "missing registered genesis oracle")
+            try:
+                oracle = genesis_oracle.preflight()
+            except genesis_oracle.OracleUnavailable as error:
+                raise Blocked("independent genesis oracle prerequisite unavailable") from error
+            except genesis_oracle.OracleCleanupUnconfirmed:
+                report["oracle_cleanup"] = "unconfirmed"
+                raise
+            stack.callback(oracle.close)
+            report["oracle_prerequisites"] = oracle.prerequisites
+            genesis = (oracle, genesis_oracle.parse_frame, genesis_oracle.OracleCleanupUnconfirmed)
+        qualify_admitted(revision, temp, evidence, report, profile, genesis)
+
+
+def qualify_admitted(revision, temp, evidence, report, profile, genesis):
     rustc = command(evidence, "rustc", ["rustc", f"+{TOOLCHAIN}", "-vV"]).splitlines()
     require(f"host: {TARGET}" in rustc and f"release: {TOOLCHAIN}" in rustc,
             "unexpected native Rust compiler")
     lock = ROOT / "Cargo.lock"
     report["lockfile_sha256"] = hashlib.sha256(lock.read_bytes()).hexdigest()
     require(not supervision.CANCELLATION_REQUESTED, "cancelled before work allocation")
-    work_prefix = "exacopy-managed-sync-work-" if profile is MANAGED else "exacopy-sync-ext4-work-"
+    work_prefix = {
+        MANAGED: "exacopy-managed-sync-work-", GENESIS: "exacopy-managed-sync-genesis-work-",
+    }.get(profile, "exacopy-sync-ext4-work-")
     work = Path(tempfile.mkdtemp(prefix=work_prefix, dir=temp))
     work_identity = inode(work)
     report["cleanup"] = "pending"
@@ -695,8 +843,9 @@ def qualify(revision, temp, evidence, report, profile=HISTORY):
             before = observe(parent, parent_fd, evidence, "fixture-before", profile)
             require(stat.S_IMODE(os.fstat(parent_fd).st_mode) == 0o700 and not any(parent.iterdir()),
                     "private fixture parent is unavailable or occupied")
-            anchored = profile is STATMOUNT or profile is MANAGED
-            if profile is MANAGED:
+            managed = has_managed_substrate(profile)
+            anchored = profile is STATMOUNT or managed
+            if managed:
                 fixture = os.fstat(parent_fd)
                 require(fixture.st_uid == os.geteuid() and fixture.st_gid == os.getegid(),
                         "fixture parent ownership differs from the managed actor")
@@ -719,18 +868,26 @@ def qualify(revision, temp, evidence, report, profile=HISTORY):
             args = ["cargo", f"+{TOOLCHAIN}", "test", "--locked", "--offline", "--jobs", "2",
                     "--target", TARGET, "-p", profile.package_root.name, "--test", profile.test,
                     "--no-run", "--message-format=json"]
-            if profile is MANAGED:
+            if managed:
                 args.append("--no-default-features")
             if profile.required_feature is not None:
                 args.extend(("--features", profile.required_feature))
+            if profile is GENESIS:
+                import genesis_format_controls
+
+                genesis_format_controls.run(sys.modules[__name__], evidence, target_root, env, work, report)
             output = command(evidence, "cargo", args, env=env, timeout=900)
             child_env = {
                 "PATH": "/usr/bin:/bin", "LC_ALL": "C", "TMPDIR": str(work),
                 profile.parent_variable: str(parent),
             }
             cli = managed_cli_artifact(output, target_root) if profile is MANAGED else None
+            selected_genesis = None
+            if profile is GENESIS:
+                child_env["EXACOPY_MANAGED_SYNC_GENESIS_CAPTURE"] = "1"
+                selected_genesis = (parent, *genesis)
             execute(evidence, artifact(output, target_root, profile), child_env, before, report,
-                    profile, before_sides, cli)
+                    profile, before_sides, cli, genesis=selected_genesis)
             try:
                 after = observe(parent, parent_fd, evidence, "fixture-after", profile)
             except Blocked as error:
@@ -738,7 +895,6 @@ def qualify(revision, temp, evidence, report, profile=HISTORY):
             require(after == before, "native fixture substrate changed")
             report["fixture_substrate"] = before
             if anchored:
-                managed = profile is MANAGED
                 require(before_sides == sibling_facts(parent_fd, held_sides, after, profile),
                         "managed admission anchor custody changed" if managed
                         else "native statmount sibling custody changed")
@@ -747,28 +903,37 @@ def qualify(revision, temp, evidence, report, profile=HISTORY):
             require(manifest_digest(profile) == report["fixture_manifest_sha256"], "fixture manifest changed")
             require(hashlib.sha256(lock.read_bytes()).hexdigest() == report["lockfile_sha256"],
                     "lockfile changed")
+            if profile is GENESIS:
+                require(genesis_format_controls.inputs(sys.modules[__name__]) == report["format_controls"]["inputs_sha256"],
+                        "intent codec inputs changed after the production case")
             if anchored and report["case"].get("outcome") == "blocked":
                 raise Blocked(report["case"]["reason"])
         finally:
             os.close(parent_fd)
     finally:
         try:
-            terminal = {"not_started", "verified_absent", "verified_absent_after_failure"}
-            require(all(path.read_text().strip() in terminal for path in evidence.glob("*.drain")),
-                    "owned process drain is unconfirmed; retain private tree")
-            require(work.resolve() == work and inode(work) == work_identity,
-                    "private work identity changed; retain all entries")
-            require(parent_identity is not None and parent.is_dir() and parent.resolve() == parent
-                    and inode(parent) == parent_identity, "fixture cleanup unconfirmed; retain private tree")
-            cleanup_siblings(parent, held_sides, parent_identity)
-            require(not any(parent.iterdir()), "fixture is occupied; retain private tree")
-            parent.rmdir()
-            shutil.rmtree(work)
-            require(not os.path.lexists(work), "private build cleanup unconfirmed")
-            report["cleanup"] = "verified_absent"
+            finish_owned_work(evidence, work, work_identity, parent, parent_identity, held_sides, report)
         finally:
             for fd in held_sides.values():
                 os.close(fd)
+
+
+def finish_owned_work(evidence, work, work_identity, parent, parent_identity, held_sides, report):
+    if report.get("oracle_cleanup") == "unconfirmed":
+        return
+    terminal = {"not_started", "verified_absent", "verified_absent_after_failure"}
+    require(all(path.read_text().strip() in terminal for path in evidence.glob("*.drain")),
+            "owned process drain is unconfirmed; retain private tree")
+    require(work.resolve() == work and inode(work) == work_identity,
+            "private work identity changed; retain all entries")
+    require(parent_identity is not None and parent.is_dir() and parent.resolve() == parent
+            and inode(parent) == parent_identity, "fixture cleanup unconfirmed; retain private tree")
+    cleanup_siblings(parent, held_sides, parent_identity)
+    require(not any(parent.iterdir()), "fixture is occupied; retain private tree")
+    parent.rmdir()
+    shutil.rmtree(work)
+    require(not os.path.lexists(work), "private build cleanup unconfirmed")
+    report["cleanup"] = "verified_absent"
 
 
 def cleanup_siblings(parent, held, parent_identity):
@@ -792,7 +957,7 @@ def cleanup_siblings(parent, held, parent_identity):
         os.close(directory)
 
 
-def main(profile=HISTORY):
+def main(profile=HISTORY, *, genesis_oracle=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--revision", required=True)
     args = parser.parse_args()
@@ -800,6 +965,7 @@ def main(profile=HISTORY):
     require(raw.is_absolute() and raw.resolve(strict=True) == raw, "invalid exact RUNNER_TEMP")
     prefixes = {
         MANAGED: "exacopy-managed-sync-production-evidence-",
+        GENESIS: "exacopy-managed-sync-genesis-production-evidence-",
         STATMOUNT: "exacopy-sync-ext4-statmount-evidence-",
         HISTORY: "exacopy-sync-ext4-evidence-",
     }
@@ -815,7 +981,7 @@ def main(profile=HISTORY):
     for signum in (signal.SIGINT, signal.SIGTERM):
         signal.signal(signum, supervision.interrupted)
     try:
-        qualify(args.revision, raw, evidence, report, profile)
+        qualify(args.revision, raw, evidence, report, profile, genesis_oracle=genesis_oracle)
     except Blocked as error:
         report.update(outcome="blocked", reason=str(error))
         code = 77
