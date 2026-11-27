@@ -227,11 +227,12 @@ fn confirm_data_read(
 	binding: Result<(), RetryError>,
 	read: Result<usize, exacopy_ssh::Error>,
 ) -> Result<usize, SftpSourceError> {
-	match confirm_read(binding, read) {
-		Err(SftpSourceError::Sftp(exacopy_ssh::Error::Timeout)) => {
-			Err(SftpSourceError::ReadTimeout)
-		}
-		result => result,
+	match read {
+		Err(exacopy_ssh::Error::Timeout) => Err(match binding {
+			Ok(()) => SftpSourceError::ReadTimeout,
+			Err(refusal) => SftpSourceError::ReadTimeoutBinding(refusal),
+		}),
+		result => confirm_read(binding, result),
 	}
 }
 
@@ -243,6 +244,10 @@ fn only_an_authorized_held_data_read_exposes_the_distinct_timeout() {
 	));
 	assert!(matches!(
 		confirm_data_read(Err(RetryError::StaleWork), Err(exacopy_ssh::Error::Timeout)),
+		Err(SftpSourceError::ReadTimeoutBinding(RetryError::StaleWork))
+	));
+	assert!(matches!(
+		confirm_read::<()>(Err(RetryError::StaleWork), Err(exacopy_ssh::Error::Timeout)),
 		Err(SftpSourceError::ReadBinding {
 			binding: RetryError::StaleWork,
 			..

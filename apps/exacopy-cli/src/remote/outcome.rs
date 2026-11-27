@@ -247,7 +247,9 @@ fn source_error(error: &SftpSourceError, cancelled: bool) -> Failure {
 	match error {
 		SftpSourceError::Sftp(error) => ssh_error(error),
 		SftpSourceError::Closed | SftpSourceError::ReadTimeout => Failure::Io,
-		SftpSourceError::Binding(_) | SftpSourceError::ReadBinding { .. } => Failure::Authorization,
+		SftpSourceError::Binding(_)
+		| SftpSourceError::ReadBinding { .. }
+		| SftpSourceError::ReadTimeoutBinding(_) => Failure::Authorization,
 		_ => Failure::Integrity,
 	}
 }

@@ -20,6 +20,8 @@ pub enum SftpSourceError {
 	},
 	/// A held data-read operation timed out and its post-I/O binding was current.
 	ReadTimeout,
+	/// The post-I/O binding was refused after a held data-read deadline elapsed.
+	ReadTimeoutBinding(RetryError),
 	/// The adapter no longer holds a source for this pass.
 	Closed,
 	/// The observed file exceeds the destination's signed offset profile.
@@ -44,6 +46,9 @@ impl fmt::Display for SftpSourceError {
 				)
 			}
 			Self::ReadTimeout => formatter.write_str("held SFTP data read timed out"),
+			Self::ReadTimeoutBinding(error) => {
+				write!(formatter, "{error}. The held SFTP data read also timed out")
+			}
 			Self::Closed => formatter.write_str("SFTP capture pass is closed"),
 			Self::Extent => formatter.write_str("SFTP file exceeds the capture offset limit"),
 			Self::Window => formatter.write_str("SFTP read window exceeds the capture bounds"),
@@ -58,7 +63,7 @@ impl fmt::Display for SftpSourceError {
 impl Error for SftpSourceError {
 	fn source(&self) -> Option<&(dyn Error + 'static)> {
 		match self {
-			Self::Binding(error) => Some(error),
+			Self::Binding(error) | Self::ReadTimeoutBinding(error) => Some(error),
 			Self::ReadBinding { binding, .. } => Some(binding),
 			Self::Sftp(error) => Some(error),
 			_ => None,

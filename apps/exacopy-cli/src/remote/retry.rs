@@ -193,7 +193,7 @@ fn take_retry(error: &mut RemoteDownloadFailure) -> Option<Box<RemoteRetryStamp>
 	if !matches!(
 		cause.as_ref(),
 		CaptureError::Read {
-			cause: SftpSourceError::ReadTimeout,
+			cause: SftpSourceError::ReadTimeout | SftpSourceError::ReadTimeoutBinding(_),
 			..
 		}
 	) {

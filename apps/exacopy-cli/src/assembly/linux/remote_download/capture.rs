@@ -22,7 +22,7 @@ use super::super::remote_journal::{
 use super::super::remote_stage::{
 	FinalizingCaptureStage, NativeCaptureStage, PrefixBarrier, PublicationContext,
 };
-use super::source::SourceOwner;
+use super::source::{RetirementCheck, SourceOwner};
 use super::{
 	ConnectedRemoteSource, EffectAuthority, ReadyRetry, RemoteDownloadFailure,
 	RemoteDownloadRequest, RemoteJobAction, RemoteRetryLease, RemoteRetryStamp, capture_failure,
@@ -271,7 +271,13 @@ async fn download_prepared(
 	.await;
 	drop(source);
 	let grant = owner.retry_grant();
-	let retirement = owner.retire(source_binding, session).await;
+	let retirement_check = match &captured {
+		Err(CaptureError::Read { cause, .. }) => RetirementCheck::from_read_error(cause),
+		_ => RetirementCheck::Live,
+	};
+	let retirement = owner
+		.retire(source_binding, session, retirement_check)
+		.await;
 	let captured = match (captured, retirement.binding, retirement.route) {
 		(Ok(value), Ok(()), Ok(())) => value,
 		(Ok(_), Err(cause), route) => {
@@ -289,18 +295,12 @@ async fn download_prepared(
 					.err(),
 			});
 		}
-		(
-			Err(
-				cause @ CaptureError::Read {
-					offset,
-					cause: SftpSourceError::ReadTimeout,
-				},
-			),
-			Ok(()),
-			Ok(()),
-		) => {
-			// The failed capture has already dropped its writer. Release the
-			// stage factory's distinct access guard before retaining read pins.
+		(Err(cause @ CaptureError::Read { offset, .. }), Ok(()), Ok(()))
+			if retirement_check != RetirementCheck::Live =>
+		{
+			// The failed capture has dropped its writer, and the exact prior
+			// route has acknowledged retirement. Release the stage factory's
+			// distinct access guard before retaining read pins.
 			drop(allocation);
 			let retry = ledger
 				.stamp_failed_read(stage_name, allocated_epoch, offset)

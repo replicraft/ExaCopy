@@ -30,11 +30,13 @@ mod route_binding;
 pub(in crate::assembly::linux) use route_binding::BoundRouteRetirement;
 #[cfg(test)]
 pub(in crate::assembly::linux) use route_binding::RetiredBoundRoute;
+mod retirement;
 mod route_lifetime;
 
 pub(crate) use direct::DirectConnectError;
 #[cfg(feature = "experimental-ssh-wireguard")]
 pub(crate) use embedded::EmbeddedConnectError;
+pub(super) use retirement::RetirementCheck;
 pub use route_lifetime::RemoteRouteCloseError;
 use route_lifetime::RouteTask;
 
@@ -351,11 +353,6 @@ fn connection_deadline(attempt_started: Instant, grant_deadline: Instant) -> Opt
 	)
 }
 
-pub(super) struct SourceRetirement {
-	pub(super) binding: Result<(), RetryError>,
-	pub(super) route: Result<(), RemoteRouteCloseError>,
-}
-
 pub(in crate::assembly::linux) struct SourceOwner<'authorization> {
 	supervisor: Arc<Supervisor>,
 	attempt: ConnectionAttempt,
@@ -402,21 +399,6 @@ impl SourceOwner<'_> {
 		self.check_transport()?;
 		self.supervisor
 			.observe(|retry, now| retry.check_completion(now, binding))
-	}
-
-	pub(super) async fn retire(
-		mut self,
-		binding: ConnectionBinding,
-		session: ReadOnlySftp,
-	) -> SourceRetirement {
-		let binding = self.check_binding(binding);
-		let task = &self.transport;
-		task.stop();
-		drop(session);
-		SourceRetirement {
-			binding,
-			route: task.join().await,
-		}
 	}
 
 	fn check_transport(&self) -> Result<(), RetryError> {
