@@ -1,6 +1,7 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
+use exacopy_endpoint::ssh_sftp::CredentialSource;
 use exacopy_platform::{ProtectedSnapshotError, read_protected_snapshot_into};
 use exacopy_ssh::{Ed25519Key, Error as SshError, MAX_OPENSSH_ED25519_BYTES};
 use serde::Deserialize;
@@ -33,6 +34,15 @@ pub(super) enum WireCredential {
 pub(super) enum Credential {
 	PasswordEnv(EnvReference),
 	OpenSshEd25519(ProtectedEd25519),
+}
+
+impl Credential {
+	pub(super) const fn source(&self) -> CredentialSource {
+		match self {
+			Self::PasswordEnv(_) => CredentialSource::SuppliedPassword,
+			Self::OpenSshEd25519(_) => CredentialSource::SuppliedKey,
+		}
+	}
 }
 
 impl WireCredential {

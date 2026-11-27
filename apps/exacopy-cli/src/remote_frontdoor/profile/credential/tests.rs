@@ -2,7 +2,8 @@ use std::cell::Cell;
 use std::fmt::Write as _;
 
 use exacopy_endpoint::ssh_sftp::{
-	CredentialSource, HostKeyFingerprint, InteractionPolicy, KnownHostStatus, verify_host,
+	CredentialSource, HostKeyFingerprint, InteractionPolicy, KnownHostStatus, SshAuthority,
+	verify_host,
 };
 use russh::keys::ssh_key::LineEnding;
 use russh::keys::ssh_key::private::{Ed25519Keypair, KeypairData};
@@ -59,32 +60,41 @@ fn selects_key_with_strict_broker_fields_and_verified_credential() {
 	let mut selected = fixture_profile([2; 32], Some("EXACOPY_TEST_KEY_ONLY"));
 	let profile = SshProfile::decode(&selected.to_string().into_bytes()).unwrap();
 	assert_eq!(profile.credential_source(), CredentialSource::SuppliedKey);
-	for (fingerprint, source, interaction) in [
+	let other_account = SshAuthority::new(
+		profile.authority.host(),
+		profile.authority.port(),
+		"another-reader",
+	)
+	.unwrap();
+	for (authority, fingerprint, source, interaction) in [
 		(
+			&other_account,
+			profile.pin,
+			CredentialSource::SuppliedKey,
+			InteractionPolicy::Forbidden,
+		),
+		(
+			&profile.authority,
 			HostKeyFingerprint::from_sha256([3; 32]),
 			CredentialSource::SuppliedKey,
 			InteractionPolicy::Forbidden,
 		),
 		(
+			&profile.authority,
 			profile.pin,
 			CredentialSource::SuppliedPassword,
 			InteractionPolicy::Forbidden,
 		),
 		(
+			&profile.authority,
 			profile.pin,
 			CredentialSource::SuppliedKey,
 			InteractionPolicy::Allowed,
 		),
 	] {
-		let verified = verify_host(
-			&profile.authority,
-			fingerprint,
-			KnownHostStatus::Trusted,
-			None,
-		)
-		.unwrap();
+		let verified = verify_host(authority, fingerprint, KnownHostStatus::Trusted, None).unwrap();
 		let request = verified
-			.request_credential(&profile.authority, source, interaction)
+			.request_credential(authority, source, interaction)
 			.unwrap();
 		assert!(matches!(
 			profile.approve_ed25519(request),

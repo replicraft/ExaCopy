@@ -7,7 +7,7 @@ use std::time::Duration;
 use exacopy_endpoint::ssh_sftp::{
 	CredentialRequest, CredentialSource, HostKeyFingerprint, InteractionPolicy, SshAuthority,
 };
-use exacopy_platform::read_protected_snapshot;
+use exacopy_platform::{ProtectedSnapshotError, read_protected_snapshot};
 use exacopy_ssh::{Error as SshError, KnownHostTrust, MAX_STREAM_BYTES, Password};
 use serde::{Deserialize, Deserializer};
 
@@ -18,6 +18,8 @@ use super::operand::{RemoteOperand, named_authority};
 use super::route::{ApprovedRoute, WireRoute};
 
 mod credential;
+#[cfg(all(test, unix))]
+mod tests;
 
 pub(crate) use credential::ProtectedEd25519;
 use credential::{Credential, WireCredential};
@@ -59,17 +61,20 @@ impl SshProfile {
 
 	/// Reacquire the explicitly selected trust snapshot for every connection.
 	pub(crate) fn read_trust(&self) -> Result<KnownHostTrust, FrontdoorError> {
-		let bytes =
-			read_protected_snapshot(&self.known_hosts).map_err(FrontdoorError::Protected)?;
+		self.read_trust_from(read_protected_snapshot)
+	}
+
+	fn read_trust_from(
+		&self,
+		read: impl FnOnce(&Path) -> Result<Vec<u8>, ProtectedSnapshotError>,
+	) -> Result<KnownHostTrust, FrontdoorError> {
+		let bytes = read(&self.known_hosts).map_err(FrontdoorError::Protected)?;
 		KnownHostTrust::from_snapshot(&self.authority, Ok(&bytes)).map_err(FrontdoorError::Trust)
 	}
 
 	/// Select one broker method without acquiring its credential.
 	pub(crate) fn credential_source(&self) -> CredentialSource {
-		match self.credential {
-			Credential::PasswordEnv(_) => CredentialSource::SuppliedPassword,
-			Credential::OpenSshEd25519(_) => CredentialSource::SuppliedKey,
-		}
+		self.credential.source()
 	}
 
 	/// Approve the selected key reference for this verified SSH request.
@@ -81,16 +86,16 @@ impl SshProfile {
 		let Credential::OpenSshEd25519(reference) = &self.credential else {
 			return Err(SshError::KeyProfile);
 		};
-		if !self.matches_request(&request, CredentialSource::SuppliedKey) {
+		if !self.matches_request(&request) {
 			return Err(SshError::KeyProfile);
 		}
 		Ok(reference.clone())
 	}
 
-	fn matches_request(&self, request: &CredentialRequest<'_>, source: CredentialSource) -> bool {
+	fn matches_request(&self, request: &CredentialRequest<'_>) -> bool {
 		request.authority() == &self.authority
 			&& request.fingerprint() == self.pin
-			&& request.source() == source
+			&& request.source() == self.credential.source()
 			&& request.interaction() == InteractionPolicy::Forbidden
 	}
 
@@ -113,7 +118,7 @@ impl SshProfile {
 		let Credential::PasswordEnv(reference) = &self.credential else {
 			return Err(SshError::Password);
 		};
-		if !self.matches_request(&request, CredentialSource::SuppliedPassword) || !grant_current() {
+		if !self.matches_request(&request) || !grant_current() {
 			return Err(SshError::Password);
 		}
 		let raw = lookup(reference.name()).ok_or(SshError::Password)?;
