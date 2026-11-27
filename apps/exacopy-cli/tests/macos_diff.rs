@@ -4,11 +4,18 @@
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, DirBuilder, OpenOptions};
 use std::io::{ErrorKind, Write as _};
+use std::num::NonZeroUsize;
 use std::os::unix::ffi::OsStringExt as _;
-use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _, symlink};
+use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _, OpenOptionsExt as _, symlink};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
+use exacopy_diff::{CompareError, LiveComparison, Side, compare, compare_parallel};
+use exacopy_endpoint::{ReadView, UnixComponent};
+use exacopy_platform::macos::{
+	ManagedReadError, ManagedReadGrant, ManagedReadRoot, ManagedRegularFile, ManagedSourceName,
+};
 use serde_json::Value;
 
 #[test]
@@ -96,6 +103,163 @@ fn refuses_symlinks_and_unprovisioned_parents_and_accepts_raw_names_for_admissio
 		fs::read(root.join("present")).expect("surviving bytes"),
 		b"content"
 	);
+}
+
+#[test]
+fn native_terminal_observation_refuses_a_same_length_replacement_after_reads() {
+	let fixture = Fixture::new();
+	let left_root = fixture.managed_root("left");
+	let right_root = fixture.managed_root("right");
+	const ORIGINAL: &[u8] = b"original";
+	const REPLACEMENT: &[u8] = b"replaced";
+	let left_path = left_root.join("file");
+	write_file(&left_path, ORIGINAL);
+
+	for workers in [None, NonZeroUsize::new(4)] {
+		for check in [TerminalCheck::Require, TerminalCheck::DiscardRefusal] {
+			let selected = right_root.join("file");
+			let replacement = right_root.join("replacement");
+			let retained = right_root.join("retained");
+			write_file(&selected, ORIGINAL);
+			write_file(&replacement, REPLACEMENT);
+			let original_inode = fs::metadata(&selected).expect("stat original").ino();
+			let replacement_inode = fs::metadata(&replacement).expect("stat replacement").ino();
+			assert_ne!(original_inode, replacement_inode);
+
+			let result = {
+				let grant = ManagedReadGrant::trusted_owner_authorizes_provisioned_root;
+				let left = ManagedReadRoot::open_provisioned_path(&left_root, grant())
+					.expect("admit left managed root");
+				let right = ManagedReadRoot::open_provisioned_path(&right_root, grant())
+					.expect("admit right managed root");
+				let component = UnixComponent::new(b"file").expect("valid fixture component");
+				let name = ManagedSourceName::new(component).expect("prepare fixture name");
+				let left = RebindView {
+					file: left.open_regular(&name).expect("hold left file"),
+					rebind: None,
+					checks: AtomicUsize::new(0),
+					bytes_read: AtomicUsize::new(0),
+				};
+				let selected_file = right.open_regular(&name).expect("hold right file");
+				let identities = selected_file
+					.observe_identities()
+					.expect("observe right identity");
+				assert_eq!(identities.file.inode().get(), original_inode);
+				assert_eq!(
+					identities.parent.inode().get(),
+					fs::metadata(&right_root).expect("stat right root").ino()
+				);
+				let right = RebindView {
+					file: selected_file,
+					rebind: Some(Rebind {
+						selected: &selected,
+						replacement: &replacement,
+						retained: &retained,
+						check,
+					}),
+					checks: AtomicUsize::new(0),
+					bytes_read: AtomicUsize::new(0),
+				};
+				let mut scratch = [0; 8];
+				let result = match workers {
+					Some(workers) => compare_parallel(&left, &right, &mut scratch, workers),
+					None => compare(&left, &right, &mut scratch),
+				};
+				assert_eq!(left.bytes_read.load(Ordering::Relaxed), ORIGINAL.len());
+				assert_eq!(right.bytes_read.load(Ordering::Relaxed), ORIGINAL.len());
+				result
+			};
+
+			match check {
+				TerminalCheck::Require => assert!(
+					matches!(
+						&result,
+						Err(CompareError::Observation {
+							side: Side::Right,
+							source: ManagedReadError::SourceChanged,
+						})
+					),
+					"replacement must make the comparison inconclusive: {result:?}"
+				),
+				TerminalCheck::DiscardRefusal => assert_eq!(
+					result.expect("negative control ignores only the terminal refusal"),
+					LiveComparison::Equal {
+						length: ORIGINAL.len() as u64,
+					}
+				),
+			}
+
+			assert_eq!(
+				fs::metadata(&retained).expect("stat retained").ino(),
+				original_inode
+			);
+			assert_eq!(
+				fs::metadata(&selected).expect("stat selected").ino(),
+				replacement_inode
+			);
+			assert_eq!(fs::read(&left_path).expect("read untouched left"), ORIGINAL);
+			assert_eq!(fs::read(&retained).expect("read retained right"), ORIGINAL);
+			assert_eq!(fs::read(&selected).expect("read replacement"), REPLACEMENT);
+			fs::remove_file(selected).expect("remove synthetic replacement");
+			fs::remove_file(retained).expect("remove retained synthetic original");
+		}
+	}
+}
+
+#[derive(Clone, Copy)]
+enum TerminalCheck {
+	Require,
+	DiscardRefusal,
+}
+
+struct Rebind<'a> {
+	selected: &'a Path,
+	replacement: &'a Path,
+	retained: &'a Path,
+	check: TerminalCheck,
+}
+
+struct RebindView<'a> {
+	file: ManagedRegularFile<'a>,
+	rebind: Option<Rebind<'a>>,
+	checks: AtomicUsize,
+	bytes_read: AtomicUsize,
+}
+
+impl ReadView for RebindView<'_> {
+	type Error = ManagedReadError;
+
+	fn length(&self) -> u64 {
+		ReadView::length(&self.file)
+	}
+
+	fn recheck_observation(&self) -> Result<(), Self::Error> {
+		let previous_checks = self.checks.fetch_add(1, Ordering::Relaxed);
+		if let Some(rebind) = &self.rebind
+			&& previous_checks == 1
+		{
+			assert_eq!(
+				self.bytes_read.load(Ordering::Relaxed) as u64,
+				self.length()
+			);
+			// A synthetic same-user writer deliberately bypasses the advisory lease.
+			fs::rename(rebind.selected, rebind.retained).expect("retain original right file");
+			fs::rename(rebind.replacement, rebind.selected).expect("replace selected right name");
+			let result = ReadView::recheck_observation(&self.file);
+			assert!(matches!(&result, Err(ManagedReadError::SourceChanged)));
+			if matches!(rebind.check, TerminalCheck::DiscardRefusal) {
+				return Ok(());
+			}
+			return result;
+		}
+		ReadView::recheck_observation(&self.file)
+	}
+
+	fn read_exact_at(&self, offset: u64, buffer: &mut [u8]) -> Result<(), Self::Error> {
+		ReadView::read_exact_at(&self.file, offset, buffer)?;
+		self.bytes_read.fetch_add(buffer.len(), Ordering::Relaxed);
+		Ok(())
+	}
 }
 
 fn write_file(path: &Path, bytes: &[u8]) {
