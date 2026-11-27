@@ -147,8 +147,11 @@ and fresh facts from the final held-name checks to the pure P-053 admission
 decision. The coordinator binds the selected scan before either read and
 retains it in the measured token through P-063 assembly. P-053 uses exact
 per-call equality labels for mode, UID and GID. P-063 retains its own
-canonical metadata digest and frozen artifact bytes. Native qualification
-for this revision is pending. The bounded P-053 oracle covers admission
+canonical metadata digest and frozen artifact bytes. The exact SDK fixture
+passed on native ext4 in [run 45973124930](https://github.com/replicraft/ExaCopy/actions/runs/45973124930),
+with independent four-member verification and confirmed fixture cleanup.
+The Linux default suite also executed the four fresh-fact and metadata regressions.
+Restart and durability qualification remain separate. The bounded P-053 oracle covers admission
 over reported facts. [Model projection](../../crates/engines/exacopy-transfer/src/linux/sync_genesis_measurement/model_admission.rs) ·
 [Native SDK profile](linux-managed-sync-genesis-production.md)
 
