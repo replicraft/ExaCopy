@@ -6,6 +6,11 @@ header_limit=16384
 archive_limit=269484032 # 257 MiB compressed, including archive overhead.
 
 release_http() (
+	# The quoted curl config value must exclude config escapes and a
+	# second physical line. Redirect destinations have a separate allowlist.
+	case $1 in
+		*'"'*|*'\'*|*[[:cntrl:]]*) exit 1 ;;
+	esac
 	# Older curl versions can only precheck Content-Length. Also cap the
 	# output file when the server omits it. File limit units vary by host
 	# shell (512 or 1024 bytes); the exact byte limit is checked below.
@@ -15,10 +20,15 @@ release_http() (
 	[ "${4:-}" != head ] || head_option=--head
 	# The sentinel lets us detect control characters at the end of the
 	# reported URL even though command substitution trims final newlines.
-	metadata=$(/usr/bin/curl --disable --silent --show-error --fail --globoff \
-		--proto '=https' --tlsv1.2 --connect-timeout 20 --max-time 600 \
-		--max-filesize "$3" ${head_option:+"$head_option"} --output "$2" \
-		--write-out '%{size_header} %{http_code} %{redirect_url}!' "$1") || exit 1
+	# The CDN URL can contain a signed query. Keep it out of process arguments
+	# and report transport failures at the caller with only the asset name.
+	metadata=$(
+		printf 'url = "%s"\n' "$1" |
+			/usr/bin/curl --disable --silent --fail --globoff \
+				--proto '=https' --tlsv1.2 --connect-timeout 20 --max-time 600 \
+				--max-filesize "$3" ${head_option:+"$head_option"} --output "$2" \
+				--write-out '%{size_header} %{http_code} %{redirect_url}!' --config - 2>/dev/null
+	) || exit 1
 	case $metadata in
 		*[[:cntrl:]]*) exit 1 ;;
 		*'!') metadata=${metadata%!} ;;

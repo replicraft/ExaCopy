@@ -34,11 +34,18 @@ import shutil
 import sys
 
 arguments = sys.argv[1:]
-url = arguments[-1]
 assert arguments[0] == "--disable"
 assert "--location" not in arguments
 assert arguments[arguments.index("--proto") + 1] == "=https"
 assert arguments[arguments.index("--write-out") + 1] == "%{size_header} %{http_code} %{redirect_url}!"
+assert arguments[-2:] == ["--config", "-"]
+assert all("https://" not in argument for argument in arguments)
+assert all("sig=A%2BB%2FC" not in argument for argument in arguments)
+prefix = 'url = "'
+config = sys.stdin.read()
+assert config.startswith(prefix) and config.endswith('"' + chr(10))
+url = config[len(prefix):-2]
+assert url.startswith("https://") and not any(chr(byte) in url for byte in (10, 13, 34, 92))
 method = "HEAD" if "--head" in arguments else "GET"
 output = Path(arguments[arguments.index("--output") + 1])
 with open(os.environ["FIXTURE_REQUESTS"], "a") as log:
@@ -46,6 +53,11 @@ with open(os.environ["FIXTURE_REQUESTS"], "a") as log:
 response, file, *header_size = json.loads(Path(os.environ["FIXTURE_ROUTES"]).read_text())[method + " " + url]
 if file:
     shutil.copyfile(file, output)
+if response == "fixture curl failure":
+    assert file
+    sys.stdout.write("123 200 !")
+    print(url, file=sys.stderr)
+    sys.exit(7)
 sys.stdout.write(f"{header_size[0] if header_size else 123} {response}!")
 """
 
@@ -228,6 +240,10 @@ def exercise(base):
             assert output.returncode == 0, (label, output)
         else:
             assert output.returncode != 0 and error in output.stderr, (label, output)
+        for stream in (output.stdout, output.stderr):
+            assert "sig=A%2BB%2FC" not in stream, (label, output)
+            for private_url in (checksum_storage, archive_storage):
+                assert private_url not in stream, (label, output)
         actual = [json.loads(line) for line in requests.read_text().splitlines()]
         assert all(not Path(parent).exists() for _, _, parent in actual), (label, actual)
         observed = [f"{method} {url}" for method, url, _ in actual]
@@ -263,6 +279,14 @@ def exercise(base):
     run("refuse asset redirect outside GitHub CDN", error="outside GitHub release storage",
         special_routes={checksum_request: ["302 https://release-assets.githubusercontent.com.example.com/evil", None]},
         expected_requests=[latest_request, checksum_request])
+    for invalid in ('"', chr(92)):
+        run("refuse curl config syntax in an asset redirect", error="redirect has invalid characters",
+            special_routes={checksum_request: [f"302 {checksum_storage}{invalid}", None]},
+            expected_requests=[latest_request, checksum_request])
+    run("a curl failure preserves the download diagnosis without leaking the signed URL",
+        error="cannot download release asset from GitHub storage: SHA256SUMS.txt",
+        special_routes={f"GET {checksum_storage}": ["fixture curl failure", str(checksums)]},
+        expected_requests=[latest_request, checksum_request, f"GET {checksum_storage}"])
     run("refuse excessive response headers", error="cannot download release asset",
         special_routes={checksum_request: [f"302 {checksum_storage}", None, 16385]},
         expected_requests=[latest_request, checksum_request])
