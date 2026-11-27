@@ -240,6 +240,27 @@ def test_launcher(temporary, release):
     leftover = tuple(case.bin.glob(".exacopy-selector.*"))
     assert len(leftover) == 1 and (leftover[0] / "link").is_symlink()
 
+    history = case.store / ".high-water"
+    pending_history = history.read_bytes(), history.stat().st_ino
+    pending_record_inode = case.record.stat().st_ino
+    pending_new_digest = sha256(case.executable(new).read_bytes()).digest()
+    case.paths = SYSTEM_PATH
+    output = case.run("install", "preview pending launcher activation after pre-switch kill",
+                      new, "--dry-run")
+    case.paths = f"{case.bin}:{SYSTEM_PATH}"
+    assert output.splitlines() == [
+        f"Verified installed release: {case.executable(new)}",
+        f"Would activate launcher: {case.launcher}",
+    ]
+    case.assert_selection(old)
+    assert case.launcher.lstat().st_ino == initial_inode
+    assert case.record.read_bytes() == interrupted_record
+    assert case.record.stat().st_ino == pending_record_inode
+    assert (history.read_bytes(), history.stat().st_ino) == pending_history
+    assert sha256(case.executable(new).read_bytes()).digest() == pending_new_digest
+    assert sha256(case.executable(old).read_bytes()).digest() == old_digest
+    assert tuple(case.bin.glob(".exacopy-selector.*")) == leftover
+
     case.expect_crash("install", new, "tools/installer/launcher.sh", '\tlauncher_current=$next_launcher')
     case.assert_selection(new)
     assert sha256(case.executable(old).read_bytes()).digest() == old_digest
@@ -247,7 +268,6 @@ def test_launcher(temporary, release):
     selected_inode = case.launcher.lstat().st_ino
     selected_record = case.record.read_bytes()
     selected_record_inode = case.record.stat().st_ino
-    history = case.store / ".high-water"
     selected_history = history.read_bytes()
     selected_history_inode = history.stat().st_ino
     new_digest = sha256(case.executable(new).read_bytes()).digest()
@@ -273,12 +293,25 @@ def test_launcher(temporary, release):
     assert f"Already installed: {case.executable(new)}\n" in output
     assert case.launcher.lstat().st_ino == selected_inode
     assert (leftover[0] / "link").is_symlink()
+    output = case.run("install", "preview the already selected release", new, "--dry-run")
+    assert output.splitlines() == [
+        f"Already installed: {case.executable(new)}",
+        f"Launcher: {case.launcher}",
+    ]
+    assert case.launcher.lstat().st_ino == selected_inode
 
     case.expect_crash("uninstall", new, "tools/installer/store.sh", "\twithdraw_launcher",
                       options=("--quiesced",))
     assert not case.launcher.is_symlink() and case.executable(new).is_file()
     assert sha256(case.executable(old).read_bytes()).digest() == old_digest
     case.clear_fixture_locks()
+    output = case.run("install", "preview activation when the selector was withdrawn", new, "--dry-run")
+    assert output.splitlines() == [
+        f"Verified installed release: {case.executable(new)}",
+        f"Would activate launcher: {case.launcher}",
+    ]
+    assert not case.launcher.is_symlink() and not case.launcher.exists()
+    assert sha256(case.executable(new).read_bytes()).digest() == new_digest
     case.run("uninstall", "complete verified withdrawal after selector removal", new, "--quiesced")
     assert not case.launcher.is_symlink() and not case.executable(new).exists()
     assert case.executable(old).is_file()

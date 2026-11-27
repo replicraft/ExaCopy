@@ -153,6 +153,11 @@ install_file() {
 		requested_hash=$manifest_hash
 		verify_installed
 		[ "$requested_hash" = "$manifest_hash" ] || fail 'version already binds a different signed release'
+		if [ "$dry_run" = yes ] && [ "${launcher_current%%|*}" != "$version" ]; then
+			printf 'Verified installed release: %s\n' "$version_dir/exacopy"
+			printf 'Would activate launcher: %s\n' "$launcher"
+			return
+		fi
 		if [ "$dry_run" = no ]; then
 			activate_launcher
 		fi

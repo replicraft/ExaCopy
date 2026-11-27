@@ -56,6 +56,8 @@ The store and launcher directory have separate lifecycle locks so two stores und
 
 An interruption before the switch leaves the prior launcher usable. After the switch the stable path targets the new version. A retry re-verifies the selected installed version and accepts an exact match to a recorded side. Retained locks, unexpected ownership or identity, and unknown transition data require owner reconciliation. Keep that evidence with the owned versions. This protocol assumes cooperative processes of the installing UID, a trusted administrator, and local storage with the stated link and rename behavior.
 
+A dry-run retry for a verified installed version reports `Would activate launcher` when the stable path is absent or selects an earlier release. The stable path selects the requested version after the install retry completes. A dry run for the already selected release reports `Already installed`.
+
 A non-preview retry that observes the requested version already selected repeats the installer's global `sync` and checks the selection again before reporting success. An interruption may have happened after the selector changed and before the previous flush. Power-loss durability remains unqualified.
 
 ## Remove an exact version
