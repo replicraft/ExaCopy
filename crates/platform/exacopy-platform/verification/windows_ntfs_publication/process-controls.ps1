@@ -242,6 +242,64 @@ function Invoke-ContainmentControl([string] $Name, [string] $ScriptText, [int] $
     return $result
 }
 
+function Assert-HostedNestedJob($Receipt, [uint32] $ControllerPid, [bool] $ExpectCompletion) {
+    $phase = if ($ExpectCompletion) { 'completion' } else { 'timeout' }
+    if ($Receipt.TotalProcessesBeforeResume -ne 1 -or $Receipt.TotalProcesses -ne 4 -or
+        $Receipt.LimitTerminations -ne 0 -or $Receipt.JobProcessEventsCapped -or
+        $null -ne $Receipt.JobProcessObservationError -or $null -ne $Receipt.JobProcessBaselineError -or
+        $null -ne $Receipt.JobProcessDetachError) {
+        throw "Hosted nested $phase requires complete accounting for one suspended and four lifetime job processes."
+    }
+
+    $fixture = $Receipt.FixtureObservation
+    $rootPid = $Receipt.ProcessId
+    $childPid = $fixture.child.pid
+    if (!$fixture.same_child -or $rootPid -lt 1 -or $childPid -lt 1 -or
+        $rootPid -eq $ControllerPid -or $childPid -eq $ControllerPid -or $rootPid -eq $childPid -or
+        $fixture.root.pid -ne $rootPid -or $fixture.root.child_pid -ne $childPid -or
+        $fixture.child.child_pid -ne 0 -or
+        ($ExpectCompletion -and (!$fixture.finish_matches_child -or $fixture.finish.pid -ne $childPid -or
+            $fixture.finish.child_pid -ne 0)) -or (!$ExpectCompletion -and $null -ne $fixture.finish)) {
+        throw "Hosted nested $phase fixture markers did not identify the launched PowerShell pair."
+    }
+
+    $entered = @{}
+    foreach ($event in $Receipt.JobProcessEvents) {
+        if ($event.Kind -cne 'new-process') { continue }
+        if ($event.ProcessId -lt 1 -or $event.ProcessId -eq $ControllerPid -or
+            $null -ne $event.LookupFailure -or $entered.ContainsKey($event.ProcessId)) {
+            throw "Hosted nested $phase had missing or ambiguous process identity evidence."
+        }
+        $entered.Add($event.ProcessId, $event)
+    }
+    if ($entered.Count -ne 4 -or !$entered.ContainsKey($rootPid) -or !$entered.ContainsKey($childPid) -or
+        !$entered[$rootPid].SelectedImage -or !$entered[$childPid].SelectedImage -or
+        $entered[$rootPid].ParentProcessId -ne $ControllerPid -or $entered[$childPid].ParentProcessId -ne $rootPid) {
+        throw "Hosted nested $phase did not record the selected PowerShell parent and child."
+    }
+
+    # This admitted hosted fixture has one genuine system console host per
+    # PowerShell process. Job membership, not these packets, governs draining.
+    $consoleParents = @{}
+    foreach ($event in $entered.Values) {
+        if ($event.ProcessId -eq $rootPid -or $event.ProcessId -eq $childPid) { continue }
+        $parent = $event.ParentProcessId
+        if (!$event.SystemConsoleHost -or ($parent -ne $rootPid -and $parent -ne $childPid) -or
+            $consoleParents.ContainsKey($parent)) {
+            throw "Hosted nested $phase did not record one system console host for each PowerShell process."
+        }
+        $consoleParents.Add($parent, $true)
+    }
+
+    # Exit notifications can be incomplete. Any received exit belongs to the
+    # recorded tree. The independent job accounting and EOF checks still apply.
+    foreach ($event in $Receipt.JobProcessEvents) {
+        if ($event.Kind -cin @('exit-process', 'abnormal-exit-process') -and !$entered.ContainsKey($event.ProcessId)) {
+            throw "Hosted nested $phase recorded an exit outside the expected process tree."
+        }
+    }
+}
+
 function Write-SyntheticPidScript([string] $Name) {
     $path = Quote-Literal (Join-Path $directory $Name)
     @"
@@ -394,7 +452,10 @@ if ($completed.RootSignaledWithActiveMilliseconds -lt 100) {
 Assert-Equal ([IO.File]::Exists($done)) $true
 Assert-Equal $timed.TimedOut $true
 Assert-Equal ([IO.File]::Exists($late)) $false
-if ($completed.TotalProcesses -ne 2 -or $timed.TotalProcesses -ne 2) {
+if ($ObserveHostedJobProcesses) {
+    Assert-HostedNestedJob $completed $PID $true
+    Assert-HostedNestedJob $timed $PID $false
+} elseif ($completed.TotalProcesses -ne 2 -or $timed.TotalProcesses -ne 2) {
     throw "Expected exactly two processes in each nested job. Completion observed $($completed.TotalProcesses), timeout observed $($timed.TotalProcesses)."
 }
 

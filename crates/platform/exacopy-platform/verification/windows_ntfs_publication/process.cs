@@ -119,11 +119,14 @@ namespace ExaCopyQualification
             public uint ProcessId { get; internal set; }
             public uint? ParentProcessId { get; internal set; }
             public string Image { get; internal set; }
+            public bool SelectedImage { get; internal set; }
+            public bool SystemConsoleHost { get; internal set; }
             public string LookupFailure { get; internal set; }
         }
 
         public sealed class Receipt
         {
+            internal string ObservedProgram { get; set; }
             public bool JobListConfigured { get; internal set; }
             public bool CreationAttempted { get; internal set; }
             public bool Started { get; internal set; }
@@ -250,7 +253,7 @@ namespace ExaCopyQualification
             if (command.Length + 1 > 32767)
                 throw new ArgumentException("The command line is too large.", nameof(arguments));
             string environmentBlock = EnvironmentBlock(environment);
-            var receipt = new Receipt();
+            var receipt = new Receipt { ObservedProgram = observeJobProcesses ? program : null };
 
             using var outputFile = new FileStream(stdout, FileMode.CreateNew, FileAccess.Write, FileShare.Read, 1);
             using var errorFile = new FileStream(stderr, FileMode.CreateNew, FileAccess.Write, FileShare.Read, 1);
@@ -538,7 +541,7 @@ namespace ExaCopyQualification
                     var entry = new JobProcessEvent { Kind = kind, ProcessId = (uint)pid };
                     receipt.JobProcessEvents.Add(entry);
                     if (message == JobNewProcess)
-                        TryResolveJobProcess(job, entry, stopwatch, budgetMilliseconds);
+                        TryResolveJobProcess(job, entry, receipt.ObservedProgram, stopwatch, budgetMilliseconds);
                 }
             }
             catch (Exception failure)
@@ -567,7 +570,7 @@ namespace ExaCopyQualification
         }
 
         private static void TryResolveJobProcess(SafeFileHandle job, JobProcessEvent entry,
-            Stopwatch stopwatch, int budgetMilliseconds)
+            string program, Stopwatch stopwatch, int budgetMilliseconds)
         {
             try
             {
@@ -584,7 +587,7 @@ namespace ExaCopyQualification
                     entry.LookupFailure = "PID no longer resolves to a member of this job.";
                     return;
                 }
-                RecordProcessIdentity(process, entry);
+                RecordProcessIdentity(process, entry, program);
             }
             catch (Exception failure)
             {
@@ -601,12 +604,18 @@ namespace ExaCopyQualification
             return failure.GetType().Name;
         }
 
-        private static void RecordProcessIdentity(SafeFileHandle process, JobProcessEvent entry)
+        private static void RecordProcessIdentity(SafeFileHandle process, JobProcessEvent entry, string program)
         {
             uint length = 1024;
             var image = new StringBuilder((int)length);
             if (QueryFullProcessImageNameW(process, 0, image, ref length))
-                entry.Image = Path.GetFileName(image.ToString());
+            {
+                string imagePath = image.ToString();
+                entry.Image = Path.GetFileName(imagePath);
+                entry.SelectedImage = StringComparer.OrdinalIgnoreCase.Equals(imagePath, program);
+                entry.SystemConsoleHost = StringComparer.OrdinalIgnoreCase.Equals(imagePath,
+                    Path.Combine(Environment.SystemDirectory, "conhost.exe"));
+            }
             else
                 entry.LookupFailure = "QueryFullProcessImageNameW: " + Marshal.GetLastWin32Error();
 

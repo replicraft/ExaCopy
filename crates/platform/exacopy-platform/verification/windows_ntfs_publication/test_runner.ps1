@@ -465,4 +465,63 @@ $application = [psobject]::AsPSObject('selected fixture.exe')
 $allowed = [object[]]@('A=first', 'B=second')
 Require-ObserverBindingResult $invalidObserverArguments
 
+# Exercise the exact hosted accounting oracle with both full and partial exit
+# notifications. Process identity evidence is synthetic on a portable host.
+$definition = $controlAst.Find({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Assert-HostedNestedJob'
+}, $false)
+Require ($null -ne $definition) 'The hosted process tree oracle must have its exact source.'
+. ([scriptblock]::Create($definition.Extent.Text))
+
+function New-NestedFixtureEvidence([bool] $Completed) {
+    @{
+        ProcessId = [uint32]10; TotalProcessesBeforeResume = 1; TotalProcesses = 4; LimitTerminations = 0
+        FixtureObservation = @{
+            root = @{ pid = [uint32]10; child_pid = [uint32]20 }
+            child = @{ pid = [uint32]20; child_pid = [uint32]0 }
+            same_child = $true
+            finish = if ($Completed) { @{ pid = [uint32]20; child_pid = [uint32]0 } }
+            finish_matches_child = $Completed
+        }
+        JobProcessEvents = @(
+            @{ Kind = 'new-process'; ProcessId = [uint32]10; ParentProcessId = [uint32]1; SelectedImage = $true }
+            @{ Kind = 'new-process'; ProcessId = [uint32]30; ParentProcessId = [uint32]10; Image = 'conhost.exe'; SystemConsoleHost = $true }
+            @{ Kind = 'new-process'; ProcessId = [uint32]20; ParentProcessId = [uint32]10; SelectedImage = $true }
+            @{ Kind = 'new-process'; ProcessId = [uint32]40; ParentProcessId = [uint32]20; Image = 'conhost.exe'; SystemConsoleHost = $true }
+            @{ Kind = 'exit-process'; ProcessId = [uint32]10 }
+        )
+    }
+}
+
+$completedEvidence = New-NestedFixtureEvidence $true
+$completedEvidence.JobProcessEvents += @(
+    @{ Kind = 'exit-process'; ProcessId = [uint32]20 }
+    @{ Kind = 'exit-process'; ProcessId = [uint32]30 }
+    @{ Kind = 'exit-process'; ProcessId = [uint32]40 }
+    @{ Kind = 'active-zero'; ProcessId = [uint32]0 }
+)
+Assert-HostedNestedJob $completedEvidence 1 $true
+$timedEvidence = New-NestedFixtureEvidence $false
+$timedEvidence.JobProcessEvents = $timedEvidence.JobProcessEvents[3, 1, 2, 0, 4]
+Assert-HostedNestedJob $timedEvidence 1 $false
+foreach ($case in @(
+    @{ Name = 'unaccounted process'; Change = { param($e) $e.TotalProcesses = 5 } }
+    @{ Name = 'missing creation evidence'; Change = { param($e) $e.JobProcessEvents = $e.JobProcessEvents[0..2] } }
+    @{ Name = 'duplicate PID'; Change = { param($e) $e.JobProcessEvents[3].ProcessId = [uint32]30 } }
+    @{ Name = 'both consoles under one parent'; Change = { param($e) $e.JobProcessEvents[3].ParentProcessId = [uint32]10 } }
+    @{ Name = 'lookalike console basename'; Change = { param($e) $e.JobProcessEvents[3].SystemConsoleHost = $false } }
+    @{ Name = 'wrong executable'; Change = { param($e) $e.JobProcessEvents[2].SelectedImage = $false } }
+    @{ Name = 'unexpected root parent'; Change = { param($e) $e.JobProcessEvents[0].ParentProcessId = [uint32]2 } }
+    @{ Name = 'mismatched marker'; Change = { param($e) $e.FixtureObservation.finish.pid = [uint32]30 } }
+    @{ Name = 'missing completion marker'; Change = { param($e) $e.FixtureObservation.finish = $null } }
+    @{ Name = 'unknown exit'; Change = { param($e) $e.JobProcessEvents[4].ProcessId = [uint32]50 } }
+    @{ Name = 'truncated notifications'; Change = { param($e) $e.JobProcessEventsCapped = $true } }
+)) {
+    $evidence = New-NestedFixtureEvidence $true
+    & $case.Change $evidence
+    Require-Refusal { Assert-HostedNestedJob $evidence 1 $true } $case.Name
+}
+
 Write-Output 'Windows held publication selector, exact-source, Stage isolation, fallback diagnostics and observer binding controls passed.'
+Write-Output 'Hosted nested console process tree controls passed.'
