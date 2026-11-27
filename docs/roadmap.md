@@ -1,32 +1,34 @@
 # Roadmap
 
-Current priorities, set on 2026-11-25: SSH/SFTP and WireGuard, recovery,
-cross-platform support, protected operations, synchronization, and installation
-and uninstallation. GUI work is last. Backup/repository and deduplication work
-are deferred beyond this scope.
+The current priorities are SSH/SFTP and WireGuard, recovery, cross-platform
+support, protected operations, synchronization, and installation and
+uninstallation. Independent work can proceed in parallel where the safety
+dependencies allow it. GUI remains last, after these CLI operations.
+Backup, repositories, and deduplication are deferred.
 
-The order below expresses safety dependencies, not a requirement to finish
-all platforms before starting remote or synchronization work. Independent
-slices can proceed together. The [CLI guide](../apps/exacopy-cli/README.md)
-and platform work packages describe implemented behavior and evidence.
-The [remote transfer readiness record](engineering/remote-transfer-readiness.md)
-separates integrated components from the remaining complete-operation gates.
-The [managed APFS metadata handoff](engineering/proposed-apfs-metadata-and-birth-handoff.md)
-records the native copy and restart blockers and the work owned by each repository.
+| Priority | Current scope and acceptance dependency |
+| --- | --- |
+| SSH/SFTP and WireGuard | The unsigned Linux x64 [preview.2 archive](releases/v0.1.0-preview.2.md) at `59c26be` passed seven direct OpenSSH cases and seven independent kernel WireGuard cases plus carrier-down with the same held ELF under synthetic fixture authority. The exact hosted Linux lanes at `204bdb0` and `33714f4` each passed 146 selected remote CLI cases and 57 SSH/SFTP package cases, including the three read-health/backoff controls. The later `6be7dc3` password path rechecks route and grant after broker acquisition. That change and its two regressions have source review. Exact execution evidence is pending. Require explicit credentials, verified server identity, and bounded SFTP capabilities. Bind the embedded route and any future private DNS to the approved profile revision and refuse direct fallback. Qualify transport, remote filesystem, and route behavior separately. Production deployment and native same-invocation embedded redial remain open. [Remote readiness](engineering/remote-transfer-readiness.md) |
+| Recovery and public execution | Linux preserve-mode local recovery and read-only public-stage inspection are implemented within their declared profiles. Explicit remote resume uses a fresh stage and reads from byte zero while retaining the old attempt. Efficient range reuse remains in private application composition. Bind public Plans to exact approved content and durable authenticated job ownership. Keep the same approved content and policy on resume or retry. Qualify retained-prefix reuse and reconcile uncertain publication before any new effect. The witnessed kind-8 restart candidate still needs native and process-crash qualification. [Public-stage inspection](architecture/public-stage-inspection.md) · [Retained suffix](architecture/remote-retained-suffix-appender.md) · [Witnessed publication](engineering/witnessed-publication.md) |
+| Cross-platform local operations | The Windows fixed-NTFS fixture passed 17 Read and five Diff cases. Its separate publication lane at `33714f4` ran zero publication cases after the signed Visual Studio locator exited successfully with empty output. The catalog-root correction at `5261c57` scopes the catalog environment to the validated OS location. Exact hosted evidence is pending. The APFS `6b211a7` pin retains the 48 mounted paths and build inputs from the earlier pin. The ordinary-source fixture at `ea2b867` refused a private-stage birth-time adjustment before publication. A separate synthetic timestamp-eligible fixture at `9a3f6b8` passed copy through the complete receipt. Ordinary APFS success, restart, broader Windows CLI composition, metadata and traversal coverage, and power-loss qualification remain open. [NTFS qualification](testing.md#windows-held-directory-ntfs-qualification) · [Publication setup result](https://github.com/replicraft/ExaCopy/actions/runs/45978346346/job/140435679325) · [APFS custody](engineering/apfs-recovery-handoff.md) · [APFS fixture outcomes](engineering/proposed-apfs-metadata-and-birth-handoff.md#hosted-profile-observations-on-2026-11-27) |
+| Protected operations | The pure replacement model and held-slot observer have scoped evidence. Live admission still needs explicit scoped approval, quiescence, exact incumbent custody, durable intent, verified effects, and reconciliation. Source retirement requires qualified durable destination publication and separate quarantine authority. Reclamation needs a distinct approval. [Protected-slot contract](architecture/protected-slot-replacement.md) |
+| Synchronization | The managed Linux SDK produces a signed one-subject genesis. The `9a3f6b8` whole-ext4 fixture exercised fresh-facts P-053 admission. The `33714f4` Linux tmpfs preview ran ten platform cases, one transfer case, and 12 read-only CLI oracles. Require a reviewed sync plan and explicit conflict handling before mutation. Preserve both sides when uncertain and bind restart and baseline advancement to verified outcomes. Receipt-backed successor admission, a current baseline pointer, and CLI protected mutation remain open. [Genesis](engineering/linux-managed-sync-genesis-production.md) · [Managed preview](engineering/linux-managed-sync-production.md) · [Exact preview run](https://github.com/replicraft/ExaCopy/actions/runs/45978346224/job/140435678678) |
+| Install, update and uninstall | The unsigned preview uses manual extraction. The [source install](../README.md#installation) is available from a selected checkout. Once the verified CLI package and its dependency closure are published, `cargo install --locked exacopy` is the primary registry path. POSIX and PowerShell installers are the alternative for signed prebuilt artifacts. Require independently trusted publisher identity and signed release metadata. Keep native lifecycle evidence, owned transactional version switching and rollback as separate gates. Windows accepts one exact release per root and reports acknowledged publication independently of launcher or later validation failures. Default removal preserves profiles, credentials, journals, recovery material, and user files. Online channels, system scope, and native packages have separate gates. [POSIX installer](architecture/posix-offline-install.md) · [Windows installer](installation/windows.md) · [Release workflow](engineering/release-ci.md) |
 
-| Order | Milestone | Acceptance dependency |
-| --- | --- | --- |
-| 1 | Recovery and public execution boundary | Connect canonical public Plans to exact approved content, durable authenticated job ownership and reconciliation. Preserve the existing Linux recovery behavior; bind resume/retry to the same approved data and policy. Qualify actual process-crash boundaries separately from model checks and power-loss claims. |
-| 2 | Cross-platform local operations | Finish managed APFS copy and recovery through the local Pomologie mounted API; qualify the Windows NTFS slice. Extend required metadata, traversal and directory workflows with explicit operation capabilities. Native execution remains necessary before advertising a supported profile. |
-| 3 | SSH/SFTP and WireGuard | Establish explicit credentials, verified server identity, bounded SFTP capabilities and reconnect/resume. Bind embedded WireGuard connections and DNS to an approved route/profile revision; refuse route fallback. Qualify transport, remote filesystem and route behavior independently. |
-| 4 | Protected operations | Require explicit scoped approval, quiescence, retained incumbent content, durable publication intent, verified replacement and uncertain-outcome reconciliation before replacement or retirement. Reclamation remains a separately authorized action. |
-| 5 | Synchronization | Implement the baseline and change classifier, explicit conflict handling and reviewed plans before mutation. Preserve both sides on uncertainty; bind restart and baseline updates to verified outcomes. |
-| 6 | Install, update and uninstall | Make `cargo install --locked exacopy` the primary registry installation entrypoint once its real CLI package and dependency closure are published and verified. Keep POSIX and PowerShell prebuilt installers as the alternative without a Rust toolchain. Require signed release metadata, independently trusted publisher identity, owned transactional version switching and safe rollback for prebuilt artifacts. Preserve profiles, credentials, journals, recovery material and user data by default. Online channels, system scope and platform packages need their own qualification. |
-| Later | GUI | Present established engine operations after the current CLI, recovery, remote and synchronization scope. |
-| Deferred | Backup, repositories and deduplication | Revisit immutable repository publication, restore, migration, retention and reachability-safe reclamation after the current scope. |
+At `204bdb0`, hosted default suites passed 1,105 Linux, 840 macOS, and
+707 Windows tests. All 56 declared formal evidence records passed, along
+with Miri. The earlier local macOS workspace run at `ca635e9` passed
+1,075 tests, with 32 skipped. Cargo Vet still reported 166 unvetted dependency versions in the retained
+`33714f4` record, covering 165 `safe-to-deploy` entries and one
+`safe-to-run` entry.
+These results apply to their recorded revisions and profiles.
+[`204bdb0` hosted CI](https://github.com/replicraft/ExaCopy/actions/runs/45976299011) · [`33714f4` hosted CI](https://github.com/replicraft/ExaCopy/actions/runs/45978346253) · [Verification policy](verification.md) · [Supply-chain evidence](supply-chain/README.md)
 
-Engineering, compatibility and verification run with each slice. Distribution
-work proceeds alongside the engine; it does not wait for the GUI. The
-[verification policy](verification.md) governs promotion to a supported
-profile. Foundation invariants and the architecture pack remain acceptance
-requirements; this priority change does not confer new mutation authority.
+The private cross-platform, protocol and recovery, native kind-8, Windows
+composition, and BoringTun modernization candidates still require integrated
+compilation and affected qualification. The cross-platform candidate has
+scoped host formatting, endpoint Clippy and doctest evidence. The private
+protocol and recovery candidate passed formatting before its compile attempt
+was blocked by storage. Preserve earlier failed and blocked results and distinguish
+fixture execution, process-crash qualification, and power-loss qualification.
+The foundation invariants and architecture pack govern each new effect.
