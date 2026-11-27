@@ -106,3 +106,18 @@ Raw fixture and trial-store logs remain in the local evidence directories
 `/private/tmp/exacopy-vet-closure.MkS9J3`,
 `/private/tmp/exacopy-memchr-vet.N7nR3I`. Local temporary artifacts are not
 published or durable release attestations.
+
+## Unselected transport candidate
+
+A source-only review of the BoringTun candidate using ChaCha20-Poly1305
+0.11.0 found a panic at the public AEAD payload limit. At the initial
+payload counter position, the AEAD length guard rounds down while the
+stream wrapper requires enough blocks for the partial tail. The
+panicking stream method can then turn a length refusal into a panic.
+BoringTun's cookie adapter uses a fixed 16-byte payload outside that
+boundary. The candidate remains unselected and supplies no new Cargo Vet
+record or hosted vector result.
+This is a source inference from the published
+[AEAD implementation](https://docs.rs/crate/chacha20poly1305/0.11.0/source/src/cipher.rs)
+and [stream wrapper](https://docs.rs/crate/cipher/0.5.2/source/src/stream/wrapper.rs),
+without a runtime reproduction or a demonstrated WireGuard exposure.
