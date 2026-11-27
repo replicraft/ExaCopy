@@ -1,5 +1,6 @@
 use std::fs::{self, File};
-use std::os::unix::fs::MetadataExt as _;
+use std::os::unix::fs::{MetadataExt as _, symlink};
+use std::path::Path;
 
 use exacopy_endpoint::UnixComponent;
 use exacopy_model::{
@@ -181,6 +182,79 @@ fn a_changed_public_name_after_rename_requires_reconciliation() {
 	assert_eq!(
 		fs::read(displaced).expect("published inode remains"),
 		b"published bytes"
+	);
+}
+
+#[test]
+fn a_reappearing_private_name_after_rename_requires_reconciliation() {
+	const STAGE_DIR: &str = "stage";
+	const STAGE_FILE: &str = "part";
+	const TARGET: &str = "target";
+	const PAYLOAD: &[u8] = b"published bytes";
+	let fixture = Scratch::new();
+	let root = DestinationRoot::from_directory(fixture.open()).expect("managed root");
+	let directory = root
+		.create_stage_directory(component(STAGE_DIR))
+		.expect("private stage directory");
+	let job = JobId::try_from_bytes([0, 0, 0, 0, 0, 0, 0x70, 0, 0x80, 0, 0, 0, 0, 0, 0, 1])
+		.expect("fixture job is UUIDv7");
+	let binding = CopyBinding::new(
+		job,
+		EntryId::new(1),
+		RunEpoch::new(1),
+		StageId::from_bytes([1; 16]),
+	);
+	let mut writer = directory
+		.create_file(component(STAGE_FILE), component(TARGET), binding)
+		.expect("new private stage");
+	writer.write_all_at(0, PAYLOAD).expect("write stage");
+	writer.flush().expect("flush stage");
+	let stage = writer.close_writes().expect("release writer");
+	let original = fixture.path(STAGE_DIR).join(STAGE_FILE);
+	let original_stat = fs::metadata(&original).expect("inspect the original stage");
+	let target = fixture.path(TARGET);
+	let missing = Path::new("missing");
+	let mut rebound_stat = None;
+	let mut barriers = 0;
+
+	let result = stage.publish_with_barriers(authorization(binding), |directory| {
+		rustix::fs::fsync(directory).expect("synchronize the held directory");
+		if barriers == 0 {
+			// A lookup that follows symlinks would mistake this occupied name for absence.
+			symlink(missing, &original).expect("recreate the retired name with a dangling link");
+			rebound_stat = Some(fs::symlink_metadata(&original).expect("inspect the rebound link"));
+		}
+		barriers += 1;
+		Ok(())
+	});
+
+	assert_eq!(barriers, 2, "both directory barriers must complete");
+	assert!(matches!(
+		result,
+		Err(PublishError::ObservationFailed(StageError::IdentityChanged))
+	));
+	let rebound_stat = rebound_stat.expect("capture the link created between barriers");
+	let retained_stat = fs::symlink_metadata(&original).expect("inspect the retained link");
+	assert_eq!(
+		(retained_stat.dev(), retained_stat.ino()),
+		(rebound_stat.dev(), rebound_stat.ino())
+	);
+	assert_eq!(
+		fs::read_link(original).expect("preserve the unexpected private name"),
+		missing
+	);
+	let target_stat = fs::symlink_metadata(&target).expect("inspect the retained publication");
+	assert!(
+		target_stat.is_file(),
+		"the public name must retain the regular file"
+	);
+	assert_eq!(
+		(target_stat.dev(), target_stat.ino()),
+		(original_stat.dev(), original_stat.ino())
+	);
+	assert_eq!(
+		fs::read(target).expect("read the retained publication"),
+		PAYLOAD
 	);
 }
 
