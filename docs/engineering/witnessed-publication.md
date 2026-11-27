@@ -241,6 +241,30 @@ open.
 [Native terminal view](../../crates/platform/exacopy-platform/src/linux/recovery/terminal.rs) ·
 [Application inspection](../../apps/exacopy-cli/src/assembly/linux/remote_journal/witnessed_inspection.rs)
 
+## Read-only publication-intent assessment
+
+The private inspector also accepts an exact clean, authenticated kind-7
+boundary at the original held journal EOF. It checks the signed destination,
+original preparation, stage identity, witness, whole-content digest and
+metadata under the same shared lease. The native view holds the original
+public file and witness together, requires their exact two-link identity
+and the old private name's absence, and rechecks the original journal.
+Application read-back measures the whole public stream and checks the
+selected current substrate before reporting the observed association.
+
+This assessment does not inspect receipt names. Terminal kind 18 continues
+to require its exact final receipt and pending-name absence. Neither result
+authorizes a recovery append, rename or retry. In particular, this observation
+does not satisfy the separate P-066 restart authority or create a recovered
+tag-4 event. The current live retention adapter requires the original
+one-link private reader, which is unavailable after successful publication.
+
+Focused journal controls, Linux ARM64 strict compilation and linked test
+images cover the source. The new ordinary Linux component and application
+cases remain unexecuted locally. Full OP2 restart qualification and public
+CLI dispatch remain open.
+[Native public view](../../crates/platform/exacopy-platform/src/linux/recovery/terminal/published.rs)
+
 ## Executed evidence and remaining qualification
 
 The retained candidate ran three platform tests as UID and GID 1000 with

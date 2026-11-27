@@ -7,11 +7,14 @@ use exacopy_endpoint::linux_job::JobFileIdentity;
 use super::witnessed_names::matches_names;
 use super::{
 	FIRST_SEGMENT, FilePolicy, JOURNAL, PrivateDirectory, RecoveryFile, RecoveryReadLease,
-	RetainedPrefixSelection, STAGE, StageError, WitnessReceiptNames, check_absent, component,
-	open_checked_record, open_regular, recheck_regular,
+	RetainedPrefixSelection, StageError, WitnessReceiptNames, check_absent, open_checked_record,
+	recheck_regular,
 };
 use crate::linux::job::OWNER;
 use crate::linux::stage::check_no_visible_attributes;
+
+mod published;
+pub use published::{WitnessedPublishedArtifacts, WitnessedPublishedSelection};
 
 const MAX_FIRST_SEGMENT: u64 = 64 * 1024 * 1024;
 const MAX_RECEIPT_LENGTH: u16 = 6_144;
@@ -185,36 +188,22 @@ impl<'lease> WitnessedTerminalJournal<'lease> {
 
 		let mount = job.root.mount;
 		let parent = &job.directory.file;
-		let stage = PrivateDirectory::open(parent, OsStr::new(STAGE), mount)?
-			.ok_or(StageError::IdentityChanged)?;
-		if selection.stage.directory != stage.identity.into() {
-			return Err(StageError::IdentityChanged);
-		}
-		check_absent(&stage.file, component(selection.stage.stage))?;
 		check_absent(parent, OsStr::from_bytes(&selection.pending_name))?;
-
-		let target = open_regular(
-			&job.root.directory,
-			component(selection.stage.target),
-			mount,
-			FilePolicy::WitnessedPublic,
-		)?
-		.ok_or(StageError::IdentityChanged)?;
-		let witness = open_regular(
-			parent,
-			OsStr::from_bytes(&selection.witness_name),
-			mount,
-			FilePolicy::WitnessedPublic,
-		)?
-		.ok_or(StageError::IdentityChanged)?;
+		let published = self.inspect_published(WitnessedPublishedSelection {
+			job: selection.job,
+			destination: selection.destination,
+			stage: selection.stage,
+			witness_name: selection.witness_name,
+			uid: selection.uid,
+			gid: selection.gid,
+			extent: selection.extent,
+			journal_end: selection.journal_end,
+		})?;
 		let receipt = open_checked_record(parent, OsStr::from_bytes(&selection.final_name), mount)?
 			.ok_or(StageError::IdentityChanged)?;
 		let artifacts = WitnessedTerminalArtifacts {
-			records: self,
+			published,
 			selection,
-			stage,
-			target,
-			witness,
 			receipt,
 		};
 		artifacts.recheck()?;
@@ -257,11 +246,8 @@ impl Read for WitnessedTerminalSegment<'_> {
 /// Held, read-only terminal artifacts and exact namespace absences on the shared lease.
 #[must_use]
 pub struct WitnessedTerminalArtifacts<'held, 'lease, 'name> {
-	records: &'held WitnessedTerminalJournal<'lease>,
+	published: WitnessedPublishedArtifacts<'held, 'lease, 'name>,
 	selection: WitnessedTerminalSelection<'name>,
-	stage: PrivateDirectory,
-	target: RecoveryFile,
-	witness: RecoveryFile,
 	receipt: RecoveryFile,
 }
 
@@ -269,7 +255,7 @@ impl WitnessedTerminalArtifacts<'_, '_, '_> {
 	/// Actual held public target of the exact original stage inode.
 	#[must_use]
 	pub const fn target(&self) -> &RecoveryFile {
-		&self.target
+		self.published.target()
 	}
 
 	/// Actual held final receipt inode, with the pending name independently absent.
@@ -283,23 +269,9 @@ impl WitnessedTerminalArtifacts<'_, '_, '_> {
 	/// # Errors
 	/// Refuses any unsafe alias, rebind, metadata or extent change or missing evidence.
 	pub fn recheck(&self) -> Result<(), StageError> {
-		self.records.recheck()?;
-		self.check_names()?;
+		self.published.recheck()?;
+		self.check_receipt_names()?;
 		let selected = self.selection;
-		for alias in [&self.target, &self.witness] {
-			let stamp = alias.observation();
-			if JobFileIdentity::from(stamp.identity()) != selected.stage.file
-				|| stamp.owner() != selected.uid
-				|| stamp.group() != selected.gid
-				|| stamp.len() != selected.extent
-			{
-				return Err(StageError::IdentityChanged);
-			}
-		}
-		self.target
-			.observation()
-			.recheck(self.witness.observation())
-			.map_err(StageError::ReadBack)?;
 		let receipt = self.receipt.observation();
 		if JobFileIdentity::from(receipt.identity()) != selected.receipt
 			|| receipt.owner() != selected.uid
@@ -308,45 +280,28 @@ impl WitnessedTerminalArtifacts<'_, '_, '_> {
 		{
 			return Err(StageError::IdentityChanged);
 		}
-		for file in [&self.target, &self.witness, &self.receipt] {
-			check_no_visible_attributes(&file.file)?;
-			file.check_logical_eof().map_err(StageError::ReadBack)?;
-			file.recheck_observation().map_err(StageError::ReadBack)?;
-		}
-		self.check_names()?;
-		self.records.recheck()
+		check_no_visible_attributes(&self.receipt.file)?;
+		self.receipt
+			.check_logical_eof()
+			.map_err(StageError::ReadBack)?;
+		self.receipt
+			.recheck_observation()
+			.map_err(StageError::ReadBack)?;
+		self.check_receipt_names()?;
+		self.published.recheck()
 	}
 
-	fn check_names(&self) -> Result<(), StageError> {
-		let job = self.records.lease.job();
-		let selected = self.selection;
-		let mount = job.root.mount;
+	fn check_receipt_names(&self) -> Result<(), StageError> {
+		let job = self.published.records.lease.job();
 		let parent = &job.directory.file;
-		self.stage.recheck(parent, OsStr::new(STAGE), mount)?;
-		check_absent(&self.stage.file, component(selected.stage.stage))?;
-		check_absent(parent, OsStr::from_bytes(&selected.pending_name))?;
-		recheck_regular(
-			&job.root.directory,
-			component(selected.stage.target),
-			mount,
-			FilePolicy::WitnessedPublic,
-			Some(&self.target),
-		)?;
+		check_absent(parent, OsStr::from_bytes(&self.selection.pending_name))?;
 		recheck_regular(
 			parent,
-			OsStr::from_bytes(&selected.witness_name),
-			mount,
-			FilePolicy::WitnessedPublic,
-			Some(&self.witness),
-		)?;
-		recheck_regular(
-			parent,
-			OsStr::from_bytes(&selected.final_name),
-			mount,
+			OsStr::from_bytes(&self.selection.final_name),
+			job.root.mount,
 			FilePolicy::Record,
 			Some(&self.receipt),
-		)?;
-		self.stage.recheck(parent, OsStr::new(STAGE), mount)
+		)
 	}
 }
 

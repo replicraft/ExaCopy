@@ -23,10 +23,12 @@ use super::{
 
 mod archive;
 mod history;
+mod inspection;
 mod prepublication;
 mod receipt;
 
 pub(in crate::remote_download) use history::WitnessCloseoutHistory;
+pub use inspection::RemoteWitnessedPublicExpectation;
 pub use prepublication::{PreparedWitnessedCloseout, WitnessedPrepublicationFact};
 pub use receipt::{
 	RemoteCommittedReceiptInspection, RemoteDurableReceiptBasis, RemoteReceiptReadyInspection,

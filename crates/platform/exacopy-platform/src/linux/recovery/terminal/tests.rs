@@ -6,10 +6,11 @@ use std::path::{Path, PathBuf};
 use exacopy_endpoint::UnixComponent;
 
 use super::{
-	FIRST_SEGMENT, JOURNAL, JobFileIdentity, OWNER, RetainedPrefixSelection, STAGE, StageError,
-	WitnessedTerminalSelection,
+	FIRST_SEGMENT, JOURNAL, JobFileIdentity, OWNER, RetainedPrefixSelection, StageError,
+	WitnessedPublishedSelection, WitnessedTerminalSelection,
 };
 use crate::linux::DestinationRoot;
+use crate::linux::job::STAGE;
 use crate::scratch::Scratch;
 
 const JOB: &str = "terminal-job";
@@ -152,6 +153,44 @@ fn terminal_inventory_refuses_changed_journal_and_foreign_witness_inode() {
 	fs::rename(&journal, fixture.path(b"original-segment")).unwrap();
 	write_fixture(&journal, JOURNAL_BYTES);
 	assert!(records.recheck().is_err());
+}
+
+#[test]
+fn witnessed_public_assessment_checks_two_aliases_without_using_receipt_names() {
+	let fixture = Fixture::new();
+	let selection = fixture.selection();
+	let job = fixture
+		.root
+		.open_recovery_job(UnixComponent::new(JOB.as_bytes()).unwrap())
+		.unwrap();
+	let lease = job.try_read_lease().unwrap();
+	let records = lease.hold_witnessed_terminal_journal().unwrap();
+	let expected = WitnessedPublishedSelection {
+		job: selection.job,
+		destination: selection.destination,
+		stage: selection.stage,
+		witness_name: selection.witness_name,
+		uid: selection.uid,
+		gid: selection.gid,
+		extent: selection.extent,
+		journal_end: selection.journal_end,
+	};
+	let receipt = fixture.path(FINAL);
+	fs::remove_file(&receipt).unwrap();
+	let read = records.inspect_published(expected).unwrap();
+	let mut data = [0; DATA.len()];
+	read.target().read_exact_at(0, &mut data).unwrap();
+	assert_eq!(data, DATA);
+	assert!(records.inspect(selection).is_err());
+
+	let former_private_stage = fixture.scratch.path(JOB).join(STAGE).join(STAGE_NAME);
+	write_fixture(&former_private_stage, b"unexpected private stage bytes");
+	assert!(read.recheck().is_err());
+	assert_eq!(
+		fs::read(former_private_stage).unwrap(),
+		b"unexpected private stage bytes"
+	);
+	assert!(!receipt.exists());
 }
 
 fn write_fixture(path: &Path, bytes: &[u8]) {

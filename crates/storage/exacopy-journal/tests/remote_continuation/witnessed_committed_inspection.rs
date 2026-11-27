@@ -127,3 +127,42 @@ fn committed_inspection_refuses_stale_phase_wrong_binding_and_any_tail() {
 	assert!(replay.issue().is_some());
 	assert!(replay.committed_receipt_inspection().is_err());
 }
+
+#[test]
+fn exact_kind7_projects_original_public_expectation_without_a_recovered_outcome() {
+	let run = Transcript::read(false);
+	let bytes = recorded("published");
+	let cut = boundary_of(&bytes, FrameKind::PublishIntent);
+	let offset = usize::try_from(cut.offset).unwrap();
+	let exact = scan(&run, &bytes[..offset], FRESH);
+	let intent = exact.publish_intent_inspection().unwrap();
+	assert_eq!(intent.boundary(), cut);
+	assert_eq!(intent.stage_name(), STAGE_NAME);
+	assert_eq!(intent.stage().file, LinuxFileIdentity::new(7, 13));
+	assert_eq!(
+		intent.stage_digest(),
+		StreamDigest::from_bytes(*blake3::hash(b"ABCD").as_bytes())
+	);
+	assert_eq!(
+		intent.destination(),
+		&run.fixture.owner.manifest().scope.destination
+	);
+	assert!(exact.observed_outcome().is_none());
+	assert!(exact.committed_receipt_inspection().is_err());
+
+	let terminal = scan(&run, bytes.as_slice(), FRESH);
+	let committed = terminal.committed_receipt_inspection().unwrap();
+	assert_eq!(intent.stage_digest(), committed.stage_digest());
+	assert_eq!(intent.metadata(), committed.metadata());
+	assert!(terminal.publish_intent_inspection().is_err());
+
+	let mut tailed = bytes[..offset].to_vec();
+	tailed.push(0);
+	for refused in [&bytes[..offset - 1], tailed.as_slice()] {
+		assert!(
+			scan(&run, refused, FRESH)
+				.publish_intent_inspection()
+				.is_err()
+		);
+	}
+}

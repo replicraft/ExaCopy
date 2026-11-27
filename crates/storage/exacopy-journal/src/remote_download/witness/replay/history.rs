@@ -40,7 +40,7 @@ pub(super) struct CloseoutFacts {
 	pub(super) continued_extent: Option<StreamLength>,
 	pub(super) verified_stage_digest: Option<StreamDigest>,
 	pub(super) metadata: Option<RemoteLocalMetadata>,
-	pub(super) committed_destination: Option<RemoteDownloadDestination>,
+	pub(super) publication_destination: Option<RemoteDownloadDestination>,
 }
 
 impl CloseoutFacts {
@@ -265,8 +265,8 @@ impl<'qualification> WitnessCloseoutHistory<'qualification> {
 						self.facts.outcome = Some(outcome);
 						self.observed = Some(end);
 					}
-					Body::CommittedReceipt { .. } => {
-						self.facts.committed_destination =
+					Body::Intent { .. } => {
+						self.facts.publication_destination =
 							Some(trust.owner().manifest().scope.destination.clone());
 					}
 					_ => {}
