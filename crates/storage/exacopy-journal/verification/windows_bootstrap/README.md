@@ -1,8 +1,9 @@
 # Windows bootstrap storage history
 
-This source slice implements the portable historical codec for R-039–041 and
-R-044. It does not provide a Windows job holder, journal writer, CLI copy or
-recovery operation. Compilation, tests and native qualification are pending.
+This source slice supplies portable read-side support toward R-039–041. It
+does not provide a Windows job holder, journal writer, CLI copy or recovery
+operation. Published-stage identity reconciliation under R-044 remains future
+work. Compilation, tests and native qualification are pending.
 
 The caller selects the profile, verification key, job and admitted container
 root independently of the records. It supplies five observed role identities:

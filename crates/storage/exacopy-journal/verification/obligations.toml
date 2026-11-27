@@ -305,7 +305,7 @@ rust = { file = "tests/remote_continuation/continued_coverage.rs", test = "witne
 
 [[obligation]]
 id = "P-079"
-requirement_ids = ["R-039", "R-041", "R-044"]
+requirement_ids = ["R-039"]
 source = "src/windows_bootstrap/record.rs"
 symbols = ["authenticate_owner", "require_canonical_strong"]
 assumptions = [
@@ -317,7 +317,7 @@ rust = { file = "tests/windows_bootstrap.rs", test = "independent_trust_selectio
 
 [[obligation]]
 id = "P-080"
-requirement_ids = ["R-039", "R-040", "R-044"]
+requirement_ids = ["R-039", "R-040", "R-041"]
 source = "src/windows_bootstrap/inspect.rs"
 symbols = ["inspect", "WindowsBootstrapEvidence", "WindowsBootstrapPrefix"]
 assumptions = [
