@@ -99,6 +99,26 @@ impl PreparedWitnessedCloseout {
 			}
 	}
 
+	/// Confirms the exact recovered kind-8 proposal in an independent clean replay.
+	#[must_use]
+	pub fn confirms_recovered_observation(
+		&self,
+		replay: &RemoteWitnessedCloseoutReplay,
+		witness: RemoteWitnessIntent,
+		target: LinuxFileIdentity,
+	) -> bool {
+		self.kind == FrameKind::PublishObserved
+			&& replay.boundary() == self.successor
+			&& replay.issue().is_none()
+			&& replay.phase() == Phase::PublishedObserved
+			&& replay.witness() == Some(witness)
+			&& replay.observed_outcome()
+				== Some(Outcome::Recovered {
+					target,
+					witness: witness.boundary().head,
+				})
+	}
+
 	/// Confirms the exact live kind-9 proposal in an independent clean replay.
 	#[must_use]
 	pub fn confirms_live_durability(
@@ -217,6 +237,40 @@ impl RemoteWitnessedCloseoutReplay {
 			_ => return Err(Error::Binding),
 		}
 		prepare_frame(binding, self.boundary(), Body::Observed(outcome))
+	}
+
+	/// Prepares a canonical recovered kind-8 successor to an exact clean kind-7 cut.
+	///
+	/// The caller must hold exclusive recovery custody, have current qualification,
+	/// grant and matching retention approval, and validate the public and witness
+	/// names, private-name absence, whole-file read-back and metadata. This
+	/// memory-only proposal carries no journal append capability.
+	///
+	/// # Errors
+	/// Refuses an unclean or differently phased cut, wrong owner, witness or
+	/// target identity, or a successor outside selected framing bounds.
+	pub fn prepare_recovered_observation(
+		&self,
+		trust: &RemoteBootstrapTrust<'_>,
+		witness: RemoteWitnessIntent,
+		target: LinuxFileIdentity,
+	) -> Result<PreparedWitnessedCloseout, Error> {
+		let expected = self.publish_intent_inspection()?;
+		let binding = witness.binding();
+		if expected.witness() != witness
+			|| expected.stage().file != target
+			|| binding.context != RemoteDownloadContext::for_owner(trust.owner())
+		{
+			return Err(Error::Binding);
+		}
+		prepare_frame(
+			binding,
+			expected.boundary(),
+			Body::Observed(Outcome::Recovered {
+				target,
+				witness: witness.boundary().head,
+			}),
+		)
 	}
 
 	/// Prepares kind 9 at the exact clean kind-8 cut of a live submission.

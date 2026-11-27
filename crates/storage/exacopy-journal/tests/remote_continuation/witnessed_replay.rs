@@ -25,6 +25,8 @@ mod live_observation;
 mod live_receipt;
 #[path = "witnessed_prepublication.rs"]
 mod prepublication;
+#[path = "witnessed_recovered_observation.rs"]
+mod recovered_observation;
 
 const FRESH: [u8; 32] = [0x85; 32];
 
