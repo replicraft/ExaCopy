@@ -1,3 +1,52 @@
+function Assert-PublicationApplicationAttributes {
+    param([int] $Attributes)
+    # RECALL_ON_OPEN and RECALL_ON_DATA_ACCESS are not FileAttributes enum names.
+    $unavailable = [int][IO.FileAttributes]'Directory, Device, ReparsePoint, Offline' -bor 0x00440000
+    if (($Attributes -band $unavailable) -ne 0) {
+        throw 'The selected application is not an available regular file.'
+    }
+}
+
+function Read-PublicationApplicationRecord {
+    param([string] $Path)
+    [void](Confirm-ExaCopyPath $Path -File)
+    Assert-PublicationApplicationAttributes ([IO.File]::GetAttributes($Path))
+    $image = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    try {
+        $size = $image.Length
+        if ($size -le 0 -or $size -gt 128MB) {
+            throw 'The selected application is empty or exceeds the fingerprint bound.'
+        }
+        [ordered]@{
+            path = $Path
+            bytes = $size
+            sha256 = (Get-FileHash -InputStream $image -Algorithm SHA256).Hash
+        }
+    } finally {
+        $image.Dispose()
+    }
+}
+
+function Resolve-PublicationApplication {
+    param([string] $Name)
+    if ($Name -cnotmatch '\A[A-Za-z0-9][A-Za-z0-9_-]*\.[Ee][Xx][Ee]\z') {
+        throw 'Resolve only an exact executable name.'
+    }
+    # Get-Command -All returns execution precedence order. Select an object
+    # before reading Source, and fail closed if that first object is inadmissible.
+    $commands = @(Get-Command -Name $Name -CommandType Application -All -ErrorAction Stop)
+    if ($commands.Count -eq 0 -or $commands[0] -isnot [Management.Automation.ApplicationInfo]) {
+        throw "The first PATH match is not an application: $Name"
+    }
+    $path = $commands[0].Source
+    if ($path -isnot [string] -or $path.Length -gt 260 -or
+        $path -cnotmatch '\A[A-Za-z]:\\[^:/<>"|?*\x00-\x1f]+\z' -or
+        ($path -split '\\')[-1] -ine $Name -or (Resolve-ExaCopyWindowsPath $path) -cne $path) {
+        throw "The first PATH match has no exact absolute executable path: $Name"
+    }
+    Read-PublicationApplicationRecord $path
+}
+
 function Confirm-PublicationSource {
     param([string] $Repository, [string] $SelectedRevision)
     $revision = @(& git -C $Repository rev-parse --verify HEAD)

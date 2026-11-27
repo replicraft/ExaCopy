@@ -91,6 +91,10 @@ function Invoke-PublicationChild {
     $diagnostic.phase = $Name
     $diagnostic.receipt = $null
     $diagnostic.launch = Get-PublicationLaunchFacts $Name $Program $repo $Arguments $childEnvironment
+    if ($null -ne $diagnostic.launch -and $state.tools.python.path -ceq $Program) {
+        $diagnostic.launch.application_sha256 = $state.tools.python.sha256
+        $diagnostic.launch.application_bytes = $state.tools.python.bytes
+    }
     $state.process_drained = $false
     $stdout = Join-Path $evidence ($Name + '.stdout.log')
     $stderr = Join-Path $evidence ($Name + '.stderr.log')
@@ -278,9 +282,13 @@ try {
         GIT_TERMINAL_PROMPT = '0'; GCM_INTERACTIVE = 'Never'
     }
 
-    $python = (Get-Command python.exe -CommandType Application -ErrorAction Stop).Source
-    $bash = (Get-Command bash.exe -CommandType Application -ErrorAction Stop).Source
-    $cargo = (Get-Command cargo.exe -CommandType Application -ErrorAction Stop).Source
+    $state.tools = [ordered]@{}
+    $state.tools.python = Resolve-PublicationApplication 'python.exe'
+    $state.tools.bash = Resolve-PublicationApplication 'bash.exe'
+    $state.tools.cargo = Resolve-PublicationApplication 'cargo.exe'
+    $python = $state.tools.python.path
+    $bash = $state.tools.bash.path
+    $cargo = $state.tools.cargo.path
     $powershell = (Get-Process -Id $PID).Path
     $nativeControls = Join-Path $evidence 'native-process-controls'
     New-StagePrivateFixture $nativeControls $owner
@@ -313,7 +321,8 @@ try {
         }
     }
     Confirm-PublicationSource $repo $env:GITHUB_SHA
-    $rustc = (Get-Command rustc.exe -CommandType Application -ErrorAction Stop).Source
+    $state.tools.rustc = Resolve-PublicationApplication 'rustc.exe'
+    $rustc = $state.tools.rustc.path
     if ((Invoke-PublicationChild 'rustc' $rustc @('+1.100.0', '-vV') 30000) -ne 0) {
         throw 'The pinned Windows Rust compiler was unavailable.'
     }

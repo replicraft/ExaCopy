@@ -14,6 +14,86 @@ function Require-Refusal {
     throw "A negative control was accepted: $Description"
 }
 
+# Use genuine ApplicationInfo instances with synthetic Windows paths so
+# this exercises the same collection semantics on both portable and native hosts.
+$currentPowerShell = (Get-Process -Id $PID).Path
+$knownApplication = @(Get-Command -Name $currentPowerShell -CommandType Application -All)[0]
+$bindingFlags = [Reflection.BindingFlags]'Instance,NonPublic'
+$applicationType = [Management.Automation.ApplicationInfo]
+$constructor = $applicationType.GetConstructors($bindingFlags)[0]
+$commandContext = $applicationType.GetField('_context', $bindingFlags).GetValue($knownApplication)
+function New-SyntheticApplication {
+    param([string] $Path)
+    $constructor.Invoke(@('python.exe', $Path, $commandContext))
+}
+
+function Test-PublicationToolSelection {
+    $first = 'C:\hostedtoolcache\windows\Python\3.12.10\x64\python.exe'
+    $second = 'C:\Users\runneradmin\AppData\Local\Microsoft\WindowsApps\python.exe'
+    $firstApplication = New-SyntheticApplication $first
+    $secondApplication = New-SyntheticApplication $second
+    $simulatedCommands = @($firstApplication, $secondApplication)
+    $checked = [Collections.Generic.List[string]]::new()
+    $rejectFirst = $false
+    function Get-Command {
+        param([string] $Name, [string] $CommandType, [switch] $All, [string] $ErrorAction)
+        Require ($Name -ceq 'python.exe' -and $CommandType -ceq 'Application' -and $All -and
+            $ErrorAction -ceq 'Stop') 'Application discovery must request PATH precedence and exact executable type.'
+        $simulatedCommands
+    }
+    function Resolve-ExaCopyWindowsPath { param([string] $Path) $Path }
+    function Read-PublicationApplicationRecord {
+        param([string] $Path)
+        $checked.Add($Path)
+        $attributes = if ($rejectFirst) { [IO.FileAttributes]::ReparsePoint } else { [IO.FileAttributes]::Normal }
+        Assert-PublicationApplicationAttributes $attributes
+        return @{ path = $Path }
+    }
+    function Bind-OriginalApplication { param([string] $Program) $Program }
+    Require ((Bind-OriginalApplication $simulatedCommands.Source) -ceq "$first $second") (
+        'The original member enumeration must reproduce the hosted joined-path failure.'
+    )
+    $selected = Resolve-PublicationApplication 'python.exe'
+    Require ($selected.path -ceq $first -and $checked.Count -eq 1 -and $checked[0] -ceq $first) (
+        'The first typed ApplicationInfo must be read as exactly one path.'
+    )
+
+    $checked.Clear()
+    $rejectFirst = $true
+    Require-Refusal { Resolve-PublicationApplication 'python.exe' } 'first PATH application is a reparse point'
+    Require ($checked.Count -eq 1 -and $checked[0] -ceq $first) 'Refusal must never inspect the later PATH alias.'
+    $checked.Clear()
+    $rejectFirst = $false
+    $emptySource = New-SyntheticApplication $first
+    $emptySource | Add-Member -Force -NotePropertyName Source -NotePropertyValue ''
+    foreach ($bad in @(
+        [pscustomobject]@{ Source = $first }, $emptySource, (New-SyntheticApplication 'folder\python.exe'),
+        (New-SyntheticApplication "$first $second"), (New-SyntheticApplication 'C:\folder\python.cmd'),
+        (New-SyntheticApplication 'C:\folder\python.exe:alternate')
+    )) {
+        $simulatedCommands = @($bad, $secondApplication)
+        Require-Refusal { Resolve-PublicationApplication 'python.exe' } 'first PATH result is not an exact available application'
+    }
+    $simulatedCommands = @()
+    Require-Refusal { Resolve-PublicationApplication 'python.exe' } 'no PATH match'
+    Require ($checked.Count -eq 0) 'Invalid candidates must be refused before file open.'
+}
+Test-PublicationToolSelection
+
+foreach ($attributes in @(
+    [IO.FileAttributes]::Directory, [IO.FileAttributes]::Device, [IO.FileAttributes]::Offline,
+    [IO.FileAttributes]::ReparsePoint, 0x00040000, 0x00400000
+)) {
+    Require-Refusal { Assert-PublicationApplicationAttributes $attributes } 'nonregular or unavailable application attributes'
+}
+
+. (Join-Path $repo 'tools/install/windows/paths.ps1')
+$knownRecord = Read-PublicationApplicationRecord $currentPowerShell
+$expected = (Get-FileHash -LiteralPath $currentPowerShell -Algorithm SHA256).Hash
+Require ($knownRecord.path -ceq $currentPowerShell -and $knownRecord.bytes -gt 0 -and $knownRecord.sha256 -ceq $expected) (
+    'The actual running PowerShell must produce the exact bounded application fingerprint.'
+)
+
 $selection = Get-PublicationCases
 $manifest = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'fixture.toml')
 $manifestCases = @([regex]::Matches($manifest, '(?m)^selector = "([^"]+)"\r?$') |
