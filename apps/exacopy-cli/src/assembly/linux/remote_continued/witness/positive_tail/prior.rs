@@ -333,7 +333,9 @@ pub(in crate::assembly::linux::remote_continued) fn check_original_vector(
 	};
 	let original = read(old_end);
 	let checkpoint = select_original(&original, prior).unwrap();
-	assert_eq!(checkpoint.checkpoint_end, 4);
+	// The original V1 checkpoint covers the first two bytes. The four-byte
+	// allocation limit allows kind 40 to adopt four after fresh comparison.
+	assert_eq!(checkpoint.checkpoint_end, 2);
 	assert_eq!(checkpoint.authorized_end, 4);
 	let prepared = preparation_boundary(&full[..old_end], checkpoint.stage.head).unwrap();
 	assert_eq!(prepared.digest, checkpoint.stage.head.digest());
