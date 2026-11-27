@@ -8,6 +8,11 @@ use crate::scratch::Scratch;
 use super::super::{ReservedJournalRead, native};
 use super::{append_held, observe_successor};
 
+#[path = "../../../../../../tests/unit/linux/witness_continuation/bounds.rs"]
+mod bounds;
+#[path = "../../../../../../tests/unit/linux/witness_continuation/held_segment.rs"]
+mod held_segment;
+
 #[test]
 #[ignore = "requires a task-owned Linux fixture supporting KEEP_SIZE"]
 fn original_reserved_descriptor_writes_and_rereads_only_the_exact_successor() {

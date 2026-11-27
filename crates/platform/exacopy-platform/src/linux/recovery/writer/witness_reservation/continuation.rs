@@ -106,16 +106,7 @@ impl<'lease> PendingWitnessReservation<'lease> {
 		use ContinuationReservationError as Error;
 
 		let previous = self.plan.accepted();
-		let length = u64::try_from(encoded_frame.len()).map_err(|_| Error::Bounds)?;
-		if encoded_frame.is_empty()
-			|| encoded_frame.len() > MAX_ENCODED_CONTINUATION
-			|| previous.end.checked_add(length) != Some(successor.end)
-			|| previous.sequence.checked_add(1) != Some(successor.sequence)
-			|| successor.digest == [0; 32]
-			|| successor.digest == previous.digest
-			|| successor.end >= self.plan.reserve_end()
-			|| self.plan.reserve_frames().get() <= 1
-		{
+		if !matches_next_frame(self.plan, previous, successor, encoded_frame.len()) {
 			return Err(Error::Bounds);
 		}
 		if !prefix.matches_reader(self.held.stage) {
@@ -174,6 +165,26 @@ impl<'lease> PendingWitnessReservation<'lease> {
 			_same_lane: PhantomData,
 		}
 	}
+}
+
+fn matches_next_frame(
+	plan: WitnessReservationPlan,
+	previous: Head,
+	successor: Head,
+	encoded_length: usize,
+) -> bool {
+	let Ok(length) = u64::try_from(encoded_length) else {
+		return false;
+	};
+	// Plan construction checks this addition. This append must leave a terminal slot.
+	let last = plan.accepted().sequence + plan.reserve_frames().get();
+	(1..=MAX_ENCODED_CONTINUATION).contains(&encoded_length)
+		&& previous.end.checked_add(length) == Some(successor.end)
+		&& previous.sequence.checked_add(1) == Some(successor.sequence)
+		&& successor.digest != [0; 32]
+		&& successor.digest != previous.digest
+		&& successor.end < plan.reserve_end()
+		&& successor.sequence < last
 }
 
 fn append_held<G>(journal: &mut HeldFirstSegment<'_>, encoded: &[u8], guard: G) -> io::Result<()> {

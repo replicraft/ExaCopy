@@ -1,11 +1,13 @@
+use std::ops::Range;
+
 use exacopy_model::retained_prefix::Head;
 
 use crate::linux::{RetainedSuffixWriter, SyncedSuffixRange};
 
 use super::{
-	ActiveWitnessReservation, ContinuationReservationError, MAX_ENCODED_CONTINUATION,
-	ReservedContinuationRequest, ReservedJournalRead, StageError,
-	WitnessReservationObservationError, append_held, observe_successor,
+	ActiveWitnessReservation, ContinuationReservationError, ReservedContinuationRequest,
+	ReservedJournalRead, StageError, WitnessReservationObservationError, WitnessReservationPlan,
+	append_held, matches_next_frame, observe_successor,
 };
 
 impl ActiveWitnessReservation<'_> {
@@ -81,20 +83,14 @@ impl ActiveWitnessReservation<'_> {
 		}
 		let previous = self.head;
 		let range = barrier.range();
-		let first = self.reservation.plan.accepted();
-		let last = first.sequence + self.reservation.plan.reserve_frames().get();
-		let length = u64::try_from(encoded_frame.len()).map_err(|_| Error::Bounds)?;
-		if self.confirmed_checkpoint_end != range.start
-			|| range.start >= range.end
-			|| encoded_frame.is_empty()
-			|| encoded_frame.len() > MAX_ENCODED_CONTINUATION
-			|| previous.end.checked_add(length) != Some(successor.end)
-			|| previous.sequence.checked_add(1) != Some(successor.sequence)
-			|| successor.digest == [0; 32]
-			|| successor.digest == previous.digest
-			|| successor.end >= self.reservation.plan.reserve_end()
-			|| successor.sequence >= last
-		{
+		if !matches_checkpoint(
+			self.reservation.plan,
+			previous,
+			successor,
+			encoded_frame.len(),
+			self.confirmed_checkpoint_end,
+			range,
+		) {
 			return Err(Error::Bounds);
 		}
 		self.check_checkpoint(barrier).map_err(Error::Preflight)?;
@@ -136,4 +132,17 @@ impl ActiveWitnessReservation<'_> {
 			.recheck(held.lease, &reservation.readback)?;
 		Ok(())
 	}
+}
+
+pub(super) fn matches_checkpoint(
+	plan: WitnessReservationPlan,
+	previous: Head,
+	successor: Head,
+	encoded_length: usize,
+	confirmed_end: u64,
+	range: &Range<u64>,
+) -> bool {
+	range.start == confirmed_end
+		&& range.start < range.end
+		&& matches_next_frame(plan, previous, successor, encoded_length)
 }
