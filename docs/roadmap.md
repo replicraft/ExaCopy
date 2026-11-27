@@ -110,6 +110,17 @@ its fixture. The target-aware correction requires the exact known declaration
 tuples while retaining the eight-package Windows closure. Its native result
 is pending. [First v2 attempt](https://github.com/replicraft/ExaCopy/actions/runs/46009182684)
 
+At `0f6051e`, compiler preparation, quiescence, transcript verification and held
+image admission succeeded. Two ABI/status controls and two native refusal cases
+passed; the three positive publication cases returned Win32 error 87 before
+observation. Cleanup remained unconfirmed after an unexpected entry. The native
+rename-call candidate preserves held roots and no-replace semantics and awaits
+hosted execution. [Second v2 attempt](https://github.com/replicraft/ExaCopy/actions/runs/46010876078)
+
+The full `74dd691` formal artifact subsequently passed all 57 declared records,
+Miri and final EVS validation. The earlier snapshot's model log and trace hashes
+match the final artifact. [Full hosted CI](https://github.com/replicraft/ExaCopy/actions/runs/46007719725)
+
 Workspace Clippy failed on Linux, macOS, and Windows at `aea84c9`.
 The protected-model type-alias follow-up passed Windows and macOS Clippy
 at `04da507`; Linux still failed at that revision. The native metadata-table
