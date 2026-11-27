@@ -15,6 +15,8 @@ use super::*;
 
 #[path = "continued_coverage.rs"]
 mod continued_coverage;
+#[path = "witnessed_live_durability.rs"]
+mod live_durability;
 #[path = "witnessed_live_observation.rs"]
 mod live_observation;
 #[path = "witnessed_prepublication.rs"]

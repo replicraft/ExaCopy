@@ -1,11 +1,11 @@
 use exacopy_endpoint::UnixComponent;
 
-use crate::StreamDigest;
 use crate::frame::{FrameKind, FrameWriter};
 use crate::remote_download::RemoteDownloadContext;
 use crate::remote_download::finalization::{RemoteLocalMetadata, RemotePublishTarget};
 use crate::remote_download::finalization_policy::SftpDataOnlyV1;
 use crate::remote_download::replay::{RemoteReplayBoundary, RemoteReplayIssue};
+use crate::{LinuxFileIdentity, StreamDigest};
 
 use super::super::records::{
 	RemoteWitnessCloseoutBody as Body, RemoteWitnessCloseoutRecord,
@@ -97,6 +97,22 @@ impl PreparedWitnessedCloseout {
 				}
 				Outcome::Recovered { .. } => false,
 			}
+	}
+
+	/// Confirms the exact live kind-9 proposal in an independent clean replay.
+	#[must_use]
+	pub fn confirms_live_durability(
+		&self,
+		replay: &RemoteWitnessedCloseoutReplay,
+		witness: RemoteWitnessIntent,
+		target: LinuxFileIdentity,
+	) -> bool {
+		self.kind == FrameKind::DurabilityRecorded
+			&& replay.boundary() == self.successor
+			&& replay.issue().is_none()
+			&& replay.phase() == Phase::Durable
+			&& replay.witness() == Some(witness)
+			&& replay.observed_outcome() == Some(Outcome::Submitted(target))
 	}
 }
 
@@ -201,6 +217,47 @@ impl RemoteWitnessedCloseoutReplay {
 			_ => return Err(Error::Binding),
 		}
 		prepare_frame(binding, self.boundary(), Body::Observed(outcome))
+	}
+
+	/// Prepares kind 9 at the exact clean kind-8 cut of a live submission.
+	///
+	/// The caller confirms all required native barriers under the original
+	/// authority. The recorded observation supplies no barrier authority.
+	///
+	/// # Errors
+	/// Refuses unclean or mismatched replay, a recovered outcome, or a frame
+	/// outside the selected bounds.
+	pub fn prepare_live_durability(
+		&self,
+		trust: &RemoteBootstrapTrust<'_>,
+		witness: RemoteWitnessIntent,
+		target: LinuxFileIdentity,
+	) -> Result<PreparedWitnessedCloseout, Error> {
+		let binding = witness.binding();
+		if self.issue().is_some()
+			|| self.phase() != Phase::PublishedObserved
+			|| self.witness() != Some(witness)
+			|| binding.context != RemoteDownloadContext::for_owner(trust.owner())
+			|| target != binding.stage
+			|| self.observed_outcome() != Some(Outcome::Submitted(target))
+		{
+			return Err(Error::Binding);
+		}
+		let metadata = self
+			.history
+			.durability_metadata_head
+			.ok_or(Error::Binding)?;
+		prepare_frame(
+			binding,
+			self.boundary(),
+			Body::Durability {
+				metadata,
+				directory: witness.stage_directory,
+				target_parent: witness.target_parent,
+				job_directory: witness.job_directory,
+				qualification: witness.qualification_digest,
+			},
+		)
 	}
 }
 

@@ -34,6 +34,7 @@ pub(super) struct CloseoutFacts {
 	pub(super) receipt_cut: Option<receipt::Cut>,
 	pub(super) durable_frames: Vec<Frame>,
 	pub(super) prepublication_heads: Option<(ChainHead, ChainHead)>,
+	pub(super) durability_metadata_head: Option<ChainHead>,
 	pub(super) continued_extent: Option<StreamLength>,
 }
 
@@ -76,6 +77,9 @@ impl<'qualification> WitnessCloseoutHistory<'qualification> {
 					.head(FrameKind::StageSealed)
 					.ok()
 					.zip(self.head(FrameKind::VerificationRecorded).ok());
+			}
+			Some(Phase::PublishedObserved) => {
+				self.facts.durability_metadata_head = self.head(FrameKind::MetadataRecorded).ok();
 			}
 			Some(Phase::Durable) => self.facts.durable_frames = self.phases,
 			_ => {}
