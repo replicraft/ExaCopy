@@ -342,6 +342,7 @@ fn unexpected_stack_egress_fences_before_exposing_the_packet() {
 	);
 }
 
+mod shutdown;
 mod wireguard;
 
 #[test]

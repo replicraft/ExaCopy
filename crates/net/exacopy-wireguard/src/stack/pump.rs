@@ -5,6 +5,8 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use tokio::io::{AsyncRead, AsyncWrite, DuplexStream, ReadBuf, duplex};
+#[cfg(any(test, feature = "experimental-udp"))]
+use tokio::sync::oneshot;
 use tokio::sync::watch;
 use tokio::time::Instant;
 use tokio_util::sync::{CancellationToken, DropGuard};
@@ -13,7 +15,12 @@ use crate::protocol::{INNER_MTU, PeerBinding};
 
 use super::{InnerTcp, PacketDisposition, TcpError, TcpState};
 
+#[cfg(any(test, feature = "experimental-udp"))]
+mod close;
 mod drive;
+
+#[cfg(any(test, feature = "experimental-udp"))]
+use close::ShutdownConfirmation;
 #[cfg(test)]
 mod tests;
 
@@ -166,6 +173,8 @@ pub struct InnerTcpStream {
 	cancelled: Pin<Box<dyn Future<Output = ()> + Send>>,
 	revoked: Pin<Box<dyn Future<Output = ()> + Send>>,
 	shutdown: watch::Sender<Option<Instant>>,
+	#[cfg(any(test, feature = "experimental-udp"))]
+	confirmation: Option<ShutdownConfirmation>,
 }
 
 /// The uniquely owned driver of one asynchronous inner TCP stream.
@@ -175,6 +184,8 @@ pub struct TcpPump {
 	pipe: DuplexStream,
 	tcp: InnerTcp,
 	signals: Signals,
+	#[cfg(any(test, feature = "experimental-udp"))]
+	confirmed_shutdown: Option<oneshot::Sender<()>>,
 }
 
 struct Signals {
@@ -231,6 +242,8 @@ impl InnerTcp {
 			cancelled: Box::pin(cancelled.clone().cancelled_owned()),
 			revoked: Box::pin(route.token.clone().cancelled_owned()),
 			shutdown: request,
+			#[cfg(any(test, feature = "experimental-udp"))]
+			confirmation: None,
 		};
 		let pump = TcpPump {
 			guard: Some(cancelled.clone().drop_guard()),
@@ -243,12 +256,21 @@ impl InnerTcp {
 				#[cfg(feature = "experimental-udp")]
 				open: None,
 			},
+			#[cfg(any(test, feature = "experimental-udp"))]
+			confirmed_shutdown: None,
 		};
 		Ok((stream, pump))
 	}
 }
 
 impl TcpPump {
+	#[cfg(any(test, feature = "experimental-udp"))]
+	pub(crate) fn confirm_shutdown(&mut self, stream: &mut InnerTcpStream) {
+		let (confirmed, receiver) = oneshot::channel();
+		self.confirmed_shutdown = Some(confirmed);
+		stream.confirmation = Some(ShutdownConfirmation::Waiting(receiver));
+	}
+
 	#[cfg(feature = "experimental-udp")]
 	pub(crate) fn track_flow(&mut self) -> TcpFlowStatus {
 		let (open, receive) = watch::channel(false);
@@ -276,10 +298,14 @@ impl TcpPump {
 	/// Requires Tokio's time driver when polled.
 	pub async fn run<I: PacketIo>(mut self, mut io: I) -> Result<(), PumpError<I::Error>> {
 		let result = drive::run(&mut self.tcp, &mut self.pipe, &mut self.signals, &mut io).await;
-		if result.is_ok()
-			&& let Some(guard) = self.guard.take()
-		{
-			guard.disarm();
+		if result.is_ok() {
+			if let Some(guard) = self.guard.take() {
+				guard.disarm();
+			}
+			#[cfg(any(test, feature = "experimental-udp"))]
+			if let Some(confirmed) = self.confirmed_shutdown.take() {
+				let _ = confirmed.send(());
+			}
 		}
 		result
 	}
@@ -322,6 +348,15 @@ impl AsyncWrite for InnerTcpStream {
 	}
 
 	fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+		// Once the pipe shutdown was admitted, only the owned driver's
+		// completion settles it. Revocation also fences the driver's sender.
+		#[cfg(any(test, feature = "experimental-udp"))]
+		{
+			let requested = self.shutdown.borrow().is_some();
+			if requested && let Some(confirmation) = &mut self.confirmation {
+				return confirmation.poll(cx);
+			}
+		}
 		self.check(cx)?;
 		self.shutdown.send_if_modified(|requested| {
 			if requested.is_some() {
@@ -330,6 +365,11 @@ impl AsyncWrite for InnerTcpStream {
 			*requested = Some(Instant::now());
 			true
 		});
-		Pin::new(&mut self.pipe).poll_shutdown(cx)
+		std::task::ready!(Pin::new(&mut self.pipe).poll_shutdown(cx))?;
+		#[cfg(any(test, feature = "experimental-udp"))]
+		if let Some(confirmation) = &mut self.confirmation {
+			return confirmation.poll(cx);
+		}
+		Poll::Ready(Ok(()))
 	}
 }

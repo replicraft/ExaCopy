@@ -308,5 +308,7 @@ async fn independent_drop_of_polled_driver_under_backpressure_does_not_retry() {
 	assert_eq!(offers.load(Ordering::Relaxed), 1);
 }
 
+#[path = "tests/close.rs"]
+mod close;
 #[path = "tests/lifecycle.rs"]
 mod lifecycle;

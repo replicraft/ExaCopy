@@ -101,6 +101,17 @@ impl UdpTcpPeer {
 }
 
 impl<R> UdpTcpAdmission<R> {
+	/// Makes the stream's write shutdown wait for the exact TCP driver to close.
+	///
+	/// Opt in only when the stream owner can keep the driver running and
+	/// bound the wait with its original route authority. A revoked or failed
+	/// driver cannot confirm shutdown.
+	#[must_use]
+	pub fn with_confirmed_shutdown(mut self) -> Self {
+		self.driver.pump.confirm_shutdown(&mut self.stream);
+		self
+	}
+
 	/// Consumes the admission into a scoped stream operation.
 	///
 	/// Run the supplied driver concurrently while using the stream. Observe the
