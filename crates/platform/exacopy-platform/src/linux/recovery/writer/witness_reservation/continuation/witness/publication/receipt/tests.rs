@@ -160,3 +160,6 @@ fn readonly_reopened_anonymous_receipt_links_and_promotes_original_inode() {
 	final_receipt.recheck(final_after_barriers).unwrap();
 	let _final = pin_receipt_name(&job, mount, final_after_barriers, &NAMES, true).unwrap();
 }
+
+#[path = "../../../../../../../../../tests/unit/linux/witness_receipt_named.rs"]
+mod named;
