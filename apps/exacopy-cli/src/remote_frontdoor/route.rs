@@ -10,6 +10,7 @@ use super::FrontdoorError;
 use super::profile::{PublicDigest, protected_path};
 
 pub(crate) const MAX_OUTER_MTU: u16 = 1500;
+const MAX_ADDRESSES: usize = 64;
 const WG_REVISION_DOMAIN: &[u8] = b"ExaCopy/ssh-profile/embedded-route/v2\0";
 
 /// The explicitly approved order for an independently supervised host lookup.
@@ -18,6 +19,38 @@ const WG_REVISION_DOMAIN: &[u8] = b"ExaCopy/ssh-profile/embedded-route/v2\0";
 pub(crate) enum AddressOrder {
 	Ipv4First,
 	Ipv6First,
+}
+
+impl AddressOrder {
+	/// Selects the first usable literal in the preferred family from the complete lookup.
+	///
+	/// # Errors
+	/// Refuses an oversized lookup or one without a usable address for the approved port.
+	pub(crate) fn select_address(
+		self,
+		addresses: impl Iterator<Item = SocketAddr>,
+		port: NonZeroU16,
+	) -> Result<SocketAddr, FrontdoorError> {
+		let (mut v4, mut v6) = (None, None);
+		for (index, address) in addresses.take(MAX_ADDRESSES + 1).enumerate() {
+			if index == MAX_ADDRESSES {
+				return Err(FrontdoorError::Route);
+			}
+			if address.port() != port.get() || !valid_socket(address) {
+				continue;
+			}
+			if address.is_ipv4() {
+				v4.get_or_insert(address);
+			} else {
+				v6.get_or_insert(address);
+			}
+		}
+		match self {
+			Self::Ipv4First => v4.or(v6),
+			Self::Ipv6First => v6.or(v4),
+		}
+		.ok_or(FrontdoorError::Route)
+	}
 }
 
 /// An exact route request. It cannot open a socket or issue route authority.
@@ -153,6 +186,82 @@ fn hash_ip(hash: &mut blake3::Hasher, ip: IpAddr) {
 		IpAddr::V6(ip) => {
 			hash.update(&[6]);
 			hash.update(&ip.octets());
+		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use std::net::{Ipv6Addr, SocketAddr, SocketAddrV6};
+	use std::num::NonZeroU16;
+
+	use super::{AddressOrder, FrontdoorError, MAX_ADDRESSES};
+
+	const SSH_PORT: NonZeroU16 = NonZeroU16::new(22).unwrap();
+
+	#[test]
+	fn bounded_resolution_selects_first_usable_literal_in_preferred_family() {
+		let v4 = "192.0.2.20:22".parse().unwrap();
+		let v6 = "[2001:db8::20]:22".parse().unwrap();
+		let later_v4 = "192.0.2.21:22".parse().unwrap();
+		let wrong_port = "192.0.2.22:2222".parse().unwrap();
+		let values = [wrong_port, v6, v4, later_v4];
+		assert_eq!(
+			AddressOrder::Ipv6First
+				.select_address(values.into_iter(), SSH_PORT)
+				.ok(),
+			Some(v6)
+		);
+		assert_eq!(
+			AddressOrder::Ipv4First
+				.select_address(values.into_iter(), SSH_PORT)
+				.ok(),
+			Some(v4)
+		);
+		assert_eq!(
+			AddressOrder::Ipv6First
+				.select_address(std::iter::repeat_n(v4, MAX_ADDRESSES), SSH_PORT)
+				.ok(),
+			Some(v4)
+		);
+		assert!(matches!(
+			AddressOrder::Ipv4First
+				.select_address(std::iter::repeat_n(v4, MAX_ADDRESSES + 1), SSH_PORT),
+			Err(FrontdoorError::Route)
+		));
+		let oversized = std::iter::once(v4).chain(std::iter::repeat_n(wrong_port, MAX_ADDRESSES));
+		assert!(matches!(
+			AddressOrder::Ipv4First.select_address(oversized, SSH_PORT),
+			Err(FrontdoorError::Route)
+		));
+	}
+
+	#[test]
+	fn resolution_refuses_empty_and_unsupported_answers() {
+		let global_v6 = Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 20);
+		let unusable: [SocketAddr; 9] = [
+			"192.0.2.20:2222".parse().unwrap(),
+			"0.0.0.0:22".parse().unwrap(),
+			"224.0.0.1:22".parse().unwrap(),
+			"255.255.255.255:22".parse().unwrap(),
+			"[::]:22".parse().unwrap(),
+			"[::ffff:192.0.2.20]:22".parse().unwrap(),
+			"[fe80::20]:22".parse().unwrap(),
+			SocketAddrV6::new(global_v6, SSH_PORT.get(), 0, 1).into(),
+			SocketAddrV6::new(global_v6, SSH_PORT.get(), 1, 0).into(),
+		];
+		assert!(matches!(
+			AddressOrder::Ipv4First.select_address(std::iter::empty(), SSH_PORT),
+			Err(FrontdoorError::Route)
+		));
+		for address in unusable {
+			assert!(
+				matches!(
+					AddressOrder::Ipv4First.select_address(std::iter::once(address), SSH_PORT),
+					Err(FrontdoorError::Route)
+				),
+				"unexpected route for {address:?}"
+			);
 		}
 	}
 }

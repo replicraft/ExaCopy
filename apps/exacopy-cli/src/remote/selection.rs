@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use exacopy_endpoint::UnixComponent;
-use exacopy_endpoint::wireguard::{InnerDial, InnerDialKind};
 use exacopy_journal::remote_download::finalization_policy::SftpDataOnlyV1;
 use exacopy_journal::remote_download::qualification::RemoteQualificationRouteClass;
 use exacopy_journal::remote_download::{
@@ -26,7 +25,6 @@ use super::interrupt::Interrupt;
 use super::qualification::Qualification;
 
 const DNS_DEADLINE: Duration = Duration::from_secs(5);
-const MAX_ADDRESSES: usize = 64;
 const MAX_UUIDV7_MILLIS: u64 = (1 << 48) - 1;
 
 pub(super) struct Selected {
@@ -129,7 +127,8 @@ async fn selected_route(
 					result.map_err(|_| Failure::Io)?.map_err(|_| Failure::Io)?
 				}
 			};
-			let selected = choose_address(endpoints, *order, ssh.authority.port().get())?;
+			let selected = AddressOrder::select_address(*order, endpoints, ssh.authority.port())
+				.map_err(|_| Failure::Authorization)?;
 			interrupt.check()?;
 			selected
 		}
@@ -142,35 +141,6 @@ async fn selected_route(
 		}
 	};
 	Ok(RemoteDownloadRoute::ResolvedDirect { endpoint })
-}
-
-fn choose_address(
-	addresses: impl Iterator<Item = std::net::SocketAddr>,
-	order: AddressOrder,
-	port: u16,
-) -> Result<std::net::SocketAddr, Failure> {
-	let (mut v4, mut v6) = (None, None);
-	for (index, address) in addresses.take(MAX_ADDRESSES + 1).enumerate() {
-		if index == MAX_ADDRESSES {
-			return Err(Failure::Authorization);
-		}
-		if address.port() != port
-			|| InnerDial::new(InnerDialKind::Stream, address).is_none()
-			|| matches!(address.ip(), std::net::IpAddr::V6(ip) if ip.is_unicast_link_local())
-		{
-			continue;
-		}
-		if address.is_ipv4() {
-			v4.get_or_insert(address);
-		} else {
-			v6.get_or_insert(address);
-		}
-	}
-	match order {
-		AddressOrder::Ipv4First => v4.or(v6),
-		AddressOrder::Ipv6First => v6.or(v4),
-	}
-	.ok_or(Failure::Authorization)
 }
 
 pub(super) fn job_component(job: JournalJobId) -> String {
@@ -227,33 +197,4 @@ pub(super) fn record_identity(identity: FileIdentity) -> LinuxFileIdentity {
 
 pub(super) fn refused(code: Failure) -> Box<RemoteOutcome> {
 	Box::new(RemoteOutcome::failed(code, None))
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn bounded_resolution_selects_one_literal_and_preserves_preference() {
-		let v4 = "192.0.2.20:22".parse().unwrap();
-		let v6 = "[2001:db8::20]:22".parse().unwrap();
-		let wrong = "192.0.2.21:2222".parse().unwrap();
-		let values = [wrong, v4, v6];
-		assert_eq!(
-			choose_address(values.into_iter(), AddressOrder::Ipv6First, 22).ok(),
-			Some(v6)
-		);
-		assert_eq!(
-			choose_address(values.into_iter(), AddressOrder::Ipv4First, 22).ok(),
-			Some(v4)
-		);
-		assert!(
-			choose_address(
-				std::iter::repeat_n(v4, MAX_ADDRESSES + 1),
-				AddressOrder::Ipv4First,
-				22
-			)
-			.is_err()
-		);
-	}
 }
