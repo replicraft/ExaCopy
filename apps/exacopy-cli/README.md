@@ -231,9 +231,10 @@ Build with `experimental-ssh-capture` to expose `get` and
 `recover remote-resume` for direct SSH. The `experimental-ssh-wireguard`
 feature includes that CLI and adds the embedded WireGuard route. Your
 protected SSH profile selects the route. These commands are Linux-only
-source-build options. Default builds and the official release profile
-exclude them. Native qualification and production release evidence remain
-pending. See [remote transfer readiness](../../docs/engineering/remote-transfer-readiness.md).
+and default builds omit them. The unsigned v0.1.0 testing prerelease
+has a [separate experimental Linux x64 archive](../../docs/releases/v0.1.0.md#experimental-remote-testing)
+with a known embedded WireGuard trust parser issue. Native qualification
+and production release evidence remain pending. See [remote transfer readiness](../../docs/engineering/remote-transfer-readiness.md).
 
 Use paths to already provisioned authority files in the following examples.
 The destination parent must be an admitted Linux directory and the final
@@ -285,7 +286,8 @@ extent to at most 128 MiB and the foreground grant to at most one hour.
   process-crash qualification for the actual destination. Supply
   the separate `exacopy-remote-qualification-trust-v1` JSON file through
   `--qualification-trust` to select the attestor identity and key, exact
-  running build digest, route class, and campaign scope and evidence. The
+  running build digest, route class, and campaign scope and evidence. Its
+  `route` is `direct-pinned-tcp-v1` or `embedded-wireguard-tcp-v1`. The
   attestor key must differ from the local job owner key. The CLI verifies
   the artifact and current native facts before creating job or staging
   material. The native profile observes x86-64 or ARM64 Linux. The

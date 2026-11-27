@@ -21,15 +21,17 @@ registry publication is still pending.
 Unsigned archives for Linux, Apple Silicon macOS and Windows are available
 in the [v0.1.0 testing prerelease](https://github.com/replicraft/ExaCopy/releases/tag/v0.1.0).
 Verify the archive checksum, extract it into a fresh test directory, and
-run the executable directly. The release notes describe its tested scope
-and current limitations.
+run the extracted executable directly. The [testing guide](docs/releases/v0.1.0.md)
+identifies the separate experimental Linux SSH/WireGuard archive and its
+known embedded trust parser issue.
 
 For a prebuilt installation without installing Rust, use
 [`install.sh`](docs/architecture/posix-offline-install.md) on macOS/Linux or
 [`install.ps1`](docs/installation/windows.md) on Windows. These installers
 select the platform archive, verify its checksum and publisher identity,
-and install an owned launcher. Official signed release provisioning remains
-pending; the installation guides state the required trust inputs.
+and install an owned launcher. Use a signed stable release or a signed
+offline bundle with these scripts. Official signed release provisioning
+remains pending.
 
 ## Usage
 
