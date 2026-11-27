@@ -20,6 +20,7 @@ from remote_retry_commissioning import COMMAND, RetryFixture
 import remote_commissioning_wireguard_net as network
 import remote_commissioning_wireguard_lane as lane
 import remote_commissioning_wireguard_observations as observations
+import remote_commissioning_wireguard_tcp as tcp
 from remote_commissioning_wireguard_progress import failure
 from remote_commissioning_peer import Blocked, Fixture
 from native_supervision import CleanupUnconfirmed, ProcessResult
@@ -461,6 +462,7 @@ class KernelFixtureTests(unittest.TestCase):
         initial = observations.Counters(0, 0, 0, None)
         connected = observations.Counters(3490, 4780, 1, "127.0.0.1:44497")
         late_transmit = observations.Counters(3490, 4940, 1, "127.0.0.1:44497")
+        closing = tcp.parse_tcp(b"FIN-WAIT-1 0 1 198.18.0.1:2222 198.18.0.2:61899 timer:(on,20ms,0)\n")
         cases = (("get", 1), ("incumbent", 0))
         rows, failures = [], []
         with tempfile.TemporaryDirectory() as scratch:
@@ -482,16 +484,23 @@ class KernelFixtureTests(unittest.TestCase):
                 patch.object(observations, "time", SimpleNamespace(monotonic=lambda: now)),
                 patch.object(observations, "snapshot", side_effect=[
                     initial, connected, late_transmit,
-                    *([late_transmit] * observations.PEER_QUIET_SECONDS), late_transmit,
+                    *([late_transmit] * (observations.PEER_QUIET_SECONDS + 1)), late_transmit,
+                ]),
+                patch.object(observations, "observe_tcp", side_effect=[
+                    closing, *([[]] * (observations.PEER_QUIET_SECONDS + 1)),
                 ]),
             ):
                 observations.observe_cases(kernel, mailbox, halted, rows, failures)
             self.assertEqual(failures, [])
             self.assertEqual(rows[0]["after"], asdict(connected))
-            self.assertEqual(rows[0]["settling"], {
-                "before_case": "incumbent", "latest": asdict(late_transmit),
-                "required_quiet_ms": 22000, "observed_quiet_ms": 22000, "elapsed_ms": 23000,
-            })
+            settling = rows[0]["settling"]
+            self.assertEqual(settling["before_case"], "incumbent")
+            self.assertEqual(settling["latest"], asdict(late_transmit))
+            self.assertEqual(settling["required_quiet_ms"], 22000)
+            self.assertEqual(settling["observed_quiet_ms"], 22000)
+            self.assertEqual(settling["elapsed_ms"], 24000)
+            self.assertEqual(settling["tcp_first"]["sockets"][0]["state"], "FIN-WAIT-1")
+            self.assertEqual(settling["tcp_latest"]["sockets"], [])
             self.assertEqual(rows[1]["before"], asdict(late_transmit))
             self.assertEqual(rows[1]["after"], asdict(late_transmit))
             self.assertTrue((mailbox / "case-1.observed").exists())
@@ -515,9 +524,58 @@ class KernelFixtureTests(unittest.TestCase):
                 with (
                     patch.object(observations, "time", SimpleNamespace(monotonic=lambda: now)),
                     patch.object(observations, "snapshot", side_effect=samples),
+                    patch.object(observations, "observe_tcp", return_value=[]),
                     self.assertRaisesRegex(Blocked, reason),
                 ):
                     observations.settle_peer(Mock(), initial, SimpleNamespace(wait=wait), {})
+
+    def test_exact_peer_tcp_inventory_keeps_only_bounded_retransmit_evidence(self):
+        active = (b"FIN-WAIT-1 0 192 198.18.0.1:2222 198.18.0.2:61899 "
+                  b"timer:(on,208ms,5) cubic bytes_retrans:960 segs_out:24 retrans:1/5\n")
+        closed = b"TIME-WAIT 0 0 198.18.0.1:2222 198.18.0.2:60950 timer:(timewait,59sec,0)\n"
+        kernel = Mock()
+        kernel.call.return_value = active + closed
+        flows = tcp.observe_tcp(kernel)
+        kernel.call.assert_called_once_with(kernel.peer, "observe exact inner OpenSSH sockets", network.SS,
+                                            "-H4ntoiO", "state", "connected", "src", "198.18.0.1:2222",
+                                            "dst", "198.18.0.2")
+        terminal, pending = flows
+        self.assertTrue(terminal.drained())
+        self.assertFalse(pending.drained())
+        self.assertEqual((pending.client_port, pending.timer, pending.send_queue, pending.timer_retransmissions,
+                          pending.retransmissions, pending.bytes_retransmitted, pending.segments_sent),
+                         (61899, "on", 192, 5, 5, 960, 24))
+        for invalid in (
+            active + active, active.replace(b"198.18.0.2", b"192.0.2.2"),
+            active.replace(b"retrans:1/5", b"retrans:6/5"), active.replace(b"61899", b"65536"),
+        ):
+            with self.assertRaises(Blocked):
+                tcp.parse_tcp(invalid)
+
+    def test_stable_wireguard_counters_do_not_hide_active_tcp_retransmission(self):
+        carrier = observations.Counters(3490, 7552, 1, "127.0.0.1:44497")
+        active = (b"FIN-WAIT-1 0 192 198.18.0.1:2222 198.18.0.2:61899 "
+                  b"timer:(on,15sec,5) bytes_retrans:960 segs_out:24 retrans:1/5\n")
+        first, last = tcp.parse_tcp(active), tcp.parse_tcp(active.replace(b"960", b"1152"))
+        now = 0
+
+        def wait(seconds):
+            nonlocal now
+            now += seconds
+            return False
+
+        evidence = {}
+        with (
+            patch.object(observations, "time", SimpleNamespace(monotonic=lambda: now)),
+            patch.object(observations, "snapshot", return_value=carrier),
+            patch.object(observations, "observe_tcp", side_effect=[first, *([last] * 59)]),
+            self.assertRaisesRegex(Blocked, "did not settle"),
+        ):
+            observations.settle_peer(Mock(), carrier, SimpleNamespace(wait=wait), evidence)
+        self.assertEqual(evidence["tcp_first"]["sockets"][0]["bytes_retransmitted"], 960)
+        self.assertEqual(evidence["tcp_latest_active"]["sockets"][0]["bytes_retransmitted"], 1152)
+        self.assertEqual(evidence["tcp_latest"]["elapsed_ms"], 60000)
+        self.assertNotIn("observed_quiet_ms", evidence)
 
     def test_public_telemetry_rejects_wrong_peer_and_non_loopback_endpoint(self):
         key = "01" * 32

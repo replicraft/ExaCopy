@@ -8,6 +8,7 @@ import time
 
 from remote_commissioning_peer import Blocked, checkpoint
 from remote_commissioning_wireguard_progress import failure
+from remote_commissioning_wireguard_tcp import observe_tcp
 
 CASES = (
     ("qualification-path-control", 0), ("qualification-refusal", 0),
@@ -134,7 +135,8 @@ def file_signal(path):
 
 
 def settle_peer(kernel, initial, halted, evidence):
-    quiet_since = started = time.monotonic()
+    started = time.monotonic()
+    quiet_since = None
     deadline = started + PEER_SETTLE_SECONDS
     previous = initial
     while (remaining := deadline - time.monotonic()) > 0:
@@ -142,19 +144,30 @@ def settle_peer(kernel, initial, halted, evidence):
             raise Blocked("carrier settling interrupted")
         checkpoint()
         current = snapshot(kernel)
+        flows = observe_tcp(kernel)
         now = time.monotonic()
-        evidence.update(latest=asdict(current), elapsed_ms=int((now - started) * 1000))
+        elapsed_ms = int((now - started) * 1000)
+        evidence.update(latest=asdict(current), elapsed_ms=elapsed_ms)
+        tcp_sample = {"carrier_sent": current.sent, "carrier_received": current.received,
+                      "elapsed_ms": elapsed_ms, "sockets": [asdict(flow) for flow in flows]}
+        evidence.setdefault("tcp_first", tcp_sample)
+        evidence["tcp_latest"] = tcp_sample
+        tcp_drained = all(flow.drained() for flow in flows)
+        if not tcp_drained:
+            evidence["tcp_latest_active"] = tcp_sample
         if (
             current.endpoint != initial.endpoint or current.handshake < previous.handshake
             or current.received < previous.received or current.sent < previous.sent
         ):
             raise Blocked("carrier settling observed changed peer or regressed counters")
-        if current != previous:
+        if not tcp_drained:
+            quiet_since = None
+        elif current != previous or quiet_since is None:
             quiet_since = now
-            previous = current
         elif now - quiet_since >= PEER_QUIET_SECONDS and now <= deadline:
             evidence["observed_quiet_ms"] = int((now - quiet_since) * 1000)
             return current
+        previous = current
     raise Blocked("carrier did not settle between network and local-only cases")
 
 
