@@ -7,7 +7,9 @@ use exacopy_journal::remote_download::{
 	MAX_REMOTE_DOWNLOAD_OWNER_BYTES, RemoteBootstrapTrust, RemoteDownloadDurability,
 	RemoteDownloadError, RemoteDownloadOwnerRecord, RemoteDownloadRoute,
 };
-use exacopy_platform::linux::{DestinationRoot, RecoveryFile, RecoveryJob, RecoveryReadLease};
+use exacopy_platform::linux::{
+	DestinationRoot, RecoveryFile, RecoveryJob, RecoveryReadLease, TargetStatus,
+};
 
 use crate::args::RemoteOptions;
 use crate::assembly::linux::remote_download::RemoteJobAction;
@@ -119,6 +121,17 @@ pub(super) fn select(
 		) {
 		return Err(Box::new(RemoteOutcome::failed(
 			Failure::Unsupported,
+			Some(duplicate_job(location)),
+		)));
+	}
+	// Observe the signed destination before admitting another connection.
+	// Absence here grants nothing at the later exclusive writer boundary.
+	let target = UnixComponent::new(scope.destination.target()).map_err(|_| unknown())?;
+	let target_status = root.target_status(target).map_err(|_| unknown())?;
+	job.recheck().map_err(|_| unknown())?;
+	if target_status == TargetStatus::Occupied {
+		return Err(Box::new(RemoteOutcome::failed(
+			Failure::Conflict,
 			Some(duplicate_job(location)),
 		)));
 	}

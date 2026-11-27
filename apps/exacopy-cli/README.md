@@ -351,7 +351,10 @@ signed scope and checks the current authority again. Clean pre-intent
 history can start a fresh attempt with a newly authenticated session,
 reading from byte zero into a new private stage. Prior private attempts
 remain available as evidence. Resume uses the recorded source, route and
-destination. Once publication intent may have been recorded, recovery
+destination. If a clean pre-intent job's target is already occupied, resume
+returns `E_CONFLICT` with the retained job before opening a connection.
+The exclusive writer still checks the destination again before any publish
+attempt. Once publication intent may have been recorded, recovery
 remains a reconciliation case and the command refuses another publish
 attempt. Retain the job when it reports uncertain or confirmed publication.
 

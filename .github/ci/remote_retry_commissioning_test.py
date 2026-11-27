@@ -73,7 +73,10 @@ class RetryProviderTests(unittest.TestCase):
                       properties["BindReadOnlyPaths"].split())
         self.assertEqual(properties["KillMode"], "control-group")
         self.assertEqual(properties["ProtectControlGroups"], "yes")
-        self.assertEqual(len(CAMPAIGN_FILES), 12)
+        self.assertEqual(len(CAMPAIGN_FILES), 18)
+        for case in ("resume-published", "resume-incumbent", "resume-qualification-refusal"):
+            self.assertIn(f"campaign/{case}.openssh.log", CAMPAIGN_FILES)
+            self.assertIn(f"campaign/{case}.terminal.json", CAMPAIGN_FILES)
         for path in CAMPAIGN_FILES:
             self.assertEqual(Path(path).parent, Path("campaign"))
             self.assertTrue(path.endswith((".openssh.log", ".terminal.json"))

@@ -11,12 +11,11 @@ import os
 from pathlib import Path
 import re
 import signal
-import stat
 import subprocess
 import time
 
 from campaign import (
-    HeldInputs, ROOT, absent, archive, cleanup_status, command_for, fixture_operand,
+    HeldInputs, MAX_RECEIPT, RECEIPT, ROOT, absent, archive, cleanup_status, command_for, fixture_operand,
     namespace, preflight, receipt_absent, sha256_artifacts, validate_published,
 )
 from fixture import (
@@ -25,12 +24,12 @@ from fixture import (
     opened, owned_directory, require,
 )
 from process import owned_cli_process
+from retry_observations import read_terminal, resume_against_incumbent, resume_control, stages
 
 DIRECT = "direct-pinned-tcp-v1"
 WINDOW = 64 * 1024
 SOURCE_BYTES = 3 * WINDOW
 MAX_TRACE = 64 * 1024
-STAGE_NAME = re.compile(r"capture-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}")
 EVENT = re.compile(
     r"(redial|expired|revoked|budget|host-refused) ([1-4]) "
     r"(open|read|fstat|lstat|close|eof|timeout-held|new-zero-held|released|transport-closed|peer-budget) "
@@ -124,17 +123,6 @@ class PreviousStage:
         require(current == self.digest, "retained stage contents changed")
 
 
-def stages(job):
-    directory = job / "stage"
-    owned_directory(directory, private=True)
-    found = set()
-    for file in directory.iterdir():
-        require(len(found) < 3 and STAGE_NAME.fullmatch(file.name), "unexpected stage namespace")
-        require(stat.S_ISREG(file.lstat().st_mode), "stage is not a regular file")
-        found.add(file)
-    return found
-
-
 def pin_previous(scope, destination, target, known, source):
     job = namespace(destination, known, pending_job=True)
     require(job is not None, "held READ did not establish one private job")
@@ -211,39 +199,6 @@ def report_code(report, actual, allowed):
         "compiled CLI emitted an unexpected terminal disposition",
     )
     return code
-
-
-def read_terminal(source, destination, exit_status, elapsed):
-    observation = {
-        "exit_status": exit_status,
-        "elapsed_seconds": round(elapsed, 3),
-        "report_schema_valid": False,
-        "result": None,
-        "publication": None,
-        "error_code": None,
-    }
-    try:
-        report = json.loads(checked_read(canonical(source), MAX_REPORT))
-        require(isinstance(report, dict) and report.get("schema") == "exacopy.cli.remote_download"
-                and report.get("schema_version") == "1.0", "wrong public report schema")
-        observation["report_schema_valid"] = True
-        if (result := report.get("result")) in ("failed", "published_with_omissions"):
-            observation["result"] = result
-        if (publication := report.get("publication")) in ("not_published", "published", "publication_uncertain"):
-            observation["publication"] = publication
-        error = report.get("error")
-        if isinstance(error, dict) and (code := error.get("code")) in (
-            "E_INVALID_REQUEST", "E_CONFLICT", "E_IO", "E_INTEGRITY", "E_UNSUPPORTED",
-            "E_AUTHORIZATION", "E_RECOVERY_REQUIRED", "E_CANCELLED",
-        ):
-            observation["error_code"] = code
-        return report
-    finally:
-        # Retain the closed process's disposition before any peer oracle can fail.
-        # The fixture's paths, stderr and full report stay in the private workspace.
-        with destination.open("x", encoding="utf-8") as output:
-            json.dump(observation, output, sort_keys=True)
-            output.write("\n")
 
 
 def require_closed(rows, name, attempts):
@@ -329,6 +284,14 @@ def case(args, name, grant, b3sum, qualification, account, host, peer, trace, kn
             known.add(target)
             peer.check(2, args.evidence / f"{name}.openssh.log")
             count, status = 2, "published_with_omissions"
+            resume_control(args, "resume-published", job, 9, "E_RECOVERY_REQUIRED",
+                           "published", peer, trace)
+            check_held(target, fresh, final)
+            retained.recheck()
+            require(stages(job) == {retained.name}
+                    and checked_read(canonical(job / RECEIPT), MAX_RECEIPT)
+                    == checked_read(args.evidence / f"{name}.receipt", MAX_RECEIPT),
+                    "published resume changed private stages or the committed receipt")
         elif name == "host-refused":
             status = report_code(report, process.returncode, {(8, "E_AUTHORIZATION")})
             peer_pass(rows, name, [])
@@ -361,6 +324,8 @@ def case(args, name, grant, b3sum, qualification, account, host, peer, trace, kn
             archive(args, name, retained.job)
             count = len(attempts)
             peer.check(count, args.evidence / f"{name}.openssh.log")
+            if name == "expired":
+                resume_against_incumbent(args, retained, target, peer, trace, known)
         namespace(args.destination, known)
         return {
             "case": name, "status": status, "connections": count, "elapsed_seconds": round(elapsed, 3),
@@ -387,7 +352,7 @@ def run(args, summary):
         trace = Trace(args.trace)
         summary["definition_sha256"].update({
             name: file_sha256(Path(__file__).with_name(name))
-            for name in ("retry_campaign.py", "retry_sftp_peer.c")
+            for name in ("retry_campaign.py", "retry_observations.py", "retry_sftp_peer.c")
         })
         summary["fixture_ready"] = True
         known = set()

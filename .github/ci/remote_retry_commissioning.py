@@ -12,12 +12,14 @@ from native_supervision import CleanupUnconfirmed, logged_command, write_json
 from remote_commissioning_peer import INSTALL, NOLOGIN, Blocked, Fixture, checkpoint, directory_identity, run
 import remote_qualification as native
 from retry_campaign import CASES, SOURCE_BYTES
+from retry_observations import RESUME_CONTROLS
 
 
 COMMAND = "exacopy-fixture-sftp-v1"
 CC = Path("/usr/bin/cc")
-CAMPAIGN_FILES = {f"campaign/{name}.openssh.log": commissioning.MAX_SUMMARY for name, _ in CASES}
-CAMPAIGN_FILES.update({f"campaign/{name}.terminal.json": 1024 for name, _ in CASES})
+EXPORTED_CASES = tuple(name for name, _ in CASES) + RESUME_CONTROLS
+CAMPAIGN_FILES = {f"campaign/{name}.openssh.log": commissioning.MAX_SUMMARY for name in EXPORTED_CASES}
+CAMPAIGN_FILES.update({f"campaign/{name}.terminal.json": 1024 for name in EXPORTED_CASES})
 CAMPAIGN_FILES.update({
     "campaign/sftp-events.log": commissioning.MAX_SUMMARY,
     "campaign/openssh.log": commissioning.MAX_SUMMARY,
