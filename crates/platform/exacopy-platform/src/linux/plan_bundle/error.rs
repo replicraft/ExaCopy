@@ -5,6 +5,10 @@ use rustix::io::Errno;
 
 use super::super::ReadError;
 
+#[cfg(test)]
+#[path = "../../../tests/unit/plan_error.rs"]
+mod tests;
+
 /// Failure to observe or write a protected native Plan bundle.
 #[derive(Debug)]
 #[non_exhaustive]

@@ -86,3 +86,7 @@ pub(super) fn require_disjoint(
 	}
 	Ok(())
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/plan_ancestry.rs"]
+mod tests;

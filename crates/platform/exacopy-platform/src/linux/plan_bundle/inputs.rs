@@ -107,3 +107,7 @@ impl std::error::Error for PlanSeedError {
 		}
 	}
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/plan_inputs.rs"]
+mod tests;

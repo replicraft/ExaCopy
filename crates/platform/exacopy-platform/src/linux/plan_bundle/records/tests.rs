@@ -46,3 +46,6 @@ fn hard_link_and_symlink_incumbents_are_never_adopted_as_pages() {
 	}
 	assert_eq!(std_fs::read(scratch.path("incumbent")).unwrap(), b"exact");
 }
+
+#[path = "../../../../tests/unit/plan_records.rs"]
+mod coverage;
