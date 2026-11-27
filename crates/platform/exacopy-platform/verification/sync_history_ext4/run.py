@@ -488,7 +488,7 @@ def checked_managed_result(output, code, facts, anchors):
     prefix = "passed " + " ".join(f"{key}={value}" for key, value in fields.items()) + " "
     device = fields["anchor"].rsplit(":", 1)[0]
     identity = rf"({re.escape(device)}:[1-9][0-9]{{0,19}})"
-    suffix = re.fullmatch(rf"live={identity} live_left={identity} live_right={identity} controls=7 cleanup=verified",
+    suffix = re.fullmatch(rf"live={identity} live_left={identity} live_right={identity} controls=8 cleanup=verified",
                           markers[0].removeprefix(prefix))
     require(markers[0].startswith(prefix) and suffix is not None and code == 0
             and lines.count("ok") == 1 and not lines.count("FAILED")
@@ -499,7 +499,7 @@ def checked_managed_result(output, code, facts, anchors):
             and len({fields["anchor"], fields["anchor_left"], fields["anchor_right"], *live}) == 6,
             "reported managed live directories must be distinct on the independent anchor device")
     return {"schema_version": 1, "outcome": "passed", "feature": MANAGED.required_feature, **fields,
-            **dict(zip(("live", "live_left", "live_right"), live)), "controls": 7, "cleanup": "verified"}
+            **dict(zip(("live", "live_left", "live_right"), live)), "controls": 8, "cleanup": "verified"}
 
 
 def execute(evidence, binary, env, facts, report, profile=HISTORY, sides=None):

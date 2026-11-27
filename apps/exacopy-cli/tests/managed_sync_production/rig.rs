@@ -1,18 +1,21 @@
 //! Descriptor-relative setup and cleanup for the selected native test parent.
 
 use std::ffi::{CStr, OsStr};
-use std::fs::File;
+use std::fs::{File, Metadata};
 use std::io::{self, Read as _, Write as _};
+use std::num::NonZeroU64;
 use std::os::unix::ffi::OsStrExt as _;
 use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 
 use exacopy_plan::workflow_sync::NativeObject;
-use exacopy_platform::linux::SyncProfileStore;
+use exacopy_platform::linux::{FileIdentity, SyncProfileStore};
 use rustix::fs::{self, AtFlags, Mode, OFlags, ResolveFlags, StatVfsMountFlags};
 use rustix::io::Errno;
 
-use super::{TestResult, object};
+use super::{SUBJECT, TestResult};
+
+pub(super) const FIXTURE_PARENT: &str = "EXACOPY_MANAGED_SYNC_FIXTURE_PARENT";
 
 const DIRECTORY: OFlags = OFlags::RDONLY
 	.union(OFlags::DIRECTORY)
@@ -43,7 +46,7 @@ impl Sandbox {
 		admit: impl FnOnce(&Path, &File) -> TestResult<T>,
 	) -> TestResult<(Self, T)> {
 		let selected = PathBuf::from(
-			std::env::var_os("EXACOPY_MANAGED_SYNC_FIXTURE_PARENT")
+			std::env::var_os(FIXTURE_PARENT)
 				.ok_or("independently selected fixture parent is required")?,
 		);
 		if !selected.is_absolute()
@@ -115,7 +118,7 @@ impl Sandbox {
 	}
 
 	pub(super) fn track_created_slot(&mut self, parent: &File, name: &[u8]) -> TestResult {
-		let file = open_child(parent, name, OFlags::RDONLY | OFlags::NONBLOCK)?;
+		let file = open_child(parent, name, OFlags::PATH)?;
 		self.entries.push(Entry::new(
 			parent.try_clone()?,
 			name,
@@ -284,4 +287,38 @@ fn namespace(thread: &File, name: &CStr) -> TestResult<NativeObject> {
 		return Err("fixture namespace descriptor is outside nsfs".into());
 	}
 	Ok(object(&ns.metadata()?))
+}
+
+pub(super) fn print_object(native: NativeObject) -> String {
+	format!("{}:{}:{}", native.major, native.minor, native.inode)
+}
+
+pub(super) fn native_object(identity: FileIdentity) -> NativeObject {
+	device_inode(identity.device(), identity.inode())
+}
+
+pub(super) fn object(metadata: &Metadata) -> NativeObject {
+	device_inode(metadata.dev(), metadata.ino())
+}
+
+fn device_inode(device: u64, inode: u64) -> NativeObject {
+	NativeObject {
+		major: rustix::fs::major(device),
+		minor: rustix::fs::minor(device),
+		inode: NonZeroU64::new(inode).unwrap(),
+	}
+}
+
+pub(super) fn assert_live(roots: [&File; 2], contents: [&[u8]; 2]) -> TestResult {
+	for (root, expected) in roots.into_iter().zip(contents) {
+		assert_eq!(read(root, SUBJECT)?, expected);
+		assert_eq!(
+			open_child(root, SUBJECT, OFlags::RDONLY)?
+				.metadata()?
+				.mode()
+				& 0o7777,
+			0o600
+		);
+	}
+	Ok(())
 }

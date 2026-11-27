@@ -52,11 +52,11 @@ class Controls(unittest.TestCase):
         success = self.output(
             "passed boot=00000000-0000-0000-0000-000000000001 mnt_ns=0:4:10 user_ns=0:4:11 "
             "mount=25 unique_mount=5021 anchor=8:1:5 anchor_left=8:1:6 anchor_right=8:1:7 "
-            "live=8:1:8 live_left=8:1:9 live_right=8:1:10 controls=7 cleanup=verified",
+            "live=8:1:8 live_left=8:1:9 live_right=8:1:10 controls=8 cleanup=verified",
         )
         result = run.checked_managed_result(success, 0, facts, anchors)
         self.assertEqual((result["outcome"], result["feature"], result["controls"]),
-                         ("passed", run.MANAGED.required_feature, 7))
+                         ("passed", run.MANAGED.required_feature, 8))
         for old, new in (
             ("000000000001", "000000000002"), ("mnt_ns=0:4:10", "mnt_ns=0:4:9"),
             ("user_ns=0:4:11", "user_ns=0:4:9"), ("mount=25", "mount=24"),
@@ -64,7 +64,7 @@ class Controls(unittest.TestCase):
             ("anchor_left=8:1:6", "anchor_left=8:1:7"), ("anchor_right=8:1:7", "anchor_right=8:1:6"),
             ("live=8:1:8", "live=8:2:8"), ("live_left=8:1:9", "live_left=8:1:6"),
             ("live_right=8:1:10", "live_right=8:1:18446744073709551616"),
-            ("controls=7", "controls=6"), (" controls=7", ""), (" live_left=8:1:9", ""),
+            ("controls=8", "controls=7"), (" controls=8", ""), (" live_left=8:1:9", ""),
             ("cleanup=verified", "cleanup=unconfirmed"),
             ("running 1 test", "running 0 tests"), (run.MANAGED.case, "unrelated_case"),
             ("0 ignored", "1 ignored"),

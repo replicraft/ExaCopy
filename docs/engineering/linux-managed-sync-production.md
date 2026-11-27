@@ -100,7 +100,7 @@ signed P-063 history independently with a public fixture-only seed. The
 positive path checks the exact right-to-left incumbent copy candidate, both
 content digests and preserved live files.
 
-The same selected test checks seven controls.
+The same selected test checks eight controls.
 
 1. A native root identity mismatch refuses Init before slot creation.
 2. A held exclusive live writer lock refuses Init before slot creation.
@@ -109,6 +109,10 @@ The same selected test checks seven controls.
 5. A held exclusive live writer lock refuses preview.
 6. A right-side stream beyond the selected ceiling refuses preview.
 7. Missing selected history refuses preview with no first-run fallback.
+8. An isolated child forces a post-create metadata refusal. Init returns no
+   selection receipt, retains the empty private slot, and a retry preserves the
+   same incumbent inode. The child checks unchanged seed, history and live bytes;
+   its deadline, output bounds and cleanup must complete before success.
 
 The ownership checker binds the manifest to the exact package, Cargo target,
 source, feature and selector. The runner binds the exact executable and test

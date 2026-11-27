@@ -4,7 +4,7 @@
 #![cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
 
 use std::error::Error;
-use std::fs::{File, Metadata};
+use std::fs::File;
 use std::io;
 use std::num::{NonZeroU32, NonZeroU64};
 use std::os::unix::ffi::OsStrExt as _;
@@ -30,10 +30,15 @@ use rustix::process::{getegid, geteuid};
 
 #[path = "managed_sync_production/history.rs"]
 mod history;
+#[path = "managed_sync_production/post_creation.rs"]
+mod post_creation;
 #[path = "managed_sync_production/rig.rs"]
 mod rig;
 
-use rig::{Sandbox, assert_missing, kernel_location, open_child, read};
+use rig::{
+	Sandbox, assert_live, assert_missing, kernel_location, native_object, object, open_child,
+	print_object, read,
+};
 
 type TestResult<T = ()> = Result<T, Box<dyn Error>>;
 
@@ -48,7 +53,8 @@ const MOUNT_ID_UNIQUE: StatxFlags = StatxFlags::from_bits_retain(0x4000);
 #[ignore = "requires a separately selected owner-private fixture parent on an admitted native ext4 root"]
 fn production_managed_init_then_preview_exact_p063_history() -> TestResult {
 	let (mut sandbox, anchor) = Sandbox::create(admit)?;
-	let result = exercise(&mut sandbox, &anchor.location);
+	let child = post_creation::is_child();
+	let result = exercise(&mut sandbox, &anchor.location, child);
 	let live = match (result, sandbox.clean()) {
 		(Ok(live), Ok(())) => live,
 		(Err(error), Ok(())) | (Ok(_), Err(error)) => return Err(error),
@@ -59,9 +65,14 @@ fn production_managed_init_then_preview_exact_p063_history() -> TestResult {
 			.into());
 		}
 	};
+	if child {
+		println!("\n{}", post_creation::CLEAN_MARKER);
+		return Ok(());
+	}
+	post_creation::run_child()?;
 	let location = anchor.location;
 	println!(
-		"\nmanaged_sync_production=passed boot={} mnt_ns={} user_ns={} mount={} unique_mount={} anchor={} anchor_left={} anchor_right={} live={} live_left={} live_right={} controls=7 cleanup=verified",
+		"\nmanaged_sync_production=passed boot={} mnt_ns={} user_ns={} mount={} unique_mount={} anchor={} anchor_left={} anchor_right={} live={} live_left={} live_right={} controls=8 cleanup=verified",
 		uuid::Uuid::from_bytes(location.boot),
 		print_object(location.mount_namespace),
 		print_object(location.user_namespace),
@@ -80,6 +91,7 @@ fn production_managed_init_then_preview_exact_p063_history() -> TestResult {
 fn exercise(
 	sandbox: &mut Sandbox,
 	admitted: &ManagedPolicyLocation,
+	post_creation_only: bool,
 ) -> TestResult<[NativeObject; 3]> {
 	let sandbox_dir = sandbox.directory.try_clone()?;
 	let profile = sandbox.path.join("profile");
@@ -197,7 +209,23 @@ fn exercise(
 		},
 	};
 
+	let live_identity = [
+		location.parent,
+		policy.endpoints[0].object,
+		policy.endpoints[1].object,
+	];
 	assert_missing(&profile_dir, SLOT);
+	if post_creation_only {
+		post_creation::exercise(
+			sandbox,
+			&profile_dir,
+			request(&profile, profile_identity, &policy),
+		)?;
+		assert_eq!(read(&profile_dir, b"owner.seed")?, SEED);
+		post_creation::verify_history(&history_fd, &artifacts)?;
+		assert_live(live, [b"abc", b"abc"])?;
+		return Ok(live_identity);
+	}
 	let approved = policy.endpoints[1].object.inode;
 	// A held regular file cannot share the live or historical directory inode.
 	policy.endpoints[1].object.inode = object(&right).inode;
@@ -319,11 +347,7 @@ fn exercise(
 		assert_eq!(read(&history_fd, name.as_bytes())?, artifact.bytes);
 	}
 	assert_live(live, [b"abc", b"xyzz"])?;
-	Ok([
-		location.parent,
-		policy.endpoints[0].object,
-		policy.endpoints[1].object,
-	])
+	Ok(live_identity)
 }
 
 fn request<'a>(
@@ -449,42 +473,8 @@ fn observe_scope(
 	})
 }
 
-fn print_object(native: NativeObject) -> String {
-	format!("{}:{}:{}", native.major, native.minor, native.inode)
-}
-
 fn mount_id(directory: &File, flag: StatxFlags) -> TestResult<NonZeroU64> {
 	let stat = statx(directory, c"", AtFlags::EMPTY_PATH, flag)?;
 	assert_ne!(stat.stx_mask & flag.bits(), 0);
 	NonZeroU64::new(stat.stx_mnt_id).ok_or_else(|| "kernel omitted requested mount ID".into())
-}
-
-fn native_object(identity: exacopy_platform::linux::FileIdentity) -> NativeObject {
-	device_inode(identity.device(), identity.inode())
-}
-
-fn object(metadata: &Metadata) -> NativeObject {
-	device_inode(metadata.dev(), metadata.ino())
-}
-
-fn device_inode(device: u64, inode: u64) -> NativeObject {
-	NativeObject {
-		major: rustix::fs::major(device),
-		minor: rustix::fs::minor(device),
-		inode: NonZeroU64::new(inode).unwrap(),
-	}
-}
-
-fn assert_live(roots: [&File; 2], contents: [&[u8]; 2]) -> TestResult {
-	for (root, expected) in roots.into_iter().zip(contents) {
-		assert_eq!(read(root, SUBJECT)?, expected);
-		assert_eq!(
-			open_child(root, SUBJECT, OFlags::RDONLY)?
-				.metadata()?
-				.mode()
-				& 0o7777,
-			0o600
-		);
-	}
-	Ok(())
 }
