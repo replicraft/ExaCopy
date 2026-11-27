@@ -34,7 +34,8 @@ pub use terminal::{
 pub use writer::{
 	ActiveWitnessReservation, ContinuationReservationError, FreshRecoveryStage,
 	PendingProtectedWitness, PendingWitnessReservation, ProtectedWitnessEffect,
-	ProtectedWitnessError, RecoveryReceiptDirectory, RecoveryStageDirectory, RecoveryWriteLease,
+	ProtectedWitnessError, RecoveredWitnessJournal, RecoveredWitnessJournalError,
+	RecoveryReceiptDirectory, RecoveryStageDirectory, RecoveryWriteLease,
 	ReservedContinuationRequest, ReservedJournalRead, RetainedPrefixRead, RetainedPrefixSelection,
 	RetainedStage, RetainedSuffixReadback, RetainedSuffixWriter, SealedProtectedWitness,
 	SuffixEffect, SuffixError, SyncedRetainedPrefix, SyncedSuffixRange, WitnessCredentialLane,

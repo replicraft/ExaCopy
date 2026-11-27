@@ -22,6 +22,7 @@ use super::{
 
 mod fresh;
 mod prefix;
+mod recovered_witness;
 mod resume;
 mod retained;
 mod witness_reservation;
@@ -32,6 +33,7 @@ pub use prefix::{
 	RetainedSuffixReadback, RetainedSuffixWriter, SuffixEffect, SuffixError, SyncedRetainedPrefix,
 	SyncedSuffixRange, WitnessCredentialLane, WitnessLinkCandidate, WitnessedSuffixReadback,
 };
+pub use recovered_witness::{RecoveredWitnessJournal, RecoveredWitnessJournalError};
 pub use resume::RecoveryStageDirectory;
 pub use retained::RetainedStage;
 pub use witness_reservation::{
@@ -76,6 +78,7 @@ impl DestinationRoot {
 			suffix_barrier_started: AtomicBool::new(false),
 			journal_access: Mutex::new(()),
 			journal_reservation_started: AtomicBool::new(false),
+			recovered_observation_started: AtomicBool::new(false),
 		})
 	}
 }
@@ -94,6 +97,7 @@ pub struct RecoveryWriteLease<'root> {
 	suffix_barrier_started: AtomicBool,
 	journal_access: Mutex<()>,
 	journal_reservation_started: AtomicBool,
+	recovered_observation_started: AtomicBool,
 }
 
 impl RecoveryWriteLease<'_> {
@@ -102,7 +106,9 @@ impl RecoveryWriteLease<'_> {
 			.stage_access
 			.try_lock()
 			.map_err(|_| StageError::JobBusy)?;
-		if self.suffix_barrier_started.load(Ordering::Relaxed) {
+		if self.suffix_barrier_started.load(Ordering::Relaxed)
+			|| self.recovered_observation_started.load(Ordering::Relaxed)
+		{
 			return Err(StageError::JobBusy);
 		}
 		Ok(access)
@@ -177,17 +183,31 @@ impl RecoveryWriteLease<'_> {
 		Ok(LinuxJournalSegment::recovered(held.file, held.writer))
 	}
 
-	fn hold_first_segment_for_append(
-		&self,
-		expected: &RecoveryFile,
-	) -> Result<HeldFirstSegment<'_>, StageError> {
+	fn try_journal_access(&self) -> Result<MutexGuard<'_, ()>, StageError> {
 		let writer = self
 			.journal_access
 			.try_lock()
 			.map_err(|_| StageError::JobBusy)?;
-		if self.journal_reservation_started.load(Ordering::Relaxed) {
+		if self.journal_reservation_started.load(Ordering::Relaxed)
+			|| self.recovered_observation_started.load(Ordering::Relaxed)
+		{
 			return Err(StageError::JobBusy);
 		}
+		Ok(writer)
+	}
+
+	fn hold_first_segment_for_append(
+		&self,
+		expected: &RecoveryFile,
+	) -> Result<HeldFirstSegment<'_>, StageError> {
+		self.hold_first_segment_with_access(expected, self.try_journal_access()?)
+	}
+
+	fn hold_first_segment_with_access<'lease>(
+		&self,
+		expected: &RecoveryFile,
+		writer: MutexGuard<'lease, ()>,
+	) -> Result<HeldFirstSegment<'lease>, StageError> {
 		let job = &self.job;
 		let mount = job.root.mount;
 		let parent = &job.directory.file;

@@ -315,11 +315,7 @@ impl<'lease> PendingWitnessReservation<'lease> {
 	/// Refuses changed or unavailable post-reservation observations.
 	pub fn replay(&self) -> Result<ReservedJournalRead<'_>, WitnessReservationError> {
 		self.recheck()?;
-		Ok(ReservedJournalRead {
-			readback: &self.readback,
-			offset: 0,
-			_same_lane: PhantomData,
-		})
+		Ok(ReservedJournalRead::new(&self.readback))
 	}
 
 	/// Checks the original held lease and both reservations after semantic replay.
@@ -333,7 +329,7 @@ impl<'lease> PendingWitnessReservation<'lease> {
 }
 
 impl HeldFirstSegment<'_> {
-	fn recheck(
+	pub(super) fn recheck(
 		&self,
 		lease: &RecoveryWriteLease<'_>,
 		expected: &RecoveryFile,
@@ -376,6 +372,16 @@ pub struct ReservedJournalRead<'reservation> {
 	readback: &'reservation RecoveryFile,
 	offset: u64,
 	_same_lane: PhantomData<Rc<()>>,
+}
+
+impl<'held> ReservedJournalRead<'held> {
+	pub(super) const fn new(readback: &'held RecoveryFile) -> Self {
+		Self {
+			readback,
+			offset: 0,
+			_same_lane: PhantomData,
+		}
+	}
 }
 
 impl Read for ReservedJournalRead<'_> {
