@@ -7,7 +7,8 @@ use super::{
 	observe_successor,
 };
 use crate::linux::{
-	ProtectedWitnessEffect, ProtectedWitnessError, WitnessLinkCandidate, WitnessedSuffixReadback,
+	ProtectedWitnessEffect, ProtectedWitnessError, WitnessLinkCandidate, WitnessReservationPlan,
+	WitnessedSuffixReadback,
 };
 
 mod prepublication;
@@ -101,16 +102,7 @@ impl<'lease> ActiveWitnessReservation<'lease> {
 			.map_err(|error| Error::Preflight(error.into()))?;
 		let previous = self.head;
 		let plan = self.reservation.plan;
-		let length = u64::try_from(encoded_frame.len()).map_err(|_| Error::Bounds)?;
-		if encoded_frame.is_empty()
-			|| encoded_frame.len() > MAX_ENCODED_WITNESS
-			|| previous.end.checked_add(length) != Some(successor.end)
-			|| previous.sequence.checked_add(1) != Some(successor.sequence)
-			|| successor.digest == [0; 32]
-			|| successor.digest == previous.digest
-			|| successor.end >= plan.reserve_end()
-			|| successor.sequence >= plan.accepted().sequence + plan.reserve_frames().get()
-		{
+		if !fits_witness_intent(plan, previous, successor, encoded_frame.len()) {
 			return Err(Error::Bounds);
 		}
 		let request = self.reservation.continuation_request(previous, successor);
@@ -195,3 +187,26 @@ impl<'view, 'lease> SealedProtectedWitness<'view, 'lease> {
 		self.active.head
 	}
 }
+
+fn fits_witness_intent(
+	plan: WitnessReservationPlan,
+	previous: Head,
+	successor: Head,
+	encoded_bytes: usize,
+) -> bool {
+	let Ok(length) = u64::try_from(encoded_bytes) else {
+		return false;
+	};
+	encoded_bytes != 0
+		&& encoded_bytes <= MAX_ENCODED_WITNESS
+		&& previous.end.checked_add(length) == Some(successor.end)
+		&& previous.sequence.checked_add(1) == Some(successor.sequence)
+		&& successor.digest != [0; 32]
+		&& successor.digest != previous.digest
+		&& successor.end < plan.reserve_end()
+		&& successor.sequence < plan.accepted().sequence + plan.reserve_frames().get()
+}
+
+#[cfg(test)]
+#[path = "../../../../../../tests/unit/linux/witness_intent.rs"]
+mod tests;

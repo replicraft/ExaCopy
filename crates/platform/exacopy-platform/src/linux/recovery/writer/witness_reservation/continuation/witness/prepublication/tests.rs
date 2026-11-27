@@ -3,8 +3,8 @@ use std::num::NonZeroU64;
 use exacopy_model::retained_prefix::Head;
 
 use super::{
-	NativePrepublication, WitnessPrepublicationAppend, WitnessPrepublicationPhase as Phase,
-	WitnessReservationPlan, matches_successor,
+	NativePrepublication, StageError, WitnessPrepublicationAppend,
+	WitnessPrepublicationPhase as Phase, WitnessReservationPlan, matches_successor,
 };
 
 #[test]
@@ -12,13 +12,32 @@ fn exact_phase_order_and_terminal_states_refuse_other_intents() {
 	let mut next = NativePrepublication::FIRST;
 	for phase in [Phase::Seal, Phase::Verify, Phase::Metadata, Phase::Intent] {
 		for probe in [Phase::Seal, Phase::Verify, Phase::Metadata, Phase::Intent] {
-			assert_eq!(next.check(probe).is_ok(), probe == phase);
-			assert!(NativePrepublication::Uncertain.check(probe).is_err());
-			assert!(NativePrepublication::IntentSynced.check(probe).is_err());
+			let result = next.check(probe);
+			if probe == phase {
+				assert!(result.is_ok(), "expected to accept {probe:?}");
+			} else {
+				assert!(
+					matches!(result, Err(StageError::IdentityChanged)),
+					"expected {phase:?}, rejected {probe:?} with {result:?}",
+				);
+			}
 		}
 		next = phase.after();
 	}
 	assert!(matches!(next, NativePrepublication::IntentSynced));
+	for probe in [Phase::Seal, Phase::Verify, Phase::Metadata, Phase::Intent] {
+		assert!(
+			matches!(next.check(probe), Err(StageError::IdentityChanged)),
+			"completed intent admitted another {probe:?} phase",
+		);
+		assert!(
+			matches!(
+				NativePrepublication::Uncertain.check(probe),
+				Err(StageError::PriorBarrierFailure)
+			),
+			"lost uncertainty while probing {probe:?}",
+		);
+	}
 }
 
 #[test]

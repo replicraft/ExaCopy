@@ -245,3 +245,7 @@ fn matches_successor(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../../../../../tests/unit/linux/witness_prepublication.rs"]
+mod width_tests;
