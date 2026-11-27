@@ -8,6 +8,7 @@ use exacopy_endpoint::ssh_sftp::SftpCapabilities;
 use russh_sftp::protocol::{
 	Close, Lstat, OpenDir, Packet, ReadDir, SftpHandle, SftpString, StatusCode,
 };
+use tokio::sync::oneshot;
 use tokio::time::{Instant, timeout_at};
 use tokio_util::sync::DropGuard;
 
@@ -59,6 +60,7 @@ type SshConnection = Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>;
 struct Session {
 	wire: Wire,
 	connection: SshConnection,
+	disconnect: oneshot::Sender<oneshot::Sender<()>>,
 	_guard: DropGuard,
 }
 
@@ -69,6 +71,7 @@ impl ReadOnlySftp {
 		guard: DropGuard,
 		peer: SshAuthenticatedPeer,
 		cancellation: SshSessionCancellation,
+		disconnect: oneshot::Sender<oneshot::Sender<()>>,
 	) -> Self {
 		Self {
 			capabilities: wire.capabilities,
@@ -77,6 +80,7 @@ impl ReadOnlySftp {
 			session: Some(Session {
 				wire,
 				connection,
+				disconnect,
 				_guard: guard,
 			}),
 		}
@@ -92,6 +96,49 @@ impl ReadOnlySftp {
 	#[must_use]
 	pub fn cancellation_handle(&self) -> SshSessionCancellation {
 		self.cancellation.clone()
+	}
+
+	/// Requests a protocol disconnect and observes the underlying write shutdown.
+	///
+	/// This consumes the session and cannot return further source bytes. The
+	/// route owner still defines and confirms its own transport retirement.
+	///
+	/// # Errors
+	/// Refuses an unavailable session, failed shutdown, or a deadline reached
+	/// before its completion. Dropping the wait fences the owning stream.
+	pub async fn disconnect_before(mut self, deadline: Instant) -> Result<(), Error> {
+		let Session {
+			disconnect,
+			connection,
+			_guard,
+			wire: _wire,
+		} = self.session.take().ok_or(Error::Closed)?;
+		if Instant::now() >= deadline {
+			return Err(Error::Timeout);
+		}
+		let result = timeout_at(deadline, async {
+			let (accepted, observed) = oneshot::channel();
+			disconnect.send(accepted).map_err(|_| Error::Closed)?;
+			observed.await.map_err(|_| Error::Closed)?;
+			match connection.await {
+				// Russh projects a locally requested disconnect as the generic
+				// Disconnect error. Neither that result nor a queue acceptance
+				// confirms shutdown without the exact stream observation.
+				Ok(()) | Err(Error::Ssh(russh::Error::Disconnect))
+					if self.cancellation.shutdown_confirmed() =>
+				{
+					Ok(())
+				}
+				Ok(()) => Err(Error::Closed),
+				Err(error) => Err(error),
+			}
+		})
+		.await
+		.map_err(|_| Error::Timeout)?;
+		if Instant::now() >= deadline {
+			return Err(Error::Timeout);
+		}
+		result
 	}
 
 	/// Returns protocol support and extension advertisements.

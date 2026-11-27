@@ -23,6 +23,51 @@ mod streaming;
 use peer::{CONTENT, NAME, SECRET, authority, fixture_key, fixture_trust, peer, peer_with_handle};
 
 #[tokio::test]
+async fn requested_disconnect_observes_the_exact_transport_write_shutdown() {
+	let (stream, pin, calls) = peer(true, false);
+	let target = authority("transfer");
+	let mut session = connect(
+		stream,
+		&target,
+		pin,
+		fixture_trust(&target, ""),
+		&target,
+		|_| Password::new(SECRET.to_owned()),
+	)
+	.await
+	.unwrap();
+	let path = [UnixComponent::new(NAME).unwrap()];
+	let mut bytes = [0; CONTENT.len()];
+	session.read_file(&path, &mut bytes).await.unwrap();
+	assert_eq!(&bytes, CONTENT);
+	assert_eq!(calls.close.load(Ordering::Relaxed), 1);
+	session
+		.disconnect_before(tokio::time::Instant::now() + std::time::Duration::from_secs(1))
+		.await
+		.unwrap();
+}
+
+#[tokio::test]
+async fn expired_disconnect_request_cannot_confirm_shutdown() {
+	let (stream, pin, _calls) = peer(true, false);
+	let target = authority("transfer");
+	let session = connect(
+		stream,
+		&target,
+		pin,
+		fixture_trust(&target, ""),
+		&target,
+		|_| Password::new(SECRET.to_owned()),
+	)
+	.await
+	.unwrap();
+	assert!(matches!(
+		session.disconnect_before(tokio::time::Instant::now()).await,
+		Err(Error::Timeout)
+	));
+}
+
+#[tokio::test]
 async fn raw_listing_and_short_reads_use_a_pinned_authenticated_connection() {
 	let (stream, pin, calls) = peer(true, false);
 	let target = authority("transfer");

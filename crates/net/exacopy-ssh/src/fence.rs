@@ -1,5 +1,7 @@
 use std::io;
 use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll};
 
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
@@ -7,28 +9,44 @@ use tokio_util::sync::{CancellationToken, DropGuard};
 
 /// Cancellation capability for one exact authenticated SSH/SFTP session.
 #[derive(Clone)]
-pub struct SshSessionCancellation(CancellationToken);
+pub struct SshSessionCancellation {
+	token: CancellationToken,
+	shutdown: Arc<AtomicBool>,
+}
 
 impl SshSessionCancellation {
 	/// Wakes pending stream I/O and refuses further reads and writes on this session.
 	pub fn cancel(&self) {
-		self.0.cancel();
+		self.token.cancel();
+	}
+
+	pub(crate) fn shutdown_confirmed(&self) -> bool {
+		self.shutdown.load(Ordering::Acquire)
 	}
 }
 
 pub(crate) struct FencedStream<S> {
 	stream: S,
 	cancelled: Pin<Box<dyn Future<Output = ()> + Send>>,
+	shutdown: Arc<AtomicBool>,
 }
 
 impl<S> FencedStream<S> {
 	pub(crate) fn new(stream: S) -> (Self, DropGuard, SshSessionCancellation) {
 		let cancellation = CancellationToken::new();
 		let cancelled = Box::pin(cancellation.clone().cancelled_owned());
+		let shutdown = Arc::new(AtomicBool::new(false));
 		(
-			Self { stream, cancelled },
+			Self {
+				stream,
+				cancelled,
+				shutdown: Arc::clone(&shutdown),
+			},
 			cancellation.clone().drop_guard(),
-			SshSessionCancellation(cancellation),
+			SshSessionCancellation {
+				token: cancellation,
+				shutdown,
+			},
 		)
 	}
 
@@ -67,7 +85,9 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for FencedStream<S> {
 	}
 
 	fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-		Pin::new(&mut self.stream).poll_shutdown(cx)
+		std::task::ready!(Pin::new(&mut self.stream).poll_shutdown(cx))?;
+		self.shutdown.store(true, Ordering::Release);
+		Poll::Ready(Ok(()))
 	}
 }
 

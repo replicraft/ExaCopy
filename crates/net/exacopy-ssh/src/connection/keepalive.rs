@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use russh::client;
+use tokio::sync::oneshot;
 use tokio::time::{sleep, timeout};
 use tokio_util::sync::DropGuard;
 use tokio_util::task::AbortOnDropHandle;
@@ -11,28 +12,52 @@ use crate::Error;
 const PROBE_INTERVAL: Duration = Duration::from_secs(5);
 const REPLY_DEADLINE: Duration = Duration::from_secs(10);
 
-pub(super) fn supervise(
-	connection: client::Handle<HostCheck>,
+pub(in crate::connection) fn supervise(
+	mut connection: client::Handle<HostCheck>,
 	fence: DropGuard,
-) -> (impl Future<Output = Result<(), Error>> + Send, DropGuard) {
+) -> (
+	impl Future<Output = Result<(), Error>> + Send,
+	DropGuard,
+	oneshot::Sender<oneshot::Sender<()>>,
+) {
 	let token = fence.disarm();
 	let session_fence = token.clone().drop_guard();
 	let driver_fence = token.drop_guard();
+	let (disconnect, request) = oneshot::channel::<oneshot::Sender<()>>();
 	let task = AbortOnDropHandle::new(tokio::spawn(async move {
 		let _fence = driver_fence;
-		probe_peer(connection).await
+		let acknowledged = tokio::select! {
+			biased;
+			result = probe_peer(&mut connection) => return result,
+			request = requested_disconnect(request) => request,
+		};
+		connection
+			.disconnect(russh::Disconnect::ByApplication, "", "")
+			.await?;
+		let _ = acknowledged.send(());
+		connection.await
 	}));
 	(
 		async move { task.await.map_err(|_| Error::Closed)? },
 		session_fence,
+		disconnect,
 	)
 }
 
-async fn probe_peer(mut connection: client::Handle<HostCheck>) -> Result<(), Error> {
+async fn requested_disconnect(
+	request: oneshot::Receiver<oneshot::Sender<()>>,
+) -> oneshot::Sender<()> {
+	match request.await {
+		Ok(request) => request,
+		Err(_) => std::future::pending().await,
+	}
+}
+
+async fn probe_peer(connection: &mut client::Handle<HostCheck>) -> Result<(), Error> {
 	loop {
 		tokio::select! {
 			biased;
-			result = &mut connection => return result,
+			result = &mut *connection => return result,
 			() = sleep(PROBE_INTERVAL) => {}
 		}
 		// An ordinary inbound packet must not complete the probe or allow a

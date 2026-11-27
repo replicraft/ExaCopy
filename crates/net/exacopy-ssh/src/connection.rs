@@ -292,13 +292,14 @@ where
 			authority,
 			fingerprint,
 		};
-		let (connection, guard) = keepalive::supervise(connection, guard);
+		let (connection, guard, disconnect) = keepalive::supervise(connection, guard);
 		Ok(ReadOnlySftp::new(
 			wire,
 			Box::pin(connection),
 			guard,
 			peer,
 			cancellation,
+			disconnect,
 		))
 	})
 	.await
