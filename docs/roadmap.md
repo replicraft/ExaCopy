@@ -71,8 +71,10 @@ model tests passed and the corrected inventory admitted 1,006/1,021 lines
 [Exact coverage run](https://github.com/replicraft/ExaCopy/actions/runs/46003782747) · [Verified correction](https://github.com/replicraft/ExaCopy/actions/runs/46004576304)
 
 The stronger protected admission model in `ce1b039` adds an explicit
-authorization step before intent and five negative controls. Its automatic
-formal results are pending. Windows short-write regressions in `576e1b0`
+authorization step before intent and five negative controls. At `b50ada3`,
+SANY rejected its initial record's closing-bracket indentation before state
+exploration. The one-bracket source correction awaits automatic verification.
+Windows short-write regressions in `576e1b0`
 also await native execution. At `824521c`, P-078 failed before state exploration:
 all twelve TLC invocations returned parser exit 150 for the model's record-update
 closing indentation. The correction indents all four affected closing brackets;

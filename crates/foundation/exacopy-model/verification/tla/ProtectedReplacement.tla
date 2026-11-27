@@ -57,7 +57,7 @@ Init ==
 			imageReady |-> FALSE,
 			displacedAtPublish |-> Empty,
 			uncertain |-> FALSE
-		]
+			]
 
 AdmitReplacement ==
 	/\ state.phase = "admission"

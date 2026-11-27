@@ -6,6 +6,12 @@ to their recorded model revisions. This correspondence table identifies test
 analogues under trusted observations; it does not establish refinement or
 native qualification.
 
+At `b50ada3`, SANY rejected the initial record's closing bracket at line 60
+before state exploration. The closing bracket is now indented inside the
+conjunction item. This correction changes no admission fact, transition,
+invariant, bound or negative-control oracle and awaits automatic verification.
+[Failed hosted CI](https://github.com/replicraft/ExaCopy/actions/runs/46004576369).
+
 This independent finite model covers one already verified regular-file
 replacement, one source kept outside the affected namespace, one public
 slot and a private reserved slot. The model selects either retention alone
