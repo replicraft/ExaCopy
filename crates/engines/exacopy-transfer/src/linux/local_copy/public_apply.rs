@@ -16,13 +16,19 @@ use crate::public_plan::AdmittedCopyPlan;
 
 use super::checkpoints::StageRecords;
 use super::planning::journal_identity;
-use super::records::EntryEvidence;
+use super::records::{EntryEvidence, RecordedSeal};
 use super::{
 	CopyCheckpoint, CopyError, CopyProfile, LocalCopyPlan, PlanningRoots, preflight_source,
 };
 
+mod proposal;
 #[cfg(test)]
 mod tests;
+
+pub use proposal::{
+	PublicApplyIntentObservation, PublicApplyIntentPreparationError, PublicApplyIntentSelection,
+	stage_public_apply_and_propose_intent,
+};
 
 /// An independently admitted public plan and one private staging attempt.
 pub struct PublicApplyStageRequest<'request, 'bundle, 'name> {
@@ -46,10 +52,8 @@ pub struct PublicApplyStage {
 	pub owner_digest: OwnerDigest,
 }
 
-type StageResult<R, D, J> = Result<
-	PublicApplyStage,
-	CopyError<R, <D as CopyDestinationView>::Error, <J as CopyWorkspace>::PublishError>,
->;
+type StageFailure<R, D, J> =
+	CopyError<R, <D as CopyDestinationView>::Error, <J as CopyWorkspace>::PublishError>;
 
 /// Stages the exact approved bytes and required metadata for a Linux public copy.
 ///
@@ -66,7 +70,7 @@ pub fn stage_public_apply<'root, S, D, J>(
 	request: PublicApplyStageRequest<'_, '_, '_>,
 	scratch: &mut [u8],
 	checkpoint: fn(CopyCheckpoint),
-) -> StageResult<S::Error, D, J>
+) -> Result<PublicApplyStage, StageFailure<S::Error, D, J>>
 where
 	S: CopySourceRoot<Source: CopySource<Identity = J::Identity, Metadata = J::Metadata>>,
 	D: CopyDestinationView
@@ -74,8 +78,34 @@ where
 	J: CopyWorkspace + JobWorkspace<Error = <D as CopyDestinationView>::Error>,
 	J::Segment: JournalSegment,
 {
-	if !matches_admitted_binding(&request, scratch.len()) {
-		return Err(CopyError::StalePlan);
+	stage_with_seal(
+		roots,
+		&request,
+		scratch,
+		checkpoint,
+		|| Ok(()),
+		|(), _, owner_digest, _| Ok(PublicApplyStage { owner_digest }),
+	)
+}
+
+fn stage_with_seal<'root, S, D, J, A, T, E>(
+	roots: PlanningRoots<'root, S, D>,
+	request: &PublicApplyStageRequest<'_, '_, '_>,
+	scratch: &mut [u8],
+	checkpoint: fn(CopyCheckpoint),
+	before_bootstrap: impl FnOnce() -> Result<A, E>,
+	finish: impl FnOnce(A, &S::Source, OwnerDigest, RecordedSeal<'_>) -> Result<T, E>,
+) -> Result<T, E>
+where
+	S: CopySourceRoot<Source: CopySource<Identity = J::Identity, Metadata = J::Metadata>>,
+	D: CopyDestinationView
+		+ JobBootstrapRoot<'root, Job = J, Error = <D as CopyDestinationView>::Error>,
+	J: CopyWorkspace + JobWorkspace<Error = <D as CopyDestinationView>::Error>,
+	J::Segment: JournalSegment,
+	E: From<StageFailure<S::Error, D, J>>,
+{
+	if !matches_admitted_binding(request, scratch.len()) {
+		return Err(CopyError::StalePlan.into());
 	}
 	let plan = request.private_plan;
 	let file = preflight_source::<S, D, J>(&roots, plan, scratch.len())?;
@@ -97,6 +127,7 @@ where
 		attempt.entry,
 		destination,
 	)?;
+	let admission = before_bootstrap()?;
 	let (job, mut journal, owner_digest) =
 		prepare_public_stage(roots.destination, plan, request.profile, request.binding)
 			.map_err(CopyError::Bootstrap)?;
@@ -125,17 +156,21 @@ where
 	.map_err(CopyError::Stage)?;
 	checkpoint(CopyCheckpoint::CopyMetadataApplied);
 	if !matches_approved_stream(request.binding, stage.observed_streams()) {
-		return Err(CopyError::StalePlan);
+		return Err(CopyError::StalePlan.into());
 	}
 	check_source(&file).map_err(CopyError::SourcePolicy)?;
-	let sealed = evidence.seal_stream(
-		journal_identity(stage.identity().into()),
-		stage.length(),
-		stage.digest(),
-	)?;
-	let _ = sealed.record(&mut journal)?;
+	let sealed = evidence
+		.seal_stream(
+			journal_identity(stage.identity().into()),
+			stage.length(),
+			stage.digest(),
+		)
+		.map_err(CopyError::from)?;
+	let recorded = sealed
+		.record_with_heads(&mut journal)
+		.map_err(CopyError::from)?;
 	checkpoint(CopyCheckpoint::StageSealed);
-	Ok(PublicApplyStage { owner_digest })
+	finish(admission, &file, owner_digest, recorded)
 }
 
 fn matches_admitted_binding(

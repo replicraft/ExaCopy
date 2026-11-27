@@ -1,7 +1,7 @@
 use exacopy_content::ContentDigest;
 use exacopy_endpoint::JournalSegment;
 use exacopy_endpoint::linux_copy::{CopySourceObservation, InodeTimestamp};
-use exacopy_journal::frame::FrameKind;
+use exacopy_journal::frame::{ChainHead, FrameKind};
 use exacopy_journal::{
 	BasicMetadata, DurableJournal, DurableJournalError, EntryPreparation, EntryPrepared,
 	JournalContext, JournalEntryId, LinuxFileIdentity, LiveSourceView, MetadataRecorded,
@@ -160,22 +160,50 @@ pub(in crate::linux) struct SealEvidence {
 	metadata: MetadataRecorded,
 }
 
+pub(super) struct RecordedSeal<'seal> {
+	seal: &'seal SealEvidence,
+	verification: SyncedFrame,
+	metadata: SyncedFrame,
+}
+
+impl RecordedSeal<'_> {
+	pub(super) const fn verification(&self) -> VerificationRecorded {
+		self.seal.verification
+	}
+
+	pub(super) const fn heads(&self) -> (ChainHead, ChainHead) {
+		(self.verification.head(), self.metadata.head())
+	}
+}
+
 impl SealEvidence {
 	pub(in crate::linux) fn record(
 		&self,
 		journal: &mut DurableJournal<impl JournalSegment>,
 	) -> Result<SyncedFrame, SealError> {
+		Ok(self.record_with_heads(journal)?.metadata)
+	}
+
+	pub(super) fn record_with_heads(
+		&self,
+		journal: &mut DurableJournal<impl JournalSegment>,
+	) -> Result<RecordedSeal<'_>, SealError> {
 		let _ = append(journal, FrameKind::StageSealed, &self.sealed.encode())?;
-		let _ = append(
+		let verification = append(
 			journal,
 			FrameKind::VerificationRecorded,
 			&self.verification.encode(),
 		)?;
-		append(
+		let metadata = append(
 			journal,
 			FrameKind::MetadataRecorded,
 			&self.metadata.encode(),
-		)
+		)?;
+		Ok(RecordedSeal {
+			seal: self,
+			verification,
+			metadata,
+		})
 	}
 }
 

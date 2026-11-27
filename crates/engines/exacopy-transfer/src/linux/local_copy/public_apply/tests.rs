@@ -19,13 +19,13 @@ use crate::public_plan::{ExpectedCopyPlan, admit_single_file_plan};
 
 use super::*;
 
-const EXPECTED: &[u8] = b"approved copy";
+pub(super) const EXPECTED: &[u8] = b"approved copy";
 const DIFFERENT: &[u8] = b"changed copy!";
 const VOLUME: [u8; 8] = 7_u64.to_le_bytes();
 const INODE: [u8; 8] = 9_u64.to_le_bytes();
 const SCRATCH_BUDGET: usize = 64;
 
-fn measured(bytes: &[u8]) -> ContentDigest {
+pub(super) fn measured(bytes: &[u8]) -> ContentDigest {
 	measure_at(bytes.len() as u64, &mut [0; 5], |offset, chunk| {
 		let start = usize::try_from(offset).unwrap();
 		chunk.copy_from_slice(&bytes[start..start + chunk.len()]);
@@ -34,7 +34,7 @@ fn measured(bytes: &[u8]) -> ContentDigest {
 	.unwrap()
 }
 
-fn selected_binding() -> PublicApplyBinding {
+pub(super) fn selected_binding() -> PublicApplyBinding {
 	PublicApplyBinding {
 		public_plan: ApprovedPublicPlanDigest::from_bytes([1; 32]),
 		public_entry: PublicPlanEntryId::from_bytes([2; 16]).unwrap(),
@@ -200,7 +200,7 @@ fn component(bytes: &'static [u8]) -> UnixComponent<'static> {
 	UnixComponent::new(bytes).unwrap()
 }
 
-fn local_plan(binding: PublicApplyBinding) -> LocalCopyPlan<'static> {
+pub(super) fn local_plan(binding: PublicApplyBinding) -> LocalCopyPlan<'static> {
 	let source_root = LinuxFileIdentity::new(7, 10);
 	LocalCopyPlan::new(
 		PlanAttempt {
@@ -236,7 +236,9 @@ fn local_plan(binding: PublicApplyBinding) -> LocalCopyPlan<'static> {
 	.unwrap()
 }
 
-fn bundle(binding: PublicApplyBinding) -> (PlanBody<'static>, Vec<u8>, ExpectedCopyPlan<'static>) {
+pub(super) fn bundle(
+	binding: PublicApplyBinding,
+) -> (PlanBody<'static>, Vec<u8>, ExpectedCopyPlan<'static>) {
 	let root_id = uuid::Uuid::from_bytes(*root().as_bytes());
 	let source = PlanPath {
 		root_id,

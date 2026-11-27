@@ -30,7 +30,11 @@ use planning::{
 };
 pub(super) use protocol::ProtocolError;
 pub(super) use protocol::Publication;
-pub use public_apply::{PublicApplyStage, PublicApplyStageRequest, stage_public_apply};
+pub use public_apply::{
+	PublicApplyIntentObservation, PublicApplyIntentPreparationError, PublicApplyIntentSelection,
+	PublicApplyStage, PublicApplyStageRequest, stage_public_apply,
+	stage_public_apply_and_propose_intent,
+};
 use records::EntryEvidence;
 
 /// The caller's trusted signing profile and fresh per-job ownership evidence.
