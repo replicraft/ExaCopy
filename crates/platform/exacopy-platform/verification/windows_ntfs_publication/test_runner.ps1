@@ -114,6 +114,29 @@ function Test-PublicationCompilerSelection {
 }
 Test-PublicationCompilerSelection
 
+function Test-PublicationMsvcCatalogEnvironment {
+    $validated = [Collections.Generic.List[string]]::new()
+    $refuse = $false
+    function Confirm-PublicationVendorPath {
+        param([string] $Path)
+        $validated.Add($Path)
+        if ($refuse) { throw 'A filesystem component is a reparse point or device.' }
+    }
+    $commonData = 'C:\ProgramData'
+    $settings = @(Get-PublicationMsvcCatalogEnvironment $commonData 'C:\')
+    Require ($validated.Count -eq 1 -and $validated[0] -ceq $commonData -and $settings.Count -eq 2 -and
+        $settings[0] -ceq "ProgramData=$commonData" -and $settings[1] -ceq "ALLUSERSPROFILE=$commonData") (
+        'Only the aliases of the validated OS machine-data directory may be projected.'
+    )
+    foreach ($foreign in @('', 'ProgramData', 'C:\', 'D:\ProgramData')) {
+        Require-Refusal { Get-PublicationMsvcCatalogEnvironment $foreign 'C:\' } 'invalid machine catalog root'
+    }
+    Require ($validated.Count -eq 1) 'Unrooted or foreign directories must be refused before path admission.'
+    $refuse = $true
+    Require-Refusal { Get-PublicationMsvcCatalogEnvironment $commonData 'C:\' } 'redirected machine catalog root'
+}
+Test-PublicationMsvcCatalogEnvironment
+
 function Test-PublicationMsvcSelection {
     $programFiles = 'C:\Program Files'
     $x86 = 'C:\Program Files (x86)'
@@ -135,6 +158,7 @@ function Test-PublicationMsvcSelection {
     Require ((Select-PublicationVisualStudio @($visualStudio) $programFiles $x86) -ceq $visualStudio) (
         'The unique hosted Visual Studio instance must be selected.'
     )
+    Require-Refusal { Select-PublicationVisualStudio @() $programFiles $x86 } 'empty Visual Studio catalog result'
     Require-Refusal { Select-PublicationVisualStudio @($visualStudio, $visualStudio) $programFiles $x86 } (
         'ambiguous Visual Studio output'
     )
@@ -451,6 +475,16 @@ $encodedLaunch = $launch | ConvertTo-Json -Depth 4 -Compress
 Require (!$encodedLaunch.Contains('secret-value-that-must-not-be-retained') -and
     !$encodedLaunch.Contains('C:\\fixture')) 'Never retain environment values in a launch diagnostic.'
 Require ($null -eq (Get-PublicationLaunchFacts 'other' $python $cwd @('other') $environment)) 'Unselected phases must not record raw arguments.'
+$locatorArgs = @('-latest', '-products', '*', '-requires',
+    'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', '-property', 'installationPath')
+$catalogEnvironment = @('ProgramData=C:\fixture-catalog-root', 'ALLUSERSPROFILE=C:\fixture-catalog-root')
+$locatorFacts = Get-PublicationLaunchFacts 'msvc-locator' $python $cwd $locatorArgs $catalogEnvironment
+Require ($locatorFacts.argument_count -eq 7 -and
+    ($locatorFacts.arguments -join [char]0) -ceq ($locatorArgs -join [char]0) -and
+    ($locatorFacts.environment_keys -join ',') -ceq 'ALLUSERSPROFILE,ProgramData' -and
+    !($locatorFacts | ConvertTo-Json -Compress).Contains('fixture-catalog-root')) (
+    'Retain the exact bounded locator arguments and environment key names without their values.'
+)
 $long = Get-PublicationLaunchFacts 'apfs-source' ('x' * 261) $cwd @('a' * 129) $environment
 Require ($null -eq $long.application -and $long.application_units -eq 261 -and
     $null -eq $long.arguments[0]) 'Do not emit out-of-bound text.'

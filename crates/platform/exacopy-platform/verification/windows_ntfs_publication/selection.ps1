@@ -79,8 +79,22 @@ function Assert-PublicationVendorSignature {
     }
 }
 
+function Get-PublicationMsvcCatalogEnvironment {
+    param([string] $CommonApplicationData, [string] $SystemVolume)
+    if ([string]::IsNullOrWhiteSpace($CommonApplicationData) -or
+        !$CommonApplicationData.StartsWith($SystemVolume, [StringComparison]::OrdinalIgnoreCase) -or
+        $CommonApplicationData -ieq $SystemVolume) {
+        throw 'The Visual Studio machine catalog root is outside the hosted system volume.'
+    }
+    Confirm-PublicationVendorPath $CommonApplicationData
+    # Both Windows names designate the same machine-wide known folder.
+    "ProgramData=$CommonApplicationData"
+    "ALLUSERSPROFILE=$CommonApplicationData"
+}
+
 function Select-PublicationVisualStudio {
     param([string[]] $Lines, [string] $ProgramFiles, [string] $ProgramFilesX86)
+    if ($Lines.Count -eq 0) { throw 'Visual Studio discovery returned no matching x64 Visual C++ instance.' }
     if ($Lines.Count -ne 1) { throw 'Expected exactly one installed x64 Visual C++ instance.' }
     $path = $Lines[0]
     if (!$path.StartsWith($ProgramFiles + '\Microsoft Visual Studio\', [StringComparison]::OrdinalIgnoreCase) -and

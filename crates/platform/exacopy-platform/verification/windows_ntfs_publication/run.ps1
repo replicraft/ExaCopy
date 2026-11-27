@@ -48,7 +48,8 @@ function Get-PublicationLaunchFacts {
         [string[]] $Environment)
     # Record only the known setup oracles and the exact failing setup call.
     # Environment values remain private, including those accepted by the allowlist.
-    if ($Name -cnotin @('launch-pwsh', 'launch-python', 'apfs-source')) { return }
+    if ($Name -cnotin @('launch-pwsh', 'launch-python', 'apfs-source', 'msvc-locator')) { return }
+    $argumentLimit = if ($Name -ceq 'msvc-locator') { 7 } else { 4 }
     $keys = @($Environment | ForEach-Object { $_.Split('=', 2)[0] } | Sort-Object -CaseSensitive)
     $units = 1
     foreach ($entry in $Environment) { $units += $entry.Length + 1 }
@@ -57,7 +58,7 @@ function Get-PublicationLaunchFacts {
         application_units = $Program.Length
         working_directory = if ($WorkingDirectory.Length -le 260) { $WorkingDirectory }
         working_directory_units = $WorkingDirectory.Length
-        arguments = @($Arguments | Select-Object -First 4 | ForEach-Object {
+        arguments = @($Arguments | Select-Object -First $argumentLimit | ForEach-Object {
             if ($_.Length -le 128) { $_ } else { $null }
         })
         argument_count = $Arguments.Count
@@ -419,15 +420,20 @@ try {
     $programFilesX86 = [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFilesX86)
     $locator = $programFilesX86 + '\Microsoft Visual Studio\Installer\vswhere.exe'
     $systemIdentity = $ancestors.Held[0].Identity
+    $commonData = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonApplicationData)
+    $catalogEnvironment = @(Get-PublicationMsvcCatalogEnvironment $commonData $system)
+    $publicationEnvironment = $childEnvironment
     $locatorTool = New-PublicationVendorCustody $locator $systemIdentity
     try {
         $state.tools.vswhere = $locatorTool.Record
+        $childEnvironment = $publicationEnvironment + $catalogEnvironment
         if ((Invoke-PublicationChild 'msvc-locator' $locator @('-latest', '-products', '*', '-requires',
             'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', '-property', 'installationPath') 30000) -ne 0) {
             throw 'The hosted Visual Studio locator did not complete.'
         }
         Confirm-PublicationVendorCustody $locatorTool
     } finally {
+        $childEnvironment = $publicationEnvironment
         Close-PublicationVendorCustody $locatorTool
     }
     $visualStudioLines = Get-Content -LiteralPath (Join-Path $evidence 'msvc-locator.stdout.log')
@@ -444,15 +450,11 @@ $ErrorActionPreference = 'Stop'
 '@
     $msvcVariables = @('LIB', 'LIBPATH', 'INCLUDE', 'VCINSTALLDIR', 'VCToolsInstallDir',
         'WindowsSdkDir', 'WindowsSDKVersion', 'VSCMD_VER')
-    $publicationEnvironment = $childEnvironment
     $baseEnvironment = [string[]]@($publicationEnvironment | Where-Object { $_.Split('=', 2)[0] -notin $msvcVariables })
     $devShellTool = New-PublicationVendorCustody $devShell $systemIdentity
     try {
         $state.tools.vs_developer_shell = $devShellTool.Record
-        $childEnvironment = $baseEnvironment + @(
-            "EXACOPY_VS_DEV_SHELL=$devShell"
-            ('ProgramData=' + [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonApplicationData))
-        )
+        $childEnvironment = $baseEnvironment + $catalogEnvironment + @("EXACOPY_VS_DEV_SHELL=$devShell")
         $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($msvcScript))
         if ((Invoke-PublicationChild 'msvc-environment' $powershell @(
             '-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', $encoded) 60000) -ne 0) {
