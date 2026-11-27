@@ -34,8 +34,10 @@ below the unchanged 85% minimum. [Exact coverage run](https://github.com/replicr
 
 Workspace Clippy failed on Linux, macOS, and Windows at `aea84c9`.
 The protected-model type-alias follow-up passed Windows and macOS Clippy
-at `04da507`. Linux still failed at that revision; the subsequent native
-metadata-table alias awaits hosted verification. Cargo Vet reported 166 unvetted
+at `04da507`; Linux still failed at that revision. The native metadata-table
+alias in `41470a7` passed strict Clippy on all three operating systems.
+[Exact integrated CI](https://github.com/replicraft/ExaCopy/actions/runs/45992934541).
+Cargo Vet still reported 166 unvetted
 dependency versions, with 165 `safe-to-deploy` and one `safe-to-run`.
 [Exact `aea84c9` CI](https://github.com/replicraft/ExaCopy/actions/runs/45990399107) · [Supply-chain evidence](supply-chain/README.md)
 
