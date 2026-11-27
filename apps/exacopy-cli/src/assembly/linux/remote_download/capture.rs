@@ -272,6 +272,7 @@ async fn download_prepared(
 	drop(source);
 	let grant = owner.retry_grant();
 	let retirement_check = match &captured {
+		Ok(_) => RetirementCheck::VerifiedSource,
 		Err(CaptureError::Read { cause, .. }) => RetirementCheck::from_read_error(cause),
 		_ => RetirementCheck::Live,
 	};

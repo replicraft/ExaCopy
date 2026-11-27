@@ -82,6 +82,7 @@ impl ConnectingRemoteSource<'_> {
 		)
 		.await?;
 		carrier
+			.with_confirmed_shutdown()
 			.with_stream(async move |stream, driver, live_route| {
 				let guard = Arc::new(RouteTask::spawn_draining(
 					lease,

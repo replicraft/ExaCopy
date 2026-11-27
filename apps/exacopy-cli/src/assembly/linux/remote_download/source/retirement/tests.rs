@@ -87,7 +87,7 @@ fn direct_timeout_retirement_refuses_stale_revoked_and_expired_authority() {
 	let (supervisor, binding) = admitted(deadline, NonZeroU128::MIN);
 	let (_, foreign) = admitted(deadline, NonZeroU128::new(2).unwrap());
 	assert_eq!(
-		check_stopped_direct(&supervisor, binding.attempt(), foreign),
+		check_retired_generation(&supervisor, binding.attempt(), foreign),
 		Err(RetryError::StaleWork),
 	);
 	let (fenced, previous) = admitted(deadline, NonZeroU128::MIN);
@@ -104,7 +104,7 @@ fn direct_timeout_retirement_refuses_stale_revoked_and_expired_authority() {
 		})
 		.unwrap();
 	assert!(matches!(decision, FailureDecision::WaitUntil { .. }));
-	assert!(check_stopped_direct(&fenced, previous.attempt(), previous).is_err());
+	assert!(check_retired_generation(&fenced, previous.attempt(), previous).is_err());
 	supervisor.grant.revoke();
 	assert!(
 		check_before_stop(
@@ -121,7 +121,7 @@ fn direct_timeout_retirement_refuses_stale_revoked_and_expired_authority() {
 	let cutoff = Instant::now() + Duration::from_millis(200);
 	let (expiring, current) = admitted(cutoff, NonZeroU128::MIN);
 	std::thread::sleep(cutoff.saturating_duration_since(Instant::now()) + Duration::from_millis(1));
-	assert!(check_stopped_direct(&expiring, current.attempt(), current).is_err());
+	assert!(check_retired_generation(&expiring, current.attempt(), current).is_err());
 }
 
 #[test]
@@ -173,5 +173,46 @@ fn a_stopped_embedded_route_cannot_use_the_direct_timeout_retirement_path() {
 			false,
 		),
 		Err(route_refusal())
+	);
+}
+
+#[test]
+fn the_embedded_close_ceiling_cannot_extend_or_reopen_the_original_grant() {
+	let before = Instant::now();
+	let long_grant = before + Duration::from_secs(60);
+	let short_grant = before + Duration::from_secs(5);
+	assert_eq!(
+		embedded_close_deadline(before, long_grant),
+		Some(before + EMBEDDED_CLOSE_LIMIT)
+	);
+	assert_eq!(
+		embedded_close_deadline(before, short_grant),
+		Some(short_grant)
+	);
+	assert_eq!(embedded_close_deadline(short_grant, short_grant), None);
+}
+
+#[tokio::test]
+async fn an_expired_or_revoked_close_cannot_admit_graceful_retirement() {
+	let (supervisor, _) = admitted(Instant::now() + Duration::from_secs(30), NonZeroU128::MIN);
+	let expected = Err(RemoteRouteCloseError::GracefulCloseUnconfirmed);
+	assert_eq!(
+		await_embedded_shutdown(
+			&supervisor.grant,
+			tokio::time::Instant::now(),
+			std::future::ready(Ok(())),
+		)
+		.await,
+		expected,
+	);
+	supervisor.grant.revoke();
+	assert_eq!(
+		await_embedded_shutdown(
+			&supervisor.grant,
+			tokio::time::Instant::now() + Duration::from_secs(1),
+			std::future::ready(Ok(())),
+		)
+		.await,
+		expected,
 	);
 }

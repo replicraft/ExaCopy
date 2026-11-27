@@ -184,6 +184,8 @@ pub enum RemoteRouteCloseError {
 	SocketTimeout,
 	/// The direct socket close acknowledgment was lost.
 	SocketUnconfirmed,
+	/// The exact embedded flow did not complete its confirmed write shutdown.
+	GracefulCloseUnconfirmed,
 }
 
 impl fmt::Display for RemoteRouteCloseError {
@@ -194,6 +196,7 @@ impl fmt::Display for RemoteRouteCloseError {
 			Self::WorkerFailed => "route worker did not exit cleanly",
 			Self::SocketTimeout => "direct socket close was not observed within its deadline",
 			Self::SocketUnconfirmed => "direct socket close acknowledgment was lost",
+			Self::GracefulCloseUnconfirmed => "embedded TCP shutdown was not confirmed",
 		})
 	}
 }

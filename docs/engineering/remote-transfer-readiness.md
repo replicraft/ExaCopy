@@ -139,6 +139,33 @@ authority. Complete embedded commissioning, including the remaining
 no-fallback and carrier-down controls, and production qualification
 remain open.
 
+The subsequent `bb6ebba` trace correlated the independent OpenSSH client
+port 55822 with the kernel peer's `ESTAB` socket. Its send queue held
+84 unacknowledged bytes; retransmissions increased from 3 to 4 and
+retransmitted bytes from 252 to 336 while carrier TX increased by 160
+bytes and RX stayed unchanged. This supplies direct TCP carryover evidence.
+The last rejected sample was unavailable, so the early settling refusal's
+exact cause remains unknown.
+[Hosted trace](https://github.com/replicraft/ExaCopy/actions/runs/45930537107)
+
+Successful ordinary embedded capture now requests a disconnect on the exact
+authenticated SSH session before fencing the route. Its stream waits for
+the owned TCP driver to drain queued bytes and complete FIN, peer EOF and
+the closing phase. Enqueueing the SSH request alone supplies no completion
+proof. A reset, revocation, cancellation or timeout refuses completion.
+The wait is bounded by 32 seconds and the original grant deadline. The
+application still fences and joins the original route, then rechecks its
+generation and authority before finalization. Failed and interrupted
+captures retain their previous hard-fence behavior. Hosted execution of
+this integrated repair, resumed-flow retirement and carrier-down remain
+separate gates.
+
+The observer also accepts iproute2's documented empty timer duration at
+zero milliseconds and retains a bounded sampling phase on refusal. The
+missing rejected sample prevents attributing the `bb6ebba` early refusal
+to that parser defect. Exact TCP drainage and zero-traffic checks remain
+required.
+
 ## Hosted direct OpenSSH commissioning
 
 The ordinary main-push commissioning run at `69aecff` passed all seven
