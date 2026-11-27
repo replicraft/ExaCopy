@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Output;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::exacopy;
 
@@ -14,49 +14,74 @@ use super::exacopy;
 fn ordinary_ntfs_compares_and_preserves_regular_files() {
 	let fixture = Fixture::new();
 	let left = fixture.0.join("left");
-	let right = fixture.0.join("right");
-	let different = fixture.0.join("different");
-	let short = fixture.0.join("short");
-	fs::write(&left, b"abc").unwrap();
-	fs::write(&right, b"abc").unwrap();
-	fs::write(&different, b"axc").unwrap();
-	fs::write(&short, b"ab").unwrap();
+	let payload = b"abc";
+	fs::write(&left, payload).expect("create the reference input");
 
-	for (other, code, result) in [
-		(&right, 0, "equal"),
-		(&different, 1, "different"),
-		(&short, 1, "different"),
+	for (name, bytes, code, witness) in [
+		("equal", b"abc".as_slice(), 0, Value::Null),
+		(
+			"first",
+			b"xbc",
+			1,
+			json!({"kind": "first_byte", "offset": "0"}),
+		),
+		(
+			"middle",
+			b"axc",
+			1,
+			json!({"kind": "first_byte", "offset": "1"}),
+		),
+		(
+			"last",
+			b"abx",
+			1,
+			json!({"kind": "first_byte", "offset": "2"}),
+		),
+		(
+			"multiple",
+			b"axx",
+			1,
+			json!({"kind": "first_byte", "offset": "1"}),
+		),
+		(
+			"short",
+			b"ab",
+			1,
+			json!({"kind": "length", "left": "3", "right": "2"}),
+		),
 	] {
+		let right = fixture.0.join(name);
+		fs::write(&right, bytes).expect("create the comparison input");
 		for workers in [&[][..], &["--workers", "3"][..]] {
-			let output = compare(&left, other, workers);
+			let output = compare(&left, &right, workers);
 			assert_eq!(
 				output.status.code(),
 				Some(code),
-				"{}",
+				"{name} {workers:?}: {}",
 				String::from_utf8_lossy(&output.stdout)
 			);
-			let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-			assert_eq!(report["result"], result);
-			assert_eq!(report["complete"], true);
-			assert_eq!(report["consistency"], "live_observed");
-			match report["difference"]["kind"].as_str() {
-				Some("first_byte") => assert_eq!(report["difference"]["offset"], "1"),
-				Some("length") => {
-					assert_eq!(report["difference"]["left"], "3");
-					assert_eq!(report["difference"]["right"], "2");
-				}
-				None if code == 0 => assert_eq!(report["length"], "3"),
-				witness => panic!("unexpected difference witness {witness:?}"),
+			let report: Value = serde_json::from_slice(&output.stdout).expect("read the report");
+			assert_eq!(report["complete"], true, "{name} {workers:?}");
+			assert_eq!(report["consistency"], "live_observed", "{name} {workers:?}");
+			if code == 0 {
+				assert_eq!(report["result"], "equal", "{name} {workers:?}");
+				assert_eq!(report["length"], "3", "{name} {workers:?}");
+				assert!(report.get("difference").is_none(), "{name} {workers:?}");
+			} else {
+				assert_eq!(report["result"], "different", "{name} {workers:?}");
+				assert_eq!(report["difference"], witness, "{name} {workers:?}");
 			}
+			assert_eq!(
+				fs::read(&right).expect("read the compared input"),
+				bytes,
+				"{name} {workers:?}"
+			);
+			assert_eq!(
+				fs::read(&left).expect("read the reference input"),
+				payload,
+				"{name} {workers:?}"
+			);
 		}
-	}
-	for (path, bytes) in [
-		(left, b"abc".as_slice()),
-		(right, b"abc"),
-		(different, b"axc"),
-		(short, b"ab"),
-	] {
-		assert_eq!(fs::read(path).unwrap(), bytes);
 	}
 }
 
