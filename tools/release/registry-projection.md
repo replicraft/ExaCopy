@@ -61,13 +61,27 @@ their original license and the corresponding ExaCopy modification notice.
 The renamed Russh package reports its own name and version in the derived
 SSH software identification string.
 
-The projection has no default transport feature. Use the explicit
-`experimental-ssh-capture` or `experimental-ssh-wireguard` feature when
-testing an installed Linux package. Existing experimental APFS, Windows
-and managed-sync features remain outside this projection. A registry
-candidate still requires the canonical approved `apfs-mounted` archive
-from its publisher. An exact APFS source fixture is suitable for private
-testing with a local registry.
+The projected CLI has four default-off features.
+
+| Cargo feature | Intended command scope |
+| --- | --- |
+| `experimental-ssh-capture` | Linux experimental SSH acquisition |
+| `experimental-ssh-wireguard` | Linux experimental SSH acquisition over embedded WireGuard |
+| `experimental-linux-managed-sync` | Linux `sync-managed profile-identity`, plus `init` and `preview` on the admitted whole-ext4 profile |
+| `experimental-windows-diff` | Windows `diff --local-ntfs` for live byte comparison on fixed local NTFS |
+
+Managed sync retains the [existing Linux profile, private initialization
+receipt and read-only preview](../../docs/engineering/linux-managed-sync-production.md).
+Windows retains the [tested fixed-NTFS comparison
+scope](../../docs/testing.md#windows-held-directory-ntfs-qualification).
+The workspace native evidence applies to its recorded revisions, hosts
+and selectors. A frozen registry candidate needs its own installed
+command checks. Experimental APFS copy, Windows staging and copy, and
+fixture features remain outside the projection.
+
+A registry candidate requires the canonical approved `apfs-mounted`
+archive from its publisher. An exact APFS source fixture is suitable for
+private testing with a local registry.
 
 Run `python3 -B tools/release/registry_transport_projection_test.py` with
 the verified transport siblings available. Private locked install results
@@ -79,7 +93,7 @@ qualification.
 Choose one frozen profile and one exact source revision before publishing a
 crate version. The profiles can produce different archives for the same
 crate name and version. Select the transport profile for the first release
-intended to include opt-in SSH and WireGuard, after its native, supply-chain
+intended to include the four opt-in features, after its native, supply-chain
 and publisher checks pass. Adding this profile after a default-only CLI
 upload requires a new CLI version and new versions for any published
 dependency artifacts whose contents must change.

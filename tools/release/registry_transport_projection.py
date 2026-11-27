@@ -12,6 +12,15 @@ sys.path.insert(0, str(projection.ROOT / "tools"))
 import transport_source
 
 POLICY = Path(__file__).with_name("registry_transports.toml")
+# A missing policy entry can remove a CLI flag or leave a dangling feature
+# forward. Changes to this public runtime inventory require explicit review.
+REQUIRED_EXISTING_FEATURES = {
+    "exacopy": {
+        "experimental-linux-managed-sync", "experimental-ssh-capture",
+        "experimental-ssh-wireguard", "experimental-windows-diff",
+    },
+    "exacopy-platform": {"experimental-linux-managed-sync", "experimental-windows-read"},
+}
 
 
 def transport_policy(default, selected):
@@ -19,8 +28,22 @@ def transport_policy(default, selected):
     cli = policy["packages"].pop()
     if cli["name"] != "exacopy":
         raise ValueError("unexpected default registry package order")
-    cli["features"] = selected["cli_features"]
     policy["packages"].extend([*selected["packages"], cli])
+    existing = {package["name"] for package in default["packages"]}
+    feature_selections = selected.get("existing_features")
+    required = REQUIRED_EXISTING_FEATURES.keys()
+    if not isinstance(feature_selections, dict) or feature_selections.keys() != required or required - existing:
+        raise ValueError("registry transport profile requires exactly the CLI and platform feature owners")
+    for name, expected in REQUIRED_EXISTING_FEATURES.items():
+        features = feature_selections[name]
+        if (not isinstance(features, list) or len(features) != len(expected)
+                or any(not isinstance(feature, str) for feature in features) or set(features) != expected):
+            raise ValueError(f"registry transport profile requires the exact default-off runtime features for {name}")
+    for package in policy["packages"]:
+        if package["name"] in feature_selections:
+            package["features"] = feature_selections[package["name"]]
+        if "default" in package.get("features", ()):
+            raise ValueError("registry transport profile must keep runtime features default-off")
     return policy
 
 

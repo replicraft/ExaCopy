@@ -238,7 +238,7 @@ def render(source, commit, policy, forks=None):
         if name == "exacopy" and forks:
             readme = readme.replace(
                 b"Experimental features require the source workspace.",
-                b"Experimental Linux SSH and embedded WireGuard require explicit Cargo features and separate qualification.",
+                b"Linux SSH/WireGuard, Linux managed sync init/preview and Windows local NTFS comparison require explicit Cargo features and separate qualification.",
             )
         staged.update({"Cargo.toml": staged_manifest, "LICENSE": source["LICENSE"], "README.md": readme})
         record["packages"].append({

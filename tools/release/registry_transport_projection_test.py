@@ -20,7 +20,10 @@ class TransportProjectionTests(unittest.TestCase):
         cls.record = json.loads(cls.files["projection.json"])
 
     def test_selected_features_preserve_defaults_and_repaired_aliases(self):
-        expected = {"experimental-ssh-capture", "experimental-ssh-wireguard"}
+        expected = {
+            "experimental-linux-managed-sync", "experimental-ssh-capture",
+            "experimental-ssh-wireguard", "experimental-windows-diff",
+        }
         cli = base.toml(self.files["exacopy/Cargo.toml"])
         self.assertEqual(set(cli["features"]), expected)
         self.assertEqual(cli["profile"]["release"], {"overflow-checks": True})
@@ -37,6 +40,63 @@ class TransportProjectionTests(unittest.TestCase):
         self.assertEqual(len(self.record["packages"]), 14)
         self.assertFalse(self.record["registry_publication_verified"])
         self.assertTrue(self.record["external_companion"]["canonical_registry_archive_required"])
+
+    def test_platform_projection_preserves_exact_optional_target_edges(self):
+        cli = base.toml(self.files["exacopy/Cargo.toml"])
+        platform = base.toml(self.files["exacopy-platform/Cargo.toml"])
+        native = {
+            name: base.toml(base.git(base.ROOT, "show", f"{self.commit}:{path}"))
+            for name, path in (
+                ("cli", "apps/exacopy-cli/Cargo.toml"),
+                ("platform", "crates/platform/exacopy-platform/Cargo.toml"),
+            )
+        }
+        for scope, manifest in (("cli", cli), ("platform", platform)):
+            with self.subTest(scope=scope):
+                expected = native[scope]["features"]
+                self.assertEqual(manifest["features"], {key: expected[key] for key in manifest["features"]})
+        self.assertEqual(set(platform["features"]), {"experimental-linux-managed-sync", "experimental-windows-read"})
+        windows = 'cfg(target_os = "windows")'
+        held_linux = 'cfg(all(target_os = "linux", target_pointer_width = "64", any(target_arch = "x86_64", target_arch = "aarch64")))'
+        self.assertEqual(set(cli["target"][windows]["dependencies"]), {"exacopy-diff", "exacopy-endpoint", "exacopy-platform"})
+        self.assertEqual(set(platform["target"][windows]["dependencies"]), {"exacopy-endpoint", "windows-sys"})
+        self.assertEqual(set(platform["target"][held_linux]["dependencies"]), {"libc"})
+        for dependencies in (
+            cli["target"][windows]["dependencies"],
+            platform["target"][windows]["dependencies"],
+            platform["target"][held_linux]["dependencies"],
+        ):
+            self.assertTrue(all(dependency["optional"] is True for dependency in dependencies.values()))
+        self.assertFalse(platform["target"][windows]["dependencies"]["windows-sys"]["default-features"])
+
+    def test_refuses_default_activation_and_unrecognized_feature_packages(self):
+        changed = copy.deepcopy(self.selected)
+        changed["existing_features"]["exacopy"].append("default")
+        with self.assertRaisesRegex(ValueError, "default-off"):
+            transport.transport_policy(self.default, changed)
+        changed = copy.deepcopy(self.selected)
+        changed["existing_features"]["apfs-mounted"] = ["experimental"]
+        with self.assertRaisesRegex(ValueError, "requires exactly the CLI and platform feature owners"):
+            transport.transport_policy(self.default, changed)
+
+    def test_refuses_missing_runtime_feature_owners_or_flags(self):
+        expected = "requires exactly the CLI and platform feature owners"
+        changed = copy.deepcopy(self.selected)
+        del changed["existing_features"]
+        with self.assertRaisesRegex(ValueError, expected):
+            transport.transport_policy(self.default, changed)
+        for owner in ("exacopy", "exacopy-platform"):
+            with self.subTest(owner=owner):
+                changed = copy.deepcopy(self.selected)
+                del changed["existing_features"][owner]
+                with self.assertRaisesRegex(ValueError, expected):
+                    transport.transport_policy(self.default, changed)
+                features = self.selected["existing_features"][owner]
+                for invalid in ([], {"unexpected": True}, features[:-1], features[:-1] + [features[0]]):
+                    changed = copy.deepcopy(self.selected)
+                    changed["existing_features"][owner] = invalid
+                    with self.assertRaisesRegex(ValueError, f"exact default-off runtime features for {owner}"):
+                        transport.transport_policy(self.default, changed)
 
     def test_source_and_notice_receipts(self):
         for receipt in self.record["transport_forks"]:

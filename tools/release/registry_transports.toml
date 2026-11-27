@@ -1,6 +1,14 @@
-# Only the reviewed experimental transport features enter this opt-in profile.
-cli_features = ["experimental-ssh-capture", "experimental-ssh-wireguard"]
+# Only the reviewed runtime features enter this opt-in profile.
 transport_pins_sha256 = "95b7e72187aa57d94be336c40380b7e4242519c157f33feeda8406dc2186c0ba"
+
+[existing_features]
+exacopy = [
+    "experimental-linux-managed-sync",
+    "experimental-ssh-capture",
+    "experimental-ssh-wireguard",
+    "experimental-windows-diff",
+]
+exacopy-platform = ["experimental-linux-managed-sync", "experimental-windows-read"]
 
 [[packages]]
 name = "exacopy-ssh"
