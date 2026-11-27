@@ -10,7 +10,8 @@ $production = @('install.ps1', 'uninstall.ps1', 'tools/install/windows/paths.ps1
     'tools/install/windows/download.ps1', 'tools/install/windows/archive.ps1',
     'tools/install/windows/online.ps1', 'tools/install/windows/online-fixtures.ps1',
     'tools/install/windows/fixture-tools.ps1', 'tools/install/windows/Lifecycle.Tests.ps1',
-    'tools/install/windows/system-volume-fixture.ps1', 'tools/install/windows/publication-fixtures.ps1')
+    'tools/install/windows/system-volume-fixture.ps1', 'tools/install/windows/publication-fixtures.ps1',
+    'tools/install/windows/withdrawal-fixtures.ps1')
 foreach ($relative in $production) {
     $tokens = $null
     $errors = $null
@@ -31,6 +32,7 @@ function Assert-Refuses {
 }
 
 . (Join-Path $PSScriptRoot 'fixture-tools.ps1')
+. (Join-Path $PSScriptRoot 'withdrawal-fixtures.ps1')
 
 $fixture = [IO.Directory]::CreateTempSubdirectory('exacopy-installer-fixture-')
 $artifactPath = Join-Path $fixture.FullName 'exacopy.exe'
@@ -124,6 +126,7 @@ try {
         finally {
             Remove-Item -LiteralPath $artifactPath -Stream 'ExaCopy-UnownedFixture' -ErrorAction SilentlyContinue
         }
+        Test-ExaCopyPrivateWithdrawal $der $rsa $epoch
     }
 
     if (![string]::IsNullOrEmpty($Artifact)) {
