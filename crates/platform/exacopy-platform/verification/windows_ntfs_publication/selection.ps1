@@ -8,10 +8,14 @@ function Assert-PublicationApplicationAttributes {
 }
 
 function Read-PublicationApplicationRecord {
-    param([string] $Path)
+    param([string] $Path, [IO.FileStream] $HeldImage)
     [void](Confirm-ExaCopyPath $Path -File)
     Assert-PublicationApplicationAttributes ([IO.File]::GetAttributes($Path))
-    $image = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    $image = if ($null -ne $HeldImage) {
+        $HeldImage
+    } else {
+        [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    }
     try {
         $size = $image.Length
         if ($size -le 0 -or $size -gt 128MB) {
@@ -23,7 +27,7 @@ function Read-PublicationApplicationRecord {
             sha256 = (Get-FileHash -InputStream $image -Algorithm SHA256).Hash
         }
     } finally {
-        $image.Dispose()
+        if ($null -eq $HeldImage) { $image.Dispose() }
     }
 }
 
@@ -45,6 +49,18 @@ function Resolve-PublicationApplication {
         throw "The first PATH match has no exact absolute executable path: $Name"
     }
     Read-PublicationApplicationRecord $path
+}
+
+function Resolve-PublicationCompiler {
+    param([string] $RustupHome)
+    # Match the hosted provisioning root and the fixed native toolchain. A
+    # rustup proxy or another PATH image is never a candidate for this probe.
+    $path = $RustupHome + '\toolchains\1.100.0-x86_64-pc-windows-msvc\bin\rustc.exe'
+    if ($path.Length -gt 260 -or (Resolve-ExaCopyWindowsPath $path) -cne $path) {
+        throw 'The provisioned compiler has no exact absolute executable path.'
+    }
+    [void](Confirm-ExaCopyPath $path -File)
+    return $path
 }
 
 function Confirm-PublicationSource {

@@ -188,6 +188,7 @@ if ($env:SystemRoot -ine ($system + 'Windows') -or
 [void](Confirm-ExaCopyPath $env:GITHUB_OUTPUT -File)
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $ancestors = $evidencePin = $fixturePin = $fixtureGuard = $buildPin = $image = $null
+$compilerAncestors = $compilerImage = $null
 $fixture = $evidence = $null
 $fixtureCustodied = $false
 $evidenceExported = $false
@@ -274,7 +275,10 @@ try {
     Assert-StageSameVolume $fixtureId $buildId
     Assert-ReadDiffTreeSecurity $build $owner
     Confirm-StageNoResidue $build
+    $rustupHome = [IO.Path]::Combine($root, '.rustup')
+    [void](Confirm-ExaCopyPath $rustupHome -AllowMissing)
     $childEnvironment = New-PublicationEnvironment @{
+        RUSTUP_HOME = $rustupHome
         CARGO_TARGET_DIR = $build; CARGO_BUILD_BUILD_DIR = $build; CARGO_TERM_COLOR = 'never'
         CARGO_INCREMENTAL = '0'; TEMP = $build; TMP = $build; RUNNER_TEMP = $build
         EXACOPY_WINDOWS_NTFS_ROOT = $fixture; EXPECTED_RUST_HOST = $selected
@@ -321,9 +325,24 @@ try {
         }
     }
     Confirm-PublicationSource $repo $env:GITHUB_SHA
-    $state.tools.rustc = Resolve-PublicationApplication 'rustc.exe'
-    $rustc = $state.tools.rustc.path
-    if ((Invoke-PublicationChild 'rustc' $rustc @('+1.100.0', '-vV') 30000) -ne 0) {
+    $diagnostic.phase = 'rustc-admission'
+    $diagnostic.receipt = $null
+    $diagnostic.launch = $null
+    $rustc = Resolve-PublicationCompiler $rustupHome
+    $compilerAncestors = New-StageAncestorCustody ([IO.Path]::GetDirectoryName($rustc)) $owner `
+        -HostedSystemVolume $system -BeforeAdmission { param($Held) }
+    $namedCompiler = [ExaCopyQualification.ReadDiffCustody]::HoldNode($rustc, $false, $false)
+    try {
+        $compilerId = [ExaCopyQualification.ReadDiffCustody]::Observe($namedCompiler, $false).FileId
+        Assert-StageSameVolume $ancestors.Held[0].Identity $compilerId
+        $compilerImage = [IO.File]::Open($rustc, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+        Assert-StageSameIdentity $compilerId ([ExaCopyQualification.ReadDiffCustody]::Observe($compilerImage.SafeFileHandle, $false).FileId)
+        $state.tools.rustc = Read-PublicationApplicationRecord $rustc -HeldImage $compilerImage
+        $state.tools.rustc['native_identity'] = $compilerId
+    } finally {
+        $namedCompiler.Dispose()
+    }
+    if ((Invoke-PublicationChild 'rustc' $rustc @('-vV') 30000) -ne 0) {
         throw 'The pinned Windows Rust compiler was unavailable.'
     }
     $compiler = Get-Content -Raw -LiteralPath (Join-Path $evidence 'rustc.stdout.log')
@@ -332,12 +351,20 @@ try {
         throw 'The compiler did not match the pinned native toolchain.'
     }
 
+    Confirm-StageAncestorCustody $compilerAncestors
+    $childEnvironment += "RUSTC=$rustc"
     $arguments = @('+1.100.0', 'test', '--locked', '--offline', '--jobs', '2', '--target', $selected,
         '-p', 'exacopy-platform', '--lib', '--no-default-features', '--features', 'experimental-windows-copy', '--no-run',
         '--message-format=json')
     if ((Invoke-PublicationChild 'cargo-build' $cargo $arguments 480000) -ne 0) {
         throw 'The selected Windows platform library test image did not build.'
     }
+    Confirm-StageAncestorCustody $compilerAncestors
+    Assert-StageSameIdentity $compilerId ([ExaCopyQualification.ReadDiffCustody]::Observe($compilerImage.SafeFileHandle, $false).FileId)
+    $compilerImage.Dispose()
+    $compilerImage = $null
+    Close-StageAncestorCustody $compilerAncestors.Held
+    $compilerAncestors = $null
     $ownerPath = Join-Path $repo 'crates/platform/exacopy-platform'
     $manifestPath = Convert-ReadDiffExecutableSeparators ([IO.Path]::GetFullPath((Join-Path $ownerPath 'Cargo.toml')))
     $libraryPath = Convert-ReadDiffExecutableSeparators ([IO.Path]::GetFullPath((Join-Path $ownerPath 'src/lib.rs')))
@@ -366,6 +393,8 @@ try {
 } finally {
     try {
         if ($null -ne $image) { $image.Dispose() }
+        if ($null -ne $compilerImage) { $compilerImage.Dispose() }
+        if ($null -ne $compilerAncestors) { Close-StageAncestorCustody $compilerAncestors.Held }
         if ($fixtureCustodied -and $state.process_drained) {
             try {
                 if ($null -ne $buildPin) {

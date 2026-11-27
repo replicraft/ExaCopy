@@ -80,6 +80,40 @@ function Test-PublicationToolSelection {
 }
 Test-PublicationToolSelection
 
+function Test-PublicationCompilerSelection {
+    $provisioned = 'C:\Users\fixture\.rustup'
+    $expected = "$provisioned\toolchains\1.100.0-x86_64-pc-windows-msvc\bin\rustc.exe"
+    $checks = [Collections.Generic.List[string]]::new()
+    $refuseFile = $false
+    $changePath = $false
+    function Resolve-ExaCopyWindowsPath {
+        param([string] $Path)
+        if ($changePath) { return 'C:\different\rustc.exe' }
+        return $Path
+    }
+    function Get-Command { throw 'Compiler selection consulted PATH.' }
+    function Confirm-ExaCopyPath {
+        param([string] $Path, [switch] $File)
+        $checks.Add($Path)
+        Require ($File -and $Path -ceq $expected) 'Compiler selection checked an unexpected filesystem path.'
+        if ($refuseFile) { throw 'A filesystem component is a reparse point or device.' }
+        return $true
+    }
+
+    Require ((Resolve-PublicationCompiler $provisioned) -ceq $expected -and $checks.Count -eq 1) (
+        'The selected compiler must be the exact provisioned toolchain image.'
+    )
+    $refuseFile = $true
+    $checks.Clear()
+    Require-Refusal { Resolve-PublicationCompiler $provisioned } 'redirected compiler path'
+    Require ($checks.Count -eq 1) 'A declined compiler image cannot trigger an alternate candidate.'
+    $checks.Clear()
+    $changePath = $true
+    Require-Refusal { Resolve-PublicationCompiler $provisioned } 'noncanonical compiler path'
+    Require ($checks.Count -eq 0) 'A changed canonical path must be refused before filesystem admission.'
+}
+Test-PublicationCompilerSelection
+
 foreach ($attributes in @(
     [IO.FileAttributes]::Directory, [IO.FileAttributes]::Device, [IO.FileAttributes]::Offline,
     [IO.FileAttributes]::ReparsePoint, 0x00040000, 0x00400000
@@ -365,6 +399,17 @@ $long = Get-PublicationLaunchFacts 'apfs-source' ('x' * 261) $cwd @('a' * 129) $
 Require ($null -eq $long.application -and $long.application_units -eq 261 -and
     $null -eq $long.arguments[0]) 'Do not emit out-of-bound text.'
 $sourceText = $runner.Extent.Text
+$compilerInstall = $sourceText.IndexOf('RUSTUP_HOME = $rustupHome', [StringComparison]::Ordinal)
+$compilerResolution = $sourceText.IndexOf('$rustc = Resolve-PublicationCompiler $rustupHome', [StringComparison]::Ordinal)
+$compilerProbe = $sourceText.IndexOf("'rustc' " + '$rustc' + " @('-vV')", [StringComparison]::Ordinal)
+$compilerBinding = $sourceText.IndexOf('$childEnvironment += "RUSTC=$rustc"', [StringComparison]::Ordinal)
+$compilerBuild = $sourceText.IndexOf("'cargo-build' " + '$cargo', [StringComparison]::Ordinal)
+$compilerRelease = $sourceText.IndexOf('$compilerImage.Dispose()', [StringComparison]::Ordinal)
+Require ($compilerInstall -ge 0 -and $compilerInstall -lt $compilerResolution -and
+    $compilerResolution -lt $compilerProbe -and $compilerProbe -lt $compilerBinding -and
+    $compilerBinding -lt $compilerBuild -and $compilerBuild -lt $compilerRelease) (
+    'The exact provisioned compiler must stay held through its direct probe and the bound Cargo build.'
+)
 $knownOffset = $sourceText.IndexOf("Invoke-PublicationChild 'launch-pwsh'", [StringComparison]::Ordinal)
 $pythonOffset = $sourceText.IndexOf("Invoke-PublicationChild 'launch-python' `$python", [StringComparison]::Ordinal)
 $apfsOffset = $sourceText.IndexOf("Name = 'apfs-source'; Program = `$python", [StringComparison]::Ordinal)
