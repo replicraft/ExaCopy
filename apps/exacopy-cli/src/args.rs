@@ -1,3 +1,5 @@
+#[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
+use std::num::NonZeroU64;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
@@ -16,6 +18,8 @@ pub(crate) enum Command {
 	Copy(CopyCommand),
 	Plan(PlanCommand),
 	SyncPreview(SyncPreviewCommand),
+	#[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
+	SyncManaged(SyncManagedCommand),
 	ManifestCreate {
 		path: PathBuf,
 	},
@@ -59,6 +63,30 @@ pub(crate) struct SyncPreviewCommand {
 	pub(crate) parent: PathBuf,
 	pub(crate) roots: [PathBuf; 2],
 	pub(crate) subject: PathBuf,
+}
+
+#[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
+pub(crate) enum SyncManagedCommand {
+	ProfileIdentity {
+		profile: PathBuf,
+	},
+	Init(ManagedSyncInitArgs),
+	Preview {
+		profile: PathBuf,
+		owner_key: [u8; 32],
+		selection: [u8; 16],
+	},
+}
+
+#[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
+pub(crate) struct ManagedSyncInitArgs {
+	pub(crate) profile: PathBuf,
+	pub(crate) profile_device: u64,
+	pub(crate) profile_inode: NonZeroU64,
+	pub(crate) owner_key: [u8; 32],
+	pub(crate) selection: [u8; 16],
+	pub(crate) revision: NonZeroU64,
+	pub(crate) approve_request: [u8; 32],
 }
 
 pub(crate) struct VerifyCommand {

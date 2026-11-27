@@ -20,7 +20,7 @@ use crate::args::SyncPreviewCommand;
 
 use super::blocked;
 
-const CONFLICT: u8 = 3;
+pub(super) const CONFLICT: u8 = 3;
 const SCRATCH_BYTES: usize = 64 * 1024;
 
 pub(super) fn preview(command: &SyncPreviewCommand) -> (Value, u8) {
@@ -171,14 +171,14 @@ fn decision(decision: SyncPathDecision) -> (Value, u8) {
 	}
 }
 
-fn side(side: SyncSide) -> &'static str {
+pub(super) fn side(side: SyncSide) -> &'static str {
 	match side {
 		SyncSide::Left => "left",
 		SyncSide::Right => "right",
 	}
 }
 
-fn evidence(observation: SyncObservation) -> Value {
+pub(super) fn evidence(observation: SyncObservation) -> Value {
 	match observation {
 		SyncObservation::Present(file) => json!({
 			"state": "present",

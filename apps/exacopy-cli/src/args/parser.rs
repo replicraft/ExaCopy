@@ -32,6 +32,8 @@ const MANAGED_MACOS: &str = "managed-macos";
 const LOCAL_NTFS: &str = "local-ntfs";
 #[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
 mod remote;
+#[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
+mod sync_managed;
 mod sync_preview;
 #[cfg(test)]
 mod tests;
@@ -199,6 +201,8 @@ fn definition() -> Cli {
 		);
 	#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
 	let cli = cli.subcommand(remote::get_subcommand());
+	#[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
+	let cli = cli.subcommand(sync_managed::definition());
 	cli
 }
 
@@ -409,6 +413,8 @@ fn typed_command(mut args: ArgMatches) -> Option<Command> {
 			output: path(&mut command, OUTPUT)?,
 		})),
 		sync_preview::NAME => sync_preview::command(&mut command),
+		#[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
+		sync_managed::NAME => sync_managed::command(command).map(Command::SyncManaged),
 		MANIFEST => {
 			let (action, mut args) = command.remove_subcommand()?;
 			if action != CREATE {

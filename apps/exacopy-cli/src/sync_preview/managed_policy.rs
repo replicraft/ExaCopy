@@ -33,6 +33,32 @@ pub(crate) struct ManagedPolicyPin {
 	pub(crate) digest: [u8; 32],
 }
 
+impl ManagedPolicyPin {
+	/// Constructs the exact decode pin from the independently approved Init inputs.
+	pub(crate) fn approved_request(
+		selection_id: [u8; 16],
+		revision: NonZeroU64,
+		owner_key: [u8; 32],
+		digest: [u8; 32],
+	) -> Result<Self, ManagedPolicyError> {
+		if selection_id == [0; 16] || digest == [0; 32] {
+			return Err(ManagedPolicyError::Selection);
+		}
+		let key = canonical_owner_key(&owner_key)?;
+		let profile =
+			crate::profile::profile_id_for_key(&key).map_err(|_| ManagedPolicyError::Selection)?;
+		Ok(Self {
+			identity: ManagedPolicyIdentity {
+				selection_id,
+				revision,
+				owner_profile: *profile.as_bytes(),
+				owner_key,
+			},
+			digest,
+		})
+	}
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// Refusal while preparing or admitting the selected managed policy.
 pub enum ManagedPolicyError {
@@ -136,17 +162,20 @@ pub struct ManagedHistoryMember {
 	pub reference: WorkflowRef,
 }
 
+fn canonical_owner_key(bytes: &[u8; 32]) -> Result<VerifyingKey, ManagedPolicyError> {
+	let key = VerifyingKey::from_bytes(bytes).map_err(|_| ManagedPolicyError::Selection)?;
+	if key.is_weak() || key.to_edwards().compress().to_bytes() != *bytes {
+		return Err(ManagedPolicyError::Selection);
+	}
+	Ok(key)
+}
+
 impl ManagedPolicyIdentity {
 	fn validate(&self) -> Result<(), ManagedPolicyError> {
-		let key =
-			VerifyingKey::from_bytes(&self.owner_key).map_err(|_| ManagedPolicyError::Selection)?;
-		if self.selection_id == [0; 16]
-			|| self.owner_profile == [0; 16]
-			|| key.is_weak()
-			|| key.to_edwards().compress().to_bytes() != self.owner_key
-		{
+		if self.selection_id == [0; 16] || self.owner_profile == [0; 16] {
 			return Err(ManagedPolicyError::Selection);
 		}
+		canonical_owner_key(&self.owner_key)?;
 		Ok(())
 	}
 }

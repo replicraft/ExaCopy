@@ -345,7 +345,7 @@ impl<'store> SyncProfileSeed<'store> {
 	) -> Result<SyncProfileStoreRecord<'store>, SyncProfileStoreError> {
 		let name = slot(id)?;
 		check_extent(exact.len())?;
-		self.check_seed(expected_seed, seed_check, seed_eof)?;
+		self.recheck_seed(expected_seed, seed_check, seed_eof)?;
 		let mut writer = match fs::openat2(
 			&self.lease,
 			&name,
@@ -379,14 +379,20 @@ impl<'store> SyncProfileSeed<'store> {
 				return Err(SyncProfileStoreError::Changed);
 			}
 			fs::fsync(&self.lease)?;
-			self.check_seed(expected_seed, seed_check, seed_eof)?;
+			self.recheck_seed(expected_seed, seed_check, seed_eof)?;
 			record.recheck()?;
 			Ok(record)
 		})();
 		result.map_err(|error| SyncProfileStoreError::CreationUnconfirmed(Box::new(error)))
 	}
 
-	fn check_seed(
+	/// Recheck the same held seed, exact expected bytes, and protected profile path.
+	///
+	/// The caller must wipe both supplied scratch buffers even after refusal.
+	///
+	/// # Errors
+	/// Refuses incomplete seed reads or drift in held bytes, identity or ancestry.
+	pub fn recheck_seed(
 		&self,
 		expected: &[u8; OWNER_SEED_BYTES],
 		scratch: &mut [u8; OWNER_SEED_BYTES],

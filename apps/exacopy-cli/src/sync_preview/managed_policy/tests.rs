@@ -6,7 +6,7 @@ use exacopy_plan::workflow_sync::{MAX_MEMBER_BYTES, NativeObject, WorkflowKind, 
 use super::{
 	MANAGED_POLICY_MAX_BYTES, ManagedCooperation, ManagedHistoryMember, ManagedPolicy,
 	ManagedPolicyEndpoint, ManagedPolicyError, ManagedPolicyHistory, ManagedPolicyIdentity,
-	ManagedPolicyLocation, decode, encode,
+	ManagedPolicyLocation, ManagedPolicyPin, decode, encode,
 };
 
 #[test]
@@ -45,6 +45,101 @@ fn complete_envelope_matches_fixed_commitment_and_round_trips() {
 	assert_eq!(endpoints[0].max_bytes, 0);
 	assert_eq!(endpoints[1].location.mount.get(), 4);
 	assert_eq!(policy.history.revision.get(), 11);
+}
+
+#[test]
+fn init_decodes_only_the_independent_owner_and_exact_approved_request() {
+	let mut expected = identity();
+	let key = ed25519_dalek::VerifyingKey::from_bytes(&expected.owner_key).unwrap();
+	expected.owner_profile = *crate::profile::profile_id_for_key(&key).unwrap().as_bytes();
+	let expected_policy = policy();
+	let (bytes, encoded_pin) = encode(&expected, &expected_policy).unwrap();
+	let select = ManagedPolicyPin::approved_request;
+	let pin = select(
+		expected.selection_id,
+		expected.revision,
+		expected.owner_key,
+		encoded_pin.digest,
+	)
+	.unwrap();
+	assert_eq!(pin, encoded_pin);
+	assert!(decode(&bytes, &pin).unwrap() == expected_policy);
+
+	let foreign = SigningKey::from_bytes(&[19; 32]).verifying_key().to_bytes();
+	for altered in [
+		select(
+			[7; 16],
+			expected.revision,
+			expected.owner_key,
+			encoded_pin.digest,
+		)
+		.unwrap(),
+		select(
+			expected.selection_id,
+			nonzero(8),
+			expected.owner_key,
+			encoded_pin.digest,
+		)
+		.unwrap(),
+		select(
+			expected.selection_id,
+			expected.revision,
+			foreign,
+			encoded_pin.digest,
+		)
+		.unwrap(),
+		select(
+			expected.selection_id,
+			expected.revision,
+			expected.owner_key,
+			[9; 32],
+		)
+		.unwrap(),
+	] {
+		assert!(matches!(
+			decode(&bytes, &altered),
+			Err(ManagedPolicyError::Selection)
+		));
+	}
+
+	// A matching independent digest still cannot authorize a foreign profile ID
+	// paired with the approved public key.
+	let mut false_profile = expected;
+	false_profile.owner_profile = [2; 16];
+	let (bytes, foreign_pin) = encode(&false_profile, &expected_policy).unwrap();
+	let approved = select(
+		expected.selection_id,
+		expected.revision,
+		expected.owner_key,
+		foreign_pin.digest,
+	)
+	.unwrap();
+	assert!(matches!(
+		decode(&bytes, &approved),
+		Err(ManagedPolicyError::Selection)
+	));
+}
+
+#[test]
+fn init_refuses_zero_approval_and_noncanonical_or_weak_owner_keys() {
+	let expected = identity();
+	let digest = [7; 32];
+	let mut weak = [0; 32];
+	weak[0] = 1;
+	let mut noncanonical = [0xff; 32];
+	noncanonical[0] = 0xee;
+	noncanonical[31] = 0x7f;
+	for (id, key, approval) in [
+		([0; 16], expected.owner_key, digest),
+		(expected.selection_id, expected.owner_key, [0; 32]),
+		(expected.selection_id, weak, digest),
+		(expected.selection_id, noncanonical, digest),
+	] {
+		assert_eq!(
+			ManagedPolicyPin::approved_request(id, expected.revision, key, approval),
+			Err(ManagedPolicyError::Selection),
+		);
+	}
 }
 
 #[test]

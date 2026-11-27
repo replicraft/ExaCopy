@@ -8,7 +8,13 @@ use crate::report::INCONCLUSIVE;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
+pub(crate) mod managed_ack;
+#[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
+pub(crate) mod managed_command;
+#[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
 pub(crate) mod managed_policy;
+#[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
+mod managed_report;
 
 pub(crate) fn run(
 	command: &SyncPreviewCommand,
@@ -16,15 +22,17 @@ pub(crate) fn run(
 	stderr: &mut impl Write,
 ) -> u8 {
 	let (report, exit) = preview(command);
-	let output = serde_json::to_writer(&mut *stdout, &report)
-		.map_err(std::io::Error::other)
-		.and_then(|()| writeln!(stdout))
-		.and_then(|()| stdout.flush());
-	if output.is_err() {
+	if write_report(&report, stdout).is_err() {
 		let _ = writeln!(stderr, "exacopy: could not write the sync preview");
 		return INCONCLUSIVE;
 	}
 	exit
+}
+
+fn write_report(report: &Value, stdout: &mut impl Write) -> std::io::Result<()> {
+	serde_json::to_writer(&mut *stdout, report)?;
+	writeln!(stdout)?;
+	stdout.flush()
 }
 
 #[cfg(target_os = "linux")]

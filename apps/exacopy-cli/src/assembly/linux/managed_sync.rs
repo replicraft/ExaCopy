@@ -28,11 +28,16 @@ use crate::sync_preview::managed_policy::{
 	ManagedPolicyIdentity, ManagedPolicyPin, decode, encode,
 };
 
+mod acknowledgement;
 mod history;
 mod scope;
 
 #[cfg(test)]
 mod tests;
+
+pub(crate) use acknowledgement::{
+	initialize_approved, inspect_profile_identity, preview_acknowledged,
+};
 
 use history::authenticate;
 use scope::{expected_native, fresh_endpoints, native_object, raw_path};
@@ -99,6 +104,8 @@ impl ManagedSyncSelection {
 pub enum ManagedSyncPreviewError {
 	/// Independent selection differs from the held facts or retained policy pin.
 	Selection,
+	/// A required signed acknowledgement was invalid or could not be issued.
+	Acknowledgement,
 	/// The private bounded policy was refused.
 	Policy(ManagedPolicyError),
 	/// The selected app-private record could not be held, verified or stored.
@@ -123,6 +130,9 @@ impl fmt::Display for ManagedSyncPreviewError {
 	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
 			Self::Selection => formatter.write_str("managed synchronization selection refused"),
+			Self::Acknowledgement => {
+				formatter.write_str("managed synchronization acknowledgement refused")
+			}
 			Self::Policy(_) => formatter.write_str("managed synchronization policy refused"),
 			Self::Store(_) => formatter.write_str("managed synchronization policy custody refused"),
 			Self::CreationUnconfirmed(_) => {
@@ -159,6 +169,16 @@ impl std::error::Error for ManagedSyncPreviewError {
 pub fn initialize_managed_preview(
 	request: ManagedSyncInit<'_>,
 ) -> Result<ManagedSyncSelection, ManagedSyncPreviewError> {
+	let store = SyncProfileStore::open(request.profile).map_err(ManagedSyncPreviewError::Store)?;
+	initialize(&store, request, None, |selection, _| Ok(selection))
+}
+
+fn initialize<T>(
+	store: &SyncProfileStore,
+	request: ManagedSyncInit<'_>,
+	approved: Option<&ManagedPolicyPin>,
+	acknowledge: impl FnOnce(ManagedSyncSelection, &SigningKey) -> Result<T, ManagedSyncPreviewError>,
+) -> Result<T, ManagedSyncPreviewError> {
 	type Failure = ManagedSyncPreviewError;
 
 	let ManagedSyncInit {
@@ -168,7 +188,6 @@ pub fn initialize_managed_preview(
 		selection_revision,
 		policy,
 	} = request;
-	let store = SyncProfileStore::open(profile).map_err(Failure::Store)?;
 	if store.identity() != profile_identity {
 		return Err(Failure::Selection);
 	}
@@ -177,7 +196,8 @@ pub fn initialize_managed_preview(
 	let owner_seed = store
 		.open_seed(&mut seed, &mut probe)
 		.map_err(Failure::Store)?;
-	let key = SigningKey::from_bytes(&seed).verifying_key();
+	let signer = SigningKey::from_bytes(&seed);
+	let key = signer.verifying_key();
 	let identity = ManagedPolicyIdentity {
 		selection_id,
 		revision: selection_revision,
@@ -187,6 +207,9 @@ pub fn initialize_managed_preview(
 		owner_key: key.to_bytes(),
 	};
 	let (encoded, pin) = encode(&identity, policy).map_err(Failure::Policy)?;
+	if approved.is_some_and(|expected| expected != &pin) {
+		return Err(Failure::Selection);
+	}
 	let scope = expected_native(policy)?;
 	let roots = SyncPreviewRoots::open(scope.parent_path, scope.roots.map(|root| root.name))
 		.map_err(Failure::Native)?;
@@ -238,11 +261,15 @@ pub fn initialize_managed_preview(
 	};
 	confirm().map_err(|cause| Failure::CreationUnconfirmed(Box::new(cause)))?;
 
-	Ok(ManagedSyncSelection {
-		profile: profile.to_path_buf(),
-		profile_identity,
-		pin,
-	})
+	acknowledge(
+		ManagedSyncSelection {
+			profile: profile.to_path_buf(),
+			profile_identity,
+			pin,
+		},
+		&signer,
+	)
+	.map_err(|cause| Failure::CreationUnconfirmed(Box::new(cause)))
 }
 
 /// Opens precisely the acknowledged selection and classifies one live subject.
@@ -262,10 +289,20 @@ pub fn preview_managed_history(
 	if store.identity() != selection.profile_identity {
 		return Err(Failure::Selection);
 	}
-	let identity = &selection.pin.identity;
+	preview_held(&store, &selection.pin, scratch)
+}
+
+fn preview_held(
+	store: &SyncProfileStore,
+	pin: &ManagedPolicyPin,
+	scratch: &mut [u8],
+) -> Result<FirstSyncPreview, ManagedSyncPreviewError> {
+	type Failure = ManagedSyncPreviewError;
+
+	let identity = &pin.identity;
 	let key = verify_owner_identity(identity)?;
 	let record = store.read(identity.selection_id).map_err(Failure::Store)?;
-	let policy = decode(record.bytes(), &selection.pin).map_err(Failure::Policy)?;
+	let policy = decode(record.bytes(), pin).map_err(Failure::Policy)?;
 	let scope = expected_native(&policy)?;
 	let roots = SyncPreviewRoots::open(scope.parent_path, scope.roots.map(|root| root.name))
 		.map_err(Failure::Native)?;

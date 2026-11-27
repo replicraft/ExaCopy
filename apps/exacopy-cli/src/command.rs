@@ -49,6 +49,13 @@ pub fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
 		Command::SyncPreview(preview) => {
 			ExitCode::from(crate::sync_preview::run(&preview, &mut stdout, &mut stderr))
 		}
+		#[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
+		Command::SyncManaged(command) => ExitCode::from(crate::sync_preview::managed_command::run(
+			command,
+			&mut io::stdin().lock(),
+			&mut stdout,
+			&mut stderr,
+		)),
 		Command::ManifestCreate { path } => {
 			ExitCode::from(crate::manifest::create(&path, &mut stdout, &mut stderr))
 		}

@@ -5,9 +5,9 @@ The default-off `experimental-linux-managed-sync` feature in
 corresponding platform feature. The assembly exposes
 `initialize_managed_preview` and `preview_managed_history` for one raw basename
 across an ordered pair of live roots. The existing P-063 signed history
-format is unchanged. The CLI has no dispatch for this feature. The assembly
-has no history writer, baseline advancement, or authority to mutate either
-live root. [Application assembly](../../apps/exacopy-cli/src/assembly/linux/managed_sync.rs) ·
+format is unchanged. The feature also exposes the Linux-only
+`sync-managed init` and `sync-managed preview` commands. Neither command
+writes history, advances a baseline, or mutates either live root. [Application assembly](../../apps/exacopy-cli/src/assembly/linux/managed_sync.rs) ·
 [P-063 history contract](../architecture/sync-baseline-root-contract.md)
 
 ## Init acknowledgment
@@ -84,6 +84,102 @@ aliases, and administrators must preserve the selected scope. The lease
 provides cooperative exclusion and the preview reports a live observation.
 [Managed platform guard](../../crates/platform/exacopy-platform/src/linux/sync_preview/managed.rs) ·
 [Mount observation](linux-managed-sync-statmount.md)
+
+## CLI use
+
+Use a Linux build with `experimental-linux-managed-sync` enabled. Supply an
+existing owner-private profile and an independently provisioned signed P-063
+history. Before Init, retain the approved canonical profile path, its Linux
+device and inode, the owner's public key, nonzero selection ID, positive
+revision, and exact managed policy commitment separately from the request.
+The selected policy includes the finite cooperating writer agreement. A
+history artifact alone cannot select a policy.
+
+At trusted profile setup, obtain the public selection facts from the selected
+existing profile without exporting its signing seed.
+
+```sh
+exacopy sync-managed profile-identity --profile "$trusted_profile"
+```
+
+This read-only command emits `owner_profile` and `owner_key` as lowercase
+hexadecimal, and `device` and `inode` as decimal strings. Retain these facts
+through the independent provisioning channel. Running it against an offered,
+untrusted profile does not establish owner identity. The command cannot
+approve a policy or create a selection slot.
+
+Use lowercase hexadecimal for the key, selection ID and commitment. Use
+decimal for the device, inode and revision. A request from an independently
+prepared producer uses the compact, bounded policy envelope described below.
+Set the example variables from the retained approved values. The receipt path
+must be a new file in a directory you control.
+
+```sh
+(
+  umask 077
+  set -C
+  exacopy sync-managed init --profile "$profile" \
+    --profile-device "$profile_device" --profile-inode "$profile_inode" \
+    --owner-key "$owner_key" --selection "$selection" --revision "$revision" \
+    --approve-request "$policy_commitment" --request-stdin \
+    < "$approved_request" > "$new_acknowledgement"
+)
+exacopy sync-managed preview --profile "$profile" --owner-key "$owner_key" \
+  --selection "$selection" --receipt-stdin < "$new_acknowledgement"
+```
+
+Init emits one 435-byte line after the original seed, profile, policy and
+live-scope checks and private slot sealing succeed. It signs the exact policy
+commitment and selection revision, selected owner and actual profile
+identity, including a digest of the canonical raw path. The application
+opens the existing seed only during Init. Preview checks the signed line
+under the independently selected key and selection, compares the held profile
+identity, and rechecks the exact sealed policy and authenticated history.
+It emits a JSON result. A conflict has exit status 3 and an inconclusive
+result has status 2. The existing `sync-preview --no-history` invocation stays
+separate.
+
+A failed output write or flush reports `delivery_uncertain`. The sealed
+slot remains occupied, and a complete authentic line may already have reached
+the receiver. Keep the exact line if available. An absent, torn or invalid
+line cannot authorize preview, and Init cannot regenerate a lost line from
+a slot. Retrying an occupied selection refuses without replacing its bytes.
+Use a separately approved new selection when needed. The selected history
+and live policy pin the original boot, namespaces, mount and ordered roots.
+A changed boot or other selected scope refuses. Reprovision and authorize
+a new applicable scope explicitly.
+
+### Approved request envelope
+
+Send compact ASCII JSON without whitespace, BOM, newline or trailing bytes.
+Encode byte strings as lowercase hex and numeric values as exact decimal
+integers. Maximum input is 24,576 bytes.
+
+- The envelope is `[1, selection_id, selection_revision, commitment, owner_key, policy]`.
+  The selection ID is 16 bytes, the key and commitment are 32 bytes each.
+- Policy is `[owner_profile_id,[uid,gid],[1,enrollment_id],live,history]`.
+  The IDs here are 16 bytes and the UID and GID are positive u32.
+- Live is `[parent_path,parent_locator,location,subject,[left,right]]`.
+  Location is `[boot,mount_namespace,user_namespace,ordinary_mount,unique_mount,parent]`.
+  Boot and the parent locator are 16 bytes. Each endpoint is
+  `[endpoint_id,root_locator,child_name,native_object,max_bytes]`. Endpoint and
+  root IDs are 16 bytes. A native object is `[major,minor,inode]`, with u32
+  device parts and positive u64 inode. The selected mount IDs are positive u64.
+- History is `[history_path,history_directory,history_revision,root,[left,right,leaf],scan]`.
+  The history directory is a native object. Revision and an optional scan
+  are positive u64. No scan constraint is JSON `null`. Each member is
+  `[raw_name,kind,length,digest]`. Use kind 6 for the root, 1 for each endpoint,
+  and 256 for the leaf, with a 32-byte digest and complete extent up to 2,048 bytes.
+  Supply the exact independently selected raw locator for each member.
+
+The owner-profile ID uses the first 16 bytes of BLAKE3 derive-key
+`ExaCopy local CLI profile ID v1` over the raw public key. Set byte index 6
+to `(byte & 0x0f) | 0x80` and byte index 8 to `(byte & 0x3f) | 0x80` for
+the UUID. The policy commitment is the 32-byte BLAKE3 derive-key result
+under `ExaCopy local managed sync policy v1` over the compact JSON array
+`[1,selection_id,selection_revision,owner_key,policy]`. The independently
+retained commitment approves that projection. The complete six-item stdin
+envelope contains it. [Policy codec](../../apps/exacopy-cli/src/sync_preview/managed_policy/wire.rs)
 
 ## Native qualification
 
