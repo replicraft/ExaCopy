@@ -26,10 +26,13 @@ mod ledger;
 mod receipt;
 mod retry;
 mod startup;
-#[cfg(test)]
-#[expect(
-	dead_code,
-	reason = "private selector-2 inspector awaits native qualification and application dispatch"
+#[cfg(any(test, feature = "experimental-verified-prefix-resume"))]
+#[cfg_attr(
+	all(test, not(feature = "experimental-verified-prefix-resume")),
+	expect(
+		dead_code,
+		reason = "private selector-2 inspector awaits application dispatch"
+	)
 )]
 pub(super) mod witnessed_inspection;
 #[cfg(test)]

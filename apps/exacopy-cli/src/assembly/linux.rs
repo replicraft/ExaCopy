@@ -50,6 +50,10 @@ pub(crate) use remote_continued::{
 #[cfg(feature = "experimental-verified-prefix-resume")]
 pub(crate) use remote_journal::CheckedOriginalWitnessStartup;
 #[cfg(feature = "experimental-verified-prefix-resume")]
+pub(crate) use remote_journal::witnessed_inspection::{
+	ArchivedWitnessedSelection, WitnessedInspectionError, WitnessedInspectionRequest,
+};
+#[cfg(feature = "experimental-verified-prefix-resume")]
 pub(crate) use remote_witness_authority::ExplicitWitnessSelection;
 
 pub use public_plan::{NativePlanningError, plan_public_new_file};

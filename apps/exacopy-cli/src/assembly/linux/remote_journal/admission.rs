@@ -14,7 +14,7 @@ use exacopy_transfer::remote_metadata::ApprovedSftpMetadata;
 use super::{Error, record_identity};
 use exacopy_transfer::remote_finalization::RemotePublicationAuthority;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub(in crate::assembly::linux) enum OwnerDialect {
 	EmbeddedV1,
 	ResolvedDirect,
@@ -24,19 +24,28 @@ pub(in crate::assembly::linux) enum OwnerDialect {
 
 impl OwnerDialect {
 	pub(super) fn select(route: RemoteDownloadRoute, root: SftpPathRoot) -> Result<Self, Error> {
-		match (route, root) {
-			(RemoteDownloadRoute::EmbeddedWireGuard { .. }, SftpPathRoot::AccountRelative) => {
-				Ok(Self::EmbeddedV1)
+		let class = match route {
+			RemoteDownloadRoute::EmbeddedWireGuard { .. } => {
+				RemoteQualificationRouteClass::EmbeddedWireGuardTcpV1
 			}
-			(RemoteDownloadRoute::ResolvedDirect { .. }, SftpPathRoot::AccountRelative) => {
-				Ok(Self::ResolvedDirect)
+			RemoteDownloadRoute::ResolvedDirect { .. } => {
+				RemoteQualificationRouteClass::DirectPinnedTcpV1
 			}
-			(RemoteDownloadRoute::EmbeddedWireGuard { .. }, SftpPathRoot::Absolute) => {
-				Ok(Self::AbsoluteEmbedded)
-			}
-			(RemoteDownloadRoute::ResolvedDirect { .. }, SftpPathRoot::Absolute) => {
-				Ok(Self::AbsoluteResolvedDirect)
-			}
+			_ => return Err(Error::UnsupportedRoute),
+		};
+		Self::select_qualification(class, root)
+	}
+
+	pub(super) fn select_qualification(
+		class: RemoteQualificationRouteClass,
+		root: SftpPathRoot,
+	) -> Result<Self, Error> {
+		use RemoteQualificationRouteClass::{DirectPinnedTcpV1, EmbeddedWireGuardTcpV1};
+		match (class, root) {
+			(EmbeddedWireGuardTcpV1, SftpPathRoot::AccountRelative) => Ok(Self::EmbeddedV1),
+			(DirectPinnedTcpV1, SftpPathRoot::AccountRelative) => Ok(Self::ResolvedDirect),
+			(EmbeddedWireGuardTcpV1, SftpPathRoot::Absolute) => Ok(Self::AbsoluteEmbedded),
+			(DirectPinnedTcpV1, SftpPathRoot::Absolute) => Ok(Self::AbsoluteResolvedDirect),
 			_ => Err(Error::UnsupportedRoute),
 		}
 	}

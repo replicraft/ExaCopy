@@ -8,13 +8,13 @@ use exacopy_journal::remote_download::replay::{RemoteReplayBoundary, RemoteRepla
 use exacopy_journal::remote_download::{
 	MAX_REMOTE_DOWNLOAD_OWNER_BYTES, RemoteDownloadOwnerRecord, RemoteDownloadScope,
 };
-use exacopy_journal::{DurableJournal, JournalJobId, LinuxFileIdentity};
+use exacopy_journal::{DurableJournal, JournalJobId, LinuxFileIdentity, OwnerProfileId};
 use exacopy_platform::linux::{
 	DestinationRoot, FileIdentity, LinuxJournalSegment, RecoveryFile, RecoveryInventory,
 	RecoveryJob, RecoveryWriteLease,
 };
 
-use crate::profile::LocalProfile;
+use crate::profile::{LocalProfile, root_id_for_key};
 
 use super::admission::{OwnerDialect, RemoteActivation};
 use super::ledger::{RemoteJobJournal, WriterStart, context, readback_frame};
@@ -359,6 +359,15 @@ pub(super) fn read_owner(
 	profile: &LocalProfile,
 	dialect: OwnerDialect,
 ) -> Result<RemoteDownloadOwnerRecord, Error> {
+	read_owner_for_key(file, profile.id(), &profile.verification_key(), dialect)
+}
+
+pub(super) fn read_owner_for_key(
+	file: &RecoveryFile,
+	profile: OwnerProfileId,
+	key: &VerifyingKey,
+	dialect: OwnerDialect,
+) -> Result<RemoteDownloadOwnerRecord, Error> {
 	let len = usize::try_from(file.len()).map_err(|_| Error::Binding)?;
 	if len == 0 || len > MAX_REMOTE_DOWNLOAD_OWNER_BYTES {
 		return Err(Error::Binding);
@@ -367,7 +376,7 @@ pub(super) fn read_owner(
 	file.read_exact_at(0, &mut bytes)?;
 	file.check_logical_eof()?;
 	file.recheck_observation()?;
-	dialect.decode(&bytes, profile.id(), &profile.verification_key())
+	dialect.decode(&bytes, profile, key)
 }
 
 fn require_live_phase(
@@ -415,9 +424,18 @@ pub(super) fn check_root(
 	scope: &RemoteDownloadScope,
 	job_name: &[u8],
 ) -> Result<(), Error> {
+	check_root_for_key(root, &profile.verification_key(), scope, job_name)
+}
+
+pub(super) fn check_root_for_key(
+	root: &DestinationRoot,
+	key: &VerifyingKey,
+	scope: &RemoteDownloadScope,
+	job_name: &[u8],
+) -> Result<(), Error> {
 	if job_name == scope.destination.target()
 		|| scope.destination.parent() != record_identity(root.identity())
-		|| scope.destination.root() != profile.root_id(root.identity())?
+		|| scope.destination.root() != root_id_for_key(key, root.identity())?
 	{
 		return Err(Error::Binding);
 	}

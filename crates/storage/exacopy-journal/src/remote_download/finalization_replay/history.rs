@@ -76,7 +76,7 @@ impl FinalizationHistory {
 		}
 	}
 
-	pub(super) fn retirements(&self) -> &[RemoteRetiredCapture] {
+	pub(in crate::remote_download) fn retirements(&self) -> &[RemoteRetiredCapture] {
 		&self.retirements
 	}
 

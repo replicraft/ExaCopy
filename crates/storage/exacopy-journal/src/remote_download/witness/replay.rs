@@ -106,6 +106,7 @@ pub struct RemoteWitnessedCloseoutReplay {
 	grant: [u8; 32],
 	fallback: RemoteFinalizationPhase,
 	pass_count: usize,
+	has_ordinary_retirements: bool,
 }
 
 impl RemoteWitnessedCloseoutReplay {
@@ -147,6 +148,12 @@ impl RemoteWitnessedCloseoutReplay {
 	#[must_use]
 	pub const fn pass_count(&self) -> usize {
 		self.pass_count
+	}
+
+	/// Reports whether replay accepted any ordinary capture retirement.
+	#[must_use]
+	pub const fn has_ordinary_retirements(&self) -> bool {
+		self.has_ordinary_retirements
 	}
 
 	/// Returns witnessed retirements in order, preserving implicit historical aliases.
@@ -281,5 +288,6 @@ pub fn replay_remote_witnessed_closeout(
 		grant: selection.grant_digest,
 		fallback: legacy.phase(),
 		pass_count,
+		has_ordinary_retirements: !legacy.retirements().is_empty(),
 	})
 }

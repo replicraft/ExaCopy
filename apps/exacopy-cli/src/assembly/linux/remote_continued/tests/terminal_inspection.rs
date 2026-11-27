@@ -4,17 +4,19 @@ use exacopy_journal::remote_download::RemoteBootstrapTrust;
 use exacopy_journal::remote_download::replay::RemoteReplayBoundary;
 use exacopy_journal::remote_download::witness::records::RemoteWitnessedOutcome;
 use exacopy_journal::remote_download::witness::replay::{
+	RemoteCommittedReceiptInspection, RemoteWitnessedCloseoutReplay,
 	RemoteWitnessedReplayPhase as Phase, RemoteWitnessedReplaySelection,
 	replay_remote_witnessed_closeout,
 };
 
 use crate::assembly::linux::remote_journal::ReplayIssue;
 use crate::assembly::linux::remote_journal::witnessed_inspection::{
-	WitnessedInspectionError, intent_history, receipt_ready_history, terminal_history,
-	verify_public_digest, verify_receipt_ready_bytes,
+	WitnessedInspectionError, first_unretired_witnessed_pass, intent_history,
+	receipt_ready_history, selected_terminal_history, terminal_history, verify_public_digest,
+	verify_receipt_ready_bytes,
 };
 
-use super::{ChainHead, field};
+use super::{ChainHead, field, hex};
 
 pub(super) fn check(
 	live_bytes: &[u8],
@@ -22,12 +24,14 @@ pub(super) fn check(
 	selection: &RemoteWitnessedReplaySelection<'_>,
 ) {
 	check_publish_intent(live_bytes, trust, selection);
+	check_first_pass(trust, selection);
 	let replay = replay_remote_witnessed_closeout(live_bytes, trust, selection).unwrap();
 	let accepted = terminal_history(&replay, live_bytes.len() as u64).unwrap();
 	assert!(matches!(
 		accepted.outcome(),
 		RemoteWitnessedOutcome::Submitted(_)
 	));
+	check_terminal_selection(&replay, &accepted, live_bytes.len() as u64);
 	assert!(matches!(
 		terminal_history(&replay, live_bytes.len() as u64 + 1),
 		Err(WitnessedInspectionError::History { issue: None, .. })
@@ -41,6 +45,16 @@ pub(super) fn check(
 	assert!(matches!(
 		accepted.outcome(),
 		RemoteWitnessedOutcome::Recovered { .. }
+	));
+	assert!(first_unretired_witnessed_pass(&replay));
+	assert!(matches!(
+		selected_terminal_history(
+			&replay,
+			recovered_bytes.len() as u64,
+			accepted.boundary(),
+			accepted.record().digest(),
+		),
+		Err(WitnessedInspectionError::SelectionMismatch)
 	));
 
 	let live_receipt = field(vector, "receipt");
@@ -84,6 +98,95 @@ pub(super) fn check(
 			terminal_history(&replay, bytes.len() as u64),
 			Err(WitnessedInspectionError::History { .. })
 		));
+	}
+}
+
+fn check_terminal_selection(
+	replay: &RemoteWitnessedCloseoutReplay,
+	accepted: &RemoteCommittedReceiptInspection<'_>,
+	native_end: u64,
+) {
+	let boundary = accepted.boundary();
+	let digest = accepted.record().digest();
+	let inspected = selected_terminal_history(replay, native_end, boundary, digest).unwrap();
+	assert_eq!(inspected.boundary(), boundary);
+	assert_eq!(inspected.record().digest(), digest);
+
+	let mut wrong_head_digest = boundary.head.digest();
+	wrong_head_digest[0] ^= 1;
+	let wrong_head = ChainHead::after(boundary.head.sequence(), wrong_head_digest).unwrap();
+	let mut wrong_receipt_digest = digest;
+	wrong_receipt_digest[0] ^= 1;
+	for (committed, receipt_digest) in [
+		(
+			RemoteReplayBoundary {
+				head: wrong_head,
+				..boundary
+			},
+			digest,
+		),
+		(
+			RemoteReplayBoundary {
+				offset: boundary.offset + 1,
+				..boundary
+			},
+			digest,
+		),
+		(boundary, wrong_receipt_digest),
+	] {
+		assert!(matches!(
+			selected_terminal_history(replay, native_end, committed, receipt_digest),
+			Err(WitnessedInspectionError::SelectionMismatch)
+		));
+	}
+}
+
+fn check_first_pass(
+	trust: &RemoteBootstrapTrust<'_>,
+	selection: &RemoteWitnessedReplaySelection<'_>,
+) {
+	let ordinary = hex(vector!("remote_finalization/retirement_journal.hex"));
+	let mut frames = FrameReader::new(ordinary.as_slice(), ChainHead::start());
+	let (retirement_start, retirement_end) = loop {
+		let start = frames.offset() as usize;
+		let frame = frames.next_frame().unwrap().unwrap();
+		if frame.kind() == FrameKind::RemoteCaptureRetired {
+			break (start, frames.offset() as usize);
+		}
+	};
+	for (bytes, retired) in [
+		(&ordinary[..retirement_start], false),
+		(&ordinary[..retirement_end], true),
+		(ordinary.as_slice(), true),
+	] {
+		let replay = replay_remote_witnessed_closeout(bytes, trust, selection).unwrap();
+		assert!(replay.issue().is_none());
+		assert_eq!(replay.boundary().offset, bytes.len() as u64);
+		assert_eq!(replay.has_ordinary_retirements(), retired);
+		assert!(!first_unretired_witnessed_pass(&replay));
+	}
+
+	let vector = vector!("remote_continuation/witnessed_replay.hex");
+	for (label, witnessed_passes, witnessed_retired) in [
+		("published", 1, false),
+		("retire-preserved", 1, true),
+		("repeated-v2", 2, false),
+		("fresh-v1-then-v2", 2, true),
+	] {
+		let bytes = field(vector, label);
+		let replay = replay_remote_witnessed_closeout(bytes.as_slice(), trust, selection).unwrap();
+		assert!(replay.issue().is_none());
+		assert_eq!(replay.boundary().offset, bytes.len() as u64);
+		assert!(!replay.has_ordinary_retirements());
+		assert_eq!(
+			replay.pass_count() - replay.attempts().len(),
+			witnessed_passes,
+		);
+		assert_eq!(!replay.retirements().is_empty(), witnessed_retired);
+		assert_eq!(
+			first_unretired_witnessed_pass(&replay),
+			label == "published",
+		);
 	}
 }
 

@@ -48,12 +48,7 @@ impl LocalProfile {
 	}
 
 	pub(crate) fn root_id(&self, identity: FileIdentity) -> Result<RootCapabilityId, ProfileError> {
-		let mut context = [0; 48];
-		context[..32].copy_from_slice(self.verification_key().as_bytes());
-		context[32..40].copy_from_slice(&identity.device().to_le_bytes());
-		context[40..].copy_from_slice(&identity.inode().to_le_bytes());
-		RootCapabilityId::from_bytes(identifier("ExaCopy local CLI root ID v1", &context))
-			.map_err(|_| ProfileError::Identifier)
+		root_id_for_key(&self.verification_key(), identity)
 	}
 
 	pub(crate) fn is_seed(&self, identity: LinuxFileIdentity) -> bool {
@@ -66,6 +61,18 @@ pub(crate) fn init(path: &Path) -> Result<(), ProfileError> {
 	let (parent, name) = split(path).map_err(|_| ProfileError::InvalidPath)?;
 	let mut seed = Zeroizing::new([0; SEED_BYTES]);
 	initialize_owner_seed(parent, name, &mut seed).map_err(ProfileError::from)
+}
+
+pub(crate) fn root_id_for_key(
+	key: &VerifyingKey,
+	identity: FileIdentity,
+) -> Result<RootCapabilityId, ProfileError> {
+	let mut context = [0; 48];
+	context[..32].copy_from_slice(key.as_bytes());
+	context[32..40].copy_from_slice(&identity.device().to_le_bytes());
+	context[40..].copy_from_slice(&identity.inode().to_le_bytes());
+	RootCapabilityId::from_bytes(identifier("ExaCopy local CLI root ID v1", &context))
+		.map_err(|_| ProfileError::Identifier)
 }
 
 pub(crate) fn profile_id_for_key(key: &VerifyingKey) -> Result<OwnerProfileId, ProfileError> {
