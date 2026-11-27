@@ -76,8 +76,10 @@ pub use mount_observation::MountObservations;
 
 #[cfg(feature = "experimental-linux-managed-sync")]
 pub use sync_profile_store::{
-	SyncProfileHistory, SyncProfileSeed, SyncProfileStore, SyncProfileStoreError,
-	SyncProfileStoreRecord,
+	SyncGenesisEffect, SyncGenesisEffectRequest, SyncGenesisIntent, SyncGenesisMember,
+	SyncGenesisMemberBinding, SyncGenesisNativeIdentity, SyncGenesisOperation, SyncGenesisOutput,
+	SyncGenesisPublishError, SyncGenesisPublishRequest, SyncGenesisPublished, SyncProfileHistory,
+	SyncProfileSeed, SyncProfileStore, SyncProfileStoreError, SyncProfileStoreRecord,
 };
 
 pub use sync_preview::{

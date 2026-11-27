@@ -143,7 +143,9 @@ pub(super) fn whole_ext4_mount(
 	unique_mount_id(fd)
 }
 
-pub(super) fn unique_mount_id(descriptor: impl AsFd) -> Result<NonZeroU64, SyncPreviewError> {
+pub(in crate::linux) fn unique_mount_id(
+	descriptor: impl AsFd,
+) -> Result<NonZeroU64, SyncPreviewError> {
 	let stat = fs::statx(descriptor, c"", AtFlags::EMPTY_PATH, MOUNT_ID_UNIQUE)?;
 	if stat.stx_mask & MOUNT_ID_UNIQUE.bits() == 0 {
 		return Err(SyncPreviewError::UnsupportedMount);

@@ -13,7 +13,7 @@ use crate::linux::handle::FileIdentity;
 pub struct SourceObservation {
 	identity: FileIdentity,
 	length: u64,
-	mode: u32,
+	native_mode: u32,
 	owner: u32,
 	group: u32,
 	link_count: u64,
@@ -42,7 +42,7 @@ impl SourceObservation {
 		Ok(Self {
 			identity: FileIdentity::from_stat(stat),
 			length,
-			mode: Mode::from_raw_mode(stat.st_mode).as_raw_mode(),
+			native_mode: stat.st_mode,
 			owner: stat.st_uid,
 			group: stat.st_gid,
 			link_count,
@@ -89,7 +89,13 @@ impl SourceObservation {
 	/// The observed mode bits, including set-user-ID, set-group-ID and sticky bits.
 	#[must_use]
 	pub fn mode(&self) -> u32 {
-		self.mode
+		Mode::from_raw_mode(self.native_mode).as_raw_mode()
+	}
+
+	/// The exact Linux stat mode, including the confirmed regular-file type bits.
+	#[must_use]
+	pub fn native_mode(&self) -> u32 {
+		self.native_mode
 	}
 
 	/// The observed owner user ID in the caller's user namespace.

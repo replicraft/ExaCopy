@@ -15,11 +15,17 @@ use super::owner_seed::{KEY_NAME, OWNER_SEED_BYTES};
 use super::{FileIdentity, MountObservations};
 use crate::protected_snapshot::checked_components;
 
+mod genesis_output;
 mod pin;
 mod scope;
 #[cfg(test)]
 mod tests;
 
+pub use genesis_output::{
+	SyncGenesisEffect, SyncGenesisEffectRequest, SyncGenesisIntent, SyncGenesisMember,
+	SyncGenesisMemberBinding, SyncGenesisNativeIdentity, SyncGenesisOperation, SyncGenesisOutput,
+	SyncGenesisPublishError, SyncGenesisPublishRequest, SyncGenesisPublished,
+};
 use pin::{Pin, Stamp};
 use scope::DirectoryStamp;
 pub use scope::SyncProfileHistory;

@@ -265,6 +265,10 @@ pub struct ManagedSyncPreviewPair<'view, 'selection> {
 }
 
 impl<'view, 'selection> ManagedSyncPreviewPair<'view, 'selection> {
+	pub(in crate::linux) fn held_roots(&self) -> &SyncPreviewRoots<'selection> {
+		self.lease.roots
+	}
+
 	/// Returns the same borrowed observations for independent measurement.
 	#[must_use]
 	pub fn entries(&self) -> [SyncPreviewEntry<'_, 'view>; 2] {

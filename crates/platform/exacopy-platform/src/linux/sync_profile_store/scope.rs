@@ -96,8 +96,45 @@ impl SyncProfileStore {
 		roots: &SyncPreviewRoots<'_>,
 	) -> Result<(), SyncProfileStoreError> {
 		let first = self.role_ancestries(history, roots)?;
-		require_disjoint(&first)?;
+		require_disjoint(first.each_ref().map(Vec::as_slice))?;
 		if self.role_ancestries(history, roots)? != first {
+			return Err(SyncProfileStoreError::Changed);
+		}
+		Ok(())
+	}
+
+	// The live common parent intentionally contains the selected children;
+	// profile and output must each be disjoint from all of those held roles.
+	pub(super) fn check_genesis_output_disjoint(
+		&self,
+		output: &Self,
+		roots: &SyncPreviewRoots<'_>,
+	) -> Result<(), SyncProfileStoreError> {
+		let observe = || {
+			self.recheck()?;
+			output.recheck()?;
+			roots.recheck_scope().map_err(io::Error::other)?;
+			let mounts = MountObservations::capture()?;
+			let system_root = self.chain.first().ok_or(SyncProfileStoreError::Changed)?;
+			let walk = |root| ancestry(root, &mounts, system_root.stamp.identity);
+			let [parent, left, right] = roots.held_directories();
+			let chains = [
+				walk(self.profile().file.as_fd())?,
+				walk(output.profile().file.as_fd())?,
+				walk(parent)?,
+				walk(left)?,
+				walk(right)?,
+			];
+			roots.recheck_scope().map_err(io::Error::other)?;
+			output.recheck()?;
+			self.recheck()?;
+			Ok::<_, SyncProfileStoreError>(chains)
+		};
+		let first = observe()?;
+		for role in &first[2..] {
+			require_disjoint([first[0].as_slice(), first[1].as_slice(), role.as_slice()])?;
+		}
+		if observe()? != first {
 			return Err(SyncProfileStoreError::Changed);
 		}
 		Ok(())
@@ -163,7 +200,9 @@ fn ancestry(
 	Err(SyncProfileStoreError::Unsupported)
 }
 
-fn require_disjoint(chains: &[Vec<FileIdentity>; 4]) -> Result<(), SyncProfileStoreError> {
+fn require_disjoint<const N: usize>(
+	chains: [&[FileIdentity]; N],
+) -> Result<(), SyncProfileStoreError> {
 	for (index, left) in chains.iter().enumerate() {
 		let left_root = left.first().ok_or(SyncProfileStoreError::Changed)?;
 		for right in &chains[index + 1..] {
