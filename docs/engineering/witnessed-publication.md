@@ -7,8 +7,10 @@ Private application composition now carries this same model and native holder
 through submission. The held outcome can record kind 8 once. The positive
 holder can request freshly authorized durability barriers and record kind 9.
 Private live receipt composition implements kinds 42 and 18 on that same
-held path. Complete native application qualification and CLI dispatch remain
-open. [Witnessed closeout design](../architecture/remote-witnessed-closeout.md) ·
+held path. A default-off CLI now composes the first positive-tail continuation
+and read-only terminal inspection. Complete native application qualification
+and later or recovered-lineage CLI routes remain open.
+[Witnessed closeout design](../architecture/remote-witnessed-closeout.md) ·
 [Remote transfer release readiness](remote-transfer-readiness.md)
 
 ## From closed capture to one rename
@@ -235,9 +237,11 @@ platform component tests in its 1,066-test run.
   refused a foreign witness with matching bytes and a replaced journal
   segment with the original bytes.
 
-These ordinary native component tests used fixture records. Complete
-authenticated OP2 application restart qualification and CLI dispatch remain
-open.
+These ordinary native component tests used fixture records. The default-off
+terminal inspector now has CLI composition with separately retained selection
+inputs; its integrated execution and native qualification remain open.
+Publication-intent, receipt-ready and recovered-lineage CLI composition remain
+outside that first terminal slice.
 [Native terminal view](../../crates/platform/exacopy-platform/src/linux/recovery/terminal.rs) ·
 [Application inspection](../../apps/exacopy-cli/src/assembly/linux/remote_journal/witnessed_inspection.rs)
 

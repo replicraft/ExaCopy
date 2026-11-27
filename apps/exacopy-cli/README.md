@@ -349,12 +349,17 @@ is the default.
 The default-off Linux `experimental-verified-prefix-resume` feature adds a
 first witnessed continuation of a clean original capture. It requires explicit
 retention consent and separately trusted continuation qualification. Witnessed
-success uses `exacopy.cli.witnessed_remote_download` 1.0 and reports the committed
+success uses `exacopy.cli.witnessed_remote_download` 1.1 and reports the committed
 receipt and retained witness instead of claiming the ordinary full-stream BLAKE3
 field. This path rereads the current remote prefix; it saves local staging work,
 not prefix network traffic. Native qualification remains pending. See the
 [first witnessed resume contract](../../docs/engineering/first-witnessed-resume.md)
-for selection, authority and recovery limits.
+for selection, authority and recovery limits. Retain the complete JSON success
+report from the trusted invocation separately from its job to select later
+`recover remote-inspect-witness` inspection. That read-only command requires the
+original qualified executable and current matching native facts, the protected
+report, and both qualification/trust pairs. It loads no private owner key and
+opens no SSH connection. A version 1.0 report lacks the required archive selection.
 
 Select the reported retained job to resume. The command authenticates its
 signed scope and checks the current authority again. Clean pre-intent

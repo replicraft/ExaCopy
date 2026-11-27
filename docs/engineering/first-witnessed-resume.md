@@ -78,10 +78,11 @@ evidence and a committed kind-18 receipt after witnessed closeout. Native
 publication without that receipt, uncertain effects, and unconfirmed conflict
 records require reconciliation. A confirmed conflict remains a conflict.
 
-Successful JSON uses `exacopy.cli.witnessed_remote_download` version `1.0` and
+Successful JSON uses `exacopy.cli.witnessed_remote_download` version `1.1` and
 exit 11 (`published_with_omissions`). It reports the receipt digest, qualification
 digest, length, retained witness link count, committed sequence and head digest,
-and canonical receipt length. It omits the ordinary
+and canonical receipt length. The receipt adds `archive_selection` for later
+read-only inspection. It omits the ordinary
 full-stream `blake3` field. Ordinary byte-zero success remains
 `exacopy.cli.remote_download` version `1.0`, including that field. Common failures
 retain the ordinary failure schema and their known publication state.
@@ -91,11 +92,47 @@ the job and witness as evidence. Data-only metadata omissions remain explicit.
 Ctrl-C revokes the grant, and expiry blocks further effects; incomplete effects may require
 reconciliation rather than a clean cancellation report.
 
+## Read-only terminal inspection
+
+Capture the complete successful `--format json` output from a trusted witnessed
+invocation and retain it separately from the job as a protected JSON file.
+The selection comes from that trusted capture. File protection controls its
+local custody. Version `1.0` success lacks archive selection and is refused.
+The inspector does not reconstruct missing selectors.
+
+On the same feature-enabled Linux build, select the job path and original
+qualification inputs explicitly. The archived display and raw path fields
+are diagnostic. Job lookup uses the parent and basename selected by `JOB`.
+
+```text
+exacopy recover remote-inspect-witness JOB --selection-report FILE \
+  --destination-qualification FILE --qualification-trust FILE \
+  --continuation-qualification FILE --continuation-trust FILE --format json
+```
+
+The inspector accepts a clean submitted kind-18 terminal receipt from the
+first witnessed continuation. It checks the exact held terminal boundary,
+public file contents and length, retained witness and final receipt. JSON
+output uses
+`exacopy.cli.witnessed_remote_inspection` version `1.0`. It reports the observed
+association at inspection time. The executable must match the original
+measured image, and the held destination facts must match the selected
+qualification, including current boot and mount facts. An upgrade, reboot
+or remount can make the original archive ineligible.
+
+The command verifies the archived owner with its public key and holds a
+shared recovery lease. It requires no private key or SSH session and grants
+no live or mutation authority.
+
 ## Verification boundary
 
 P-081 checks only projection of a synthetic native-result/receipt combination:
 confirmed publication without its committed receipt cannot become CLI success.
 Parser and report regressions check selection and output compatibility. The
 dedicated hosted lane includes those cases and existing signed-kind-40 controls.
-It does not establish native custody, live remote-source comparison, process-crash
-or power-loss qualification. Those require their own evidence before promotion.
+The lane also checks inspection argument selection, archive decoding, terminal
+selection and report projection. The new inspection controls are inventoried
+and source reviewed; their integrated hosted execution is pending. These
+controls do not establish native custody, live
+remote-source comparison, process-crash or power-loss qualification.
+Those require their own evidence before promotion.
