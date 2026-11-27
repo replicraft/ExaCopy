@@ -230,9 +230,29 @@ The test confirmed fixture cleanup; the wrapper confirmed process drain and
 absence of its owned work directory. The held executable SHA-256 was
 `cf053d5c5551e26fd2d2fc04ecbc5e536d230dd342cf26c089991221344811e6`.
 The retained artifact archives and their uncompressed members were verified.
-This qualifies the executed Init and read-only preview controls under that
-native profile and finite cooperative enrollment, with synthetic signed history.
-It does not qualify future CLI receipt import or mutation.
+This execution covered the assembly-level Init and read-only preview
+controls with synthetic signed history and finite cooperative enrollment.
+
+The later [hosted execution at `b82e95d`](https://github.com/replicraft/ExaCopy/actions/runs/45928809441)
+passed the same eight native controls plus 15 invocations of the held CLI,
+including profile identity, Init, signed acknowledgment import, and
+read-only preview. It ran on Linux `7.0.0-1020-azure`, whole ext4,
+with UID/GID 1001 and full identity maps. The read-only stdout control
+returned exit 2 and `delivery_uncertain`, emitted no acknowledgment,
+retained the exact sealed slot and refused Init on that occupied selection.
+The runner confirmed cleanup. The held test and CLI images had SHA-256
+`49c96f5d06a12c6bc26a06c1d4582a6191a4ee7ce180839996a8f93e98eea0dc`
+and `4fbe45a47b89e33772c482e888db30929efe44a6a0edac262ce983f52cbe5243`,
+respectively. The result JSON had SHA-256
+`2a12983002831a11f233cf4a6f0f7e26f7840b94e0072e8e1b3601e207c7690e`.
+
+The preceding [CLI execution at `99fdf66`](https://github.com/replicraft/ExaCopy/actions/runs/45924705418)
+failed when read-only stdout returned exit 0 instead of exit 2. Fixture
+cleanup refused because the directory was nonempty. The raw failure is
+retained under `target/agent-evidence/hosted-99fdf66/`. The subsequent
+`c46b8b5` fix writes the Init acknowledgment through an owned duplicate
+of the actual output descriptor and verifies the retained slot after an
+output failure. The passing `b82e95d` run follows that fix.
 
 The earlier [execution at `37ba6a1`](https://github.com/replicraft/ExaCopy/actions/runs/45918433791)
 compiled and selected the exact case but failed its first root-mismatch assertion.
@@ -242,6 +262,7 @@ The subsequent fix removed an invalid `O_NONBLOCK` flag from an `O_PATH`
 directory, and retained typed refusal diagnostics. The original error variant
 remains unavailable. That failed observation is preserved separately.
 
-The observed mount had `nobarrier` and `data=writeback`. Process-crash and
-power-loss qualification remain open; passing these live controls supplies
-neither claim.
+The AWS and Azure test mounts had `nobarrier` and `data=writeback`.
+The passing controls cover the observed managed read-only scope and
+private Init slot, with synthetic signed history and cooperative writers.
+Process-crash and power-loss qualification remain open.

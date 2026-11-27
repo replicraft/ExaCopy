@@ -110,10 +110,34 @@ Other kernels, missing tools, drift or uncertainty remain blocked. Previously li
 dependencies have name-only attribution; they do not inherit archive-byte
 provenance. The runner VM owns loaded module lifetime.
 
-Portable controls and source review cover this harness. Actual module
-loading, kernel peer interoperability, no-fallback behavior and complete
-embedded transfer qualification remain pending native execution. Its
-one-use synthetic qualification record is not production authority.
+The `99fdf66` provider-B run admitted the pinned module set on AWS
+Linux `7.0.0-1014-aws`. Two qualification controls and the positive
+download passed. The incumbent command refused the occupied target and
+made no SSH connection. The kernel observer then refused the late peer
+delta, with TX increasing from 4,780 to 4,940 bytes while RX, endpoint and
+handshake stayed unchanged. No later cases or carrier-down ran. The run
+confirmed client drain and fixture and marker removal.
+[Hosted run](https://github.com/replicraft/ExaCopy/actions/runs/45924705292)
+
+The `b82e95d` provider-B run on Azure Linux `7.0.0-1020-azure` recorded
+the two initial qualification controls. Its positive `get` reached
+independent OpenSSH and passed the original kernel traffic check with
+RX +3,490 and TX +4,780 bytes. In the settling window before the incumbent
+case, TX increased by another 2,772 bytes, from 4,780 to 7,552, while RX
+stayed at 3,490 and the endpoint and handshake stayed unchanged. The
+observer did not record the required 22 continuous quiet seconds in
+60.061 seconds. It withheld the `get` acknowledgment, leaving both the
+incumbent and carrier-down commands unexecuted.
+[Hosted run](https://github.com/replicraft/ExaCopy/actions/runs/45928809368) ·
+[Provider and campaign reports](https://github.com/replicraft/ExaCopy/actions/runs/45928809368/artifacts/15167269338)
+
+The retained OpenSSH `get` transcript ends at SFTP session start. The
+reports leave the origin of the later TX increments undetermined. The
+Azure run confirmed client drain and fixture and marker removal. All
+14 outer report commitments verified. Both native runs used synthetic
+authority. Complete embedded commissioning, including the remaining
+no-fallback and carrier-down controls, and production qualification
+remain open.
 
 ## Hosted direct OpenSSH commissioning
 
@@ -151,6 +175,20 @@ recorded the same staged executable digest. The ordinary job retained seven
 OpenSSH case logs and confirmed fixture removal and process-group drainage.
 The qualification record was specific to that synthetic fixture.
 [Hosted run](https://github.com/replicraft/ExaCopy/actions/runs/45924705323)
+
+The `b82e95d` hosted execution passed all seven ordinary cases on Azure
+Linux `7.0.0-1020-azure` and all five READ-timeout cases on AWS Linux
+`7.0.0-1014-aws`, both on whole ext4. Both jobs used the held executable
+with SHA-256
+`458d7c8019d1ba2211bec64ecc19b8353334c9b753fc097fa3483dbe46ef77d5`.
+The three retry-budget sessions each recorded an open, a held READ and
+transport closure. The CLI refused publication at 52.006 seconds with
+exit 8 and `E_AUTHORIZATION`. Both report file maps and all 12 exported
+case transcripts verified. Both fixtures confirmed process-group drain
+and removal. The results apply to the synthetic fixture authority.
+[Hosted run](https://github.com/replicraft/ExaCopy/actions/runs/45928809198) ·
+[Ordinary report](https://github.com/replicraft/ExaCopy/actions/runs/45928809198/artifacts/15167324370) ·
+[READ-timeout report](https://github.com/replicraft/ExaCopy/actions/runs/45928809198/artifacts/15167453997)
 
 ## Earlier native destination evidence
 
