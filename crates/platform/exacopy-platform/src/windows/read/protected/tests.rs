@@ -44,8 +44,10 @@ fn native_protects_content_sharing_and_confidentiality() {
 	let alias = fixture.0.join("hardlink");
 	let user = format!("*{}", sid_text(&subject.sid));
 	secure(&fixture.0, &user);
-	fs::write(&file, b"synthetic protected bytes").unwrap();
+	fs::write(&file, []).unwrap();
 	secure(&file, &user);
+	assert!(read(&file).unwrap().is_empty());
+	fs::write(&file, b"synthetic protected bytes").unwrap();
 	assert_eq!(read(&file).unwrap(), b"synthetic protected bytes");
 
 	let writer = OpenOptions::new()
@@ -59,6 +61,21 @@ fn native_protects_content_sharing_and_confidentiality() {
 	fs::hard_link(&file, &alias).unwrap();
 	assert_eq!(read(&file), Err(Error::Unprotected));
 	fs::remove_file(alias).unwrap();
+
+	let ads = fixture.0.join("selected:hidden");
+	fs::write(&ads, b"synthetic named stream").unwrap();
+	let mut refused_bytes = [0x51; 128];
+	let mut refused_scratch = [0x52; 8];
+	assert_eq!(
+		read_into(&file, &mut refused_bytes, &mut refused_scratch),
+		Err(Error::Unprotected)
+	);
+	assert_eq!(refused_bytes, [0x51; 128]);
+	assert_eq!(refused_scratch, [0x52; 8]);
+	assert_eq!(fs::read(&file).unwrap(), b"synthetic protected bytes");
+	assert_eq!(fs::read(&ads).unwrap(), b"synthetic named stream");
+	fs::remove_file(ads).unwrap();
+	assert_eq!(read(&file).unwrap(), b"synthetic protected bytes");
 
 	icacls(&file, &["/grant", "*S-1-1-0:(R)"]);
 	let mut bytes = [0x41; 128];

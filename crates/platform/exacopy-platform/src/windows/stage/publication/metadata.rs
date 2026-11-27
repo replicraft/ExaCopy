@@ -1,21 +1,17 @@
 use std::io;
-use std::mem::{align_of, offset_of, size_of};
+use std::mem::{offset_of, size_of};
 use std::os::windows::io::{AsRawHandle, BorrowedHandle};
 
 use windows_sys::Win32::Security::{
 	DACL_SECURITY_INFORMATION, GetKernelObjectSecurity, OWNER_SECURITY_INFORMATION,
 	SE_DACL_PRESENT, SE_SELF_RELATIVE, SECURITY_DESCRIPTOR_RELATIVE,
 };
-use windows_sys::Win32::Storage::FileSystem::{
-	FILE_STREAM_INFO, FileStreamInfo, GetFileInformationByHandleEx,
-};
 
 use super::WindowsPublicationError;
+use crate::windows::native::streams::{StreamError, require_unnamed_stream};
 use crate::windows::stage::handles::Stamp;
 
 const SECURITY_BYTES: usize = 16 * 1024;
-const STREAM_NAME_CAPACITY: usize = 256;
-const DATA_STREAM: [u16; 7] = [58, 58, 36, 68, 65, 84, 65]; // ::$DATA
 
 /// Exact held observations for the experimental unnamed-stream metadata profile.
 ///
@@ -40,7 +36,10 @@ impl WindowsPublicationMetadata {
 		if !stamp.has_archive() {
 			return Err(WindowsPublicationError::UnsupportedMetadata);
 		}
-		require_unnamed_stream(handle, extent)?;
+		require_unnamed_stream(handle, extent).map_err(|error| match error {
+			StreamError::Query(cause) => WindowsPublicationError::MetadataQuery(cause),
+			StreamError::Unsupported => WindowsPublicationError::UnsupportedMetadata,
+		})?;
 		Ok(Self {
 			stamp,
 			extent,
@@ -53,66 +52,6 @@ impl WindowsPublicationMetadata {
 			&& self.security == original.security
 			&& self.stamp.preserves_required(original.stamp)
 	}
-}
-
-#[repr(C, align(8))]
-struct StreamBuffer {
-	next: u32,
-	name_bytes: u32,
-	size: i64,
-	allocation: i64,
-	name: [u16; STREAM_NAME_CAPACITY],
-}
-
-const _: () = {
-	assert!(align_of::<StreamBuffer>() == 8);
-	assert!(offset_of!(StreamBuffer, next) == offset_of!(FILE_STREAM_INFO, NextEntryOffset));
-	assert!(offset_of!(StreamBuffer, name_bytes) == offset_of!(FILE_STREAM_INFO, StreamNameLength));
-	assert!(offset_of!(StreamBuffer, size) == offset_of!(FILE_STREAM_INFO, StreamSize));
-	assert!(
-		offset_of!(StreamBuffer, allocation) == offset_of!(FILE_STREAM_INFO, StreamAllocationSize)
-	);
-	assert!(offset_of!(StreamBuffer, name) == offset_of!(FILE_STREAM_INFO, StreamName));
-};
-
-fn require_unnamed_stream(
-	handle: BorrowedHandle<'_>,
-	extent: u64,
-) -> Result<(), WindowsPublicationError> {
-	let mut stream = StreamBuffer {
-		next: 0,
-		name_bytes: 0,
-		size: 0,
-		allocation: 0,
-		name: [0; STREAM_NAME_CAPACITY],
-	};
-	let size = u32::try_from(size_of::<StreamBuffer>())
-		.map_err(|_| WindowsPublicationError::UnsupportedMetadata)?;
-	// SAFETY: The live handle and writable buffer are valid through this
-	// synchronous query. The buffer is initialized, bounded, and the prefix
-	// and alignment match FILE_STREAM_INFO.
-	let success = unsafe {
-		GetFileInformationByHandleEx(
-			handle.as_raw_handle(),
-			FileStreamInfo,
-			(&raw mut stream).cast(),
-			size,
-		)
-	};
-	if success == 0 {
-		return Err(WindowsPublicationError::MetadataQuery(
-			io::Error::last_os_error(),
-		));
-	}
-	if stream.next != 0
-		|| usize::try_from(stream.name_bytes).ok() != Some(size_of_val(&DATA_STREAM))
-		|| !stream.name.starts_with(&DATA_STREAM)
-		|| u64::try_from(stream.size).ok() != Some(extent)
-		|| stream.allocation < 0
-	{
-		return Err(WindowsPublicationError::UnsupportedMetadata);
-	}
-	Ok(())
 }
 
 #[repr(align(4))]

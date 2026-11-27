@@ -19,6 +19,7 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 
 use crate::protected_snapshot::{MAX_PROTECTED_SNAPSHOT_BYTES, ProtectedSnapshotError as Error};
+use crate::windows::native::streams::{StreamError, require_unnamed_stream};
 use crate::windows::native::{
 	Kind, ObjectId, Refusal, RelativeFileOpen, local_ntfs_path, observe_file, open_relative_entry,
 	parse_volume_guid,
@@ -135,6 +136,7 @@ impl<'path> Snapshot<'path> {
 		if stamp.length > limit {
 			return Err(Error::TooLarge);
 		}
+		stamp.check_stream(first.as_handle(), Error::Unprotected)?;
 		let file = open_relative(
 			parent.handle.as_handle(),
 			path.leaf,
@@ -145,6 +147,7 @@ impl<'path> Snapshot<'path> {
 		if held_leaf != leaf || held_stamp != stamp {
 			return Err(Error::Changed);
 		}
+		stamp.check_stream(file.as_handle(), Error::Changed)?;
 		Ok(Self {
 			path,
 			subject,
@@ -199,6 +202,7 @@ impl<'path> Snapshot<'path> {
 			if LeafStamp::capture(handle)? != self.stamp {
 				return Err(Error::Changed);
 			}
+			self.stamp.check_stream(handle, Error::Changed)?;
 		}
 		if security::Subject::current()? != self.subject {
 			return Err(Error::Changed);
@@ -286,6 +290,13 @@ impl LeafStamp {
 			write_time: basic.LastWriteTime,
 			change_time: basic.ChangeTime,
 			attributes: basic.FileAttributes,
+		})
+	}
+
+	fn check_stream(self, handle: BorrowedHandle<'_>, unsupported: Error) -> Result<(), Error> {
+		require_unnamed_stream(handle, self.length as u64).map_err(|error| match error {
+			StreamError::Query(_cause) => Error::Unavailable,
+			StreamError::Unsupported => unsupported,
 		})
 	}
 }

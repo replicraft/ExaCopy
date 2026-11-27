@@ -76,6 +76,8 @@ impl std::error::Error for ProtectedSnapshotError {}
 /// and one-link regular file, with protected DACLs excluding untrusted grants.
 /// A metadata-only open precedes the data open. The reader compares two complete
 /// reads and checks identity, names, protection evidence, token, and actual EOF.
+/// The held and freshly named file observations must show only the unnamed data
+/// stream at the admitted extent.
 /// The caller must trust the kernel, volume/device namespace, LocalSystem, local
 /// administrators, principals delegated equivalent storage or ACL-bypass
 /// privileges, and processes acting as the current user. Provisioning must
