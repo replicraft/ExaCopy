@@ -74,7 +74,7 @@ jobs:
           if [[ "$RUNNER_OS" == Windows ]]; then
             matrix_python=python
           fi
-          bash .github/ci/capture.sh feature-matrix "$matrix_python" tools/feature_matrix.py --target "$EXPECTED_RUST_HOST"
+          bash .github/ci/capture.sh feature-matrix "$matrix_python" -B tools/feature_matrix.py --target "$EXPECTED_RUST_HOST"
       - name: Run Clippy
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
         run: bash .github/ci/capture.sh clippy cargo +1.100.0 clippy --locked --workspace --all-targets --all-features -- -D warnings

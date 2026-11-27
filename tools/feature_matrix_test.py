@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 import json
+from pathlib import Path
 import unittest
 
 from feature_matrix import (
@@ -15,6 +16,18 @@ WINDOWS = "x86_64-pc-windows-msvc"
 
 
 class FeatureMatrixTests(unittest.TestCase):
+    def test_ci_feature_matrix_invocations_disable_bytecode_writes(self):
+        invocations = [
+            (workflow, line)
+            for workflow in Path(".github/workflows").glob("*.yml")
+            for line in workflow.read_text(encoding="utf-8").splitlines()
+            if " tools/feature_matrix.py " in line
+        ]
+        self.assertTrue(invocations)
+        for workflow, invocation in invocations:
+            with self.subTest(workflow=workflow):
+                self.assertIn(" -B tools/feature_matrix.py ", invocation)
+
     def test_unreviewed_feature_is_rejected(self):
         packages = [
             {"name": name, "features": {}, "dependencies": []}
