@@ -5,6 +5,10 @@ use std::sync::MutexGuard;
 
 use exacopy_endpoint::{JournalFileBarrier, JournalSegment};
 
+#[cfg(test)]
+#[path = "../../tests/unit/journal_segment.rs"]
+mod tests;
+
 /// A checked Linux journal file held for its exclusive writer.
 /// The synchronization contract is Linux `File::sync_all` on the held object.
 pub struct LinuxJournalSegment<'lease> {
