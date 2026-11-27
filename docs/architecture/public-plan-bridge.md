@@ -3,8 +3,13 @@
 Decision PLN-003, 2026-11-25. The fixed Linux metadata-policy identifier
 and requested grant names below are selected for the initial local profile.
 The canonical body and page codecs and the [read-only Linux export](read-only-plan-export.md)
-are implemented. Apply, durable recovery binding and integrated qualification
-remain open.
+are implemented. Private staging now uses the signed public apply owner and
+supports authenticated read-only inspection. Its bounded native fixture has
+executed. The engine also prepares the existing v2 publication intent from
+the active staging attempt. Intent append, exclusive publication, mutating
+recovery and public apply dispatch remain open.
+[Staging and native evidence](public-apply-staging.md) ·
+[Read-only inspection](public-stage-inspection.md)
 
 This work package maps the public Plan v1 envelope and the existing
 [one-entry page codec](public-plan-pages.md) to a local Linux create-new
@@ -136,6 +141,26 @@ its name at the seal and intent boundary. Use the existing model permit,
 private stage, full file and directory barriers, exact intent synchronization,
 exclusive rename, and observation and receipt ordering. Unknown effect or
 barrier outcomes retain evidence for reconciliation.
+
+### Implemented intent proposal
+
+`stage_public_apply_and_propose_intent` shares the existing staging path.
+It binds the independently approved public digest and selected qualification
+before private effects. After source and target preflight it samples current
+UTC and native facts immediately before bootstrap. After sealing it checks
+the held source and target again and takes a second observation. Missing
+facts, changed selection, expiry or clock rollback refuse the proposal.
+
+The private journal supplies the actual consecutive synchronized kind-5
+verification and kind-6 metadata frames from that same appender. The
+proposal binds those heads, the exact owner, entry, epoch, content and
+policy using the existing v2 format. Ordinary staging keeps its existing
+return value and record bytes. The returned proposal is historical data;
+it supplies no permission to append or reopen a job. Future publication
+must retain the original journal appender and perform fresh named-stage, metadata,
+qualification and approval checks at the effect boundary. This function
+does not append kind 7 or issue a rename.
+[Engine preparation](../../crates/engines/exacopy-transfer/src/linux/local_copy/public_apply/proposal.rs)
 
 ## Durable apply binding and recovery
 
