@@ -44,15 +44,16 @@ def isolated_client(net, host_mount, owner, nonce):
 
 
 def main():
-    if len(sys.argv) != 5 or not FIXTURE_ID.fullmatch(sys.argv[1]):
+    if len(sys.argv) not in (5, 6) or not FIXTURE_ID.fullmatch(sys.argv[1]):
         return 77
-    nonce, net, host_mount, owner = sys.argv[1:]
+    nonce, net, host_mount, owner, *candidate_digest = sys.argv[1:]
     signal.signal(signal.SIGTERM, interrupted)
     signal.signal(signal.SIGINT, interrupted)
     try:
+        candidate = native.CandidateFactsBinding(candidate_digest[0], native.EMBEDDED) if candidate_digest else None
         mount = isolated_client(net, host_mount, owner, nonce)
         os.chdir(native.REPO)
-        return run_client(nonce, mount, lambda: isolated_client(net, host_mount, owner, nonce))
+        return run_client(nonce, mount, lambda: isolated_client(net, host_mount, owner, nonce), candidate=candidate)
     except (Blocked, OSError, KeyError, TypeError, ValueError):
         return 77
 
@@ -63,7 +64,7 @@ def no_direct_route():
         return check.connect_ex((SERVER, SSH_PORT)) in {errno.ENETUNREACH, errno.EHOSTUNREACH}
 
 
-def run_client(nonce, mount, recheck):
+def run_client(nonce, mount, recheck, *, candidate=None):
     # File operands are selected by the admitted parent and derived inside the
     # exclusive fixture. This stage has no transport setup or sudo authority.
     work = Path(os.environ["RUNNER_TEMP"]) / "exacopy-wireguard-commissioning"
@@ -97,19 +98,28 @@ def run_client(nonce, mount, recheck):
         return 1
     fixture = Fixture(nonce, os.getegid())
     manifest = work / "private/build/result.json"
-    build, digest = direct.read_build_manifest(manifest)
+    if candidate is None:
+        build, digest = direct.read_build_manifest(manifest)
 
-    def verify_build():
-        if native.source_identity(native.REPO) != build["source_after"]:
-            raise Blocked("source changed during isolated native observations")
-        direct.verify_build_custody(manifest, paths["binary"], build, digest)
+        def verify_build():
+            if native.source_identity(native.REPO) != build["source_after"]:
+                raise Blocked("source changed during isolated native observations")
+            direct.verify_build_custody(manifest, paths["binary"], build, digest)
+    else:
+        def verify_build():
+            candidate.verify(manifest, paths["binary"], native.source_identity(native.REPO))
+
+        verify_build()
 
     pending = handoff / "observations-cleanup-pending"
     file_signal(pending)
     try:
         env = native.build_environment(paths["binary"].parent)
         env["CARGO_BUILD_JOBS"] = "2"
-        direct.observations(fixture, manifest, paths["binary"], env, work / "private", verify_build)
+        if candidate is None:
+            direct.observations(fixture, manifest, paths["binary"], env, work / "private", verify_build)
+        else:
+            direct.observations(fixture, manifest, paths["binary"], env, work / "private", verify_build, candidate=candidate)
     except CleanupUnconfirmed:
         # Preserve the pre-existing marker even if subsequent writes fail.
         return 77
@@ -134,6 +144,8 @@ def run_client(nonce, mount, recheck):
         write_json(retained, retained_namespace(campaign, root))
 
     result = campaign.main(observe_case(work / "private/telemetry"), observe_destination)
+    if candidate is not None:
+        verify_build()
     if result != 0:
         return result
     file_signal(handoff / ClientStep.CAMPAIGN_COMPLETE.value)
@@ -141,7 +153,10 @@ def run_client(nonce, mount, recheck):
     verify_build()
     if not no_direct_route():
         return 1
-    return carrier_down(campaign, paths, work / "private/carrier-down", retained)
+    result = carrier_down(campaign, paths, work / "private/carrier-down", retained)
+    if candidate is not None:
+        verify_build()
+    return result
 
 
 def retained_namespace(campaign, root):

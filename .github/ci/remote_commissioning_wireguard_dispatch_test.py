@@ -177,15 +177,28 @@ class DispatcherControls(unittest.TestCase):
 
     def test_workflow_literal_gates_every_commissioning_effect(self):
         path = Path(__file__).resolve().parent.parent / "workflows/linux-remote-wireguard-provider-b.yml"
-        workflow = path.read_text()
-        literal = ("if: (steps.provider.outputs.mode == 'commission-azure-1017' || "
-                   "steps.provider.outputs.mode == 'commission-azure-1020' || "
-                   "steps.provider.outputs.mode == 'commission-aws-1014' || "
-                   "steps.provider.outputs.mode == 'commission-aws-1018')")
-        for name in ("Prepare pinned sources and Rust", "Stage bounded independent fixture tools",
-                     "Verify the selected module closure and commission the ordinary embedded CLI"):
-            self.assertIn(f"      - name: {name}\n        {literal}\n", workflow)
-        self.assertIn(f"if: always() && {literal.removeprefix('if: ')}", workflow)
+        workflow = path.read_text().split("\n  embedded:\n", 1)[1].split("\n  preview-direct:\n", 1)[0]
+        profile_gate = ("(steps.provider.outputs.mode == 'commission-azure-1017' || "
+                        "steps.provider.outputs.mode == 'commission-azure-1020' || "
+                        "steps.provider.outputs.mode == 'commission-aws-1014' || "
+                        "steps.provider.outputs.mode == 'commission-aws-1018')")
+        requested = "needs.preview-candidate.outputs.status == 'requested'"
+        ordinary = "needs.preview-candidate.outputs.status == 'not-requested'"
+        staged = "steps.candidate-input.outcome == 'success'"
+        gates = {
+            "Prepare pinned sources and Rust": profile_gate,
+            "Stage bounded independent fixture tools": profile_gate,
+            "Prepare the owned candidate input": f"{requested} && {profile_gate}",
+            "Download the frozen candidate by same-run artifact ID": staged,
+            "Verify the selected module closure and commission the ordinary embedded CLI": f"{ordinary} && {profile_gate}",
+            "Verify the selected module closure and commission the exact candidate via embedded WireGuard":
+                f"{requested} && {staged} && {profile_gate}",
+            "Remove the owned tool staging": f"always() && {profile_gate}",
+        }
+        for name, gate in gates.items():
+            with self.subTest(step=name):
+                selected = workflow.split(f"      - name: {name}\n", 1)[1].split("\n      - ", 1)[0]
+                self.assertIn(f"        if: {gate}", selected.splitlines())
         for pin in (AZURE_1017, AZURE_1020, AWS_1014_PROFILE, AWS_1018):
             self.assertIn(f"{pin.mode.value}) module_package='{pin.package}={pin.version}' ;;", workflow)
         self.assertIn("commission-aws-1014|commission-aws-1018) python3 -B .github/ci/remote_commissioning_wireguard_aws.py ;;", workflow)

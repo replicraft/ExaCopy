@@ -1112,6 +1112,49 @@ class KernelFixtureTests(unittest.TestCase):
             self.assertEqual(verify.call_count, 3)
             self.assertEqual(no_direct.call_count, 3)
 
+    def test_candidate_client_checks_parent_digest_before_rendezvous_and_refuses_drift(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            runner = Path(scratch)
+            parent = runner / fixture.JOB
+            work = parent / "private"
+            handoff = work / "lane-campaign"
+            handoff.mkdir(parents=True)
+            binding = client.native.CandidateFactsBinding("c" * 64, client.native.EMBEDDED)
+            mount = {"device": 5, "inode": 300}
+            source = {"revision": "fixture-source"}
+
+            def observations(_fixture, manifest, binary, _env, _evidence, verify, *, candidate):
+                self.assertIs(candidate, binding)
+                self.assertEqual(manifest, work / "build/result.json")
+                self.assertEqual(binary, parent / "private-build/exacopy")
+                verify()
+
+            def transfer(_observe_case, _observe_destination):
+                self.assertTrue((handoff / lane.ClientStep.OBSERVED.value).exists())
+                return 0
+
+            with (
+                patch.dict(os.environ, {"RUNNER_TEMP": str(runner), "PATH": "/scoped/bin:/usr/bin"}),
+                patch.object(client, "wait_file", return_value=True),
+                patch.object(client, "no_direct_route", return_value=True),
+                patch.object(client.direct, "read_build_manifest") as locked_manifest,
+                patch.object(client.native, "source_identity", return_value=source),
+                patch.object(client.native, "build_environment", return_value={}),
+                patch.object(type(binding), "verify",
+                             side_effect=[{}, {}, {}, fixture.Blocked("candidate manifest drift")]) as verify,
+                patch.object(client.direct, "observations", side_effect=observations),
+                patch.object(campaign, "main", side_effect=transfer),
+                patch.object(client, "carrier_down") as carrier_down,
+                patch.object(sys, "argv", []),
+                self.assertRaisesRegex(fixture.Blocked, "candidate manifest drift"),
+            ):
+                client.run_client("0" * 20, mount, lambda: mount, candidate=binding)
+            locked_manifest.assert_not_called()
+            carrier_down.assert_not_called()
+            self.assertEqual(verify.call_count, 4)
+            self.assertEqual(verify.call_args.args, (work / "build/result.json", parent / "private-build/exacopy", source))
+            self.assertFalse((handoff / lane.ClientStep.CAMPAIGN_COMPLETE.value).exists())
+
     def test_exact_independent_route_revision_bytes(self):
         route = {
             "outer": "127.0.0.1:51820", "remote_inner": "198.18.0.1:2222",

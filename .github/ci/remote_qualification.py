@@ -15,6 +15,7 @@ import stat
 import subprocess
 import sys
 from contextlib import contextmanager
+from dataclasses import dataclass
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tools" / "qualification"))
@@ -33,6 +34,7 @@ DEPLOYMENT_PATHS = (
     "source_small", "source_interrupt", "sshd_log",
 )
 FACTS_MARKER = b"EXACOPY_REMOTE_NATIVE_FACTS "
+CANDIDATE_ATTRIBUTION = "frozen-preview-candidate"
 FIXTURES = Path("apps/exacopy-cli/verification/remote")
 CONFIG_LIMIT = 16 * 1024
 FEATURES = {DIRECT: "experimental-ssh-capture", EMBEDDED: "experimental-ssh-wireguard"}
@@ -311,8 +313,24 @@ def build_cli(
         write_json(manifest, report)
 
 
+@dataclass(frozen=True)
+class CandidateFactsBinding:
+    manifest_sha256: str
+    route: str
+
+    def __post_init__(self):
+        if self.route not in ROUTES or not re.fullmatch(r"[0-9a-f]{64}", self.manifest_sha256):
+            raise ValueError("invalid frozen candidate evidence binding")
+
+    def verify(self, manifest: Path, binary: Path, source: dict) -> dict:
+        from remote_commissioning_candidate import verify_staged_candidate
+
+        return verify_staged_candidate(manifest, binary, self.manifest_sha256, self.route, source)
+
+
 def collect_facts(
     destination: Path, binary: Path, evidence: Path, *, env: dict[str, str], manifest: Path | None,
+    candidate: CandidateFactsBinding | None = None,
 ) -> int:
     command = [
         "cargo", RUST, "test", "--offline", "--locked", "-p", "exacopy-cli",
@@ -325,13 +343,23 @@ def collect_facts(
         "qualifies_remote_download": False,
         "repository_attribution": "locked-cli-build" if manifest else "measured-selected-elf",
     }
+    if candidate is not None:
+        report["repository_attribution"] = CANDIDATE_ATTRIBUTION
     log = evidence / "facts.log"
     try:
+        if candidate is not None and (not isinstance(candidate, CandidateFactsBinding) or manifest is None):
+            raise ValueError("frozen candidate facts require a checked manifest binding")
         before = source_identity(REPO)
         if manifest:
             verified_pins("facts-pre", evidence, env)
         build_before = binary_observation(binary)
-        if manifest:
+        if candidate is not None:
+            verified = candidate.verify(manifest, binary, before)
+            if (verified["binary"]["size"], verified["binary"]["sha256"]) != build_before:
+                raise ValueError("native facts selected a different ELF than the frozen candidate")
+            report.update(build_manifest_sha256=candidate.manifest_sha256, elf_sha256=build_before[1],
+                          campaign_route=candidate.route)
+        elif manifest:
             build = json.loads(manifest.read_bytes())
             report["build_manifest_sha256"] = file_digest(manifest)
             if (
@@ -351,6 +379,8 @@ def collect_facts(
         after = source_identity(REPO)
         if before != after or binary_observation(binary) != build_before:
             raise ValueError("source or selected ELF changed while collecting facts")
+        if candidate is not None:
+            candidate.verify(manifest, binary, after)
         report.update(before)
         if log.stat().st_size > LOG_LIMIT:
             raise ValueError("native facts evidence exceeds its input bound")

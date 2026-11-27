@@ -20,10 +20,12 @@ from native_supervision import CleanupUnconfirmed, file_digest, interrupted, log
 
 sys.path.insert(0, str(native.REPO / native.FIXTURES))
 from fixture import Blocked as EvidenceBlocked, Failed as EvidenceFailed
-from remote_commissioning_authority import make_authority, read_json
+from remote_commissioning_authority import make_authority, read_evidence, read_json
+from remote_commissioning_candidate import CandidateRequest, import_candidate
 from remote_commissioning_peer import Blocked, DPKG_QUERY, Fixture, SSHD, checkpoint, directory_identity, preflight, run
 
 SCHEMA = "exacopy.linux-remote-commissioning.v1"
+CAMPAIGN_SCHEMA = "exacopy.linux-remote-cli-campaign.v1"
 MAX_SUMMARY = 64 * 1024
 BASE_FILES = {
     "build/result.json": MAX_SUMMARY,
@@ -109,14 +111,102 @@ def export(work, output, case_files=PEER_FILES):
     return hashes
 
 
-def check_case_exports(report, hashes, case_files):
-    summary = read_json(report / "campaign/summary.json", MAX_SUMMARY)
+def check_case_exports(report, hashes, case_files, *, expected_summary_sha256=None):
+    summary_bytes = read_evidence(report / "campaign/summary.json", MAX_SUMMARY)
+    if expected_summary_sha256 is not None and hashlib.sha256(summary_bytes).hexdigest() != expected_summary_sha256:
+        raise EvidenceFailed("the exported campaign summary differs from the checked candidate summary")
+    summary = json.loads(summary_bytes)
     declared = summary.get("artifacts_sha256") if isinstance(summary, dict) else None
     if not isinstance(declared, dict) or any(
         relative not in hashes or hashes[relative] != declared.get(Path(relative).name)
         for relative in case_files
     ):
         raise EvidenceFailed("successful campaign lacks its complete exact exported transcripts")
+
+
+def check_candidate_summary(summary, candidate, authority, inputs):
+    if not isinstance(summary, dict):
+        raise EvidenceFailed("campaign result is not a structured candidate observation")
+    cases = summary.get("cases")
+    if (
+        summary.get("schema") != CAMPAIGN_SCHEMA or summary.get("status") != "pass"
+        or type(summary.get("exit_status")) is not int or summary["exit_status"] != 0
+        or summary.get("route") != candidate["campaign_route"]
+        or summary.get("binary_sha256") != candidate["binary"]["sha256"]
+        or summary.get("binary_build_digest") != candidate["build_blake3_derive_key"]
+        or summary.get("qualification_digest") != authority["record_digest"]
+        or any(summary.get(name) != digest for name, digest in inputs.items())
+        or summary.get("issues_new_qualification") is not False
+        or not isinstance(cases, list) or len(cases) != len(CASES)
+        or any(not isinstance(row, dict) or row.get("name") != name or row.get("outcome") != "pass"
+               for row, name in zip(cases, CASES))
+    ):
+        raise EvidenceFailed("campaign result does not bind the checked frozen candidate and ordered cases")
+
+
+def check_candidate_exports(report, evidence):
+    hashes = evidence["artifacts_sha256"]
+    if BASE_FILES.keys() - hashes.keys():
+        raise EvidenceFailed("exported commissioning evidence lacks required candidate observations")
+    inputs = evidence["authority"]["inputs_sha256"]
+    expected = {
+        "build/result.json": evidence["candidate"]["manifest_sha256"],
+        "campaign/summary.json": evidence["observations"]["campaign_summary_sha256"],
+        "native-facts/facts.json": inputs["native_facts_sha256"],
+        "native-facts-recheck/facts.json": inputs["native_facts_sha256"],
+        "substrate/result.json": inputs["substrate_result_sha256"],
+        "substrate/native.log": inputs["substrate_log_sha256"],
+    }
+    if any(hashes.get(name) != digest for name, digest in expected.items()):
+        raise EvidenceFailed("exported commissioning evidence lost the frozen candidate binding")
+    candidate = evidence["candidate"]
+    campaign_process = ("rendezvous", None) if candidate["campaign_route"] == native.EMBEDDED else ("exited", 0)
+    for relative, (status, exit_status) in (
+        ("native-facts/process.json", ("exited", 0)),
+        ("campaign-process.json", campaign_process),
+    ):
+        data = read_evidence(report / relative)
+        details = json.loads(data)
+        if (
+            hashlib.sha256(data).hexdigest() != hashes[relative]
+            or not isinstance(details, dict) or details.get("status") != status or "exit_status" not in details
+            or type(details["exit_status"]) is not type(exit_status) or details["exit_status"] != exit_status
+        ):
+            raise EvidenceFailed("exported commissioning process evidence does not cover the successful candidate run")
+    if candidate.get("post_campaign_custody") != candidate_custody(candidate):
+        raise EvidenceFailed("candidate archive and ELF custody were not confirmed after the campaign")
+    check_case_exports(report, hashes, PEER_FILES, expected_summary_sha256=expected["campaign/summary.json"])
+
+
+def import_preview_candidate(request, work, target, route, source, evidence):
+    frozen = import_candidate(request, work / "build", target / "exacopy", route, source)
+    evidence["candidate"] = {
+        name: frozen.report[name]
+        for name in ("campaign_route", "producer_route", "source", "transport", "archive", "binary", "compiled_features")
+    }
+    evidence["candidate"].update(manifest_sha256=frozen.digest, build_blake3_derive_key=None)
+    return frozen, native.CandidateFactsBinding(frozen.digest, route)
+
+
+def check_candidate_custody(verify, outcome, evidence):
+    try:
+        verify()
+    except (EvidenceFailed, OSError, ValueError):
+        evidence["candidate"]["post_campaign_custody"] = {"status": "failed"}
+        if outcome == 0:
+            raise
+
+
+def candidate_custody(candidate):
+    return {"status": "confirmed", "archive_sha256": candidate["archive"]["sha256"],
+            "elf_sha256": candidate["binary"]["sha256"]}
+
+
+def confirm_candidate_archive(frozen, outcome, evidence):
+    check_candidate_custody(frozen.verify_archive, outcome, evidence)
+    candidate = evidence["candidate"]
+    if "post_campaign_custody" not in candidate:
+        candidate["post_campaign_custody"] = candidate_custody(candidate)
 
 
 def read_build_manifest(manifest):
@@ -133,16 +223,22 @@ def verify_build_custody(manifest, binary, build, digest):
     native.verify_executable_custody(binary.parent / "release/exacopy", binary, build)
 
 
-def observations(fixture, build, binary, env, work, verify_build):
+def observations(fixture, build, binary, env, work, verify_build, *, candidate=None):
     verify_build()
-    first = native.collect_facts(fixture.destination, binary, work / "native-facts", env=env, manifest=build)
+    first = native.collect_facts(
+        fixture.destination, binary, work / "native-facts", env=env, manifest=build, candidate=candidate,
+    )
     if first != 0:
         raise Blocked("exact fixture native facts were unavailable")
+    if candidate is not None:
+        verify_build()
     result = native.linux_remote_substrate.run(fixture.destination, work / "substrate", environment=env)
     if result != 0:
         raise Blocked("exact-root substrate diagnostics did not pass")
     verify_build()
-    second = native.collect_facts(fixture.destination, binary, work / "native-facts-recheck", env=env, manifest=build)
+    second = native.collect_facts(
+        fixture.destination, binary, work / "native-facts-recheck", env=env, manifest=build, candidate=candidate,
+    )
     if second != 0 or (
         work.joinpath("native-facts/facts.json").read_bytes()
         != work.joinpath("native-facts-recheck/facts.json").read_bytes()
@@ -155,12 +251,12 @@ def direct_campaign(fixture, paths, binary, work):
     return native.run_campaign(paths, native.DIRECT, binary, work)
 
 
-def run_fixture(fixture, work, binary, manifest, env, b3sum, evidence, verify_build, campaign):
+def run_fixture(fixture, work, binary, manifest, env, b3sum, evidence, verify_build, campaign, *, candidate=None):
     verify_build()
     fixture.make_root()
-    observations(fixture, manifest, binary, env, work, verify_build)
+    observations(fixture, manifest, binary, env, work, verify_build, candidate=candidate)
     checkpoint()
-    record, trust, authority = make_authority(fixture, work, manifest, b3sum)
+    record, trust, authority = make_authority(fixture, work, manifest, b3sum, candidate=candidate, binary=binary)
     verify_build()
     evidence["authority"] = authority
     evidence["inputs"] = {
@@ -171,8 +267,11 @@ def run_fixture(fixture, work, binary, manifest, env, b3sum, evidence, verify_bu
             for name in ("campaign.py", "fixture.py", "process.py")
         },
     }
-    facts = read_json(work / "native-facts/facts.json")
-    evidence["build"]["build_blake3_derive_key"] = facts["build_blake3_derive_key"]
+    if candidate is None:
+        facts = read_json(work / "native-facts/facts.json")
+        evidence["build"]["build_blake3_derive_key"] = facts["build_blake3_derive_key"]
+    else:
+        evidence["candidate"]["build_blake3_derive_key"] = authority["build_blake3_derive_key"]
     owner = fixture.private / "owner"
     checkpoint()
     init = logged_command([binary, "profile", "init", owner], work / "owner-init.log", 10, env=env, output_limit=8192)
@@ -185,18 +284,28 @@ def run_fixture(fixture, work, binary, manifest, env, b3sum, evidence, verify_bu
     evidence["peer"] = peer
     checkpoint()
     verify_build()
+    if candidate is not None:
+        inputs = {"ssh_profile_sha256": profile, "trust_sha256": trust, "qualification_sha256": record}
+        input_digests = {name: file_digest(path) for name, path in inputs.items()}
     result = campaign(fixture, {
         "destination": fixture.destination, "owner_profile": owner, "ssh_profile": profile,
         "qualification": record, "trust": trust, "source_small": small,
         "source_interrupt": large, "sshd_log": peer_log,
     }, binary, work)
+    if candidate is not None:
+        check_candidate_custody(verify_build, result, evidence)
     summary_file = work / "campaign/summary.json"
     if summary_file.exists():
-        summary = read_json(summary_file, MAX_SUMMARY)
+        summary_bytes = read_evidence(summary_file, MAX_SUMMARY)
+        summary = json.loads(summary_bytes)
         if summary.get("qualification_digest") != authority["record_digest"] and result == 0:
             raise EvidenceFailed("campaign result lost the exact synthetic authority binding")
+        if candidate is not None and result == 0:
+            check_candidate_summary(summary, evidence["candidate"], authority, input_digests)
+            if any(file_digest(path) != input_digests[name] for name, path in inputs.items()):
+                raise EvidenceFailed("protected route or authority inputs changed")
         evidence["observations"] = {
-            "campaign_summary_sha256": file_digest(summary_file), "outer_route_evidence_sha256": None,
+            "campaign_summary_sha256": hashlib.sha256(summary_bytes).hexdigest(), "outer_route_evidence_sha256": None,
         }
     if result == 0:
         if evidence["observations"] is None:
@@ -210,6 +319,13 @@ def run_fixture(fixture, work, binary, manifest, env, b3sum, evidence, verify_bu
 
 
 def execute(parent, report, work, evidence, fixture_kind=None, campaign=direct_campaign):
+    source = native.source_identity(native.REPO)
+    if source["revision"] != os.environ["GITHUB_SHA"]:
+        raise Blocked("fixture checkout differs from the selected workflow source revision")
+    evidence["source"] = source
+    request = CandidateRequest.from_hosted_environment(parent.parent, route=native.DIRECT)
+    if request is not None and (fixture_kind is not None or campaign is not direct_campaign):
+        raise Blocked("the frozen candidate requires the ordinary direct commissioning campaign")
     evidence["host_preflight"] = {}
     gid = preflight(evidence["host_preflight"])
     b3sum = shutil.which("b3sum")
@@ -227,10 +343,6 @@ def execute(parent, report, work, evidence, fixture_kind=None, campaign=direct_c
     ).decode("ascii").strip()
     if not re.fullmatch(r"[0-9][0-9A-Za-z.+:~\-]{1,120}", version):
         raise Blocked("unexpected OpenSSH tool identity")
-    source = native.source_identity(native.REPO)
-    if source["revision"] != os.environ["GITHUB_SHA"]:
-        raise Blocked("fixture checkout differs from the selected workflow source revision")
-    evidence["source"] = source
     sshd_digest = file_digest(Path(SSHD))
     evidence["b3sum_sha256"] = file_digest(Path(b3sum))
     fixture = (fixture_kind or Fixture)(evidence["fixture_id"], gid)
@@ -244,21 +356,33 @@ def execute(parent, report, work, evidence, fixture_kind=None, campaign=direct_c
     with native.fresh_target(target):
         unresolved_child = False
         try:
-            binary, manifest = native.build_cli(
-                native.DIRECT, work / "build", target, env, staged_executable=target / "exacopy",
-            )
-            build, digest = read_build_manifest(manifest)
-            evidence["build"] = {
-                "elf_sha256": build["build_sha256"], "compiled_features": build["compiled_features"],
-                "build_manifest_sha256": digest, "build_blake3_derive_key": None,
-            }
+            frozen = candidate = None
+            if request is None:
+                binary, manifest = native.build_cli(
+                    native.DIRECT, work / "build", target, env, staged_executable=target / "exacopy",
+                )
+                build, digest = read_build_manifest(manifest)
+                evidence["build"] = {
+                    "elf_sha256": build["build_sha256"], "compiled_features": build["compiled_features"],
+                    "build_manifest_sha256": digest, "build_blake3_derive_key": None,
+                }
+            else:
+                frozen, candidate = import_preview_candidate(request, work, target, native.DIRECT, source, evidence)
+                binary, manifest = frozen.binary, frozen.manifest
 
             def verify_build():
-                if native.source_identity(native.REPO) != build["source_after"]:
+                expected_source = source if frozen is not None else build["source_after"]
+                if native.source_identity(native.REPO) != expected_source:
                     raise EvidenceFailed("source changed during commissioning")
-                verify_build_custody(manifest, binary, build, digest)
+                if frozen is not None:
+                    frozen.verify()
+                else:
+                    verify_build_custody(manifest, binary, build, digest)
 
-            outcome = run_fixture(fixture, work, binary, manifest, env, b3sum, evidence, verify_build, campaign)
+            outcome = run_fixture(fixture, work, binary, manifest, env, b3sum, evidence, verify_build, campaign,
+                                  candidate=candidate)
+            if frozen is not None:
+                confirm_candidate_archive(frozen, outcome, evidence)
             if evidence["peer"] is not None:
                 if file_digest(Path(SSHD)) != sshd_digest:
                     raise EvidenceFailed("independent OpenSSH executable changed during commissioning")
@@ -350,11 +474,17 @@ def main(*, fixture_kind=None, campaign=direct_campaign, program="remote_commiss
         if result == 0 and require_case_exports:
             try:
                 check_case_exports(report, evidence["artifacts_sha256"], case_files)
-            except (Blocked, EvidenceFailed, OSError, ValueError, TypeError) as error:
+            except (Blocked, EvidenceFailed, OSError, KeyError, ValueError, TypeError) as error:
                 result = 1
                 evidence["reason"] = (
                     str(error) if isinstance(error, EvidenceFailed) else "successful campaign summary cannot be read"
                 )
+        if result == 0 and "candidate" in evidence:
+            try:
+                check_candidate_exports(report, evidence)
+            except (Blocked, EvidenceFailed, OSError, KeyError, ValueError, TypeError) as error:
+                result = 1
+                evidence["reason"] = str(error) if isinstance(error, EvidenceFailed) else "frozen candidate evidence is unavailable"
         evidence["exit_status"] = result
         evidence["status"] = {0: "pass", 1: "fail", 77: "blocked"}[result]
         write_json(report / "commissioning.json", evidence)

@@ -13,7 +13,7 @@ import tempfile
 
 from native_supervision import file_digest
 from remote_commissioning_peer import Blocked, OPENSSL, run
-from remote_qualification import DIRECT, EMBEDDED, REPO
+from remote_qualification import CANDIDATE_ATTRIBUTION, CandidateFactsBinding, DIRECT, EMBEDDED, REPO, source_identity
 
 V1_DOMAIN = b"ExaCopy/linux-remote-destination-qualification/v1\0"
 RECORD_DOMAIN = b"ExaCopy/linux-remote-destination-qualification-record/v1\0"
@@ -22,12 +22,16 @@ CLAIM_KIND = "synthetic-fixture-only-assumed-campaign"
 HEX_DIGEST = re.compile(r"[0-9a-f]{64}")
 
 
-def read_json(path, maximum=64 * 1024):
+def read_evidence(path, maximum=64 * 1024):
     with path.open("rb") as source:
         data = source.read(maximum + 1)
     if not data or len(data) > maximum:
         raise Blocked("the internal fixture evidence exceeds its bound")
-    return json.loads(data)
+    return data
+
+
+def read_json(path, maximum=64 * 1024):
+    return json.loads(read_evidence(path, maximum))
 
 
 def independent_encoder():
@@ -49,13 +53,13 @@ def stable_claim_digest(label, value):
     return hashlib.sha256(f"ExaCopy direct commissioning {label} v1\0".encode("ascii") + data).digest()
 
 
-def observed_facts(fixture, facts, substrate, source, log):
+def observed_facts(fixture, facts, substrate, source, log, *, attribution="locked-cli-build"):
     from qualification_request import checked_native, substrate_closure
 
     value = facts["destination"]
     if (
         facts["status"] != "observed" or facts["qualifies_remote_download"] is not False
-        or facts["repository_attribution"] != "locked-cli-build"
+        or facts["repository_attribution"] != attribution
         or not checked_native(value)
         or not HEX_DIGEST.fullmatch(facts["build_blake3_derive_key"])
         or any(facts.get(name) != item for name, item in source.items())
@@ -108,23 +112,48 @@ def fixture_payload(reference, destination, build_digest, nonce, source, observe
     }
 
 
-def make_authority(fixture, evidence, manifest, b3sum, *, route=DIRECT, route_revision=None):
+def make_authority(fixture, evidence, manifest, b3sum, *, route=DIRECT, route_revision=None,
+                   candidate: CandidateFactsBinding | None = None, binary: Path | None = None):
     facts_path = evidence / "native-facts/facts.json"
     substrate_path = evidence / "substrate/result.json"
-    facts = read_json(facts_path)
-    substrate = read_json(substrate_path)
-    build = read_json(manifest)
-    if file_digest(manifest) != facts["build_manifest_sha256"] or build["route"] != route:
-        raise Blocked("native facts do not bind the exact fixture build")
+    facts_bytes = read_evidence(facts_path)
+    substrate_bytes = read_evidence(substrate_path)
+    facts = json.loads(facts_bytes)
+    substrate = json.loads(substrate_bytes)
+    observed_hashes = {
+        "native_facts_sha256": hashlib.sha256(facts_bytes).hexdigest(),
+        "substrate_result_sha256": hashlib.sha256(substrate_bytes).hexdigest(),
+    }
+    if candidate is None:
+        build = read_json(manifest)
+        if (
+            facts["repository_attribution"] != "locked-cli-build"
+            or file_digest(manifest) != facts["build_manifest_sha256"] or build["route"] != route
+        ):
+            raise Blocked("native facts do not bind the exact fixture build")
+        source = build["source_after"]
+        attribution = "locked-cli-build"
+    else:
+        if not isinstance(candidate, CandidateFactsBinding) or candidate.route != route or binary is None:
+            raise Blocked("synthetic authority requires the checked candidate binding for this campaign route")
+        source = source_identity(REPO)
+        imported = candidate.verify(manifest, binary, source)
+        attribution = CANDIDATE_ATTRIBUTION
+        if (
+            facts.get("repository_attribution") != attribution or facts.get("campaign_route") != route
+            or facts.get("build_manifest_sha256") != candidate.manifest_sha256
+            or facts.get("elf_sha256") != imported["binary"]["sha256"]
+        ):
+            raise Blocked("native facts do not bind the exact frozen candidate")
+        observed_hashes["candidate_manifest_sha256"] = candidate.manifest_sha256
     with (evidence / "substrate/native.log").open("rb") as stream:
         log = stream.read(8 * 1024 * 1024 + 1)
     if len(log) > 8 * 1024 * 1024:
         raise Blocked("substrate transcript exceeds its bound")
-    destination = observed_facts(fixture, facts, substrate, build["source_after"], log)
+    destination = observed_facts(fixture, facts, substrate, source, log, attribution=attribution)
     reference = independent_encoder()
     body, trust = fixture_payload(
-        reference, destination, facts["build_blake3_derive_key"], fixture.nonce, build["source_after"],
-        {"native_facts_sha256": file_digest(facts_path), "substrate_result_sha256": file_digest(substrate_path)},
+        reference, destination, facts["build_blake3_derive_key"], fixture.nonce, source, observed_hashes,
         route=route, route_revision=route_revision,
     )
     with tempfile.TemporaryDirectory(prefix="one-use-attestor-", dir=fixture.private) as scratch:
@@ -155,8 +184,12 @@ def make_authority(fixture, evidence, manifest, b3sum, *, route=DIRECT, route_re
                  operation="synthetic record digest").decode("ascii").strip()
     if not HEX_DIGEST.fullmatch(digest):
         raise Blocked("invalid synthetic record digest")
-    return record_path, trust_path, {
+    authority = {
         "kind": CLAIM_KIND, "reviewed_attestor": False, "production_qualification_issued": False,
         "scope_digest": trust["campaign_scope"], "evidence_claim_digest": trust["campaign_evidence"],
         "record_digest": digest, "issuer_secret_removed": True,
     }
+    if candidate is not None:
+        authority["inputs_sha256"] = observed_hashes | {"substrate_log_sha256": substrate["log_sha256"]}
+        authority["build_blake3_derive_key"] = facts["build_blake3_derive_key"]
+    return record_path, trust_path, authority

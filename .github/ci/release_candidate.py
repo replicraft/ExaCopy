@@ -43,13 +43,20 @@ def check_source(ref, commit):
     prefix = "refs/tags/v"
     if not ref.startswith(prefix) or not VERSION.fullmatch(ref[len(prefix):]):
         raise ValueError("select a canonical vMAJOR.MINOR.PATCH Git tag when dispatching this workflow")
+    return check_source_version(ref, commit, ref[len(prefix):])
+
+
+def check_source_version(ref, commit, version):
     if not COMMIT.fullmatch(commit):
         raise ValueError("the workflow commit must be a complete lowercase hexadecimal object ID")
     if git("rev-parse", "HEAD") != commit or git("rev-parse", "--verify", f"{ref}^{{commit}}") != commit:
         raise ValueError("checkout HEAD and the tag must both resolve to the workflow commit")
     if git("status", "--porcelain=v1", "--untracked-files=all"):
         raise ValueError("release candidates require a clean source checkout")
-    version = ref[len(prefix):]
+    return check_workspace_version(version)
+
+
+def check_workspace_version(version):
     workspace = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))
     cli = tomllib.loads((ROOT / "apps/exacopy-cli/Cargo.toml").read_text(encoding="utf-8"))
     lock = tomllib.loads((ROOT / "Cargo.lock").read_text(encoding="utf-8"))

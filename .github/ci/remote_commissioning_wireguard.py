@@ -3,7 +3,9 @@
 from contextlib import contextmanager
 from dataclasses import asdict
 from enum import Enum
+import hashlib
 import ipaddress
+import json
 import os
 from pathlib import Path
 import re
@@ -19,7 +21,7 @@ import threading
 import remote_commissioning as direct
 from remote_commissioning import native
 from native_supervision import CleanupUnconfirmed, file_digest, interrupted, logged_command, write_json
-from remote_commissioning_authority import make_authority, read_json
+from remote_commissioning_authority import make_authority, read_evidence, read_json
 from remote_commissioning_peer import Blocked, Fixture, INSTALL, SSHD, checkpoint, directory_identity, run, unit_status
 from remote_commissioning_wireguard_lane import ClientBudget, ClientLane, ClientStep
 from remote_commissioning_wireguard_net import CLIENT, SERVER, SSH_PORT, SET_PRIV, SS, KernelPeer, command
@@ -111,7 +113,7 @@ def validate_listener(fixture, kernel):
         raise Blocked("the isolated client unexpectedly owns a TCP listener")
 
 
-def client_command(fixture, kernel, work, b3sum, env, host_mount):
+def client_command(fixture, kernel, work, b3sum, env, host_mount, *, candidate=None):
     return kernel.client.enter(
         SET_PRIV, f"--reuid={os.geteuid()}", f"--regid={os.getegid()}", "--clear-groups",
         "--bounding-set=-all", "--inh-caps=-all", "--ambient-caps=-all", "--no-new-privs",
@@ -121,6 +123,7 @@ def client_command(fixture, kernel, work, b3sum, env, host_mount):
         "/usr/bin/python3", "-B", native.REPO / ".github/ci/remote_commissioning_wireguard_client.py",
         fixture.nonce, ":".join(map(str, kernel.client.identity)),
         f"{host_mount['device']}:{host_mount['inode']}", str(os.geteuid()),
+        *((candidate.manifest_sha256,) if candidate is not None else ()),
     )
 
 
@@ -158,7 +161,8 @@ def execute_campaign(kernel, lane, handoff, work, binary, report, input_digests,
         raise direct.EvidenceFailed("kernel peer observations differ from the executed campaign") from error
     if result.status != "rendezvous":
         return 1 if result.exit_status == 1 else 77
-    summary = read_json(work / "campaign/summary.json")
+    summary_bytes = read_evidence(work / "campaign/summary.json")
+    summary = json.loads(summary_bytes)
     if (
         [row["case"] for row in rows] != [case[0] for case in CASES]
         or summary["status"] != "pass" or summary["exit_status"] != 0 or summary["route"] != native.EMBEDDED
@@ -170,6 +174,9 @@ def execute_campaign(kernel, lane, handoff, work, binary, report, input_digests,
         raise Blocked("kernel or CLI campaign evidence does not cover the exact requested run")
     if asdict(snapshot(kernel)) != rows[-1]["after"]:
         raise direct.EvidenceFailed("unexpected carrier traffic after the last owned campaign case")
+    if "candidate" in report:
+        direct.check_candidate_summary(summary, report["candidate"], report["authority"], input_digests)
+        report["observations"] = {"campaign_summary_sha256": hashlib.sha256(summary_bytes).hexdigest()}
     return 0
 
 
@@ -283,15 +290,18 @@ def execute(parent, work, report, evidence, choice=ProviderChoice.EXISTING):
     else:
         raise ValueError("unexpected provider choice")
     evidence["provider_choice"] = choice.value
+    identity = native.source_identity(native.REPO)
+    if identity["revision"] != os.environ["GITHUB_SHA"]:
+        raise Blocked("source differs from the selected hosted revision")
+    request = direct.CandidateRequest.from_hosted_environment(parent.parent, route=native.EMBEDDED)
+    if request is not None and choice is ProviderChoice.EXISTING:
+        raise Blocked("the frozen candidate requires hosted provider B")
     evidence["preflight"] = {}
     fixture = Fixture(secrets.token_hex(10), direct.preflight(evidence["preflight"]))
     b3sum = staged_tool(parent.parent, "b3sum")
     wg = staged_tool(parent.parent, "wg")
     staged_wg_sha = file_digest(wg)
     sshd_sha = file_digest(Path(SSHD))
-    identity = native.source_identity(native.REPO)
-    if identity["revision"] != os.environ["GITHUB_SHA"]:
-        raise Blocked("source differs from the selected hosted revision")
     target = parent / "private-build"
     env = native.build_environment(target)
     kernel = None
@@ -307,13 +317,21 @@ def execute(parent, work, report, evidence, choice=ProviderChoice.EXISTING):
     with native.fresh_target(target):
         try:
             setup.advance(Step.BUILD)
-            binary, manifest = native.build_cli(native.EMBEDDED, work / "build", target, env, staged_executable=target / "exacopy")
-            build, digest = direct.read_build_manifest(manifest)
+            frozen = candidate = None
+            if request is None:
+                binary, manifest = native.build_cli(native.EMBEDDED, work / "build", target, env, staged_executable=target / "exacopy")
+                build, digest = direct.read_build_manifest(manifest)
+            else:
+                frozen, candidate = direct.import_preview_candidate(request, work, target, native.EMBEDDED, identity, evidence)
+                binary, manifest = frozen.binary, frozen.manifest
 
             def verify():
                 if native.source_identity(native.REPO) != identity:
                     raise Blocked("source changed during kernel commissioning")
-                direct.verify_build_custody(manifest, binary, build, digest)
+                if frozen is not None:
+                    frozen.verify()
+                else:
+                    direct.verify_build_custody(manifest, binary, build, digest)
 
             verify()
             setup.advance(Step.FIXTURE_ROOT)
@@ -345,7 +363,7 @@ def execute(parent, work, report, evidence, choice=ProviderChoice.EXISTING):
             if host_mount is None:
                 raise Blocked("caller mount namespace identity unavailable")
             setup.advance(Step.CLIENT_OBSERVATIONS)
-            args = client_command(fixture, kernel, work, b3sum, env, host_mount)
+            args = client_command(fixture, kernel, work, b3sum, env, host_mount, candidate=candidate)
             with owned_client(fixture, work, args, budget) as (lane, handoff):
                 mount = observe_client(lane, handoff, work, host_mount, evidence, budget)
                 verify()
@@ -356,7 +374,11 @@ def execute(parent, work, report, evidence, choice=ProviderChoice.EXISTING):
                 require_client_mount(lane, mount)
                 _, _, evidence["authority"] = make_authority(
                     fixture, work, manifest, b3sum, route=native.EMBEDDED, route_revision=revision,
+                    candidate=candidate, binary=binary,
                 )
+                if candidate is not None:
+                    verify()
+                    evidence["candidate"]["build_blake3_derive_key"] = evidence["authority"]["build_blake3_derive_key"]
                 owner = fixture.private / "owner"
                 init = logged_command([binary, "profile", "init", owner], work / "owner-init.log", 10, env=env, output_limit=8192)
                 if not init.passed():
@@ -376,7 +398,14 @@ def execute(parent, work, report, evidence, choice=ProviderChoice.EXISTING):
                 verify()
                 require_client_mount(lane, mount)
                 setup.advance(Step.CAMPAIGN)
-                result = execute_campaign(kernel, lane, handoff, work, binary, evidence, input_digests, budget)
+                try:
+                    result = execute_campaign(kernel, lane, handoff, work, binary, evidence, input_digests, budget)
+                except (direct.EvidenceFailed, OSError, KeyError, TypeError, ValueError, subprocess.SubprocessError):
+                    if candidate is not None:
+                        direct.check_candidate_custody(verify, 1, evidence)
+                    raise
+                if candidate is not None:
+                    direct.check_candidate_custody(verify, result, evidence)
                 if result == 0:
                     setup.advance(Step.CARRIER_DOWN)
                     require_client_mount(lane, mount)
@@ -389,6 +418,9 @@ def execute(parent, work, report, evidence, choice=ProviderChoice.EXISTING):
                     verify()
                     if any(file_digest(path) != input_digests[name] for name, path in inputs.items()):
                         raise direct.EvidenceFailed("protected route or authority inputs changed")
+            if candidate is not None:
+                direct.check_candidate_custody(verify, result, evidence)
+                direct.confirm_candidate_archive(frozen, result, evidence)
             setup.completed()
         except Exception as error:
             unresolved = isinstance(error, CleanupUnconfirmed)
@@ -466,6 +498,12 @@ def main(choice=ProviderChoice.EXISTING):
                 shutil.rmtree(work)
         except (Blocked, OSError):
             status = 77
+        if status == 0 and "candidate" in evidence:
+            try:
+                direct.check_candidate_exports(report, evidence)
+            except (direct.EvidenceFailed, OSError, KeyError, TypeError, ValueError) as error:
+                status = 1
+                evidence["reason"] = str(error) if isinstance(error, direct.EvidenceFailed) else "frozen candidate evidence is unavailable"
         evidence["status"] = {0: "pass", 1: "fail", 77: "blocked"}[status]
         evidence["exit_status"] = status
         provider.write_report(report, evidence)

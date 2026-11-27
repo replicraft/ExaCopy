@@ -99,6 +99,43 @@ class ImmutableEvidenceControls(unittest.TestCase):
                                                       env={}, manifest=manifest), 77)
             invoked.assert_not_called()
 
+    def test_candidate_facts_require_exact_custody_before_and_after_observation(self):
+        manifest = self.root / "candidate-result.json"
+        binding = ci.CandidateFactsBinding("1" * 64, ci.DIRECT)
+        size, digest = ci.binary_observation(self.binary)
+        verified = {"binary": {"size": size, "sha256": digest}}
+        observation = b'{"status":"observed","facts":{"build_blake3_derive_key":"abc","destination":{}}}\n'
+
+        def fake(_command, log, _timeout, **_kwargs):
+            log.write_bytes(ci.FACTS_MARKER + observation)
+            return supervisor.ProcessResult("exited", 0)
+
+        for mode, proof, status, invoked in (
+            ("valid", [verified, verified], 0, True),
+            ("changed-before", [ValueError("replaced manifest")], 77, False),
+            ("another-elf", [{"binary": {"size": size, "sha256": "2" * 64}}], 77, False),
+            ("changed-after", [verified, ValueError("replaced manifest")], 77, True),
+        ):
+            with (
+                self.subTest(mode=mode),
+                patch.object(ci, "source_identity", return_value=self.identity),
+                patch.object(ci, "verified_pins"),
+                patch.object(type(binding), "verify", side_effect=proof) as verify,
+                patch.object(ci, "logged_command", side_effect=fake) as command,
+            ):
+                evidence = self.evidence.with_name(mode)
+                self.assertEqual(ci.collect_facts(self.root, self.binary, evidence,
+                                                  env={}, manifest=manifest, candidate=binding), status)
+                self.assertEqual(command.called, invoked)
+                self.assertEqual(verify.call_args.args, (manifest, self.binary, self.identity))
+                report = json.loads((evidence / "facts.json").read_bytes())
+                self.assertEqual(report["repository_attribution"], ci.CANDIDATE_ATTRIBUTION)
+                if status == 0:
+                    self.assertEqual(report["build_manifest_sha256"], binding.manifest_sha256)
+                    self.assertEqual(report["elf_sha256"], digest)
+                    self.assertEqual(report["campaign_route"], ci.DIRECT)
+                    self.assertTrue(self.identity.items() <= report.items())
+
     def test_build_requires_exact_cargo_features_and_new_executable(self):
         log = self.root / "build.log"
         unit = {

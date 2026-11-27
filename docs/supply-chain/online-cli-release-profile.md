@@ -170,3 +170,37 @@ authorized release. [GitHub immutable releases](https://docs.github.com/en/code-
 Native platform signatures, lowest-floor execution, signed distribution,
 independent reproducibility and real process-crash or power-loss qualification
 each require their own evidence before claiming the corresponding property.
+
+## Unsigned Linux remote preview
+
+The separate `v0.1.0-preview.2` pipeline is inactive until the canonical
+`main` push selects a changed `.github/ci/remote-preview-candidate.json` in
+its head commit. The `v0.1.0` testing release and its assets retain their
+existing identity. The preview uses a distinct tag and manual extraction.
+Its synthetic fixture authority is scoped to the commissioning campaigns.
+
+The Ubuntu 22.04 producer packages one Linux x86-64 ELF. The direct OpenSSH
+and provider B kernel WireGuard jobs run on Ubuntu 24.04. They consume the
+same Actions artifact ID from the first attempt and independently verify
+its receipt, archive and extracted ELF before running that ELF in their
+respective synthetic fixtures.
+
+Before approving a testing release, review the exact hosted workflow, source
+revision, tree, lockfile, run, attempt and artifact ID. Recompute the retained
+receipt, archive and ELF SHA-256 digests and match them to both route reports
+and the producer provenance. Require passing native campaign summaries,
+complete process and peer transcripts, WireGuard case and carrier-down
+evidence, and confirmed fixture cleanup. A green workflow can contain an
+observation-only WireGuard job. A skipped, blocked, incomplete or
+observation-only route leaves the publication gate open.
+
+For publication, bind the intended tag to the
+reviewed commit and transfer the six original files from the producer
+artifact. Verify the published download and its ELF against both route
+reports. The workflow retains evidence for this manual gate and has read-only
+repository permissions.
+
+Source-packet validation on macOS passed 220 of 223 portable checks. Three
+GNU/Linux cleanup controls were skipped locally and remain in the Ubuntu
+jobs. Native candidate production, both hosted route campaigns and preview
+publication are pending.

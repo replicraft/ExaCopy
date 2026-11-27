@@ -5,6 +5,14 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/linux-remote-wireguard-provider-b.yml'
+      - '.github/ci/remote-preview-candidate.json'
+      - '.github/ci/preview_release_*.py'
+      - '.github/ci/preview-notices/**'
+      - '.github/ci/testing_remote_asset*.py'
+      - '.github/ci/capture.sh'
+      - '.github/ci/release_candidate.py'
+      - '.github/ci/remote_commissioning_candidate_input.sh'
+      - '.github/ci/remote_commissioning_digest_tool.sh'
       - '.github/ci/remote_commissioning*.py'
       - '.github/ci/remote_qualification.py'
       - '.github/ci/remote_retry_commissioning*.py'
@@ -24,6 +32,8 @@ on:
       - 'tools/apfs_source.py'
       - 'tools/transport_source.py'
       - 'tools/qualification/**'
+      - 'tools/release/**'
+      - 'LICENSE'
 
 permissions:
   contents: read
@@ -39,8 +49,150 @@ env:
   EXPECTED_RUST_HOST: x86_64-unknown-linux-gnu
 
 jobs:
+  preview-candidate:
+    if: github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    outputs:
+      status: ${{ steps.plan.outputs.status }}
+      artifact-id: ${{ steps.transport.outputs.artifact-id }}
+      artifact-digest: ${{ steps.transport.outputs.artifact-digest }}
+      receipt-sha256: ${{ steps.pins.outputs.receipt-sha256 }}
+      archive-sha256: ${{ steps.pins.outputs.archive-sha256 }}
+      request-sha256: ${{ steps.pins.outputs.request-sha256 }}
+      run-attempt: ${{ steps.transport.outputs.run-attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.14.7"
+      - name: Confirm the selected native builder
+        run: |
+          test "$GITHUB_JOB" = preview-candidate
+          grep -qx 'ID=ubuntu' /etc/os-release
+          grep -qx 'VERSION_ID="22.04"' /etc/os-release
+      - name: Plan the candidate from this exact main commit
+        id: plan
+        run: |
+          plan="$RUNNER_TEMP/exacopy-preview-candidate-plan.json"
+          result=0
+          python3 -B -Werror .github/ci/preview_release_candidate.py plan --output "$plan" || result=$?
+          if (( result != 0 )); then
+            printf '%s\n' status=invalid >> "$GITHUB_OUTPUT"
+            exit "$result"
+          fi
+          status=$(python3 -B -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["status"])' "$plan")
+          case "$status" in
+            requested|not-requested) printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT" ;;
+            *) exit 1 ;;
+          esac
+      - name: Run portable candidate producer controls
+        if: steps.plan.outputs.status == 'requested'
+        run: |
+          python -B -Werror .github/ci/preview_release_candidate_test.py -v
+          python -B -Werror .github/ci/testing_remote_asset_test.py -v
+          python -B -Werror .github/ci/preview_release_notices_test.py -v
+      - name: Prepare pinned native sources and Rust
+        if: steps.plan.outputs.status == 'requested'
+        run: |
+          bash .github/ci/capture.sh preview-apfs python3 -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh preview-transport python3 -B tools/transport_source.py --fetch
+          bash .github/ci/capture.sh preview-rust bash .github/ci/install.sh rust
+          bash .github/ci/capture.sh preview-fetch cargo +1.100.0 fetch --locked --target "$EXPECTED_RUST_HOST"
+      - name: Build the unsigned frozen candidate
+        if: steps.plan.outputs.status == 'requested'
+        run: |
+          python3 -B -Werror .github/ci/preview_release_candidate.py build \
+            --plan "$RUNNER_TEMP/exacopy-preview-candidate-plan.json" \
+            --output "$RUNNER_TEMP/exacopy-preview-candidate-assets" \
+            --evidence "$RUNNER_TEMP/exacopy-preview-candidate-build"
+      - name: Bind independent request, receipt and archive pins
+        id: pins
+        if: steps.plan.outputs.status == 'requested'
+        run: |
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          temp = Path(os.environ["RUNNER_TEMP"])
+          assets = temp / "exacopy-preview-candidate-assets"
+          plan = json.loads((temp / "exacopy-preview-candidate-plan.json").read_bytes())
+          archive_name = "exacopy-cli-v0.1.0-preview.2-x86_64-unknown-linux-gnu-experimental-ssh-wireguard.tar.gz"
+          receipt_name = "build-provenance-experimental-ssh-wireguard.json"
+          names = {
+              archive_name, receipt_name, "SHA256SUMS.txt", "exacopy-experimental-ssh-wireguard.cdx.json",
+              "LICENSE", "THIRD-PARTY-NOTICES.txt",
+          }
+          if {p.name for p in assets.iterdir()} != names or any(
+              p.is_symlink() or not p.is_file() or p.stat().st_size <= 0 for p in assets.iterdir()
+          ):
+              raise SystemExit("candidate upload must contain the exact six nonempty regular outputs")
+
+          receipt_bytes = (assets / receipt_name).read_bytes()
+          receipt = json.loads(receipt_bytes)
+          archive = assets / archive_name
+          with archive.open("rb") as stream:
+              if stream.read(2) != b"\x1f\x8b":
+                  raise SystemExit("candidate upload lacks its selected gzip archive")
+              stream.seek(0)
+              archive_sha = hashlib.file_digest(stream, "sha256").hexdigest()
+          request_sha = hashlib.sha256(Path(".github/ci/remote-preview-candidate.json").read_bytes()).hexdigest()
+          if (
+              receipt["schema"] != "exacopy-main-preview-build-v1"
+              or receipt["source"] != plan["source"] or receipt["workflow"] != plan["workflow"]
+              or receipt["workflow"]["run_attempt"] != os.environ["GITHUB_RUN_ATTEMPT"]
+              or receipt["request_sha256"] != request_sha or plan["request_sha256"] != request_sha
+              or receipt["archive"] != {"name": archive_name, "sha256": archive_sha, "size": archive.stat().st_size}
+          ):
+              raise SystemExit("candidate build receipt differs from the selected inputs or archive")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="ascii") as output:
+              output.write(f"request-sha256={request_sha}\n")
+              output.write(f"receipt-sha256={hashlib.sha256(receipt_bytes).hexdigest()}\n")
+              output.write(f"archive-sha256={archive_sha}\n")
+          PY
+      - name: Upload the six frozen candidate outputs
+        id: upload
+        if: steps.plan.outputs.status == 'requested'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: exacopy-preview-candidate-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exacopy-preview-candidate-assets/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
+      - name: Verify immutable artifact outputs and their run attempt
+        id: transport
+        if: steps.plan.outputs.status == 'requested'
+        env:
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          UPLOAD_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        run: |
+          digest="${UPLOAD_DIGEST#sha256:}"
+          [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ && "$digest" =~ ^[a-fA-F0-9]{64}$ && "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || exit 1
+          digest=$(printf '%s' "$digest" | LC_ALL=C tr 'A-F' 'a-f')
+          printf 'artifact-id=%s\nartifact-digest=%s\nrun-attempt=%s\n' \
+            "$ARTIFACT_ID" "$digest" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - name: Retain the plan and separate build evidence
+        if: always() && steps.plan.outputs.status != 'not-requested'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: exacopy-preview-candidate-build-evidence-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-preview-candidate-plan.json
+            ${{ runner.temp }}/exacopy-preview-candidate-build/
+            ${{ runner.temp }}/exacopy-evidence/
+          if-no-files-found: error
+          retention-days: 90
+
   embedded:
-    if: github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main'
+    needs: preview-candidate
+    if: github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main' && (needs.preview-candidate.outputs.status == 'not-requested' || needs.preview-candidate.outputs.status == 'requested')
     runs-on: ubuntu-24.04
     timeout-minutes: 70
     steps:
@@ -65,9 +217,28 @@ jobs:
           python3 -B -Werror .github/ci/remote_commissioning_wireguard_provider_b_test.py -v
           python3 -B -Werror .github/ci/remote_commissioning_wireguard_dispatch_test.py -v
           python3 -B -Werror .github/ci/remote_commissioning_wireguard_enrollment_test.py -v
+      - name: Exercise candidate importer and input custody controls
+        if: needs.preview-candidate.outputs.status == 'requested'
+        run: |
+          python3 -B -Werror .github/ci/remote_commissioning_candidate_test.py -v
+          python3 -B -Werror .github/ci/remote_commissioning_candidate_input_test.py -v
       - name: Select commissioning or candidate observation on this boot
         id: provider
         run: python3 -B -Werror .github/ci/remote_commissioning_wireguard_dispatch.py
+      - name: Prepare the owned candidate input
+        id: candidate-input
+        if: needs.preview-candidate.outputs.status == 'requested' && (steps.provider.outputs.mode == 'commission-azure-1017' || steps.provider.outputs.mode == 'commission-azure-1020' || steps.provider.outputs.mode == 'commission-aws-1014' || steps.provider.outputs.mode == 'commission-aws-1018')
+        env:
+          ARTIFACT_ID: ${{ needs.preview-candidate.outputs.artifact-id }}
+          CANDIDATE_RUN_ATTEMPT: ${{ needs.preview-candidate.outputs.run-attempt }}
+        run: bash .github/ci/remote_commissioning_candidate_input.sh stage
+      - name: Download the frozen candidate by same-run artifact ID
+        if: steps.candidate-input.outcome == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.preview-candidate.outputs.artifact-id }}
+          path: ${{ runner.temp }}/exacopy-preview-candidate-input
+          digest-mismatch: error
       - name: Prepare pinned sources and Rust
         if: (steps.provider.outputs.mode == 'commission-azure-1017' || steps.provider.outputs.mode == 'commission-azure-1020' || steps.provider.outputs.mode == 'commission-aws-1014' || steps.provider.outputs.mode == 'commission-aws-1018')
         run: |
@@ -114,15 +285,38 @@ jobs:
           test -x unpacked/usr/bin/b3sum
           test -x unpacked/usr/bin/wg
       - name: Verify the selected module closure and commission the ordinary embedded CLI
-        if: (steps.provider.outputs.mode == 'commission-azure-1017' || steps.provider.outputs.mode == 'commission-azure-1020' || steps.provider.outputs.mode == 'commission-aws-1014' || steps.provider.outputs.mode == 'commission-aws-1018')
+        if: needs.preview-candidate.outputs.status == 'not-requested' && (steps.provider.outputs.mode == 'commission-azure-1017' || steps.provider.outputs.mode == 'commission-azure-1020' || steps.provider.outputs.mode == 'commission-aws-1014' || steps.provider.outputs.mode == 'commission-aws-1018')
         env:
           PROVIDER_MODE: ${{ steps.provider.outputs.mode }}
+          EXACOPY_PREVIEW_CANDIDATE_MODE: not-requested
         run: |
           case "$PROVIDER_MODE" in
             commission-azure-1017|commission-azure-1020) python3 -B .github/ci/remote_commissioning_wireguard_azure.py ;;
             commission-aws-1014|commission-aws-1018) python3 -B .github/ci/remote_commissioning_wireguard_aws.py ;;
             *) exit 1 ;;
           esac
+      - name: Verify the selected module closure and commission the exact candidate via embedded WireGuard
+        if: needs.preview-candidate.outputs.status == 'requested' && steps.candidate-input.outcome == 'success' && (steps.provider.outputs.mode == 'commission-azure-1017' || steps.provider.outputs.mode == 'commission-azure-1020' || steps.provider.outputs.mode == 'commission-aws-1014' || steps.provider.outputs.mode == 'commission-aws-1018')
+        env:
+          PROVIDER_MODE: ${{ steps.provider.outputs.mode }}
+          EXACOPY_PREVIEW_CANDIDATE_MODE: requested
+          EXACOPY_PREVIEW_CANDIDATE_ARTIFACT_ID: ${{ needs.preview-candidate.outputs.artifact-id }}
+          EXACOPY_PREVIEW_CANDIDATE_ARTIFACT_DIGEST: ${{ needs.preview-candidate.outputs.artifact-digest }}
+          EXACOPY_PREVIEW_CANDIDATE_RECEIPT_SHA256: ${{ needs.preview-candidate.outputs.receipt-sha256 }}
+          EXACOPY_PREVIEW_CANDIDATE_ARCHIVE_SHA256: ${{ needs.preview-candidate.outputs.archive-sha256 }}
+          EXACOPY_PREVIEW_CANDIDATE_REQUEST_SHA256: ${{ needs.preview-candidate.outputs.request-sha256 }}
+        run: |
+          : "${EXACOPY_PREVIEW_CANDIDATE_ARTIFACT_ID:?}" "${EXACOPY_PREVIEW_CANDIDATE_ARTIFACT_DIGEST:?}" \
+            "${EXACOPY_PREVIEW_CANDIDATE_RECEIPT_SHA256:?}" "${EXACOPY_PREVIEW_CANDIDATE_ARCHIVE_SHA256:?}" \
+            "${EXACOPY_PREVIEW_CANDIDATE_REQUEST_SHA256:?}"
+          case "$PROVIDER_MODE" in
+            commission-azure-1017|commission-azure-1020) python3 -B .github/ci/remote_commissioning_wireguard_azure.py ;;
+            commission-aws-1014|commission-aws-1018) python3 -B .github/ci/remote_commissioning_wireguard_aws.py ;;
+            *) exit 1 ;;
+          esac
+      - name: Remove the owned candidate input after fixture cleanup
+        if: always() && (steps.candidate-input.outcome == 'success' || steps.candidate-input.outcome == 'failure' || steps.candidate-input.outcome == 'cancelled')
+        run: bash .github/ci/remote_commissioning_candidate_input.sh cleanup
       - name: Remove the owned tool staging
         if: always() && (steps.provider.outputs.mode == 'commission-azure-1017' || steps.provider.outputs.mode == 'commission-azure-1020' || steps.provider.outputs.mode == 'commission-aws-1014' || steps.provider.outputs.mode == 'commission-aws-1018')
         run: |
@@ -170,5 +364,100 @@ jobs:
             ${{ runner.temp }}/exacopy-wireguard-enrollment.pending
             ${{ runner.temp }}/exacopy-wireguard-provider-b-tools.pending
             ${{ runner.temp }}/exacopy-wireguard-commissioning/report/
+            ${{ runner.temp }}/exacopy-preview-candidate-cleanup.txt
+          if-no-files-found: error
+          retention-days: 90
+
+  preview-direct:
+    needs: preview-candidate
+    if: github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main' && needs.preview-candidate.outputs.status == 'requested'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      COMMISSIONING_CAMPAIGN: direct
+    steps:
+      - name: Admit only the canonical hosted synthetic fixture
+        run: |
+          evidence="$RUNNER_TEMP/exacopy-evidence"
+          mkdir -p -- "$evidence"
+          status=blocked
+          if [[ "$GITHUB_SERVER_URL" == https://github.com &&
+                "${GITHUB_REPOSITORY,,}" == replicraft/exacopy &&
+                "$GITHUB_REF" == refs/heads/main && "$GITHUB_EVENT_NAME" == push &&
+                "$GITHUB_ACTIONS" == true && "$RUNNER_ENVIRONMENT" == github-hosted &&
+                "$RUNNER_OS" == Linux && "$RUNNER_ARCH" == X64 &&
+                "$GITHUB_JOB" == preview-direct && ! -v EXACOPY_REMOTE_DEPLOYMENT ]]; then
+            status=admitted
+          fi
+          printf '%s\n' 'policy=hosted-synthetic-direct-v1' "status=$status" \
+            "repository=$GITHUB_REPOSITORY" "event=$GITHUB_EVENT_NAME" "ref=$GITHUB_REF" \
+            "sha=$GITHUB_SHA" "ref_protected=${GITHUB_REF_PROTECTED:-unknown}" \
+            > "$evidence/commissioning-admission.log"
+          test "$status" = admitted
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        id: checkout
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify exact clean source
+        run: |
+          test "$GITHUB_WORKFLOW_REF" = "replicraft/ExaCopy/.github/workflows/linux-remote-wireguard-provider-b.yml@refs/heads/main"
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain)"
+      - name: Run portable commissioning controls
+        run: |
+          python3 -B .github/ci/remote_commissioning_test.py -v
+          python3 -B apps/exacopy-cli/verification/remote/test_fixture.py -v
+          python3 -B -Werror .github/ci/remote_commissioning_candidate_test.py -v
+          python3 -B -Werror .github/ci/remote_commissioning_candidate_input_test.py -v
+      - name: Prepare the owned candidate input
+        id: candidate-input
+        env:
+          ARTIFACT_ID: ${{ needs.preview-candidate.outputs.artifact-id }}
+          CANDIDATE_RUN_ATTEMPT: ${{ needs.preview-candidate.outputs.run-attempt }}
+        run: bash .github/ci/remote_commissioning_candidate_input.sh stage
+      - name: Download the frozen candidate by same-run artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.preview-candidate.outputs.artifact-id }}
+          path: ${{ runner.temp }}/exacopy-preview-candidate-input
+          digest-mismatch: error
+      - name: Prepare pinned dependencies for native facts
+        run: |
+          bash .github/ci/capture.sh apfs-source python3 -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source python3 -B tools/transport_source.py --fetch
+          bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
+          bash .github/ci/capture.sh locked-fetch cargo +1.100.0 fetch --locked
+      - name: Extract the independent digest tool from Ubuntu's signed package index
+        run: bash .github/ci/remote_commissioning_digest_tool.sh stage
+      - name: Commission the exact candidate via direct SSH
+        env:
+          EXACOPY_PREVIEW_CANDIDATE_MODE: requested
+          EXACOPY_PREVIEW_CANDIDATE_ARTIFACT_ID: ${{ needs.preview-candidate.outputs.artifact-id }}
+          EXACOPY_PREVIEW_CANDIDATE_ARTIFACT_DIGEST: ${{ needs.preview-candidate.outputs.artifact-digest }}
+          EXACOPY_PREVIEW_CANDIDATE_RECEIPT_SHA256: ${{ needs.preview-candidate.outputs.receipt-sha256 }}
+          EXACOPY_PREVIEW_CANDIDATE_ARCHIVE_SHA256: ${{ needs.preview-candidate.outputs.archive-sha256 }}
+          EXACOPY_PREVIEW_CANDIDATE_REQUEST_SHA256: ${{ needs.preview-candidate.outputs.request-sha256 }}
+        run: |
+          : "${EXACOPY_PREVIEW_CANDIDATE_ARTIFACT_ID:?}" "${EXACOPY_PREVIEW_CANDIDATE_ARTIFACT_DIGEST:?}" \
+            "${EXACOPY_PREVIEW_CANDIDATE_RECEIPT_SHA256:?}" "${EXACOPY_PREVIEW_CANDIDATE_ARCHIVE_SHA256:?}" \
+            "${EXACOPY_PREVIEW_CANDIDATE_REQUEST_SHA256:?}"
+          python3 -B .github/ci/remote_commissioning.py
+      - name: Remove the owned candidate input after fixture cleanup
+        if: always() && (steps.candidate-input.outcome == 'success' || steps.candidate-input.outcome == 'failure' || steps.candidate-input.outcome == 'cancelled')
+        run: bash .github/ci/remote_commissioning_candidate_input.sh cleanup
+      - name: Remove the job-owned digest tool after confirmed fixture cleanup
+        if: always() && steps.checkout.outcome == 'success'
+        run: bash .github/ci/remote_commissioning_digest_tool.sh cleanup
+      - name: Retain allowlisted direct commissioning observations
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: exacopy-preview-direct-commissioning-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-evidence/
+            ${{ runner.temp }}/exacopy-direct-commissioning/report/
+            ${{ runner.temp }}/exacopy-preview-candidate-cleanup.txt
           if-no-files-found: error
           retention-days: 90

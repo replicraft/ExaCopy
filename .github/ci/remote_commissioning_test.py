@@ -407,6 +407,174 @@ class PortableCommissioningControls(unittest.TestCase):
         self.assertTrue((report / "cleanup-unconfirmed.json").is_file())
         self.assertTrue((parent / "private-build").is_dir())
 
+    def test_candidate_request_refusal_precedes_privileged_preflight(self):
+        with (
+            patch.dict(os.environ, {"GITHUB_SHA": "selected"}),
+            patch.object(commission.native, "source_identity", return_value={"revision": "selected"}),
+            patch.object(commission.CandidateRequest, "from_hosted_environment",
+                         side_effect=peer.Blocked("candidate request incomplete")) as admit,
+            patch.object(commission, "preflight") as preflight,
+            patch.object(commission.native, "build_cli") as build,
+            self.assertRaisesRegex(peer.Blocked, "candidate request incomplete"),
+        ):
+            commission.execute(self.root / "invocation", self.root / "report", self.root / "work", {})
+        admit.assert_called_once_with(self.root, route=commission.native.DIRECT)
+        preflight.assert_not_called()
+        build.assert_not_called()
+
+    def test_failed_candidate_import_is_terminal_and_keeps_the_fixture_uncreated(self):
+        parent = self.root / "invocation"
+        report, work = parent / "report", parent / "private"
+        report.mkdir(parents=True)
+        work.mkdir()
+        tools = self.root / "exacopy-commissioning-tools"
+        tools.mkdir(mode=0o700)
+        b3sum = tools / "unpacked/usr/bin/b3sum"
+        b3sum.parent.mkdir(parents=True)
+        b3sum.touch()
+        evidence = {"fixture_id": self.fixture.nonce}
+        request = object()
+        with (
+            patch.dict(os.environ, {"GITHUB_SHA": "selected"}),
+            patch.object(commission.native, "source_identity", return_value={"revision": "selected"}),
+            patch.object(commission.CandidateRequest, "from_hosted_environment", return_value=request),
+            patch.object(commission, "preflight", return_value=65534),
+            patch.object(commission.shutil, "which", return_value=str(b3sum)),
+            patch.object(commission, "run", return_value=b"1:9.6p1-3ubuntu13.14"),
+            patch.object(commission, "file_digest", return_value="tool-digest"),
+            patch.object(commission.native, "build_cli") as build,
+            patch.object(commission, "import_candidate", side_effect=peer.Blocked("archive drift")) as import_candidate,
+            patch.object(commission, "run_fixture") as run_fixture,
+        ):
+            self.assertEqual(commission.execute(parent, report, work, evidence), 77)
+        import_candidate.assert_called_once_with(
+            request, work / "build", parent / "private-build/exacopy", commission.native.DIRECT, {"revision": "selected"},
+        )
+        build.assert_not_called()
+        run_fixture.assert_not_called()
+        self.assertEqual(evidence["reason"], "archive drift")
+        self.assertEqual(evidence["cleanup"]["fixture_state"], "not-created")
+        self.assertFalse((parent / "private-build").exists())
+        self.assertFalse((report / "cleanup-unconfirmed.json").exists())
+
+    def test_candidate_pass_binds_exact_elf_route_cases_and_inputs(self):
+        candidate = {
+            "campaign_route": commission.native.DIRECT, "binary": {"sha256": "elf"},
+            "build_blake3_derive_key": "build",
+        }
+        authority = {"record_digest": "record"}
+        inputs = {"qualification_sha256": "held-record", "trust_sha256": "held-trust",
+                  "ssh_profile_sha256": "held-profile"}
+        cases = [{"name": name, "outcome": "pass"} for name in commission.CASES]
+        summary = {
+            "schema": commission.CAMPAIGN_SCHEMA, "status": "pass", "exit_status": 0,
+            "route": commission.native.DIRECT, "binary_sha256": "elf", "binary_build_digest": "build",
+            "qualification_digest": "record", "issues_new_qualification": False, "cases": cases,
+        } | inputs
+        commission.check_candidate_summary(summary, candidate, authority, inputs)
+        tampering = {
+            "schema": "unknown", "status": "blocked", "exit_status": False,
+            "route": commission.native.EMBEDDED, "binary_sha256": "another-elf",
+            "binary_build_digest": "another-build", "qualification_digest": "another-record",
+            "issues_new_qualification": True, "cases": list(reversed(cases)),
+            "qualification_sha256": "replacement-record", "trust_sha256": "replacement-trust",
+            "ssh_profile_sha256": "replacement-profile",
+        }
+        for name, replacement in tampering.items():
+            with self.subTest(field=name), self.assertRaises(commission.EvidenceFailed):
+                commission.check_candidate_summary(summary | {name: replacement}, candidate, authority, inputs)
+
+    def test_candidate_export_binds_reports_and_every_openssh_transcript(self):
+        manifest = "manifest-digest"
+        facts = "facts-digest"
+        summary = self.root / "campaign/summary.json"
+        summary.parent.mkdir()
+        peers = {relative: f"digest-for-{relative}" for relative in commission.PEER_FILES}
+        summary.write_text(json.dumps({"artifacts_sha256": {Path(name).name: digest for name, digest in peers.items()}}))
+        summary_digest = hashlib.sha256(summary.read_bytes()).hexdigest()
+        processes = {}
+        for name in ("native-facts/process.json", "campaign-process.json"):
+            path = self.root / name
+            path.parent.mkdir(exist_ok=True)
+            data = b'{"status":"exited","exit_status":0}'
+            path.write_bytes(data)
+            processes[name] = hashlib.sha256(data).hexdigest()
+        hashes = {
+            "build/result.json": manifest, "campaign/summary.json": summary_digest,
+            "native-facts/facts.json": facts, "native-facts-recheck/facts.json": facts,
+            "substrate/result.json": "substrate-result", "substrate/native.log": "substrate-log",
+        } | peers | processes
+        candidate = {"manifest_sha256": manifest, "campaign_route": commission.native.DIRECT,
+                     "archive": {"sha256": "archive"}, "binary": {"sha256": "elf"},
+                     "post_campaign_custody": {"status": "confirmed", "archive_sha256": "archive", "elf_sha256": "elf"}}
+        evidence = {
+            "candidate": candidate, "observations": {"campaign_summary_sha256": summary_digest},
+            "authority": {"inputs_sha256": {"native_facts_sha256": facts, "substrate_result_sha256": "substrate-result",
+                                          "substrate_log_sha256": "substrate-log"}},
+            "artifacts_sha256": hashes,
+        }
+        commission.check_candidate_exports(self.root, evidence)
+        with self.assertRaisesRegex(commission.EvidenceFailed, "process evidence"):
+            commission.check_candidate_exports(self.root, evidence | {
+                "candidate": candidate | {"campaign_route": commission.native.EMBEDDED},
+            })
+        with self.assertRaisesRegex(commission.EvidenceFailed, "custody were not confirmed"):
+            commission.check_candidate_exports(self.root, evidence | {
+                "candidate": candidate | {"post_campaign_custody": {"status": "failed"}},
+            })
+        for relative in hashes:
+            with self.subTest(missing=relative), self.assertRaises(commission.EvidenceFailed):
+                commission.check_candidate_exports(
+                    self.root, evidence | {"artifacts_sha256": {name: digest for name, digest in hashes.items() if name != relative}},
+                )
+        for relative in ("build/result.json", "campaign/summary.json", "native-facts-recheck/facts.json", *peers):
+            with self.subTest(changed=relative), self.assertRaises(commission.EvidenceFailed):
+                commission.check_candidate_exports(
+                    self.root, evidence | {"artifacts_sha256": hashes | {relative: "different-digest"}},
+                )
+        summary.write_bytes(summary.read_bytes() + b"\n")
+        with self.assertRaisesRegex(commission.EvidenceFailed, "summary differs"):
+            commission.check_candidate_exports(self.root, evidence)
+
+    def test_post_campaign_archive_hash_does_not_discard_an_original_failure(self):
+        evidence = {"candidate": {"archive": {"sha256": "archive"}, "binary": {"sha256": "elf"}}}
+        frozen = Mock()
+        commission.confirm_candidate_archive(frozen, 0, evidence)
+        frozen.verify_archive.assert_called_once_with()
+        self.assertEqual(evidence["candidate"]["post_campaign_custody"],
+                         {"status": "confirmed", "archive_sha256": "archive", "elf_sha256": "elf"})
+        frozen.verify_archive.side_effect = peer.Blocked("archive drift")
+        commission.confirm_candidate_archive(frozen, 1, evidence)
+        self.assertEqual(evidence["candidate"]["post_campaign_custody"], {"status": "failed"})
+        with self.assertRaisesRegex(peer.Blocked, "archive drift"):
+            commission.confirm_candidate_archive(frozen, 0, evidence)
+
+    def test_candidate_authority_rejects_wrong_route_and_elf_before_signing(self):
+        inputs = self.root / "native-facts"
+        inputs.mkdir()
+        substrate = self.root / "substrate"
+        substrate.mkdir()
+        (substrate / "result.json").write_text("{}")
+        candidate = commission.native.CandidateFactsBinding("1" * 64, commission.native.EMBEDDED)
+        (inputs / "facts.json").write_text(json.dumps({
+            "repository_attribution": commission.native.CANDIDATE_ATTRIBUTION, "campaign_route": candidate.route,
+            "build_manifest_sha256": candidate.manifest_sha256, "elf_sha256": "unrelated-elf",
+        }))
+        with (
+            patch.object(authority, "source_identity", return_value={"revision": "selected"}),
+            patch.object(type(candidate), "verify", return_value={"binary": {"sha256": "candidate-elf"}}) as verify,
+            patch.object(authority, "run") as sign,
+        ):
+            with self.assertRaisesRegex(peer.Blocked, "campaign route"):
+                authority.make_authority(self.fixture, self.root, self.root / "manifest", "b3sum",
+                                         candidate=candidate, binary=self.root / "binary")
+            verify.assert_not_called()
+            with self.assertRaisesRegex(peer.Blocked, "exact frozen candidate"):
+                authority.make_authority(self.fixture, self.root, self.root / "manifest", "b3sum",
+                                         route=candidate.route, candidate=candidate, binary=self.root / "binary")
+            verify.assert_called_once()
+            sign.assert_not_called()
+
     def test_cgroup_inode_and_population_are_independent_of_process_sessions(self):
         group = self.root / "group"
         group.mkdir()

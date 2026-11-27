@@ -118,12 +118,12 @@ def component(package, units, checksum, application, local_pin=None):
 
 def write_sbom(
     source, env, evidence, target, commit, binary_sha256, units, root_id, apfs_pin, transport_pins,
-    apfs_layout=None, *, origins,
+    apfs_layout=None, *, origins, selected_features=(),
 ):
-    metadata = json.loads(output(
-        "cargo", "metadata", "--format-version", "1", "--locked", "--offline",
-        "--filter-platform", target, cwd=source, env=env,
-    ))
+    command = ["cargo", "metadata", "--format-version", "1", "--locked", "--offline", "--filter-platform", target]
+    if selected_features:
+        command.extend(("--no-default-features", "--features", ",".join(selected_features)))
+    metadata = json.loads(output(*command, cwd=source, env=env))
     package_by_id = {package["id"]: package for package in metadata["packages"]}
     lock = tomllib.loads((source / "Cargo.lock").read_text(encoding="utf-8"))
     checksums = {
