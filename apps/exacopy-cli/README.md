@@ -337,7 +337,7 @@ extended attributes and security labels, file flags, hard links, sparse
 layout, and compression or encryption representation. Source observations
 are live. Snapshots and complete metadata fidelity are outside this profile.
 
-Successful publication includes a committed receipt and reports
+Successful byte-zero publication includes a committed receipt and reports
 `published_with_omissions` with exit 11. `--format json` selects the
 `exacopy.cli.remote_download` 1.0 report. It includes the receipt and
 qualification digests, exact stream length and BLAKE3, and the retained job
@@ -345,6 +345,16 @@ pathname with its original bytes in hex. It distinguishes observed file
 and directory barriers from the required process-crash qualification.
 Power-loss durability remains outside the profile. Human-readable output
 is the default.
+
+The default-off Linux `experimental-verified-prefix-resume` feature adds a
+first witnessed continuation of a clean original capture. It requires explicit
+retention consent and separately trusted continuation qualification. Witnessed
+success uses `exacopy.cli.witnessed_remote_download` 1.0 and reports the committed
+receipt and retained witness instead of claiming the ordinary full-stream BLAKE3
+field. This path rereads the current remote prefix; it saves local staging work,
+not prefix network traffic. Native qualification remains pending. See the
+[first witnessed resume contract](../../docs/engineering/first-witnessed-resume.md)
+for selection, authority and recovery limits.
 
 Select the reported retained job to resume. The command authenticates its
 signed scope and checks the current authority again. Clean pre-intent
