@@ -489,6 +489,11 @@ $long = Get-PublicationLaunchFacts 'apfs-source' ('x' * 261) $cwd @('a' * 129) $
 Require ($null -eq $long.application -and $long.application_units -eq 261 -and
     $null -eq $long.arguments[0]) 'Do not emit out-of-bound text.'
 $sourceText = $runner.Extent.Text
+$observedBuild = "Invoke-PublicationChild 'cargo-build' " + '$cargo $arguments 480000 -ObserveBuildProcesses'
+Require ($sourceText.Contains($observedBuild, [StringComparison]::Ordinal) -and
+    [regex]::Matches($sourceText, '-ObserveBuildProcesses').Count -eq 1) (
+    'Only the contained Cargo build gets post-root job process diagnostics.'
+)
 $compilerInstall = $sourceText.IndexOf('RUSTUP_HOME = $rustupHome', [StringComparison]::Ordinal)
 $compilerResolution = $sourceText.IndexOf('$rustc = Resolve-PublicationCompiler $rustupHome', [StringComparison]::Ordinal)
 $compilerProbe = $sourceText.IndexOf("'rustc' " + '$rustc' + " @('-vV')", [StringComparison]::Ordinal)

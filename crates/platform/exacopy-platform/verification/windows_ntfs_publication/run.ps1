@@ -88,7 +88,8 @@ function Write-PublicationEvidenceDiagnostic {
 }
 
 function Invoke-PublicationChild {
-    param([string] $Name, [string] $Program, [string[]] $Arguments, [int] $Timeout)
+    param([string] $Name, [string] $Program, [string[]] $Arguments, [int] $Timeout,
+        [switch] $ObserveBuildProcesses)
     $diagnostic.phase = $Name
     $diagnostic.receipt = $null
     $diagnostic.launch = Get-PublicationLaunchFacts $Name $Program $repo $Arguments $childEnvironment
@@ -100,8 +101,13 @@ function Invoke-PublicationChild {
     $stdout = Join-Path $evidence ($Name + '.stdout.log')
     $stderr = Join-Path $evidence ($Name + '.stderr.log')
     $record = Join-Path $evidence ($Name + '.process.json')
-    $child = [ExaCopyQualification.PublicationProcess]::Run(
-        $Program, $Arguments, $repo, $childEnvironment, $stdout, $stderr, $Timeout)
+    $child = if ($ObserveBuildProcesses) {
+        [ExaCopyQualification.PublicationProcess]::RunWithActiveProcessObservation(
+            $Program, $Arguments, $repo, $childEnvironment, $stdout, $stderr, $Timeout)
+    } else {
+        [ExaCopyQualification.PublicationProcess]::Run(
+            $Program, $Arguments, $repo, $childEnvironment, $stdout, $stderr, $Timeout)
+    }
     $diagnostic.receipt = $child
     $child | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $record -Encoding utf8
     if ($null -ne $diagnostic.launch) {
@@ -491,7 +497,7 @@ $ErrorActionPreference = 'Stop'
     $arguments = @('+1.100.0', 'test', '--locked', '--offline', '--jobs', '2', '--target', $selected,
         '-p', 'exacopy-platform', '--lib', '--no-default-features', '--features', 'experimental-windows-copy', '--no-run',
         '--message-format=json')
-    if ((Invoke-PublicationChild 'cargo-build' $cargo $arguments 480000) -ne 0) {
+    if ((Invoke-PublicationChild 'cargo-build' $cargo $arguments 480000 -ObserveBuildProcesses) -ne 0) {
         throw 'The selected Windows platform library test image did not build.'
     }
     Confirm-PublicationVendorCustody $linkerTool

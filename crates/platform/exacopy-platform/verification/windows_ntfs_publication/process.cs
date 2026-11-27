@@ -26,6 +26,12 @@ namespace ExaCopyQualification
         private const uint WaitObject = 0;
         private const uint WaitTimeout = 258;
         private const int BasicAccounting = 1;
+        private const int BasicProcessIdList = 3;
+        private const int ProcessIdListHeaderBytes = 8;
+        private const int ProcessIdBytes = 8;
+        private const int ActiveSampleLimit = 32;
+        private const int ActiveSampleIntervalMilliseconds = 1000;
+        private const int ActiveSampleReserveMilliseconds = 25;
         private const int AssociateCompletionPort = 7;
         private const int ExtendedLimits = 9;
         private const uint JobActiveProcessZero = 4;
@@ -124,9 +130,16 @@ namespace ExaCopyQualification
             public string LookupFailure { get; internal set; }
         }
 
+        public sealed class ActiveJobProcessSample
+        {
+            public long ObservedMilliseconds { get; internal set; }
+            public List<JobProcessEvent> Processes { get; internal set; }
+        }
+
         public sealed class Receipt
         {
             internal string ObservedProgram { get; set; }
+            internal bool SampleActiveAfterRoot { get; set; }
             public bool JobListConfigured { get; internal set; }
             public bool CreationAttempted { get; internal set; }
             public bool Started { get; internal set; }
@@ -147,6 +160,9 @@ namespace ExaCopyQualification
             public string JobProcessObservationError { get; internal set; }
             public string JobProcessBaselineError { get; internal set; }
             public string JobProcessDetachError { get; internal set; }
+            public ActiveJobProcessSample LastPostRootActiveSample { get; internal set; }
+            public long? LastPostRootSampleAttemptMilliseconds { get; internal set; }
+            public string LastPostRootSampleError { get; internal set; }
             public uint? ExitCode { get; internal set; }
             public int StdoutBytes { get; internal set; }
             public int StderrBytes { get; internal set; }
@@ -229,6 +245,21 @@ namespace ExaCopyQualification
             string[] environment, string stdout, string stderr, int timeoutMilliseconds, bool observeJobProcesses,
             bool refuseDiagnosticSetup)
         {
+            return RunOwned(program, arguments, workDirectory, environment, stdout, stderr, timeoutMilliseconds,
+                observeJobProcesses, refuseDiagnosticSetup, false);
+        }
+
+        public static Receipt RunWithActiveProcessObservation(string program, string[] arguments, string workDirectory,
+            string[] environment, string stdout, string stderr, int timeoutMilliseconds)
+        {
+            return RunOwned(program, arguments, workDirectory, environment, stdout, stderr, timeoutMilliseconds,
+                true, false, true);
+        }
+
+        private static Receipt RunOwned(string program, string[] arguments, string workDirectory,
+            string[] environment, string stdout, string stderr, int timeoutMilliseconds, bool observeJobProcesses,
+            bool refuseDiagnosticSetup, bool sampleActiveAfterRoot)
+        {
             // The owning runner separately establishes the Windows Server 2025 SKU.
             if (!OperatingSystem.IsWindows() || Environment.OSVersion.Version.Build != Server2025Build ||
                 RuntimeInformation.ProcessArchitecture != Architecture.X64 || !ValidateAbi())
@@ -253,7 +284,11 @@ namespace ExaCopyQualification
             if (command.Length + 1 > 32767)
                 throw new ArgumentException("The command line is too large.", nameof(arguments));
             string environmentBlock = EnvironmentBlock(environment);
-            var receipt = new Receipt { ObservedProgram = observeJobProcesses ? program : null };
+            var receipt = new Receipt
+            {
+                ObservedProgram = observeJobProcesses ? program : null,
+                SampleActiveAfterRoot = sampleActiveAfterRoot
+            };
 
             using var outputFile = new FileStream(stdout, FileMode.CreateNew, FileAccess.Write, FileShare.Read, 1);
             using var errorFile = new FileStream(stderr, FileMode.CreateNew, FileAccess.Write, FileShare.Read, 1);
@@ -391,6 +426,8 @@ namespace ExaCopyQualification
                     break;
                 }
                 ReadJobObservation(job, trace, receipt, stopwatch, budgetMilliseconds);
+                if (receipt.SampleActiveAfterRoot && receipt.RootSignaled && receipt.ActiveProcesses > 0)
+                    MaybeSampleActiveJobProcesses(job, receipt, stopwatch, budgetMilliseconds);
                 if (!progress)
                     Thread.Sleep(10);
             }
@@ -567,6 +604,74 @@ namespace ExaCopyQualification
             {
                 port.Dispose();
             }
+        }
+
+        private static void MaybeSampleActiveJobProcesses(SafeFileHandle job, Receipt receipt,
+            Stopwatch stopwatch, int budgetMilliseconds)
+        {
+            long observed = stopwatch.ElapsedMilliseconds;
+            if (observed >= budgetMilliseconds - ActiveSampleReserveMilliseconds ||
+                (receipt.LastPostRootSampleAttemptMilliseconds is long previous &&
+                    observed - previous < ActiveSampleIntervalMilliseconds))
+                return;
+
+            receipt.LastPostRootSampleAttemptMilliseconds = observed;
+            try
+            {
+                var buffer = new byte[ProcessIdListHeaderBytes + ActiveSampleLimit * ProcessIdBytes];
+                Require(QueryInformationJobObject(job, BasicProcessIdList, buffer, (uint)buffer.Length,
+                    out uint returned), "Query active job process IDs");
+                uint[] pids = DecodeActiveJobProcessIds(buffer, returned);
+                if (pids.Length == 0)
+                {
+                    // The earlier accounting sample may race with a normal exit.
+                    receipt.LastPostRootSampleError = "The listed job was empty when sampled.";
+                    return;
+                }
+
+                var processes = new List<JobProcessEvent>(pids.Length);
+                foreach (uint pid in pids)
+                {
+                    var entry = new JobProcessEvent { Kind = "post-root-active-sample", ProcessId = pid };
+                    TryResolveJobProcess(job, entry, receipt.ObservedProgram, stopwatch,
+                        budgetMilliseconds - ActiveSampleReserveMilliseconds);
+                    processes.Add(entry);
+                }
+                receipt.LastPostRootActiveSample = new ActiveJobProcessSample
+                {
+                    ObservedMilliseconds = observed,
+                    Processes = processes
+                };
+                receipt.LastPostRootSampleError = null;
+            }
+            catch (Exception failure)
+            {
+                receipt.LastPostRootSampleError = failure is InvalidDataException
+                    ? failure.Message
+                    : DescribeObservationFailure(failure);
+            }
+        }
+
+        private static uint[] DecodeActiveJobProcessIds(byte[] buffer, uint returned)
+        {
+            // Server 2025 x64 uses two DWORDs followed by an array of ULONG_PTR.
+            if (returned < ProcessIdListHeaderBytes || returned > buffer.Length)
+                throw new InvalidDataException("Invalid active job process list extent.");
+            uint assigned = BitConverter.ToUInt32(buffer, 0);
+            uint listed = BitConverter.ToUInt32(buffer, 4);
+            if (assigned != listed || listed > ActiveSampleLimit ||
+                returned < ProcessIdListHeaderBytes + listed * ProcessIdBytes)
+                throw new InvalidDataException("The active job process list was incomplete or exceeded its bound.");
+
+            var pids = new uint[(int)listed];
+            for (int index = 0; index < pids.Length; index++)
+            {
+                ulong pid = BitConverter.ToUInt64(buffer, ProcessIdListHeaderBytes + index * ProcessIdBytes);
+                if (pid == 0 || pid > uint.MaxValue || Array.IndexOf(pids, (uint)pid, 0, index) >= 0)
+                    throw new InvalidDataException("Invalid or duplicate active job process identifier.");
+                pids[index] = (uint)pid;
+            }
+            return pids;
         }
 
         private static void TryResolveJobProcess(SafeFileHandle job, JobProcessEvent entry,
@@ -849,6 +954,10 @@ namespace ExaCopyQualification
 
         [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
         private static extern bool QueryInformationJobObject(SafeFileHandle job, int kind, out JobAccounting accounting, uint length, IntPtr actualLength);
+
+        [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
+        private static extern bool QueryInformationJobObject(SafeFileHandle job, int kind, [Out] byte[] buffer,
+            uint length, out uint actualLength);
 
         [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
         private static extern bool SetInformationJobObject(SafeFileHandle job, int kind, ref JobCompletionPort port, uint length);

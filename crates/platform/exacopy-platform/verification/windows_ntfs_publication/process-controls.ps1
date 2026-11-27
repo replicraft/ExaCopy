@@ -107,8 +107,48 @@ try {
     $normal.Dispose()
 }
 
+# Windows x64 PROCESS_ID_LIST layout, exercised without invoking the kernel.
+$decodeJobIds = [ExaCopyQualification.PublicationProcess].GetMethod('DecodeActiveJobProcessIds',
+    [Reflection.BindingFlags]'NonPublic,Static')
+$jobIds = [byte[]]::new(24)
+[BitConverter]::GetBytes([uint32]2).CopyTo($jobIds, 0)
+[BitConverter]::GetBytes([uint32]2).CopyTo($jobIds, 4)
+[BitConverter]::GetBytes([uint64]41).CopyTo($jobIds, 8)
+[BitConverter]::GetBytes([uint64]67).CopyTo($jobIds, 16)
+$decoded = $decodeJobIds.Invoke($null, [object[]]@($jobIds.PSObject.BaseObject, [uint32]24))
+Assert-Equal $decoded.Length 2
+Assert-Equal $decoded[0] 41
+Assert-Equal $decoded[1] 67
+
+function Assert-InvalidJobPidList([byte[]] $Buffer, [uint32] $Extent) {
+    try {
+        [void]$decodeJobIds.Invoke($null, [object[]]@($Buffer.PSObject.BaseObject, $Extent))
+    } catch {
+        $cause = $_.Exception
+        while ($cause.InnerException) { $cause = $cause.InnerException }
+        if ($cause -is [IO.InvalidDataException]) { return }
+        throw
+    }
+    throw 'An invalid job process ID list was accepted.'
+}
+Assert-InvalidJobPidList $jobIds 7
+Assert-InvalidJobPidList $jobIds 16
+Assert-InvalidJobPidList $jobIds 25
+foreach ($badPid in @([uint64]0, [uint64]41, [uint64]4294967296)) {
+    $invalid = $jobIds.Clone()
+    [BitConverter]::GetBytes($badPid).CopyTo($invalid, 16)
+    Assert-InvalidJobPidList $invalid 24
+}
+$incomplete = $jobIds.Clone()
+[BitConverter]::GetBytes([uint32]3).CopyTo($incomplete, 0)
+Assert-InvalidJobPidList $incomplete 24
+$overCap = $jobIds.Clone()
+[BitConverter]::GetBytes([uint32]33).CopyTo($overCap, 0)
+[BitConverter]::GetBytes([uint32]33).CopyTo($overCap, 4)
+Assert-InvalidJobPidList $overCap 24
+
 if (!$NativeOutputDirectory) {
-    'Process ABI, quoting, Unicode environment, input bounds, and failed-sink controls passed.'
+    'Process ABI, quoting, Unicode environment, input bounds, failed-sink and job PID list controls passed.'
     return
 }
 
