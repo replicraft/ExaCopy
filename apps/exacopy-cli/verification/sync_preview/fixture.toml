@@ -152,6 +152,125 @@ ignored = false
 
 [[case]]
 kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::tests::coverage::selection_rejects_invalid_parent_paths_and_duplicate_root_names"
+source = "tests/unit/sync_preview.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::tests::coverage::selection_rejects_symlinked_parents_and_children_and_retains_native_causes"
+source = "tests/unit/sync_preview.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::tests::coverage::selection_refuses_procfs_as_an_unsupported_mount"
+source = "tests/unit/sync_preview.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::tests::coverage::selection_and_recheck_keep_raw_names_ordered_and_preserve_both_files"
+source = "tests/unit/sync_preview.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::tests::coverage::recheck_refuses_disappeared_linked_and_rebound_parents"
+source = "tests/unit/sync_preview.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::tests::coverage::recheck_refuses_a_disappeared_or_symlinked_child_root"
+source = "tests/unit/sync_preview.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::tests::coverage::recheck_rejects_changed_or_disappeared_unsupported_entries"
+source = "tests/unit/sync_preview.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::tests::coverage::access_denial_remains_a_system_error_instead_of_a_changed_or_absent_entry"
+source = "tests/unit/sync_preview.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::tests::coverage::typed_observation_refusals_explain_their_scope"
+source = "tests/unit/sync_preview.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::history_scope::tests::stable_live_pair_on_tmpfs_refuses_history_location_and_preserves_inputs"
+source = "tests/unit/sync_history_scope.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::history_scope::tests::changed_subject_refuses_history_before_the_mount_check"
+source = "tests/unit/sync_history_scope.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::history_scope::tests::changed_root_refuses_history_before_the_mount_check"
+source = "tests/unit/sync_history_scope.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::history_scope::tests::history_directory_requires_matching_live_identity_and_mounts"
+source = "tests/unit/sync_history_scope.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::names::tests::a_regular_file_cannot_supply_a_directory_observation"
+source = "tests/unit/preview_names.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::names::tests::a_detached_directory_cannot_certify_absence"
+source = "tests/unit/preview_names.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::namespaces::tests::preview_namespaces::recheck_refuses_stale_identity_for_either_live_namespace_pin"
+source = "tests/unit/preview_namespaces.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
+selector = "linux::sync_preview::namespaces::tests::preview_namespaces::namespace_link_observation_refuses_missing_wrong_kind_and_wrong_label"
+source = "tests/unit/preview_namespaces.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
 owner = "exacopy-transfer"
 selector = "linux::sync_preview::tests::checks_both_limits_before_reading_and_refuses_incomplete_recheck"
 source = "src/linux/sync_preview/tests.rs"

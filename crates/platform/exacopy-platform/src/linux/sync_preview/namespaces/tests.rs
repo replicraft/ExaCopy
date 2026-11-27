@@ -2,6 +2,9 @@ use rustix::io::{FdFlags, fcntl_getfd};
 
 use super::*;
 
+#[path = "../../../../tests/unit/preview_namespaces.rs"]
+mod preview_namespaces;
+
 #[test]
 fn accepts_only_fixed_kind_and_bounded_canonical_inode_text() {
 	assert_eq!(

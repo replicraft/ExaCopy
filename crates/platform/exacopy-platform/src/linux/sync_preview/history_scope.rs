@@ -179,3 +179,7 @@ fn check_directory(
 	}
 	Ok(())
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/sync_history_scope.rs"]
+mod tests;

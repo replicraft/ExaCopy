@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import tomllib
 import unittest
 from unittest.mock import patch
 
@@ -102,6 +103,8 @@ class QualificationControls(unittest.TestCase):
                 source.replace('kind = "command"', 'kind = "rust-unit"', 1),
                 source.replace('ignored = false', 'ignored = true', 1),
                 source.replace('owner = "exacopy-platform"', 'owner = "exacopy-cli"', 1),
+                source.replace('source = "tests/unit/sync_history_scope.rs"',
+                               'source = "src/linux/sync_preview/history_scope.rs"', 1),
                 source.replace(f'profile = "{fixture.PROFILE}"', 'profile = "linux-unrelated"'),
                 source.replace(f'target = "{fixture.TARGET}"', 'target = "aarch64-unknown-linux-gnu"'),
             )
@@ -117,6 +120,21 @@ class QualificationControls(unittest.TestCase):
             owners.write_text(registration.replace(f'["{fixture.FIXTURE}"]', f'["{fixture.FIXTURE}", "{fixture.FIXTURE}"]'), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "not registered"):
                 fixture.bind_fixture(manifest, owners)
+
+    def test_unit_source_fingerprints_cover_owned_manifest_sources(self):
+        manifest = Path(fixture.__file__).with_name("fixture.toml")
+        cases = tomllib.loads(manifest.read_text(encoding="utf-8"))["case"]
+        expected = {family: {} for family in fixture.UNIT_OWNERS}
+        families = {owner: family for family, owner in fixture.UNIT_OWNERS.items()}
+        for case in cases:
+            if case["kind"] == "rust-unit":
+                family = families[case["owner"]]
+                source = case["source"]
+                relative = Path(fixture.UNIT_ROOTS[family]) / source
+                expected[family][source] = hashlib.sha256((fixture.ROOT / relative).read_bytes()).hexdigest()
+        self.assertEqual(fixture.unit_source_fingerprints(), expected)
+        self.assertEqual(len(expected["platform"]), 6)
+        self.assertEqual(len(expected["transfer"]), 1)
 
     def test_listing_requires_exact_native_selector_inventory(self):
         names = qualify.TEST_NAMES["transfer"]

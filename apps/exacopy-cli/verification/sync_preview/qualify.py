@@ -13,7 +13,9 @@ import subprocess
 import sys
 import tempfile
 
-from fixture import CASES, ROOT, TARGET, TEST_NAMES, bind_fixture
+from fixture import (
+    CASES, ROOT, TARGET, TEST_NAMES, bind_fixture, unit_source_fingerprints,
+)
 from native import (
     PREFIX, build_cli, build_native_suite, build_oracle, check_toolchain,
     clean_revision, command, digest, private_build_environment, verify_listing,
@@ -312,6 +314,7 @@ def qualify(revision, evidence, report):
     report["mount"] = {"filesystem": "tmpfs", "mount_id": mount}
     report["kernel"] = platform.release()
     clean_revision(revision, evidence, "before")
+    report["unit_source_sha256"] = unit_source_fingerprints()
     check_toolchain(evidence)
     lockfile = ROOT / "Cargo.lock"
     report["lockfile_sha256"] = digest(lockfile)
@@ -348,6 +351,8 @@ def qualify(revision, evidence, report):
             campaign(binary, oracle, mount, report["preview"])
             require(admit() == mount, "native fixture mount changed during qualification")
             require(bind_fixture() == binding, "fixture or owner registry changed during the run")
+            require(unit_source_fingerprints() == report["unit_source_sha256"],
+                    "native unit test sources changed during the run")
             require(digest(lockfile) == report["lockfile_sha256"],
                     "Cargo.lock changed during qualification")
             clean_revision(revision, evidence, "after")

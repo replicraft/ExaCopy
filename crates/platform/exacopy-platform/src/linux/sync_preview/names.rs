@@ -6,6 +6,10 @@ use rustix::fs::{self, Mode, OFlags, RawDir};
 
 use super::{CHILD_RESOLUTION, FileIdentity, SyncPreviewError};
 
+#[cfg(test)]
+#[path = "../../../tests/unit/preview_names.rs"]
+mod tests;
+
 // Bound each exact-name confirmation, including the zero-match absence case.
 pub(super) const MAX_DIRECTORY_ENTRIES: usize = 4096;
 const DIRECTORY_SCRATCH_BYTES: usize = 4096;

@@ -32,6 +32,10 @@ on:
       - 'crates/platform/exacopy-platform/src/linux/source/**'
       - 'crates/platform/exacopy-platform/src/linux/sync_preview.rs'
       - 'crates/platform/exacopy-platform/src/linux/sync_preview/**'
+      - 'crates/platform/exacopy-platform/tests/unit/sync_preview.rs'
+      - 'crates/platform/exacopy-platform/tests/unit/sync_history_scope.rs'
+      - 'crates/platform/exacopy-platform/tests/unit/preview_names.rs'
+      - 'crates/platform/exacopy-platform/tests/unit/preview_namespaces.rs'
       - 'crates/engines/exacopy-transfer/Cargo.toml'
       - 'crates/engines/exacopy-transfer/src/lib.rs'
       - 'crates/engines/exacopy-transfer/src/linux.rs'
@@ -53,6 +57,7 @@ on:
       - 'tools/apfs_source.py'
       - 'tools/transport_source.py'
       - 'xtask/src/verification/native.rs'
+      - 'xtask/src/verification/native/linked_unit.rs'
 
 permissions:
   contents: read

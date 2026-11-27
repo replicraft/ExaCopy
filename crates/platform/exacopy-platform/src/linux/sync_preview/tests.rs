@@ -149,3 +149,6 @@ fn recheck_returns_ordered_fresh_present_stats_and_refuses_a_rebound_subject() {
 	));
 	assert!(matches!(pair.recheck(), Err(SyncPreviewError::Changed)));
 }
+
+#[path = "../../../tests/unit/sync_preview.rs"]
+mod coverage;

@@ -12,26 +12,72 @@ PROFILE = "linux-unprivileged-tmpfs-sync-preview-v1"
 TARGET = "x86_64-unknown-linux-gnu"
 TOOLCHAIN = "1.100.0"
 UNIT_OWNERS = {"platform": "exacopy-platform", "transfer": "exacopy-transfer"}
+UNIT_ROOTS = {
+    "platform": "crates/platform/exacopy-platform",
+    "transfer": "crates/engines/exacopy-transfer",
+}
+PREFIX = "linux::sync_preview::"
 UNIT_SOURCE = "src/linux/sync_preview/tests.rs"
 NAMESPACE_SOURCE = "src/linux/sync_preview/namespaces/tests.rs"
-NAMESPACE_PREFIX = "linux::sync_preview::namespaces::tests::"
-TEST_NAMES = {
+
+
+UNIT_GROUPS = {
     "platform": (
-        "linux::sync_preview::tests::a_bounded_directory_scan_cannot_certify_absence_when_exhausted",
-        "linux::sync_preview::tests::matching_inode_cannot_substitute_a_different_raw_name",
-        "linux::sync_preview::tests::recheck_rejects_absent_name_that_appears_and_rebound_root",
-        "linux::sync_preview::tests::recheck_rejects_changed_bytes_and_required_metadata",
-        "linux::sync_preview::tests::recheck_returns_ordered_fresh_present_stats_and_refuses_a_rebound_subject",
-        "linux::sync_preview::tests::unsupported_and_aliased_subjects_never_become_absence",
-        NAMESPACE_PREFIX + "accepts_only_fixed_kind_and_bounded_canonical_inode_text",
-        NAMESPACE_PREFIX + "current_namespace_pins_are_read_only_and_match_fresh_observations",
-        NAMESPACE_PREFIX + "distinguishes_missing_support_from_native_read_failure",
-        NAMESPACE_PREFIX + "procfs_directory_cannot_be_used_as_a_namespace_object",
+        ("tests::", UNIT_SOURCE, (
+            "a_bounded_directory_scan_cannot_certify_absence_when_exhausted",
+            "matching_inode_cannot_substitute_a_different_raw_name",
+            "recheck_rejects_absent_name_that_appears_and_rebound_root",
+            "recheck_rejects_changed_bytes_and_required_metadata",
+            "recheck_returns_ordered_fresh_present_stats_and_refuses_a_rebound_subject",
+            "unsupported_and_aliased_subjects_never_become_absence",
+        )),
+        ("namespaces::tests::", NAMESPACE_SOURCE, (
+            "accepts_only_fixed_kind_and_bounded_canonical_inode_text",
+            "current_namespace_pins_are_read_only_and_match_fresh_observations",
+            "distinguishes_missing_support_from_native_read_failure",
+            "procfs_directory_cannot_be_used_as_a_namespace_object",
+        )),
+        ("tests::coverage::", "tests/unit/sync_preview.rs", (
+            "selection_rejects_invalid_parent_paths_and_duplicate_root_names",
+            "selection_rejects_symlinked_parents_and_children_and_retains_native_causes",
+            "selection_refuses_procfs_as_an_unsupported_mount",
+            "selection_and_recheck_keep_raw_names_ordered_and_preserve_both_files",
+            "recheck_refuses_disappeared_linked_and_rebound_parents",
+            "recheck_refuses_a_disappeared_or_symlinked_child_root",
+            "recheck_rejects_changed_or_disappeared_unsupported_entries",
+            "access_denial_remains_a_system_error_instead_of_a_changed_or_absent_entry",
+            "typed_observation_refusals_explain_their_scope",
+        )),
+        ("history_scope::tests::", "tests/unit/sync_history_scope.rs", (
+            "stable_live_pair_on_tmpfs_refuses_history_location_and_preserves_inputs",
+            "changed_subject_refuses_history_before_the_mount_check",
+            "changed_root_refuses_history_before_the_mount_check",
+            "history_directory_requires_matching_live_identity_and_mounts",
+        )),
+        ("names::tests::", "tests/unit/preview_names.rs", (
+            "a_regular_file_cannot_supply_a_directory_observation",
+            "a_detached_directory_cannot_certify_absence",
+        )),
+        ("namespaces::tests::preview_namespaces::", "tests/unit/preview_namespaces.rs", (
+            "recheck_refuses_stale_identity_for_either_live_namespace_pin",
+            "namespace_link_observation_refuses_missing_wrong_kind_and_wrong_label",
+        )),
     ),
     "transfer": (
-        "linux::sync_preview::tests::checks_both_limits_before_reading_and_refuses_incomplete_recheck",
+        ("tests::", UNIT_SOURCE, (
+            "checks_both_limits_before_reading_and_refuses_incomplete_recheck",
+        )),
     ),
 }
+UNIT_CASES = {
+    family: tuple(
+        (f"{PREFIX}{module}{name}", source)
+        for module, source, names in groups
+        for name in names
+    )
+    for family, groups in UNIT_GROUPS.items()
+}
+TEST_NAMES = {family: tuple(name for name, _ in cases) for family, cases in UNIT_CASES.items()}
 CASES = (
     "equal", "same_extent_divergent", "metadata_divergent",
     "one_sided", "both_absent", "different_spelling", "unsupported_link",
@@ -49,11 +95,11 @@ def expected_manifest():
     cases.extend(
         {
             "kind": "rust-unit", "owner": UNIT_OWNERS[family], "selector": selector,
-            "source": NAMESPACE_SOURCE if selector.startswith(NAMESPACE_PREFIX) else UNIT_SOURCE,
+            "source": source,
             "ignored": False,
         }
-        for family, selectors in TEST_NAMES.items()
-        for selector in selectors
+        for family, cases in UNIT_CASES.items()
+        for selector, source in cases
     )
     return {
         "schema_version": 1, "id": "linux-sync-preview",
@@ -72,6 +118,16 @@ def read_exact(path):
     if len(data) > 64 * 1024:
         raise ValueError("fixture binding exceeds its input budget")
     return data
+
+
+def unit_source_fingerprints():
+    return {
+        family: {
+            source: hashlib.sha256(read_exact(ROOT / UNIT_ROOTS[family] / source)).hexdigest()
+            for source in sorted({source for _, source in cases})
+        }
+        for family, cases in UNIT_CASES.items()
+    }
 
 
 def bind_fixture(manifest_path=ROOT / "apps" / PACKAGE / FIXTURE,
