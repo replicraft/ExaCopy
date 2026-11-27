@@ -94,11 +94,33 @@ reconciliation rather than a clean cancellation report.
 
 ## Read-only terminal inspection
 
-Capture the complete successful `--format json` output from a trusted witnessed
-invocation and retain it separately from the job as a protected JSON file.
-The selection comes from that trusted capture. File protection controls its
-local custody. Version `1.0` success lacks archive selection and is refused.
-The inspector does not reconstruct missing selectors.
+### Capture a protected selection report
+
+1. As the unprivileged operator of the feature-enabled Linux build, select an
+   absolute report path separately from the job on the admitted whole ext4 or
+   XFS root mount. Use a dedicated effective-user-owned parent with exact mode
+   `0700`, distinct from the owner, SSH and qualification input directories so
+   the capture lock cannot block this invocation's protected input reads.
+   The path must avoid symlinks and mount crossings. Ancestors must be owned by
+   root or the effective user and deny group-class and other write access.
+2. Hold an exclusive `flock` on the independently opened private parent
+   directory while creating and writing the report. Create a fresh regular
+   file exclusively with mode `0600` and one hard link. Preserve any existing
+   file. Direct only stdout from the trusted witnessed `--format json`
+   invocation to the new file and keep stderr separate. Close the report and
+   release the parent lock before inspection.
+3. Treat exit `11` and a complete
+   `exacopy.cli.witnessed_remote_download` version `1.1` report with
+   `result: published_with_omissions` as witnessed success. Preserve output
+   from other statuses or incomplete captures as diagnostic evidence and
+   leave it out of inspection. Retain the accepted report with the
+   independently selected qualification and trust inputs.
+
+The report's provenance comes from the trusted invocation. File protection
+controls local custody. Version `1.0` success lacks archive selection and is
+refused. The inspector does not reconstruct missing selectors.
+
+### Inspect the selected job
 
 On the same feature-enabled Linux build, select the job path and original
 qualification inputs explicitly. The archived display and raw path fields

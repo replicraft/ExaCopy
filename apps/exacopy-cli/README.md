@@ -354,9 +354,11 @@ receipt and retained witness instead of claiming the ordinary full-stream BLAKE3
 field. This path rereads the current remote prefix; it saves local staging work,
 not prefix network traffic. Native qualification remains pending. See the
 [first witnessed resume contract](../../docs/engineering/first-witnessed-resume.md)
-for selection, authority and recovery limits. Retain the complete JSON success
-report from the trusted invocation separately from its job to select later
-`recover remote-inspect-witness` inspection. That read-only command requires the
+for selection, authority and recovery limits. Follow the
+[protected report capture procedure](../../docs/engineering/first-witnessed-resume.md#capture-a-protected-selection-report)
+to retain the trusted invocation's complete JSON stdout separately from the job.
+Witnessed success returns exit 11. Later `recover remote-inspect-witness`
+inspection requires the
 original qualified executable and current matching native facts, the protected
 report, and both qualification/trust pairs. It loads no private owner key and
 opens no SSH connection. A version 1.0 report lacks the required archive selection.
