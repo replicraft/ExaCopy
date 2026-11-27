@@ -28,3 +28,31 @@ journal case exercises the native append and readback primitives with its
 literal fixture bytes. It does not exercise the authenticated kind-8 or kind-9
 recorder. The run provides no process-kill, power-loss, receipt, or CLI
 activation evidence. It changes no protocol, model transition or proof input.
+
+## Separately reported coverage
+
+The optional runner mode is selected by `--coverage-only` on the canonical
+GitHub-hosted main push. A caller must provision the matching Rust 1.100.0
+`llvm-tools` component alongside the existing pinned build inputs. The
+existing workflow keeps its normal invocation. The coverage runner repeats
+the checkout, actor, mount, fixture and running-image checks and adds a
+fixed instrumenting Rust flag after the compiler and loader override check.
+
+The instrumented image runs the same seven exact ignored tests. Each test and
+each of the fourteen listings gets its own protected profile sink outside
+the test fixture. The coverage artifact retains the held ELF, seven measured
+raw profiles, merged profile and LLVM summary export. The receipt binds those
+inputs to the selected revision, lockfile, exact Cargo artifact and selectors.
+LLVM writes the indexed profile in its own held destination directory.
+Cleanup rechecks that file and all collected raw profiles through their held
+descriptors. An occupied unadmitted slot or a replaced output retains the
+owned work tree. Listings contribute no counters to the merge. Their receipt
+entries identify the discarded profiles, which are removed with the owned work directory.
+Incomplete attendance, profile admission, export and cleanup remain visible.
+If custody or process drainage cannot be confirmed, the runner retains the
+owned work directory and reports the cleanup failure.
+
+This profile reports mapped platform source line and region counts separately.
+It supplies neither the ordinary endpoint coverage gate nor OP2, crash or
+power-loss qualification. Combining coverage with another run requires
+compatible mappings and one merged export over the reviewed source inventory.

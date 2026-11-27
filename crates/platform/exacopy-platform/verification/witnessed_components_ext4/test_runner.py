@@ -1,11 +1,15 @@
 """Portable negative controls for the closed hosted component fixture."""
 
+from contextlib import ExitStack
 import json
 import os
 from pathlib import Path
 import tempfile
+import tomllib
 import unittest
+from unittest.mock import patch
 
+import coverage_profile
 import run
 
 
@@ -101,6 +105,249 @@ class WitnessedComponents(unittest.TestCase):
                 self.assertFalse(work.exists())
             finally:
                 os.close(fd)
+
+
+    def test_coverage_sinks_are_distinct_and_only_measured_profiles_are_retained(self):
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            work = Path(directory).resolve()
+            evidence = work / "evidence"
+            evidence.mkdir()
+            receipt = {}
+            profiles = coverage_profile.Profiles(run.ext4, stack, work, evidence, receipt)
+            profiles.prepare()
+            base = {"TMPDIR": str(work / "fixture")}
+            seen = set()
+            for index, selector in enumerate(run.CASES, 1):
+                for ending in ("listed", "ignored", "run"):
+                    label = f"case-{index}-{ending}"
+                    env = profiles.allocate(label, base)
+                    path = Path(env["LLVM_PROFILE_FILE"])
+                    self.assertEqual(env["TMPDIR"], base["TMPDIR"])
+                    self.assertNotIn("LLVM_PROFILE_FILE", base)
+                    self.assertEqual(path.parent.parent, work / "profiles")
+                    self.assertNotIn(path, seen)
+                    self.assertFalse(path.exists())
+                    seen.add(path)
+                    path.write_bytes(b"bounded custody control; LLVM validates raw framing")
+                    profiles.collect(label, selector, "a" * 64)
+            self.assertEqual(len(seen), 21)
+            self.assertEqual(len(receipt["discarded_listing_profiles"]), 14)
+            self.assertEqual([row["selector"] for row in receipt["admitted_profiles"]], list(run.CASES))
+            self.assertEqual(len(list(evidence.glob("*.profraw"))), 7)
+            profiles.check_cleanup()
+            with self.assertRaisesRegex(ValueError, "repeated coverage sink"):
+                profiles.allocate("case-1-run", base)
+
+    def test_coverage_profile_refuses_missing_linked_empty_or_ambiguous_output(self):
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            work = Path(directory).resolve()
+            profiles = coverage_profile.Profiles(run.ext4, stack, work, work, {})
+            profiles.prepare()
+            label = "case-1-run"
+            output = Path(profiles.allocate(label, {})["LLVM_PROFILE_FILE"])
+
+            def collect():
+                profiles.collect(label, run.CASES[0], "a" * 64)
+
+            with self.assertRaisesRegex(ValueError, "exactly one"):
+                collect()
+            output.touch()
+            with self.assertRaisesRegex(ValueError, "private regular file"):
+                collect()
+            output.write_bytes(b"bounded")
+            alias = work / "alias"
+            os.link(output, alias)
+            with self.assertRaisesRegex(ValueError, "private regular file"):
+                collect()
+            alias.unlink()
+            (output.parent / "other.profraw").touch()
+            with self.assertRaisesRegex(ValueError, "exactly one"):
+                collect()
+
+
+    def test_instrumented_artifact_accepts_both_exact_pinned_cargo_layouts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            debug = root / run.TARGET / "debug"
+            suffix = "41bef07687c54c85"
+            name = f"exacopy_platform-{suffix}"
+            version = tomllib.loads((run.ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
+            event = {
+                "reason": "compiler-artifact", "fresh": False, "features": [],
+                "package_id": f"path+{run.PACKAGE.as_uri()}#{version}",
+                "manifest_path": str(run.PACKAGE / "Cargo.toml"), "profile": {"test": True},
+                "target": {"name": "exacopy_platform", "kind": ["lib"], "crate_types": ["lib"],
+                           "src_path": str(run.PACKAGE / "src/lib.rs"), "edition": "2024"},
+            }
+
+            def artifact(binary, **overrides):
+                binary.parent.mkdir(parents=True, exist_ok=True)
+                binary.touch()
+                return {**event, "executable": str(binary), "filenames": [str(binary)], **overrides}
+
+            build = debug / "build" / "exacopy-platform" / suffix / "out" / name
+            for binary in (build, debug / "deps" / name):
+                exact = artifact(binary)
+                receipt = {}
+                self.assertEqual(run.artifact(json.dumps(exact), root, coverage=receipt), binary)
+                self.assertEqual(receipt["cargo_artifact"], exact)
+            for invalid in (
+                artifact(build.with_name("exacopy_platform-0123456789abcdef")),
+                artifact(debug / "other" / name),
+                artifact(debug / "deps" / "exacopy_platform-candidate"),
+                artifact(build, filenames=[]),
+                artifact(build, fresh=True),
+                artifact(build, features=["other"]),
+            ):
+                with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                    run.artifact(json.dumps(invalid), root, coverage={})
+            first = json.dumps(artifact(build))
+            extra = json.dumps(artifact(debug / "deps" / name, features=["other"]))
+            with self.assertRaisesRegex(ValueError, "expected one"):
+                run.artifact(f"{first}\n{extra}", root, coverage={})
+
+    def test_cleanup_rechecks_discarded_listing_inode(self):
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            temp = Path(directory).resolve()
+            work, evidence = temp / "work", temp / "evidence"
+            work.mkdir()
+            evidence.mkdir()
+            work_id = run.ext4.inode(work)
+            profiles = coverage_profile.Profiles(run.ext4, stack, work, evidence, {})
+            profiles.prepare()
+            label = "case-1-listed"
+            output = Path(profiles.allocate(label, {})["LLVM_PROFILE_FILE"])
+            output.write_bytes(b"discarded")
+            profiles.collect(label, run.CASES[0], "a" * 64)
+            output.rename(work / "original")
+            output.write_bytes(b"discarded")
+            with self.assertRaisesRegex(ValueError, "held private regular file"):
+                run.cleanup(evidence, work, work_id, work / "fixture", None, profiles=profiles)
+            self.assertEqual(output.read_bytes(), b"discarded")
+            self.assertEqual((work / "original").read_bytes(), b"discarded")
+
+    def test_cleanup_preserves_uncollected_outputs_and_partial_profile_root(self):
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            temp = Path(directory).resolve()
+            evidence = temp / "evidence"
+            evidence.mkdir()
+            for index, kind in enumerate(("symlink", "hardlink", "directory", "file", "partial-root")):
+                work = temp / f"work-{index}"
+                work.mkdir()
+                work_id = run.ext4.inode(work)
+                profiles = coverage_profile.Profiles(run.ext4, stack, work, evidence, {})
+                if kind == "partial-root":
+                    with patch.object(profiles, "open_directory", side_effect=OSError("cannot hold root")):
+                        with self.assertRaisesRegex(OSError, "cannot hold root"):
+                            profiles.prepare()
+                    with self.assertRaisesRegex(ValueError, "root custody unconfirmed"):
+                        run.cleanup(evidence, work, work_id, work / "fixture", None, profiles=profiles)
+                    self.assertTrue(profiles.root_path.is_dir())
+                    continue
+                profiles.prepare()
+                output = Path(profiles.allocate("case-1-run", {})["LLVM_PROFILE_FILE"])
+                original = work / "original"
+                original.write_bytes(b"uncollected")
+                if kind == "symlink":
+                    output.symlink_to(original)
+                if kind == "hardlink":
+                    os.link(original, output)
+                if kind == "directory":
+                    output.mkdir()
+                if kind == "file":
+                    output.write_bytes(b"uncollected")
+                with self.assertRaisesRegex(ValueError, "uncollected coverage output"):
+                    run.cleanup(evidence, work, work_id, work / "fixture", None, profiles=profiles)
+                self.assertTrue(os.path.lexists(output))
+                self.assertEqual(original.read_bytes(), b"uncollected")
+
+    def test_cleanup_preserves_unadmitted_merge_output(self):
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            temp = Path(directory).resolve()
+            work, evidence = temp / "work", temp / "evidence"
+            work.mkdir()
+            evidence.mkdir()
+            work_id = run.ext4.inode(work)
+            profiles = coverage_profile.Profiles(run.ext4, stack, work, evidence, {})
+            profiles.prepare()
+            index = profiles.begin_merge()
+            self.assertEqual(index.parent.parent, work / "profiles")
+            self.assertFalse(os.path.lexists(index))
+            profiles.check_cleanup()
+
+            index.touch()
+            with self.assertRaisesRegex(ValueError, "held private regular file"):
+                profiles.collect_index()
+            with self.assertRaisesRegex(ValueError, "uncollected coverage output"):
+                run.cleanup(evidence, work, work_id, work / "fixture", None, profiles=profiles)
+            self.assertTrue(index.is_file())
+
+            index.unlink()
+            original = work / "incumbent"
+            original.write_bytes(b"unadmitted index")
+            index.symlink_to(original)
+            with self.assertRaises(OSError):
+                profiles.collect_index()
+            with self.assertRaisesRegex(ValueError, "uncollected coverage output"):
+                run.cleanup(evidence, work, work_id, work / "fixture", None, profiles=profiles)
+            self.assertEqual(index.readlink(), original)
+            self.assertEqual(original.read_bytes(), b"unadmitted index")
+
+    def test_cleanup_rechecks_owned_merged_index_until_removal(self):
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            temp = Path(directory).resolve()
+            work, evidence = temp / "work", temp / "evidence"
+            work.mkdir()
+            evidence.mkdir()
+            work_id = run.ext4.inode(work)
+            report = {}
+            profiles = coverage_profile.Profiles(run.ext4, stack, work, evidence, report)
+            profiles.prepare()
+            index = profiles.begin_merge()
+            data = b"owned merged profile custody control"
+            index.write_bytes(data)
+            fd = profiles.collect_index()
+            self.assertEqual(os.pread(fd, len(data), 0), data)
+            self.assertEqual(report["merged_profile"]["retained"], index.name)
+            self.assertEqual((evidence / index.name).read_bytes(), data)
+            profiles.check_cleanup()
+
+            original = work / "original-index"
+            index.rename(original)
+            index.write_bytes(data)
+            with self.assertRaisesRegex(ValueError, "held private regular file"):
+                run.cleanup(evidence, work, work_id, work / "fixture", None, profiles=profiles)
+            self.assertEqual(original.read_bytes(), data)
+            self.assertEqual(index.read_bytes(), data)
+            index.unlink()
+            original.rename(index)
+            run.cleanup(evidence, work, work_id, work / "fixture", None, profiles=profiles)
+            self.assertFalse(work.exists())
+            self.assertEqual((evidence / index.name).read_bytes(), data)
+
+    def test_llvm_export_requires_typed_versioned_finite_unique_data(self):
+        name = f"{coverage_profile.SOURCE_PREFIX}linux.rs"
+        summary = {"count": 2, "covered": 1, "notcovered": 1, "percent": 50}
+        row = {"filename": name, "summary": {"lines": summary, "regions": summary}}
+        report = {"type": coverage_profile.EXPORT_TYPE, "version": coverage_profile.EXPORT_VERSION,
+                  "data": [{"files": [row, {"filename": "other/crate.rs"}]}]}
+        coverage_profile.summarize(coverage_profile.parse_export(json.dumps(report)), run.ROOT, [name])
+        for invalid in (
+            None,
+            report | {"version": "0.0.0"},
+            report | {"data": [None]},
+            report | {"data": [{"files": [row | {"summary": None}]}]},
+            report | {"data": [{"files": [row | {"filename": False}]}]},
+            report | {"data": [{"files": [row, row]}]},
+            report | {"data": [{"files": [row | {"summary": {
+                "lines": summary | {"covered": True}, "regions": summary,
+            }}]}]},
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                coverage_profile.summarize(invalid, run.ROOT, [name])
+        for invalid in ('{"field":0,"field":1}', '{"metric":NaN}', '{"metric":1e999}'):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                coverage_profile.parse_export(invalid)
 
 
 if __name__ == "__main__":
