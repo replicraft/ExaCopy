@@ -111,6 +111,13 @@ ignored = false
 [[case]]
 kind = "rust-unit"
 owner = "exacopy-platform"
+selector = "linux::sync_preview::tests::recheck_returns_ordered_fresh_present_stats_and_refuses_a_rebound_subject"
+source = "src/linux/sync_preview/tests.rs"
+ignored = false
+
+[[case]]
+kind = "rust-unit"
+owner = "exacopy-platform"
 selector = "linux::sync_preview::tests::unsupported_and_aliased_subjects_never_become_absence"
 source = "src/linux/sync_preview/tests.rs"
 ignored = false

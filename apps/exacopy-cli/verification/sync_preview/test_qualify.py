@@ -126,6 +126,33 @@ class QualificationControls(unittest.TestCase):
             with self.subTest(report=report), self.assertRaisesRegex(ValueError, "exact manifest"):
                 native.verify_listing(report, names)
 
+    def test_fresh_subject_recheck_is_required_in_listing_and_pass_log(self):
+        recheck = (
+            "linux::sync_preview::tests::"
+            "recheck_returns_ordered_fresh_present_stats_and_refuses_a_rebound_subject"
+        )
+        expected = qualify.TEST_NAMES["platform"]
+        self.assertIn(recheck, expected)
+        prior = tuple(name for name in expected if name != recheck)
+        substitution = recheck + "_substitute"
+
+        def listing(names):
+            return "\n".join(f"{name}: test" for name in names)
+
+        def transcript(names):
+            records = [f"test {name} ... ok" for name in names]
+            records.append(f"test result: ok. {len(expected)} passed; 0 failed; 0 ignored;")
+            return "\n".join(records)
+
+        native.verify_listing(listing(expected), expected)
+        qualify.verify_test_log("platform", transcript(expected))
+        for rejected in (prior, (*prior, substitution), (*expected, recheck)):
+            with self.subTest(selectors=rejected):
+                with self.assertRaisesRegex(ValueError, "exact manifest"):
+                    native.verify_listing(listing(rejected), expected)
+                with self.assertRaisesRegex(ValueError, "every exact"):
+                    qualify.verify_test_log("platform", transcript(rejected))
+
     def test_selected_executable_rejects_substitutions_and_wrong_cargo_kind(self):
         with tempfile.TemporaryDirectory(prefix="exacopy-sync-controls-") as name:
             root = Path(name).resolve()

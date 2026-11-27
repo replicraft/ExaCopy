@@ -21,6 +21,7 @@ TEST_NAMES = {
         "linux::sync_preview::tests::matching_inode_cannot_substitute_a_different_raw_name",
         "linux::sync_preview::tests::recheck_rejects_absent_name_that_appears_and_rebound_root",
         "linux::sync_preview::tests::recheck_rejects_changed_bytes_and_required_metadata",
+        "linux::sync_preview::tests::recheck_returns_ordered_fresh_present_stats_and_refuses_a_rebound_subject",
         "linux::sync_preview::tests::unsupported_and_aliased_subjects_never_become_absence",
         NAMESPACE_PREFIX + "accepts_only_fixed_kind_and_bounded_canonical_inode_text",
         NAMESPACE_PREFIX + "current_namespace_pins_are_read_only_and_match_fresh_observations",
