@@ -61,7 +61,7 @@ RequestRetirement(whichJob) ==
         !.jobBinding = whichJob,
         !.everIssued = TRUE,
         !.issuedLate = s.expired
-    ]
+        ]
 
 ObserveStop(result, who) ==
     /\ s.phase = "retirement-issued"
@@ -75,7 +75,7 @@ ObserveDrain(zero, stdoutEnd, stderrEnd, extents) ==
         !.stdoutEof = stdoutEnd,
         !.stderrEof = stderrEnd,
         !.sinksKnown = extents
-    ]
+        ]
 
 Expire ==
     /\ s.phase \in {"running", "retirement-issued", "stop-observed", "drain-observed"}
@@ -84,7 +84,7 @@ Expire ==
         !.phase = IF Mutation \in {"clear-timeout", "late-request"} THEN s.phase ELSE "failed",
         !.expired = TRUE,
         !.timedOut = TRUE
-    ]
+        ]
 
 Fail ==
     /\ s.phase \notin {"failed", "launched"}
@@ -101,7 +101,7 @@ ClassifyQuiesced ==
     /\ s' = [s EXCEPT
         !.phase = "quiesced",
         !.timedOut = IF Mutation = "clear-timeout" THEN FALSE ELSE s.timedOut
-    ]
+        ]
 
 CheckTranscript(result) ==
     /\ s.phase = "quiesced"

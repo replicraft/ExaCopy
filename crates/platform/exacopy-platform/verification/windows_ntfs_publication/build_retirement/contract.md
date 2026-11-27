@@ -4,6 +4,13 @@
 
 ## Scope and entry point
 
+At `824521c`, all twelve P-078 invocations returned TLC parser exit 150 before
+state exploration. SANY rejected the closing record-update bracket at model
+line 64. The four analogous closing brackets are now indented inside their
+conjunction items. The source correction awaits automatic formal verification;
+neither the two healthy cases nor the ten mutants is qualified by the failed
+run. [Failed formal job](https://github.com/replicraft/ExaCopy/actions/runs/46002008193/job/140515758293).
+
 A separately named preparation entry point may retire a compiler job to establish that its admitted job members can no longer write its outputs. Only the canonical admitted Windows Server 2025 x64 fixed-NTFS publication harness can construct the preparation request. It supplies the exact source and lockfile revision, a newly acquired empty private target, the reviewed offline feature/package/target graph, and the held compiler toolchain. Plan, source capture, setup tools, ordinary process controls, inventory, and publication tests continue to use the strict existing supervisor. Give any future hosted run that enables the new preparation contract a distinct profile identifier and retain the v1 result.
 
 Proposed narrow API boundaries:

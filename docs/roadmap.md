@@ -73,9 +73,11 @@ model tests passed and the corrected inventory admitted 1,006/1,021 lines
 The stronger protected admission model in `ce1b039` adds an explicit
 authorization step before intent and five negative controls. Its automatic
 formal results are pending. Windows short-write regressions in `576e1b0`
-also await native execution. The `824521c` formal job reported a TLC failure;
-the precise obligation and retained diagnostic are still being inspected.
-Windows preparation v2 remains disabled.
+also await native execution. At `824521c`, P-078 failed before state exploration:
+all twelve TLC invocations returned parser exit 150 for the model's record-update
+closing indentation. The correction indents all four affected closing brackets;
+its automatic formal result is pending. Windows preparation v2 remains disabled.
+[Exact failed formal job](https://github.com/replicraft/ExaCopy/actions/runs/46002008193/job/140515758293)
 
 Workspace Clippy failed on Linux, macOS, and Windows at `aea84c9`.
 The protected-model type-alias follow-up passed Windows and macOS Clippy
