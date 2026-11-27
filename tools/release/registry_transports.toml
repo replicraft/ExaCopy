@@ -1,0 +1,51 @@
+# Only the reviewed experimental transport features enter this opt-in profile.
+cli_features = ["experimental-ssh-capture", "experimental-ssh-wireguard"]
+transport_pins_sha256 = "95b7e72187aa57d94be336c40380b7e4242519c157f33feeda8406dc2186c0ba"
+
+[[packages]]
+name = "exacopy-ssh"
+source_name = "exacopy-ssh"
+path = "crates/net/exacopy-ssh"
+description = "SSH capabilities for ExaCopy"
+manifest_sha256 = "95385c3642df5b430473c521079c661695518a27e1e4d6dfd6cb15ca13129573"
+features = ["experimental-ssh"]
+
+[[packages]]
+name = "exacopy-sftp"
+source_name = "exacopy-sftp"
+path = "crates/adapters/exacopy-sftp"
+description = "SFTP capabilities for ExaCopy"
+manifest_sha256 = "ec6f436d78ca90120eabec82a801cc8038d5bfe34fd354633497caf9e19630d5"
+features = ["experimental-sftp"]
+
+[[packages]]
+name = "exacopy-wireguard"
+source_name = "exacopy-wireguard"
+path = "crates/net/exacopy-wireguard"
+description = "WIREGUARD capabilities for ExaCopy"
+manifest_sha256 = "bcaf48fb00362c23305f91763446c815becb6b9ac05b4f8d4fe7e19cc3f4a5c6"
+features = ["experimental-protocol", "experimental-udp", "experimental-tcp"]
+
+[[forks]]
+source_name = "russh-util"
+name = "exacopy-russh-util"
+version = "0.1.0"
+upstream_version = "0.52.0"
+library = "russh_util"
+features = []
+
+[[forks]]
+source_name = "russh"
+name = "exacopy-russh"
+version = "0.1.0"
+upstream_version = "0.65.4"
+library = "russh"
+features = ["ring"]
+
+[[forks]]
+source_name = "boringtun"
+name = "exacopy-boringtun"
+version = "0.1.0"
+upstream_version = "0.7.1"
+library = "boringtun"
+features = []

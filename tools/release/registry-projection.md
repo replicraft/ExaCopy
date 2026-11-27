@@ -43,3 +43,50 @@ incumbent on refusal and recovery inspection. On macOS, verify managed APFS
 comparison and its refusal without the managed flag. Include reproducible
 archive digests and native results in the release evidence. A local archive
 or passed fixture does not establish that the registry name is owned.
+
+## Optional transport projection
+
+Use `--profile transports` to stage the preserved Linux SSH and embedded
+WireGuard feature edges and the repaired BoringTun, Russh and Russh utility
+libraries. The default command and its output are unchanged. The optional
+projection verifies the selected commit's pins, locally reconstructed Git
+archive bytes and exact repair/attribution lineage before it selects any
+transport source. Use the existing pinned transport-source setup first.
+
+The package names distinguish the downstream sources; their Rust crate
+identifiers remain compatible with the existing consumers. Russh directly
+depends on the renamed repaired utility, since Cargo strips workspace
+patches from registry packages. All three downstream source archives carry
+their original license and the corresponding ExaCopy modification notice.
+The renamed Russh package reports its own name and version in the derived
+SSH software identification string.
+
+The projection has no default transport feature. Use the explicit
+`experimental-ssh-capture` or `experimental-ssh-wireguard` feature when
+testing an installed Linux package. Existing experimental APFS, Windows
+and managed-sync features remain outside this projection. A registry
+candidate still requires the canonical approved `apfs-mounted` archive
+from its publisher. An exact APFS source fixture is suitable for private
+testing with a local registry.
+
+Run `python3 -B tools/release/registry_transport_projection_test.py` with
+the verified transport siblings available. Private locked install results
+do not establish public registry availability or native transport
+qualification.
+
+### First public version
+
+Choose one frozen profile and one exact source revision before publishing a
+crate version. The profiles can produce different archives for the same
+crate name and version. Select the transport profile for the first release
+intended to include opt-in SSH and WireGuard, after its native, supply-chain
+and publisher checks pass. Adding this profile after a default-only CLI
+upload requires a new CLI version and new versions for any published
+dependency artifacts whose contents must change.
+
+The existing GitHub `v0.1.0` tag identifies user-testing revision
+`104451ebfeeb344418ece53ad020e7cbafa72054`. A registry candidate from a
+later commit has its own source and package digests. Before publishing,
+review its version, package provenance and source revision together.
+Existing user-testing assets only describe the source named in their own
+provenance.

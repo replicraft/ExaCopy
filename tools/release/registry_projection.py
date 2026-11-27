@@ -80,8 +80,8 @@ def checked_manifest(data, expected, location):
     return manifest
 
 
-def dependency(name, member, inherited, packages, version):
-    if member.get("workspace") is not True or set(member) - {"workspace", "features"}:
+def dependency(name, member, inherited, packages, version, forks):
+    if member.get("workspace") is not True or set(member) - {"workspace", "features", "optional"}:
         raise ValueError(f"unsupported registry dependency declaration: {name}")
     declaration = inherited[name]
     resolved = {"version": declaration} if isinstance(declaration, str) else declaration.copy()
@@ -90,16 +90,24 @@ def dependency(name, member, inherited, packages, version):
         if name == "apfs-mounted":
             if path != "../pomologie/apfs/crates/platform/apfs-mounted" or not resolved["version"].startswith("="):
                 raise ValueError("registry projection requires the exact external Pomologie crate")
+        elif name in forks:
+            fork = forks[name]
+            if path != f"../local-deps/{name}" or resolved["version"] != f'={fork["upstream_version"]}':
+                raise ValueError(f"unapproved transport source declaration: {name}")
+            resolved.update(package=fork["name"], version=f'={fork["version"]}')
         elif name not in packages or path != packages[name]["path"] or resolved["version"] != f"={version}":
             raise ValueError(f"unapproved registry substitution for path dependency: {name}")
-    if set(resolved) - {"version", "default-features", "features"} or not isinstance(resolved.get("version"), str):
+    if set(resolved) - {"version", "default-features", "features", "package"} or not isinstance(resolved.get("version"), str):
         raise ValueError(f"unsupported registry dependency: {name}")
     if "features" in member:
         resolved["features"] = sorted(set(resolved.get("features", ())) | set(member["features"]))
+    if member.get("optional") is True:
+        resolved["optional"] = True
     return resolved
 
 
-def dependency_sections(manifest, inherited, packages, version):
+def dependency_sections(manifest, inherited, packages, version, features, forks):
+    optional = {value[4:] for selection in features.values() for value in selection if value.startswith("dep:")}
     sections = [("dependencies", manifest.get("dependencies", {}))]
     sections.extend(
         (f"target.{json.dumps(target)}.dependencies", target_section.get("dependencies", {}))
@@ -107,8 +115,9 @@ def dependency_sections(manifest, inherited, packages, version):
     )
     for header, dependencies in sections:
         selected = {
-            name: dependency(name, declaration, inherited, packages, version)
-            for name, declaration in sorted(dependencies.items()) if declaration.get("optional") is not True
+            name: dependency(name, declaration, inherited, packages, version, forks)
+            for name, declaration in sorted(dependencies.items())
+            if declaration.get("optional") is not True or name in optional
         }
         if selected:
             yield header, selected
@@ -124,7 +133,7 @@ def table(header, fields):
     return "\n".join([f"[{header}]", *(f"{key} = {value(item)}" for key, item in fields.items())])
 
 
-def standalone_manifest(manifest, workspace, profile, package, packages):
+def standalone_manifest(manifest, workspace, profile, package, packages, forks):
     metadata = workspace["package"]
     cli = package["name"] == "exacopy"
     fields = {
@@ -140,14 +149,17 @@ def standalone_manifest(manifest, workspace, profile, package, packages):
     if cli:
         sections.append(table("[bin]", {**manifest["bin"][0], "test": False}))
         sections.append(table("profile.release", profile))
-    dependencies = list(dependency_sections(manifest, workspace["dependencies"], packages, metadata["version"]))
+    selected = {name: manifest["features"][name] for name in package.get("features", ())}
+    if selected:
+        sections.append(table("features", selected))
+    dependencies = list(dependency_sections(manifest, workspace["dependencies"], packages, metadata["version"], selected, forks))
     sections.extend(table(header, fields) for header, fields in dependencies)
     lints = copy.deepcopy(workspace["lints"])
-    if omitted_features := sorted(manifest.get("features", {})):
+    if omitted_features := sorted(manifest.get("features", {}).keys() - selected.keys()):
         names = ", ".join(map(json.dumps, omitted_features))
         lints["rust"]["unexpected_cfgs"]["check-cfg"].append(f"cfg(feature, values({names}))")
     sections.extend(table(f"lints.{name}", fields) for name, fields in sorted(lints.items()))
-    return ("\n\n".join(sections) + "\n").encode(), sorted({name for _, fields in dependencies for name in fields})
+    return ("\n\n".join(sections) + "\n").encode(), sorted({item.get("package", name) for _, fields in dependencies for name, item in fields.items()})
 
 
 def package_readme(name, description, commit):
@@ -179,7 +191,8 @@ def lock_baseline(lock, version):
     )
 
 
-def render(source, commit, policy):
+def render(source, commit, policy, forks=None):
+    forks = forks or {}
     workspace_manifest = checked_manifest(source["Cargo.toml"], policy["workspace_sha256"], "Cargo.toml")
     workspace = workspace_manifest["workspace"]
     version = workspace["package"]["version"]
@@ -212,7 +225,7 @@ def render(source, commit, policy):
         manifest = checked_manifest(source[manifest_path], package["manifest_sha256"], manifest_path)
         if manifest["package"]["name"] != package["source_name"] or manifest["package"]["publish"] is not False:
             raise ValueError(f"unexpected canonical package identity at {manifest_path}")
-        staged_manifest, dependencies = standalone_manifest(manifest, workspace, profile, package, packages)
+        staged_manifest, dependencies = standalone_manifest(manifest, workspace, profile, package, packages, forks)
         if (set(dependencies) & packages.keys()) - earlier:
             raise ValueError(f"registry dependency order is invalid for {name}")
         earlier.add(name)
@@ -221,8 +234,13 @@ def render(source, commit, policy):
         entries = {"src/lib.rs", "src/main.rs"} if name == "exacopy" else {"src/lib.rs"}
         if missing := entries - staged.keys():
             raise ValueError(f"registry package source entries missing in {path}: {', '.join(sorted(missing))}")
-        staged.update({"Cargo.toml": staged_manifest, "LICENSE": source["LICENSE"],
-                       "README.md": package_readme(name, package["description"], commit)})
+        readme = package_readme(name, package["description"], commit)
+        if name == "exacopy" and forks:
+            readme = readme.replace(
+                b"Experimental features require the source workspace.",
+                b"Experimental Linux SSH and embedded WireGuard require explicit Cargo features and separate qualification.",
+            )
+        staged.update({"Cargo.toml": staged_manifest, "LICENSE": source["LICENSE"], "README.md": readme})
         record["packages"].append({
             "name": name, "source_path": path, "source_manifest_sha256": digest(source[manifest_path]),
             "dependencies": dependencies, "files_sha256": {file: digest(data) for file, data in sorted(staged.items())},
@@ -232,8 +250,8 @@ def render(source, commit, policy):
     return projected
 
 
-def project(root, commit, destination, policy):
-    requested = ["Cargo.toml", "Cargo.lock", "LICENSE", APFS_PIN]
+def projection_inputs(root, commit, policy, extra=()):
+    requested = ["Cargo.toml", "Cargo.lock", "LICENSE", APFS_PIN, *extra]
     for package in policy["packages"]:
         requested.extend(f"{package['path']}/{entry}" for entry in ("Cargo.toml", "src"))
     if not COMMIT.fullmatch(commit):
@@ -241,7 +259,14 @@ def project(root, commit, destination, policy):
     build_paths = [f"{package['path']}/build.rs" for package in policy["packages"]]
     if git(root, "ls-tree", "--full-tree", "-r", commit, "--", *build_paths):
         raise ValueError("registry projection requires review before packaging implicit build scripts")
-    projected = render(source_files(root, commit, requested), commit, policy)
+    return source_files(root, commit, requested)
+
+
+def write_projection(destination, projected):
+    for file in projected:
+        parts = file.split("/")
+        if any(not part or part in (".", "..") or "\\" in part or ":" in part for part in parts):
+            raise ValueError(f"registry projection output path is outside its staging directory: {file!r}")
     destination.mkdir()
     try:
         for file, data in sorted(projected.items()):
@@ -253,13 +278,23 @@ def project(root, commit, destination, policy):
         raise
 
 
+def project(root, commit, destination, policy):
+    write_projection(destination, render(projection_inputs(root, commit, policy), commit, policy))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--commit", required=True, help="full immutable ExaCopy commit ID")
     parser.add_argument("--output", type=Path, required=True, help="absent destination for the registry staging files")
+    parser.add_argument("--profile", choices=("default", "transports"), default="default")
     args = parser.parse_args()
     try:
-        project(ROOT, args.commit, args.output, toml(POLICY.read_bytes()))
+        policy = toml(POLICY.read_bytes())
+        if args.profile == "transports":
+            import registry_transport_projection
+            registry_transport_projection.project_transport(ROOT, args.commit, args.output, policy)
+        else:
+            project(ROOT, args.commit, args.output, policy)
     except (ValueError, OSError, KeyError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"registry projection: {error}\n")
 
