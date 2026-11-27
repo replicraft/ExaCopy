@@ -199,33 +199,32 @@ fn exercise(
 
 	assert_missing(&profile_dir, SLOT);
 	let approved = policy.endpoints[1].object.inode;
-	let wrong = [
-		policy.location.parent.inode,
-		policy.endpoints[0].object.inode,
-		approved,
-	]
-	.into_iter()
-	.max()
-	.unwrap()
-	.checked_add(1)
-	.ok_or("could not choose a distinct synthetic mismatch")?;
-	policy.endpoints[1].object.inode = wrong;
-	assert!(matches!(
-		initialize_managed_preview(request(&profile, profile_identity, &policy)),
-		Err(ManagedSyncPreviewError::Managed(
-			ManagedSyncError::ScopeMismatch
-		))
-	));
+	// A held regular file cannot share the live or historical directory inode.
+	policy.endpoints[1].object.inode = object(&right).inode;
+	let refusal = initialize_managed_preview(request(&profile, profile_identity, &policy)).err();
+	assert!(
+		matches!(
+			refusal,
+			Some(ManagedSyncPreviewError::Managed(
+				ManagedSyncError::ScopeMismatch
+			))
+		),
+		"wrong selected right root must refuse before policy creation, observed {refusal:?}"
+	);
 	policy.endpoints[1].object.inode = approved;
 	assert_missing(&profile_dir, SLOT);
 
 	// The writer must exclude Init before it can create the selected slot.
 	let writer = open_child(&sandbox_dir, b"live", OFlags::RDONLY | OFlags::DIRECTORY)?;
 	flock(&writer, FlockOperation::NonBlockingLockExclusive)?;
-	assert!(matches!(
-		initialize_managed_preview(request(&profile, profile_identity, &policy)),
-		Err(ManagedSyncPreviewError::Managed(ManagedSyncError::Busy))
-	));
+	let refusal = initialize_managed_preview(request(&profile, profile_identity, &policy)).err();
+	assert!(
+		matches!(
+			&refusal,
+			Some(ManagedSyncPreviewError::Managed(ManagedSyncError::Busy))
+		),
+		"Init under a competing parent lease must be busy, observed {refusal:?}"
+	);
 	assert_missing(&profile_dir, SLOT);
 	drop(writer);
 
@@ -242,12 +241,16 @@ fn exercise(
 		(0o600, 1)
 	);
 	assert!(!sealed.is_empty());
-	assert!(matches!(
-		initialize_managed_preview(request(&profile, profile_identity, &policy)),
-		Err(ManagedSyncPreviewError::Store(
-			SyncProfileStoreError::AlreadyExists
-		))
-	));
+	let refusal = initialize_managed_preview(request(&profile, profile_identity, &policy)).err();
+	assert!(
+		matches!(
+			&refusal,
+			Some(ManagedSyncPreviewError::Store(
+				SyncProfileStoreError::AlreadyExists
+			))
+		),
+		"repeated Init must refuse the incumbent slot, observed {refusal:?}"
+	);
 	assert_eq!(read(&profile_dir, SLOT)?, sealed);
 
 	// Remove the disposable seed from its selected name to prove preview needs only custody and the receipt.
@@ -256,10 +259,14 @@ fn exercise(
 	let writer = open_child(&sandbox_dir, b"live", OFlags::RDONLY | OFlags::DIRECTORY)?;
 	flock(&writer, FlockOperation::NonBlockingLockExclusive)?;
 	right_file.write_all_at(b"xyz", 0)?;
-	assert!(matches!(
-		preview_managed_history(&selection, &mut [0; 16]),
-		Err(ManagedSyncPreviewError::Managed(ManagedSyncError::Busy))
-	));
+	let refusal = preview_managed_history(&selection, &mut [0; 16]).err();
+	assert!(
+		matches!(
+			&refusal,
+			Some(ManagedSyncPreviewError::Managed(ManagedSyncError::Busy))
+		),
+		"preview under a competing parent lease must be busy, observed {refusal:?}"
+	);
 	drop(writer);
 	let report = preview_managed_history(&selection, &mut [0; 16])?;
 	assert_eq!(
@@ -282,21 +289,23 @@ fn exercise(
 	flock(&writer, FlockOperation::NonBlockingLockExclusive)?;
 	right_file.write_all_at(b"xyzz", 0)?;
 	drop(writer);
-	assert!(matches!(
-		preview_managed_history(&selection, &mut [0; 16]),
-		Err(ManagedSyncPreviewError::Preview(error))
-			if matches!(*error, HistoricalPreviewFailure::Live(SyncPreviewFailure::FileLimit(SyncSide::Right)))
-	));
+	let refusal = preview_managed_history(&selection, &mut [0; 16]).err();
+	assert!(
+		matches!(&refusal, Some(ManagedSyncPreviewError::Preview(error))
+			if matches!(**error, HistoricalPreviewFailure::Live(SyncPreviewFailure::FileLimit(SyncSide::Right)))),
+		"over-ceiling right subject must refuse at its byte limit, observed {refusal:?}"
+	);
 	assert_live(live, [b"abc", b"xyzz"])?;
 
 	// Selected history is mandatory. No alternate first-run preview could pass this typed refusal.
 	let history_root = history::NAMES[0].as_bytes();
 	let retained = b"retained-fixture-root";
 	sandbox.rename(&history_fd, history_root, retained)?;
-	assert!(matches!(
-		preview_managed_history(&selection, &mut [0; 16]),
-		Err(ManagedSyncPreviewError::ReadHistory(error)) if error.kind() == io::ErrorKind::NotFound
-	));
+	let refusal = preview_managed_history(&selection, &mut [0; 16]).err();
+	assert!(
+		matches!(&refusal, Some(ManagedSyncPreviewError::ReadHistory(error)) if error.kind() == io::ErrorKind::NotFound),
+		"missing selected history must refuse before preview, observed {refusal:?}"
+	);
 	sandbox.rename(&history_fd, retained, history_root)?;
 	assert_eq!(read(&profile_dir, SLOT)?, sealed);
 	assert_eq!(

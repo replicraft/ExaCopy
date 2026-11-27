@@ -4,7 +4,7 @@ use std::os::unix::fs::FileExt as _;
 
 use rustix::fs::{self, AtFlags, FileType, Mode, OFlags, Stat};
 
-use super::{BELOW, FileIdentity, LEAF, PRIVATE_FILE, SyncProfileStoreError, mount_id};
+use super::{BELOW, FileIdentity, PRIVATE_FILE, SyncProfileStoreError, mount_id};
 use crate::linux::SourceTimestamp;
 use crate::linux::source::reopen_regular_without_atime;
 
@@ -82,7 +82,14 @@ impl Pin {
 	) -> Result<Self, SyncProfileStoreError> {
 		let named = fs::statat(parent, name, AtFlags::SYMLINK_NOFOLLOW)?;
 		let stamp = Stamp::from_stat(&named, owner)?;
-		let path = fs::openat2(parent, name, LEAF | OFlags::PATH, Mode::empty(), BELOW)?;
+		// openat2 rejects O_NONBLOCK with an O_PATH descriptor.
+		let path = fs::openat2(
+			parent,
+			name,
+			OFlags::PATH | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+			Mode::empty(),
+			BELOW,
+		)?;
 		if Stamp::observe(&path, owner, mount)? != stamp {
 			return Err(SyncProfileStoreError::Changed);
 		}

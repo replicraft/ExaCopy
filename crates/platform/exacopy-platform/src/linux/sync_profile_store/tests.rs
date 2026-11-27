@@ -5,7 +5,7 @@ use std::path::Path;
 
 use exacopy_endpoint::UnixComponent;
 
-use super::{SyncProfileStore, SyncProfileStoreError, check_extent, slot};
+use super::{SyncProfileStore, SyncProfileStoreError, check_extent, mount_id, pin::Pin, slot};
 use crate::linux::{OWNER_SEED_BYTES, SyncPreviewRoots};
 use crate::scratch::Scratch;
 
@@ -29,6 +29,24 @@ fn fixed_selection_derives_one_canonical_nonzero_slot_and_extent() {
 			Err(SyncProfileStoreError::InvalidExtent)
 		));
 	}
+}
+
+#[test]
+fn held_regular_pin_reads_private_bytes() {
+	let scratch = Scratch::new();
+	private_file(&scratch.path("private-record"), RECORD);
+	let parent = scratch.open();
+	let owner = rustix::process::geteuid().as_raw();
+	let pin = Pin::open(
+		&parent,
+		b"private-record",
+		owner,
+		mount_id(&parent).unwrap(),
+	)
+	.unwrap();
+	let mut record = [0; RECORD.len()];
+	pin.read(&parent, &mut record, &mut [0]).unwrap();
+	assert_eq!(record.as_slice(), RECORD);
 }
 
 #[test]
