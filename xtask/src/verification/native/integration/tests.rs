@@ -94,3 +94,50 @@ required-features = ["{STATMOUNT_FEATURE}"]
 		assert!(!valid(&candidate));
 	}
 }
+
+#[cfg(windows)]
+#[test]
+fn cargo_metadata_path_comparison_changes_only_windows_separators() {
+	use super::same_cargo_path;
+
+	let expected = Path::new(r"C:\fixture\tests/history.rs");
+	assert!(same_cargo_path(
+		Path::new(r"C:\fixture\tests\history.rs"),
+		expected
+	));
+	assert!(same_cargo_path(
+		Path::new("C:/fixture/tests/history.rs"),
+		expected
+	));
+
+	for refused in [
+		r"\fixture\tests\history.rs",
+		r"C:fixture\tests\history.rs",
+		r"C:\fixture\tests\.\history.rs",
+		r"C:\fixture\tests\other\..\history.rs",
+		r"C:\fixture\tests\..\history.rs",
+		r"C:\fixture\tests-other\history.rs",
+		r"C:\fixture\TESTS\history.rs",
+		r"C:\fixture\tests\\history.rs",
+		r"\\?\C:\fixture\tests\history.rs",
+	] {
+		assert!(!same_cargo_path(Path::new(refused), expected), "{refused}");
+	}
+}
+
+#[cfg(not(windows))]
+#[test]
+fn cargo_metadata_path_comparison_keeps_backslash_literal() {
+	use super::same_cargo_path;
+
+	let expected = Path::new("/fixture/tests/history.rs");
+	assert!(same_cargo_path(expected, expected));
+	assert!(!same_cargo_path(
+		Path::new(r"/fixture/tests\history.rs"),
+		expected
+	));
+	assert!(!same_cargo_path(
+		Path::new("/fixture/tests/./history.rs"),
+		expected
+	));
+}

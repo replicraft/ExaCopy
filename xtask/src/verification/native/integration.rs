@@ -69,7 +69,7 @@ pub(super) fn check(
 	let mut candidates = package.targets.iter().filter(|target| {
 		target.kind.as_slice() == [TargetKind::Test]
 			&& target.name == name
-			&& target.src_path.as_std_path().as_os_str() == path.as_os_str()
+			&& same_cargo_path(target.src_path.as_std_path(), &path)
 	});
 	if !candidates
 		.next()
@@ -98,6 +98,31 @@ pub(super) fn check(
 			"expected exact crate-level Linux/profile cfg and a substantive top-level ignored libtest test",
 		);
 	}
+}
+
+// Cargo and an owned registry path can spell Windows separators differently.
+// Compare every other unit exactly, including dot components and case.
+#[cfg(windows)]
+fn same_cargo_path(actual: &Path, expected: &Path) -> bool {
+	use std::os::windows::ffi::OsStrExt as _;
+
+	let separators = |unit| {
+		if unit == u16::from(b'/') {
+			u16::from(b'\\')
+		} else {
+			unit
+		}
+	};
+	actual
+		.as_os_str()
+		.encode_wide()
+		.map(separators)
+		.eq(expected.as_os_str().encode_wide().map(separators))
+}
+
+#[cfg(not(windows))]
+fn same_cargo_path(actual: &Path, expected: &Path) -> bool {
+	actual.as_os_str() == expected.as_os_str()
 }
 
 fn exact_features(actual: &[String], expected: Option<&str>) -> bool {
@@ -137,7 +162,7 @@ fn standard_harness(
 	let source = &case.source;
 	let manifest = Path::new(CARGO_MANIFEST);
 	let path = root.join(manifest);
-	if package.manifest_path.as_std_path().as_os_str() != path.as_os_str() {
+	if !same_cargo_path(package.manifest_path.as_std_path(), &path) {
 		findings.add(
 			&path,
 			"native Rust integration owner needs its canonical Cargo.toml",
