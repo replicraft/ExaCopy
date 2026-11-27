@@ -309,7 +309,7 @@ class KernelFixtureTests(unittest.TestCase):
 
             with (
                 patch.dict(os.environ, {"GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REF_PROTECTED": "true",
-                                        "GITHUB_SHA": "a" * 40}),
+                                        "GITHUB_SHA": "a" * 40}, clear=True),
                 patch.object(fixture.direct, "hosted_parent", return_value=parent),
                 patch.object(fixture.signal, "signal"),
                 patch.object(fixture, "check_provider", return_value=({}, "built-in")),
