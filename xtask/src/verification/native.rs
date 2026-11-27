@@ -16,6 +16,7 @@ mod genesis;
 mod integration;
 mod managed_sync;
 mod public_stage;
+mod windows_publication;
 
 const FIXTURE_MANIFEST: &str = "fixture.toml";
 const RESULT: &str = "result.json";
@@ -25,12 +26,15 @@ const STATMOUNT_FEATURE: &str = "experimental-linux-managed-sync";
 enum Target {
 	#[serde(rename = "x86_64-unknown-linux-gnu")]
 	LinuxX86_64Gnu,
+	#[serde(rename = "x86_64-pc-windows-msvc")]
+	WindowsX86_64Msvc,
 }
 
 impl Target {
 	fn triple(self) -> &'static str {
 		match self {
 			Self::LinuxX86_64Gnu => "x86_64-unknown-linux-gnu",
+			Self::WindowsX86_64Msvc => "x86_64-pc-windows-msvc",
 		}
 	}
 }
@@ -55,6 +59,8 @@ enum Profile {
 	UnprivilegedWholeExt4ManagedSyncGenesisProduction,
 	#[serde(rename = "linux-unprivileged-whole-ext4-public-stage-v1")]
 	UnprivilegedWholeExt4PublicStage,
+	#[serde(rename = "windows-hosted-server2025-fixed-ntfs-publication-v1")]
+	WindowsFixedNtfsPublication,
 }
 
 impl Profile {
@@ -69,6 +75,7 @@ impl Profile {
 			| Self::UnprivilegedWholeExt4ManagedSyncProduction
 			| Self::UnprivilegedWholeExt4ManagedSyncGenesisProduction
 			| Self::UnprivilegedWholeExt4PublicStage => Target::LinuxX86_64Gnu,
+			Self::WindowsFixedNtfsPublication => Target::WindowsX86_64Msvc,
 		}
 	}
 
@@ -87,6 +94,7 @@ impl Profile {
 			Self::UnprivilegedWholeExt4SyncStatmount => Some(STATMOUNT_FEATURE),
 			Self::UnprivilegedWholeExt4ManagedSyncProduction
 			| Self::UnprivilegedWholeExt4ManagedSyncGenesisProduction => Some(managed_sync::FEATURE),
+			Self::WindowsFixedNtfsPublication => Some(windows_publication::FEATURE),
 			_ => None,
 		}
 	}
@@ -113,6 +121,7 @@ struct Fixture {
 enum CaseKind {
 	#[default]
 	RustUnit,
+	RustUnitWindows,
 	RustIntegration,
 	Command,
 }
@@ -208,6 +217,18 @@ fn check_manifest(
 		);
 	}
 
+	if windows_publication::applies(manifest, fixture.profile) {
+		windows_publication::check(
+			metadata.workspace_root.as_std_path(),
+			package,
+			root,
+			manifest,
+			&fixture,
+			findings,
+		);
+		return;
+	}
+
 	if !managed_sync::check(package, manifest, &path, &fixture, findings)
 		|| !genesis::check(package, manifest, &path, &fixture, findings)
 		|| !closed_ext4::check(package, manifest, &path, &fixture, findings)
@@ -279,6 +300,10 @@ fn check_cases(
 			CaseKind::RustUnit => {
 				check_rust_case(metadata, package, manifest, fixture.profile, case, findings);
 			}
+			CaseKind::RustUnitWindows => findings.add(
+				manifest,
+				"Windows native unit cases require the closed fixed-NTFS publication profile",
+			),
 			CaseKind::Command => {
 				if case.owner.is_some()
 					|| case.ignored

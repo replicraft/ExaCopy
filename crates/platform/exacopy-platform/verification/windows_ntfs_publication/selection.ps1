@@ -1,0 +1,81 @@
+function Confirm-PublicationSource {
+    param([string] $Repository, [string] $SelectedRevision)
+    $revision = @(& git -C $Repository rev-parse --verify HEAD)
+    if ($LASTEXITCODE -ne 0 -or $revision.Count -ne 1 -or $revision[0] -cne $SelectedRevision) {
+        throw 'The checked-out source is not the selected event revision.'
+    }
+    $status = @(& git -C $Repository status --porcelain=v1 --untracked-files=all)
+    if ($LASTEXITCODE -ne 0 -or $status.Count -ne 0) {
+        throw 'The exact qualification checkout must be clean.'
+    }
+}
+
+function Get-PublicationCases {
+    $prefix = 'windows::stage::publication::'
+    return @{
+        Ordinary = @(
+            $prefix + 'native::tests::rename_buffer_has_counted_units_and_zero_replacement'
+            $prefix + 'native::tests::native_refusals_keep_unknown_effects_distinct'
+        )
+        Native = @(
+            $prefix + 'tests::absent_target_moves_original_closed_stage'
+            $prefix + 'tests::late_incumbent_and_case_alias_are_preserved'
+            $prefix + 'tests::writer_and_changed_stage_refuse_before_rename'
+            $prefix + 'tests::bound_target_and_metadata_refusals_preserve_entries'
+            $prefix + 'tests::native_success_with_observation_failure_requires_reconciliation'
+        )
+    }
+}
+
+function Select-PublicationExecutable {
+    param([string[]] $Lines, [string] $Manifest, [string] $Source)
+    $events = @($Lines | ForEach-Object { ConvertFrom-Json -InputObject $_ -Depth 32 -ErrorAction Stop } |
+        Where-Object {
+            $event = $_
+            $_.reason -ceq 'compiler-artifact' -and $_.executable -and $_.fresh -is [bool] -and !$_.fresh -and
+            $_.profile.test -is [bool] -and $_.profile.test -and
+            $_.target.name -ceq 'exacopy_platform' -and
+            $_.target.kind.Count -eq 1 -and $_.target.kind[0] -ceq 'lib' -and
+            $_.target.crate_types.Count -eq 1 -and $_.target.crate_types[0] -ceq 'lib' -and
+            $_.features.Count -eq 1 -and $_.features[0] -ceq 'experimental-windows-copy' -and
+            $_.manifest_path -and $_.target.src_path -and
+            (Convert-ReadDiffExecutableSeparators $_.manifest_path) -ceq $Manifest -and
+            (Convert-ReadDiffExecutableSeparators $_.target.src_path) -ceq $Source -and
+            @($_.filenames | Where-Object {
+                (Convert-ReadDiffExecutableSeparators $_) -ceq
+                    (Convert-ReadDiffExecutableSeparators $event.executable)
+            }).Count -eq 1
+        })
+    if ($events.Count -ne 1) {
+        throw 'Expected exactly one fresh experimental Windows platform library test image.'
+    }
+    return $events[0].executable
+}
+
+function Assert-PublicationInventory {
+    param([string[]] $All, [string[]] $Ignored)
+    $selection = Get-PublicationCases
+    $prefix = 'windows::stage::publication::'
+    foreach ($inventory in @(
+        @{ Actual = $All; Expected = @($selection.Ordinary) + @($selection.Native) },
+        @{ Actual = $Ignored; Expected = @($selection.Native) }
+    )) {
+        $actual = @($inventory.Actual | Where-Object {
+            $_.StartsWith($prefix, [StringComparison]::Ordinal)
+        } | Sort-Object -CaseSensitive)
+        $expected = @($inventory.Expected | ForEach-Object { "${_}: test" } | Sort-Object -CaseSensitive)
+        if (($actual -join [char]0) -cne ($expected -join [char]0)) {
+            throw 'The held image inventory differs from the closed publication selectors or declared ignore state.'
+        }
+    }
+}
+
+function Assert-PublicationResult {
+    param([string] $Name, [Nullable[uint32]] $ExitCode, [string] $Output)
+    if ($null -eq $ExitCode) { throw "No process exit was obtained for $Name" }
+    Assert-ReadDiffExactResult $Name $ExitCode $Output
+    if ([regex]::Matches($Output, '(?m)^test result:').Count -ne 1 -or
+        $Output -cnotmatch '(?m)^running 1 test\r?$') {
+        throw "The held executable did not report a single independent test: $Name"
+    }
+}

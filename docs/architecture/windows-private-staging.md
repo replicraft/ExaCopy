@@ -53,5 +53,60 @@ on the declared fixed local NTFS profile. Raw candidate checks and retained
 failures are at `/private/tmp/exacopy-windows-stage.4KuUIu`.
 
 The [native qualification guide](../testing.md) describes the manual lane.
+
+## Fresh-parent native publication component
+
+The same default-off feature now includes an isolated publication component
+for a fresh stage and a newly created destination parent. The caller supplies
+a continuously controlled, authorized outer directory on a fixed local
+NTFS volume. `WindowsPublicationRoot::create_destination` exclusively
+creates one direct child and confirms the held directory and its exact
+name. It refuses an existing directory. The fresh parent and continuous
+custody avoid historical target-name reuse. The stage parent and destination
+parent must be distinct and on the same physical NTFS volume. Bindings
+include the volume GUID and serial, full 128-bit native file IDs, and
+exact counted UTF-16 components.
+[Destination custody](../../crates/platform/exacopy-platform/src/windows/stage/publication/destination.rs)
+
+The caller must exclude prior and competing file and namespace mutation
+handles through final observation. Authorized participants may create a
+new incumbent. Deletion, rename-in, name reuse, parent delete-child
+effects, alternate data streams and writes to attributes, DACL or ownership
+are outside this custody contract. The adapter checks metadata and security
+descriptors for drift. Its read pin denies writes to the selected unnamed
+stream. The caller supplies the broader exclusion.
+
+`finish_for_publication` flushes and consumes the fresh stage writer, then
+provides an independently reopened read-back path for the exact placement.
+The coordinator verifies the complete stream and selects required metadata
+before sealing and supplying a matching one-shot model permit. The narrow
+stage profile checks one unnamed stream of the verified extent, owner and
+DACL, creation and last-write times, and supported attributes including
+ARCHIVE. The adapter keeps identity pinned across the DELETE-access open
+and makes one held-handle `SetFileInformationByHandle(FileRenameInfo)` call
+with replacement disabled. No pathname fallback is available. After a
+successful return it rechecks both parents, absence of the former name,
+and the exact target inode, spelling, metadata and EOF. It distinguishes
+pre-submission refusal, kernel collision, uncertain submission and a
+reported rename whose observations remain unconfirmed. Evidence stays
+held for reconciliation.
+[Publication component](../../crates/platform/exacopy-platform/src/windows/stage/publication.rs)
+
+The separate Windows Server 2025 x64 workflow selects the platform test
+image with the exact experimental feature, two ordinary ABI and status
+controls, and five ignored native cases. The owned fixed-NTFS fixture
+requires the hosted administrative token and a synthetic directory
+reparse control. The runner binds the exact image and selectors to the
+revision, checks process drainage and removes only verified owned
+artifacts. Strict Windows cross-Clippy and copy-only library code
+generation passed. Workflow and portable selection controls passed.
+Native execution of this publication profile remains pending.
+[Fixture manifest](../../crates/platform/exacopy-platform/verification/windows_ntfs_publication/fixture.toml) ·
+[Hosted workflow](../../.github/workflows/windows-ntfs-publication.yml)
+
+This component supplies no product copy command, durable intent writer,
+receipt, namespace durability, process-crash or power-loss qualification.
+The separate Stage qualification retains its own scope.
+
 Successful cross-compilation alone does not qualify this capability or
 enable Windows product copy/recovery.

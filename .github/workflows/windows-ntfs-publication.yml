@@ -1,0 +1,55 @@
+name: Windows fixed NTFS publication qualification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows-ntfs-publication.yml'
+      - '.github/ci/windows-ntfs.ps1'
+      - '.github/ci/windows-ntfs-custody.*'
+      - '.github/ci/windows-ntfs-read-diff*'
+      - '.github/ci/install.sh'
+      - '.github/ci/common.sh'
+      - 'tools/install/windows/paths.ps1'
+      - 'tools/apfs_source.py'
+      - 'tools/transport_source.py'
+      - 'specs/dependencies/apfs-source.toml'
+      - 'specs/dependencies/transport-source*'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'crates/foundation/exacopy-core/**'
+      - 'crates/foundation/exacopy-model/**'
+      - 'crates/interfaces/exacopy-endpoint/**'
+      - 'crates/platform/exacopy-platform/Cargo.toml'
+      - 'crates/platform/exacopy-platform/src/windows.rs'
+      - 'crates/platform/exacopy-platform/src/windows/**'
+      - 'crates/platform/exacopy-platform/verification/windows_ntfs_publication/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    if: github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main'
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Run held fixed-NTFS publication fixture
+        id: qualification
+        shell: pwsh
+        run: >-
+          ./crates/platform/exacopy-platform/verification/windows_ntfs_publication/run.ps1
+      - name: Retain acquired qualification evidence
+        if: always() && steps.qualification.outputs.evidence_path != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-ntfs-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.qualification.outputs.evidence_path }}
+          if-no-files-found: error
+          retention-days: 90

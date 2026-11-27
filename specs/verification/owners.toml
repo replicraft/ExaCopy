@@ -28,4 +28,5 @@ exacopy-platform = [
 	"verification/sync_history_ext4/fixture.toml",
 	"verification/sync_history_ext4_statmount/fixture.toml",
 	"verification/witnessed_components_ext4/fixture.toml",
+	"verification/windows_ntfs_publication/fixture.toml",
 ]
