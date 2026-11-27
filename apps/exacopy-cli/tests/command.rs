@@ -227,6 +227,83 @@ fn copy_refuses_unsupported_platform_without_accessing_inputs() {
 	assert_eq!(report["error"]["code"], "E_UNSUPPORTED");
 }
 
+#[cfg(not(target_os = "linux"))]
+#[test]
+fn retained_copy_inspection_refuses_unsupported_platform_with_no_evidence() {
+	let output = exacopy()
+		.args([
+			"recover",
+			"inspect",
+			"absent-job",
+			"--profile",
+			"absent-profile",
+			"--format",
+			"json",
+		])
+		.output()
+		.expect("invoke retained copy inspection on an unsupported platform");
+	assert_eq!(output.status.code(), Some(6));
+	assert!(output.stderr.is_empty());
+	let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("read report");
+	assert_eq!(
+		report,
+		serde_json::json!({
+			"schema": "exacopy.local_recovery_inspection",
+			"schema_version": "1.0",
+			"result": "failed",
+			"code": "E_UNSUPPORTED",
+			"message": "local recovery requires Linux"
+		})
+	);
+}
+
+#[test]
+fn public_stage_inspection_dispatch_refuses_without_a_valid_owner_key() {
+	const SELECTOR: &str = "inspect-public-stage";
+	let enabled = cfg!(all(
+		target_os = "linux",
+		feature = "experimental-linux-public-apply"
+	));
+	assert_eq!(help(&["recover", "--help"]).contains(SELECTOR), enabled);
+
+	let weak_key = "00".repeat(32);
+	let output = exacopy()
+		.args([
+			"recover",
+			SELECTOR,
+			"absent-job",
+			"--owner-key",
+			&weak_key,
+			"--format",
+			"json",
+		])
+		.output()
+		.expect("invoke public-stage inspection with a weak public key");
+	if enabled {
+		assert_eq!(output.status.code(), Some(8));
+		assert!(output.stderr.is_empty());
+		let report: serde_json::Value =
+			serde_json::from_slice(&output.stdout).expect("read report");
+		assert_eq!(
+			report,
+			serde_json::json!({
+				"schema": "exacopy.public_stage_inspection",
+				"schema_version": "1.0",
+				"authority": "none",
+				"status": "refused",
+				"reason": "owner_key_refused"
+			})
+		);
+	} else {
+		assert_eq!(output.status.code(), Some(2));
+		assert!(output.stdout.is_empty());
+		let stderr = String::from_utf8(output.stderr).expect("read usage");
+		assert!(stderr.contains("Usage:"));
+		assert!(!stderr.contains("absent-job"));
+		assert!(!stderr.contains(&weak_key));
+	}
+}
+
 #[test]
 fn retry_requires_one_explicit_source_root_and_profile() {
 	for (options, error) in [
