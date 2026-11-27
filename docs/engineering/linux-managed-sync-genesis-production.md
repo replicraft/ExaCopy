@@ -103,7 +103,7 @@ authorizes unlink, retry or recovery adoption.
 
 The retained portable sample passed 18 Plan, Manifest, assembler and
 historical-reader tests. The integrated host checks passed formatting,
-strict all-feature workspace Clippy, 1,056 Nextest tests with 31 skipped,
+strict all-feature workspace Clippy, 1,058 Nextest tests with 31 skipped,
 workspace doctests and the engineering policy check. The reviewed producer
 source also passed Linux x86-64 strict cross-Clippy. The exact logs and
 earlier failed candidates remain under
@@ -119,3 +119,12 @@ does not demonstrate that a separate observer held the native inodes
 through the run. Native Linux execution of this writer and separate
 process-crash and power-loss qualification remain pending.
 [Native fixture source](../../apps/exacopy-cli/tests/linux_managed_sync_genesis_production.rs)
+
+The dedicated hosted lane first builds the feature-qualified platform
+library and runs four exact intent-codec controls. It then selects the
+held SDK test executable and requires independent canonical-frame and
+signature checks, process drainage and owned-fixture cleanup. The portable
+runner and oracle controls passed, as did the fixture ownership checks.
+These checks prepare the lane; its native execution remains pending.
+[Hosted lane](../../.github/workflows/linux-managed-sync-genesis-production-qualification.yml) ·
+[Independent oracle](../../apps/exacopy-cli/verification/managed_sync_genesis_production/oracle.py)
