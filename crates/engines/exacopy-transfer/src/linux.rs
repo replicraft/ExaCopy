@@ -7,6 +7,7 @@ mod plan;
 mod receipt;
 mod recovery;
 mod replay;
+pub mod sync_genesis_measurement;
 pub mod sync_preview;
 
 pub use checkpoint::CopyCheckpoint;
