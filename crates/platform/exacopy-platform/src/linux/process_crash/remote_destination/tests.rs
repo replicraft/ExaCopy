@@ -56,6 +56,39 @@ fn destination_observer_joins_exact_writable_ext4_row_to_the_held_mount() {
 }
 
 #[test]
+fn destination_observer_accepts_ext4_with_namespace_handle_mounts_present() {
+	const ROUTE_ROW: &str = "17 13 0:4 net:[4026533115] /run/netns/route rw - nsfs nsfs rw";
+	const PEER_ROW: &str = "18 13 0:4 net:[4026533116] /run/netns/peer rw - nsfs nsfs rw";
+	let data = format!("{MOUNT_ROW}\n{ROUTE_ROW}\n{PEER_ROW}\n");
+	let rows = MountObservations::parse(data.as_bytes()).unwrap();
+	let ext4 = mount::Mount {
+		id: 13,
+		unique_id: 35,
+		device: fs::makedev(8, 1),
+	};
+	assert_eq!(remote_mount_row(&rows, ext4).unwrap(), MOUNT_ROW.as_bytes());
+	assert_eq!(rows.record_bytes(17), Some(ROUTE_ROW.as_bytes()));
+	assert_eq!(rows.record_bytes(18), Some(PEER_ROW.as_bytes()));
+
+	let nsfs = mount::Mount {
+		id: 17,
+		unique_id: 36,
+		device: fs::makedev(0, 4),
+	};
+	assert!(matches!(
+		remote_mount_row(&rows, nsfs),
+		Err(RemoteDestinationEligibilityError::UnsupportedMount)
+	));
+
+	let data = format!("{}\n", ROUTE_ROW.replace("net:[4026533115]", "/"));
+	let absolute = MountObservations::parse(data.as_bytes()).unwrap();
+	assert!(matches!(
+		remote_mount_row(&absolute, nsfs),
+		Err(RemoteDestinationEligibilityError::UnsupportedMount)
+	));
+}
+
+#[test]
 fn missing_projection_refuses_before_any_mount_observation() {
 	let scratch = Scratch::new();
 	let root = DestinationRoot::from_directory(scratch.open()).expect("held fixture directory");

@@ -1,6 +1,7 @@
 use std::ffi::CStr;
 use std::fs::File;
 use std::io::{self, Read as _};
+use std::num::NonZeroU32;
 use std::os::fd::{AsFd, OwnedFd};
 
 use rustix::fs::{self, FileType, Mode, OFlags, ResolveFlags};
@@ -118,6 +119,7 @@ pub(super) struct MountRecord<'line> {
 	pub(super) id: u64,
 	pub(super) parent: u64,
 	pub(super) device: (u32, u32),
+	// Opaque mountinfo field. The exact b"/" value denotes a whole filesystem.
 	pub(super) root: &'line [u8],
 	pub(super) mount_point: &'line [u8],
 	pub(super) mount_options: &'line [u8],
@@ -212,7 +214,7 @@ fn parse_record(line: &[u8]) -> Option<MountRecord<'_>> {
 			.parse()
 			.ok()?,
 	);
-	let root = fields.next().filter(|name| name.starts_with(b"/"))?;
+	let root = fields.next()?;
 	let mount_point = fields.next().filter(|name| name.starts_with(b"/"))?;
 	let mount_options = fields.next().filter(|field| !field.is_empty())?;
 	let mut optional_fields = Vec::new();
@@ -224,6 +226,9 @@ fn parse_record(line: &[u8]) -> Option<MountRecord<'_>> {
 		}
 	}
 	let filesystem = fields.next().filter(|field| !field.is_empty())?;
+	if !root.starts_with(b"/") && !(filesystem == b"nsfs" && namespace_handle(root).is_some()) {
+		return None;
+	}
 	let source = fields.next().filter(|field| !field.is_empty())?;
 	let super_options = fields.next().filter(|field| !field.is_empty())?;
 	if fields.next().is_some() {
@@ -241,6 +246,38 @@ fn parse_record(line: &[u8]) -> Option<MountRecord<'_>> {
 		source,
 		super_options,
 	})
+}
+
+#[derive(Clone, Copy)]
+enum NamespaceKind {
+	Cgroup,
+	Ipc,
+	Mount,
+	Network,
+	Pid,
+	Time,
+	User,
+	Uts,
+}
+
+// Linux nsfs_show_path prints the namespace's canonical kind and inode. The
+// inode comes from the unsigned int ns_common.inum. Neither is a path.
+fn namespace_handle(root: &[u8]) -> Option<(NamespaceKind, NonZeroU32)> {
+	let mut fields = root.splitn(2, |byte| *byte == b':');
+	let kind = match fields.next()? {
+		b"cgroup" => NamespaceKind::Cgroup,
+		b"ipc" => NamespaceKind::Ipc,
+		b"mnt" => NamespaceKind::Mount,
+		b"net" => NamespaceKind::Network,
+		b"pid" => NamespaceKind::Pid,
+		b"time" => NamespaceKind::Time,
+		b"user" => NamespaceKind::User,
+		b"uts" => NamespaceKind::Uts,
+		_ => return None,
+	};
+	let number = fields.next()?.strip_prefix(b"[")?.strip_suffix(b"]")?;
+	let inode = NonZeroU32::new(u32::try_from(nonzero_decimal(number)?).ok()?)?;
+	Some((kind, inode))
 }
 
 pub(super) fn nonzero_decimal(bytes: &[u8]) -> Option<u64> {
@@ -277,6 +314,39 @@ mod tests {
 		assert_eq!(table.record(23).unwrap().root, b"/");
 		assert_eq!(table.record(42).unwrap().root, b"/a\\040b");
 		assert!(table.record(99).is_none());
+	}
+
+	#[test]
+	fn admits_only_canonical_namespace_handle_roots_for_nsfs() {
+		for kind in ["cgroup", "ipc", "mnt", "net", "pid", "time", "user", "uts"] {
+			let row = format!("17 13 0:4 {kind}:[4294967295] /run/handle rw - nsfs nsfs rw\n");
+			assert!(MountObservations::parse(row.as_bytes()).is_ok(), "{row:?}");
+		}
+
+		for (root, filesystem) in [
+			("net:[1]", "ext4"),
+			("net:[1]", "nsfs.foreign"),
+			("relative", "nsfs"),
+			("socket:[1]", "nsfs"),
+			("pid_for_children:[1]", "nsfs"),
+			("time_for_children:[1]", "nsfs"),
+			("Net:[1]", "nsfs"),
+			("net:[]", "nsfs"),
+			("net:[0]", "nsfs"),
+			("net:[01]", "nsfs"),
+			("net:[+1]", "nsfs"),
+			("net:[-1]", "nsfs"),
+			("net:[１]", "nsfs"),
+			("net:[4294967296]", "nsfs"),
+			("net:[18446744073709551616]", "nsfs"),
+			("net:[1", "nsfs"),
+			("net:1]", "nsfs"),
+			("net:[1]/extra", "nsfs"),
+			("net:[1]:[2]", "nsfs"),
+		] {
+			let row = format!("17 13 0:4 {root} /run/handle rw - {filesystem} nsfs rw\n");
+			assert!(MountObservations::parse(row.as_bytes()).is_err(), "{row:?}");
+		}
 	}
 
 	#[test]
