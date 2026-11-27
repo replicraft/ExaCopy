@@ -12,6 +12,7 @@ use super::super::{
 };
 
 mod basis;
+mod live;
 
 pub use basis::{RemoteDurableReceiptBasis, RemoteReceiptReadyInspection};
 

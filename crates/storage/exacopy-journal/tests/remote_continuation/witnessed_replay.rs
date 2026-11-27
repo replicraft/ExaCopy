@@ -19,6 +19,8 @@ mod continued_coverage;
 mod live_durability;
 #[path = "witnessed_live_observation.rs"]
 mod live_observation;
+#[path = "witnessed_live_receipt.rs"]
+mod live_receipt;
 #[path = "witnessed_prepublication.rs"]
 mod prepublication;
 

@@ -261,17 +261,25 @@ impl RemoteWitnessedCloseoutReplay {
 	}
 }
 
-fn prepare_frame(
+pub(super) fn prepare_frame(
 	binding: RemoteWitnessBinding,
 	previous: RemoteReplayBoundary,
 	body: Body<'_>,
 ) -> Result<PreparedWitnessedCloseout, Error> {
 	let kind = body.kind();
 	let payload = RemoteWitnessCloseoutRecord::new(binding, previous, body).encode()?;
+	prepare_payload(previous, kind, &payload)
+}
+
+pub(super) fn prepare_payload(
+	previous: RemoteReplayBoundary,
+	kind: FrameKind,
+	payload: &[u8],
+) -> Result<PreparedWitnessedCloseout, Error> {
 	let offset = successor_end(previous, payload.len())?;
 	let mut writer = FrameWriter::new(Vec::new(), previous.head);
 	let head = writer
-		.append(kind, &payload)
+		.append(kind, payload)
 		.map_err(|_| Error::FrameBinding)?;
 	Ok(PreparedWitnessedCloseout {
 		kind,
