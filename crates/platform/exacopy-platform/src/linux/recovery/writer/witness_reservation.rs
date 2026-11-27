@@ -22,7 +22,8 @@ mod types;
 
 pub use continuation::{
 	ActiveWitnessReservation, ContinuationReservationError, PendingProtectedWitness,
-	ReservedContinuationRequest, SealedProtectedWitness,
+	ReservedContinuationRequest, SealedProtectedWitness, WitnessPrepublicationAppend,
+	WitnessPrepublicationPhase,
 };
 pub use types::{
 	WitnessReservationAuthority, WitnessReservationEffect, WitnessReservationError,

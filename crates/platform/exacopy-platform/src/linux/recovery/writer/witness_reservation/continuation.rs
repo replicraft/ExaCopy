@@ -13,7 +13,10 @@ use crate::linux::{FileIdentity, SyncedRetainedPrefix};
 mod checkpoints;
 mod witness;
 
-pub use witness::{PendingProtectedWitness, SealedProtectedWitness};
+pub use witness::{
+	PendingProtectedWitness, SealedProtectedWitness, WitnessPrepublicationAppend,
+	WitnessPrepublicationPhase,
+};
 
 // The owner codec bounds the payload to 1,024 bytes and framing to 92 bytes.
 const MAX_ENCODED_CONTINUATION: usize = 1116;

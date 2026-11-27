@@ -10,6 +10,11 @@ use crate::linux::{
 	ProtectedWitnessEffect, ProtectedWitnessError, WitnessLinkCandidate, WitnessedSuffixReadback,
 };
 
+mod prepublication;
+
+use prepublication::NativePrepublication;
+pub use prepublication::{WitnessPrepublicationAppend, WitnessPrepublicationPhase};
+
 // Maximum encoded kind 41: 605 payload bytes and 92 framing bytes.
 const MAX_ENCODED_WITNESS: usize = 697;
 
@@ -29,6 +34,7 @@ pub struct PendingProtectedWitness<'view, 'lease> {
 /// Neither resource can be detached or converted to a single-link publisher.
 #[must_use]
 pub struct SealedProtectedWitness<'view, 'lease> {
+	phase: NativePrepublication,
 	active: ActiveWitnessReservation<'lease>,
 	stage: WitnessedSuffixReadback<'view, 'lease>,
 }
@@ -160,6 +166,7 @@ impl<'view, 'lease> PendingProtectedWitness<'view, 'lease> {
 		})?;
 		check(true)?;
 		Ok(SealedProtectedWitness {
+			phase: NativePrepublication::FIRST,
 			active: self.active,
 			stage,
 		})
@@ -173,7 +180,7 @@ impl<'view, 'lease> SealedProtectedWitness<'view, 'lease> {
 		&self.stage
 	}
 
-	/// Exact accepted kind-41 boundary under the held reservation.
+	/// Exact latest accepted witness or prepublication boundary under the held reservation.
 	#[must_use]
 	pub const fn head(&self) -> Head {
 		self.active.head

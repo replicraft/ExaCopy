@@ -291,6 +291,21 @@ fn check_aliases(
 	Ok(())
 }
 
+impl WitnessedSuffixReadback<'_, '_> {
+	pub(in crate::linux::recovery::writer) fn observe_barriered_metadata(
+		&self,
+	) -> Result<SourceObservation, StageError> {
+		self.recheck_observation()?;
+		if self.stamp.mode() != crate::linux::stage::FILE_MODE.as_raw_mode()
+			|| self.stamp.owner() != rustix::process::geteuid().as_raw()
+			|| self.stamp.group() != rustix::process::getegid().as_raw()
+		{
+			return Err(StageError::UnsafeFile);
+		}
+		Ok(self.stamp)
+	}
+}
+
 impl ReadView for WitnessedSuffixReadback<'_, '_> {
 	type Error = StageError;
 

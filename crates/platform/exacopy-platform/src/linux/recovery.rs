@@ -31,9 +31,10 @@ pub use writer::{
 	ReservedContinuationRequest, ReservedJournalRead, RetainedPrefixRead, RetainedPrefixSelection,
 	RetainedStage, RetainedSuffixReadback, RetainedSuffixWriter, SealedProtectedWitness,
 	SuffixEffect, SuffixError, SyncedRetainedPrefix, SyncedSuffixRange, WitnessCredentialLane,
-	WitnessLinkCandidate, WitnessReservationAuthority, WitnessReservationEffect,
-	WitnessReservationError, WitnessReservationGateRequest, WitnessReservationObservationError,
-	WitnessReservationPlan, WitnessedSuffixReadback,
+	WitnessLinkCandidate, WitnessPrepublicationAppend, WitnessPrepublicationPhase,
+	WitnessReservationAuthority, WitnessReservationEffect, WitnessReservationError,
+	WitnessReservationGateRequest, WitnessReservationObservationError, WitnessReservationPlan,
+	WitnessedSuffixReadback,
 };
 
 #[cfg(test)]

@@ -62,6 +62,12 @@ impl<'root> RemoteDestinationEligibility<'root> {
 		Ok(())
 	}
 
+	/// Returns the selected facts this held capability checks on each revalidation.
+	#[must_use]
+	pub const fn facts(&self) -> &RemoteDestinationFacts {
+		self.expected.facts()
+	}
+
 	/// Returns the digest of the selected authenticated qualification record.
 	#[must_use]
 	pub const fn qualification_digest(&self) -> [u8; 32] {

@@ -58,7 +58,12 @@ fn actual_descriptor_link_keeps_both_names_and_held_exclusion() {
 			.inventory(selected.stage, selected.target)
 			.is_err()
 	);
-	linked.recheck_observation().unwrap();
+	let metadata = linked.observe_barriered_metadata().unwrap();
+	assert_eq!(metadata.mode(), 0o600);
+	assert_eq!(metadata.owner(), rustix::process::geteuid().as_raw());
+	assert_eq!(metadata.group(), rustix::process::getegid().as_raw());
+	assert_eq!(metadata.len(), PREFIX.len() as u64);
+	assert_eq!(metadata.link_count(), 2);
 	let mut bytes = [0; PREFIX.len()];
 	linked.read_exact_at(0, &mut bytes).unwrap();
 	assert_eq!(bytes, PREFIX);
@@ -67,7 +72,7 @@ fn actual_descriptor_link_keeps_both_names_and_held_exclusion() {
 		Err(StageError::JobBusy)
 	));
 	fs::remove_file(&path).unwrap();
-	assert!(linked.recheck_observation().is_err());
+	assert!(linked.observe_barriered_metadata().is_err());
 }
 
 #[test]
