@@ -83,7 +83,7 @@ assumptions = [
     "Replay checks historical declarations and exact framing. It does not establish native object provenance, file or namespace durability, selected route qualification, current grant or writable authority.",
 ]
 gates = ["rust"]
-rust = { file = "tests/remote_finalization_replay.rs", test = "only_clear_exact_commit_associates_receipt_after_accepted_checkpoint", oracle = "A receipt associates only with the exact terminal commitment following an authenticated bootstrap and checked current checkpoint prefix. Foreign commitment, missing or malformed artifact and a torn suffix prevent association and retain the preceding accepted boundary." }
+rust = { file = "tests/remote_finalization_replay.rs", test = "only_clear_exact_commit_associates_receipt_after_accepted_checkpoint", oracle = "A receipt associates only with the exact terminal commitment following an authenticated bootstrap and checked current checkpoint prefix. Foreign commitment, missing or malformed artifact, a torn suffix and an I/O error while confirming terminal EOF prevent association and retain the preceding accepted boundary. Terminal I/O failure preserves the committed phase, exact known head and byte extent, and nested error without validating the receipt." }
 
 [[obligation]]
 id = "P-049"

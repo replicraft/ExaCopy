@@ -172,6 +172,21 @@ fn owner() -> RemoteDownloadOwnerRecord {
 
 #[test]
 fn only_clear_exact_commit_associates_receipt_after_accepted_checkpoint() {
+	use std::io::{self, Read};
+
+	use exacopy_journal::frame::FrameReadError;
+
+	struct UnconfirmedEnd;
+
+	impl Read for UnconfirmedEnd {
+		fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+			if buffer.is_empty() {
+				return Ok(0);
+			}
+			Err(io::ErrorKind::PermissionDenied.into())
+		}
+	}
+
 	let owner = owner();
 	let key = signer().verifying_key();
 	let trust = RemoteBootstrapTrust::new(&owner, profile(), &key).unwrap();
@@ -239,6 +254,27 @@ fn only_clear_exact_commit_associates_receipt_after_accepted_checkpoint() {
 	assert!(matches!(
 		inspect(Some(&bytes[..bytes.len() - 1])).receipt_association(),
 		Association::Refused(_)
+	));
+
+	let committed_end = u64::try_from(journal.bytes.len()).unwrap();
+	let unreadable = replay_remote_finalization(
+		journal.bytes.as_slice().chain(UnconfirmedEnd),
+		&trust,
+		QUALIFICATION,
+		Some(&bytes),
+	)
+	.unwrap();
+	assert_eq!(unreadable.phase(), Phase::ReceiptCommitted);
+	assert_eq!(unreadable.boundary(), matched.boundary());
+	assert_eq!(unreadable.boundary().head, journal.head);
+	assert_eq!(unreadable.boundary().offset, committed_end);
+	assert_eq!(unreadable.receipt_association(), Association::UnclearEnd);
+	assert!(unreadable.validated_receipt().unwrap().is_none());
+	assert!(matches!(
+		unreadable.issue(),
+		Some(RemoteReplayIssue::Framing(FrameReadError::Io { offset, source }))
+			if *offset == committed_end
+				&& source.kind() == io::ErrorKind::PermissionDenied
 	));
 
 	journal.bytes.extend_from_slice(b"EXA");
