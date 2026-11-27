@@ -217,3 +217,33 @@ fn assert_missing(path: &Path) {
 		"expected absent name at {path:?}"
 	);
 }
+
+#[test]
+fn committed_receipt_refuses_pending_name_before_invalid_public_artifacts() {
+	let fixture = Fixture::new();
+	let selection = fixture.selection();
+	let job = fixture
+		.root
+		.open_recovery_job(UnixComponent::new(JOB.as_bytes()).unwrap())
+		.unwrap();
+	let lease = job.try_read_lease().unwrap();
+	let records = lease.hold_witnessed_terminal_journal().unwrap();
+	let pending = fixture.path(PENDING);
+	let extra = fixture.scratch.path("third-public-link");
+	write_fixture(&pending, b"unexpected pending receipt");
+	fs::hard_link(fixture.scratch.path(TARGET), &extra).unwrap();
+
+	assert!(matches!(
+		records.inspect_receipt_ready(selection),
+		Err(StageError::UnsafeFile)
+	));
+	assert!(matches!(
+		records.inspect(selection),
+		Err(StageError::IdentityChanged)
+	));
+	assert_eq!(fs::read(&pending).unwrap(), b"unexpected pending receipt");
+	assert_file(&fixture.scratch.path(TARGET), selection.stage.file, DATA);
+	assert_file(&fixture.path(WITNESS), selection.stage.file, DATA);
+	assert_file(&extra, selection.stage.file, DATA);
+	assert_file(&fixture.path(FINAL), selection.receipt, RECEIPT_BYTES);
+}

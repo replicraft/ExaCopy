@@ -7,7 +7,7 @@ use exacopy_endpoint::UnixComponent;
 
 use super::{
 	FIRST_SEGMENT, JOURNAL, JobFileIdentity, OWNER, RetainedPrefixSelection, StageError,
-	WitnessedPublishedSelection, WitnessedTerminalSelection,
+	WitnessedPublishedSelection, WitnessedReceiptLocation, WitnessedTerminalSelection,
 };
 use crate::linux::DestinationRoot;
 use crate::linux::job::STAGE;
@@ -228,6 +228,49 @@ fn witnessed_public_assessment_checks_two_aliases_without_using_receipt_names() 
 		b"unexpected private stage bytes"
 	);
 	assert!(!receipt.exists());
+}
+
+#[test]
+fn receipt_ready_view_requires_one_exact_name_and_rejects_late_name_changes() {
+	let fixture = Fixture::new();
+	let selected = fixture.selection();
+	let job = fixture
+		.root
+		.open_recovery_job(UnixComponent::new(JOB.as_bytes()).unwrap())
+		.unwrap();
+	let lease = job.try_read_lease().unwrap();
+	let records = lease.hold_witnessed_terminal_journal().unwrap();
+	let pending = fixture.path(PENDING);
+	let final_name = fixture.path(FINAL);
+
+	let final_view = records.inspect_receipt_ready(selected).unwrap();
+	assert_eq!(
+		final_view.receipt_location(),
+		WitnessedReceiptLocation::Final
+	);
+	fs::rename(&final_name, &pending).unwrap();
+	assert!(final_view.recheck().is_err());
+	assert!(records.inspect(selected).is_err());
+
+	let pending_view = records.inspect_receipt_ready(selected).unwrap();
+	assert_eq!(
+		pending_view.receipt_location(),
+		WitnessedReceiptLocation::Pending
+	);
+	assert_eq!(
+		JobFileIdentity::from(pending_view.receipt().identity()),
+		selected.receipt
+	);
+
+	write_fixture(&final_name, RECEIPT_BYTES);
+	assert!(pending_view.recheck().is_err());
+	assert!(records.inspect_receipt_ready(selected).is_err());
+	fs::remove_file(&pending).unwrap();
+	// The remaining file has exact bytes and mode, but the wrong inode.
+	assert!(records.inspect_receipt_ready(selected).is_err());
+	assert_eq!(fs::read(&final_name).unwrap(), RECEIPT_BYTES);
+	fs::remove_file(&final_name).unwrap();
+	assert!(records.inspect_receipt_ready(selected).is_err());
 }
 
 fn write_fixture(path: &Path, bytes: &[u8]) {

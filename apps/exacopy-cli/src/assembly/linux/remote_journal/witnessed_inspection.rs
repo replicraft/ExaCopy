@@ -4,16 +4,18 @@ use exacopy_content::{MeasureError, measure_at};
 use exacopy_endpoint::linux_job::JobFileIdentity;
 use exacopy_journal::remote_download::RemoteDownloadScope;
 use exacopy_journal::remote_download::replay::{RemoteReplayBoundary, RemoteReplayIssue};
+use exacopy_journal::remote_download::witness::RemoteReceiptReady;
 use exacopy_journal::remote_download::witness::records::RemoteWitnessedOutcome;
 use exacopy_journal::remote_download::witness::replay::{
-	RemoteCommittedReceiptInspection, RemoteWitnessedCloseoutReplay,
+	RemoteCommittedReceiptInspection, RemoteReceiptReadyInspection, RemoteWitnessedCloseoutReplay,
 	RemoteWitnessedPublicExpectation, RemoteWitnessedReplayPhase, RemoteWitnessedReplaySelection,
 	replay_remote_witnessed_closeout,
 };
 use exacopy_journal::{JournalJobId, LinuxFileIdentity};
 use exacopy_platform::linux::{
 	DestinationRoot, ReadError, RecoveryFile, RetainedPrefixSelection, WitnessedPublishedSelection,
-	WitnessedTerminalJournal, WitnessedTerminalSelection, observe_remote_destination,
+	WitnessedReceiptLocation, WitnessedTerminalJournal, WitnessedTerminalSelection,
+	observe_remote_destination,
 };
 
 use crate::profile::LocalProfile;
@@ -44,6 +46,14 @@ pub(in crate::assembly::linux) struct WitnessedTerminalInspection {
 pub(in crate::assembly::linux) struct WitnessedIntentAssessment {
 	pub(in crate::assembly::linux) intent: RemoteReplayBoundary,
 	pub(in crate::assembly::linux) target: LinuxFileIdentity,
+}
+
+/// Read-only association of a single verified receipt name at the exact kind-42 cut.
+#[derive(Debug)]
+pub(in crate::assembly::linux) struct WitnessedReceiptReadyAssessment {
+	pub(in crate::assembly::linux) ready: RemoteReplayBoundary,
+	pub(in crate::assembly::linux) location: WitnessedReceiptLocation,
+	pub(in crate::assembly::linux) receipt: LinuxFileIdentity,
 }
 
 #[derive(Debug)]
@@ -77,7 +87,12 @@ impl WitnessedInspectionRequest<'_> {
 			let inspection = terminal_history(replay, held.segment_length())?;
 			let selected = inspection.record();
 			let artifacts = held
-				.inspect(native_selection(&inspection)?)
+				.inspect(native_selection(
+					inspection.publication(),
+					selected,
+					inspection.pending_name(),
+					inspection.final_name(),
+				)?)
 				.map_err(Error::from)?;
 			self.verify_public(inspection.publication(), artifacts.target(), scratch)?;
 			let receipt = artifacts.receipt();
@@ -114,6 +129,41 @@ impl WitnessedInspectionRequest<'_> {
 			Ok(WitnessedIntentAssessment {
 				intent: inspection.boundary(),
 				target: record_identity(artifacts.target().identity()),
+			})
+		})
+	}
+
+	/// Observes the exact pending or promoted receipt at clean kind 42 under shared custody.
+	pub(in crate::assembly::linux) fn inspect_receipt_ready(
+		self,
+		scratch: &mut [u8],
+	) -> Result<WitnessedReceiptReadyAssessment, WitnessedInspectionError> {
+		self.with_history(|held, replay| {
+			let inspection = receipt_ready_history(replay, held.segment_length())?;
+			let selected = inspection.record();
+			let artifacts = held
+				.inspect_receipt_ready(native_selection(
+					inspection.publication(),
+					selected,
+					inspection.pending_name(),
+					inspection.final_name(),
+				)?)
+				.map_err(Error::from)?;
+			self.verify_public(inspection.publication(), artifacts.target(), scratch)?;
+
+			let receipt = artifacts.receipt();
+			let identity = record_identity(receipt.identity());
+			let mut bytes = vec![0; usize::from(selected.length())];
+			receipt.read_exact_at(0, &mut bytes).map_err(Error::from)?;
+			receipt.check_logical_eof().map_err(Error::from)?;
+			verify_receipt_ready_bytes(&inspection, identity, &bytes)?;
+
+			self.check_substrate()?;
+			artifacts.recheck().map_err(Error::from)?;
+			Ok(WitnessedReceiptReadyAssessment {
+				ready: inspection.boundary(),
+				location: artifacts.receipt_location(),
+				receipt: identity,
 			})
 		})
 	}
@@ -222,6 +272,31 @@ pub(in crate::assembly::linux) fn intent_history(
 		.map_err(|cause| Error::from(cause).into())
 }
 
+pub(in crate::assembly::linux) fn receipt_ready_history(
+	replay: &RemoteWitnessedCloseoutReplay,
+	native_end: u64,
+) -> Result<RemoteReceiptReadyInspection<'_>, WitnessedInspectionError> {
+	require_phase(
+		replay,
+		native_end,
+		RemoteWitnessedReplayPhase::ReceiptReadyRequiresInspection,
+	)?;
+	replay
+		.receipt_ready_inspection()
+		.map_err(|cause| Error::from(cause).into())
+}
+
+pub(in crate::assembly::linux) fn verify_receipt_ready_bytes(
+	inspection: &RemoteReceiptReadyInspection<'_>,
+	identity: LinuxFileIdentity,
+	bytes: &[u8],
+) -> Result<(), WitnessedInspectionError> {
+	if identity != inspection.record().receipt() || bytes != inspection.bytes() {
+		return Err(WitnessedInspectionError::ReceiptMismatch);
+	}
+	Ok(())
+}
+
 fn require_phase(
 	replay: &RemoteWitnessedCloseoutReplay,
 	native_end: u64,
@@ -245,10 +320,12 @@ fn require_phase(
 }
 
 fn native_selection<'name>(
-	inspection: &'name RemoteCommittedReceiptInspection<'_>,
+	publication: &'name RemoteWitnessedPublicExpectation<'_>,
+	receipt: RemoteReceiptReady,
+	pending_name: &[u8],
+	final_name: &[u8],
 ) -> Result<WitnessedTerminalSelection<'name>, Error> {
-	let published = public_selection(inspection.publication())?;
-	let receipt = inspection.record();
+	let published = public_selection(publication)?;
 	Ok(WitnessedTerminalSelection {
 		job: published.job,
 		destination: published.destination,
@@ -258,14 +335,8 @@ fn native_selection<'name>(
 		gid: published.gid,
 		extent: published.extent,
 		journal_end: published.journal_end,
-		pending_name: inspection
-			.pending_name()
-			.try_into()
-			.map_err(|_| Error::Binding)?,
-		final_name: inspection
-			.final_name()
-			.try_into()
-			.map_err(|_| Error::Binding)?,
+		pending_name: pending_name.try_into().map_err(|_| Error::Binding)?,
+		final_name: final_name.try_into().map_err(|_| Error::Binding)?,
 		receipt: identity(receipt.receipt()),
 		receipt_len: receipt.length(),
 	})

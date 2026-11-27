@@ -71,6 +71,19 @@ fn clean_live_and_recovered_archives_project_exact_terminal_inspection() {
 		let ready_offset = usize::try_from(checked.record().boundary().offset).unwrap();
 		let at_ready = scan(&run, &bytes[..ready_offset], FRESH);
 		let prior = at_ready.receipt_ready_inspection().unwrap();
+		let publication = prior.publication();
+		assert_eq!(publication.boundary(), checked.record().boundary());
+		assert_eq!(publication.witness(), checked.witness());
+		assert_eq!(publication.allocation(), checked.allocation());
+		assert_eq!(publication.stage().head, checked.stage().head);
+		assert_eq!(publication.stage().directory, checked.stage().directory);
+		assert_eq!(publication.stage().file, checked.stage().file);
+		assert_eq!(publication.stage_name(), checked.stage_name());
+		assert_eq!(publication.destination(), destination);
+		assert_eq!(publication.extent(), checked.extent());
+		assert_eq!(publication.stage_digest(), checked.stage_digest());
+		assert_eq!(publication.metadata(), checked.metadata());
+		assert_eq!(publication.mode(), checked.mode());
 		assert_eq!(checked.pending_name(), prior.pending_name());
 		assert_eq!(checked.final_name(), prior.final_name());
 		assert!(

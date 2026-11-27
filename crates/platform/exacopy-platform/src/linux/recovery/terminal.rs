@@ -19,7 +19,16 @@ pub use published::{WitnessedPublishedArtifacts, WitnessedPublishedSelection};
 const MAX_FIRST_SEGMENT: u64 = 64 * 1024 * 1024;
 const MAX_RECEIPT_LENGTH: u16 = 6_144;
 
-/// Native facts selected from the independently authenticated terminal history.
+/// The sole selected receipt name observed in the held job directory.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WitnessedReceiptLocation {
+	/// The exact pending name exists and the final name is absent.
+	Pending,
+	/// The exact final name exists and the pending name is absent.
+	Final,
+}
+
+/// Native facts selected from independently authenticated receipt history.
 #[derive(Clone, Copy)]
 pub struct WitnessedTerminalSelection<'name> {
 	/// Protected job root selected by the history.
@@ -30,9 +39,9 @@ pub struct WitnessedTerminalSelection<'name> {
 	pub stage: RetainedPrefixSelection<'name>,
 	/// Exact witness name in the protected job root.
 	pub witness_name: [u8; 40],
-	/// Exact receipt pending name, which must be absent.
+	/// Exact receipt pending name.
 	pub pending_name: [u8; 101],
-	/// Exact committed receipt final name.
+	/// Exact receipt final name.
 	pub final_name: [u8; 99],
 	/// File owner selected by the recorded metadata policy.
 	pub uid: u32,
@@ -44,7 +53,7 @@ pub struct WitnessedTerminalSelection<'name> {
 	pub receipt: JobFileIdentity,
 	/// Exact canonical receipt byte count.
 	pub receipt_len: u16,
-	/// Exact end offset of the accepted terminal journal.
+	/// Exact end offset of the accepted journal.
 	pub journal_end: u64,
 }
 
@@ -159,6 +168,29 @@ impl<'lease> WitnessedTerminalJournal<'lease> {
 		&self,
 		selection: WitnessedTerminalSelection<'name>,
 	) -> Result<WitnessedTerminalArtifacts<'_, 'lease, 'name>, StageError> {
+		self.inspect_receipt(selection, Some(WitnessedReceiptLocation::Final))
+	}
+
+	/// Pins the witnessed public file and exactly one of the protected receipt names.
+	///
+	/// The caller independently authenticates the owner and complete journal,
+	/// compares the public digest and canonical receipt bytes, confirms the
+	/// current profile, and rechecks the returned view around the reads.
+	///
+	/// # Errors
+	/// Refuses missing, simultaneous, unsafe or changed receipt names or other evidence.
+	pub fn inspect_receipt_ready<'name>(
+		&self,
+		selection: WitnessedTerminalSelection<'name>,
+	) -> Result<WitnessedTerminalArtifacts<'_, 'lease, 'name>, StageError> {
+		self.inspect_receipt(selection, None)
+	}
+
+	fn inspect_receipt<'name>(
+		&self,
+		selection: WitnessedTerminalSelection<'name>,
+		expected: Option<WitnessedReceiptLocation>,
+	) -> Result<WitnessedTerminalArtifacts<'_, 'lease, 'name>, StageError> {
 		self.recheck()?;
 		let job = self.lease.job();
 		if !matches_names(
@@ -188,7 +220,10 @@ impl<'lease> WitnessedTerminalJournal<'lease> {
 
 		let mount = job.root.mount;
 		let parent = &job.directory.file;
-		check_absent(parent, OsStr::from_bytes(&selection.pending_name))?;
+		let pending_name = OsStr::from_bytes(&selection.pending_name);
+		if expected == Some(WitnessedReceiptLocation::Final) {
+			check_absent(parent, pending_name)?;
+		}
 		let published = self.inspect_published(WitnessedPublishedSelection {
 			job: selection.job,
 			destination: selection.destination,
@@ -199,11 +234,22 @@ impl<'lease> WitnessedTerminalJournal<'lease> {
 			extent: selection.extent,
 			journal_end: selection.journal_end,
 		})?;
-		let receipt = open_checked_record(parent, OsStr::from_bytes(&selection.final_name), mount)?
-			.ok_or(StageError::IdentityChanged)?;
+		let pending = if expected == Some(WitnessedReceiptLocation::Final) {
+			None
+		} else {
+			open_checked_record(parent, pending_name, mount)?
+		};
+		let final_receipt =
+			open_checked_record(parent, OsStr::from_bytes(&selection.final_name), mount)?;
+		let (location, receipt) = match (pending, final_receipt) {
+			(Some(receipt), None) => (WitnessedReceiptLocation::Pending, receipt),
+			(None, Some(receipt)) => (WitnessedReceiptLocation::Final, receipt),
+			_ => return Err(StageError::IdentityChanged),
+		};
 		let artifacts = WitnessedTerminalArtifacts {
 			published,
 			selection,
+			location,
 			receipt,
 		};
 		artifacts.recheck()?;
@@ -248,6 +294,7 @@ impl Read for WitnessedTerminalSegment<'_> {
 pub struct WitnessedTerminalArtifacts<'held, 'lease, 'name> {
 	published: WitnessedPublishedArtifacts<'held, 'lease, 'name>,
 	selection: WitnessedTerminalSelection<'name>,
+	location: WitnessedReceiptLocation,
 	receipt: RecoveryFile,
 }
 
@@ -258,7 +305,13 @@ impl WitnessedTerminalArtifacts<'_, '_, '_> {
 		self.published.target()
 	}
 
-	/// Actual held final receipt inode, with the pending name independently absent.
+	/// Location of the receipt under the held read lease.
+	#[must_use]
+	pub const fn receipt_location(&self) -> WitnessedReceiptLocation {
+		self.location
+	}
+
+	/// Actual held receipt inode, with the other receipt name independently absent.
 	#[must_use]
 	pub const fn receipt(&self) -> &RecoveryFile {
 		&self.receipt
@@ -287,6 +340,7 @@ impl WitnessedTerminalArtifacts<'_, '_, '_> {
 		self.receipt
 			.recheck_observation()
 			.map_err(StageError::ReadBack)?;
+		self.published.recheck()?;
 		self.check_receipt_names()?;
 		self.published.recheck()
 	}
@@ -294,14 +348,21 @@ impl WitnessedTerminalArtifacts<'_, '_, '_> {
 	fn check_receipt_names(&self) -> Result<(), StageError> {
 		let job = self.published.records.lease.job();
 		let parent = &job.directory.file;
-		check_absent(parent, OsStr::from_bytes(&self.selection.pending_name))?;
+		let pending = OsStr::from_bytes(&self.selection.pending_name);
+		let final_name = OsStr::from_bytes(&self.selection.final_name);
+		let (name, absent) = match self.location {
+			WitnessedReceiptLocation::Pending => (pending, final_name),
+			WitnessedReceiptLocation::Final => (final_name, pending),
+		};
+		check_absent(parent, absent)?;
 		recheck_regular(
 			parent,
-			OsStr::from_bytes(&self.selection.final_name),
+			name,
 			job.root.mount,
 			FilePolicy::Record,
 			Some(&self.receipt),
-		)
+		)?;
+		check_absent(parent, absent)
 	}
 }
 
