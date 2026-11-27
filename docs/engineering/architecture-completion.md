@@ -142,6 +142,16 @@ verifier, continuation model and signed kind-40 codec are implemented.
 Continued replay, tail append authority and finalization remain separate from
 the current fresh-attempt command. [Registered contracts](../../specs/contracts/versions.toml)
 
+At `9a3f6b8`, the experimental Linux SDK passes its two completed reads
+and fresh facts from the final held-name checks to the pure P-053 admission
+decision. The coordinator binds the selected scan before either read and
+retains it in the measured token through P-063 assembly. P-053 uses exact
+per-call equality labels for mode, UID and GID. P-063 retains its own
+canonical metadata digest and frozen artifact bytes. Native qualification
+for this revision is pending. The bounded P-053 oracle covers admission
+over reported facts. [Model projection](../../crates/engines/exacopy-transfer/src/linux/sync_genesis_measurement/model_admission.rs) ·
+[Native SDK profile](linux-managed-sync-genesis-production.md)
+
 - **APFS companion.** The source and live staging/publication adapters use
   the companion mechanisms, including the strict stage ACL predicate and
   explicit partial-read diagnostics. Restart inspection uses the pinned
