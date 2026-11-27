@@ -110,21 +110,48 @@ earlier failed candidates remain under
 `target/agent-evidence/root-genesis-public-intent/` and
 `target/agent-evidence/parallel-roadmap/sync_genesis_producer/`.
 
-The feature-qualified ignored fixture
+### First hosted native execution
+
+The hosted run at `993668d` executed on whole ext4 with Linux
+`7.0.0-1014-aws`, UID/GID 1001 and full identity maps. It separately ran
+four ordinary Rust intent-codec tests against the held platform library
+test image. They checked the v1 layout and byte order, malformed extent
+and inventory, swapped same-kind members and foreign approval, and the
+independent exact-selection oracle. All four passed. The 12 normal-list,
+ignored-list and execution processes drained.
+[Hosted run](https://github.com/replicraft/ExaCopy/actions/runs/45940037039)
+
+The separate feature-qualified SDK test
 `production_managed_genesis_publishes_and_previews_exact_p063_history`
-compiles the real producer, existing Init and authenticated preview.
-It includes an optional bounded capture for independent artifact
-verification. An offline capture can check canonical output bytes. It
-does not demonstrate that a separate observer held the native inodes
-through the run. Native Linux execution of this writer and separate
-process-crash and power-loss qualification remain pending.
+passed its eight controls. They cover content or metadata mismatch, absence
+or aliasing, overlapping output, an occupied final name, same-operation
+replay, and missing selected history. The positive path published exact
+genesis, explicitly selected it through managed Init, and observed both
+no change and a right-side copy candidate in read-only preview.
+
+The runner matched the result frame to the held launch PID, ordered
+anchors, actor, boot, mount and user namespaces, and ordinary and unique
+mount IDs. The pinned independent oracle reproduced the four-member
+signed closure and 364-byte intent with the fixture key. The canonical root
+digest was `1e0fca22430315685274457f847a9cb26bc359fe52455dd654b8f8f139c84401`.
+The frame SHA-256
+was `8901b2283ee6582021703f54f44210d9094cfe73af330705d7b01963973638bc`. The held
+platform and SDK ELF SHA-256 values were
+`df2b9eeba48d02f5ed4c3da059e5e69820799b0770f86c2b548e33d59fec73a4` and
+`f1c9ee9c0d1b3a3c338ccdfa09851a2003ca17f1698af91d9f4b35f599d4e340`, respectively.
+The result JSON SHA-256 was
+`bafc0efc0837b610d17faed155620ed81856598820b1b758e9ea58ee4dc022a3`. Source,
+lockfile and fixture checks matched this revision, and the SDK's three
+process groups drained. The wrapper confirmed fixture and build removal.
+The retained capture permits independent artifact comparison. The inner
+file identities remain observations made by the held SDK fixture.
+[Native report](https://github.com/replicraft/ExaCopy/actions/runs/45940037039/artifacts/15172252732) ·
 [Native fixture source](../../apps/exacopy-cli/tests/linux_managed_sync_genesis_production.rs)
 
-The dedicated hosted lane first builds the feature-qualified platform
-library and runs four exact intent-codec controls. It then selects the
-held SDK test executable and requires independent canonical-frame and
-signature checks, process drainage and owned-fixture cleanup. The portable
-runner and oracle controls passed, as did the fixture ownership checks.
-These checks prepare the lane; its native execution remains pending.
+This execution covers the synthetic owner-managed SDK producer and
+read-only preview under the recorded cooperative ext4 profile. CLI
+activation, process-crash and power-loss qualification remain open. The
+mount was `/dev/mapper/cow-root` with `journal_async_commit`, `nobarrier`,
+`commit=30` and `data=writeback`.
 [Hosted lane](../../.github/workflows/linux-managed-sync-genesis-production-qualification.yml) ·
 [Independent oracle](../../apps/exacopy-cli/verification/managed_sync_genesis_production/oracle.py)
