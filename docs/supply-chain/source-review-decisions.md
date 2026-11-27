@@ -91,9 +91,11 @@ objects have no executable or linker-directive sections. The record assumes
 trusted Cargo build paths, linker and deployment module lookup. Imported
 module basenames do not authenticate resolved modules. Native linking,
 external ABI behavior and independent generation remain unverified. No package
-code ran. Cargo Vet evaluation of this added record is pending; the last
-verified report above still had 165 gaps. The record, two independent reviews
-and complete member inventories remain under
+code ran. The hosted `ab8319a` replay removed exactly this package's gap,
+reducing 165 to 164: 163 `safe-to-deploy` and one `safe-to-run` records remain.
+The gate still fails; its other rows and dependency-policy outputs are unchanged.
+[Exact dependency-policy job](https://github.com/replicraft/ExaCopy/actions/runs/46048291349/job/140672939545).
+The record, two independent reviews and complete member inventories remain under
 `target/agent-evidence/dependency-source-next/`.
 
 ## Records left open
