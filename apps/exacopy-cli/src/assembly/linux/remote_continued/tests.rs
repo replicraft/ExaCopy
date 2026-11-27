@@ -319,6 +319,55 @@ fn check_exact_live_witness_vector(
 		)
 		.is_err()
 	);
+
+	check_live_prepublication_successors(full, trust, selection, recorded, framed);
+}
+
+fn check_live_prepublication_successors(
+	full: &[u8],
+	trust: &RemoteBootstrapTrust<'_>,
+	selection: &RemoteWitnessedReplaySelection<'_>,
+	witness: exacopy_journal::remote_download::witness::RemoteWitnessIntent,
+	mut frames: FrameReader<&[u8]>,
+) {
+	use super::witness::prepublication::confirm_successor;
+	use exacopy_journal::remote_download::witness::replay::RemoteWitnessedReplayPhase as Phase;
+	for (kind, phase) in [
+		(FrameKind::StageSealed, Phase::Sealed),
+		(FrameKind::VerificationRecorded, Phase::Verified),
+		(FrameKind::MetadataRecorded, Phase::MetadataReady),
+		(
+			FrameKind::PublishIntent,
+			Phase::PublishIntentRequiresObservation,
+		),
+	] {
+		let previous = frames.offset() as usize;
+		let frame = frames.next_frame().unwrap().unwrap();
+		assert_eq!(frame.kind(), kind);
+		let expected = RemoteReplayBoundary {
+			head: frame.head(),
+			offset: frames.offset(),
+		};
+		let end = expected.offset as usize;
+		let proposed = full[..previous].chain(&full[previous..end]);
+		confirm_successor(proposed, trust, selection, witness, expected, phase).unwrap();
+		confirm_successor(&full[..end], trust, selection, witness, expected, phase).unwrap();
+		assert!(
+			confirm_successor(&full[..end - 1], trust, selection, witness, expected, phase)
+				.is_err()
+		);
+		assert!(
+			confirm_successor(
+				&full[..end],
+				trust,
+				selection,
+				witness,
+				expected,
+				Phase::WitnessIntentRequiresInspection,
+			)
+			.is_err()
+		);
+	}
 }
 
 mod hosted_witness;

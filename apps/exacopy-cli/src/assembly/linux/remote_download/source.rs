@@ -28,6 +28,8 @@ mod embedded;
 mod route_binding;
 #[cfg(test)]
 pub(in crate::assembly::linux) use route_binding::BoundRouteRetirement;
+#[cfg(test)]
+pub(in crate::assembly::linux) use route_binding::RetiredBoundRoute;
 mod route_lifetime;
 
 pub(crate) use direct::DirectConnectError;

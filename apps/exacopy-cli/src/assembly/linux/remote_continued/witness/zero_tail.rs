@@ -1,6 +1,7 @@
 use crate::assembly::linux::remote_continued::prefix::WitnessPrefix;
 use std::io::{Cursor, Read as _};
 
+use exacopy_content::{StreamInputError, validate_stream_input};
 use exacopy_endpoint::connection_retry::{ConnectionBinding, RetryError};
 use exacopy_journal::remote_download::continuation::RemoteContinuationExpectation;
 use exacopy_platform::linux::{
@@ -9,8 +10,13 @@ use exacopy_platform::linux::{
 };
 use exacopy_sftp::{SftpSource, SftpSourceError};
 use exacopy_transfer::remote_resume::prefix::VerifiedHeldRetainedPrefix;
+use exacopy_transfer::remote_witnessed_finalization::{
+	WitnessedPrepublicationFailure, WitnessedPublicationIntent,
+};
 
-use super::{VerifiedWitnessedStage, WitnessAdmissionError, WitnessFailure, WitnessPass};
+use super::prepublication::WitnessedAdapterError;
+
+use super::{LinkedWitnessedStage, WitnessAdmissionError, WitnessFailure, WitnessPass};
 use crate::assembly::linux::remote_continued::activation::{
 	AdmissionError, Kind40Admission, confirm_selected, reservation_plan,
 };
@@ -35,16 +41,66 @@ pub(in crate::assembly::linux::remote_continued) enum ZeroTailWitnessFailure {
 	Prefix(SuffixError<WitnessAdmissionError>),
 	Continuation(AdmissionError<WitnessAdmissionError>),
 	Link(WitnessFailure<SftpSourceError>),
+	PrepublicationInput(StreamInputError),
+	Prepublication(Box<WitnessedPrepublicationFailure<WitnessedAdapterError>>),
 }
 
-impl WitnessPass<'_, '_> {
+impl<'scope, 'name> WitnessPass<'scope, 'name> {
 	/// Runs a complete zero-tail pass under the one original stage and route.
 	/// The final callback may inspect two-link custody inside the reader scope.
 	pub(in crate::assembly::linux::remote_continued) async fn run_zero_tail<Check, T>(
 		&self,
 		proof: VerifiedHeldRetainedPrefix<'_, SftpSource<'_, Check>, WitnessPrefix<'_>>,
 		run: ZeroTailWitness<'_>,
-		finish: impl for<'view, 'lease> FnOnce(VerifiedWitnessedStage<'view, 'lease>) -> T,
+		finish: impl for<'view, 'lease> FnOnce(LinkedWitnessedStage<'view, 'lease, 'scope, 'name>) -> T,
+	) -> Result<T, ZeroTailWitnessFailure>
+	where
+		Check: FnMut(ConnectionBinding) -> Result<(), RetryError>,
+	{
+		self.with_zero_tail_link(proof, run, |linked, scratch| {
+			linked
+				.confirm_digest(scratch)
+				.map_err(ZeroTailWitnessFailure::Link)?;
+			Ok(finish(linked))
+		})
+		.await
+	}
+
+	/// Keeps the originating held stage and original OP2 reservation through checked kind 7.
+	/// The caller supplies the native eligibility matched to the same independently selected OP2.
+	pub(in crate::assembly::linux::remote_continued) async fn run_zero_tail_prepublication<
+		Check,
+		T,
+	>(
+		&self,
+		proof: VerifiedHeldRetainedPrefix<'_, SftpSource<'_, Check>, WitnessPrefix<'_>>,
+		run: ZeroTailWitness<'_>,
+		finish: impl for<'view, 'lease> FnOnce(
+			WitnessedPublicationIntent<LinkedWitnessedStage<'view, 'lease, 'scope, 'name>>,
+		) -> T,
+	) -> Result<T, ZeroTailWitnessFailure>
+	where
+		Check: FnMut(ConnectionBinding) -> Result<(), RetryError>,
+	{
+		validate_stream_input(self.names.source_extent, run.scratch.len())
+			.map_err(ZeroTailWitnessFailure::PrepublicationInput)?;
+		self.with_zero_tail_link(proof, run, |linked, scratch| {
+			linked
+				.prepare_publication(scratch)
+				.map(finish)
+				.map_err(ZeroTailWitnessFailure::Prepublication)
+		})
+		.await
+	}
+
+	async fn with_zero_tail_link<Check, T>(
+		&self,
+		proof: VerifiedHeldRetainedPrefix<'_, SftpSource<'_, Check>, WitnessPrefix<'_>>,
+		run: ZeroTailWitness<'_>,
+		finish: impl for<'view, 'lease> FnOnce(
+			LinkedWitnessedStage<'view, 'lease, 'scope, 'name>,
+			&mut [u8],
+		) -> Result<T, ZeroTailWitnessFailure>,
 	) -> Result<T, ZeroTailWitnessFailure>
 	where
 		Check: FnMut(ConnectionBinding) -> Result<(), RetryError>,
@@ -70,6 +126,9 @@ impl WitnessPass<'_, '_> {
 					|| !reader.matches_lease(run.lease)
 					|| binding != run.retirement.binding()
 					|| !std::ptr::eq(self.current.verified(), self.selection.qualification)
+					|| &run.eligibility.qualification_digest()
+						!= self.current.verified().digest().as_bytes()
+					|| run.eligibility.facts() != self.current.facts()
 				{
 					return Err(Error::Binding);
 				}
@@ -160,10 +219,11 @@ impl WitnessPass<'_, '_> {
 							.map_err(WitnessAdmissionError::Custody)
 					})
 					.map_err(Error::Prefix)?;
-				self.close_and_link(live, run.retirement, stage, active, run.scratch)
+				let linked = self
+					.close_and_link(live, run.retirement, stage, active, run.scratch)
 					.await
-					.map(finish)
-					.map_err(Error::Link)
+					.map_err(Error::Link)?;
+				finish(linked, run.scratch)
 			})
 			.await;
 		result

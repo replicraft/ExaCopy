@@ -25,16 +25,19 @@ use exacopy_platform::linux::{
 	SealedProtectedWitness, StageError, WitnessLinkCandidate, WitnessReservationObservationError,
 };
 use exacopy_sftp::{SftpSource, SftpSourceError};
-use exacopy_transfer::remote_resume::prefix::{LentRetainedSuffix, PrefixVerificationError};
+use exacopy_transfer::remote_resume::prefix::{
+	LentRetainedSuffix, PrefixVerificationError, SuffixSourceObservation,
+};
 
 use super::activation::{model_head, reservation_plan};
 use crate::assembly::linux::remote_download::{
-	BoundRouteRetirement, RemoteGrant, RemoteRouteCloseError,
+	BoundRouteRetirement, RemoteGrant, RemoteRouteCloseError, RetiredBoundRoute,
 };
 use crate::assembly::linux::remote_witness_authority::{
 	BoundWitnessStage, ConsentRefusal, WitnessRetentionApproval,
 };
 
+pub(super) mod prepublication;
 pub(super) mod zero_tail;
 
 #[derive(Debug)]
@@ -60,6 +63,7 @@ pub(super) enum WitnessAdmissionError {
 	Stage(StageError),
 }
 
+#[derive(Clone, Copy)]
 pub(super) struct WitnessPass<'scope, 'name> {
 	pub(super) trust: &'scope RemoteBootstrapTrust<'scope>,
 	pub(super) selection: &'scope RemoteWitnessedReplaySelection<'scope>,
@@ -71,13 +75,27 @@ pub(super) struct WitnessPass<'scope, 'name> {
 	pub(super) names: BoundWitnessStage<'name>,
 }
 
-pub(super) struct VerifiedWitnessedStage<'view, 'lease> {
+pub(super) struct LinkedWitnessedStage<'view, 'lease, 'scope, 'name> {
 	pub(super) chain: SealedProtectedWitness<'view, 'lease>,
 	pub(super) intent: RemoteWitnessIntent,
 	pub(super) digest: [u8; 32],
+	source: SuffixSourceObservation,
+	route: RetiredBoundRoute,
+	pass: WitnessPass<'scope, 'name>,
 }
 
-impl WitnessPass<'_, '_> {
+impl LinkedWitnessedStage<'_, '_, '_, '_> {
+	fn confirm_digest<R>(&self, scratch: &mut [u8]) -> Result<(), WitnessFailure<R>> {
+		if hash_stage(self.chain.stage(), scratch).map_err(WitnessFailure::WitnessedVerification)?
+			!= self.source.digest()
+		{
+			return Err(WitnessFailure::WitnessedDigestMismatch);
+		}
+		Ok(())
+	}
+}
+
+impl<'scope, 'name> WitnessPass<'scope, 'name> {
 	/// Complete both termination observations while the original lease and
 	/// reservation remain held, then make the one permitted protected link.
 	pub(super) async fn close_and_link<'view, 'lease, Check>(
@@ -87,7 +105,7 @@ impl WitnessPass<'_, '_> {
 		stage: WitnessLinkCandidate<'view, 'lease>,
 		active: ActiveWitnessReservation<'lease>,
 		scratch: &mut [u8],
-	) -> Result<VerifiedWitnessedStage<'view, 'lease>, WitnessFailure<SftpSourceError>>
+	) -> Result<LinkedWitnessedStage<'view, 'lease, 'scope, 'name>, WitnessFailure<SftpSourceError>>
 	where
 		Check: FnMut(ConnectionBinding) -> Result<(), RetryError>,
 	{
@@ -236,15 +254,13 @@ impl WitnessPass<'_, '_> {
 					.map_err(WitnessAdmissionError::Consent)
 			})
 			.map_err(Error::Link)?;
-		if hash_stage(chain.stage(), scratch).map_err(Error::WitnessedVerification)?
-			!= source.digest()
-		{
-			return Err(Error::WitnessedDigestMismatch);
-		}
-		Ok(VerifiedWitnessedStage {
+		Ok(LinkedWitnessedStage {
 			chain,
 			intent,
 			digest: source.digest(),
+			source,
+			route,
+			pass: *self,
 		})
 	}
 

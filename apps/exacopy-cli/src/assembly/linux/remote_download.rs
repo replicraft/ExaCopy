@@ -38,6 +38,8 @@ pub(crate) use retry::ReadyRetry;
 pub use retry::{RemoteRetryLease, RemoteRetryStamp};
 #[cfg(test)]
 pub(in crate::assembly::linux) use source::BoundRouteRetirement;
+#[cfg(test)]
+pub(in crate::assembly::linux) use source::RetiredBoundRoute;
 
 pub(crate) use source::DirectConnectError;
 #[cfg(feature = "experimental-ssh-wireguard")]
