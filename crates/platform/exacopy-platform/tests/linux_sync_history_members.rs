@@ -3,13 +3,15 @@
 #![cfg(target_os = "linux")]
 
 use std::fs::{self, File};
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::os::unix::fs::{DirBuilderExt as _, symlink};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use exacopy_endpoint::UnixComponent;
-use exacopy_platform::linux::{ReadRoot, SyncHistoryDirectory, SyncPreviewError, SyncPreviewRoots};
+use exacopy_platform::linux::{
+	ReadError, ReadRoot, SyncHistoryDirectory, SyncPreviewError, SyncPreviewRoots,
+};
 
 static NEXT_FIXTURE: AtomicUsize = AtomicUsize::new(0);
 
@@ -73,6 +75,41 @@ fn explicit_member_names_borrow_stable_bounded_read_only_views() {
 		"EOF must recheck the held name"
 	);
 	assert_eq!(fs::read(sibling).unwrap(), b"other");
+}
+
+#[test]
+fn empty_reads_preserve_position_and_nonempty_eof_refuses_member_growth() {
+	let fixture = Fixture::new();
+	let artifact = fixture.0.join("selected");
+	fs::write(&artifact, b"valid").unwrap();
+	let root = ReadRoot::from_directory(File::open(&fixture.0).unwrap()).unwrap();
+	let directory = SyncHistoryDirectory::new(&root, 5);
+	let mut reader = directory.open_member(name(b"selected")).unwrap();
+
+	assert_eq!(reader.read(&mut []).unwrap(), 0);
+	let mut content = [0; 5];
+	reader.read_exact(&mut content).unwrap();
+	assert_eq!(&content, b"valid");
+
+	File::options()
+		.append(true)
+		.open(&artifact)
+		.unwrap()
+		.write_all(b"x")
+		.unwrap();
+
+	let mut probe = [0];
+	let error = reader.read(&mut probe).unwrap_err();
+	assert_eq!(error.kind(), io::ErrorKind::Other);
+	let cause = error
+		.get_ref()
+		.expect("member EOF refusal has a typed cause");
+	assert!(matches!(
+		cause.downcast_ref::<ReadError>(),
+		Some(ReadError::SourceChanged)
+	));
+	assert_eq!(probe, [0]);
+	assert_eq!(fs::read(artifact).unwrap(), b"validx");
 }
 
 #[test]
