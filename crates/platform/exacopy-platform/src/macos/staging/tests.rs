@@ -7,9 +7,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use exacopy_endpoint::{MAX_FILE_LENGTH, UnixComponent};
 use exacopy_model::{EntryId, JobId, RunEpoch};
+use rustix::fs::{Mode, OFlags};
 
 use super::super::{ManagedReadError, ManagedReadGrant, ManagedReadRoot, acl};
 use super::{ManagedStageGrant, ManagedStageRoot, StageBindingContext, StageDirectory, StageError};
+
+mod cleanup;
 
 const PRIVATE: &str = "private-stage";
 const STAGE: &str = "candidate";
@@ -17,7 +20,10 @@ const TARGET: &str = "target";
 const SOURCE: &str = "source";
 const PAYLOAD: &[u8] = b"\0a preserved\xFF byte sequence";
 
-pub(super) struct Fixture(PathBuf);
+pub(super) struct Fixture {
+	path: PathBuf,
+	directory: File,
+}
 
 impl Fixture {
 	pub(super) fn new() -> Self {
@@ -31,11 +37,24 @@ impl Fixture {
 			));
 			match DirBuilder::new().mode(0o700).create(&path) {
 				Ok(()) => {
-					install_empty_acl(&path);
-					let private = path.join(PRIVATE);
+					let directory = rustix::fs::open(
+						&path,
+						OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+						Mode::empty(),
+					)
+					.unwrap_or_else(|error| {
+						panic!("retain synthetic APFS fixture {path:?}: {error}")
+					});
+					let fixture = Self {
+						path,
+						directory: File::from(directory),
+					};
+					acl::set_fixture_empty_acl(fixture.directory.as_fd())
+						.expect("set explicit zero-entry ACL on synthetic root");
+					let private = fixture.path(PRIVATE);
 					DirBuilder::new().mode(0o700).create(&private).unwrap();
 					install_empty_acl(&private);
-					return Self(path);
+					return fixture;
 				}
 				Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
 				Err(error) => panic!("cannot allocate local APFS fixture: {error}"),
@@ -49,11 +68,11 @@ impl Fixture {
 	}
 
 	fn open(&self) -> File {
-		File::open(&self.0).expect("open fixture destination directory")
+		File::open(&self.path).expect("open fixture destination directory")
 	}
 
 	pub(super) fn path(&self, child: &str) -> PathBuf {
-		self.0.join(child)
+		self.path.join(child)
 	}
 
 	pub(super) fn stage_path(&self) -> PathBuf {

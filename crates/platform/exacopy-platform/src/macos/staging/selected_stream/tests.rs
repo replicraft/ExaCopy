@@ -10,8 +10,7 @@ use super::super::tests::{Fixture, make_stage, open_staging};
 #[ignore = "requires managed APFS fixtures without visible extended attributes"]
 fn independently_reads_private_unnamed_stream_and_observes_local_metadata() {
 	const PAYLOAD: &[u8] = b"remote unnamed stream\0\xff";
-	let fixture_owner = FixtureOwner(Fixture::new());
-	let fixture = &fixture_owner.0;
+	let fixture = Fixture::new();
 	let root = fixture.bind();
 	let directory = open_staging(&root);
 	let mut writer = make_stage(&directory, u64::try_from(PAYLOAD.len()).unwrap()).unwrap();
@@ -46,8 +45,7 @@ fn independently_reads_private_unnamed_stream_and_observes_local_metadata() {
 #[test]
 #[ignore = "requires managed APFS fixtures without visible extended attributes"]
 fn empty_stream_revalidation_refuses_changed_local_mode() {
-	let fixture_owner = FixtureOwner(Fixture::new());
-	let fixture = &fixture_owner.0;
+	let fixture = Fixture::new();
 	let root = fixture.bind();
 	let directory = open_staging(&root);
 	let stage = make_stage(&directory, 0)
@@ -64,8 +62,7 @@ fn empty_stream_revalidation_refuses_changed_local_mode() {
 
 #[test]
 fn length_or_mode_mismatch_preserves_private_and_public_names() {
-	let fixture_owner = FixtureOwner(Fixture::new());
-	let fixture = &fixture_owner.0;
+	let fixture = Fixture::new();
 	let root = fixture.bind();
 	let directory = open_staging(&root);
 	let stage = make_stage(&directory, 0)
@@ -83,12 +80,4 @@ fn length_or_mode_mismatch_preserves_private_and_public_names() {
 	));
 	assert_eq!(fs::symlink_metadata(fixture.stage_path()).unwrap().len(), 0);
 	assert!(!fixture.path("target").exists());
-}
-
-struct FixtureOwner(Fixture);
-
-impl Drop for FixtureOwner {
-	fn drop(&mut self) {
-		let _ = fs::remove_dir_all(self.0.path(""));
-	}
 }

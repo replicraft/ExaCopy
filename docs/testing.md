@@ -24,6 +24,13 @@ where that keeps inputs small. Freeze oracle expectations independently of
 the production algorithm and include a negative control that demonstrates
 the test can fail.
 
+Native macOS staging fixtures remove their exclusively created trees after
+successful tests, after checking the held root's device and inode. Cleanup
+does not follow symlinks and refuses a replaced root. Panic unwinding retains
+the fixture and prints its exact path for diagnosis. Preserve required
+failure evidence before removing a retained fixture; its filename alone
+does not authorize cleanup.
+
 The [CI](../.github/workflows/ci.yml) and
 [nightly assurance](../.github/workflows/nightly.yml) workflows define the
 executed automation. Preserve raw outcomes and surface required jobs
