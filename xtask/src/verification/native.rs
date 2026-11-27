@@ -11,6 +11,7 @@ use crate::finding::Findings;
 use crate::workspace::APP_VERSION;
 
 mod integration;
+mod managed_sync;
 
 const FIXTURE_MANIFEST: &str = "fixture.toml";
 const RESULT: &str = "result.json";
@@ -43,6 +44,8 @@ enum Profile {
 	UnprivilegedWholeExt4SyncHistory,
 	#[serde(rename = "linux-unprivileged-whole-ext4-sync-statmount-v1")]
 	UnprivilegedWholeExt4SyncStatmount,
+	#[serde(rename = "linux-unprivileged-whole-ext4-managed-sync-production-v1")]
+	UnprivilegedWholeExt4ManagedSyncProduction,
 }
 
 impl Profile {
@@ -52,19 +55,26 @@ impl Profile {
 			| Self::HostedRootSetupUnprivilegedObserver
 			| Self::UnprivilegedTmpfsSyncPreview
 			| Self::UnprivilegedWholeExt4SyncHistory
-			| Self::UnprivilegedWholeExt4SyncStatmount => Target::LinuxX86_64Gnu,
+			| Self::UnprivilegedWholeExt4SyncStatmount
+			| Self::UnprivilegedWholeExt4ManagedSyncProduction => Target::LinuxX86_64Gnu,
 		}
 	}
 
 	fn integration(self) -> bool {
 		matches!(
 			self,
-			Self::UnprivilegedWholeExt4SyncHistory | Self::UnprivilegedWholeExt4SyncStatmount
+			Self::UnprivilegedWholeExt4SyncHistory
+				| Self::UnprivilegedWholeExt4SyncStatmount
+				| Self::UnprivilegedWholeExt4ManagedSyncProduction
 		)
 	}
 
 	fn required_feature(self) -> Option<&'static str> {
-		matches!(self, Self::UnprivilegedWholeExt4SyncStatmount).then_some(STATMOUNT_FEATURE)
+		match self {
+			Self::UnprivilegedWholeExt4SyncStatmount => Some(STATMOUNT_FEATURE),
+			Self::UnprivilegedWholeExt4ManagedSyncProduction => Some(managed_sync::FEATURE),
+			_ => None,
+		}
 	}
 }
 
@@ -184,7 +194,10 @@ fn check_manifest(
 		);
 	}
 
-	let statmount = fixture.profile.required_feature().is_some();
+	if !managed_sync::check(package, manifest, &path, &fixture, findings) {
+		return;
+	}
+	let statmount = matches!(fixture.profile, Profile::UnprivilegedWholeExt4SyncStatmount);
 	if statmount != (manifest == Path::new(STATMOUNT_MANIFEST))
 		|| (statmount && !exact_statmount_case(package, &fixture.cases))
 	{
@@ -311,7 +324,7 @@ fn check_cases(
 		if fixture.profile.integration() != matches!(case.kind, CaseKind::RustIntegration) {
 			findings.add(
 				manifest,
-				"native Rust integration cases require the whole-ext4 sync-history or statmount profile",
+				"native Rust integration cases require a closed whole-ext4 fixture profile",
 			);
 			continue;
 		}

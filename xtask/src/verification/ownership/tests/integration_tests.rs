@@ -104,7 +104,7 @@ fn integration_requires_exact_target_source_case_and_profile() {
 		(
 			"linux-unprivileged-whole-ext4-sync-history-v1",
 			"linux-unprivileged-tmpfs-sync-preview-v1",
-			"require the whole-ext4",
+			"native Rust integration cases require a closed whole-ext4 fixture profile",
 		),
 	] {
 		fixture.write(NATIVE_PATH, &manifest().replace(from, to));

@@ -1,0 +1,17 @@
+schema_version = 1
+id = "linux-managed-sync-production"
+target = "x86_64-unknown-linux-gnu"
+profile = "linux-unprivileged-whole-ext4-managed-sync-production-v1"
+rust_toolchain = "1.100.0"
+runner = "verification/managed_sync_production/run.py"
+controls = "verification/managed_sync_production/test_runner.py"
+workflow = ".github/workflows/linux-managed-sync-production-qualification.yml"
+result = "result.json"
+
+[[case]]
+kind = "rust-integration"
+test_target = "linux_managed_sync_production"
+selector = "production_managed_init_then_preview_exact_p063_history"
+source = "tests/linux_managed_sync_production.rs"
+required_feature = "experimental-linux-managed-sync"
+ignored = true

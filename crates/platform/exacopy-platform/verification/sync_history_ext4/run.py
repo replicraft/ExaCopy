@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT / "tools/qualification"))
 import native_supervision as supervision
 
 PACKAGE = ROOT / "crates/platform/exacopy-platform"
+CLI_PACKAGE = ROOT / "apps/exacopy-cli"
 TARGET = "x86_64-unknown-linux-gnu"
 TOOLCHAIN = "1.100.0"
 TEST = "linux_sync_history_ext4"
@@ -51,6 +52,7 @@ class FixtureProfile:
     parent_variable: str
     workflow: str
     required_feature: str | None = None
+    package_root: Path = PACKAGE
 
 
 HISTORY = FixtureProfile(
@@ -64,6 +66,14 @@ STATMOUNT = FixtureProfile(
     ".github/workflows/linux-sync-history-ext4-statmount-qualification.yml",
     "experimental-linux-managed-sync",
 )
+MANAGED = FixtureProfile(
+    "linux-managed-sync-production", "linux-unprivileged-whole-ext4-managed-sync-production-v1",
+    CLI_PACKAGE / "verification/managed_sync_production/fixture.toml", "linux_managed_sync_production",
+    "production_managed_init_then_preview_exact_p063_history", "EXACOPY_MANAGED_SYNC_FIXTURE_PARENT",
+    ".github/workflows/linux-managed-sync-production-qualification.yml",
+    "experimental-linux-managed-sync", CLI_PACKAGE,
+)
+MANAGED_MARKER = "managed_sync_production="
 STATMOUNT_MARKER = "EXACOPY_SYNC_HISTORY_STATMOUNT_RESULT "
 SIDES = ("left", "right")
 
@@ -264,7 +274,7 @@ def unique_mount(fd):
     return identity
 
 
-def observe(parent, parent_fd, evidence, phase):
+def observe(parent, parent_fd, evidence, phase, profile=HISTORY):
     if platform.system() != "Linux" or platform.machine() != "x86_64":
         raise Blocked("native Linux x86-64 is required")
     if os.getuid() == 0 or os.getuid() != os.geteuid():
@@ -293,6 +303,7 @@ def observe(parent, parent_fd, evidence, phase):
             values = re.findall(rb"(?m)^" + field + rb":\s*([0-9a-f]+)$", status)
             if len(values) != 1 or int(values[0], 16) != 0:
                 raise Blocked("fixture requires zero live inheritable, permitted, effective and ambient capabilities")
+        actor = managed_actor(status, read, thread, proc, evidence, phase) if profile is MANAGED else {}
         mount = fd_mount(stack, parent_fd, fdinfo, proc_node.st_dev)
         mountinfo = read(thread, "mountinfo", 1024 * 1024)
         (evidence / f"{phase}.mountinfo").write_bytes(mountinfo)
@@ -317,13 +328,42 @@ def observe(parent, parent_fd, evidence, phase):
     row = mount_row(mountinfo, mount, held.st_dev)
     require(re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", boot) is not None,
             "invalid boot ID")
+    unique = unique_mount(parent_fd)
+    if profile is MANAGED:
+        root_fd = os.open("/", DIR_FLAGS)
+        try:
+            if row.split(b" ")[4] != b"/" or unique_mount(root_fd) != unique:
+                raise Blocked("managed fixture requires the current whole ext4 root mount")
+        finally:
+            os.close(root_fd)
     return {
         "boot": boot, "kernel": platform.release(), "mount": mount,
         "mount_record": row.decode("utf-8", errors="replace"),
         "mount_namespace": namespaces[0], "user_namespace": namespaces[1],
-        "real_uid": os.getuid(), "effective_uid": os.geteuid(), "unique_mount": unique_mount(parent_fd),
-        "parent": f"{held.st_dev}:{held.st_ino}", "filesystem": "ext4",
+        "real_uid": os.getuid(), "effective_uid": os.geteuid(), "unique_mount": unique,
+        "parent": f"{held.st_dev}:{held.st_ino}", "filesystem": "ext4", **actor,
     }
+
+
+def managed_actor(status, read, thread, proc, evidence, phase):
+    uid, gid = os.geteuid(), os.getegid()
+    for label, real, effective in (("uid", os.getuid(), uid), ("gid", os.getgid(), gid)):
+        field = re.findall(rb"(?m)^" + label.title().encode() + rb":([^\n]*)$", status)
+        columns = [str(effective).encode()] * 4
+        if not 0 < effective < 2**32 - 1 or real != effective or len(field) != 1 or field[0].split() != columns:
+            raise Blocked("managed fixture requires one ordinary real/effective/saved/filesystem actor")
+        mapping = read(thread, f"{label}_map", 4096)
+        (evidence / f"{phase}.{label}_map").write_bytes(mapping)
+        if (not mapping.endswith(b"\n") or mapping.count(b"\n") != 1
+                or mapping.split() != [b"0", b"0", b"4294967295"]):
+            raise Blocked("managed fixture requires exact full identity maps")
+        sentinel = read(proc, f"sys/kernel/overflow{label}", 16)
+        (evidence / f"{phase}.overflow{label}").write_bytes(sentinel)
+        if re.fullmatch(rb"(0|[1-9][0-9]{0,9})\n", sentinel) is None or not int(sentinel) < 2**32:
+            raise Blocked("managed fixture cannot confirm a native overflow identity")
+        if int(sentinel) == effective:
+            raise Blocked("managed actor aliases a native overflow identity")
+    return {"real_gid": os.getgid(), "effective_gid": gid, "identity_maps": "full"}
 
 
 def digest_file(file):
@@ -345,8 +385,8 @@ def artifact(output, target_root, profile=HISTORY):
         target = event.get("target", {})
         if (event.get("reason") == "compiler-artifact" and target.get("name") == profile.test
                 and target.get("kind") == ["test"] and event.get("profile", {}).get("test") is True
-                and event.get("manifest_path") == str(PACKAGE / "Cargo.toml")
-                and target.get("src_path") == str(PACKAGE / "tests" / f"{profile.test}.rs")
+                and event.get("manifest_path") == str(profile.package_root / "Cargo.toml")
+                and target.get("src_path") == str(profile.package_root / "tests" / f"{profile.test}.rs")
                 and (profile.required_feature is None
                      or event.get("features") == [profile.required_feature])
                 and event.get("executable")):
@@ -419,6 +459,49 @@ def checked_statmount_result(output, code, facts, sides):
     return status
 
 
+def native_object(identity):
+    device, inode = map(int, identity.split(":"))
+    return f"{os.major(device)}:{os.minor(device)}:{inode}"
+
+
+def checked_managed_result(output, code, facts, anchors):
+    lines = output.splitlines()
+    markers = [line.removeprefix(MANAGED_MARKER) for line in lines if line.startswith(MANAGED_MARKER)]
+    require(len(markers) == 1, "required one managed production result marker")
+    require(lines.count("running 1 test") == 1
+            and sum(line.strip() == f"test {MANAGED.case} ..." for line in lines) == 1,
+            "managed production fixture did not report its exact executed case")
+    if markers[0].startswith("blocked reason="):
+        reason = markers[0].removeprefix("blocked reason=")
+        require(reason in {"statmount-attributes-unavailable", "idmapped-history-mount"}
+                and code == 101 and lines.count("FAILED") == 1 and not lines.count("ok")
+                and sum(line.startswith("test result: FAILED. 0 passed; 1 failed; 0 ignored;")
+                        for line in lines) == 1, "invalid typed managed production blockage")
+        return {"schema_version": 1, "outcome": "blocked", "feature": MANAGED.required_feature,
+                "reason": reason}
+    fields = {
+        "boot": facts["boot"], "mnt_ns": native_object(facts["mount_namespace"]),
+        "user_ns": native_object(facts["user_namespace"]), "mount": str(facts["mount"]),
+        "unique_mount": str(facts["unique_mount"]), "anchor": native_object(facts["parent"]),
+        "anchor_left": native_object(anchors["left"]), "anchor_right": native_object(anchors["right"]),
+    }
+    prefix = "passed " + " ".join(f"{key}={value}" for key, value in fields.items()) + " "
+    device = fields["anchor"].rsplit(":", 1)[0]
+    identity = rf"({re.escape(device)}:[1-9][0-9]{{0,19}})"
+    suffix = re.fullmatch(rf"live={identity} live_left={identity} live_right={identity} controls=7 cleanup=verified",
+                          markers[0].removeprefix(prefix))
+    require(markers[0].startswith(prefix) and suffix is not None and code == 0
+            and lines.count("ok") == 1 and not lines.count("FAILED")
+            and sum(line.startswith("test result: ok. 1 passed; 0 failed; 0 ignored;")
+                    for line in lines) == 1, "managed production identity or exact passing result differs")
+    live = suffix.groups()
+    require(all(int(value.rsplit(":", 1)[1]) < 2**64 for value in live)
+            and len({fields["anchor"], fields["anchor_left"], fields["anchor_right"], *live}) == 6,
+            "reported managed live directories must be distinct on the independent anchor device")
+    return {"schema_version": 1, "outcome": "passed", "feature": MANAGED.required_feature, **fields,
+            **dict(zip(("live", "live_left", "live_right"), live)), "controls": 7, "cleanup": "verified"}
+
+
 def execute(evidence, binary, env, facts, report, profile=HISTORY, sides=None):
     with os.fdopen(os.open(binary, FD_FLAGS | os.O_NONBLOCK), "rb", buffering=0) as held:
         node = os.fstat(held.fileno())
@@ -436,7 +519,10 @@ def execute(evidence, binary, env, facts, report, profile=HISTORY, sides=None):
         args = [binary, "--ignored", "--exact", "--nocapture", "--test-threads=1",
                 "--color", "never", profile.case]
         options = {"env": env, "executable": pinned, "held": (held.fileno(),), "timeout": 45}
-        if profile is STATMOUNT:
+        if profile is MANAGED:
+            output, code = command(evidence, "run", args, observe_exit=True, **options)
+            report["case"] = checked_managed_result(output, code, facts, sides)
+        elif profile is STATMOUNT:
             output, code = command(evidence, "run", args, observe_exit=True, **options)
             report["case"] = checked_statmount_result(output, code, facts, sides)
         else:
@@ -454,8 +540,8 @@ def manifest_digest(profile=HISTORY):
     expected = {
         "schema_version": 1, "id": profile.id, "target": TARGET,
         "profile": profile.profile, "rust_toolchain": TOOLCHAIN,
-        "runner": profile.definition.with_name("run.py").relative_to(PACKAGE).as_posix(),
-        "controls": profile.definition.with_name("test_runner.py").relative_to(PACKAGE).as_posix(),
+        "runner": profile.definition.with_name("run.py").relative_to(profile.package_root).as_posix(),
+        "controls": profile.definition.with_name("test_runner.py").relative_to(profile.package_root).as_posix(),
         "workflow": profile.workflow, "result": "result.json",
         "case": [{"kind": "rust-integration", "test_target": profile.test, "selector": profile.case,
                   "source": f"tests/{profile.test}.rs", "ignored": True}],
@@ -467,7 +553,7 @@ def manifest_digest(profile=HISTORY):
     return hashlib.sha256(raw).hexdigest()
 
 
-def sibling_facts(parent_fd, held, parent_facts):
+def sibling_facts(parent_fd, held, parent_facts, profile=STATMOUNT):
     result = {}
     for side, fd in held.items():
         node = os.fstat(fd)
@@ -476,11 +562,13 @@ def sibling_facts(parent_fd, held, parent_facts):
         require((node.st_dev, node.st_ino) == (named.st_dev, named.st_ino)
                 and stat.S_ISDIR(node.st_mode) and stat.S_IMODE(node.st_mode) == 0o700
                 and node.st_uid == os.geteuid() and not os.listdir(fd)
+                and (profile is not MANAGED or node.st_gid == os.getegid())
                 and unique_mount(fd) == parent_facts["unique_mount"],
-                "held statmount sibling changed")
+                "held managed admission anchor changed" if profile is MANAGED else "held statmount sibling changed")
         result[side] = identity
     require(len({parent_facts["parent"], *result.values()}) == len(result) + 1,
-            "statmount siblings must have distinct identities")
+            "managed admission anchors must have distinct identities" if profile is MANAGED
+            else "statmount siblings must have distinct identities")
     return result
 
 
@@ -492,7 +580,7 @@ def qualify(revision, temp, evidence, report, profile=HISTORY):
         node = os.fstat(parent_fd)
         if node.st_uid != os.geteuid() or node.st_mode & 0o022:
             raise Blocked("RUNNER_TEMP must be held, owned and protected")
-        report["substrate"] = observe(temp, parent_fd, evidence, "before")
+        report["substrate"] = observe(temp, parent_fd, evidence, "before", profile)
     finally:
         os.close(parent_fd)
     rustc = command(evidence, "rustc", ["rustc", f"+{TOOLCHAIN}", "-vV"]).splitlines()
@@ -501,7 +589,8 @@ def qualify(revision, temp, evidence, report, profile=HISTORY):
     lock = ROOT / "Cargo.lock"
     report["lockfile_sha256"] = hashlib.sha256(lock.read_bytes()).hexdigest()
     require(not supervision.CANCELLATION_REQUESTED, "cancelled before work allocation")
-    work = Path(tempfile.mkdtemp(prefix="exacopy-sync-ext4-work-", dir=temp))
+    work_prefix = "exacopy-managed-sync-work-" if profile is MANAGED else "exacopy-sync-ext4-work-"
+    work = Path(tempfile.mkdtemp(prefix=work_prefix, dir=temp))
     work_identity = inode(work)
     report["cleanup"] = "pending"
     parent = work / "fixture"
@@ -514,14 +603,19 @@ def qualify(revision, temp, evidence, report, profile=HISTORY):
         parent_fd = os.open(parent, DIR_FLAGS)
         try:
             parent_identity = inode(parent)
-            before = observe(parent, parent_fd, evidence, "fixture-before")
+            before = observe(parent, parent_fd, evidence, "fixture-before", profile)
             require(stat.S_IMODE(os.fstat(parent_fd).st_mode) == 0o700 and not any(parent.iterdir()),
                     "private fixture parent is unavailable or occupied")
-            if profile is STATMOUNT:
+            anchored = profile is STATMOUNT or profile is MANAGED
+            if profile is MANAGED:
+                fixture = os.fstat(parent_fd)
+                require(fixture.st_uid == os.geteuid() and fixture.st_gid == os.getegid(),
+                        "fixture parent ownership differs from the managed actor")
+            if anchored:
                 for side in SIDES:
                     os.mkdir(side, mode=0o700, dir_fd=parent_fd)
                     held_sides[side] = os.open(side, DIR_FLAGS, dir_fd=parent_fd)
-            before_sides = sibling_facts(parent_fd, held_sides, before) if profile is STATMOUNT else None
+            before_sides = sibling_facts(parent_fd, held_sides, before, profile) if anchored else None
             target_root = work / "target"
             overrides = {"RUSTC", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "RUSTFLAGS",
                          "CARGO_ENCODED_RUSTFLAGS", "CARGO_BUILD_RUSTC", "CARGO_BUILD_RUSTFLAGS",
@@ -534,8 +628,10 @@ def qualify(revision, temp, evidence, report, profile=HISTORY):
                 "TMPDIR": str(work),
             }
             args = ["cargo", f"+{TOOLCHAIN}", "test", "--locked", "--offline", "--jobs", "2",
-                    "--target", TARGET, "-p", "exacopy-platform", "--test", profile.test,
+                    "--target", TARGET, "-p", profile.package_root.name, "--test", profile.test,
                     "--no-run", "--message-format=json"]
+            if profile is MANAGED:
+                args.append("--no-default-features")
             if profile.required_feature is not None:
                 args.extend(("--features", profile.required_feature))
             output = command(evidence, "cargo", args, env=env, timeout=900)
@@ -546,20 +642,22 @@ def qualify(revision, temp, evidence, report, profile=HISTORY):
             execute(evidence, artifact(output, target_root, profile), child_env, before, report,
                     profile, before_sides)
             try:
-                after = observe(parent, parent_fd, evidence, "fixture-after")
+                after = observe(parent, parent_fd, evidence, "fixture-after", profile)
             except Blocked as error:
                 raise ValueError("native fixture substrate unavailable after execution") from error
             require(after == before, "native fixture substrate changed")
             report["fixture_substrate"] = before
-            if profile is STATMOUNT:
-                require(before_sides == sibling_facts(parent_fd, held_sides, after),
-                        "native statmount sibling custody changed")
-                report["fixture_siblings"] = before_sides
+            if anchored:
+                managed = profile is MANAGED
+                require(before_sides == sibling_facts(parent_fd, held_sides, after, profile),
+                        "managed admission anchor custody changed" if managed
+                        else "native statmount sibling custody changed")
+                report["fixture_anchors" if managed else "fixture_siblings"] = before_sides
             check_revision(revision, evidence, "after")
             require(manifest_digest(profile) == report["fixture_manifest_sha256"], "fixture manifest changed")
             require(hashlib.sha256(lock.read_bytes()).hexdigest() == report["lockfile_sha256"],
                     "lockfile changed")
-            if profile is STATMOUNT and report["case"].get("outcome") == "blocked":
+            if anchored and report["case"].get("outcome") == "blocked":
                 raise Blocked(report["case"]["reason"])
         finally:
             os.close(parent_fd)
@@ -610,7 +708,12 @@ def main(profile=HISTORY):
     args = parser.parse_args()
     raw = Path(os.environ["RUNNER_TEMP"])
     require(raw.is_absolute() and raw.resolve(strict=True) == raw, "invalid exact RUNNER_TEMP")
-    prefix = "exacopy-sync-ext4-statmount-evidence-" if profile is STATMOUNT else "exacopy-sync-ext4-evidence-"
+    prefixes = {
+        MANAGED: "exacopy-managed-sync-production-evidence-",
+        STATMOUNT: "exacopy-sync-ext4-statmount-evidence-",
+        HISTORY: "exacopy-sync-ext4-evidence-",
+    }
+    prefix = prefixes[profile]
     evidence = Path(tempfile.mkdtemp(prefix=prefix, dir=raw))
     output_path = os.environ.get("GITHUB_OUTPUT")
     if output_path is not None:
