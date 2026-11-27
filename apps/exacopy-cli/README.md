@@ -200,7 +200,17 @@ The default text report identifies a successfully published copy and its committ
 | 5 | Integrity failure |
 | 6 | Unsupported platform, required capability or metadata |
 | 8 | Profile authorization failed |
-| 9 | Publication or its journal evidence requires reconciliation |
+| 9 | Publication or its closeout evidence requires reconciliation |
+
+A copy that reaches confirmed publication and then fails to finish its
+journal or receipt can exit 9. The JSON report sets `publication` to
+`published`, `result` to `failed`, and `pending` to `1`. When the
+publication outcome still needs confirmation, the report uses
+`publication_uncertain`. Use the reported job directory for recovery.
+The publication field describes the observed outcome of the copy attempt.
+The receipt appears only on a completed report. Durability remains
+unconfirmed. This covers the local publication status portion of
+R-009/A-009 and R-154/A-154 under INV-006 and INV-020.
 
 If report output fails after publication, the CLI attempts to report the committed job on stderr and exits 4. The copy remains published. CLI process tests cover the report and authorization stringency, exact output content, authenticated job bindings, and exclusive publication under concurrency. These exercise the local portion of R-007–009, R-027–028, R-154 and R-194 and their corresponding acceptance cases. The development CLI and ext4 VM tests carry no release or power-loss qualification.
 

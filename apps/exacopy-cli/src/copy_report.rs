@@ -31,10 +31,23 @@ pub(crate) struct CopySuccess {
 pub(crate) struct CopyFailure {
 	code: ErrorKind,
 	message: String,
+	#[serde(skip)]
+	publication: PublicationStatus,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	job_id: Option<String>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	job_directory: Option<String>,
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum PublicationStatus {
+	NotPublished,
+	#[cfg(target_os = "linux")]
+	Published,
+	#[cfg(target_os = "linux")]
+	#[serde(rename = "publication_uncertain")]
+	Uncertain,
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -89,9 +102,16 @@ impl CopyFailure {
 		Self {
 			code,
 			message: error.to_string(),
+			publication: PublicationStatus::NotPublished,
 			job_id: None,
 			job_directory: None,
 		}
+	}
+
+	#[cfg(target_os = "linux")]
+	pub(crate) fn with_publication(mut self, publication: PublicationStatus) -> Self {
+		self.publication = publication;
+		self
 	}
 
 	#[cfg(target_os = "linux")]
@@ -99,6 +119,27 @@ impl CopyFailure {
 		self.job_id = Some(id.into());
 		self.job_directory = Some(directory.into());
 		self
+	}
+
+	fn write_context(&self, stderr: &mut impl io::Write) -> io::Result<()> {
+		#[cfg(target_os = "linux")]
+		match self.publication {
+			PublicationStatus::Published => writeln!(
+				stderr,
+				"The copy was published. Its closeout requires reconciliation."
+			)?,
+			PublicationStatus::Uncertain => {
+				writeln!(
+					stderr,
+					"Publication is uncertain and requires reconciliation."
+				)?;
+			}
+			PublicationStatus::NotPublished => {}
+		}
+		if let Some(directory) = &self.job_directory {
+			writeln!(stderr, "Job directory for this attempt: {directory}")?;
+		}
+		Ok(())
 	}
 }
 
@@ -108,7 +149,7 @@ struct Report<'outcome> {
 	schema_version: &'static str,
 	completed: u8,
 	pending: u8,
-	publication: &'static str,
+	publication: PublicationStatus,
 	verification: Option<&'static str>,
 	consistency: Option<&'static str>,
 	durability: &'static str,
@@ -152,9 +193,7 @@ impl CopyOutcome {
 				}
 				Self::Failed { error } => {
 					writeln!(stderr, "exacopy: {}", error.message)?;
-					if let Some(directory) = &error.job_directory {
-						writeln!(stderr, "Job directory for this attempt: {directory}")?;
-					}
+					error.write_context(stderr)?;
 					stderr.flush()
 				}
 			},
@@ -179,9 +218,7 @@ impl CopyOutcome {
 				4
 			}
 			Self::Failed { error } => {
-				if let Some(directory) = &error.job_directory {
-					let _ = writeln!(stderr, "Job directory for this attempt: {directory}");
-				}
+				let _ = error.write_context(stderr);
 				error.code.exit_code()
 			}
 		}
@@ -189,10 +226,10 @@ impl CopyOutcome {
 
 	fn report(&self) -> Report<'_> {
 		let complete = self.exit_code() == 0;
-		let publication = match self.exit_code() {
-			0 => "published",
-			9 => "publication_uncertain",
-			_ => "not_published",
+		let publication = match self {
+			#[cfg(target_os = "linux")]
+			Self::Published { .. } => PublicationStatus::Published,
+			Self::Failed { error } => error.publication,
 		};
 		Report {
 			schema: "exacopy.cli.copy",

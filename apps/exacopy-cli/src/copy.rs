@@ -13,7 +13,7 @@ use exacopy_transfer::linux::{CopyProfile, PlanAttempt};
 use uuid::{Builder, Uuid};
 
 use crate::args::CopyCommand;
-use crate::copy_report::{CopyFailure, CopyOutcome, CopySuccess, ErrorKind};
+use crate::copy_report::{CopyFailure, CopyOutcome, CopySuccess, ErrorKind, PublicationStatus};
 use crate::linux_path::{open_destination, open_directory, split};
 use crate::profile::{LocalProfile, kernel_random};
 
@@ -67,8 +67,7 @@ fn copy(command: &CopyCommand) -> Result<CopySuccess, CopyFailure> {
 		job_name: UnixComponent::new(job_directory.as_bytes()).map_err(io_failure)?,
 		stage_name: UnixComponent::new(STAGE_NAME).map_err(io_failure)?,
 	};
-	let plan = plan_new_file(roots, attempt, source, target)
-		.map_err(|error| CopyFailure::new(copy_kind(&error), error))?;
+	let plan = plan_new_file(roots, attempt, source, target).map_err(copy_failure)?;
 	if profile.is_seed(plan.source().file_identity) {
 		return Err(CopyFailure::new(
 			ErrorKind::ProfileAuthorization,
@@ -86,9 +85,8 @@ fn copy(command: &CopyCommand) -> Result<CopySuccess, CopyFailure> {
 		created,
 		owner_token,
 	};
-	let receipt = copy_new_file(roots, &plan, credential, &mut scratch).map_err(|error| {
-		CopyFailure::new(copy_kind(&error), error).with_job(&job_id, &job_directory)
-	})?;
+	let receipt = copy_new_file(roots, &plan, credential, &mut scratch)
+		.map_err(|error| copy_failure(error).with_job(&job_id, &job_directory))?;
 	Ok(CopySuccess {
 		job_id,
 		length: receipt.evidence().stream.length.get().to_string(),
@@ -128,6 +126,24 @@ fn job_identity() -> Result<(JournalJobId, OwnerTimestamp), CopyFailure> {
 
 fn io_failure(error: impl std::fmt::Display) -> CopyFailure {
 	CopyFailure::new(ErrorKind::Io, error)
+}
+
+fn copy_failure(error: LocalCopyError) -> CopyFailure {
+	let code = copy_kind(&error);
+	let publication = match &error {
+		// An unconfirmed PublishObserved append failure is carried in Publication::recording.
+		LocalCopyError::Journal {
+			kind:
+				FrameKind::PublishObserved | FrameKind::DurabilityRecorded | FrameKind::ReceiptCommitted,
+			..
+		}
+		| LocalCopyError::Receipt(_)
+		| LocalCopyError::ReceiptNamespace(_)
+		| LocalCopyError::ReceiptIo(_) => PublicationStatus::Published,
+		_ if matches!(code, ErrorKind::RecoveryRequired) => PublicationStatus::Uncertain,
+		_ => PublicationStatus::NotPublished,
+	};
+	CopyFailure::new(code, error).with_publication(publication)
 }
 
 fn copy_kind(error: &LocalCopyError) -> ErrorKind {
@@ -220,14 +236,16 @@ fn stage_kind(error: &StageError) -> ErrorKind {
 
 #[cfg(test)]
 mod tests {
-	use crate::assembly::linux::LocalCopyError;
-	use crate::assembly::linux::StageFailure;
+	use crate::args::Format;
+	use crate::assembly::linux::{LocalCopyError, StageFailure};
+	use crate::copy_report::CopyOutcome;
 	use exacopy_journal::frame::FrameKind;
 	use exacopy_journal::{DurableJournalError, VerificationRecordError};
-	use exacopy_platform::linux::StageError;
+	use exacopy_platform::linux::{PublishError, StageError};
+	use exacopy_transfer::linux::ReceiptError;
 	use rustix::io::Errno;
 
-	use super::{ErrorKind, copy_kind, stage_failure_kind};
+	use super::{ErrorKind, copy_failure, copy_kind, stage_failure_kind};
 
 	#[test]
 	fn prepublication_checkpoint_sync_failures_are_io_errors() {
@@ -282,5 +300,92 @@ mod tests {
 				"{error:?}"
 			);
 		}
+	}
+
+	#[test]
+	fn confirmed_publication_remains_visible_when_closeout_fails() {
+		for cause in [
+			LocalCopyError::Receipt(ReceiptError::InvalidDurabilityFrame),
+			LocalCopyError::ReceiptNamespace(StageError::DirectoryBarrierFailed(Errno::IO.into())),
+			LocalCopyError::ReceiptIo(Errno::NOSPC.into()),
+			journal_sync_failure(FrameKind::PublishObserved),
+			journal_sync_failure(FrameKind::DurabilityRecorded),
+			journal_sync_failure(FrameKind::ReceiptCommitted),
+		] {
+			let outcome = failed_copy(cause);
+			let report = json_report(&outcome);
+			assert_eq!(outcome.exit_code(), 9, "{report}");
+			assert_eq!(report["result"], "failed", "{report}");
+			assert_eq!(report["error"]["code"], "E_RECOVERY_REQUIRED", "{report}");
+			assert_eq!(report["error"]["job_id"], "test-job", "{report}");
+			assert_eq!(
+				report["error"]["job_directory"], ".exacopy-test-job",
+				"{report}"
+			);
+			assert_eq!(report["publication"], "published", "{report}");
+			assert_eq!(report["completed"], 0, "{report}");
+			assert_eq!(report["pending"], 1, "{report}");
+			assert_eq!(report["durability"], "unconfirmed", "{report}");
+			for field in ["verification", "consistency", "redundancy", "metadata"] {
+				assert_eq!(
+					report.get(field),
+					Some(&serde_json::Value::Null),
+					"{report}"
+				);
+			}
+			assert!(report.get("receipt").is_none(), "{report}");
+
+			let mut stderr = Vec::new();
+			outcome
+				.write(Format::Human, &mut std::io::sink(), &mut stderr)
+				.expect("write the human-readable closeout failure");
+			let diagnostic = String::from_utf8(stderr).expect("read the UTF-8 diagnostic");
+			assert!(
+				diagnostic.contains("The copy was published."),
+				"{diagnostic}"
+			);
+			assert!(diagnostic.contains(".exacopy-test-job"), "{diagnostic}");
+		}
+	}
+
+	#[test]
+	fn uncertain_publication_and_conflict_remain_distinct() {
+		for cause in [
+			journal_sync_failure(FrameKind::PublishIntent),
+			LocalCopyError::Publication {
+				source: PublishError::Uncertain(Errno::IO.into()),
+				recording: None,
+			},
+		] {
+			let outcome = failed_copy(cause);
+			let report = json_report(&outcome);
+			assert_eq!(outcome.exit_code(), 9, "{report}");
+			assert_eq!(report["publication"], "publication_uncertain", "{report}");
+		}
+		let outcome = failed_copy(LocalCopyError::Conflict);
+		let report = json_report(&outcome);
+		assert_eq!(outcome.exit_code(), 3, "{report}");
+		assert_eq!(report["publication"], "not_published", "{report}");
+	}
+
+	fn failed_copy(cause: LocalCopyError) -> CopyOutcome {
+		CopyOutcome::Failed {
+			error: copy_failure(cause).with_job("test-job", ".exacopy-test-job"),
+		}
+	}
+
+	fn journal_sync_failure(kind: FrameKind) -> LocalCopyError {
+		LocalCopyError::Journal {
+			kind,
+			source: DurableJournalError::Sync(Errno::IO.into()),
+		}
+	}
+
+	fn json_report(outcome: &CopyOutcome) -> serde_json::Value {
+		let mut stdout = Vec::new();
+		outcome
+			.write(Format::Json, &mut stdout, &mut std::io::sink())
+			.expect("write the JSON failure summary");
+		serde_json::from_slice(&stdout).expect("parse the JSON failure summary")
 	}
 }
