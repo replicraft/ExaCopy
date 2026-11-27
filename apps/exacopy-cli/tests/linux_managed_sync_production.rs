@@ -25,9 +25,15 @@ use exacopy_platform::linux::{
 	SyncPreviewError, SyncPreviewRoots, SyncProfileStore, SyncProfileStoreError,
 };
 use exacopy_transfer::linux::sync_preview::{HistoricalPreviewFailure, SyncPreviewFailure};
-use rustix::fs::{AtFlags, FlockOperation, OFlags, StatxFlags, flock, statx};
+use rustix::fs::{FlockOperation, OFlags, StatxFlags, flock};
 use rustix::process::{getegid, geteuid};
 
+#[path = "managed_sync_production/cli.rs"]
+mod cli;
+#[path = "managed_sync_production/cli_format.rs"]
+mod cli_format;
+#[path = "managed_sync_production/cli_process.rs"]
+mod cli_process;
 #[path = "managed_sync_production/history.rs"]
 mod history;
 #[path = "managed_sync_production/post_creation.rs"]
@@ -36,8 +42,8 @@ mod post_creation;
 mod rig;
 
 use rig::{
-	Sandbox, assert_live, assert_missing, kernel_location, native_object, object, open_child,
-	print_object, read,
+	MOUNT_ID_UNIQUE, Sandbox, assert_live, assert_missing, kernel_location, mount_id,
+	native_object, object, open_child, read,
 };
 
 type TestResult<T = ()> = Result<T, Box<dyn Error>>;
@@ -47,7 +53,6 @@ const SUBJECT: &[u8] = b"subject-\xff";
 const ROOT_NAMES: [&[u8]; 2] = [b"left-\xff", b"right-\xff"];
 const ID: [u8; 16] = [0xa1; 16];
 const SLOT: &[u8] = b"managed-sync-a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1.v1";
-const MOUNT_ID_UNIQUE: StatxFlags = StatxFlags::from_bits_retain(0x4000);
 
 #[test]
 #[ignore = "requires a separately selected owner-private fixture parent on an admitted native ext4 root"]
@@ -55,7 +60,14 @@ fn production_managed_init_then_preview_exact_p063_history() -> TestResult {
 	let (mut sandbox, anchor) = Sandbox::create(admit)?;
 	let child = post_creation::is_child();
 	let result = exercise(&mut sandbox, &anchor.location, child);
-	let live = match (result, sandbox.clean()) {
+	if result
+		.as_ref()
+		.is_err_and(|error| error.is::<cli_process::UnconfirmedProcess>())
+	{
+		sandbox.retain();
+		return result.map(|_| ());
+	}
+	let (live, cli_sha256) = match (result, sandbox.clean()) {
 		(Ok(live), Ok(())) => live,
 		(Err(error), Ok(())) | (Ok(_), Err(error)) => return Err(error),
 		(Err(exercise), Err(cleanup)) => {
@@ -70,20 +82,10 @@ fn production_managed_init_then_preview_exact_p063_history() -> TestResult {
 		return Ok(());
 	}
 	post_creation::run_child()?;
-	let location = anchor.location;
-	println!(
-		"\nmanaged_sync_production=passed boot={} mnt_ns={} user_ns={} mount={} unique_mount={} anchor={} anchor_left={} anchor_right={} live={} live_left={} live_right={} controls=8 cleanup=verified",
-		uuid::Uuid::from_bytes(location.boot),
-		print_object(location.mount_namespace),
-		print_object(location.user_namespace),
-		location.ordinary_mount,
-		location.unique_mount,
-		print_object(location.parent),
-		print_object(anchor.sides[0]),
-		print_object(anchor.sides[1]),
-		print_object(live[0]),
-		print_object(live[1]),
-		print_object(live[2]),
+	rig::print_success(
+		&anchor,
+		live,
+		&cli_sha256.ok_or("CLI fixture result missing")?,
 	);
 	Ok(())
 }
@@ -92,7 +94,7 @@ fn exercise(
 	sandbox: &mut Sandbox,
 	admitted: &ManagedPolicyLocation,
 	post_creation_only: bool,
-) -> TestResult<[NativeObject; 3]> {
+) -> TestResult<([NativeObject; 3], Option<String>)> {
 	let sandbox_dir = sandbox.directory.try_clone()?;
 	let profile = sandbox.path.join("profile");
 	let history_dir = sandbox.path.join("history");
@@ -179,6 +181,7 @@ fn exercise(
 			(genesis.mode, genesis.uid, genesis.gid)
 		);
 	}
+	let owner_profile = genesis.profile;
 	let artifacts = history::encode(&genesis, &signer);
 	let [root, left_history, right_history, leaf] =
 		std::array::from_fn(|index| ManagedHistoryMember {
@@ -224,7 +227,7 @@ fn exercise(
 		assert_eq!(read(&profile_dir, b"owner.seed")?, SEED);
 		post_creation::verify_history(&history_fd, &artifacts)?;
 		assert_live(live, [b"abc", b"abc"])?;
-		return Ok(live_identity);
+		return Ok((live_identity, None));
 	}
 	let approved = policy.endpoints[1].object.inode;
 	// A held regular file cannot share the live or historical directory inode.
@@ -313,6 +316,18 @@ fn exercise(
 	}
 	assert_live(live, [b"abc", b"xyz"])?;
 
+	let cli_sha256 = cli::exercise(
+		sandbox,
+		cli::Inputs {
+			policy: &policy,
+			owner_profile,
+			signer: &signer,
+			live,
+			history: &history_fd,
+			artifacts: &artifacts,
+		},
+	)?;
+
 	let writer = open_child(&sandbox_dir, b"live", OFlags::RDONLY | OFlags::DIRECTORY)?;
 	flock(&writer, FlockOperation::NonBlockingLockExclusive)?;
 	right_file.write_all_at(b"xyzz", 0)?;
@@ -347,7 +362,7 @@ fn exercise(
 		assert_eq!(read(&history_fd, name.as_bytes())?, artifact.bytes);
 	}
 	assert_live(live, [b"abc", b"xyzz"])?;
-	Ok(live_identity)
+	Ok((live_identity, Some(cli_sha256)))
 }
 
 fn request<'a>(
@@ -471,10 +486,4 @@ fn observe_scope(
 		unique_mount: unique,
 		parent,
 	})
-}
-
-fn mount_id(directory: &File, flag: StatxFlags) -> TestResult<NonZeroU64> {
-	let stat = statx(directory, c"", AtFlags::EMPTY_PATH, flag)?;
-	assert_ne!(stat.stx_mask & flag.bits(), 0);
-	NonZeroU64::new(stat.stx_mnt_id).ok_or_else(|| "kernel omitted requested mount ID".into())
 }

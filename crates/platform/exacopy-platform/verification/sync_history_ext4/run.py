@@ -36,6 +36,7 @@ FIXTURE = Path(__file__).with_name("fixture.toml")
 PROFILE = "linux-unprivileged-whole-ext4-sync-history-v1"
 MARKER = "EXACOPY_SYNC_HISTORY_EXT4_RESULT "
 OUTPUT_LIMIT = 8 * 1024 * 1024
+MANAGED_CLI_LIMIT = 128 * 1024 * 1024
 FD_FLAGS = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
 DIR_FLAGS = FD_FLAGS | os.O_DIRECTORY
 UNAVAILABLE = {errno.ENOENT, errno.ENODEV, errno.ENOSYS, errno.EINVAL, errno.EOPNOTSUPP,
@@ -398,6 +399,70 @@ def artifact(output, target_root, profile=HISTORY):
     return path
 
 
+def managed_cli_artifact(output, target_root):
+    candidates = []
+    for row in output.splitlines():
+        event = json.loads(row)
+        if (event.get("reason") == "compiler-artifact"
+                and event.get("target", {}).get("name") == "exacopy"):
+            candidates.append(event)
+    require(len(candidates) == 1, "expected exactly one managed Cargo CLI artifact")
+    event, = candidates
+    target = event["target"]
+    version = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
+    package_id = f"path+{CLI_PACKAGE.as_uri()}#{version}"
+    path = target_root / TARGET / "debug" / "exacopy"
+    require(event.get("package_id") == package_id
+            and event.get("manifest_path") == str(CLI_PACKAGE / "Cargo.toml")
+            and target.get("src_path") == str(CLI_PACKAGE / "src/main.rs")
+            and target.get("kind") == ["bin"] and target.get("crate_types") == ["bin"]
+            and target.get("edition") == "2024"
+            and event.get("profile", {}).get("test") is False
+            and event.get("features") == [MANAGED.required_feature]
+            and event.get("fresh") is False and event.get("executable") == str(path)
+            and path.is_absolute() and path.resolve(strict=True) == path,
+            "managed Cargo CLI artifact differs from the exact private bin target")
+    return path
+
+
+def executable_stamp(node):
+    return (node.st_dev, node.st_ino, node.st_mode, node.st_uid, node.st_gid,
+            node.st_nlink, node.st_size, node.st_mtime_ns, node.st_ctime_ns)
+
+
+def held_managed_image(path, fd, limit=256 * 1024 * 1024):
+    node = os.fstat(fd)
+    stamp = executable_stamp(node)
+    require(stat.S_ISREG(node.st_mode) and node.st_uid == os.geteuid()
+            and (node.st_mode & 0o500) == 0o500 and not (node.st_mode & 0o7022)
+            and node.st_nlink > 0 and 20 <= node.st_size <= limit
+            and executable_stamp(path.stat(follow_symlinks=False)) == stamp,
+            "managed executable identity or size differs")
+    header = os.pread(fd, 20, 0)
+    require(header[:6] == b"\x7fELF\x02\x01" and header[18:20] == b"\x3e\x00",
+            "expected a Linux x86-64 ELF managed image")
+    digest = hashlib.sha256()
+    offset = 0
+    while offset < node.st_size:
+        chunk = os.pread(fd, min(65536, node.st_size - offset), offset)
+        require(chunk, "managed executable ended during hashed observation")
+        digest.update(chunk)
+        offset += len(chunk)
+    require(not os.pread(fd, 1, offset)
+            and executable_stamp(os.fstat(fd)) == stamp
+            and executable_stamp(path.stat(follow_symlinks=False)) == stamp,
+            "managed executable changed during hashed observation")
+    return stamp, digest.hexdigest()
+
+
+def managed_cli_environment(fd, observation):
+    (device, inode, mode, _, _, _, size, _, _), digest = observation
+    facts = {"dev": device, "ino": inode, "mode": stat.S_IMODE(mode), "size": size, "sha256": digest}
+    environment = {f"EXACOPY_MANAGED_SYNC_CLI_{key.upper()}": str(value)
+                   for key, value in {**facts, "fd": fd}.items()}
+    return environment, facts
+
+
 def checked_result(output, facts):
     lines = output.splitlines()
     markers = [line.removeprefix(MARKER) for line in lines if line.startswith(MARKER)]
@@ -464,7 +529,7 @@ def native_object(identity):
     return f"{os.major(device)}:{os.minor(device)}:{inode}"
 
 
-def checked_managed_result(output, code, facts, anchors):
+def checked_managed_result(output, code, facts, anchors, cli_sha256):
     lines = output.splitlines()
     markers = [line.removeprefix(MANAGED_MARKER) for line in lines if line.startswith(MANAGED_MARKER)]
     require(len(markers) == 1, "required one managed production result marker")
@@ -488,8 +553,12 @@ def checked_managed_result(output, code, facts, anchors):
     prefix = "passed " + " ".join(f"{key}={value}" for key, value in fields.items()) + " "
     device = fields["anchor"].rsplit(":", 1)[0]
     identity = rf"({re.escape(device)}:[1-9][0-9]{{0,19}})"
-    suffix = re.fullmatch(rf"live={identity} live_left={identity} live_right={identity} controls=8 cleanup=verified",
-                          markers[0].removeprefix(prefix))
+    require(re.fullmatch(r"[0-9a-f]{64}", cli_sha256), "invalid selected managed CLI digest")
+    suffix = re.fullmatch(
+        rf"live={identity} live_left={identity} live_right={identity} "
+        rf"controls=8 cli_controls=15 cli_sha256={cli_sha256} cleanup=verified",
+        markers[0].removeprefix(prefix),
+    )
     require(markers[0].startswith(prefix) and suffix is not None and code == 0
             and lines.count("ok") == 1 and not lines.count("FAILED")
             and sum(line.startswith("test result: ok. 1 passed; 0 failed; 0 ignored;")
@@ -499,10 +568,11 @@ def checked_managed_result(output, code, facts, anchors):
             and len({fields["anchor"], fields["anchor_left"], fields["anchor_right"], *live}) == 6,
             "reported managed live directories must be distinct on the independent anchor device")
     return {"schema_version": 1, "outcome": "passed", "feature": MANAGED.required_feature, **fields,
-            **dict(zip(("live", "live_left", "live_right"), live)), "controls": 8, "cleanup": "verified"}
+            **dict(zip(("live", "live_left", "live_right"), live)), "controls": 8,
+            "cli_controls": 15, "cli_sha256": cli_sha256, "cleanup": "verified"}
 
 
-def execute(evidence, binary, env, facts, report, profile=HISTORY, sides=None):
+def execute(evidence, binary, env, facts, report, profile=HISTORY, sides=None, cli=None):
     with os.fdopen(os.open(binary, FD_FLAGS | os.O_NONBLOCK), "rb", buffering=0) as held:
         node = os.fstat(held.fileno())
         require(stat.S_ISREG(node.st_mode) and node.st_mode & 0o111
@@ -511,7 +581,8 @@ def execute(evidence, binary, env, facts, report, profile=HISTORY, sides=None):
         require(header[:6] == b"\x7fELF\x02\x01" and header[18:20] == b"\x3e\x00",
                 "expected a Linux x86-64 ELF test image")
         pinned = f"/proc/self/fd/{held.fileno()}"
-        report["executable_sha256"] = digest_file(held)
+        before_managed = held_managed_image(binary, held.fileno()) if profile is MANAGED else None
+        report["executable_sha256"] = before_managed[1] if before_managed else digest_file(held)
         for label, options in (("listed", []), ("ignored", ["--ignored"])):
             listed = command(evidence, label, [binary, "--list", "--format=terse", *options],
                              env=env, executable=pinned, held=(held.fileno(),))
@@ -520,18 +591,36 @@ def execute(evidence, binary, env, facts, report, profile=HISTORY, sides=None):
                 "--color", "never", profile.case]
         options = {"env": env, "executable": pinned, "held": (held.fileno(),), "timeout": 45}
         if profile is MANAGED:
-            output, code = command(evidence, "run", args, observe_exit=True, **options)
-            report["case"] = checked_managed_result(output, code, facts, sides)
+            require(cli is not None, "managed fixture requires the exact CLI companion")
+            require(held_managed_image(binary, held.fileno()) == before_managed,
+                    "held managed harness changed before execution")
+            with ExitStack() as stack:
+                cli_fd = os.open(cli, FD_FLAGS | os.O_NONBLOCK)
+                stack.callback(os.close, cli_fd)
+                before_cli = held_managed_image(cli, cli_fd, MANAGED_CLI_LIMIT)
+                require(before_cli[0][:2] != before_managed[0][:2],
+                        "managed CLI aliases the test harness")
+                cli_env, cli_facts = managed_cli_environment(cli_fd, before_cli)
+                options.update(env={**env, **cli_env}, held=(held.fileno(), cli_fd))
+                try:
+                    output, code = command(evidence, "run", args, observe_exit=True, **options)
+                finally:
+                    require(held_managed_image(cli, cli_fd, MANAGED_CLI_LIMIT) == before_cli
+                            and held_managed_image(binary, held.fileno()) == before_managed,
+                            "held managed executable changed after execution")
+                report["cli_executable"] = cli_facts
+                report["case"] = checked_managed_result(output, code, facts, sides, cli_facts["sha256"])
         elif profile is STATMOUNT:
             output, code = command(evidence, "run", args, observe_exit=True, **options)
             report["case"] = checked_statmount_result(output, code, facts, sides)
         else:
             result = command(evidence, "run", args, **options)
             report["case"] = checked_result(result, facts)
-        after = binary.stat(follow_symlinks=False)
-        require((node.st_dev, node.st_ino) == (after.st_dev, after.st_ino)
-                and report["executable_sha256"] == digest_file(held),
-                "held executable or exact name changed")
+        if profile is not MANAGED:
+            after = binary.stat(follow_symlinks=False)
+            require((node.st_dev, node.st_ino) == (after.st_dev, after.st_ino)
+                    and report["executable_sha256"] == digest_file(held),
+                    "held executable or exact name changed")
 
 
 def manifest_digest(profile=HISTORY):
@@ -639,8 +728,9 @@ def qualify(revision, temp, evidence, report, profile=HISTORY):
                 "PATH": "/usr/bin:/bin", "LC_ALL": "C", "TMPDIR": str(work),
                 profile.parent_variable: str(parent),
             }
+            cli = managed_cli_artifact(output, target_root) if profile is MANAGED else None
             execute(evidence, artifact(output, target_root, profile), child_env, before, report,
-                    profile, before_sides)
+                    profile, before_sides, cli)
             try:
                 after = observe(parent, parent_fd, evidence, "fixture-after", profile)
             except Blocked as error:

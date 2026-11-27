@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use exacopy_plan::workflow_sync::NativeObject;
 use exacopy_platform::linux::{FileIdentity, SyncProfileStore};
-use rustix::fs::{self, AtFlags, Mode, OFlags, ResolveFlags, StatVfsMountFlags};
+use rustix::fs::{self, AtFlags, Mode, OFlags, ResolveFlags, StatVfsMountFlags, StatxFlags, statx};
 use rustix::io::Errno;
 
 use super::{SUBJECT, TestResult};
@@ -139,6 +139,14 @@ impl Sandbox {
 		fs::renameat_with(parent, from, parent, to, fs::RenameFlags::NOREPLACE)?;
 		entry.name = to.to_vec();
 		Ok(())
+	}
+
+	pub(super) fn retain(&mut self) {
+		self.cleanup_attempted = true;
+		eprintln!(
+			"fixture retained at {} after unconfirmed CLI child cleanup",
+			self.path.display()
+		);
 	}
 
 	pub(super) fn clean(&mut self) -> TestResult {
@@ -321,4 +329,30 @@ pub(super) fn assert_live(roots: [&File; 2], contents: [&[u8]; 2]) -> TestResult
 		);
 	}
 	Ok(())
+}
+
+pub(super) const MOUNT_ID_UNIQUE: StatxFlags = StatxFlags::from_bits_retain(0x4000);
+
+pub(super) fn mount_id(directory: &File, flag: StatxFlags) -> TestResult<NonZeroU64> {
+	let stat = statx(directory, c"", AtFlags::EMPTY_PATH, flag)?;
+	assert_ne!(stat.stx_mask & flag.bits(), 0);
+	NonZeroU64::new(stat.stx_mnt_id).ok_or_else(|| "kernel omitted requested mount ID".into())
+}
+
+pub(super) fn print_success(anchor: &super::Anchor, live: [NativeObject; 3], cli_sha256: &str) {
+	let location = anchor.location;
+	println!(
+		"\nmanaged_sync_production=passed boot={} mnt_ns={} user_ns={} mount={} unique_mount={} anchor={} anchor_left={} anchor_right={} live={} live_left={} live_right={} controls=8 cli_controls=15 cli_sha256={cli_sha256} cleanup=verified",
+		uuid::Uuid::from_bytes(location.boot),
+		print_object(location.mount_namespace),
+		print_object(location.user_namespace),
+		location.ordinary_mount,
+		location.unique_mount,
+		print_object(location.parent),
+		print_object(anchor.sides[0]),
+		print_object(anchor.sides[1]),
+		print_object(live[0]),
+		print_object(live[1]),
+		print_object(live[2]),
+	);
 }
