@@ -49,7 +49,7 @@ pub(in crate::assembly::linux) enum RecoverWitnessedObservationError {
 	Job(Error),
 	Authority(AuthorityError),
 	History(WitnessedInspectionError),
-	Recovery(WitnessedRecoveryFailure<RecoveryAdapterError>),
+	Recovery(Box<WitnessedRecoveryFailure<RecoveryAdapterError>>),
 }
 
 impl From<Error> for RecoverWitnessedObservationError {
@@ -138,7 +138,7 @@ impl RecoverWitnessedObservation<'_, '_> {
 			held,
 			scratch,
 		)
-		.map_err(RecoverWitnessedObservationError::Recovery)
+		.map_err(|cause| RecoverWitnessedObservationError::Recovery(Box::new(cause)))
 	}
 }
 
