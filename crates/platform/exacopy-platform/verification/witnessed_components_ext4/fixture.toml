@@ -1,0 +1,39 @@
+schema_version = 1
+id = "linux-witnessed-components-ext4"
+target = "x86_64-unknown-linux-gnu"
+profile = "linux-unprivileged-whole-ext4-witnessed-components-v1"
+rust_toolchain = "1.100.0"
+runner = "verification/witnessed_components_ext4/run.py"
+controls = "verification/witnessed_components_ext4/test_runner.py"
+workflow = ".github/workflows/linux-witnessed-components-ext4-qualification.yml"
+result = "result.json"
+
+[[case]]
+selector = "linux::recovery::writer::prefix::tests::witness::actual_descriptor_link_keeps_both_names_and_held_exclusion"
+source = "src/linux/recovery/writer/prefix/tests/witness.rs"
+ignored = true
+
+[[case]]
+selector = "linux::recovery::writer::prefix::tests::witness::occupied_slot_or_refused_later_barrier_never_removes_evidence"
+source = "src/linux/recovery/writer/prefix/tests/witness.rs"
+ignored = true
+
+[[case]]
+selector = "linux::recovery::writer::prefix::tests::witness::witnessed_native_rename_observes_success_conflict_and_nonregular_incumbent"
+source = "src/linux/recovery/writer/prefix/tests/witness.rs"
+ignored = true
+
+[[case]]
+selector = "linux::recovery::writer::witness_reservation::tests::native_allocation_preserves_the_named_segment_and_anonymous_eof"
+source = "src/linux/recovery/writer/witness_reservation/tests.rs"
+ignored = true
+
+[[case]]
+selector = "linux::recovery::writer::witness_reservation::tests::only_a_submitted_journal_allocation_latches_the_lease_even_on_syscall_error"
+source = "src/linux/recovery/writer/witness_reservation/tests.rs"
+ignored = true
+
+[[case]]
+selector = "linux::recovery::writer::witness_reservation::continuation::tests::original_reserved_descriptor_writes_and_rereads_only_the_exact_successor"
+source = "src/linux/recovery/writer/witness_reservation/continuation/tests.rs"
+ignored = true

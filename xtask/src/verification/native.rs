@@ -10,12 +10,12 @@ use super::artifact_text;
 use crate::finding::Findings;
 use crate::workspace::APP_VERSION;
 
+mod closed_ext4;
 mod integration;
 mod managed_sync;
 
 const FIXTURE_MANIFEST: &str = "fixture.toml";
 const RESULT: &str = "result.json";
-const STATMOUNT_MANIFEST: &str = "verification/sync_history_ext4_statmount/fixture.toml";
 const STATMOUNT_FEATURE: &str = "experimental-linux-managed-sync";
 
 #[derive(Clone, Copy, Deserialize, Eq, PartialEq)]
@@ -42,6 +42,8 @@ enum Profile {
 	UnprivilegedTmpfsSyncPreview,
 	#[serde(rename = "linux-unprivileged-whole-ext4-sync-history-v1")]
 	UnprivilegedWholeExt4SyncHistory,
+	#[serde(rename = "linux-unprivileged-whole-ext4-witnessed-components-v1")]
+	UnprivilegedWholeExt4WitnessedComponents,
 	#[serde(rename = "linux-unprivileged-whole-ext4-sync-statmount-v1")]
 	UnprivilegedWholeExt4SyncStatmount,
 	#[serde(rename = "linux-unprivileged-whole-ext4-managed-sync-production-v1")]
@@ -55,6 +57,7 @@ impl Profile {
 			| Self::HostedRootSetupUnprivilegedObserver
 			| Self::UnprivilegedTmpfsSyncPreview
 			| Self::UnprivilegedWholeExt4SyncHistory
+			| Self::UnprivilegedWholeExt4WitnessedComponents
 			| Self::UnprivilegedWholeExt4SyncStatmount
 			| Self::UnprivilegedWholeExt4ManagedSyncProduction => Target::LinuxX86_64Gnu,
 		}
@@ -194,17 +197,9 @@ fn check_manifest(
 		);
 	}
 
-	if !managed_sync::check(package, manifest, &path, &fixture, findings) {
-		return;
-	}
-	let statmount = matches!(fixture.profile, Profile::UnprivilegedWholeExt4SyncStatmount);
-	if statmount != (manifest == Path::new(STATMOUNT_MANIFEST))
-		|| (statmount && !exact_statmount_case(package, &fixture.cases))
+	if !managed_sync::check(package, manifest, &path, &fixture, findings)
+		|| !closed_ext4::check(package, manifest, &path, &fixture, findings)
 	{
-		findings.add(
-			&path,
-			"statmount fixture requires its exact platform owner, manifest and one case",
-		);
 		return;
 	}
 
@@ -216,14 +211,6 @@ fn check_manifest(
 		findings,
 	);
 	check_cases(metadata, package, root, &path, &fixture, findings);
-}
-
-fn exact_statmount_case(package: &Package, cases: &[Case]) -> bool {
-	package.name.as_str() == "exacopy-platform"
-		&& matches!(cases, [case]
-			if case.test_target.as_deref() == Some("linux_sync_history_ext4_statmount")
-				&& case.source == Path::new("tests/linux_sync_history_ext4_statmount.rs")
-				&& case.selector == "held_ext4_history_mount_admits_unmapped_attributes")
 }
 
 fn check_custody(

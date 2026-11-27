@@ -1,0 +1,107 @@
+name: Linux witnessed component ext4 qualification
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/linux-witnessed-components-ext4-qualification.yml'
+      - '.github/ci/common.sh'
+      - '.github/ci/capture.sh'
+      - '.github/ci/install.sh'
+      - '.cargo/config.toml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'crates/platform/exacopy-platform/**'
+      - 'crates/foundation/exacopy-core/**'
+      - 'crates/foundation/exacopy-model/**'
+      - 'crates/interfaces/exacopy-endpoint/**'
+      - 'specs/dependencies/**'
+      - 'specs/verification/owners.toml'
+      - 'tools/apfs_source.py'
+      - 'tools/qualification/native_supervision.py'
+      - 'tools/transport_source.py'
+      - 'xtask/src/verification/native.rs'
+      - 'xtask/src/verification/native/**'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  EXPECTED_RUST_HOST: x86_64-unknown-linux-gnu
+  CARGO_BUILD_JOBS: "2"
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: never
+
+jobs:
+  qualify:
+    if: github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Confirm exact canonical hosted input
+        id: admission
+        run: |
+          test "$GITHUB_SERVER_URL" = https://github.com
+          test "${GITHUB_REPOSITORY,,}" = replicraft/exacopy
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_EVENT_NAME" = push
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = Linux
+          test "$RUNNER_ARCH" = X64
+          head=$(git rev-parse HEAD)
+          status=$(git status --porcelain)
+          test "$head" = "$GITHUB_SHA"
+          test -z "$status"
+          (umask 077; mkdir -- "$RUNNER_TEMP/exacopy-evidence")
+      - name: Validate portable evidence controls
+        run: |
+          bash .github/ci/capture.sh witnessed-components-controls python3 -B -Werror \
+            crates/platform/exacopy-platform/verification/witnessed_components_ext4/test_runner.py -v
+      - name: Prepare pinned build inputs
+        run: |
+          bash .github/ci/capture.sh witnessed-components-apfs python3 -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh witnessed-components-transport python3 -B tools/transport_source.py --fetch
+          bash .github/ci/capture.sh witnessed-components-rust bash .github/ci/install.sh rust
+          bash .github/ci/capture.sh witnessed-components-lock cargo +1.100.0 fetch --locked \
+            --target "$EXPECTED_RUST_HOST"
+      - name: Exercise held Linux witness components
+        id: native
+        run: |
+          bash .github/ci/capture.sh witnessed-components-ext4 python3 -B -Werror \
+            crates/platform/exacopy-platform/verification/witnessed_components_ext4/run.py --revision "$GITHUB_SHA"
+      - name: Retain exact native evidence
+        if: always() && steps.native.outputs.evidence_path != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-witnessed-components-ext4-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.native.outputs.evidence_path }}
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain workflow capture logs
+        if: always() && steps.admission.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-witnessed-components-ext4-capture-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-controls.log
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-controls.txt
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-apfs.log
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-apfs.txt
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-transport.log
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-transport.txt
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-rust.log
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-rust.txt
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-lock.log
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-lock.txt
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-ext4.log
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-ext4.txt
+          if-no-files-found: ignore
+          retention-days: 90
