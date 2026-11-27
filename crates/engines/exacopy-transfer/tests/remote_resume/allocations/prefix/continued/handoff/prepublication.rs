@@ -48,6 +48,7 @@ enum Fault {
 	WrongPolicyIds,
 	Consent,
 	DefinitiveAppendRefusal,
+	UnknownBeforeAppend,
 	UncertainAppend,
 	FalseAcknowledgement,
 	HistoricalSeal,
@@ -144,6 +145,9 @@ impl HeldWitnessPrepublication for Holder<'_> {
 		self.events.borrow_mut().push(frame.kind());
 		if frame.kind() == FrameKind::PublishIntent {
 			match self.fault {
+				Fault::UnknownBeforeAppend => {
+					return Err(WitnessedAppendError::Unconfirmed("custody unconfirmed"));
+				}
 				Fault::DefinitiveAppendRefusal => {
 					return Err(WitnessedAppendError::Refused("preflight"));
 				}
@@ -406,6 +410,12 @@ fn live_prepublication_stops_without_reissuing_any_uncertain_frame() {
 			&intent_attempted[..],
 			MetadataRecorded,
 			false,
+		),
+		(
+			Fault::UnknownBeforeAppend,
+			&intent_attempted[..],
+			MetadataRecorded,
+			true,
 		),
 		(
 			Fault::UncertainAppend,

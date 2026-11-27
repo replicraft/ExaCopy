@@ -104,6 +104,8 @@ pub struct WitnessedLiveCut<'current, 'facts> {
 pub enum WitnessedAppendError<E> {
 	/// The native effect was refused before it began.
 	Refused(E),
+	/// Current held custody or history became unconfirmed before submission.
+	Unconfirmed(E),
 	/// The native effect began or cannot be ruled out.
 	Uncertain(E),
 }
@@ -338,7 +340,10 @@ fn advance<H: HeldWitnessPrepublication>(
 	held.append(cut, &frame).map_err(|error| {
 		failure(
 			Some(confirmed),
-			matches!(error, WitnessedAppendError::Uncertain(_)),
+			matches!(
+				error,
+				WitnessedAppendError::Unconfirmed(_) | WitnessedAppendError::Uncertain(_)
+			),
 			Cause::Append {
 				kind: frame.kind(),
 				error,
