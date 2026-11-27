@@ -313,7 +313,7 @@ assumptions = [
     "Signed role declarations and supplied identity values do not establish native custody, actual EOF, protection from ID reuse or effect authority.",
 ]
 gates = ["rust"]
-rust = { file = "tests/windows_bootstrap.rs", test = "independent_trust_selection_and_signature_domain_are_mandatory", oracle = "A separately selected key, profile, job or root must match the signed owner. Refuse weak and noncanonical verification keys, mismatching key copies, an invalid signature and a signature from a different owner domain before accepting a prepared prefix." }
+rust = { file = "tests/windows_bootstrap.rs", test = "independent_trust_selection_and_signature_domain_are_mandatory", oracle = "A separately selected key, profile, job or root must match the signed owner. Refuse weak and noncanonical verification keys, mismatching key copies and a signature made in a different owner domain before accepting a prepared prefix." }
 
 [[obligation]]
 id = "P-080"
