@@ -56,6 +56,26 @@ Assert-Refused { Confirm-StageNoResidue 'synthetic' } 'Contains a named stream.'
 Assert-ObservationOrder 'children,streams'
 Write-Output 'Synthetic custody selector controls passed.'
 
+# Validate the managed diagnostic without a native disposition or a pathname.
+Add-Type -Path (Join-Path $PSScriptRoot 'windows-ntfs-custody.cs')
+$failure = [ExaCopyQualification.DirectoryCustody].GetMethod(
+    'DispositionFailure', [Reflection.BindingFlags]'NonPublic, Static')
+$entry = [ExaCopyQualification.DirectoryCustody+CleanupRole]::BuildEntry
+$build = [ExaCopyQualification.DirectoryCustody+CleanupRole]::BuildRoot
+$fixture = [ExaCopyQualification.DirectoryCustody+CleanupRole]::FixtureRoot
+foreach ($sampleFailure in @(
+    @{ Role = $entry; Code = 5; Attributes = [uint32]0x21; Detail = 'BuildEntry (type=file, win32=5, attributes=0x00000021)' },
+    @{ Role = $build; Code = 145; Attributes = [uint32]0x10; Detail = 'BuildRoot (type=directory, win32=145, attributes=0x00000010)' },
+    @{ Role = $fixture; Code = 16; Attributes = $null; Detail = 'FixtureRoot (type=unknown, win32=16, attributes=unavailable)' }
+)) {
+    $refusal = $failure.Invoke($null, [object[]]@($sampleFailure.Role, $sampleFailure.Code, $sampleFailure.Attributes))
+    if ($refusal.NativeErrorCode -ne $sampleFailure.Code -or
+        $refusal.Message -cne "Native nonrecursive disposition was refused for $($sampleFailure.Detail).") {
+        throw 'The fixture disposition diagnostic lost its path-free role, exact native status or type.'
+    }
+}
+Write-Output 'Synthetic disposition diagnostic controls passed.'
+
 $user = 'S-1-5-21-1-2-3-1001'
 $token = @{ user_sid = $user; administrator_enabled = $true }
 $sample = @(

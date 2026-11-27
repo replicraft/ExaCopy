@@ -208,7 +208,8 @@ function Remove-HeldStageFixture {
         Confirm-StageAncestorCustody $Ancestors
         Assert-StageSameIdentity $FixtureIdentity ([ExaCopyQualification.DirectoryCustody]::Observe($FixturePin))
         Assert-StageSameIdentity $FixtureIdentity ([ExaCopyQualification.DirectoryCustody]::Observe($selected))
-        [ExaCopyQualification.DirectoryCustody]::MarkForDeletion($selected)
+        [ExaCopyQualification.DirectoryCustody]::MarkForDeletion($selected,
+            [ExaCopyQualification.DirectoryCustody+CleanupRole]::FixtureRoot)
     } finally {
         $selected.Dispose()
     }

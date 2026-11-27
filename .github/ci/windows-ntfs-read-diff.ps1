@@ -105,7 +105,8 @@ function Remove-ReadDiffBuildChildren {
                 if (!$entry.Directory -and $current.Links -ne $links[$current.FileId]) {
                     throw 'The Read/Diff build artifact link count changed.'
                 }
-                [ExaCopyQualification.DirectoryCustody]::MarkForDeletion($selected)
+                [ExaCopyQualification.DirectoryCustody]::MarkForDeletion($selected,
+                    [ExaCopyQualification.DirectoryCustody+CleanupRole]::BuildEntry)
                 if (!$entry.Directory) { $links[$current.FileId]-- }
             } finally {
                 $selected.Dispose()
@@ -154,7 +155,8 @@ function Remove-HeldReadDiffFixture {
         Assert-ExaCopyExactEntries $Build @()
         Assert-ReadDiffTreeSecurity $Build $Ancestors.Owner
         Assert-ExaCopyNoNamedStreams $Build
-        [ExaCopyQualification.DirectoryCustody]::MarkForDeletion($namedBuild)
+        [ExaCopyQualification.DirectoryCustody]::MarkForDeletion($namedBuild,
+            [ExaCopyQualification.DirectoryCustody+CleanupRole]::BuildRoot)
     } finally {
         $namedBuild.Dispose()
     }
@@ -168,7 +170,8 @@ function Remove-HeldReadDiffFixture {
         Assert-StageSameIdentity $Identity ([ExaCopyQualification.DirectoryCustody]::Observe($disposition))
         Assert-ExaCopyExactEntries $Fixture @()
         Assert-ExaCopyNoNamedStreams $Fixture
-        [ExaCopyQualification.DirectoryCustody]::MarkForDeletion($disposition)
+        [ExaCopyQualification.DirectoryCustody]::MarkForDeletion($disposition,
+            [ExaCopyQualification.DirectoryCustody+CleanupRole]::FixtureRoot)
     } finally {
         $disposition.Dispose()
     }

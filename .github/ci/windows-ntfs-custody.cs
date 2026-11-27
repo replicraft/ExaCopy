@@ -23,6 +23,13 @@ namespace ExaCopyQualification
         private const int SharingViolation = 32;
         private const int MaxSecurityDescriptorBytes = 65536;
 
+        public enum CleanupRole
+        {
+            FixtureRoot,
+            BuildRoot,
+            BuildEntry,
+        }
+
         private enum FileInfoClass
         {
             Standard = 1,
@@ -170,11 +177,30 @@ namespace ExaCopyQualification
                 $"{identity.VolumeSerial:X16}:{identity.IdHigh:X16}{identity.IdLow:X16}");
         }
 
-        public static void MarkForDeletion(SafeFileHandle handle)
+        public static void MarkForDeletion(SafeFileHandle handle, CleanupRole role)
         {
             var information = new DispositionInfo { DeleteFile = 1 };
-            Require(SetDisposition(handle, FileInfoClass.Disposition, ref information,
-                Size<DispositionInfo>()), "Native nonrecursive directory disposition was refused.");
+            if (SetDisposition(handle, FileInfoClass.Disposition, ref information, Size<DispositionInfo>()))
+                return;
+
+            // Keep the disposition error even if the subsequent handle observation fails.
+            var error = Marshal.GetLastWin32Error();
+            uint? attributes = GetAttributeTag(handle, FileInfoClass.AttributeTag, out var tag,
+                Size<AttributeTagInfo>()) ? tag.Attributes : (uint?)null;
+            throw DispositionFailure(role, error, attributes);
+        }
+
+        private static Win32Exception DispositionFailure(CleanupRole role, int error, uint? attributes)
+        {
+            string kind = "unknown";
+            string flags = "unavailable";
+            if (attributes.HasValue)
+            {
+                kind = (attributes.Value & Directory) == Directory ? "directory" : "file";
+                flags = FormattableString.Invariant($"0x{attributes.Value:X8}");
+            }
+            return new Win32Exception(error, FormattableString.Invariant(
+                $"Native nonrecursive disposition was refused for {role} (type={kind}, win32={error}, attributes={flags})."));
         }
 
         private static uint Size<T>() where T : struct
