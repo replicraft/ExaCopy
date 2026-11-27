@@ -59,5 +59,12 @@ Platform coverage rose by 355 lines to 6,876/8,910 (77.1717%); the 85% gate
 still failed. Endpoint coverage remained 580/663 and core remained 34/34.
 [Exact coverage run](https://github.com/replicraft/ExaCopy/actions/runs/46029308664).
 These component measurements supply no restart or power-loss qualification.
-The expanded 17-case collection is source-reviewed; its first hosted result
-remains pending. The original seven-case qualification is unchanged.
+The expanded collection passed at `b9fcc0f`: all 17 native cases, their 34
+listings, and all three fixture cleanups were verified. The original index and
+31 ordered objects produced the same 90 per-file line denominators. Platform
+coverage reached 7,186/8,910 (80.6510%), still below 85%; the ordinary baseline
+remained 6,521/8,910. Both new receipt read-back refusal tests passed in the
+383-case ordinary run. The original seven-case qualification is unchanged.
+[Expanded coverage run](https://github.com/replicraft/ExaCopy/actions/runs/46033196570).
+Some covered helpers reside in `process_crash` modules, but these foreground
+executions supply no process-crash qualification.
