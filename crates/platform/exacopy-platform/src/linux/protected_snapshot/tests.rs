@@ -11,6 +11,9 @@ use super::{
 use crate::scratch::Scratch;
 use crate::{read_protected_snapshot, read_protected_snapshot_into};
 
+#[path = "../../../tests/unit/protected_snapshot.rs"]
+mod coverage;
+
 const FILE: &str = "selected.fixture";
 
 fn create_fixture(scratch: &Scratch) -> File {
