@@ -19,11 +19,11 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 
 use crate::protected_snapshot::{MAX_PROTECTED_SNAPSHOT_BYTES, ProtectedSnapshotError as Error};
-use crate::windows::native::streams::{StreamError, require_unnamed_stream};
 use crate::windows::native::{
 	Kind, ObjectId, Refusal, RelativeFileOpen, local_ntfs_path, observe_file, open_relative_entry,
 	parse_volume_guid,
 };
+use crate::windows::streams::{StreamError, require_unnamed_stream};
 
 use super::{
 	DIRECTORY_RIGHTS, DrivePath, FILE_OPENED_INFORMATION, HeldDirectory, MAX_PATH_UNITS,

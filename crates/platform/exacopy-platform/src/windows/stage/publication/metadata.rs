@@ -8,8 +8,8 @@ use windows_sys::Win32::Security::{
 };
 
 use super::WindowsPublicationError;
-use crate::windows::native::streams::{StreamError, require_unnamed_stream};
 use crate::windows::stage::handles::Stamp;
+use crate::windows::streams::{StreamError, require_unnamed_stream};
 
 const SECURITY_BYTES: usize = 16 * 1024;
 

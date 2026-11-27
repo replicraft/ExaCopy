@@ -20,6 +20,18 @@ pub use component::{MAX_WINDOWS_COMPONENT_UNITS, WindowsComponent, WindowsNameEr
 mod native;
 #[cfg(all(target_os = "windows", feature = "experimental-windows-copy"))]
 mod stage;
+#[cfg(all(
+	target_os = "windows",
+	any(
+		feature = "experimental-windows-copy",
+		feature = "experimental-windows-read"
+	)
+))]
+#[allow(
+	unsafe_code,
+	reason = "bounded initialized Windows stream inventory query"
+)]
+mod streams;
 
 #[cfg(all(target_os = "windows", feature = "experimental-windows-copy"))]
 pub use native::ObjectId as WindowsStageIdentity;

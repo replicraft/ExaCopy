@@ -23,8 +23,6 @@ use windows_sys::Win32::System::IO::IO_STATUS_BLOCK;
 
 use super::{MAX_WINDOWS_COMPONENT_UNITS, WindowsComponent};
 
-pub(super) mod streams;
-
 pub(super) const DATA_RECALL_ATTRIBUTES: u32 =
 	FILE_ATTRIBUTE_OFFLINE | FILE_ATTRIBUTE_RECALL_ON_OPEN | FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS;
 
