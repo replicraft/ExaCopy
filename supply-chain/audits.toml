@@ -572,6 +572,25 @@ ExaCopy enables only the empty default feature through serde_json. The optional
 no-panic proc macro was outside the resolved build and this evidence.
 """
 
+[[audits.kem]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.3.0"
+notes = """
+2026-11-27. Reviewed the entire locked crate archive SHA-256
+01737161ba802849cfd486b5bd209d38ba4943494c249a8126005170c7621edd.
+The original manifest, README, and library source match upstream commit
+23118eab10a60fb31ee81785bd02dac7ccb12681. This no_std, unsafe-forbidden
+crate defines KEM interfaces, type-sized keys and ciphertexts, and wrappers
+which check slice length before calling their selected implementation.
+The optional getrandom wrapper delegates to the system RNG through
+UnwrapErr, so it can panic on system entropy failure. The locked feature
+set leaves this wrapper disabled. Cryptographic primitives, secret
+zeroization, RNG provider behavior, and side-channel properties belong to
+implementations and dependencies outside this exact package review.
+No build script, proc macro, or crate-local I/O. Static source review only.
+"""
+
 [[audits.md5]]
 who = "OpenAI Codex (dependency source review)"
 criteria = "safe-to-deploy"
@@ -1241,4 +1260,22 @@ namespace and identifier normalization, symbol identity, string escaping and
 descriptor words matched exact vectors. The build script emitted the exact
 hash accepted by the packaged schema approval test. Downstream macro,
 generated bindings and ABI behavior are separately scoped.
+"""
+
+[[audits.windows-targets]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.52.6"
+notes = """
+2026-11-27. Reviewed the entire locked crate archive SHA-256
+9b724f72796e036ab90c1021d4780d4d3d648aca59e491e6b98e725b84e99973.
+The original manifest, README, and library source match upstream commit
+db06b51c2ebb743efb544d40e3064efa49f28d38. This no_std package has no build
+script or proc macro. Its four declarative macro branches emit foreign
+function declarations for x86 raw-dylib, other raw-dylib, Windows import
+libraries or non-Windows declarations. They do not perform calls or
+manufacture safe wrappers. Callers must provide correct signatures,
+ABI and import names, and uphold the foreign function contracts.
+The eight target-specific Windows import-library packages are separate
+artifacts outside this exact package audit. Static source review only.
 """
