@@ -7,6 +7,7 @@ license.workspace = true
 publish = false
 
 [features]
+experimental-linux-managed-sync = ["exacopy-platform?/experimental-linux-managed-sync"]
 experimental-ssh-capture = [
 	"dep:exacopy-sftp",
 	"dep:exacopy-ssh",
@@ -28,6 +29,11 @@ experimental-windows-diff = ["dep:exacopy-diff", "dep:exacopy-endpoint", "dep:ex
 [[bin]]
 name = "exacopy"
 path = "src/main.rs"
+
+[[test]]
+name = "linux_managed_sync_production"
+path = "tests/linux_managed_sync_production.rs"
+required-features = ["experimental-linux-managed-sync"]
 
 [dependencies]
 clap.workspace = true

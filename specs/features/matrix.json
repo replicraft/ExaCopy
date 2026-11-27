@@ -51,6 +51,14 @@
       "targets": ["x86_64-unknown-linux-gnu"],
       "purpose": "Check the opt-in held ext4 mount attribute adapter and its separately qualified native integration test."
     },
+    "experimental-linux-managed-sync-preview": {
+      "defaults": false,
+      "check_cli": false,
+      "feature_statuses": [],
+      "exact_features": ["exacopy-cli/experimental-linux-managed-sync", "exacopy-platform/experimental-linux-managed-sync"],
+      "targets": ["x86_64-unknown-linux-gnu"],
+      "purpose": "Check the default-off managed sync assembly and its exact native integration target without selecting CLI dispatch."
+    },
     "experimental-apfs-copy": {
       "defaults": false,
       "check_cli": false,
@@ -202,6 +210,13 @@
       }
     },
     "exacopy-cli": {
+      "experimental-linux-managed-sync": {
+        "status": "experimental",
+        "targets": ["x86_64-unknown-linux-gnu"],
+        "enables": ["exacopy-platform?/experimental-linux-managed-sync"],
+        "resolution_probe": [],
+        "purpose": "Compose the exact owner-private managed sync policy, held Linux read lease and authenticated historical preview."
+      },
       "experimental-ssh-capture": {
         "status": "experimental",
         "targets": ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"],

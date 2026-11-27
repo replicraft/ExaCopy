@@ -12,6 +12,8 @@ use exacopy_transfer::linux::{
 
 #[cfg(test)]
 mod crash_tests;
+#[cfg(feature = "experimental-linux-managed-sync")]
+pub mod managed_sync;
 mod public_plan;
 mod recovery;
 #[cfg(all(test, feature = "experimental-ssh-capture"))]

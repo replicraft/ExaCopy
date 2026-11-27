@@ -27,11 +27,7 @@ impl LocalProfile {
 		let held = HeldOwnerSeed::open(parent, name, &mut seed, &mut eof_probe)?;
 
 		let signer = SigningKey::from_bytes(&seed);
-		let id = OwnerProfileId::from_bytes(identifier(
-			"ExaCopy local CLI profile ID v1",
-			signer.verifying_key().as_bytes(),
-		))
-		.map_err(|_| ProfileError::Identifier)?;
+		let id = profile_id_for_key(&signer.verifying_key())?;
 		Ok(Self {
 			id,
 			signer,
@@ -70,6 +66,14 @@ pub(crate) fn init(path: &Path) -> Result<(), ProfileError> {
 	let (parent, name) = split(path).map_err(|_| ProfileError::InvalidPath)?;
 	let mut seed = Zeroizing::new([0; SEED_BYTES]);
 	initialize_owner_seed(parent, name, &mut seed).map_err(ProfileError::from)
+}
+
+pub(crate) fn profile_id_for_key(key: &VerifyingKey) -> Result<OwnerProfileId, ProfileError> {
+	OwnerProfileId::from_bytes(identifier(
+		"ExaCopy local CLI profile ID v1",
+		key.as_bytes(),
+	))
+	.map_err(|_| ProfileError::Identifier)
 }
 
 fn identifier(domain: &str, material: &[u8]) -> [u8; 16] {

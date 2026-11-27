@@ -7,6 +7,8 @@ use crate::report::INCONCLUSIVE;
 
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
+pub(crate) mod managed_policy;
 
 pub(crate) fn run(
 	command: &SyncPreviewCommand,

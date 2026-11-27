@@ -1699,7 +1699,7 @@
         }
       },
       {
-        "profiles": ["experimental-linux-managed-sync"],
+        "profiles": ["experimental-linux-managed-sync", "experimental-linux-managed-sync-preview"],
         "inputs": {
           "anstyle@1.0.14": {"parents": ["clap_builder@4.6.10"], "features": ["default", "std"]},
           "arrayvec@0.7.8": {"parents": ["blake3@1.8.7"], "features": []},
