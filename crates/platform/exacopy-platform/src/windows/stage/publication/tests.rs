@@ -439,12 +439,20 @@ fn native_success_with_observation_failure_requires_reconciliation() {
 	assert_absent(&private);
 	assert_bytes(&public, exact.stage, DATA);
 	let root_identity = observe(root_file.as_handle(), Kind::Directory).unwrap();
+	let reopened: WindowsPublicationBinding<'static> = WindowsPublicationBinding {
+		model: exact.model,
+		stage_parent: exact.stage_parent,
+		stage: exact.stage,
+		destination_parent: exact.destination_parent,
+		stage_name: WindowsComponent::new(STAGE).unwrap(),
+		target_name: WindowsComponent::new(PUBLIC).unwrap(),
+	};
 	drop(result);
 	drop(stage_file);
 	drop(root_file);
 
-	reopen::inspect_reopened_publication(&fixture, root_identity, exact);
+	reopen::inspect_reopened_publication(&fixture, root_identity, reopened);
 	assert_absent(&private);
-	assert_bytes(&public, exact.stage, DATA);
-	fixture.clean([(public, exact.stage)]);
+	assert_bytes(&public, reopened.stage, DATA);
+	fixture.clean([(public, reopened.stage)]);
 }
