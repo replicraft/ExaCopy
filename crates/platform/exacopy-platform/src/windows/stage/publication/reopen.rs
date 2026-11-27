@@ -14,7 +14,7 @@ use super::{
 };
 use crate::windows::WindowsComponent;
 use crate::windows::native::{
-	Kind, ObjectId, Refusal, RelativeFileOpen, observe, observe_entry, open_relative_entry,
+	Kind, ObjectId, Refusal, RelativeFileOpen, observe_entry, open_relative_entry,
 	open_relative_file,
 };
 
