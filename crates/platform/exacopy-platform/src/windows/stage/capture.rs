@@ -8,7 +8,7 @@ use exacopy_endpoint::{ClosedStage, FreshStage, MAX_FILE_LENGTH, ReadView};
 use windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ;
 
 use super::{
-	Location, MAX_WINDOWS_STAGE_IO_BYTES, ObjectId, ObservedStage, WindowsComponent,
+	Location, MAX_WINDOWS_STAGE_IO_BYTES, ObjectId, ObservedStage, READ_ACCESS, WindowsComponent,
 	WindowsStageDirectory, WindowsStageError, WindowsStageReadBack, WindowsStageWriter,
 };
 
@@ -179,6 +179,8 @@ impl WindowsStageDirectory<'_> {
 			file,
 			observed,
 			length,
+			reader_access: READ_ACCESS,
+			reader_share: FILE_SHARE_READ,
 		};
 		stage.check_eof()?;
 		Ok(WindowsRetainedStage { stage })

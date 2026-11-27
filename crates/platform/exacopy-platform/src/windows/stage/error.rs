@@ -10,6 +10,12 @@ use crate::windows::native::Refusal;
 #[derive(Debug)]
 pub struct NativeStageError(Refusal);
 
+impl NativeStageError {
+	pub(super) fn new(cause: Refusal) -> Self {
+		Self(cause)
+	}
+}
+
 impl fmt::Display for NativeStageError {
 	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
 		self.0.fmt(formatter)
@@ -59,11 +65,11 @@ pub enum WindowsStageError {
 
 impl WindowsStageError {
 	pub(super) fn native(error: Refusal) -> Self {
-		Self::Native(NativeStageError(error))
+		Self::Native(NativeStageError::new(error))
 	}
 
 	pub(super) fn creation_uncertain(error: Refusal) -> Self {
-		Self::CreateUncertain(NativeStageError(error))
+		Self::CreateUncertain(NativeStageError::new(error))
 	}
 }
 

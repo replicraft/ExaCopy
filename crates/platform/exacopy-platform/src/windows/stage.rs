@@ -27,11 +27,18 @@ mod error;
 	reason = "bounded handle observations and consuming Windows handle close"
 )]
 mod handles;
+mod publication;
 
 use handles::{Stamp, close_writer, stamp};
 
 pub use capture::{WindowsRetainedStage, WindowsStagePrefix, WindowsStageView};
 pub use error::{NativeStageError, WindowsStageError};
+pub use publication::{
+	WindowsClosedPublicationStage, WindowsPublicationAttempt, WindowsPublicationBinding,
+	WindowsPublicationDestination, WindowsPublicationError, WindowsPublicationMetadata,
+	WindowsPublicationOutcome, WindowsPublicationRoot, WindowsSealedPublicationStage,
+	WindowsUnconfirmedPublicationDirectory,
+};
 
 /// Maximum bytes admitted for one synchronous stage read or write.
 pub const MAX_WINDOWS_STAGE_IO_BYTES: usize = 4 * 1024 * 1024;
@@ -156,12 +163,16 @@ impl Location<'_> {
 	}
 
 	fn open_read(&self, share: u32) -> Result<File, WindowsStageError> {
+		self.open_observation(READ_ACCESS, share)
+	}
+
+	fn open_observation(&self, access: u32, share: u32) -> Result<File, WindowsStageError> {
 		self.parent.check()?;
 		self.parent
 			.open(
 				self.name,
 				RelativeFileOpen {
-					access: READ_ACCESS,
+					access,
 					share,
 					disposition: FILE_OPEN,
 					attributes: OBJ_DONT_REPARSE,
@@ -240,6 +251,16 @@ impl<'stage> WindowsStageWriter<'stage> {
 		sync: impl FnOnce(&File) -> io::Result<()>,
 		close: impl FnOnce(File) -> io::Result<()>,
 	) -> Result<WindowsStageReadBack<'stage>, WindowsStageError> {
+		self.finish_with_observation(sync, close, READ_ACCESS, FILE_SHARE_READ)
+	}
+
+	fn finish_with_observation(
+		self,
+		sync: impl FnOnce(&File) -> io::Result<()>,
+		close: impl FnOnce(File) -> io::Result<()>,
+		reader_access: u32,
+		reader_share: u32,
+	) -> Result<WindowsStageReadBack<'stage>, WindowsStageError> {
 		let file = self.file.ok_or(WindowsStageError::WriterRetired)?;
 		let Self {
 			location,
@@ -261,7 +282,7 @@ impl<'stage> WindowsStageWriter<'stage> {
 		location.check(pin.as_handle(), length)?;
 		close(file).map_err(WindowsStageError::CloseWriter)?;
 
-		let reader = location.open_read(FILE_SHARE_READ)?;
+		let reader = location.open_observation(reader_access, reader_share)?;
 		let observed = location.check(reader.as_handle(), length)?;
 		if location.check(pin.as_handle(), length)? != observed {
 			return Err(WindowsStageError::Changed);
@@ -271,6 +292,8 @@ impl<'stage> WindowsStageWriter<'stage> {
 			file: reader,
 			observed,
 			length,
+			reader_access,
+			reader_share,
 		};
 		observation.check_eof()?;
 		Ok(WindowsStageReadBack { observation })
@@ -288,6 +311,8 @@ struct ObservedStage<'stage> {
 	file: File,
 	observed: Stamp,
 	length: u64,
+	reader_access: u32,
+	reader_share: u32,
 }
 
 impl WindowsStageReadBack<'_> {
@@ -341,7 +366,9 @@ impl ObservedStage<'_> {
 	}
 
 	fn open_checked_view(&self) -> Result<File, WindowsStageError> {
-		let reader = self.location.open_read(FILE_SHARE_READ)?;
+		let reader = self
+			.location
+			.open_observation(self.reader_access, self.reader_share)?;
 		self.check_stamps(&reader)?;
 		Ok(reader)
 	}

@@ -418,7 +418,7 @@ try {
 
     if ($Mode -eq 'Stage') {
         $failures = Run-TestLane -Name 'stage_contract_controls' -ExpectedTests 3 `
-            -HarnessArgs @('windows::stage::')
+            -HarnessArgs @('windows::stage::', '--skip', 'windows::stage::publication::')
         $failures += Run-TestLane -Name 'ordinary_ntfs_stage' -ExpectedTests 5 `
             -HarnessArgs @('--ignored', 'windows::stage::tests::', '--skip', 'stage_symlink_')
         $capture = 'windows::stage::capture::tests::'

@@ -18,6 +18,18 @@ pub(super) struct Stamp {
 	attributes: u32,
 }
 
+impl Stamp {
+	pub(super) fn has_archive(self) -> bool {
+		self.attributes & FILE_ATTRIBUTE_ARCHIVE != 0
+	}
+
+	pub(super) fn preserves_required(self, original: Self) -> bool {
+		self.created == original.created
+			&& self.written == original.written
+			&& self.attributes == original.attributes
+	}
+}
+
 pub(super) fn stamp(handle: BorrowedHandle<'_>, length: u64) -> Result<Stamp, WindowsStageError> {
 	let mut standard = StandardInformation::default();
 	let mut basic = FILE_BASIC_INFO::default();

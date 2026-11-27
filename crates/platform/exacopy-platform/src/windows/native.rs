@@ -122,6 +122,22 @@ pub(super) fn open_relative_entry(
 	request: RelativeFileOpen,
 	kind: Kind,
 ) -> Result<OwnedHandle, Refusal> {
+	let (handle, information) = open_relative_entry_observed(parent, name, request, kind)?;
+	if request
+		.expected_result
+		.is_some_and(|expected| expected != information)
+	{
+		return Err(Refusal::UnexpectedOpenResult(information));
+	}
+	Ok(handle)
+}
+
+pub(super) fn open_relative_entry_observed(
+	parent: BorrowedHandle<'_>,
+	name: WindowsComponent<'_>,
+	request: RelativeFileOpen,
+	kind: Kind,
+) -> Result<(OwnedHandle, usize), Refusal> {
 	let kind = match kind {
 		Kind::Directory => FILE_DIRECTORY_FILE,
 		Kind::RegularFile => FILE_NON_DIRECTORY_FILE,
@@ -172,13 +188,7 @@ pub(super) fn open_relative_entry(
 	}
 	// SAFETY: NtCreateFile succeeded and transferred an independently owned file handle.
 	let handle = unsafe { OwnedHandle::from_raw_handle(handle) };
-	if request
-		.expected_result
-		.is_some_and(|expected| expected != status_block.Information)
-	{
-		return Err(Refusal::UnexpectedOpenResult(status_block.Information));
-	}
-	Ok(handle)
+	Ok((handle, status_block.Information))
 }
 
 pub(super) fn observe(handle: BorrowedHandle<'_>, kind: Kind) -> Result<ObjectId, Refusal> {
