@@ -75,8 +75,12 @@ The paired source review of `zmij 1.0.23` accepted an exact-version
 verified all 17 locked archive members and reviewed buffer, table, SIMD and
 UTF-8 invariants. A big-endian AArch64 NEON numeric-order defect and a private
 test-helper bounds defect remain recorded. This is no numerical round-trip or
-native qualification. No dependency code ran; hosted Cargo Vet replay is
-pending. The local review and inventories are retained under
+native qualification. No dependency code ran during review. The hosted
+`cargo vet --locked` replay at `adba747` removed exactly the `zmij 1.0.23`
+gap, reducing 166 to 165 without changing any other missing record. The gate
+still failed; 164 `safe-to-deploy` and one `safe-to-run` records remain open.
+[Exact dependency-policy job](https://github.com/replicraft/ExaCopy/actions/runs/46037037379/job/140634944275).
+The local review and inventories are retained under
 `target/agent-evidence/dependency-source-continuation/zmij/`.
 
 ## Records left open
