@@ -87,14 +87,12 @@ stat baseline, and rechecks the original leased ancestry and both names.
 Consumer firmlink and dataless admission now uses the companion's typed
 `ObjectFlags`. ExaCopy keeps the comparison with its recorded publication
 expectation.
-Existing `Directory::create_private_directory` can also replace consumer
-`mkdirat`/open/barrier scaffolding, while preserving separate created,
-existing and created-but-unconfirmed outcomes and ExaCopy's strict 0700/ACL
-admission. `write_private_artifact_checked` now supplies exclusive creation,
-held/name observation, a file barrier, consuming checked close and independent
-byte/EOF read-back. ExaCopy uses it for immutable owner and plan records,
-retaining their names, formats, resource reservations, directory barriers
-and final held/name identity checks. Receipt migration remains separate.
+ExaCopy uses `write_private_artifact_checked` for immutable owner and
+plan records, keeping their names, formats, directory barriers and final
+held/name identity checks. The current companion APIs need two additions
+before ExaCopy can delegate private-directory creation and pending
+receipt preparation with their existing observation and error order.
+[Mounted companion follow-ups](apfs-companion-followups.md)
 The adapter retains strict ACL admission,
 including the existing refusal of a present native no-ACL marker rather than
 an explicit zero-entry payload, and map nested restoration
