@@ -120,8 +120,11 @@ COFF objects and all 42,215 index entries. Decorated i386 routes match the
 reviewed MSVC encoding; the linker supplies any executable import thunks.
 Trusted build inputs, native linking and deployment-controlled module lookup
 remain assumptions. Native execution and upstream regeneration remain
-unqualified. Cargo Vet replay is pending; the last verified report has 163
-gaps. The reviews and complete inventories remain under
+unqualified. At `11d2134`, Cargo Vet removed only this package's missing
+audit row, reducing the report from 163 to 162 gaps. The gate still fails;
+all other rows are unchanged and retain their order.
+[Exact dependency-policy job](https://github.com/replicraft/ExaCopy/actions/runs/46070224005/job/140745109964).
+The reviews and complete inventories remain under
 `target/agent-evidence/dependency-gnullvm-next/`.
 
 ## Records left open
