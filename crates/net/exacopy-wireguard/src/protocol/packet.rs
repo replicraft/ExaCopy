@@ -1,5 +1,8 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
+use boringtun::noise::TunnResult;
+use boringtun::noise::errors::WireGuardError;
+
 use super::ProtocolError;
 
 const HANDSHAKE_INITIATION: [u8; 4] = 1_u32.to_le_bytes();
@@ -11,6 +14,43 @@ const RESPONSE_EPHEMERAL_OFFSET: usize = 12;
 const TRANSPORT_MESSAGE: [u8; 4] = 4_u32.to_le_bytes();
 // WireGuard whitepaper section 6.1. A key serves counters zero through limit - 1.
 pub(super) const REJECT_AFTER_MESSAGES: u64 = u64::MAX - (1 << 13);
+
+#[derive(Clone, Copy)]
+pub(super) enum ReceiveMode {
+	Ordinary,
+	#[cfg(all(unix, feature = "experimental-udp", feature = "experimental-tcp"))]
+	BlockedControl,
+}
+
+impl ReceiveMode {
+	pub(super) const fn drops_rejected_input(self) -> bool {
+		match self {
+			Self::Ordinary => false,
+			#[cfg(all(unix, feature = "experimental-udp", feature = "experimental-tcp"))]
+			Self::BlockedControl => true,
+		}
+	}
+
+	pub(super) fn drops_backend_rejection(self, output: &TunnResult<'_>) -> bool {
+		self.drops_rejected_input()
+			&& matches!(
+				output,
+				TunnResult::Err(
+					WireGuardError::UnexpectedPacket
+						| WireGuardError::WrongIndex
+						| WireGuardError::WrongKey
+						| WireGuardError::InvalidTai64nTimestamp
+						| WireGuardError::WrongTai64nTimestamp
+						| WireGuardError::InvalidMac
+						| WireGuardError::InvalidAeadTag
+						| WireGuardError::InvalidCounter
+						| WireGuardError::DuplicateCounter
+						| WireGuardError::NoCurrentSession
+						| WireGuardError::UnderLoad
+				)
+			)
+	}
+}
 
 pub(super) fn admitted_counter(datagram: &[u8]) -> bool {
 	if !datagram.starts_with(&TRANSPORT_MESSAGE) {

@@ -76,6 +76,17 @@ same generation and the peer's fixed inner address. The resulting target is
 for future stack integration. An actual dial still needs authorization
 at the initiating effect.
 
+With the experimental UDP and TCP features enabled, Linux and macOS keep
+FIFO-head control eligible while TCP ingress is occupied. The actor checks
+the connected peer and a dedicated allowance before consuming a handshake,
+cookie or empty transport candidate. Each admitted attempt spends one of
+eight charges before dequeue or protocol work. Only a newly confirmed selected
+key renews the allowance. The actor leaves ordinary protocol work in reserve,
+and timers and write readiness remain independently eligible. A TCP data
+datagram at the head stays queued and delays control behind it. Windows keeps
+the ordinary receive-interest gating. The control path does not retain
+ciphertext on native send backpressure.
+
 The native tests use localhost and a synthetic route owner. They exercise
 encrypted two-way traffic, peer and datagram bounds, revocation at egress
 and during a receive wait, expiry, generation reuse, and dial admission.

@@ -18,7 +18,7 @@ use crate::udp::tests::{
 use super::*;
 
 #[derive(Clone)]
-struct Owner(Arc<Mutex<Lease>>);
+pub(super) struct Owner(Arc<Mutex<Lease>>);
 
 struct Lease {
 	binding: RouteObservation,
@@ -65,7 +65,7 @@ impl TcpRouteOwner for Owner {
 	}
 }
 
-async fn pair() -> (Owner, UdpPeer<Owner>, Owner, UdpPeer<Owner>) {
+pub(super) async fn pair() -> (Owner, UdpPeer<Owner>, Owner, UdpPeer<Owner>) {
 	let (first, second) = socket_pair().await;
 	let first_owner = Owner::new(binding(1));
 	let second_owner = Owner::new(binding(2));

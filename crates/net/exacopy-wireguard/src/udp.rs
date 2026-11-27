@@ -11,6 +11,8 @@ use tokio::net::UdpSocket;
 
 use crate::protocol::{MAX_DATAGRAM_BYTES, PacketOutput, PeerBinding, ProtocolError, ProtocolPeer};
 
+#[cfg(all(unix, feature = "experimental-tcp"))]
+mod blocked_control;
 mod error;
 #[cfg(feature = "experimental-tcp")]
 mod tcp;
@@ -294,6 +296,11 @@ enum Operation<'packet> {
 	Tick,
 	Send(&'packet [u8]),
 	Receive(&'packet [u8]),
+	#[cfg(all(unix, feature = "experimental-tcp"))]
+	ReceiveBlocked(
+		crate::protocol::blocked_control::BlockedControlPermit,
+		&'packet [u8],
+	),
 }
 
 impl Operation<'_> {
@@ -307,6 +314,8 @@ impl Operation<'_> {
 			Self::Tick => protocol.tick(output),
 			Self::Send(packet) => protocol.send(packet, output),
 			Self::Receive(packet) => protocol.receive(protocol.outer_endpoint(), packet, output),
+			#[cfg(all(unix, feature = "experimental-tcp"))]
+			Self::ReceiveBlocked(permit, packet) => protocol.receive_blocked_control(permit, packet, output),
 		}
 	}
 }

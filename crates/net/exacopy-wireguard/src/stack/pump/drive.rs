@@ -40,13 +40,13 @@ pub(super) async fn run<I: PacketIo>(
 		if signals.cancelled.is_cancelled() {
 			return Err(PumpError::Cancelled);
 		}
-		io.check(tcp.binding()).map_err(PumpError::Route)?;
 		if work == WORK_BUDGET {
 			tokio::task::yield_now().await;
 			work = 0;
 			continue;
 		}
 		work += 1;
+		io.check(tcp.binding()).map_err(PumpError::Route)?;
 		let now = Instant::now();
 		let elapsed = now
 			.checked_duration_since(start)

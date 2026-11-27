@@ -136,6 +136,14 @@ impl KeyLifetime {
 }
 
 impl ProtocolPeer {
+	#[cfg(all(
+		test,
+		all(unix, feature = "experimental-udp", feature = "experimental-tcp")
+	))]
+	pub(crate) fn current_renewal_key_for_test(&self) -> Option<TransportKeyId> {
+		self.keys.active_epoch.map(|(key, _)| key)
+	}
+
 	pub(super) fn selected_is_admitted(&self) -> bool {
 		self.clock
 			.current()
@@ -242,6 +250,8 @@ impl ProtocolPeer {
 			self.keys.active_epoch = Some((selected.id, now));
 			self.operations_remaining = MAX_GENERATION_OPERATIONS - 1;
 			self.handshakes_remaining = MAX_INCOMING_HANDSHAKES - 1;
+			#[cfg(all(unix, feature = "experimental-udp", feature = "experimental-tcp"))]
+			self.blocked_controls.renew();
 		}
 		if !matches!(result, TunnResult::Done) {
 			self.keys.output_key = Some(id);

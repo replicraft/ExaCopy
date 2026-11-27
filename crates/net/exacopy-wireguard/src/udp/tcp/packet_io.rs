@@ -5,6 +5,8 @@ use tokio::time::{Instant, sleep_until};
 
 use crate::protocol::{INNER_MTU, MAX_DATAGRAM_BYTES, PeerBinding};
 use crate::stack::{PacketDisposition, PacketEvent, PacketInterest, PacketIo};
+#[cfg(unix)]
+use crate::udp::blocked_control::ControlRead;
 use crate::udp::{RouteOwner, SocketPhase, UdpError, UdpPeer, UdpProgress};
 
 use super::UdpTcpError;
@@ -62,6 +64,10 @@ impl<R: RouteOwner> UdpPacketIo<R> {
 	}
 }
 
+#[cfg(all(test, unix))]
+#[path = "tests/control.rs"]
+mod control_tests;
+
 enum Ready {
 	Read(io::Result<()>),
 	Write(io::Result<()>),
@@ -100,21 +106,33 @@ impl<R: RouteOwner + Send> PacketIo for UdpPacketIo<R> {
 		packet: &mut [u8; INNER_MTU],
 	) -> Result<PacketEvent, Self::Error> {
 		let mut work = 0;
+		#[cfg(unix)]
+		let mut control_parked = false;
 		loop {
-			self.check(self.binding)?;
 			if work == READINESS_WORK_BUDGET {
 				tokio::task::yield_now().await;
 				work = 0;
 				continue;
 			}
 			work += 1;
+			self.check(self.binding)?;
+			let read = interest.receive;
+			#[cfg(unix)]
+			let read = read || (!control_parked && self.peer.blocked_control_available());
 			let socket = &self.peer.active.as_ref().ok_or(UdpError::Retired)?.socket;
 			let ready = tokio::select! {
-				result = socket.readable(), if interest.receive => Ready::Read(result),
+				result = socket.readable(), if read => Ready::Read(result),
 				result = socket.writable(), if interest.writable => Ready::Write(result),
 				() = sleep_until(self.next_tick) => Ready::Tick,
 			};
 			match ready {
+				#[cfg(unix)]
+				Ready::Read(Ok(())) if !interest.receive => {
+					control_parked = matches!(
+						self.peer.receive_blocked_control(&mut self.scratch)?,
+						ControlRead::Park
+					);
+				}
 				Ready::Read(Ok(())) => {
 					if let UdpProgress::Inner(bytes) = self.peer.receive_ready(&mut self.scratch)? {
 						let output = packet.get_mut(..bytes.len()).ok_or(UdpTcpError::Output)?;

@@ -7,6 +7,8 @@ use std::num::{NonZeroU64, NonZeroU128};
 use boringtun::noise::{TransportKeyResult, Tunn, TunnResult};
 pub use boringtun::x25519::{PublicKey, StaticSecret};
 
+#[cfg(all(unix, feature = "experimental-udp", feature = "experimental-tcp"))]
+pub(super) mod blocked_control;
 mod clock;
 mod lifecycle;
 mod packet;
@@ -15,7 +17,7 @@ mod tests;
 
 use clock::GenerationClock;
 use lifecycle::KeyLifetime;
-use packet::{addresses, admitted_counter, handshake_ephemeral, is_literal_unicast};
+use packet::{ReceiveMode, addresses, admitted_counter, handshake_ephemeral, is_literal_unicast};
 
 /// Maximum inner packet size in this fixed-MTU experimental profile.
 pub const INNER_MTU: usize = 1420;
@@ -97,6 +99,8 @@ pub struct ProtocolPeer {
 	keys: KeyLifetime,
 	operations_remaining: u32,
 	handshakes_remaining: u16,
+	#[cfg(all(unix, feature = "experimental-udp", feature = "experimental-tcp"))]
+	blocked_controls: blocked_control::BlockedControls,
 }
 
 impl ProtocolPeer {
@@ -149,6 +153,8 @@ impl ProtocolPeer {
 			keys: KeyLifetime::default(),
 			operations_remaining: MAX_GENERATION_OPERATIONS,
 			handshakes_remaining: MAX_INCOMING_HANDSHAKES,
+			#[cfg(all(unix, feature = "experimental-udp", feature = "experimental-tcp"))]
+			blocked_controls: blocked_control::BlockedControls::new(),
 		})
 	}
 
@@ -260,6 +266,16 @@ impl ProtocolPeer {
 		datagram: &[u8],
 		output: &'buffer mut [u8; MAX_DATAGRAM_BYTES],
 	) -> Result<PacketOutput<'buffer>, ProtocolError> {
+		self.receive_datagram(sender, datagram, output, ReceiveMode::Ordinary)
+	}
+
+	fn receive_datagram<'buffer>(
+		&mut self,
+		sender: SocketAddr,
+		datagram: &[u8],
+		output: &'buffer mut [u8; MAX_DATAGRAM_BYTES],
+		mode: ReceiveMode,
+	) -> Result<PacketOutput<'buffer>, ProtocolError> {
 		if sender != self.endpoints.outer {
 			return Err(ProtocolError::OuterEndpoint);
 		}
@@ -267,7 +283,11 @@ impl ProtocolPeer {
 			return Err(ProtocolError::PacketBounds);
 		}
 		if !admitted_counter(datagram) {
-			return Err(ProtocolError::CounterLimit);
+			return if mode.drops_rejected_input() {
+				Ok(PacketOutput::None)
+			} else {
+				Err(ProtocolError::CounterLimit)
+			};
 		}
 		let ephemeral = handshake_ephemeral(datagram)?;
 		if ephemeral.is_some() && self.handshakes_remaining == 0 {
@@ -282,7 +302,11 @@ impl ProtocolPeer {
 			// This public probe is independent of the tunnel's private key.
 			let probe = StaticSecret::from(EPHEMERAL_PROBE_SCALAR);
 			if !probe.diffie_hellman(&public_key).was_contributory() {
-				return Err(ProtocolError::NonContributoryEphemeral);
+				return if mode.drops_rejected_input() {
+					Ok(PacketOutput::None)
+				} else {
+					Err(ProtocolError::NonContributoryEphemeral)
+				};
 			}
 			self.clock.advance()?;
 		}
@@ -292,6 +316,10 @@ impl ProtocolPeer {
 				.decapsulate_with_transport_key(Some(sender.ip()), datagram, output);
 		if ephemeral.is_some() {
 			self.register_key_installation(started)?;
+		}
+		if mode.drops_backend_rejection(&result.result) {
+			self.require_active()?;
+			return Ok(PacketOutput::None);
 		}
 		self.translate(result)
 	}
