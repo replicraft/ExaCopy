@@ -50,7 +50,7 @@ pub fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
 			ExitCode::from(crate::sync_preview::run(&preview, &mut stdout, &mut stderr))
 		}
 		#[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
-		Command::SyncManaged(command) => ExitCode::from(crate::sync_preview::managed_command::run(
+		Command::SyncManaged(command) => ExitCode::from(crate::sync_preview::managed_command::run_stdio(
 			command,
 			&mut io::stdin().lock(),
 			&mut stdout,

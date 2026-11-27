@@ -1,7 +1,9 @@
 //! CLI admission using explicit bounded stdin and an independently selected profile.
 
 use std::fmt::Write as _;
+use std::fs::File;
 use std::io::{self, Read, Write};
+use std::os::fd::AsFd as _;
 use std::path::Path;
 
 use exacopy_platform::linux::{ManagedSyncError, SyncProfileStoreError};
@@ -19,7 +21,28 @@ use super::{managed_report, write_report};
 
 const SCRATCH_BYTES: usize = 64 * 1024;
 
-pub(crate) fn run(
+pub(crate) fn run_stdio(
+	command: SyncManagedCommand,
+	stdin: &mut impl Read,
+	stdout: &mut io::StdoutLock<'_>,
+	stderr: &mut impl Write,
+) -> u8 {
+	if !matches!(command, SyncManagedCommand::Init(_)) {
+		return run(command, stdin, stdout, stderr);
+	}
+	// Stdout treats EBADF as a successful write. Deliver signed Init
+	// evidence through an owned duplicate of the caller's actual stream.
+	let Ok(descriptor) = stdout.as_fd().try_clone_to_owned() else {
+		let _ = writeln!(
+			stderr,
+			"exacopy: managed sync Init refused (output_unavailable)"
+		);
+		return INCONCLUSIVE;
+	};
+	run(command, stdin, &mut File::from(descriptor), stderr)
+}
+
+fn run(
 	command: SyncManagedCommand,
 	stdin: &mut impl Read,
 	stdout: &mut impl Write,

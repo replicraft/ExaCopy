@@ -60,11 +60,11 @@ fn production_managed_init_then_preview_exact_p063_history() -> TestResult {
 	let (mut sandbox, anchor) = Sandbox::create(admit)?;
 	let child = post_creation::is_child();
 	let result = exercise(&mut sandbox, &anchor.location, child);
-	if result
-		.as_ref()
-		.is_err_and(|error| error.is::<cli_process::UnconfirmedProcess>())
+	if let Err(error) = &result
+		&& (error.is::<cli_process::UnconfirmedProcess>()
+			|| error.is::<cli::UnconfirmedDeliverySlot>())
 	{
-		sandbox.retain();
+		sandbox.retain(error.as_ref());
 		return result.map(|_| ());
 	}
 	let (live, cli_sha256) = match (result, sandbox.clean()) {

@@ -119,10 +119,19 @@ impl Sandbox {
 
 	pub(super) fn track_created_slot(&mut self, parent: &File, name: &[u8]) -> TestResult {
 		let file = open_child(parent, name, OFlags::PATH)?;
+		self.track_held_slot(parent, name, &file)
+	}
+
+	pub(super) fn track_held_slot(
+		&mut self,
+		parent: &File,
+		name: &[u8],
+		file: &File,
+	) -> TestResult {
 		self.entries.push(Entry::new(
 			parent.try_clone()?,
 			name,
-			&file,
+			file,
 			AtFlags::empty(),
 		)?);
 		Ok(())
@@ -141,12 +150,9 @@ impl Sandbox {
 		Ok(())
 	}
 
-	pub(super) fn retain(&mut self) {
+	pub(super) fn retain(&mut self, reason: &dyn std::error::Error) {
 		self.cleanup_attempted = true;
-		eprintln!(
-			"fixture retained at {} after unconfirmed CLI child cleanup",
-			self.path.display()
-		);
+		eprintln!("fixture retained at {} ({reason})", self.path.display());
 	}
 
 	pub(super) fn clean(&mut self) -> TestResult {

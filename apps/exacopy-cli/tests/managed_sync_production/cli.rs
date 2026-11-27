@@ -1,6 +1,7 @@
 //! Independent invocation and wire expectations for the real managed-sync CLI.
 
 use std::ffi::OsString;
+use std::fmt;
 use std::fs::{File, Metadata};
 use std::os::unix::fs::{FileExt as _, MetadataExt as _};
 
@@ -119,15 +120,40 @@ pub(super) fn exercise(sandbox: &mut Sandbox, selected: Inputs<'_>) -> TestResul
 
 	sandbox.write_new(&directory, b"delivery-sentinel", SENTINEL)?;
 	let readonly = open_child(&directory, b"delivery-sentinel", OFlags::RDONLY)?;
-	let delivery = cli.invoke(&undelivered.init(), &undelivered.envelope, Some(readonly))?;
-	assert_eq!(delivery.status.code(), Some(2));
-	assert!(delivery.stdout.is_empty());
-	assert_eq!(
-		delivery.stderr,
-		b"exacopy: managed sync Init delivery_uncertain; selection slot retained\n"
+	assert_missing(&profile, slots[1].as_bytes());
+	let delivery = cli
+		.invoke(&undelivered.init(), &undelivered.envelope, Some(readonly))
+		.map_err(|error| {
+			UnconfirmedDeliverySlot(format!("delivery attempt unconfirmed ({error})"))
+		})?;
+	let observed = format!(
+		"status={} stdout_bytes={} stderr={:?}",
+		delivery.status,
+		delivery.stdout.len(),
+		String::from_utf8_lossy(&delivery.stderr),
 	);
-	sandbox.track_created_slot(&profile, slots[1].as_bytes())?;
-	let occupied = Slot::read(&profile, &slots[1], &undelivered.envelope)?;
+	// The slot can be committed even when output fails or is misreported. Pin
+	// and verify this exact slot before judging the independently observed exit.
+	let occupied = (|| -> TestResult<Slot> {
+		let slot = Slot::read(&profile, &slots[1], &undelivered.envelope)?;
+		if slot.stamp.owner != (held.uid(), held.gid()) {
+			return Err("undelivered slot has unexpected ownership".into());
+		}
+		sandbox.track_held_slot(&profile, slots[1].as_bytes(), &slot.held)?;
+		Ok(slot)
+	})()
+	.map_err(|error| {
+		UnconfirmedDeliverySlot(format!(
+			"undelivered slot unconfirmed ({error}); {observed}"
+		))
+	})?;
+	assert!(
+		delivery.status.code() == Some(2)
+			&& delivery.stdout.is_empty()
+			&& delivery.stderr
+				== b"exacopy: managed sync Init delivery_uncertain; selection slot retained\n",
+		"expected delivery_uncertain, exit 2 and no acknowledgement, observed {observed}",
+	);
 	expect_init_refusal(
 		cli.invoke(&undelivered.init(), &undelivered.envelope, None)?,
 		"selection_occupied",
@@ -241,6 +267,17 @@ fn expect_report(output: Output, code: i32, report: &Value) -> TestResult {
 	Ok(())
 }
 
+#[derive(Debug)]
+pub(super) struct UnconfirmedDeliverySlot(String);
+
+impl fmt::Display for UnconfirmedDeliverySlot {
+	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+		formatter.write_str(&self.0)
+	}
+}
+
+impl std::error::Error for UnconfirmedDeliverySlot {}
+
 struct Slot {
 	held: File,
 	stamp: StableMetadata,
@@ -279,17 +316,27 @@ fn read_held(
 ) -> TestResult<StableMetadata> {
 	let meta = held.metadata()?;
 	let stamp = stable_metadata(&meta);
-	assert!(meta.is_file());
-	assert_eq!((stamp.mode & 0o7777, stamp.links), (0o600, 1));
-	assert_eq!(stamp.size, u64::try_from(expected.len())?);
-	assert!(expected.len() <= 24 * 1024);
+	if !meta.is_file()
+		|| (stamp.mode & 0o7777, stamp.links) != (0o600, 1)
+		|| expected.len() > 24 * 1024
+		|| stamp.size != u64::try_from(expected.len())?
+	{
+		return Err(
+			"fixture file differs from the expected type, mode, link count or extent".into(),
+		);
+	}
 	let mut bytes = vec![0; expected.len()];
 	held.read_exact_at(&mut bytes, 0)?;
-	assert_eq!(held.read_at(&mut [0; 1], stamp.size)?, 0);
-	assert_eq!(bytes, expected);
-	assert_eq!(stable_metadata(&held.metadata()?), stamp);
+	if held.read_at(&mut [0; 1], stamp.size)? != 0 || bytes != expected {
+		return Err("fixture file differs from its exact expected contents or EOF".into());
+	}
+	if stable_metadata(&held.metadata()?) != stamp {
+		return Err("held fixture file changed during readback".into());
+	}
 	let named = open_regular(parent, name)?;
-	assert_eq!(stable_metadata(&named.metadata()?), stamp);
+	if stable_metadata(&named.metadata()?) != stamp {
+		return Err("fixture name no longer reaches the observed file and stamp".into());
+	}
 	Ok(stamp)
 }
 
