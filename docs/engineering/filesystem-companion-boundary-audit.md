@@ -2,10 +2,10 @@
 
 ## Current selection and remaining work
 
-The source pin selects public APFS `88cb85a2d1459e834ef657e09b59036b41b12997`.
-The update expands raw APFS verification and renames its portable core
-package to `libapfs-core`. The mounted library tree and its selected
-dependency declarations match `aa75bcb6`.
+The source pin selects public APFS `8878ed18b4e4c424e0dcb3da145a1a6a29b51913`.
+The update adds mounted regressions for bounded xattr inventory and
+resource fork absence. Mounted production sources and selected dependency
+declarations match `88cb85a`.
 Existing native results keep their recorded source and limits.
 ExaCopy uses `ReopenedStage::open_named` for read-only restart inspection,
 including bounded reads, the EOF probe and coherent live metadata.
