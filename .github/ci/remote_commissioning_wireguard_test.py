@@ -1,5 +1,6 @@
 from contextlib import nullcontext
 from dataclasses import asdict
+import errno
 from pathlib import Path
 import hashlib
 import json
@@ -630,8 +631,14 @@ class KernelFixtureTests(unittest.TestCase):
     def test_socket_destroy_frame_binds_exact_cookie_and_kernel_ack(self):
         code = compile(orphan.DESTROY, "<fixture-netlink-helper>", "exec")
         cookie = 0x1234567887654321
-        for sender, state in (((0, 0), None), ((7, 0), 2)):
-            with self.subTest(sender=sender):
+        for sender, status, corrupt_echo, accepted in (
+            ((0, 0), 0, False, "removed"),
+            ((0, 0), -errno.ENOENT, False, "not-found"),
+            ((0, 0), -errno.ENOENT, True, None),
+            ((0, 0), -errno.EOPNOTSUPP, False, None),
+            ((7, 0), 0, False, None),
+        ):
+            with self.subTest(sender=sender, status=status, corrupt_echo=corrupt_echo):
                 diag = Mock()
                 diag.getsockname.return_value = (1234, 0)
                 header = struct.Struct("=IHHII")
@@ -643,8 +650,11 @@ class KernelFixtureTests(unittest.TestCase):
                     self.assertEqual(packet[28:32], socket.inet_aton("198.18.0.1"))
                     self.assertEqual(packet[44:48], socket.inet_aton("198.18.0.2"))
                     self.assertEqual(struct.unpack_from("=III", packet, 60), (0, 0x87654321, 0x12345678))
-                    diag.recvmsg.return_value = (header.pack(36, 2, 0x100, 1, 1234)
-                                                  + struct.pack("=i", 0) + packet[:16], [], 0, sender)
+                    echo = packet[:16] if status == 0 else packet
+                    if corrupt_echo:
+                        echo = echo[:-1] + bytes([echo[-1] ^ 1])
+                    reply = header.pack(20 + len(echo), 2, 0x100 if status == 0 else 0, 1, 1234)
+                    diag.recvmsg.return_value = (reply + struct.pack("=i", status) + echo, [], 0, sender)
                     return len(packet)
 
                 diag.sendto.side_effect = sendto
@@ -656,15 +666,27 @@ class KernelFixtureTests(unittest.TestCase):
                     patch.object(socket, "socket", return_value=nullcontext(diag)),
                     patch("builtins.print") as output,
                 ):
-                    if state is None:
+                    if accepted is not None:
                         exec(code, {})
-                        output.assert_called_once_with("removed")
+                        output.assert_called_once_with(accepted)
                     else:
                         with self.assertRaises(SystemExit) as error:
                             exec(code, {})
-                        self.assertEqual(error.exception.code, state)
+                        self.assertEqual(error.exception.code, 2)
                         output.assert_not_called()
                 diag.sendto.assert_called_once()
+
+    def test_socket_destroy_refuses_namespace_replacement_before_netlink(self):
+        code = compile(orphan.DESTROY, "<fixture-netlink-helper>", "exec")
+        with (
+            patch.object(sys, "argv", ["helper", "14", "42", "60313", "1"]),
+            patch.object(os, "stat", return_value=SimpleNamespace(st_dev=14, st_ino=43)),
+            patch.object(socket, "socket") as open_diag,
+            self.assertRaises(SystemExit) as error,
+        ):
+            exec(code, {})
+        self.assertEqual(error.exception.code, 2)
+        open_diag.assert_not_called()
 
     def test_stable_wireguard_counters_do_not_hide_active_tcp_retransmission(self):
         carrier = observations.Counters(3490, 7552, 1, "127.0.0.1:44497")
