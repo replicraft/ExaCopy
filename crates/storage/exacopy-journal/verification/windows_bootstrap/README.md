@@ -1,9 +1,9 @@
 # Windows bootstrap storage history
 
-This source slice supplies portable read-side support toward R-039–041. It
-does not provide a Windows job holder, journal writer, CLI copy or recovery
-operation. Published-stage identity reconciliation under R-044 remains future
-work. Compilation, tests and native qualification are pending.
+The portable journal codec supplies read-side support toward R-039–041.
+The application composes the native read-only holder. Windows journal writing,
+CLI copy and recovery, and published-stage identity reconciliation under R-044
+remain separate work.
 
 The caller selects the profile, verification key, job and admitted container
 root independently of the records. It supplies five observed role identities:
@@ -48,6 +48,10 @@ provides publication, append, resume or durability authority.
 The portable integration target `tests/windows_bootstrap.rs` includes literal
 field and bitwise CRC oracles, trust and full-width role counterexamples,
 validly signed malformed owners, re-framed payload changes, byte cuts,
-terminal I/O failure, extra frames and old-dialect isolation. P-079 and P-080
-register specific trust-selection and terminal-boundary regressions. Native
-Windows custody and physical EOF remain separate acceptance work.
+terminal I/O failure, extra frames and old-dialect isolation. At `24a8946`,
+all seven cases passed on Linux, macOS and Windows. The same CI run recorded
+passes for P-079 and P-080, which cover the selected trust and terminal-boundary
+regressions. [Hosted CI run 46062770004](https://github.com/replicraft/ExaCopy/actions/runs/46062770004)
+
+Native qualification of held-role custody and physical EOF remains pending
+for the separate application fixture. [Initial held Windows fixture](../../../../../apps/exacopy-cli/verification/windows_bootstrap/README.md)
