@@ -130,3 +130,7 @@ fn matches_bounds(plan: WitnessReservationPlan, proposed: &WitnessObservationApp
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../../../../../../tests/unit/witness_observation_bounds.rs"]
+mod bounds_tests;

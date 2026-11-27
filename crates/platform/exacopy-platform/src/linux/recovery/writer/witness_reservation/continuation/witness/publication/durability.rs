@@ -109,6 +109,31 @@ pub(super) enum Progress {
 	Confirmed(Head),
 }
 
+impl Progress {
+	fn begin(
+		&mut self,
+		observation: &WitnessPublicationObservation,
+		observation_head: Option<Head>,
+		active: Head,
+		expected: Head,
+	) -> Result<SourceObservation, WitnessReservationObservationError> {
+		if !matches!(self, Self::Unspent) {
+			return Err(StageError::PriorBarrierFailure.into());
+		}
+		*self = Self::Spent;
+
+		// A premature attempt still spends durability. Outcome recording owns
+		// the separate capability for the already-submitted rename.
+		let WitnessPublicationObservation::Published(published) = observation else {
+			return Err(StageError::PriorBarrierFailure.into());
+		};
+		if observation_head != Some(expected) || active != expected {
+			return Err(StageError::IdentityChanged.into());
+		}
+		Ok(*published)
+	}
+}
+
 impl WitnessPublication<'_, '_> {
 	/// The qualification facts originally selected for this held publication.
 	#[must_use]
@@ -156,20 +181,16 @@ impl WitnessPublication<'_, '_> {
 	) -> Result<Head, WitnessDurabilityError<E>> {
 		use WitnessDurabilityError as Error;
 
-		if !matches!(self.durability, Progress::Unspent) {
-			return Err(Error::Preflight(StageError::PriorBarrierFailure.into()));
-		}
-		self.durability = Progress::Spent;
-
 		let active = &mut self.held.active;
-		// A premature attempt still spends durability, while the caller can
-		// independently record the original, already-submitted rename outcome.
-		let WitnessPublicationObservation::Published(published) = self.observation else {
-			return Err(Error::Preflight(StageError::PriorBarrierFailure.into()));
-		};
-		if self.observation_head != Some(expected_kind8) || active.head() != expected_kind8 {
-			return Err(Error::Preflight(StageError::IdentityChanged.into()));
-		}
+		let published = self
+			.durability
+			.begin(
+				&self.observation,
+				self.observation_head,
+				active.head(),
+				expected_kind8,
+			)
+			.map_err(Error::Preflight)?;
 
 		let result = (|| {
 			let published_names = self
@@ -280,3 +301,7 @@ fn matches_bounds(plan: WitnessReservationPlan, proposed: &WitnessDurabilityAppe
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../../../../../../tests/unit/witness_durability_preflight.rs"]
+mod preflight_tests;

@@ -221,3 +221,7 @@ impl<'view, 'lease> SealedProtectedWitness<'view, 'lease> {
 		})
 	}
 }
+
+#[cfg(test)]
+#[path = "../../../../../../../tests/unit/witness_publication.rs"]
+mod tests;

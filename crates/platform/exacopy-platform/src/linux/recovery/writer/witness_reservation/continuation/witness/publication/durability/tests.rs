@@ -55,17 +55,25 @@ fn classifies_probe_refusal_separately_from_a_submitted_barrier_error() {
 		barrier_failure::<()>(effect, StageError::IdentityChanged),
 		WitnessDurabilityError::BarrierPreflight {
 			effect: WitnessDurabilityEffect::DestinationDirectory,
-			..
+			cause: StageError::IdentityChanged,
 		},
+	));
+	let failure = std::io::ErrorKind::WriteZero;
+	assert!(matches!(
+		barrier_failure::<()>(effect, StageError::DirectoryBarrierFailed(failure.into())),
+		WitnessDurabilityError::BarrierSubmitted {
+			effect: WitnessDurabilityEffect::DestinationDirectory,
+			cause: StageError::DirectoryBarrierFailed(cause),
+		} if cause.kind() == failure
 	));
 	assert!(matches!(
 		barrier_failure::<()>(
-			effect,
-			StageError::DirectoryBarrierFailed(std::io::Error::other("fixture sync failure"))
+			WitnessDurabilityEffect::File,
+			StageError::BarrierFailed(failure.into()),
 		),
 		WitnessDurabilityError::BarrierSubmitted {
-			effect: WitnessDurabilityEffect::DestinationDirectory,
-			..
-		},
+			effect: WitnessDurabilityEffect::File,
+			cause: StageError::BarrierFailed(cause),
+		} if cause.kind() == failure
 	));
 }
