@@ -1,8 +1,11 @@
 use std::fs::{File, FileTimes, OpenOptions};
 use std::io::Write as _;
-use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _};
+use std::os::unix::fs::{FileExt as _, MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _};
 use std::path::Path;
 use std::time::{Duration, SystemTime};
+
+use rustix::fs::{self, OFlags, XattrFlags};
+use rustix::io::Errno;
 
 use super::super::native::{
 	capture, confirm_transition, exact_receipt, pin_receipt_name, rename_pending, reopen_sealed,
@@ -67,6 +70,110 @@ fn named_receipt_readback_refuses_mismatched_bytes_identity_and_metadata() {
 		exact_receipt(&receipt, expected, RECEIPT_BYTES, 1, mount),
 		Err(StageError::IdentityChanged)
 	));
+}
+
+#[test]
+fn receipt_readback_requires_readable_custody_of_the_exact_inode() {
+	let scratch = Scratch::new();
+	let job = scratch.open();
+	let mount = mount_id(&job).expect("observe fixture mount");
+	let pending = scratch.path(std::str::from_utf8(&NAMES.pending).expect("ASCII pending name"));
+	let final_name =
+		scratch.path(std::str::from_utf8(&NAMES.final_name).expect("ASCII final name"));
+	let reader = create_fixture(&pending, RECEIPT_BYTES);
+	let expected = capture(&reader).expect("observe receipt through the readable descriptor");
+	let write_only = OpenOptions::new()
+		.write(true)
+		.open(&pending)
+		.expect("hold the same inode without read access");
+
+	assert_eq!(
+		fs::fcntl_getfl(&write_only)
+			.unwrap()
+			.intersection(OFlags::ACCMODE),
+		OFlags::WRONLY
+	);
+	let held = write_only.metadata().unwrap();
+	assert_eq!(held.ino(), expected.identity().inode());
+	assert_eq!(held.dev(), expected.identity().device());
+	assert_eq!(fs::flistxattr_query(&write_only).unwrap(), 0);
+	assert_eq!(
+		write_only
+			.read_at(&mut [0; 1], 0)
+			.unwrap_err()
+			.raw_os_error(),
+		Some(Errno::BADF.raw_os_error())
+	);
+	assert!(matches!(
+		exact_receipt(&write_only, expected, RECEIPT_BYTES, 1, mount),
+		Err(StageError::System(cause))
+			if cause.raw_os_error() == Some(Errno::BADF.raw_os_error())
+	));
+
+	let mut bytes = [0; RECEIPT_BYTES.len()];
+	reader
+		.read_exact_at(&mut bytes, 0)
+		.expect("independently read the retained bytes");
+	assert_eq!(&bytes, RECEIPT_BYTES);
+	let named = pending.symlink_metadata().unwrap();
+	assert!(named.file_type().is_file());
+	assert_eq!((named.dev(), named.ino()), (held.dev(), held.ino()));
+	assert!(matches!(
+		final_name.symlink_metadata(),
+		Err(error) if error.kind() == std::io::ErrorKind::NotFound
+	));
+	exact_receipt(&reader, expected, RECEIPT_BYTES, 1, mount)
+		.expect("the readable descriptor can still confirm the exact receipt");
+}
+
+#[test]
+fn receipt_readback_refuses_visible_attributes_on_matching_bytes_and_inode() {
+	let scratch = Scratch::new();
+	let job = scratch.open();
+	let mount = mount_id(&job).expect("observe fixture mount");
+	let path = scratch.path("receipt");
+	let reader = create_fixture(&path, RECEIPT_BYTES);
+	let expected = capture(&reader).expect("observe original receipt");
+	exact_receipt(&reader, expected, RECEIPT_BYTES, 1, mount)
+		.expect("confirm fixture before adding a user attribute");
+
+	const ATTRIBUTE: &std::ffi::CStr = c"user.exacopy";
+	const VALUE: &[u8] = b"visible";
+	fs::fsetxattr(&reader, ATTRIBUTE, VALUE, XattrFlags::CREATE)
+		.expect("add a visible attribute to the same inode");
+	assert!(matches!(
+		exact_receipt(&reader, expected, RECEIPT_BYTES, 1, mount),
+		Err(StageError::UnexpectedExtendedAttributes)
+	));
+	let write_only = OpenOptions::new().write(true).open(&path).unwrap();
+	assert!(matches!(
+		exact_receipt(&write_only, expected, RECEIPT_BYTES, 1, mount),
+		Err(StageError::UnexpectedExtendedAttributes)
+	));
+
+	let mut bytes = [0; RECEIPT_BYTES.len()];
+	reader
+		.read_exact_at(&mut bytes, 0)
+		.expect("independently read the retained bytes");
+	assert_eq!(&bytes, RECEIPT_BYTES);
+	assert_eq!(
+		reader
+			.read_at(&mut [0; 1], u64::try_from(RECEIPT_BYTES.len()).unwrap())
+			.unwrap(),
+		0
+	);
+	let named = path.symlink_metadata().unwrap();
+	assert!(named.file_type().is_file());
+	assert_eq!(
+		(named.dev(), named.ino()),
+		(expected.identity().device(), expected.identity().inode())
+	);
+	let mut attribute = [0; VALUE.len()];
+	assert_eq!(
+		fs::fgetxattr(&reader, ATTRIBUTE, &mut attribute[..]).unwrap(),
+		VALUE.len()
+	);
+	assert_eq!(&attribute, VALUE);
 }
 
 #[test]
