@@ -71,7 +71,8 @@ fn rename_comparison_requires_the_original_identity_and_metadata() {
 	assert_ne!(before.changed_at(), after.changed_at());
 	assert!(same_after_rename(before, after));
 
-	let changes: [(&str, fn(&mut Stat)); 8] = [
+	type ChangeStat = fn(&mut Stat);
+	let changes: [(&str, ChangeStat); 8] = [
 		("device", |stat| stat.st_dev ^= 1),
 		("inode", |stat| stat.st_ino ^= 1),
 		("length", |stat| stat.st_size = 1),
