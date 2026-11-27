@@ -20,10 +20,16 @@ use super::stage::{CHILD_RESOLVE, DestinationRoot, StageError, check_private_chi
 mod anchor;
 mod artifacts;
 mod lease;
+mod terminal;
+mod witnessed_names;
 mod writer;
 
 pub use anchor::RecoveryStageAnchor;
 pub use lease::RecoveryReadLease;
+pub use terminal::{
+	WitnessedTerminalArtifacts, WitnessedTerminalJournal, WitnessedTerminalSegment,
+	WitnessedTerminalSelection,
+};
 pub use writer::{
 	ActiveWitnessReservation, ContinuationReservationError, FreshRecoveryStage,
 	PendingProtectedWitness, PendingWitnessReservation, ProtectedWitnessEffect,
@@ -339,6 +345,7 @@ enum FilePolicy {
 	Record,
 	Stage,
 	Target,
+	WitnessedPublic,
 }
 
 impl FilePolicy {
@@ -351,6 +358,9 @@ impl FilePolicy {
 			Self::Record => private && mode == RECORD_MODE,
 			Self::Stage => private && !mode.intersects(SPECIAL_BITS),
 			Self::Target => true,
+			Self::WitnessedPublic => {
+				stat.st_uid == geteuid().as_raw() && stat.st_nlink == 2 && mode == RECORD_MODE
+			}
 		};
 		if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile || !valid {
 			return Err(StageError::UnsafeFile);

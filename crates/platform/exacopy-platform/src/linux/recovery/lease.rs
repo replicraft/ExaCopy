@@ -11,8 +11,23 @@ use super::{CHILD_RESOLVE, RecoveryJob, StageError, file_identity, mount_id};
 /// lock. Cooperating copy writers use the exclusive lock on the same inode.
 #[must_use]
 pub struct RecoveryReadLease<'lease> {
-	_file: File,
-	_job: &'lease RecoveryJob<'lease>,
+	file: File,
+	job: &'lease RecoveryJob<'lease>,
+}
+
+impl<'lease> RecoveryReadLease<'lease> {
+	pub(super) fn job(&self) -> &'lease RecoveryJob<'lease> {
+		self.job
+	}
+
+	pub(super) fn recheck(&self) -> Result<(), StageError> {
+		if file_identity(&self.file)? != self.job.identity()
+			|| mount_id(&self.file)? != self.job.root.mount
+		{
+			return Err(StageError::IdentityChanged);
+		}
+		self.job.recheck()
+	}
 }
 
 impl RecoveryJob<'_> {
@@ -22,10 +37,7 @@ impl RecoveryJob<'_> {
 	/// Reports a busy job, unsupported lock, or changed binding.
 	pub fn try_read_lease(&self) -> Result<RecoveryReadLease<'_>, StageError> {
 		let file = lock_job(self, FlockOperation::NonBlockingLockShared)?;
-		Ok(RecoveryReadLease {
-			_file: file,
-			_job: self,
-		})
+		Ok(RecoveryReadLease { file, job: self })
 	}
 }
 

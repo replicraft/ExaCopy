@@ -3,6 +3,7 @@ use exacopy_model::retained_prefix::Head;
 use super::super::super::super::native::RECEIPT_CAPACITY;
 use super::super::super::ActiveWitnessReservation;
 use super::{ReservedJournalRead, WitnessPublication, WitnessPublicationObservation};
+use crate::linux::recovery::witnessed_names::matches_names;
 use crate::linux::{SourceObservation, StageError, WitnessReservationPlan};
 
 mod native;
@@ -303,25 +304,6 @@ fn matches_bounds(
 			.sequence
 			.checked_add(following_slots)
 			.is_some_and(|sequence| sequence <= last)
-}
-
-fn matches_names(names: &WitnessReceiptNames, witness: &[u8; 40]) -> bool {
-	let (Some(pending), Some(final_name)) = (
-		names.pending.strip_prefix(b"rw-receipt.pending."),
-		names.final_name.strip_prefix(b"rw-receipt.final."),
-	) else {
-		return false;
-	};
-	if pending != final_name || pending.len() != 82 {
-		return false;
-	}
-	let hex = |byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f');
-	pending[32] == b'.'
-		&& pending[49] == b'.'
-		&& pending[..32].iter().copied().all(hex)
-		&& pending[33..49].iter().copied().all(hex)
-		&& pending[33..49].iter().any(|&byte| byte != b'0')
-		&& pending[50..] == witness[8..]
 }
 
 mod effects;
