@@ -12,7 +12,9 @@ use exacopy_platform::linux::{
 };
 
 use crate::args::RemoteOptions;
-use crate::assembly::linux::remote_download::RemoteJobAction;
+use crate::assembly::linux::remote_download::{
+	RemoteJobAction, RemoteJobError, check_resume_startup,
+};
 use crate::profile::LocalProfile;
 use crate::remote_frontdoor::{ApprovedRoute, SshProfile};
 use crate::remote_report::{
@@ -101,15 +103,7 @@ pub(super) fn select(
 	let mut segment = job.open_first_segment().map_err(|_| unknown())?;
 	let replay = replay_remote_finalization(&mut segment, &trust, qualification.digest, None)
 		.map_err(|_| unknown())?;
-	segment.check_logical_eof().map_err(|_| unknown())?;
-	segment.recheck_observation().map_err(|_| unknown())?;
-	owner_file.recheck_observation().map_err(|_| unknown())?;
-	if job.open_owner().map_err(|_| unknown())?.identity() != owner_file.identity()
-		|| job.open_first_segment().map_err(|_| unknown())?.identity() != segment.identity()
-	{
-		return Err(unknown());
-	}
-	job.recheck().map_err(|_| unknown())?;
+	recheck_startup_records(job, &owner_file, &segment).map_err(|_| unknown())?;
 	let clear = replay.issue().is_none() && replay.boundary().offset == segment.len();
 	if let Some(outcome) = startup_outcome(replay.phase(), clear, location) {
 		return Err(Box::new(outcome));
@@ -135,12 +129,46 @@ pub(super) fn select(
 			Some(duplicate_job(location)),
 		)));
 	}
+	match check_resume_startup(job, target, &replay) {
+		Ok(()) => {}
+		Err(RemoteJobError::Conflict) => {
+			return Err(Box::new(RemoteOutcome::failed(
+				Failure::Conflict,
+				Some(duplicate_job(location)),
+			)));
+		}
+		Err(RemoteJobError::ResumeCapacity(limit)) => {
+			return Err(Box::new(RemoteOutcome::resume_capacity(
+				limit,
+				duplicate_job(location),
+			)));
+		}
+		Err(_) => return Err(unknown()),
+	}
+	recheck_startup_records(job, &owner_file, &segment).map_err(|_| unknown())?;
 	Ok(Selected {
 		job: duplicate_job(location),
 		scope: scope.clone(),
 		action: RemoteJobAction::Resume,
 		qualification,
 	})
+}
+
+fn recheck_startup_records(
+	job: &RecoveryJob<'_>,
+	owner: &RecoveryFile,
+	segment: &RecoveryFile,
+) -> Result<(), RemoteJobError> {
+	segment.check_logical_eof()?;
+	segment.recheck_observation()?;
+	owner.recheck_observation()?;
+	if job.open_owner()?.identity() != owner.identity()
+		|| job.open_first_segment()?.identity() != segment.identity()
+	{
+		return Err(RemoteJobError::Binding);
+	}
+	job.recheck()?;
+	Ok(())
 }
 
 pub(super) fn uncertain(location: &RemoteJob) -> Box<RemoteOutcome> {

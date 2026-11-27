@@ -354,7 +354,12 @@ remain available as evidence. Resume uses the recorded source, route and
 destination. If a clean pre-intent job's target is already occupied, resume
 returns `E_CONFLICT` with the retained job before opening a connection.
 The exclusive writer still checks the destination again before any publish
-attempt. Once publication intent may have been recorded, recovery
+attempt. Before connecting, resume also checks every recorded allocation's
+private stage binding and extent, including superseded attempts, and refuses
+an exhausted allocation or epoch limit. These checks retain the job for
+reconciliation and do not authorize reuse of its old bytes. The writer repeats
+the checks under its exclusive lease. Once publication intent may have been
+recorded, recovery
 remains a reconciliation case and the command refuses another publish
 attempt. Retain the job when it reports uncertain or confirmed publication.
 

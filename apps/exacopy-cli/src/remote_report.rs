@@ -176,6 +176,25 @@ impl RemoteOutcome {
 		Self::failure(RemoteFailureKind::RecoveryRequired, publication, Some(job))
 	}
 
+	pub(crate) fn resume_capacity(
+		limit: crate::assembly::linux::remote_download::ResumeCapacity,
+		job: RemoteJob,
+	) -> Self {
+		Self(Outcome::Failed {
+			error: RemoteFailure {
+				code: RemoteFailureKind::RecoveryRequired,
+				publication: RemotePublication::PublicationUncertain,
+				message: format!(
+					"{} ({})",
+					RemoteFailureKind::RecoveryRequired.message(),
+					limit.message()
+				)
+				.into(),
+				job: Some(job.into()),
+			},
+		})
+	}
+
 	#[cfg(feature = "experimental-ssh-wireguard")]
 	pub(crate) fn with_unconfirmed_route_retirement(self, _cause: RemoteRouteCloseError) -> Self {
 		let mut error = match self.0 {

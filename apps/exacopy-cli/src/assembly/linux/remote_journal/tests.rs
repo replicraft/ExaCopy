@@ -29,6 +29,8 @@ use super::admission::{CurrentGrant, CurrentQualification, RemoteActivation};
 use super::lease::{RemoteJobLease, bootstrap};
 use super::{BootstrapIdentity, Error, component, job_name, record_identity};
 
+mod startup;
+
 const JOB: [u8; 16] = [
 	0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0x7c, 0xde, 0x8f, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd,
 ];

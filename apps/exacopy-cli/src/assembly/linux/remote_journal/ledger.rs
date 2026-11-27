@@ -3,7 +3,7 @@ use std::num::NonZeroU64;
 use exacopy_journal::DurableJournal;
 use exacopy_journal::frame::{ChainHead, FRAME_OVERHEAD_BYTES, Frame, FrameReader};
 use exacopy_journal::remote_download::finalization_replay::RemoteFinalizationReplay;
-use exacopy_journal::remote_download::replay::{MAX_REMOTE_REPLAY_ATTEMPTS, RemoteReplayBoundary};
+use exacopy_journal::remote_download::replay::RemoteReplayBoundary;
 use exacopy_journal::remote_download::{
 	RemoteDownloadBody as Body, RemoteDownloadContext, RemoteDownloadOwnerRecord,
 	RemoteDownloadRecord, RemoteEpochs, RemoteSourceObservation, RemoteUncertainBoundary,
@@ -17,6 +17,8 @@ use super::super::remote_stage::{PrefixBarrier, PrefixScope};
 use super::admission::RemoteActivation;
 use super::lease::{CheckedCandidate, PreservedCapture, check_current};
 use super::{Error, binding, component, next_epochs, record_identity};
+
+use super::startup::check_capacity;
 
 mod append;
 mod checkpoints;
@@ -158,12 +160,12 @@ impl<'lease> RemoteJobJournal<'lease> {
 		}
 		self.activation.recheck()?;
 		let previous = self.spent.last().map(|attempt| attempt.epochs);
+		check_capacity(self.spent.len(), previous)?;
 		let next = next_epochs(previous, source_epoch)?;
 		let name = candidate.name;
 		let scope = &self.owner.manifest().scope;
 		if observation.length().get() > scope.maximum_extent.get()
 			|| nonce == [0; 16]
-			|| self.spent.len() >= MAX_REMOTE_REPLAY_ATTEMPTS
 			|| self
 				.spent
 				.iter()

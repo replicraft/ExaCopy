@@ -7,6 +7,35 @@ use exacopy_platform::linux::{
 
 use super::{Error, component, record_identity};
 
+pub(in crate::assembly::linux::remote_journal) fn inspect_capture<'job>(
+	job: &'job RecoveryJob<'_>,
+	attempt: &RemoteReplayAttempt,
+	target: UnixComponent<'_>,
+	directory: LinuxFileIdentity,
+) -> Result<RecoveryInventory<'job>, Error> {
+	let inventory = job.inventory(component(attempt.name())?, target)?;
+	if inventory.target().is_some() {
+		return Err(Error::Conflict);
+	}
+	if inventory.stage_directory_identity().map(record_identity) != Some(directory) {
+		return Err(Error::UnknownStage);
+	}
+	match (attempt.prepared(), inventory.stage()) {
+		(Some(prepared), Some(file))
+			if prepared.directory == directory
+				&& prepared.file == record_identity(file.identity())
+				&& (attempt.covered_extent()..=attempt.source().length().get())
+					.contains(&file.len()) =>
+		{
+			file.check_logical_eof()?;
+		}
+		(None, None) => {}
+		_ => return Err(Error::UnknownStage),
+	}
+	inventory.recheck()?;
+	Ok(inventory)
+}
+
 /// Old staged bytes retained for a fresh allocation. No content is promoted.
 pub(in crate::assembly::linux::remote_journal) struct PreservedCapture {
 	name: Box<[u8]>,
@@ -19,15 +48,9 @@ impl PreservedCapture {
 		attempt: &RemoteReplayAttempt,
 		inventory: RecoveryInventory<'_>,
 	) -> Result<Self, Error> {
-		let anchor = if let Some(file) = inventory.stage() {
-			if !(attempt.covered_extent()..=attempt.source().length().get()).contains(&file.len()) {
-				return Err(Error::UnknownStage);
-			}
-			file.check_logical_eof()?;
-			file.recheck_observation()?;
+		let anchor = if inventory.stage().is_some() {
 			Some(lease.pin_stopped_stage(inventory)?)
 		} else {
-			inventory.recheck()?;
 			None
 		};
 		Ok(Self {

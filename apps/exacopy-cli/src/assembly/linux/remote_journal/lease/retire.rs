@@ -4,7 +4,6 @@ use exacopy_journal::NamespaceObservation;
 use exacopy_journal::frame::FrameKind;
 use exacopy_journal::remote_download::finalization::RemotePublishTarget;
 use exacopy_journal::remote_download::finalization_replay::RemoteFinalizationPhase;
-use exacopy_journal::remote_download::replay::MAX_REMOTE_REPLAY_ATTEMPTS;
 use exacopy_journal::remote_download::retirement::{
 	RemoteCaptureRetired, RemoteRetirementObservation,
 };
@@ -12,6 +11,7 @@ use exacopy_journal::remote_download::{RemoteDownloadBody, RemoteSourceObservati
 
 use super::super::ledger::append_payload_admitted;
 use super::super::next_epochs;
+use super::super::startup::check_capacity;
 use super::retry::{check_preparation_capacity, preview_frame};
 
 use super::{
@@ -80,10 +80,10 @@ impl RemoteJobLease<'_> {
 			return Err(Error::Binding);
 		}
 		let previous = Some(attempt.epochs());
+		check_capacity(replay.attempts().len(), previous)?;
 		let next = next_epochs(previous, source_epoch)?;
 		if observation.length().get() > scope.maximum_extent.get()
 			|| nonce == [0; 16]
-			|| replay.attempts().len() >= MAX_REMOTE_REPLAY_ATTEMPTS
 			|| replay
 				.attempts()
 				.iter()

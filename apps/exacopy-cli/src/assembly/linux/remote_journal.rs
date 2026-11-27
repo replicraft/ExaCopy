@@ -25,6 +25,7 @@ mod lease;
 mod ledger;
 mod receipt;
 mod retry;
+mod startup;
 #[cfg(test)]
 #[expect(
 	dead_code,
@@ -43,6 +44,31 @@ pub use lease::RemoteRetryLease;
 pub(super) use lease::{RemoteJobLease, bootstrap};
 pub(super) use ledger::IntentReadback;
 pub(super) use retry::RetryCaptureStamp;
+pub(crate) use startup::check_resume_startup;
+
+/// A clean ordinary resume cannot allocate any further attempts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ResumeCapacity {
+	/// The first segment already contains the allowed number of allocations.
+	AllocationsExhausted,
+	/// A recorded run or source epoch cannot be advanced safely.
+	EpochsExhausted,
+}
+
+impl ResumeCapacity {
+	pub(crate) const fn message(self) -> &'static str {
+		match self {
+			Self::AllocationsExhausted => "the retained journal reached its fresh allocation limit",
+			Self::EpochsExhausted => "the retained journal's attempt epochs cannot advance",
+		}
+	}
+}
+
+impl From<ResumeCapacity> for Error {
+	fn from(limit: ResumeCapacity) -> Self {
+		Self::ResumeCapacity(limit)
+	}
+}
 
 #[cfg(test)]
 mod tests;
@@ -88,6 +114,7 @@ fn next_epochs(previous: Option<RemoteEpochs>, source: NonZeroU64) -> Result<Rem
 pub enum Error {
 	Binding,
 	Attempt,
+	ResumeCapacity(ResumeCapacity),
 	Conflict,
 	UnknownStage,
 	Stopped,
@@ -126,6 +153,7 @@ impl fmt::Display for Error {
 			Self::Attempt => {
 				formatter.write_str("remote job attempt exceeds its scope or uses stale labels")
 			}
+			Self::ResumeCapacity(limit) => formatter.write_str(limit.message()),
 			Self::Conflict => formatter.write_str("a target or private stage name is occupied"),
 			Self::UnknownStage => {
 				formatter.write_str("private stage provenance needs reconciliation")

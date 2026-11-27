@@ -18,8 +18,10 @@ use exacopy_transfer::remote_metadata::ApprovedSftpMetadata;
 
 use crate::profile::LocalProfile;
 
-pub(crate) use super::remote_journal::Error as RemoteJobError;
 use super::remote_journal::Error;
+pub(crate) use super::remote_journal::{
+	Error as RemoteJobError, ResumeCapacity, check_resume_startup,
+};
 use super::remote_stage::{NativeCaptureStageError, StageFinalizationError};
 
 mod authority;

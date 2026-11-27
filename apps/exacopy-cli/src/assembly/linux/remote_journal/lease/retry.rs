@@ -2,7 +2,6 @@ use exacopy_journal::frame::{FRAME_OVERHEAD_BYTES, FrameKind, FrameWriter};
 use exacopy_journal::remote_download::finalization_replay::{
 	RemoteFinalizationPhase, RemoteFinalizationReplay,
 };
-use exacopy_journal::remote_download::replay::MAX_REMOTE_REPLAY_ATTEMPTS;
 use exacopy_journal::remote_download::replay::RemoteReplayBoundary;
 use exacopy_journal::remote_download::{
 	RemoteDownloadBody, RemoteDownloadContext, RemoteDownloadRecord, RemoteEpochs,
@@ -13,6 +12,7 @@ use exacopy_platform::linux::RecoveryFile;
 
 use crate::profile::LocalProfile;
 
+use super::super::startup::check_capacity as check_attempt_capacity;
 use super::super::{RetryCaptureStamp, next_epochs};
 use super::{
 	Error, RemoteActivation, RemoteJobLease, check_current, component, context, record_identity,
@@ -207,8 +207,8 @@ impl<'root> RemoteRetryLease<'root> {
 		{
 			return Err(Error::Binding);
 		}
-		if replay.attempts().len() >= MAX_REMOTE_REPLAY_ATTEMPTS
-			|| self.fresh.nonce == [0; 16]
+		check_attempt_capacity(replay.attempts().len(), Some(last.epochs()))?;
+		if self.fresh.nonce == [0; 16]
 			|| replay.attempts().iter().any(|attempt| {
 				attempt.name() == self.fresh.name.as_ref() || *attempt.nonce() == self.fresh.nonce
 			}) {

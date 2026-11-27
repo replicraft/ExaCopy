@@ -28,7 +28,7 @@ pub(super) mod retry;
 
 pub(in crate::assembly::linux) use bootstrap::bootstrap;
 
-pub(super) use reconcile::PreservedCapture;
+pub(super) use reconcile::{PreservedCapture, inspect_capture};
 pub use retry::RemoteRetryLease;
 
 pub(in crate::assembly::linux) struct RemoteJobLease<'root> {
@@ -121,22 +121,7 @@ impl<'root> RemoteJobLease<'root> {
 			.directory();
 		let mut preserved_capture = Vec::new();
 		for attempt in replay.attempts() {
-			let inventory = held.inventory(component(attempt.name())?, target)?;
-			if inventory.target().is_some() {
-				return Err(Error::Conflict);
-			}
-			match (
-				attempt.prepared(),
-				inventory.stage(),
-				inventory.stage_directory_identity(),
-			) {
-				(Some(prepared), Some(file), Some(directory))
-					if stage_directory == record_identity(directory)
-						&& prepared.directory == stage_directory
-						&& prepared.file == record_identity(file.identity()) => {}
-				(None, None, Some(directory)) if stage_directory == record_identity(directory) => {}
-				_ => return Err(Error::UnknownStage),
-			}
+			let inventory = inspect_capture(held, attempt, target, stage_directory)?;
 			preserved_capture.push(PreservedCapture::admit(&lease, attempt, inventory)?);
 		}
 		PreservedCapture::check_all(&preserved_capture, held, target, stage_directory)?;

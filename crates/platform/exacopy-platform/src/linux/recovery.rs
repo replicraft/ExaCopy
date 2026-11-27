@@ -111,6 +111,23 @@ impl RecoveryJob<'_> {
 			.recheck(&self.root.directory, &self.name, self.root.mount)
 	}
 
+	/// Observes the checked private stage directory without opening a stage file.
+	///
+	/// The returned identity describes the current namespace observation.
+	/// # Errors
+	/// Refuses an unsafe directory, changed binding or failed lookup.
+	pub fn stage_directory_identity(&self) -> Result<Option<FileIdentity>, StageError> {
+		self.recheck()?;
+		let parent = &self.directory.file;
+		let name = OsStr::new(STAGE);
+		let directory = PrivateDirectory::open(parent, name, self.root.mount)?;
+		if directory.is_none() {
+			check_absent(parent, name)?;
+		}
+		self.recheck()?;
+		Ok(directory.map(|directory| directory.identity))
+	}
+
 	/// Observes a private stage name and a public target name with held read-only handles.
 	///
 	/// Absence describes the observed namespace. The snapshot can become stale
