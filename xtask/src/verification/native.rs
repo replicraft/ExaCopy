@@ -62,6 +62,8 @@ enum Profile {
 	UnprivilegedWholeExt4PublicStage,
 	#[serde(rename = "windows-hosted-server2025-fixed-ntfs-publication-v1")]
 	WindowsFixedNtfsPublication,
+	#[serde(rename = "windows-hosted-server2025-fixed-ntfs-publication-owned-preparation-v2")]
+	WindowsFixedNtfsPublicationOwnedPreparation,
 }
 
 impl Profile {
@@ -76,7 +78,8 @@ impl Profile {
 			| Self::UnprivilegedWholeExt4ManagedSyncProduction
 			| Self::UnprivilegedWholeExt4ManagedSyncGenesisProduction
 			| Self::UnprivilegedWholeExt4PublicStage => Target::LinuxX86_64Gnu,
-			Self::WindowsFixedNtfsPublication => Target::WindowsX86_64Msvc,
+			Self::WindowsFixedNtfsPublication
+			| Self::WindowsFixedNtfsPublicationOwnedPreparation => Target::WindowsX86_64Msvc,
 		}
 	}
 
@@ -95,7 +98,8 @@ impl Profile {
 			Self::UnprivilegedWholeExt4SyncStatmount => Some(STATMOUNT_FEATURE),
 			Self::UnprivilegedWholeExt4ManagedSyncProduction
 			| Self::UnprivilegedWholeExt4ManagedSyncGenesisProduction => Some(managed_sync::FEATURE),
-			Self::WindowsFixedNtfsPublication => Some(windows_publication::FEATURE),
+			Self::WindowsFixedNtfsPublication
+			| Self::WindowsFixedNtfsPublicationOwnedPreparation => Some(windows_publication::FEATURE),
 			_ => None,
 		}
 	}

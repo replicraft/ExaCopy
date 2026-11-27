@@ -879,6 +879,36 @@ $publicationWorkflow = Get-Content -Raw -LiteralPath (Join-Path $repo '.github/w
 Require ($publicationWorkflow -cmatch '(?m)^\s*\./crates/platform/exacopy-platform/verification/windows_ntfs_publication/run\.ps1\s*$' -and
     $publicationWorkflow -cnotmatch 'PrepareOwnedCompilerJob') 'The canonical workflow must retain the existing strict invocation.'
 
+$profileDefinition = $runner.Find({
+    param($Node)
+    $Node -is [Management.Automation.Language.FunctionDefinitionAst] -and $Node.Name -ceq 'Get-PublicationHostedProfile'
+}, $false)
+Require ($null -ne $profileDefinition) 'The runner must define hosted profile admission.'
+. ([scriptblock]::Create($profileDefinition.Extent.Text))
+$strictRef = 'replicraft/ExaCopy/.github/workflows/windows-ntfs-publication.yml@refs/heads/main'
+$preparationRef = 'replicraft/ExaCopy/.github/workflows/windows-ntfs-publication-preparation.yml@refs/heads/main'
+$strict = Get-PublicationHostedProfile $false $strictRef 'push'
+Require ($strict.Profile -ceq 'windows-hosted-server2025-fixed-ntfs-publication-v1' -and
+    $strict.Workflow -ceq '.github/workflows/windows-ntfs-publication.yml' -and
+    $strict.Manifest -ceq 'crates/platform/exacopy-platform/verification/windows_ntfs_publication/fixture.toml') 'The strict profile must retain its existing manifest, workflow, and name.'
+Require ((Get-PublicationHostedProfile $false $strictRef 'workflow_dispatch').Profile -ceq $strict.Profile) 'The strict workflow still accepts its original dispatch event.'
+$preparation = Get-PublicationHostedProfile $true $preparationRef 'push'
+Require ($preparation.Profile -ceq 'windows-hosted-server2025-fixed-ntfs-publication-owned-preparation-v2' -and
+    $preparation.Workflow -ceq '.github/workflows/windows-ntfs-publication-preparation.yml' -and
+    $preparation.Manifest -ceq 'crates/platform/exacopy-platform/verification/windows_ntfs_publication_preparation/fixture.toml') 'Preparation must have its own manifest, workflow, and profile.'
+Require-Refusal { Get-PublicationHostedProfile $true $strictRef 'push' } 'strict workflow with preparation enabled'
+Require-Refusal { Get-PublicationHostedProfile $false $preparationRef 'push' } 'preparation workflow with strict mode'
+Require-Refusal { Get-PublicationHostedProfile $true $preparationRef 'workflow_dispatch' } 'manual preparation dispatch'
+Require-Refusal { Get-PublicationHostedProfile $true ($preparationRef.Replace('heads/main', 'heads/other')) 'push' } 'preparation on another branch'
+Require-Refusal { Get-PublicationHostedProfile $true ($preparationRef.Replace('replicraft/', 'other/')) 'push' } 'preparation from another owner'
+
+$preparationWorkflow = Get-Content -Raw -LiteralPath (Join-Path $repo $preparation.Workflow)
+$preparationCommand = '(?m)^          \./crates/platform/exacopy-platform/verification/windows_ntfs_publication/run\.ps1 -PrepareOwnedCompilerJob\r?$'
+Require ([regex]::Matches($preparationWorkflow, $preparationCommand).Count -eq 1 -and
+    $preparationWorkflow -cmatch '(?m)^  push:\r?$' -and
+    $preparationWorkflow -cnotmatch '(?m)workflow_dispatch|workflow_call|pull_request' -and
+    $preparationWorkflow -cmatch '(?m)^          name: windows-ntfs-publication-preparation-v2-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}\r?$') 'Preparation must have one fixed push invocation and a separate evidence artifact.'
+
 $prepareDefinition = $runner.Find({
     param($Node)
     $Node -is [Management.Automation.Language.FunctionDefinitionAst] -and $Node.Name -ceq 'Invoke-OwnedPublicationBuildPreparation'

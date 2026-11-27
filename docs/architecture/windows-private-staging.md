@@ -104,6 +104,14 @@ Native execution of this publication profile remains pending.
 [Fixture manifest](../../crates/platform/exacopy-platform/verification/windows_ntfs_publication/fixture.toml) ·
 [Hosted workflow](../../.github/workflows/windows-ntfs-publication.yml)
 
+The separate owned-build preparation profile uses the same test cases on
+the hosted Windows image. Its build first establishes whole-job quiescence,
+then admits the held test executable from verified compiler output. Case
+execution still requires strict natural completion. Native qualification of
+this profile remains pending. The strict v1 results remain separately scoped.
+[Preparation fixture](../../crates/platform/exacopy-platform/verification/windows_ntfs_publication_preparation/fixture.toml) ·
+[Preparation workflow](../../.github/workflows/windows-ntfs-publication-preparation.yml)
+
 This component supplies no product copy command, durable intent writer,
 receipt, namespace durability, process-crash or power-loss qualification.
 The separate Stage qualification retains its own scope.

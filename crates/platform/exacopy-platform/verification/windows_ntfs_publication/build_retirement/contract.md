@@ -1,19 +1,41 @@
 # Windows publication compiler preparation with owned-job retirement
 
-**Status.** Integrated source with an explicit, default-off `PrepareOwnedCompilerJob` switch. The hosted Windows workflow still selects strict v1. The bundled prebuild controls passed at `8c1a311` and `b50ada3`; native preparation qualification remains pending. P-078 is registered separately with the formal dispatcher. The strict `windows-hosted-server2025-fixed-ntfs-publication-v1` result remains failed at `cb47f4a`. Its retained publication ZIP records a successful Cargo root and emitted executable, with `vctip.exe` as the sole sampled job member at 479862 ms. The job timed out, drained, and was deleted. No publication case ran.
+**Status.** The strict v1 workflow keeps its default invocation. The separate
+push-only v2 workflow explicitly selects `PrepareOwnedCompilerJob`. The bundled
+prebuild controls passed at `8c1a311` and `b50ada3`. Native v2 qualification
+remains pending.
+
+The strict `windows-hosted-server2025-fixed-ntfs-publication-v1` result
+remains failed at `cb47f4a`. Its retained publication ZIP records a successful
+Cargo root and emitted executable, with `vctip.exe` as the sole sampled job
+member at 479862 ms. The job timed out, drained, and the fixture was deleted.
+No publication case ran. The separate strict run at `8c1a311` confirmed the
+bundled selection and process controls before reproducing the Cargo timeout.
+Its archive is artifact `15201400361` from run `46003782963`, SHA-256
+`b9c813d373109066d31fa2904bd325c84583d1ae284f89e4262d4b3ed2eb64b5`.
 
 ## Scope and entry point
 
 At `824521c`, all twelve P-078 invocations returned TLC parser exit 150 before
 state exploration. SANY rejected the closing record-update bracket at model
 line 64. The four analogous closing brackets are now indented inside their
-conjunction items. The source correction awaits automatic formal verification;
-neither the two healthy cases nor the ten mutants is qualified by the failed
-run. [Failed formal job](https://github.com/replicraft/ExaCopy/actions/runs/46002008193/job/140515758293).
+conjunction items. The failed run supplied no exploration evidence for either
+healthy configuration or any of the ten mutants. [Failed formal job](https://github.com/replicraft/ExaCopy/actions/runs/46002008193/job/140515758293).
 
-A separately named preparation entry point may retire a compiler job to establish that its admitted job members can no longer write its outputs. Only the canonical admitted Windows Server 2025 x64 fixed-NTFS publication harness can construct the preparation request. It supplies the exact source and lockfile revision, a newly acquired empty private target, the reviewed offline feature/package/target graph, and the held compiler toolchain. Plan, source capture, setup tools, ordinary process controls, inventory, and publication tests continue to use the strict existing supervisor. Give any future hosted run that enables the new preparation contract a distinct profile identifier and retain the v1 result.
+At `90b5d44`, the automatic formal run recorded a passing P-078 obligation.
+The preparation and strict configurations exhausted 333 and 21 distinct
+states, respectively, with empty queues. Preparation reached the first
+selector. All ten single mutations produced the expected invariant
+violation and final action. Formal artifact `15201004421` from run
+`46005751603` has SHA-256
+`44b18fbbb67b2046e4238e1984cb9fcf785b02b511956d6ef224007911345d78`.
+The model relies on trusted observations and checks their ordering and
+invocation binding. The result establishes neither implementation
+refinement nor native Windows, process-crash, or power-loss qualification.
 
-Proposed narrow API boundaries:
+A separately named preparation entry point may retire a compiler job to establish that its admitted job members can no longer write its outputs. Only the canonical admitted Windows Server 2025 x64 fixed-NTFS publication harness can construct the preparation request. It supplies the exact source and lockfile revision, a newly acquired empty private target, the reviewed offline feature/package/target graph, and the held compiler toolchain. Plan, source capture, setup tools, ordinary process controls, inventory, and publication tests continue to use the strict existing supervisor. The hosted workflows give the two profiles distinct fixture registrations, profile identifiers and evidence artifacts.
+
+The API has three boundaries.
 
 - `PreparePublicationBuild(ApprovedCompilerPreparation)` owns one launch, its private job, both sinks and its build deadline. It returns an `OwnedBuildPreparationReceipt`. The request is constructed by the canonical harness from fixed inputs rather than generic command strings or a caller-controlled switch on `Run`.
 - `AdmitPreparedTestImage(OwnedBuildPreparationReceipt, HeldCompilationInputs, HeldBuildDirectory)` returns a held `PreparedTestImage` only after the full admission checks below. The construction is private to the qualification harness. A receipt or path alone supplies no test-launch authority.

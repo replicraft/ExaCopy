@@ -3,19 +3,35 @@ param([switch] $PrepareOwnedCompilerJob)
 
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../../..'))
-$qualification = 'windows-hosted-server2025-fixed-ntfs-publication-v1'
-if ($PrepareOwnedCompilerJob) { $qualification = 'windows-hosted-server2025-fixed-ntfs-publication-owned-preparation-v2' }
+function Get-PublicationHostedProfile {
+    param([bool] $Preparation, [string] $WorkflowRef, [string] $EventName)
+    $workflow = '.github/workflows/windows-ntfs-publication.yml'
+    $profile = 'windows-hosted-server2025-fixed-ntfs-publication-v1'
+    $fixtureManifest = 'crates/platform/exacopy-platform/verification/windows_ntfs_publication/fixture.toml'
+    $events = @('push', 'workflow_dispatch')
+    if ($Preparation) {
+        $workflow = '.github/workflows/windows-ntfs-publication-preparation.yml'
+        $profile = 'windows-hosted-server2025-fixed-ntfs-publication-owned-preparation-v2'
+        $fixtureManifest = 'crates/platform/exacopy-platform/verification/windows_ntfs_publication_preparation/fixture.toml'
+        $events = @('push')
+    }
+    if ($WorkflowRef -cne ('replicraft/ExaCopy/' + $workflow + '@refs/heads/main') -or
+        $EventName -cnotin $events) {
+        throw 'The explicit publication mode does not match this canonical hosted workflow and event.'
+    }
+    return @{ Profile = $profile; Workflow = $workflow; Manifest = $fixtureManifest }
+}
+
 $selected = 'x86_64-pc-windows-msvc'
 if (!$IsWindows -or $env:GITHUB_ACTIONS -cne 'true' -or
     $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or $env:RUNNER_OS -cne 'Windows' -or
     $env:RUNNER_ARCH -cne 'X64' -or $env:GITHUB_SERVER_URL -cne 'https://github.com' -or
-    $env:GITHUB_EVENT_NAME -cnotin @('push', 'workflow_dispatch') -or
-    $env:GITHUB_WORKFLOW_REF -cne 'replicraft/ExaCopy/.github/workflows/windows-ntfs-publication.yml@refs/heads/main' -or
     $env:GITHUB_WORKFLOW_SHA -cne $env:GITHUB_SHA -or
     $env:GITHUB_REPOSITORY -cne 'replicraft/ExaCopy' -or $env:GITHUB_REF -cne 'refs/heads/main' -or
     $env:GITHUB_SHA -cnotmatch '\A[0-9a-f]{40}\z') {
     throw 'Run this fixture only from its canonical hosted Windows workflow.'
 }
+$hostedProfile = Get-PublicationHostedProfile $PrepareOwnedCompilerJob.IsPresent $env:GITHUB_WORKFLOW_REF $env:GITHUB_EVENT_NAME
 
 . (Join-Path $PSScriptRoot 'selection.ps1')
 Confirm-PublicationSource $repo $env:GITHUB_SHA
@@ -366,7 +382,7 @@ $fixtureCustodied = $false
 $evidenceExported = $false
 $diagnostic = @{ phase = 'fixture-admission'; receipt = $null; launch = $null }
 $state = @{
-    profile = $qualification; source_revision = $env:GITHUB_SHA; status = 'fail'; process_drained = $true
+    profile = $hostedProfile.Profile; source_revision = $env:GITHUB_SHA; status = 'fail'; process_drained = $true
     target = $selected; windows = $windows.Caption; build_number = $windows.BuildNumber
     runner_image = $env:ImageVersion; cases = @(); cleanup = 'not-acquired'
 }
@@ -410,6 +426,13 @@ try {
     )) {
         $sourcePath = if ($source.Contains('/')) { Join-Path $repo $source } else { Join-Path $PSScriptRoot $source }
         $fileHashes[$source] = (Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash
+    }
+    if ($PrepareOwnedCompilerJob) {
+        foreach ($source in @($hostedProfile.Manifest, $hostedProfile.Workflow)) {
+            $fileHashes[$source] = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $repo $source)).Hash
+        }
+        $state.workflow_ref = $env:GITHUB_WORKFLOW_REF
+        $state.workflow_event = $env:GITHUB_EVENT_NAME
     }
     $state.source_inputs = $fileHashes
     $fixture = Join-Path $root ('exacopy-windows-publication-fixture-' + [Guid]::NewGuid().ToString('N'))

@@ -1,0 +1,44 @@
+schema_version = 1
+id = "windows-fixed-ntfs-publication-owned-preparation"
+target = "x86_64-pc-windows-msvc"
+profile = "windows-hosted-server2025-fixed-ntfs-publication-owned-preparation-v2"
+rust_toolchain = "1.100.0"
+runner = "verification/windows_ntfs_publication/run.ps1"
+controls = "verification/windows_ntfs_publication/test_runner.ps1"
+workflow = ".github/workflows/windows-ntfs-publication-preparation.yml"
+result = "result.json"
+
+[[case]]
+kind = "rust-unit-windows"
+selector = "windows::stage::publication::tests::absent_target_moves_original_closed_stage"
+source = "src/windows/stage/publication/tests.rs"
+required_feature = "experimental-windows-copy"
+ignored = true
+
+[[case]]
+kind = "rust-unit-windows"
+selector = "windows::stage::publication::tests::late_incumbent_and_case_alias_are_preserved"
+source = "src/windows/stage/publication/tests.rs"
+required_feature = "experimental-windows-copy"
+ignored = true
+
+[[case]]
+kind = "rust-unit-windows"
+selector = "windows::stage::publication::tests::writer_and_changed_stage_refuse_before_rename"
+source = "src/windows/stage/publication/tests.rs"
+required_feature = "experimental-windows-copy"
+ignored = true
+
+[[case]]
+kind = "rust-unit-windows"
+selector = "windows::stage::publication::tests::bound_target_and_metadata_refusals_preserve_entries"
+source = "src/windows/stage/publication/tests.rs"
+required_feature = "experimental-windows-copy"
+ignored = true
+
+[[case]]
+kind = "rust-unit-windows"
+selector = "windows::stage::publication::tests::native_success_with_observation_failure_requires_reconciliation"
+source = "src/windows/stage/publication/tests.rs"
+required_feature = "experimental-windows-copy"
+ignored = true

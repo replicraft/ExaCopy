@@ -9,11 +9,14 @@ use crate::finding::Findings;
 
 const OWNER: &str = "exacopy-platform";
 const ID: &str = "windows-fixed-ntfs-publication";
+const PREPARATION_ID: &str = "windows-fixed-ntfs-publication-owned-preparation";
 pub(super) const FEATURE: &str = "experimental-windows-copy";
 const MANIFEST: &str = "verification/windows_ntfs_publication/fixture.toml";
+const PREPARATION_MANIFEST: &str = "verification/windows_ntfs_publication_preparation/fixture.toml";
 const RUNNER: &str = "verification/windows_ntfs_publication/run.ps1";
 const CONTROLS: &str = "verification/windows_ntfs_publication/test_runner.ps1";
 const WORKFLOW: &str = ".github/workflows/windows-ntfs-publication.yml";
+const PREPARATION_WORKFLOW: &str = ".github/workflows/windows-ntfs-publication-preparation.yml";
 const SOURCE: &str = "src/windows/stage/publication/tests.rs";
 const PREFIX: &str = "windows::stage::publication::tests::";
 const CASES: [&str; 5] = [
@@ -25,7 +28,13 @@ const CASES: [&str; 5] = [
 ];
 
 pub(super) fn applies(manifest: &Path, profile: Profile) -> bool {
-	manifest == Path::new(MANIFEST) || matches!(profile, Profile::WindowsFixedNtfsPublication)
+	manifest == Path::new(MANIFEST)
+		|| manifest == Path::new(PREPARATION_MANIFEST)
+		|| matches!(
+			profile,
+			Profile::WindowsFixedNtfsPublication
+				| Profile::WindowsFixedNtfsPublicationOwnedPreparation
+		)
 }
 
 pub(super) fn check(
@@ -60,18 +69,24 @@ pub(super) fn check(
 	}
 	check_module_chain(root, findings);
 	check_cases(root, findings);
-	check_runner(workspace, root, findings);
+	check_runner(workspace, root, fixture, findings);
 }
 
 fn matches_fixture(owner: &str, manifest: &Path, fixture: &Fixture) -> bool {
-	matches!(fixture.profile, Profile::WindowsFixedNtfsPublication)
-		&& fixture.target == Target::WindowsX86_64Msvc
+	let (expected_manifest, id, workflow) = match fixture.profile {
+		Profile::WindowsFixedNtfsPublication => (MANIFEST, ID, WORKFLOW),
+		Profile::WindowsFixedNtfsPublicationOwnedPreparation => {
+			(PREPARATION_MANIFEST, PREPARATION_ID, PREPARATION_WORKFLOW)
+		}
+		_ => return false,
+	};
+	fixture.target == Target::WindowsX86_64Msvc
 		&& owner == OWNER
-		&& manifest.as_os_str() == MANIFEST
-		&& fixture.id == ID
+		&& manifest.as_os_str() == expected_manifest
+		&& fixture.id == id
 		&& fixture.runner.as_os_str() == RUNNER
 		&& fixture.controls.as_os_str() == CONTROLS
-		&& fixture.workflow.as_os_str() == WORKFLOW
+		&& fixture.workflow.as_os_str() == workflow
 		&& fixture.cases.len() == CASES.len()
 		&& fixture
 			.cases
@@ -221,18 +236,30 @@ fn check_cases(root: &Path, findings: &mut Findings) {
 	}
 }
 
-fn check_runner(workspace: &Path, root: &Path, findings: &mut Findings) {
+fn check_runner(workspace: &Path, root: &Path, fixture: &Fixture, findings: &mut Findings) {
 	for source in [RUNNER, CONTROLS] {
 		artifact_text(root, Path::new(source), findings);
 	}
-	let folder = Path::new(MANIFEST).parent().unwrap_or(Path::new(""));
+	let folder = Path::new(RUNNER).parent().unwrap_or(Path::new(""));
 	for helper in ["selection.ps1", "process.cs", "process-controls.ps1"] {
 		artifact_text(root, &folder.join(helper), findings);
 	}
-	let workflow = Path::new(WORKFLOW);
+	let workflow = fixture.workflow.as_path();
 	let Some(contents) = artifact_text(workspace, workflow, findings) else {
 		return;
 	};
+	if matches!(
+		fixture.profile,
+		Profile::WindowsFixedNtfsPublicationOwnedPreparation
+	) {
+		if !preparation_workflow(&contents) {
+			findings.add(
+				&workspace.join(workflow),
+				"Windows preparation requires its fixed push-only workflow, runner and evidence artifact",
+			);
+		}
+		return;
+	}
 	let runner_path = PathBuf::from("crates/platform/exacopy-platform").join(RUNNER);
 	let runner_path = runner_path
 		.to_string_lossy()
@@ -252,6 +279,83 @@ fn check_runner(workspace: &Path, root: &Path, findings: &mut Findings) {
 		);
 	}
 }
+
+// The fixed shape excludes alternate triggers, caller inputs, and misplaced commands.
+fn preparation_workflow(contents: &str) -> bool {
+	let contents = contents.replace("\r\n", "\n");
+	let Some(after_header) = contents.strip_prefix(PREPARATION_HEADER) else {
+		return false;
+	};
+	let Some((paths, job)) = after_header.split_once("\npermissions:") else {
+		return false;
+	};
+	if job != PREPARATION_JOB {
+		return false;
+	}
+	let mut filters = std::collections::BTreeSet::new();
+	for line in paths.lines() {
+		let Some(path) = line
+			.strip_prefix("      - '")
+			.and_then(|path| path.strip_suffix('\''))
+		else {
+			return false;
+		};
+		if path.is_empty()
+			|| !path
+				.bytes()
+				.all(|byte| byte.is_ascii_alphanumeric() || b"._-*/".contains(&byte))
+			|| !filters.insert(path)
+		{
+			return false;
+		}
+	}
+	[
+		".github/workflows/windows-ntfs-publication-preparation.yml",
+		"crates/platform/exacopy-platform/verification/windows_ntfs_publication/**",
+		"crates/platform/exacopy-platform/verification/windows_ntfs_publication_preparation/**",
+		"specs/verification/owners.toml",
+		"xtask/src/verification/native.rs",
+		"xtask/src/verification/native/windows_publication.rs",
+	]
+	.into_iter()
+	.all(|path| filters.contains(path))
+}
+
+const PREPARATION_HEADER: &str = r"name: Windows fixed NTFS publication owned preparation qualification
+
+on:
+  push:
+    branches: [main]
+    paths:
+";
+
+const PREPARATION_JOB: &str = r"
+  contents: read
+
+jobs:
+  qualify:
+    if: github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main'
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Run held fixed-NTFS publication preparation fixture
+        id: qualification
+        shell: pwsh
+        run: >-
+          ./crates/platform/exacopy-platform/verification/windows_ntfs_publication/run.ps1 -PrepareOwnedCompilerJob
+      - name: Retain acquired qualification evidence
+        if: always() && steps.qualification.outputs.evidence_path != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-ntfs-publication-preparation-v2-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.qualification.outputs.evidence_path }}
+          if-no-files-found: error
+          retention-days: 90
+";
 
 #[cfg(test)]
 mod tests {
@@ -322,6 +426,48 @@ mod tests {
 		assert!(applies(exact, fixture.profile));
 		assert!(!applies(alternate, fixture.profile));
 		assert!(!matches_fixture(OWNER, exact, &fixture));
+
+		let preparation = Path::new(PREPARATION_MANIFEST);
+		assert!(applies(preparation, fixture.profile));
+		fixture.profile = Profile::WindowsFixedNtfsPublicationOwnedPreparation;
+		assert!(applies(alternate, fixture.profile));
+		assert!(!matches_fixture(OWNER, exact, &fixture));
+		assert!(!matches_fixture(OWNER, preparation, &fixture));
+		fixture.id = PREPARATION_ID.to_owned();
+		assert!(!matches_fixture(OWNER, preparation, &fixture));
+		fixture.workflow = PREPARATION_WORKFLOW.into();
+		assert!(matches_fixture(OWNER, preparation, &fixture));
+		assert!(!matches_fixture(OWNER, exact, &fixture));
+		fixture.profile = Profile::WindowsFixedNtfsPublication;
+		assert!(!matches_fixture(OWNER, preparation, &fixture));
+	}
+
+	#[test]
+	fn preparation_workflow_rejects_changed_authority_or_evidence() {
+		let workflow =
+			include_str!("../../../../.github/workflows/windows-ntfs-publication-preparation.yml");
+		assert!(preparation_workflow(workflow));
+		for (original, altered) in [
+			("  push:", "  workflow_dispatch:"),
+			("  push:", "  workflow_dispatch:\n  push:"),
+			(" -PrepareOwnedCompilerJob", ""),
+			(
+				" -PrepareOwnedCompilerJob",
+				" -PrepareOwnedCompilerJob -PrepareOwnedCompilerJob",
+			),
+			(" -PrepareOwnedCompilerJob", " # -PrepareOwnedCompilerJob"),
+			(
+				"always() && steps.qualification.outputs.evidence_path",
+				"always() && steps.other.outputs.evidence_path",
+			),
+			(
+				"windows-ntfs-publication-preparation-v2-",
+				"windows-ntfs-publication-",
+			),
+		] {
+			assert!(workflow.contains(original));
+			assert!(!preparation_workflow(&workflow.replace(original, altered)));
+		}
 	}
 
 	#[test]
