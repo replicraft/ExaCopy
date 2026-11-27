@@ -1,14 +1,14 @@
 use std::cell::{Cell, RefCell};
 use std::num::NonZeroU16;
 
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use exacopy_journal::frame::{ChainHead, FrameKind, FrameReader};
 use exacopy_journal::remote_download::finalization::RemoteLocalMetadata;
 use exacopy_journal::remote_download::finalization_replay::replay_remote_finalization_with_checkpoints;
 use exacopy_journal::remote_download::qualification::continuation::{
 	RemoteContinuationCoverageProfile, RemoteContinuationOperationProfile,
 	RemoteContinuationQualificationScope, RemoteContinuationQualificationTrust,
-	verify_remote_witness_qualification,
+	VerifiedRemoteWitnessQualification, verify_remote_witness_qualification,
 };
 use exacopy_journal::remote_download::qualification::{
 	RemoteQualificationRouteClass, RemoteQualificationScope,
@@ -27,6 +27,9 @@ use exacopy_transfer::remote_witnessed_finalization::{
 };
 
 use super::{HeldSource, ReadView, Reader, epoch, ready, stage, verify_held_retained_prefix};
+
+#[path = "prepublication/recovery.rs"]
+mod recovery;
 
 const CONTENT: &[u8] = b"ABCD";
 const VERIFIED_METADATA: RemoteLocalMetadata = RemoteLocalMetadata {
@@ -190,18 +193,18 @@ fn boundary_of(full: &[u8], kind: FrameKind) -> RemoteReplayBoundary {
 	panic!("independent transcript lacks {kind:?}");
 }
 
-fn exercise(fault: Fault, expected: &[FrameKind], evidence: FrameKind, reconcile: bool) {
-	let profile = OwnerProfileId::from_bytes([0x22; 16]).unwrap();
-	let owner_key = SigningKey::from_bytes(&[0x52; 32]).verifying_key();
-	let owner = RemoteDownloadOwnerRecord::decode(
+fn owner_record(profile: OwnerProfileId, owner_key: &VerifyingKey) -> RemoteDownloadOwnerRecord {
+	RemoteDownloadOwnerRecord::decode(
 		&super::super::hex(independent_fixture!("remote_finalization/owner.hex")),
 		profile,
-		&owner_key,
+		owner_key,
 	)
-	.unwrap();
-	let trust = RemoteBootstrapTrust::new(&owner, profile, &owner_key).unwrap();
+	.unwrap()
+}
+
+fn witness_qualification(owner_key: &VerifyingKey) -> VerifiedRemoteWitnessQualification {
 	let attestor = SigningKey::from_bytes(&[0x62; 32]).verifying_key();
-	let qualification = verify_remote_witness_qualification(
+	verify_remote_witness_qualification(
 		&vector(
 			independent_fixture!("remote_continuation/witness_closeout.hex"),
 			"qualification",
@@ -209,7 +212,7 @@ fn exercise(fault: Fault, expected: &[FrameKind], evidence: FrameKind, reconcile
 		&RemoteContinuationQualificationTrust {
 			attestor: [0x31; 16],
 			attestor_key: &attestor,
-			owner_key: &owner_key,
+			owner_key,
 			scope: RemoteContinuationQualificationScope {
 				common: RemoteQualificationScope {
 					build: [0x61; 32],
@@ -223,7 +226,15 @@ fn exercise(fault: Fault, expected: &[FrameKind], evidence: FrameKind, reconcile
 			},
 		},
 	)
-	.unwrap();
+	.unwrap()
+}
+
+fn exercise(fault: Fault, expected: &[FrameKind], evidence: FrameKind, reconcile: bool) {
+	let profile = OwnerProfileId::from_bytes([0x22; 16]).unwrap();
+	let owner_key = SigningKey::from_bytes(&[0x52; 32]).verifying_key();
+	let owner = owner_record(profile, &owner_key);
+	let trust = RemoteBootstrapTrust::new(&owner, profile, &owner_key).unwrap();
+	let qualification = witness_qualification(&owner_key);
 	// This is a synthetic native-facts fixture. The real adapter selects current observations.
 	let current = qualification
 		.match_current([0x61; 32], qualification.facts())

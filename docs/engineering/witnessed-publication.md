@@ -252,12 +252,12 @@ and the old private name's absence, and rechecks the original journal.
 Application read-back measures the whole public stream and checks the
 selected current substrate before reporting the observed association.
 
-This assessment does not inspect receipt names. Terminal kind 18 continues
-to require its exact final receipt and pending-name absence. Neither result
-authorizes a recovery append, rename or retry. In particular, this observation
-does not satisfy the separate P-066 restart authority or create a recovered
-tag-4 event. The current live retention adapter requires the original
-one-link private reader, which is unavailable after successful publication.
+Terminal kind 18 continues to require its exact final receipt and pending-name
+absence. The shared-lease kind-7 assessment gives association evidence about
+the inspected publication. A recovered tag-4 append requires a newly admitted
+exclusive recovery holder with independently checked authority and custody.
+The live retention adapter requires the original one-link private reader,
+which is unavailable after successful publication.
 
 Focused journal controls, Linux ARM64 strict compilation and linked test
 images cover the source. The new ordinary Linux component and application
@@ -278,15 +278,22 @@ original lint failure and the initial filter attempt that selected zero
 tests remain in the evidence directory. The final platform cross-Clippy
 and native link succeeded.
 
-Seven host model tests passed. The P-066 TLC model generated 74,808 states,
+The retained candidate based on `441ecfc38a525a503ac2cafb06c899b8311d9b90`
+passed seven host model tests. Its P-066 TLC run generated 74,808 states,
 exhausted 12,128 distinct states and left zero queued. Four deliberate
 negative controls detected inode reuse despite the protected witness,
 recovery from the witness alone, recovery using stale target evidence, and
 a repeated rename after restart. P-066 assumes qualified continuous custody
 of the witness and independently validated simultaneous observations.
-It gives bounded model evidence under those assumptions.
+These results apply to that candidate's bounded model run.
 [Model tests](../../crates/foundation/exacopy-model/tests/witnessed_publication.rs) ·
 [P-066 model and scope](../../crates/foundation/exacopy-model/verification/obligations.toml)
+
+The [recovered kind-8 correspondence](../../crates/foundation/exacopy-model/verification/tla/WITNESSED_PUBLICATION.md#recovered-kind-8-correspondence)
+maps the journal proposal and exclusive transfer coordinator to P-066. Its
+frozen journal vector and synthetic holder cases target exact recording
+and reconciliation. Qualification still requires an application-owned
+native restart holder and execution on the selected profile.
 
 The retained local records are under
 `target/agent-evidence/witnessed-native-publication/`, including the exact
