@@ -58,6 +58,18 @@ replay removed exactly those three missing entries, reducing 176 to 173;
 the gate still fails. Evidence is retained under
 `target/agent-evidence/dependency-audits-round2/`.
 
+Six further paired source reviews accepted `hkdf 0.13.0`,
+`jiff-static 1.0.3`, `shake 0.1.0`, `wasm-bindgen-macro 0.2.130`,
+`windows-numerics 0.3.1` and `x25519-dalek 2.0.1`. The HKDF and SHAKE
+records retain trusted compile-time backend width and resource assumptions;
+runtime message input cannot select those types. Dependencies, cryptographic
+correctness, timing and native execution remain separate review boundaries.
+Both complete member inventories matched the six locked archives. Actual
+frozen Cargo Vet replay removed exactly those six missing entries, reducing
+173 to 167, with the lockfile, criteria and imports unchanged. Both replay
+runs still failed the workspace gate. Evidence and the original findings
+remain under `target/agent-evidence/audit-six-integration/`.
+
 ## Records left open
 
 | Package | Finding or unresolved review boundary |

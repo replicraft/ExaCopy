@@ -555,6 +555,25 @@ A const fixture checked output bytes from mixed-case hexadecimal digits,
 whitespace, and adjacent literals.
 """
 
+[[audits.hkdf]]
+who = "OpenAI Codex (automated dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.13.0"
+notes = """
+2026-11-27. Two independent automated reviewers inspected the exact locked
+archive SHA-256 4aaa26c720c68b866f2c96ef5c1264b3e6f473fe5d4ce61cd44bbe913e553018. Reviewed all package source, archived
+test and benchmark source, and the optional kdf integration. The no_std
+library has no authored unsafe, ambient I/O, build script, or native code.
+Supported HMAC backend types choose a positive output width at compile time
+and require a representable 255-block expansion bound and suitable stack
+budget. Unsupported widths can panic. Runtime length is checked before
+writing and cannot select the backend type. The built-in adapters redact
+debug state. Custom backend formatting and protocol input framing remain
+caller contracts. The kdf crate itself and other dependencies remain
+separate review boundaries. No execution, Cargo Vet replay, cryptographic,
+timing, or native qualification result is claimed.
+"""
+
 [[audits.hybrid-array]]
 who = "OpenAI Codex (dependency source review)"
 criteria = "safe-to-deploy"
@@ -641,6 +660,18 @@ string lifetime. The crate performs no ambient I/O. Native Rust 1.100.0 and
 Miri checks passed against the exact source with ExaCopy's resolved feature set.
 ExaCopy enables only the empty default feature through serde_json. The optional
 no-panic proc macro was outside the resolved build and this evidence.
+"""
+
+[[audits.jiff-static]]
+who = "OpenAI Codex (automated dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.0.3"
+notes = """
+2026-11-27. Two independent automated reviews of the complete, exact
+locked registry archive SHA-256 4996f71e569e3a3e32b925c28ef8f0027dc30bb1d594b33eeda409eea185f5c8.
+All archived Rust source, manifests, and features reviewed. The macro produces typed static data for the matching Jiff runtime. The paired Jiff 1.0.3 types and copy/drop contracts were checked. Explicitly requested zoneinfo paths and file sizes are trusted build inputs. Optional database contents have a separate dependency boundary.
+Source review only. No build, test, Cargo Vet replay, cryptographic,
+timing, or native execution result is claimed.
 """
 
 [[audits.kem]]
@@ -1048,6 +1079,18 @@ test lock was blocked by an uncached syn version. There is no unsafe code,
 build script, or ambient I/O.
 """
 
+[[audits.shake]]
+who = "OpenAI Codex (automated dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.1.0"
+notes = """
+2026-11-27. Two independent automated reviews of the complete, exact
+locked registry archive SHA-256 09057cb2149ad4cbd2da1e26b351f9a4c354219421229c69c3063e6f61947c4a.
+No_std, alloc, zeroize, tests and benchmarks reviewed. Supported const rates bound padding indexes and cursor operations. AlgorithmName can panic for unsupported rates selected by downstream types. Optional boxed output requires caller bounds. Keccak, cursor and wipe providers retain their separate dependency contracts.
+Source review only. No build, test, Cargo Vet replay, cryptographic,
+timing, or native execution result is claimed.
+"""
+
 [[audits.signature]]
 who = "OpenAI Codex (automated dependency source review)"
 criteria = "safe-to-deploy"
@@ -1353,6 +1396,18 @@ The released archive omits the historical sample fixtures. There is no unsafe
 code, native linkage, network access, or direct file mutation.
 """
 
+[[audits.wasm-bindgen-macro]]
+who = "OpenAI Codex (automated dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.2.130"
+notes = """
+2026-11-27. Two independent automated reviews of the complete, exact
+locked registry archive SHA-256 6e931a02a39abdbf66966fc35902b5ed58344750a70885bed4ebb3d8eaf28ed9.
+All four entry points, diagnostic forwarding and strict-macro feature forwarding reviewed. Explicit host debug cfg can print expanded tokens. The wrapper has no build script, authored unsafe, direct file/network/process I/O or native linkage. Macro support owns parsing, local module reads and generated ABI.
+Source review only. No build, test, Cargo Vet replay, cryptographic,
+timing, or native execution result is claimed.
+"""
+
 [[audits.wasm-bindgen-shared]]
 who = "OpenAI Codex (automated dependency source review)"
 criteria = "safe-to-deploy"
@@ -1372,6 +1427,18 @@ hash accepted by the packaged schema approval test. Downstream macro,
 generated bindings and ABI behavior are separately scoped.
 """
 
+[[audits.windows-numerics]]
+who = "OpenAI Codex (automated dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.3.1"
+notes = """
+2026-11-27. Two independent automated reviews of the complete, exact
+locked registry archive SHA-256 6e2e40844ac143cdb44aead537bbf727de9b044e107a0f1220392177d15b0f26.
+Default std, no_std and off-Windows declarations reviewed. The three Direct2D imports use fixed-layout types and initialized fixed-size output storage for synchronous writes under the documented Windows ABI. Arithmetic can produce nonfinite floats.
+Source review only. No build, test, Cargo Vet replay, cryptographic,
+timing, or native execution result is claimed.
+"""
+
 [[audits.windows-targets]]
 who = "OpenAI Codex (dependency source review)"
 criteria = "safe-to-deploy"
@@ -1388,4 +1455,16 @@ manufacture safe wrappers. Callers must provide correct signatures,
 ABI and import names, and uphold the foreign function contracts.
 The eight target-specific Windows import-library packages are separate
 artifacts outside this exact package audit. Static source review only.
+"""
+
+[[audits.x25519-dalek]]
+who = "OpenAI Codex (automated dependency source review)"
+criteria = "safe-to-deploy"
+version = "2.0.1"
+notes = """
+2026-11-27. Two independent automated reviews of the complete, exact
+locked registry archive SHA-256 c7e468321c81fb07fa7f4c636c3972b9100f0346e5b6a9f2bd0603a52f7ed277.
+All feature paths and package source reviewed. No build script, authored unsafe, or direct file/network I/O. Fixed-width wrappers delegate curve and entropy operations. Protocol callers establish peer authentication, contributory checks and key derivation. Serialization exposes key bytes intentionally and optional zeroization applies to owned fields. RNG convenience methods can panic on provider failure. A Serde-only package test configuration concern remains recorded.
+Source review only. No build, test, Cargo Vet replay, cryptographic,
+timing, or native execution result is claimed.
 """
