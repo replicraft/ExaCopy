@@ -170,6 +170,73 @@ fn unsupported_records_are_rejected_without_echoing_annotations() {
 }
 
 #[test]
+fn dispatches_version_before_interpreting_the_body() {
+	let mut document = annotated_envelope();
+	document["body"]["schema_version"] = json!("2.0");
+	document["body"]["entries"] = json!({"named_entry": HOSTILE_DISPLAY});
+	document["body"]["new_required_field"] = json!({"value": HOSTILE_DISPLAY});
+	assert_private_error(
+		SingleFileManifest::from_json(&serde_json::to_vec(&document).unwrap()),
+		ManifestUnsupported::Version.into(),
+		HOSTILE_DISPLAY,
+	);
+
+	document["body"]["schema_version"] = json!("1.0");
+	assert_private_error(
+		SingleFileManifest::from_json(&serde_json::to_vec(&document).unwrap()),
+		ManifestInvalid::Json.into(),
+		HOSTILE_DISPLAY,
+	);
+}
+
+#[test]
+fn requires_one_unambiguous_version_in_a_complete_json_envelope() {
+	for input in [
+		br#"{"body":{"schema_version":"2.0","schema_versi\u006fn":"1.0"}}"#.as_slice(),
+		br#"{"body":{"schema_version":"2.0"},"body":{"schema_version":"2.0"}}"#,
+		br#"{"body":{"schema_version":"2.0"},"digest":"x","digest":"y"}"#,
+		br#"{"body":{"schema_version":"2.0"}} {}"#,
+		br#"{"body":{"schema_version":"2.0","future":[1,]}}"#,
+		br#"{"body":{"future":{"schema_version":"2.0"}}}"#,
+		br#"{"body":[{"schema_version":"2.0"}]}"#,
+		br#"{"body":{"schema_version":2}}"#,
+		b"{\"body\":{\"schema_version\":\"2.0\",\"future\":\"\xff\"}}",
+	] {
+		assert_eq!(
+			SingleFileManifest::from_json(input),
+			Err(ManifestInvalid::Json.into()),
+			"{input:?}"
+		);
+	}
+}
+
+#[test]
+fn applies_input_limits_before_version_dispatch() {
+	let future = br#"{"body":{"schema_version":"2.0"}}"#;
+	let mut input = future.to_vec();
+	input.resize(MAX_MANIFEST_JSON_BYTES, b' ');
+	assert_eq!(
+		SingleFileManifest::from_json(&input),
+		Err(ManifestUnsupported::Version.into())
+	);
+	input.push(b' ');
+	assert_eq!(
+		SingleFileManifest::from_json(&input),
+		Err(ManifestInvalid::Size.into())
+	);
+
+	let nested = format!(
+		r#"{{"body":{{"schema_version":"2.0","future":{}0{}}}}}"#,
+		"[".repeat(31),
+		"]".repeat(31),
+	);
+	assert_eq!(
+		SingleFileManifest::from_json(nested.as_bytes()),
+		Err(ManifestInvalid::Depth.into())
+	);
+}
+
+#[test]
 fn trailing_collection_items_cannot_qualify_the_first_entry() {
 	let mut document = annotated_envelope();
 	let entries = document["body"]["entries"].as_array_mut().unwrap();

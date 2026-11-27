@@ -25,13 +25,17 @@ pub(super) fn decode(input: &[u8]) -> Result<SingleFileManifest, ManifestError> 
 		return Err(ManifestInvalid::Size.into());
 	}
 	limits::check(input)?;
+	let Object(version): Object<VersionEnvelope> =
+		serde_json::from_slice(input).map_err(|_| ManifestInvalid::Json)?;
+	if version.body.0.schema_version != SCHEMA_VERSION {
+		// Serde's skipped values need not contain valid UTF-8.
+		core::str::from_utf8(input).map_err(|_| ManifestInvalid::Json)?;
+		return Err(ManifestUnsupported::Version.into());
+	}
 	let Object(envelope): Object<Envelope> =
 		serde_json::from_slice(input).map_err(|_| ManifestInvalid::Json)?;
 	let expected = parse_digest(&envelope.digest)?;
 	let body = envelope.body.0;
-	if body.schema_version != SCHEMA_VERSION {
-		return Err(ManifestUnsupported::Version.into());
-	}
 	check_algorithm(&body.algorithm)?;
 	match body.consistency.as_str() {
 		LIVE_OBSERVED if body.complete => {}
@@ -188,6 +192,21 @@ fn hex(bytes: [u8; 32]) -> String {
 	blake3::Hash::from_bytes(bytes).to_hex().to_string()
 }
 
+// Read the complete JSON envelope without interpreting fields from a newer schema.
+#[derive(Deserialize)]
+struct VersionEnvelope {
+	body: Object<VersionBody>,
+	#[serde(default, rename = "digest")]
+	_digest: IgnoredAny,
+	#[serde(default, rename = "signature")]
+	_signature: IgnoredAny,
+}
+
+#[derive(Deserialize)]
+struct VersionBody {
+	schema_version: String,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Envelope {
@@ -200,7 +219,8 @@ struct Envelope {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Body {
-	schema_version: String,
+	#[serde(rename = "schema_version")]
+	_schema_version: String,
 	manifest_id: String,
 	algorithm: String,
 	consistency: String,

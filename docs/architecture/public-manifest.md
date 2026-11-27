@@ -27,6 +27,11 @@ Unknown fields, duplicate supported fields, trailing documents, invalid
 primitives and oversized inputs are refused. These are admission limits,
 not a claim that other public profiles or filesystems have the same bounds.
 
+The reader checks the schema marker in a complete, bounded JSON envelope
+before interpreting the body. A different version receives a compatibility
+error even if its body adds fields or changes their types. Duplicate version
+markers and trailing documents receive an invalid JSON diagnostic.
+
 The source contract is the architecture pack's manifest JSON schema and
 `PUBLIC_RECORD_FIELDS.md` projection. Body keys are numeric 0, 1–7 and 127.
 Paths, components and streams use their registered numeric maps. Inline
