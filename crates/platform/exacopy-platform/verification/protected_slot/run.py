@@ -18,17 +18,37 @@ from contextlib import contextmanager
 TOOLCHAIN = "1.100.0"
 TARGET = "x86_64-unknown-linux-gnu"
 PREFIX = "linux::protected_slot::tests::"
-ORDINARY = (
-    PREFIX + "distinguishes_lookup_absence_and_rebound_objects",
-    PREFIX + "reports_opaque_kind_without_following_or_opening_payload",
-    PREFIX + "refuses_non_directory_and_previously_unlinked_parent",
-    PREFIX + "distinguishes_hard_link_identity_from_distinct_slot_names",
-    PREFIX + "refuses_unknown_entry_kind",
-    PREFIX + "renamed_parent_survives_as_a_held_observation_only",
-)
+ORDINARY_SOURCE = "src/linux/protected_slot/tests.rs"
+COVERAGE_SOURCE = "tests/unit/protected_slot.rs"
+MOUNT_SOURCE = "src/linux/protected_slot/tests/mount.rs"
 MOUNT_TEST = PREFIX + "mount::refuses_same_device_bind_mount_at_the_selected_name"
+ORDINARY_SOURCES = {
+    PREFIX + "distinguishes_lookup_absence_and_rebound_objects": ORDINARY_SOURCE,
+    PREFIX + "reports_opaque_kind_without_following_or_opening_payload": ORDINARY_SOURCE,
+    PREFIX + "refuses_non_directory_and_previously_unlinked_parent": ORDINARY_SOURCE,
+    PREFIX + "distinguishes_hard_link_identity_from_distinct_slot_names": ORDINARY_SOURCE,
+    PREFIX + "refuses_unknown_entry_kind": ORDINARY_SOURCE,
+    PREFIX + "renamed_parent_survives_as_a_held_observation_only": ORDINARY_SOURCE,
+    PREFIX + "coverage::observes_the_exact_unix_component_bytes": COVERAGE_SOURCE,
+    PREFIX + "coverage::pinned_recheck_propagates_invalid_parent": COVERAGE_SOURCE,
+    PREFIX + "coverage::observation_error_reports_keep_typed_causes": COVERAGE_SOURCE,
+}
+ORDINARY = tuple(ORDINARY_SOURCES)
 BLOCKED_EXIT = 77
 SETUP_DENIALS = ("operation not permitted", "permission denied", "function not implemented")
+
+
+def fixture_cases():
+    return [
+        {"selector": name, "source": source, "ignored": False}
+        for name, source in ORDINARY_SOURCES.items()
+    ] + [{"selector": MOUNT_TEST, "source": MOUNT_SOURCE, "ignored": True}]
+
+
+def fixture_source_fingerprints():
+    crate = Path(__file__).resolve().parents[2]
+    sources = {case["source"] for case in fixture_cases()}
+    return {source: sha256(crate / source) for source in sorted(sources)}
 
 
 def fixture_binding(path):
@@ -41,11 +61,7 @@ def fixture_binding(path):
         "controls": "verification/protected_slot/test_runner.py",
         "workflow": ".github/workflows/linux-protected-slot-qualification.yml",
         "result": "result.json",
-        "case": [
-            {"selector": name, "source": "src/linux/protected_slot/tests.rs", "ignored": False}
-            for name in ORDINARY
-        ] + [{"selector": MOUNT_TEST, "source": "src/linux/protected_slot/tests/mount.rs",
-              "ignored": True}],
+        "case": fixture_cases(),
     }
     if manifest != expected or type(manifest.get("schema_version")) is not int or any(
         type(case.get("ignored")) is not bool for case in manifest.get("case", [])
@@ -269,6 +285,7 @@ def run(revision, evidence, report, *, binding, mount_runner):
     clean_revision(revision)
     cargo_lock = Path("Cargo.lock")
     report["lockfile_sha256"] = sha256(cargo_lock)
+    report["fixture_source_sha256"] = fixture_source_fingerprints()
     version = require_success(
         record(evidence, "rustc", collect(["rustc", f"+{TOOLCHAIN}", "-vV"])),
         "pinned compiler",
@@ -321,6 +338,8 @@ def run(revision, evidence, report, *, binding, mount_runner):
             clean_revision(revision)
             if sha256(cargo_lock) != report["lockfile_sha256"]:
                 raise RuntimeError("Cargo.lock changed during qualification")
+            if fixture_source_fingerprints() != report["fixture_source_sha256"]:
+                raise RuntimeError("fixture sources changed during qualification")
             if sha256(binary) != report["test_executable_sha256"]:
                 raise RuntimeError("unit-test executable changed during qualification")
 

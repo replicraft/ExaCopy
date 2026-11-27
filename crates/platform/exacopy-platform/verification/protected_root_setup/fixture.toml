@@ -39,6 +39,21 @@ source = "src/linux/protected_slot/tests.rs"
 ignored = false
 
 [[case]]
+selector = "linux::protected_slot::tests::coverage::observes_the_exact_unix_component_bytes"
+source = "tests/unit/protected_slot.rs"
+ignored = false
+
+[[case]]
+selector = "linux::protected_slot::tests::coverage::pinned_recheck_propagates_invalid_parent"
+source = "tests/unit/protected_slot.rs"
+ignored = false
+
+[[case]]
+selector = "linux::protected_slot::tests::coverage::observation_error_reports_keep_typed_causes"
+source = "tests/unit/protected_slot.rs"
+ignored = false
+
+[[case]]
 selector = "linux::protected_slot::tests::mount::refuses_same_device_bind_mount_at_the_selected_name"
 source = "src/linux/protected_slot/tests/mount.rs"
 ignored = true

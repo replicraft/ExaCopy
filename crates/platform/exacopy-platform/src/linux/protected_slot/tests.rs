@@ -151,3 +151,6 @@ fn renamed_parent_survives_as_a_held_observation_only() {
 }
 
 mod mount;
+
+#[path = "../../../tests/unit/protected_slot.rs"]
+mod coverage;

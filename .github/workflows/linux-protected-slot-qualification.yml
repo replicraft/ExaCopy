@@ -10,6 +10,7 @@ on:
       - ".github/ci/install.sh"
       - "crates/platform/exacopy-platform/src/linux/protected_slot*"
       - "crates/platform/exacopy-platform/src/linux/protected_slot/**"
+      - "crates/platform/exacopy-platform/tests/unit/protected_slot.rs"
       - "crates/platform/exacopy-platform/verification/protected_slot/**"
       - "specs/verification/owners.toml"
       - "rust-toolchain.toml"

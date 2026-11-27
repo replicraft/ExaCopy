@@ -37,11 +37,7 @@ def bind_manifest():
         "rust_toolchain": COMMON.TOOLCHAIN, "runner": "verification/protected_root_setup/run.py",
         "controls": "verification/protected_root_setup/test_runner.py",
         "workflow": ".github/workflows/linux-protected-slot-root-setup.yml", "result": "result.json",
-        "case": [
-            {"selector": name, "source": "src/linux/protected_slot/tests.rs", "ignored": False}
-            for name in COMMON.ORDINARY
-        ] + [{"selector": COMMON.MOUNT_TEST, "source": "src/linux/protected_slot/tests/mount.rs",
-              "ignored": True}],
+        "case": COMMON.fixture_cases(),
     }
     if parsed != expected or type(parsed["schema_version"]) is not int or any(
         type(case["ignored"]) is not bool for case in parsed["case"]

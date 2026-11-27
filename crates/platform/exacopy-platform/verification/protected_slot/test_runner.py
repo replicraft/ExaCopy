@@ -37,6 +37,7 @@ class RunnerControls(unittest.TestCase):
                 raw.replace("ignored = false", "ignored = true", 1),
                 raw.replace("ignored = false", "ignored = 0", 1),
                 raw.replace(run.ORDINARY[0], run.ORDINARY[1]),
+                raw.replace(run.COVERAGE_SOURCE, run.ORDINARY_SOURCE, 1),
                 raw.rsplit("[[case]]", 1)[0],
                 raw + raw[raw.rindex("[[case]]"):],
                 raw + '\n[unknown]\nextra = true\n',
@@ -47,6 +48,13 @@ class RunnerControls(unittest.TestCase):
                     manifest.write_text(changed)
                     with self.assertRaises(RuntimeError):
                         run.fixture_binding(manifest)
+
+    def test_coverage_fingerprint_names_the_implementation_source(self):
+        crate = Path(run.__file__).resolve().parents[2]
+        source = "tests/unit/protected_slot.rs"
+        fingerprints = run.fixture_source_fingerprints()
+        self.assertEqual(fingerprints[source], run.sha256(crate / source))
+        self.assertEqual(len(fingerprints), 3)
 
     def test_requires_exact_inventory_with_unique_names(self):
         required = (*run.ORDINARY, run.MOUNT_TEST)
