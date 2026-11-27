@@ -7,9 +7,16 @@ use exacopy_core::UnixComponent;
 mod decoder;
 mod projection;
 mod wire;
+mod writer;
 
-pub use projection::{PairProjection, local_route_digest, native_id, project_pair, scope_digest};
+pub use projection::{
+	LinuxStability, PairProjection, linux_stability_digest, local_route_digest, native_id,
+	project_pair, scope_digest,
+};
 pub use wire::{decode_endpoint, decode_envelope, decode_root};
+pub use writer::{
+	EncodedWorkflowBody, EncodedWorkflowRecord, encode_endpoint_body, encode_root_body,
+};
 
 /// Maximum bytes per signed workflow member.
 pub const MAX_MEMBER_BYTES: usize = 2_048;
@@ -57,7 +64,41 @@ impl WorkflowEnvelope<'_> {
 	/// Builds the exact record signing input. The caller verifies the selected key.
 	#[must_use]
 	pub fn signing_input(self, kind: WorkflowKind) -> Vec<u8> {
-		[RECORD_DOMAIN, &(kind as u16).to_le_bytes(), self.body].concat()
+		signing_input(kind, self.body)
+	}
+}
+
+fn signing_input(kind: WorkflowKind, body: &[u8]) -> Vec<u8> {
+	[RECORD_DOMAIN, &(kind as u16).to_le_bytes(), body].concat()
+}
+
+/// Canonical signed Unix seconds and a nonnegative nanosecond fraction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WorkflowTimestamp {
+	seconds: i64,
+	nanoseconds: u32,
+}
+
+impl WorkflowTimestamp {
+	/// Constructs a time used in workflow headers and native stability facts.
+	/// # Errors
+	/// Refuses nanoseconds outside the current second.
+	pub fn new(seconds: i64, nanoseconds: u32) -> Result<Self, WorkflowError> {
+		if nanoseconds >= 1_000_000_000 {
+			return Err(WorkflowError::Shape);
+		}
+		Ok(Self {
+			seconds,
+			nanoseconds,
+		})
+	}
+
+	fn write<W: minicbor::encode::Write>(
+		self,
+		out: &mut minicbor::Encoder<W>,
+	) -> Result<(), minicbor::encode::Error<W::Error>> {
+		out.array(2)?.i64(self.seconds)?.u32(self.nanoseconds)?;
+		Ok(())
 	}
 }
 

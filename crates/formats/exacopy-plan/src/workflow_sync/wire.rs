@@ -5,11 +5,12 @@ use super::{
 	local_route_digest,
 };
 
-const ROOT_REQUIRED_FEATURES: u64 = 69;
-const ENDPOINT_REQUIRED_FEATURES: u64 = 1;
-const VERSION: [u64; 2] = [1, 0];
-const SIGNATURE_DOMAIN_CODE: u64 = 32;
-const LOCAL_PROFILE: &str = "linux-managed-local-sync-genesis-v1";
+pub(super) const ROOT_REQUIRED_FEATURES: u64 = 69;
+pub(super) const ENDPOINT_REQUIRED_FEATURES: u64 = 1;
+pub(super) const VERSION: [u64; 2] = [1, 0];
+pub(super) const SIGNATURE_DOMAIN_CODE: u64 = 32;
+pub(super) const LOCAL_PROFILE: &str = "linux-managed-local-sync-genesis-v1";
+pub(super) const LOCAL_EVIDENCE_VALUES: [u64; 7] = [0, 0, 0, 0, 0, 3, 2];
 
 /// Parses the bounded canonical outer envelope only.
 /// # Errors
@@ -121,7 +122,7 @@ pub fn decode_endpoint(bytes: &[u8]) -> Result<EndpointBody<'_>, Error> {
 	d.text(LOCAL_PROFILE)?;
 	d.key(8)?;
 	d.map(8)?;
-	for (key, value) in [0, 0, 0, 0, 0, 3, 2].into_iter().enumerate() {
+	for (key, value) in LOCAL_EVIDENCE_VALUES.into_iter().enumerate() {
 		d.key(key as u64)?;
 		d.key(value)?;
 	}
@@ -181,7 +182,7 @@ fn header(
 	d.key(kind as u64)?;
 	d.key(2)?;
 	let id = d.uuid()?;
-	if id[6] >> 4 != 7 || id[8] >> 6 != 2 {
+	if !is_record_id(id) {
 		return Err(Error::Shape);
 	}
 	d.key(3)?;
@@ -190,6 +191,10 @@ fn header(
 	d.null()?;
 	d.key(5)?;
 	Ok((id, profile))
+}
+
+pub(super) fn is_record_id(id: [u8; 16]) -> bool {
+	id[6] >> 4 == 7 && id[8] >> 6 == 2
 }
 
 fn trailer(mut d: Canonical<'_>) -> Result<(), Error> {

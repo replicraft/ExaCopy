@@ -2,10 +2,11 @@ use core::num::NonZeroU64;
 
 use exacopy_core::UnixComponent;
 use minicbor::Encoder;
+use minicbor::encode::{Error, Write};
 
 use crate::cbor::{BodyBytes, EncodeError, canonical_bytes};
 
-use super::{EndpointFacts, LinuxLocation, NativeObject, WorkflowError};
+use super::{EndpointFacts, LinuxLocation, NativeObject, WorkflowError, WorkflowTimestamp};
 
 /// Independently reproducible pair, scope and leaf projections.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -126,26 +127,73 @@ pub fn scope_digest(
 			.bytes(&pair.roots[0])?
 			.bytes(&pair.roots[1])?;
 		for location in locations {
-			out.array(6)?.bytes(&location.boot)?;
-			write_object(out, location.mount_namespace)?;
-			write_object(out, location.user_namespace)?;
-			out.u64(location.mount.get())?;
-			write_object(out, location.parent)?;
-			write_object(out, location.root)?;
+			write_location(out, location)?;
 		}
 		Ok(())
 	})
 }
 
-fn write_object(out: &mut Encoder<BodyBytes>, value: NativeObject) -> Result<(), EncodeError> {
+/// Equality-relevant Linux native facts behind a held regular-file observation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LinuxStability {
+	/// Native file identity in the existing Linux object digest domain.
+	pub file: [u8; 32],
+	/// Captured unnamed data stream extent.
+	pub length: u64,
+	/// Complete native mode, including the file type and any special bits.
+	pub mode: u32,
+	/// Observed numeric owner.
+	pub uid: u32,
+	/// Observed numeric owning group.
+	pub gid: u32,
+	/// Observed hard-link count.
+	pub links: u64,
+	/// Captured inode modification time.
+	pub modified: WorkflowTimestamp,
+	/// Captured inode change time.
+	pub changed: WorkflowTimestamp,
+}
+
+/// Projects exact native stability facts without admitting the underlying observation.
+#[must_use]
+pub fn linux_stability_digest(value: LinuxStability) -> [u8; 32] {
+	digest(b"linux-stability/v1\0", |out| {
+		out.array(8)?
+			.bytes(&value.file)?
+			.u64(value.length)?
+			.u32(value.mode)?
+			.u32(value.uid)?
+			.u32(value.gid)?
+			.u64(value.links)?;
+		value.modified.write(out)?;
+		value.changed.write(out)
+	})
+}
+
+pub(super) fn write_location<W: Write>(
+	out: &mut Encoder<W>,
+	location: LinuxLocation,
+) -> Result<(), Error<W::Error>> {
+	out.array(6)?.bytes(&location.boot)?;
+	write_object(out, location.mount_namespace)?;
+	write_object(out, location.user_namespace)?;
+	out.u64(location.mount.get())?;
+	write_object(out, location.parent)?;
+	write_object(out, location.root)
+}
+
+fn write_object<W: Write>(
+	out: &mut Encoder<W>,
+	value: NativeObject,
+) -> Result<(), Error<W::Error>> {
 	out.array(2)?;
 	write_device_and_inode(out, value)
 }
 
-fn write_device_and_inode(
-	out: &mut Encoder<BodyBytes>,
+fn write_device_and_inode<W: Write>(
+	out: &mut Encoder<W>,
 	value: NativeObject,
-) -> Result<(), EncodeError> {
+) -> Result<(), Error<W::Error>> {
 	out.array(2)?
 		.u32(value.major)?
 		.u32(value.minor)?
