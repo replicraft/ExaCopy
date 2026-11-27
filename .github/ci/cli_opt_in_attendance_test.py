@@ -14,7 +14,11 @@ from cli_opt_in_attendance import (
 
 OTHER_CASE = "assembly::linux::remote_journal::tests::unrelated_test"
 REMOTE_EXPECTED = (
-    REMOTE_CASE,
+    "assembly::linux::remote_continued::tests::actual_signed_kind40_must_form_the_exact_clean_successor",
+    (
+        "assembly::linux::remote_continued::tests::hosted_witness::preflight::tests::"
+        "original_capture_budget_and_native_projection_match_signed_next_pass"
+    ),
     "assembly::ssh_session::tests::host_and_route_admission_precede_credential_offer_liveness",
     "assembly::ssh_session::tests::protected_key_worker_rechecks_the_same_offer_before_reading",
 )

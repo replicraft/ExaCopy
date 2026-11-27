@@ -1,4 +1,4 @@
-use std::num::{NonZeroU16, NonZeroU64};
+use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -19,7 +19,6 @@ use exacopy_journal::remote_download::qualification::continuation::{
 use exacopy_journal::remote_download::qualification::{
 	RemoteQualificationTrust, verify_remote_destination_qualification,
 };
-use exacopy_journal::remote_download::witness::budget::WitnessedPassBudget;
 use exacopy_journal::remote_download::witness::replay::{
 	RemoteWitnessedReplayPhase, RemoteWitnessedReplaySelection, replay_remote_witnessed_closeout,
 };
@@ -49,11 +48,13 @@ use crate::remote_frontdoor::{ApprovedRoute, SshProfile};
 
 mod facts;
 mod inputs;
+mod preflight;
 mod seed;
 
 use inputs::{
 	Request, Route, Stop, Strategy, artifact, component, decode, hex, no_receipt, protected,
 };
+use preflight::{witness_projection, zero_tail_budget};
 
 const RESULT: &str = "EXACOPY_HOSTED_WITNESS_RESULT";
 const GRANT_DOMAIN: &str = "ExaCopy Linux remote foreground grant binding v1";
@@ -114,7 +115,7 @@ async fn hosted_pass() -> Result<serde_json::Value, Stop> {
 	)
 	.map_err(|_| Stop::Qualification)?;
 	let (op2_record, op2_digest) = request.op2.selected_witness_record()?;
-	let op2_refused = |_| Stop::Op2Qualification {
+	let op2_refused = || Stop::Op2Qualification {
 		digest: op2_digest,
 		request_blake3,
 	};
@@ -132,13 +133,16 @@ async fn hosted_pass() -> Result<serde_json::Value, Stop> {
 			},
 		},
 	)
-	.map_err(op2_refused)?;
-	let current = verified.match_current(build, &facts).map_err(op2_refused)?;
+	.map_err(|_| op2_refused())?;
+	let current = verified
+		.match_current(build, &facts)
+		.map_err(|_| op2_refused())?;
 	if *verified.digest().as_bytes() != op2_digest || refusal {
 		return Err(Stop::Request);
 	}
+	let op2_native = witness_projection(&current).ok_or_else(op2_refused)?;
 	let eligibility =
-		RemoteDestinationEligibility::admit(&root, Some(&v1)).map_err(|_| Stop::Qualification)?;
+		RemoteDestinationEligibility::admit(&root, Some(&op2_native)).map_err(|_| op2_refused())?;
 	let id = uuid::Uuid::parse_str(&request.job_id).map_err(|_| Stop::Request)?;
 	if id.hyphenated().to_string() != request.job_id {
 		return Err(Stop::Request);
@@ -264,6 +268,7 @@ async fn hosted_pass() -> Result<serde_json::Value, Stop> {
 		adopted_extent: extent.get(),
 		source_extent: extent.get(),
 	};
+	let budget = zero_tail_budget(&replay, extent).ok_or(Stop::Prefix)?;
 	let explicit = ExplicitWitnessSelection::select(
 		matches!(request.strategy, Strategy::VerifiedPrefix),
 		request.allow_witness_retention,
@@ -282,15 +287,7 @@ async fn hosted_pass() -> Result<serde_json::Value, Stop> {
 		grant_digest,
 	)
 	.map_err(|_| Stop::Request)?;
-	let new_run = history
-		.epochs()
-		.run
-		.get()
-		.checked_add(1)
-		.and_then(|run| u16::try_from(run).ok())
-		.and_then(NonZeroU16::new)
-		.ok_or(Stop::Prefix)?;
-	let run = NonZeroU64::new(u64::from(new_run.get())).ok_or(Stop::Prefix)?;
+	let run = NonZeroU64::from(budget.new_run());
 	let (pending, final_receipt) =
 		witnessed_receipt_names(history.context().entry, run, *checkpoints.nonce());
 	let receipt_names = [component(&pending)?, component(&final_receipt)?];
@@ -304,8 +301,6 @@ async fn hosted_pass() -> Result<serde_json::Value, Stop> {
 		.checked_add(1)
 		.and_then(NonZeroU64::new)
 		.ok_or(Stop::Prefix)?;
-	let budget =
-		WitnessedPassBudget::plan(prior, extent, extent, new_run).map_err(|_| Stop::Prefix)?;
 	let pass = WitnessPass {
 		trust: &trust,
 		selection: &selection,

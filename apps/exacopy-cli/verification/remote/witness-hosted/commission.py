@@ -41,7 +41,8 @@ FEATURES = {
 APP = "apps/exacopy-cli/src/assembly/linux/remote_continued"
 WITNESS_SOURCES = (
     f"{APP}/tests.rs", f"{APP}/tests/hosted_witness.rs", f"{APP}/tests/hosted_witness/inputs.rs",
-    f"{APP}/tests/hosted_witness/facts.rs", f"{APP}/witness.rs", f"{APP}/witness/zero_tail.rs",
+    f"{APP}/tests/hosted_witness/facts.rs", f"{APP}/tests/hosted_witness/preflight.rs",
+    f"{APP}/witness.rs", f"{APP}/witness/zero_tail.rs",
 )
 PIN_INPUTS = ("specs/dependencies/apfs-source.toml", "specs/dependencies/transport-source.toml")
 CASES = ("positive", "qualification-refusal")
