@@ -5,13 +5,16 @@ use crate::frame::{FrameKind, FrameWriter};
 use crate::remote_download::RemoteDownloadContext;
 use crate::remote_download::finalization::{RemoteLocalMetadata, RemotePublishTarget};
 use crate::remote_download::finalization_policy::SftpDataOnlyV1;
-use crate::remote_download::replay::RemoteReplayBoundary;
+use crate::remote_download::replay::{RemoteReplayBoundary, RemoteReplayIssue};
 
-use super::super::records::{RemoteWitnessCloseoutBody as Body, RemoteWitnessCloseoutRecord};
+use super::super::records::{
+	RemoteWitnessCloseoutBody as Body, RemoteWitnessCloseoutRecord,
+	RemoteWitnessedOutcome as Outcome,
+};
 use super::super::successor_end;
 use super::{
-	Error, RemoteBootstrapTrust, RemoteWitnessIntent, RemoteWitnessedCloseoutReplay,
-	RemoteWitnessedReplayPhase as Phase,
+	Error, RemoteBootstrapTrust, RemoteWitnessBinding, RemoteWitnessIntent,
+	RemoteWitnessedCloseoutReplay, RemoteWitnessedReplayPhase as Phase,
 };
 
 /// Exact declarations for the four witnessed phases before a rename submission.
@@ -35,7 +38,7 @@ pub enum WitnessedPrepublicationFact {
 	PublishIntent,
 }
 
-/// Canonical frame proposal for one clean witnessed prepublication successor.
+/// Canonical frame proposal for one witnessed closeout successor.
 ///
 /// A proposal supplies no append, synchronization or publication capability.
 #[derive(Debug)]
@@ -66,6 +69,34 @@ impl PreparedWitnessedCloseout {
 	/// Complete bounded canonical frame bytes including the framing.
 	pub fn encoded(&self) -> &[u8] {
 		&self.bytes
+	}
+
+	/// Confirms the exact live kind-8 proposal in an independent complete replay.
+	///
+	/// A clean terminal uncertainty is an accepted record and still requires
+	/// reconciliation. Any framing or ordering issue prevents confirmation.
+	#[must_use]
+	pub fn confirms_live_observation(
+		&self,
+		replay: &RemoteWitnessedCloseoutReplay,
+		witness: RemoteWitnessIntent,
+		outcome: Outcome,
+	) -> bool {
+		self.kind == FrameKind::PublishObserved
+			&& replay.boundary() == self.successor
+			&& replay.witness() == Some(witness)
+			&& replay.observed_outcome() == Some(outcome)
+			&& match outcome {
+				Outcome::Submitted(_) => {
+					replay.phase() == Phase::PublishedObserved && replay.issue().is_none()
+				}
+				Outcome::Conflict => replay.phase() == Phase::Conflict && replay.issue().is_none(),
+				Outcome::Uncertain { .. } => {
+					replay.phase() == Phase::Uncertain
+						&& matches!(replay.issue(), Some(RemoteReplayIssue::RecordedUncertainty))
+				}
+				Outcome::Recovered { .. } => false,
+			}
 	}
 }
 
@@ -139,18 +170,56 @@ impl RemoteWitnessedCloseoutReplay {
 			}
 			_ => return Err(Error::Binding),
 		};
-		let kind = body.kind();
-		let payload = RemoteWitnessCloseoutRecord::new(binding, previous, body).encode()?;
-		let offset = successor_end(previous, payload.len())?;
-		let mut writer = FrameWriter::new(Vec::new(), previous.head);
-		let head = writer
-			.append(kind, &payload)
-			.map_err(|_| Error::FrameBinding)?;
-		Ok(PreparedWitnessedCloseout {
-			kind,
-			previous,
-			successor: RemoteReplayBoundary { head, offset },
-			bytes: writer.into_inner(),
-		})
+		prepare_frame(binding, previous, body)
 	}
+
+	/// Prepares kind 8 for one actual live submission on the exact clean kind-7 cut.
+	///
+	/// The caller owns the original submission and its native observations.
+	/// Historical replay does not supply that authority.
+	///
+	/// # Errors
+	/// Refuses an unsupported phase, wrong owner or witness, mismatched submitted
+	/// inode, recovered outcome, or frame outside the selected bounds.
+	pub fn prepare_live_observation(
+		&self,
+		trust: &RemoteBootstrapTrust<'_>,
+		witness: RemoteWitnessIntent,
+		outcome: Outcome,
+	) -> Result<PreparedWitnessedCloseout, Error> {
+		let binding = witness.binding();
+		if self.issue().is_some()
+			|| self.phase() != Phase::PublishIntentRequiresObservation
+			|| self.witness() != Some(witness)
+			|| binding.context != RemoteDownloadContext::for_owner(trust.owner())
+		{
+			return Err(Error::Binding);
+		}
+		match outcome {
+			Outcome::Submitted(target) if target == binding.stage => {}
+			Outcome::Conflict | Outcome::Uncertain { .. } => {}
+			_ => return Err(Error::Binding),
+		}
+		prepare_frame(binding, self.boundary(), Body::Observed(outcome))
+	}
+}
+
+fn prepare_frame(
+	binding: RemoteWitnessBinding,
+	previous: RemoteReplayBoundary,
+	body: Body<'_>,
+) -> Result<PreparedWitnessedCloseout, Error> {
+	let kind = body.kind();
+	let payload = RemoteWitnessCloseoutRecord::new(binding, previous, body).encode()?;
+	let offset = successor_end(previous, payload.len())?;
+	let mut writer = FrameWriter::new(Vec::new(), previous.head);
+	let head = writer
+		.append(kind, &payload)
+		.map_err(|_| Error::FrameBinding)?;
+	Ok(PreparedWitnessedCloseout {
+		kind,
+		previous,
+		successor: RemoteReplayBoundary { head, offset },
+		bytes: writer.into_inner(),
+	})
 }
