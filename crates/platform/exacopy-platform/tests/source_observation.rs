@@ -38,6 +38,13 @@ fn captures_descriptor_identity_and_basic_metadata_at_open() {
 	let observation = source.observation();
 	scratch.assert_debug_redacts(&observation, &[SOURCE]);
 	assert_eq!(observation.identity(), source.identity());
+	assert_eq!(observation.identity().device(), raw.dev());
+	assert_eq!(observation.identity().inode(), raw.ino());
+	assert_eq!(
+		observation.native_mode(),
+		raw.mode(),
+		"native mode must include the regular-file type bits"
+	);
 	assert_eq!(observation.len(), 8);
 	assert!(!observation.is_empty());
 	assert_eq!(observation.link_count(), 1);

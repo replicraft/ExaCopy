@@ -4,6 +4,10 @@ use rustix::fs::{FileType, Mode, Stat};
 use super::ReadError;
 use crate::linux::handle::FileIdentity;
 
+#[cfg(test)]
+#[path = "../../../tests/unit/source_observation.rs"]
+mod tests;
+
 /// Basic identity and metadata captured through the held regular-file descriptor.
 ///
 /// These fields describe observations of a live inode. The filesystem can

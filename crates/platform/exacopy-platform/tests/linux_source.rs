@@ -4,13 +4,14 @@
 
 mod common;
 
+use std::error::Error as _;
 use std::ffi::OsStr;
 use std::fs::{self, File, OpenOptions};
-use std::io::Write as _;
+use std::io::{self, Write as _};
 use std::os::unix::ffi::OsStrExt as _;
-use std::os::unix::fs::symlink;
+use std::os::unix::fs::{PermissionsExt as _, symlink};
 
-use exacopy_endpoint::{IoError, UnixComponent};
+use exacopy_endpoint::{IoError, ReadView, UnixComponent};
 use exacopy_platform::linux::{ReadError, ReadRoot};
 use rustix::fs::{self as unix, Mode};
 use rustix::io::Errno;
@@ -292,4 +293,151 @@ fn reads_out_of_order_with_fixed_offsets_and_reports_eof_after_a_partial_read() 
 		fs::read(scratch.path("source")).expect("read externally truncated file"),
 		b"0123"
 	);
+}
+
+#[test]
+fn read_view_keeps_the_admitted_extent_and_checks_positioned_read_boundaries() {
+	let scratch = Scratch::new();
+	let path = scratch.path("source");
+	fs::write(&path, b"abcdef").expect("create the six-byte fixture");
+	let root = ReadRoot::from_directory(scratch.open()).expect("admit the fixture directory");
+	let name = UnixComponent::new(b"source").expect("validate the fixture name");
+	let source = root.open_regular(name).expect("open the six-byte fixture");
+
+	assert_eq!(ReadView::length(&source), 6);
+	ReadView::recheck_observation(&source).expect("confirm stable source and its logical end");
+	let mut tail = [0; 2];
+	ReadView::read_exact_at(&source, 4, &mut tail).expect("read up to the captured end");
+	assert_eq!(&tail, b"ef");
+	ReadView::read_exact_at(&source, 6, &mut []).expect("admit an empty read at EOF");
+	assert!(matches!(
+		ReadView::read_exact_at(&source, 7, &mut []),
+		Err(ReadError::RangeOutsideFile)
+	));
+	assert!(matches!(
+		ReadView::read_exact_at(&source, u64::MAX, &mut tail),
+		Err(ReadError::RangeOutsideFile)
+	));
+	assert_eq!(&tail, b"ef", "range refusal leaves the buffer intact");
+	ReadView::recheck_observation(&source).expect("confirm source after positioned reads");
+	assert_eq!(
+		fs::read(&path).expect("read the retained fixture"),
+		b"abcdef"
+	);
+}
+
+#[test]
+fn same_inode_with_changed_mode_fails_named_and_read_view_revalidation() {
+	let scratch = Scratch::new();
+	let path = scratch.path("source");
+	fs::write(&path, b"unchanged").expect("create the source fixture");
+	fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+		.expect("set the fixture's initial mode");
+	let root = ReadRoot::from_directory(scratch.open()).expect("admit the fixture directory");
+	let name = UnixComponent::new(b"source").expect("validate the fixture name");
+	let source = root.open_regular(name).expect("open the fixture");
+	root.recheck_regular_name(name, &source)
+		.expect("validate the initial name and metadata");
+
+	fs::set_permissions(&path, fs::Permissions::from_mode(0o400))
+		.expect("simulate a metadata-only change by the fixture owner");
+	let current = root.open_regular(name).expect("reopen the same fixture");
+	assert_eq!(
+		current.identity(),
+		source.identity(),
+		"the inode is unchanged"
+	);
+	assert_eq!(current.len(), source.len(), "the extent is unchanged");
+	assert!(matches!(
+		root.recheck_regular_name(name, &source),
+		Err(ReadError::SourceChanged)
+	));
+	assert!(matches!(
+		ReadView::recheck_observation(&source),
+		Err(ReadError::SourceChanged)
+	));
+	assert_eq!(
+		fs::read(&path).expect("read the retained fixture"),
+		b"unchanged"
+	);
+}
+
+#[test]
+fn read_refusals_without_underlying_errors_have_specific_diagnostics() {
+	for (error, expected) in [
+		(ReadError::NotDirectory, "read root must be a directory"),
+		(ReadError::NotRegularFile, "source must be a regular file"),
+		(
+			ReadError::UnsupportedProcfs,
+			"descriptor reopening requires trusted procfs",
+		),
+		(
+			ReadError::IdentityChanged,
+			"reopened file does not match the pinned file",
+		),
+		(
+			ReadError::InvalidLength,
+			"file length exceeds the supported range",
+		),
+		(
+			ReadError::InvalidTimestamp,
+			"source has an invalid timestamp",
+		),
+		(
+			ReadError::SourceChanged,
+			"source metadata changed after open",
+		),
+		(
+			ReadError::UnexpectedDataAfterEnd,
+			"source returned data beyond its recorded length",
+		),
+		(
+			ReadError::ExtendedAttributeListTooLarge,
+			"source extended-attribute name list exceeds the Linux limit",
+		),
+		(
+			ReadError::RangeOutsideFile,
+			"read range exceeds the recorded file length",
+		),
+	] {
+		assert_eq!(error.to_string(), expected);
+		assert!(
+			error.source().is_none(),
+			"{error:?} has no underlying cause"
+		);
+	}
+}
+
+#[test]
+fn read_error_diagnostics_preserve_typed_causes() {
+	let error = ReadError::Io(IoError::UnexpectedEof { offset: 4 });
+	assert_eq!(
+		error.to_string(),
+		"source read failed (unexpected end of file at offset 4)"
+	);
+	assert!(matches!(
+		error
+			.source()
+			.and_then(|cause| cause.downcast_ref::<IoError>()),
+		Some(IoError::UnexpectedEof { offset: 4 })
+	));
+
+	let denied = Errno::ACCESS.raw_os_error();
+	for (error, diagnostic) in [
+		(
+			ReadError::ExtendedAttributesUnreadable(io::Error::from_raw_os_error(denied)),
+			"source extended-attribute inspection failed (",
+		),
+		(
+			ReadError::System(io::Error::from_raw_os_error(denied)),
+			"source descriptor operation failed (",
+		),
+	] {
+		assert!(error.to_string().starts_with(diagnostic), "{error:?}");
+		let cause = error
+			.source()
+			.and_then(|cause| cause.downcast_ref::<io::Error>())
+			.expect("retain the native I/O cause");
+		assert_eq!(cause.raw_os_error(), Some(denied));
+	}
 }
