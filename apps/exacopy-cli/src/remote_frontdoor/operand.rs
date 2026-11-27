@@ -22,7 +22,10 @@ pub(crate) enum RemotePath<'a> {
 
 impl RemoteOperand {
 	pub(super) fn parse(value: &OsStr) -> Result<Self, FrontdoorError> {
-		let bytes = super::native::remote_bytes(value)?;
+		Self::parse_bytes(super::native::remote_bytes(value)?)
+	}
+
+	fn parse_bytes(bytes: &[u8]) -> Result<Self, FrontdoorError> {
 		if bytes.len() > MAX_AUTHORITY_BYTES + MAX_REMOTE_PATH_BYTES + 1 {
 			return Err(FrontdoorError::Operand);
 		}
@@ -117,3 +120,6 @@ fn split_host_path(rest: &[u8]) -> Result<(&[u8], &[u8]), FrontdoorError> {
 	}
 	Ok((host, path))
 }
+
+#[cfg(test)]
+mod tests;
