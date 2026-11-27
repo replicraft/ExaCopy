@@ -44,6 +44,33 @@ pub trait ClosedStage {
 
 	/// Opens a read-only view of the same staged stream with its declared extent.
 	///
+	/// A verifier can read and recheck the opened view using [`ReadView`].
+	///
+	/// ```no_run
+	/// use exacopy_endpoint::{ClosedStage, ReadView};
+	///
+	/// fn read_back_chunk<S: ClosedStage>(
+	///     stage: &S,
+	///     offset: u64,
+	///     buffer: &mut [u8],
+	/// ) -> Result<(), S::Error> {
+	///     let reader = stage.open_read_back()?;
+	///     reader.read_exact_at(offset, buffer)?;
+	///     reader.recheck_observation()
+	/// }
+	/// ```
+	///
+	/// The read-back contract exposes no [`FreshStage`] write operation.
+	///
+	/// ```compile_fail,E0599
+	/// use exacopy_endpoint::{ClosedStage, FreshStage as _};
+	///
+	/// fn rewrite_chunk<S: ClosedStage>(stage: &S, bytes: &[u8]) -> Result<(), S::Error> {
+	///     let mut reader = stage.open_read_back()?;
+	///     reader.write_next(bytes)
+	/// }
+	/// ```
+	///
 	/// # Errors
 	/// Returns an error if the read-only view cannot be bound to the closed stage.
 	fn open_read_back(&self) -> Result<Self::Reader<'_>, Self::Error>;
