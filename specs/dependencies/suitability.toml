@@ -222,16 +222,17 @@ verification = "Journal tests and the journal-frame fuzz target exercise framing
 replacement = "A replacement must reproduce CRC32C parameters and existing frame vectors."
 review_gaps = ["Hardware and software path suitability review", "Independent exact-version suitability evidence"]
 
-[assessment."ed25519-dalek@2.2.0"]
-archive_sha256 = "70e796c081cee67dc755e1a36a0a172b897fab85fc3f6bc48307991f64e4eca9"
-release_observation = "Local crates.io index lists 2.2.0 on 2025-07-09 and a new 3.0.0 major release on 2026-07-06. Review any planned major upgrade against persisted signatures and build features."
-security_history = "RUSTSEC-2022-0093 is patched from version 2 onward in the recorded snapshot."
-unsafe_exposure = "The archive exposes a feature-gated src/hazmat.rs surface. The selected verification path relies on transitive curve25519-dalek backends, SHA-2, and zeroization."
-resource_limits = "Callers provide fixed-size keys and signatures and bound the signed record before verification."
-adversarial_inputs = "Public keys, signatures, and signed structures are decoded by bounded callers and verified against the expected body and key."
-verification = "Journal and transfer tests exercise authenticated records and rejection; ExaCopy's model proofs use a cryptographic trust assumption."
-replacement = "An independently reviewed implementation must preserve Ed25519 encoding and strict verification semantics or define explicit migration for authenticated records."
-review_gaps = ["Selected constant-time, strict verification, and transitive implementation review", "Independent exact-version suitability evidence"]
+# The locked archive identifies upstream commit 07bef73ff85998a206cd2cea7f2605c801d0d1c9.
+[assessment."ed25519-dalek@3.0.0"]
+archive_sha256 = "6ebaa1a2bf1290ab3bfe5a7b771d050ebffab2711c19a81691c683a5144a25de"
+release_observation = "The packaged changelog dates 3.0.0 to 2026-07-06 and records Rust 1.85, edition 2024 and the move to the SHA-2 0.11 and Signature 3 generations. This version was already in the workspace lockfile through the optional SSH profile."
+security_history = "RUSTSEC-2022-0093 is patched from version 2 onward in the recorded snapshot. Exact-version source review retains open findings in optional prehash, Serde, legacy-plus-batch and delegated PKCS#8 parsing."
+unsafe_exposure = "The raw Ed25519 signing and strict verification paths use Curve25519 Dalek 5.0.0, SHA-2 0.11.1 and their transitive implementations. The workspace edge disables defaults and selects zeroize for the stored and expanded secret keys. SSH profiles unify this with the upstream SSH feature selection."
+resource_limits = "The selected record paths retain fixed 32-byte raw keys and 64-byte signatures. Journal and CLI format owners check their existing message bounds before the cryptographic operations."
+adversarial_inputs = "Verification binds the independently selected key, canonical signed body and domain. The raw verify_strict path checks the canonical scalar, rejects small-order R and key points and compares the calculated R encoding. SSH profiles also resolve PKCS#8 support through existing dependencies."
+verification = "The existing independent journal and transfer vectors compare deterministic signatures and validate historical envelopes and rejection cases. Exact graph checks distinguish zeroize-only base signing, the broader SSH feature union and the legacy WireGuard inputs."
+replacement = "Preserve plain Ed25519, the existing raw key and signature encodings, strict verification and zeroization. A change to persisted records requires an explicit format transition."
+review_gaps = ["Whole-version Cargo Vet criterion remains unmet", "Optional prehash, Serde, legacy-plus-batch and delegated PKCS#8 findings remain open", "Independent exact-version selected-path, constant-time and native backend qualification"]
 
 # The locked archive identifies upstream commit 5e7cd5733536844a9856dc7259bd4696bbe5e3ae.
 [assessment."getrandom@0.4.3"]
@@ -388,11 +389,11 @@ review_gaps = ["Isolated compiler-probe tests cover the reviewed build host. Cro
 archive_sha256 = "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71"
 release_observation = "Local crates.io index lists 0.10.4 on 2023-03-09 and 0.12.1 on 2026-06-11. The locked digest 0.10 line requires block-buffer 0.10."
 security_history = "No package advisory in the recorded RustSec snapshot."
-unsafe_exposure = "src/sealed.rs casts bounded whole-block byte prefixes to GenericArray slices. src/lib.rs relies on the sealed cursor invariant before unreachable_unchecked and also provides a mutable block-output cast. SHA-512 uses the eager immutable-input path."
-resource_limits = "A SHA-512 buffer holds one 128-byte block and an 8-bit cursor. Updates borrow complete blocks and copy the pending prefix or trailing remainder into the buffer."
-adversarial_inputs = "The compile-time size and sealed eager cursor constrain block splits independently of byte values. SHA-512 supplies a fixed 16-byte length suffix and bounded journal inputs."
-verification = "An isolated digest harness passed SHA-512 streaming and reset across chunk sizes 1 through 132 on Apple ARM64 and in Miri. The supported signatures also exercise final padding."
-replacement = "Preserve eager block splitting, SHA-512 length padding and exact streaming results. Coordinate a replacement with digest and generic-array."
+unsafe_exposure = "src/sealed.rs casts bounded whole-block byte prefixes to GenericArray slices. src/lib.rs relies on the sealed cursor invariant before unreachable_unchecked and also provides a mutable block-output cast. BoringTun selects this version through its legacy BLAKE2s digest and MAC."
+resource_limits = "BLAKE2s uses 64-byte blocks and may hold one complete block in its lazy buffer. The compile-time size and sealed cursor constrain all splits."
+adversarial_inputs = "The WireGuard wrapper bounds packets before the BoringTun handshake and cookie operations feed them to the selected BLAKE2s code. The xtask and Linux CLI development fixture also retain the eager SHA-2 0.10 stack."
+verification = "Historical eager SHA-512 streaming and reset tests cover a different consumer. The WireGuard lazy-buffer path requires independent qualification."
+replacement = "Preserve the exact selected BLAKE2s/HMAC transcript and lazy block semantics. Coordinate changes with digest, generic-array and their consumers."
 review_gaps = ["Independent exact-version review of selected casts and cursor invariants"]
 
 [assessment."cpufeatures@0.2.17"]
@@ -421,9 +422,9 @@ review_gaps = ["Native x86-64 Linux and Windows BLAKE3 dispatch on baseline and 
 archive_sha256 = "78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a"
 release_observation = "Local crates.io index lists 0.1.7 on 2025-11-12 and 0.2.2 on 2026-05-19. The selected digest traits use the 0.1 line."
 security_history = "No package advisory in the recorded RustSec snapshot."
-unsafe_exposure = "src/lib.rs forbids unsafe code. Block and output aliases use GenericArray and its layout contract."
-resource_limits = "Associated types fix block and output sizes at compilation. Product SHA-512 uses 128-byte blocks and 64-byte digests."
-adversarial_inputs = "Record bytes cannot choose the type-level sizes. The slice-based key and IV helpers check lengths before delegating to GenericArray and are outside the selected SHA-512 path."
+unsafe_exposure = "src/lib.rs forbids unsafe code. Block, key and output aliases depend on GenericArray layout. BoringTun selects this version through the legacy digest and AEAD stack."
+resource_limits = "Associated types fix block, key and output sizes at compilation. BoringTun BLAKE2s and its cookie AEAD supply fixed-width inputs for these parameters."
+adversarial_inputs = "The legacy key and IV helpers validate slice lengths before delegating to GenericArray. This generation remains in the WireGuard lineage and in engineering or development SHA-2 use."
 verification = "An isolated digest harness passed SHA-512 known answers and exact key/IV length checks on Apple ARM64 with and without dependency std features and in Miri."
 replacement = "Update digest and its implementations together to preserve block and output contracts and authenticated wire bytes."
 review_gaps = ["Independent exact-version suitability evidence"]
@@ -432,22 +433,11 @@ review_gaps = ["Independent exact-version suitability evidence"]
 archive_sha256 = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 release_observation = "Local crates.io index lists 0.10.7 on 2023-05-19 and 0.11.3 on 2026-05-03. SHA-2 and its consumers must agree on the trait version."
 security_history = "No package advisory in the recorded RustSec snapshot."
-unsafe_exposure = "src/lib.rs forbids unsafe code. src/core_api/wrapper.rs delegates buffering and compression to block-buffer and the algorithm core."
-resource_limits = "The selected default/core-api path stores fixed algorithm state and a block buffer. The production feature sets exclude alloc and std."
-adversarial_inputs = "Update borrows input bytes and fixed-output finalization uses an associated output length. Journal decoding bounds the message before hashing."
+unsafe_exposure = "src/lib.rs forbids unsafe code. src/core_api/wrapper.rs delegates buffering and compression to block-buffer and the algorithm core. The production edge for this digest generation is BoringTun BLAKE2s and HMAC."
+resource_limits = "The core-api path stores fixed algorithm state and a block buffer, with the BLAKE2s core using fixed 64-byte blocks."
+adversarial_inputs = "Update borrows input bytes and fixed-output finalization uses an associated output length. WireGuard handshake and cookie handling constrain the bytes passed to BLAKE2s."
 verification = "An isolated harness exercised known answers, update chunking, reset, and rejection of wrong dynamic output lengths on Apple ARM64 and in Miri. Dynamic output checks supplement the production fixed-output path."
-replacement = "Move SHA-2 and the Ed25519 consumers to compatible traits together while preserving digest, reset and streaming semantics."
-review_gaps = ["Independent exact-version suitability evidence"]
-
-[assessment."ed25519@2.2.3"]
-archive_sha256 = "115531babc129696a58c64a4fef0a8bf9e9698629fb97e9e40767d235cfbcd53"
-release_observation = "Local crates.io index lists 2.2.3 on 2023-10-15 and 3.0.0 on 2026-05-03."
-security_history = "No package advisory in the recorded RustSec snapshot."
-unsafe_exposure = "src/lib.rs forbids unsafe code. Selected features are empty. The signature representation holds two 32-byte components."
-resource_limits = "Parsing and emitting the 64-byte signature operates on fixed-size arrays. The slice constructor returns an error if its input length differs."
-adversarial_inputs = "Length and representation checks allow arbitrary 64-byte signatures to reach Ed25519 Dalek. ExaCopy invokes verify_strict against the expected key and domain-bound message before treating an owner record as authentic."
-verification = "Journal owner tests include wrong keys, tampering and weak-key rejection. An isolated RFC 8032 known-answer check validates the actual signing and verification result and the signature byte order."
-replacement = "Retain the 64-byte R-then-S wire format and the strict verifier contract when upgrading the representation and provider."
+replacement = "Move BLAKE2s, HMAC and their buffer types together when updating BoringTun. Preserve the transcript and keyed output bytes."
 review_gaps = ["Independent exact-version suitability evidence"]
 
 [assessment."generic-array@0.14.7"]
@@ -455,33 +445,11 @@ archive_sha256 = "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e
 release_observation = "Local crates.io index lists 0.14.7 on 2023-03-28, 0.14.9 on 2025-10-13 and 1.4.5 on 2026-08-13. The selected crypto-common manifest pins 0.14.7."
 security_history = "RUSTSEC-2020-0146 describes lifetime erasure in arr! and lists 0.13.3 and later as patched."
 unsafe_exposure = "src/lib.rs uses recursive repr(C) storage and transparent GenericArray, with unsafe ArrayLength, slice casts and initialization/drop helpers. src/impls.rs casts array representations for fixed lengths. The build script probes the compiler through version_check."
-resource_limits = "Block and output lengths are compile-time constants. The SHA-512 path operates on fixed arrays including U128 and U64. The selected more_lengths feature supplies additional conversion implementations."
-adversarial_inputs = "Input bytes cannot select layout, alignment or array length. Selected reinterpretations rely on the built-in ArrayLength implementation for u8 and a correct caller-side length check."
-verification = "Known-answer and streaming SHA-512 checks exercised selected byte-array operations on Apple ARM64 and under Miri. Other generic element types and initialization/drop paths require separate evidence."
+resource_limits = "Block, key and output lengths are compile-time constants. The retained production paths are BoringTun digest and cookie AEAD, and the root lock also retains the engineering and development SHA-2 0.10 callers."
+adversarial_inputs = "Input bytes cannot select layout, alignment or array length. Selected reinterpretations rely on the built-in ArrayLength implementation for u8 and correct caller-side length checks."
+verification = "Historical SHA-512 tests covered selected byte-array operations. They do not settle the retained initialization concern or qualify the WireGuard AEAD paths."
 replacement = "Coordinate a fixed-array representation change with crypto-common and block-buffer. Retest layout assumptions across the slice-cast boundaries and preserve wire bytes."
-review_gaps = ["Independent exact-version review of selected layouts and initialization paths"]
-
-[assessment."sha2@0.10.9"]
-archive_sha256 = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
-release_observation = "Local crates.io index lists 0.10.9 on 2025-04-30 and 0.11.1 on 2026-10-12."
-security_history = "RUSTSEC-2021-0100 describes incorrect long-message AVX2 output in 0.9.7, patched in 0.9.8 and later."
-unsafe_exposure = "src/sha512.rs casts fixed 128-byte GenericArray blocks to native arrays and selects the portable implementation on Apple ARM64 with current features. x86-64 uses src/sha512/x86.rs AVX2 intrinsics after detection, with a portable fallback. The ARM64 asm feature is absent."
-resource_limits = "SHA-512 uses fixed state, one 128-byte pending block and a 128-bit encoded bit length. Work grows with journal message length within the caller's format bound."
-adversarial_inputs = "The hash consumes arbitrary message bytes. Journal owner decoders limit bodies to 512 bytes before applying domain separation and signature verification. SHA-512 correctness is part of the signature trust boundary."
-verification = "Isolated known answers and fragmented multi-block SHA-512 updates passed on Apple ARM64. An RFC 8032 check covers Ed25519 interoperability. Miri covers selected portable byte-layout operations."
-replacement = "Preserve SHA-512 results and strict Ed25519 interoperability, including existing signed records. Validate portable and accelerated paths with independent known answers across padding and multi-block boundaries."
-review_gaps = ["Native x86-64 Linux and Windows validation of AVX2 and portable fallback", "Independent exact-version suitability evidence"]
-
-[assessment."signature@2.2.0"]
-archive_sha256 = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
-release_observation = "Local crates.io index lists 2.2.0 on 2023-11-12 and 3.0.0 on 2026-05-02."
-security_history = "No package advisory in the recorded RustSec snapshot."
-unsafe_exposure = "src/lib.rs forbids unsafe code. src/signer.rs, src/encoding.rs and src/error.rs provide the feature-minimal callable interface and error. Algorithm implementation lives in the provider."
-resource_limits = "The enabled interface passes borrowed messages and fixed-size signatures. The production graph selects no optional allocation, std, prehash or randomized-signing features."
-adversarial_inputs = "The product uses fallible try_sign and Ed25519 Dalek verify_strict. The trait interface delegates message limits and validation to the caller and provider."
-verification = "Journal owner tests exercise the actual fallible signing and strict verification integration. An isolated RFC 8032 test exercises the same signature representation and provider."
-replacement = "Keep the fallible signing call, error propagation and strict algorithm-specific verification when migrating the trait and provider together."
-review_gaps = ["Independent exact-version suitability evidence"]
+review_gaps = ["Independent exact-version review of selected layouts and initialization paths", "Legacy array initialization contract remains unresolved"]
 
 [assessment."subtle@2.6.1"]
 archive_sha256 = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
@@ -677,10 +645,10 @@ archive_sha256 = "97fb8b7c4503de7d6ae7b42ab72a5a59857b4c937ec27a3d4539dba95b5ab2
 release_observation = "Local crates.io index lists 4.1.3 on 2024-06-18 after 4.1.2 on 2024-02-07. It lists 4.2.0 as yanked and the 5.0.0 major release on 2026-07-06."
 security_history = "RUSTSEC-2024-0344 identifies scalar subtraction timing variability and lists 4.1.3 as patched. The locked serial u32 and u64 source contains the volatile-read optimization barrier."
 unsafe_exposure = "build.rs reads Cargo target configuration and probes rustc. Default stable builds use the serial backend on ARM64 and select AVX2 or serial at runtime on x86-64. The vector backend contains intrinsic operations and generated target-feature wrappers. The nightly AVX-512 branch is outside the stable compiler scope."
-resource_limits = "Ed25519 uses fixed-size point, scalar, public-key and signature representations. The production graph selects digest and zeroize without alloc. The caller bounds the signed owner envelope before verifying it."
-adversarial_inputs = "Owner decoders bind the envelope to an independently selected profile key and use Ed25519 strict verification. That path decompresses the signature point, rejects small-order signature and key points and compares the computed signature point encoding. The public verification arithmetic and the secret signing arithmetic have different timing requirements."
-verification = "Journal Linux and Darwin owner-codec tests cover signed formats and authentication refusal. Those tests exercise the application contract. Native backend parity and emitted constant-time behavior require separate evidence."
-replacement = "Choose an independently reviewed Ed25519 stack and preserve deterministic signature bytes and strict acceptance for persisted owner records or use an explicit format transition. Verify existing vectors and malformed-signature refusals on each supported backend."
+resource_limits = "The remaining BoringTun X25519 consumer uses fixed-size point, scalar and 32-byte key representations. Its curve features are alloc, precomputed-tables and zeroize."
+adversarial_inputs = "The selected X25519 operations derive shared secrets for fixed configured peers and ephemeral handshake inputs. Bounds and protocol admission remain the responsibility of the transport caller."
+verification = "The WireGuard protocol and independent peer fixture evidence are separate from the legacy Ed25519 owner-codec evidence. Native backend parity and emitted constant-time behavior require separate evidence."
+replacement = "Preserve WireGuard X25519 public-key and shared-secret byte compatibility and the transport authentication and rejection behavior."
 review_gaps = ["Independent exact-version cryptographic and unsafe backend review", "Stable compiler code generation and native AVX2 and serial parity, including baseline x86-64 and ARM64"]
 
 # The locked archive identifies upstream commit 72761ca6b4772af985f969db53faf7accbad9b36.

@@ -1,6 +1,6 @@
 # Semantic Cargo manifest SHA-256 values approved for the default registry profile.
 # Reassess omitted options, feature links and dependencies before refreshing a value.
-workspace_sha256 = "5497fbedda768bd559440acab2b54c30fca9755d80935feec95eb4797885f10d"
+workspace_sha256 = "8abc6aae3be520b1e51bee79456ffa8dbef3fcc0e8055772d8ff7759da57a279"
 
 [[packages]]
 name = "exacopy-core"

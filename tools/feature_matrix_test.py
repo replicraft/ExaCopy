@@ -65,11 +65,15 @@ class FeatureMatrixTests(unittest.TestCase):
         groups = POLICY["cli_graph_groups"]
         graph = {name: set() for group in target["cli_graph_groups"] for name in groups[group]}
         graph["rustix@1.1.6"] = set(target["rustix_features"])
-        graph["ed25519-dalek@2.2.0"] = {"zeroize"}
+        graph["ed25519-dalek@3.0.0"] = {"zeroize"}
         graph["clap@4.6.10"] = {"error-context", "help", "std", "usage"}
         graph["base64@0.23.1"] = {"alloc"}
         graph["nix@0.31.4"] = {"feature"}
         check_cli_graph(POLICY, LINUX, graph)
+        legacy_compatibility = deepcopy(graph)
+        legacy_compatibility["ed25519-dalek@3.0.0"].add("legacy_compatibility")
+        with self.assertRaisesRegex(ValueError, "CLI dependency ed25519-dalek"):
+            check_cli_graph(POLICY, LINUX, legacy_compatibility)
         unrelated_nix = deepcopy(graph)
         unrelated_nix["nix@0.31.4"].add("mman")
         with self.assertRaisesRegex(ValueError, "CLI dependency nix"):
