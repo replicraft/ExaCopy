@@ -63,6 +63,66 @@ function Resolve-PublicationCompiler {
     return $path
 }
 
+function Confirm-PublicationVendorPath {
+    param([string] $Path, [switch] $File)
+    if ($Path.Length -gt 260 -or $Path -cnotmatch '\A[A-Za-z]:\\[^:/;<>"|?*\x00-\x1f]+\z' -or
+        (Resolve-ExaCopyWindowsPath $Path) -cne $Path) {
+        throw 'The selected Visual Studio or SDK path is not a canonical local path.'
+    }
+    [void](Confirm-ExaCopyPath $Path -File:$File)
+}
+
+function Assert-PublicationVendorSignature {
+    param([string] $Status, [string] $Signer)
+    if ($Status -cne 'Valid' -or $Signer -cne 'Microsoft Corporation') {
+        throw 'The selected Visual Studio tool lacks a valid Microsoft Corporation signature.'
+    }
+}
+
+function Select-PublicationVisualStudio {
+    param([string[]] $Lines, [string] $ProgramFiles, [string] $ProgramFilesX86)
+    if ($Lines.Count -ne 1) { throw 'Expected exactly one installed x64 Visual C++ instance.' }
+    $path = $Lines[0]
+    if (!$path.StartsWith($ProgramFiles + '\Microsoft Visual Studio\', [StringComparison]::OrdinalIgnoreCase) -and
+        !$path.StartsWith($ProgramFilesX86 + '\Microsoft Visual Studio\', [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Visual Studio discovery reported an installation outside the hosted program directories.'
+    }
+    Confirm-PublicationVendorPath $path
+    $path
+}
+
+function Select-PublicationMsvc {
+    param([string[]] $Lines, [string] $VisualStudio, [string] $ProgramFilesX86)
+    if ($Lines.Count -ne 1 -or $Lines[0].Length -gt 4096) {
+        throw 'Expected one bounded Visual C++ toolset record.'
+    }
+    $facts = ConvertFrom-Json -InputObject $Lines[0] -AsHashtable -Depth 3
+    if ($facts -isnot [System.Collections.IDictionary] -or $facts.Count -ne 3 -or
+        $facts.vc -isnot [string] -or $facts.sdk -isnot [string] -or $facts.sdk_version -isnot [string]) {
+        throw 'Visual Studio did not return the expected compiler and Windows SDK fields.'
+    }
+    $vc = $facts.vc.TrimEnd([char]92)
+    $sdk = $facts.sdk.TrimEnd([char]92)
+    $version = $facts.sdk_version.TrimEnd([char]92)
+    $prefix = $VisualStudio + '\VC\Tools\MSVC\'
+    if (!$vc.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) -or
+        $vc.Substring($prefix.Length) -cnotmatch '\A[0-9]+(?:\.[0-9]+){2,3}\z' -or
+        !$sdk.StartsWith($ProgramFilesX86 + '\Windows Kits\', [StringComparison]::OrdinalIgnoreCase) -or
+        $version -cnotmatch '\A[0-9]+(?:\.[0-9]+){3}\z') {
+        throw 'Visual Studio reported an unexpected VC toolset or Windows SDK layout.'
+    }
+
+    $bin = $vc + '\bin\Hostx64\x64'
+    $linker = $bin + '\link.exe'
+    $sdkLib = $sdk + '\Lib\' + $version
+    $libraries = @($vc + '\lib\x64'; $sdkLib + '\ucrt\x64'; $sdkLib + '\um\x64')
+    Confirm-PublicationVendorPath $vc
+    Confirm-PublicationVendorPath $sdk
+    foreach ($library in $libraries) { Confirm-PublicationVendorPath $library }
+    Confirm-PublicationVendorPath $linker -File
+    @{ linker = $linker; bin = $bin; libraries = $libraries; vc = $vc; sdk = $sdk; sdk_version = $version }
+}
+
 function Confirm-PublicationSource {
     param([string] $Repository, [string] $SelectedRevision)
     $revision = @(& git -C $Repository rev-parse --verify HEAD)

@@ -120,6 +120,67 @@ function Invoke-PublicationChild {
     return $child.ExitCode
 }
 
+function Close-PublicationVendorCustody($Tool) {
+    if ($null -ne $Tool.Image) { $Tool.Image.Dispose() }
+    Close-StageAncestorCustody $Tool.Parents
+}
+
+function Confirm-PublicationVendorCustody($Tool) {
+    Confirm-PublicationVendorPath $Tool.Path -File
+    $named = [ExaCopyQualification.ReadDiffCustody]::HoldNode($Tool.Path, $false, $false)
+    try {
+        Assert-StageSameIdentity $Tool.Identity ([ExaCopyQualification.ReadDiffCustody]::Observe($named, $false).FileId)
+        Assert-StageSameIdentity $Tool.Identity ([ExaCopyQualification.ReadDiffCustody]::Observe($Tool.Image.SafeFileHandle, $false).FileId)
+    } finally {
+        $named.Dispose()
+    }
+}
+
+function New-PublicationVendorCustody([string] $Path, [string] $VolumeIdentity) {
+    Confirm-PublicationVendorPath $Path -File
+    $parents = [Collections.Generic.Stack[string]]::new()
+    for ($parent = [IO.Directory]::GetParent($Path); $null -ne $parent; $parent = $parent.Parent) {
+        $parents.Push($parent.FullName)
+    }
+    $tool = @{
+        Path = $Path
+        Parents = [Collections.Generic.List[object]]::new()
+        Image = $null
+        Identity = $null
+        Record = $null
+    }
+    try {
+        # These canonical vendor paths are anchored under OS program directories.
+        # Hold their names without applying the fixture owner's ACL shape to them.
+        foreach ($parent in $parents) {
+            $handle = [ExaCopyQualification.DirectoryCustody]::HoldAncestor($parent)
+            $tool.Parents.Add(@{ Handle = $handle })
+            Assert-StageSameVolume $VolumeIdentity ([ExaCopyQualification.DirectoryCustody]::Observe($handle))
+        }
+        $named = [ExaCopyQualification.ReadDiffCustody]::HoldNode($Path, $false, $false)
+        try {
+            $tool.Identity = [ExaCopyQualification.ReadDiffCustody]::Observe($named, $false).FileId
+            Assert-StageSameVolume $VolumeIdentity $tool.Identity
+            $tool.Image = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+            Confirm-PublicationVendorCustody $tool
+            $signature = Get-AuthenticodeSignature -LiteralPath $Path
+            $signer = if ($null -ne $signature.SignerCertificate) {
+                $signature.SignerCertificate.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
+            }
+            Assert-PublicationVendorSignature ([string]$signature.Status) $signer
+            $tool.Record = Read-PublicationApplicationRecord $Path -HeldImage $tool.Image
+            $tool.Record['native_identity'] = $tool.Identity
+            $tool.Record['signer'] = $signer
+        } finally {
+            $named.Dispose()
+        }
+        return $tool
+    } catch {
+        Close-PublicationVendorCustody $tool
+        throw
+    }
+}
+
 function Confirm-PublicationImage {
     $named = [ExaCopyQualification.ReadDiffCustody]::HoldNode($binary, $false, $false)
     try {
@@ -189,6 +250,7 @@ if ($env:SystemRoot -ine ($system + 'Windows') -or
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $ancestors = $evidencePin = $fixturePin = $fixtureGuard = $buildPin = $image = $null
 $compilerAncestors = $compilerImage = $null
+$linkerTool = $null
 $fixture = $evidence = $null
 $fixtureCustodied = $false
 $evidenceExported = $false
@@ -351,14 +413,89 @@ try {
         throw 'The compiler did not match the pinned native toolchain.'
     }
 
+    $diagnostic.phase = 'msvc-admission'
+    $diagnostic.receipt = $diagnostic.launch = $null
+    $programFiles = [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles)
+    $programFilesX86 = [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFilesX86)
+    $locator = $programFilesX86 + '\Microsoft Visual Studio\Installer\vswhere.exe'
+    $systemIdentity = $ancestors.Held[0].Identity
+    $locatorTool = New-PublicationVendorCustody $locator $systemIdentity
+    try {
+        $state.tools.vswhere = $locatorTool.Record
+        if ((Invoke-PublicationChild 'msvc-locator' $locator @('-latest', '-products', '*', '-requires',
+            'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', '-property', 'installationPath') 30000) -ne 0) {
+            throw 'The hosted Visual Studio locator did not complete.'
+        }
+        Confirm-PublicationVendorCustody $locatorTool
+    } finally {
+        Close-PublicationVendorCustody $locatorTool
+    }
+    $visualStudioLines = Get-Content -LiteralPath (Join-Path $evidence 'msvc-locator.stdout.log')
+    $visualStudio = Select-PublicationVisualStudio $visualStudioLines $programFiles $programFilesX86
+    $devShell = $visualStudio + '\Common7\Tools\Launch-VsDevShell.ps1'
+    $msvcScript = @'
+$ErrorActionPreference = 'Stop'
+& $env:EXACOPY_VS_DEV_SHELL -Arch amd64 -HostArch amd64 -SkipAutomaticLocation *> $null
+[Console]::WriteLine((ConvertTo-Json -Compress -InputObject @{
+    vc = $env:VCToolsInstallDir
+    sdk = $env:WindowsSdkDir
+    sdk_version = $env:WindowsSDKLibVersion
+}))
+'@
+    $msvcVariables = @('LIB', 'LIBPATH', 'INCLUDE', 'VCINSTALLDIR', 'VCToolsInstallDir',
+        'WindowsSdkDir', 'WindowsSDKVersion', 'VSCMD_VER')
+    $publicationEnvironment = $childEnvironment
+    $baseEnvironment = [string[]]@($publicationEnvironment | Where-Object { $_.Split('=', 2)[0] -notin $msvcVariables })
+    $devShellTool = New-PublicationVendorCustody $devShell $systemIdentity
+    try {
+        $state.tools.vs_developer_shell = $devShellTool.Record
+        $childEnvironment = $baseEnvironment + @(
+            "EXACOPY_VS_DEV_SHELL=$devShell"
+            ('ProgramData=' + [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonApplicationData))
+        )
+        $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($msvcScript))
+        if ((Invoke-PublicationChild 'msvc-environment' $powershell @(
+            '-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', $encoded) 60000) -ne 0) {
+            throw 'The hosted x64 Visual Studio developer environment did not initialize.'
+        }
+        Confirm-PublicationVendorCustody $devShellTool
+    } finally {
+        $childEnvironment = $baseEnvironment
+        Close-PublicationVendorCustody $devShellTool
+    }
+    $msvcLines = Get-Content -LiteralPath (Join-Path $evidence 'msvc-environment.stdout.log')
+    $msvc = Select-PublicationMsvc $msvcLines $visualStudio $programFilesX86
+    $linker = $msvc.linker
+    $linkerTool = New-PublicationVendorCustody $linker $systemIdentity
+    $state.tools.linker = $linkerTool.Record
+
     Confirm-StageAncestorCustody $compilerAncestors
+    $basePath = @($baseEnvironment | Where-Object { $_.StartsWith('Path=', [StringComparison]::OrdinalIgnoreCase) })
+    if ($basePath.Count -ne 1) { throw 'The contained build requires one inherited PATH assignment.' }
+    $childEnvironment = [string[]]@($baseEnvironment | Where-Object { $_.Split('=', 2)[0] -ine 'Path' })
     $childEnvironment += "RUSTC=$rustc"
+    $childEnvironment += @(
+        "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$linker"
+        ("PATH=" + $msvc.bin + ';' + $basePath[0].Substring(5))
+        ('LIB=' + ($msvc.libraries -join ';'))
+        ('VCINSTALLDIR=' + $visualStudio + '\VC\')
+        ('VSINSTALLDIR=' + $visualStudio + '\')
+        ('VCToolsInstallDir=' + $msvc.vc + '\')
+        ('WindowsSdkDir=' + $msvc.sdk + '\')
+        ('WindowsSDKVersion=' + $msvc.sdk_version + '\')
+        'VSCMD_ARG_HOST_ARCH=x64'
+        'VSCMD_ARG_TGT_ARCH=x64'
+    )
     $arguments = @('+1.100.0', 'test', '--locked', '--offline', '--jobs', '2', '--target', $selected,
         '-p', 'exacopy-platform', '--lib', '--no-default-features', '--features', 'experimental-windows-copy', '--no-run',
         '--message-format=json')
     if ((Invoke-PublicationChild 'cargo-build' $cargo $arguments 480000) -ne 0) {
         throw 'The selected Windows platform library test image did not build.'
     }
+    Confirm-PublicationVendorCustody $linkerTool
+    Close-PublicationVendorCustody $linkerTool
+    $linkerTool = $null
+    $childEnvironment = $publicationEnvironment
     Confirm-StageAncestorCustody $compilerAncestors
     Assert-StageSameIdentity $compilerId ([ExaCopyQualification.ReadDiffCustody]::Observe($compilerImage.SafeFileHandle, $false).FileId)
     $compilerImage.Dispose()
@@ -393,6 +530,7 @@ try {
 } finally {
     try {
         if ($null -ne $image) { $image.Dispose() }
+        if ($null -ne $linkerTool) { Close-PublicationVendorCustody $linkerTool }
         if ($null -ne $compilerImage) { $compilerImage.Dispose() }
         if ($null -ne $compilerAncestors) { Close-StageAncestorCustody $compilerAncestors.Held }
         if ($fixtureCustodied -and $state.process_drained) {

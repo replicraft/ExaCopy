@@ -114,6 +114,62 @@ function Test-PublicationCompilerSelection {
 }
 Test-PublicationCompilerSelection
 
+function Test-PublicationMsvcSelection {
+    $programFiles = 'C:\Program Files'
+    $x86 = 'C:\Program Files (x86)'
+    $visualStudio = "$programFiles\Microsoft Visual Studio\2030\BuildTools"
+    $vc = "$visualStudio\VC\Tools\MSVC\42.7.12345"
+    $sdk = "$x86\Windows Kits\10"
+    $facts = @{ vc = "$vc\"; sdk = "$sdk\"; sdk_version = '10.0.43210.0\' }
+    $held = [Collections.Generic.List[string]]::new()
+    $rejectLinker = $false
+    function Resolve-ExaCopyWindowsPath { param([string] $Path) $Path }
+    function Confirm-ExaCopyPath {
+        param([string] $Path, [switch] $File)
+        if ($File -and $rejectLinker) { throw 'A filesystem component is a reparse point or device.' }
+        if ($File) { $held.Add($Path) }
+        return $true
+    }
+    function Get-Command { throw 'MSVC selection must not search PATH.' }
+
+    Require ((Select-PublicationVisualStudio @($visualStudio) $programFiles $x86) -ceq $visualStudio) (
+        'The unique hosted Visual Studio instance must be selected.'
+    )
+    Require-Refusal { Select-PublicationVisualStudio @($visualStudio, $visualStudio) $programFiles $x86 } (
+        'ambiguous Visual Studio output'
+    )
+    Require-Refusal { Select-PublicationVisualStudio @('C:\outside\Tools') $programFiles $x86 } (
+        'Visual Studio outside the hosted program directories'
+    )
+    $encoded = ConvertTo-Json -Compress -InputObject $facts
+    $msvc = Select-PublicationMsvc @($encoded) $visualStudio $x86
+    $expectedLinker = "$vc\bin\Hostx64\x64\link.exe"
+    $expectedLibraries = @("$vc\lib\x64", "$sdk\Lib\10.0.43210.0\ucrt\x64", "$sdk\Lib\10.0.43210.0\um\x64")
+    Require ($msvc.linker -ceq $expectedLinker -and $held.Count -eq 1 -and $held[0] -ceq $expectedLinker -and
+        ($msvc.libraries -join ';') -ceq ($expectedLibraries -join ';')) (
+        'Linker and libraries must come from the observed x64 vendor toolset and SDK version.'
+    )
+    $rejectLinker = $true
+    Require-Refusal { Select-PublicationMsvc @($encoded) $visualStudio $x86 } 'redirected native linker'
+    $rejectLinker = $false
+    foreach ($bad in @(
+        @{ vc = 'C:\Program Files\Git\usr\bin'; sdk = $sdk; sdk_version = '10.0.43210.0' }
+        @{ vc = $vc; sdk = 'C:\outside\Windows Kits\10'; sdk_version = '10.0.43210.0' }
+        @{ vc = $vc; sdk = "$sdk;C:\foreign"; sdk_version = '10.0.43210.0' }
+        @{ vc = $vc; sdk = $sdk; sdk_version = '..\foreign' }
+    )) {
+        $record = ConvertTo-Json -Compress -InputObject $bad
+        Require-Refusal { Select-PublicationMsvc @($record) $visualStudio $x86 } 'invalid toolset or SDK evidence'
+    }
+    Require-Refusal { Select-PublicationMsvc @($encoded, $encoded) $visualStudio $x86 } 'ambiguous SDK evidence'
+}
+Test-PublicationMsvcSelection
+
+Assert-PublicationVendorSignature 'Valid' 'Microsoft Corporation'
+Require-Refusal { Assert-PublicationVendorSignature 'HashMismatch' 'Microsoft Corporation' } 'changed Microsoft-signed image'
+Require-Refusal { Assert-PublicationVendorSignature 'Valid' 'Microsoft Corporation Tools' } 'lookalike vendor signer'
+Require-Refusal { Assert-PublicationVendorSignature 'NotSigned' '' } 'unsigned vendor image'
+
 foreach ($attributes in @(
     [IO.FileAttributes]::Directory, [IO.FileAttributes]::Device, [IO.FileAttributes]::Offline,
     [IO.FileAttributes]::ReparsePoint, 0x00040000, 0x00400000
@@ -404,6 +460,15 @@ $compilerResolution = $sourceText.IndexOf('$rustc = Resolve-PublicationCompiler 
 $compilerProbe = $sourceText.IndexOf("'rustc' " + '$rustc' + " @('-vV')", [StringComparison]::Ordinal)
 $compilerBinding = $sourceText.IndexOf('$childEnvironment += "RUSTC=$rustc"', [StringComparison]::Ordinal)
 $compilerBuild = $sourceText.IndexOf("'cargo-build' " + '$cargo', [StringComparison]::Ordinal)
+$msvcLocator = $sourceText.IndexOf("Invoke-PublicationChild 'msvc-locator'", [StringComparison]::Ordinal)
+$msvcEnvironment = $sourceText.IndexOf("Invoke-PublicationChild 'msvc-environment'", [StringComparison]::Ordinal)
+$linkerHold = $sourceText.IndexOf('New-PublicationVendorCustody $linker $systemIdentity', [StringComparison]::Ordinal)
+$linkerBinding = $sourceText.IndexOf('"CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$linker"', [StringComparison]::Ordinal)
+$linkerRelease = $sourceText.IndexOf('Close-PublicationVendorCustody $linkerTool', [StringComparison]::Ordinal)
+Require ($msvcLocator -ge 0 -and $msvcLocator -lt $msvcEnvironment -and $msvcEnvironment -lt $linkerHold -and
+    $linkerHold -lt $linkerBinding -and $linkerBinding -lt $compilerBuild -and $compilerBuild -lt $linkerRelease) (
+    'The contained build must consume the exact held linker selected from the hosted developer environment.'
+)
 $compilerRelease = $sourceText.IndexOf('$compilerImage.Dispose()', [StringComparison]::Ordinal)
 Require ($compilerInstall -ge 0 -and $compilerInstall -lt $compilerResolution -and
     $compilerResolution -lt $compilerProbe -and $compilerProbe -lt $compilerBinding -and
