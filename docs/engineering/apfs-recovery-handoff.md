@@ -1,7 +1,7 @@
 # APFS private-stage recovery handoff
 
 The selected mounted APFS companion is public commit
-`6b211a706e038e5b485f1d410049b068e753344e` (`apfs-mounted` 0.1.0).
+`8c13b1da5aba2f31a012daa48756fef5cf0752dc` (`apfs-mounted` 0.1.0).
 All 48 mounted-package paths and its workspace build inputs match `9bba2730`.
 The upstream container and format qualification changes are outside the mounted
 dependency graph and do not change the strict birth-time contract.

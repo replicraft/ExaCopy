@@ -2,7 +2,7 @@
 
 ## Current selection and remaining work
 
-The source pin selects public APFS `6b211a706e038e5b485f1d410049b068e753344e`.
+The source pin selects public APFS `8c13b1da5aba2f31a012daa48756fef5cf0752dc`.
 All 48 mounted-package paths and its workspace build inputs match `9bba2730`.
 The upstream changes concern container and format qualification outside the
 mounted dependency graph.
