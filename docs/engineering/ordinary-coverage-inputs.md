@@ -29,16 +29,21 @@ success, select or authorize a test executable, or admit additional profiles.
 Correlate them with the ordinary command's retained exit status and report.
 Separate witnessed coverage summaries remain separate.
 
-Canonical main pushes from the Coverage workflow now request seven native
-witness cases in the same ordinary campaign. Source, workflow, job and run
-identity are checked before the ordinary build. The ordinary command must
-finish successfully before the native contribution can proceed. The runner
-holds the original indexed profile, LLVM tools, ordered objects and selected
-test executable, and retains the ordinary report independently.
+Canonical main pushes from the Coverage workflow request three separately
+admitted foreground groups in the same ordinary campaign: seven witnessed
+recovery components, six selected-stream publication cases, and four protected
+snapshot cases. Source, workflow, job and run identity are checked before the
+ordinary build. The ordinary command must finish successfully before the native
+contribution can proceed. The runner holds the original indexed profile, LLVM
+tools, ordered objects and selected test executable, and retains the ordinary
+report independently.
 
-Only the seven measured run profiles join the original index, after exact
-attendance and verified fixture cleanup. Fourteen listing profiles are
-discarded. The combined export must preserve the ordinary filename filter,
+Only the 17 measured run profiles join the original index, after exact
+attendance and verified cleanup of each group's private fixture. All 34 listing
+profiles are discarded. The protected snapshot group additionally checks the
+current ext4 root mount, protected ancestry and working POSIX access ACLs. The
+held executable must have no file capabilities. The combined export preserves
+the ordinary filename filter,
 file inventory and every file's line denominator, with no decrease in covered
 lines. The existing per-crate 85% gate then evaluates the combined report.
 
@@ -54,3 +59,5 @@ Platform coverage rose by 355 lines to 6,876/8,910 (77.1717%); the 85% gate
 still failed. Endpoint coverage remained 580/663 and core remained 34/34.
 [Exact coverage run](https://github.com/replicraft/ExaCopy/actions/runs/46029308664).
 These component measurements supply no restart or power-loss qualification.
+The expanded 17-case collection is source-reviewed; its first hosted result
+remains pending. The original seven-case qualification is unchanged.

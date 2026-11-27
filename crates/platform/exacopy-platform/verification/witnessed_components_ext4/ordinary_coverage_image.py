@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import stat
 
+import ordinary_coverage_cohorts as cohorts
 import run
 
 COLLECTOR = run.ROOT / ".github/ci/endpoint_llvm_export_capture.py"
@@ -25,7 +26,10 @@ def source_snapshot(revision, evidence, phase):
     tree = run.ext4.command(evidence, f"ordinary-tree-{phase}", ["git", "rev-parse", "HEAD^{tree}"]).strip()
     run.ext4.require(re.fullmatch(r"[0-9a-f]{40}", tree), "invalid ordinary coverage source tree")
     inputs = run.inputs(coverage=True)
-    for name in (*SOURCE_INPUTS, str(Path(__file__).relative_to(run.ROOT))):
+    controls = run.HERE / "test_ordinary_coverage.py"
+    source_files = (Path(__file__), controls)
+    relative_sources = (str(path.relative_to(run.ROOT)) for path in source_files)
+    for name in dict.fromkeys((*SOURCE_INPUTS, *cohorts.SOURCE_INPUTS, *relative_sources)):
         inputs[name] = hashlib.sha256((run.ROOT / name).read_bytes()).hexdigest()
     return {"revision": revision, "tree": tree, "inputs_sha256": inputs}
 
@@ -94,47 +98,20 @@ def verify_capture(collector, raw, tool, target):
     return platform_unit(observed["objects"], target)
 
 
-@contextmanager
-def held_listed_image(revision, before_build, collector, temp, evidence, fixture, fixture_fd, profiles,
-                      *, pinned_exporter=None):
-    """Yield the same held image after all ordinary and ignored listings."""
-    run.check_coverage_host(revision)
-    require = run.ext4.require
-    require(source_snapshot(revision, evidence, "ordinary-before-listing") == before_build,
-            "ordinary coverage source changed since before build")
-    if pinned_exporter is None:
-        compiler = run.ext4.command(evidence, "ordinary-rustc", ["rustc", f"+{run.TOOLCHAIN}", "-vV"]).splitlines()
-        require(f"release: {run.TOOLCHAIN}" in compiler and f"host: {run.TARGET}" in compiler,
-                "unexpected ordinary coverage compiler")
-        pinned_exporter = run.coverage_profile.pinned_tools(run.ext4, evidence, compiler, {})["llvm-cov"]
-    tool = pinned_exporter
-    target = run.ROOT / "target/llvm-cov-target"
-    directory = temp / "exacopy-evidence/endpoint-llvm-export"
-    with held_capture_pair(directory) as read_pair, ExitStack() as stack:
-        raw = read_pair()
-        selected = verify_capture(collector, raw, tool, target)
-        path = Path(selected["path"])
-        fd = os.open(path, run.ext4.FD_FLAGS | os.O_NONBLOCK)
-        stack.callback(os.close, fd)
-        image = run.ext4.held_managed_image(path, fd)
-        require((image[0][6], image[1]) == (selected["size"], selected["sha256"]),
-                "held platform ELF differs from original ordinary export")
-        environment = {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "TMPDIR": str(fixture)}
-        for index, case in enumerate(run.CASES, 1):
-            for ending, flags in (("listed", []), ("ignored", ["--ignored"])):
-                label = f"case-{index}-{ending}"
-                require(not os.listdir(fixture_fd), "ordinary selector fixture occupied")
-                output = run.ext4.command(
-                    evidence, label, [path, "--list", "--exact", "--format=terse", *flags, case],
-                    env=profiles.allocate(label, environment), executable=f"/proc/self/fd/{fd}", held=(fd,))
-                run.check_listing(output, case)
-                require(run.ext4.held_managed_image(path, fd) == image and not os.listdir(fixture_fd),
-                        "ordinary listing changed held image or fixture")
-                profiles.collect(label, case, image[1])
-        require(source_snapshot(revision, evidence, "ordinary-after-listing") == before_build,
-                "ordinary coverage source changed during listings")
-        require(verify_capture(collector, raw, tool, target) == selected
-                and run.ext4.held_managed_image(path, fd) == image and read_pair() == raw,
-                "ordinary campaign binding changed during listings")
-        profiles.check_cleanup()
-        yield path, fd, image
+def list_cases(evidence, fixture, fixture_fd, profiles, selected, cases):
+    """Verify both exact listings on the already held merge object."""
+    path, fd, image = selected
+    environment = {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "TMPDIR": str(fixture)}
+    for index, case in enumerate(cases, 1):
+        for ending, flags in (("listed", []), ("ignored", ["--ignored"])):
+            label = f"case-{index}-{ending}"
+            run.ext4.require(not os.listdir(fixture_fd), "ordinary selector fixture occupied")
+            output = run.ext4.command(
+                evidence, label, [path, "--list", "--exact", "--format=terse", *flags, case],
+                env=profiles.allocate(label, environment),
+                executable=run.coverage_profile.fd_path(fd), held=(fd,))
+            run.check_listing(output, case)
+            run.ext4.require(run.ext4.held_managed_image(path, fd) == image and not os.listdir(fixture_fd),
+                             "ordinary listing changed held image or fixture")
+            profiles.collect(label, case, image[1])
+    profiles.check_cleanup()

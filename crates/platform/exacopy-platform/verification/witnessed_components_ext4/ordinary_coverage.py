@@ -1,4 +1,4 @@
-"""Contribute seven native witness profiles to the same ordinary LLVM campaign."""
+"""Contribute separately admitted native cohorts to the ordinary LLVM campaign."""
 
 import argparse
 from contextlib import ExitStack
@@ -12,6 +12,7 @@ import signal
 import stat
 import subprocess
 
+import ordinary_coverage_cohorts as cohorts
 import ordinary_coverage_image as image_selection
 import run
 
@@ -71,13 +72,17 @@ def prepare(context, evidence):
         output.write("\n")
 
 
-def bind_file(stack, path, limit, *, expected=None):
+def bind_file(stack, path, limit, *, expected=None, private_copy=False):
     fd = os.open(path, ext4.FD_FLAGS | os.O_NONBLOCK)
     stack.callback(os.close, fd)
     node = os.fstat(fd)
     original = profiles_api.stamp(node)
     require(stat.S_ISREG(node.st_mode) and not node.st_mode & 0o022
             and 0 < node.st_size <= limit, "ordinary LLVM input is not a bounded regular file")
+
+    if private_copy:
+        require(node.st_nlink == 1 and node.st_uid == os.geteuid(),
+                "retained native profile must be owned and singly named")
 
     def verify():
         digest = hashlib.sha256()
@@ -138,11 +143,11 @@ def same_denominator(before, after):
 
 
 
-def admitted_runs(coverage, executable_sha256):
+def admitted_runs(coverage, cases, executable_sha256):
     measured = coverage["admitted_profiles"]
     discarded = coverage["discarded_listing_profiles"]
-    expected_runs = [(f"case-{i}-run", case) for i, case in enumerate(run.CASES, 1)]
-    expected_listings = [(f"case-{i}-{kind}", case) for i, case in enumerate(run.CASES, 1)
+    expected_runs = [(f"case-{i}-run", case) for i, case in enumerate(cases, 1)]
+    expected_listings = [(f"case-{i}-{kind}", case) for i, case in enumerate(cases, 1)
                          for kind in ("listed", "ignored")]
     require([(p["launch"], p["selector"]) for p in measured] == expected_runs
             and [(p["launch"], p["selector"]) for p in discarded] == expected_listings
@@ -152,11 +157,30 @@ def admitted_runs(coverage, executable_sha256):
             "ordinary witness profile attendance differs")
     return measured
 
-def execute_cases(evidence, fixture, fixture_fd, profiles, selected, report):
+
+def admitted_cohorts(reports, executable_sha256):
+    require([report["id"] for report in reports] == [name for name, _ in cohorts.COHORTS],
+            "ordinary native cohort inventory differs")
+    admitted = []
+    discarded = 0
+    for report, (name, cases) in zip(reports, cohorts.COHORTS, strict=True):
+        require(report["outcome"] == "pass" and report["cleanup"] == "verified_absent"
+                and report["executable_sha256"] == executable_sha256
+                and report["cases"] == dict.fromkeys(cases, "pass"),
+                "ordinary native cohort lacks exact tests, executable or cleanup")
+        coverage = report["coverage"]
+        admitted.append((name, admitted_runs(coverage, cases, executable_sha256)))
+        discarded += len(coverage["discarded_listing_profiles"])
+    require(sum(len(profiles) for _, profiles in admitted) == 17 and discarded == 34,
+            "ordinary native cohort profile totals differ")
+    return admitted
+
+
+def execute_cases(evidence, fixture, fixture_fd, profiles, selected, cases, report):
     path, fd, original = selected
     report["executable_sha256"] = original[1]
     env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "TMPDIR": str(fixture)}
-    for index, case in enumerate(run.CASES, 1):
+    for index, case in enumerate(cases, 1):
         label = f"case-{index}-run"
         require(not os.listdir(fixture_fd), "ordinary witness fixture occupied")
         try:
@@ -182,6 +206,33 @@ def held_tool(evidence, label, tool, args, inputs, *, output_limit=65536):
     return output
 
 
+def execute_cohort(name, cases, temp, context, source, evidence, selected, check_inputs, report):
+    def run_ordinary(fixture, fixture_fd, profiles, tools):
+        check_inputs(tools)
+        require(snapshot(context, evidence, "cohort-before") == source,
+                "ordinary coverage source changed before cohort listing")
+        if name == cohorts.PROTECTED_SNAPSHOT:
+            report["snapshot_substrate"] = cohorts.snapshot_substrate(
+                fixture, fixture_fd, evidence, "snapshot-before")
+            cohorts.check_snapshot_acl(fixture)
+            report["posix_acl"] = "verified_masked_access_acl"
+        image_selection.list_cases(evidence, fixture, fixture_fd, profiles, selected, cases)
+        require(snapshot(context, evidence, "cohort-listed") == source,
+                "ordinary coverage source changed during cohort listing")
+        execute_cases(evidence, fixture, fixture_fd, profiles, selected, cases, report)
+        if name == cohorts.PROTECTED_SNAPSHOT:
+            require(cohorts.snapshot_substrate(fixture, fixture_fd, evidence, "snapshot-after")
+                    == report["snapshot_substrate"], "protected snapshot fixture substrate changed")
+        check_inputs(tools)
+
+    try:
+        run.qualify(context["revision"], temp, evidence, report, ordinary=run_ordinary)
+    except ext4.Blocked:
+        report["outcome"] = "blocked"
+        raise
+    report["outcome"] = "pass"
+
+
 def combine(temp, context, evidence, report):
     private_parent(evidence)
     require(stat.S_IMODE(evidence.stat().st_mode) == 0o700, "ordinary witness evidence is not private")
@@ -190,8 +241,6 @@ def combine(temp, context, evidence, report):
     collector_spec.loader.exec_module(collector)
     target = run.ROOT / "target/llvm-cov-target"
     export_dir = evidence.parent / "endpoint-llvm-export"
-    revision = context["revision"]
-
     with ExitStack() as stack, image_selection.held_capture_pair(export_dir) as read_pair:
         before_fd, _, check_before = bind_file(stack, evidence / "before-build.json", image_selection.CAPTURE_LIMIT)
         before = json.loads(os.pread(before_fd, image_selection.CAPTURE_LIMIT, 0))
@@ -206,41 +255,72 @@ def combine(temp, context, evidence, report):
         report.update(source=before["source"], prebuild_tools=before["tools"],
                       ordinary_report=ordinary_report, ordinary_producer=producer,
                       capture_sha256=hashlib.sha256(raw).hexdigest())
-        coverage = report["coverage"]
-        inputs = {}
+        expected_snapshot = {key: before[key] for key in ("context", "source")}
+        exporter = Path(before["tools"]["llvm-cov"]["path"])
+        selected_object = image_selection.verify_capture(collector, raw, exporter, target)
+        inputs = {
+            name: bind_file(stack, Path(before["tools"][key]["path"]), collector.FILE_LIMIT,
+                            expected=before["tools"][key])
+            for name, key in (("cov", "llvm-cov"), ("profdata", "llvm-profdata"))
+        }
+        require(inputs["cov"][1] == before["tools"]["llvm-cov"] == recorded["tool"]
+                and inputs["profdata"][1] == before["tools"]["llvm-profdata"],
+                "ordinary LLVM tools differ from prebuild capture")
+        inputs["ordinary"] = bind_file(stack, Path(recorded["indexed_profile"]["path"]),
+                                       profiles_api.INDEXED_PROFILE_LIMIT,
+                                       expected=recorded["indexed_profile"])
+        inputs["objects"] = [
+            bind_file(stack, Path(item["path"]), collector.FILE_LIMIT, expected=item)
+            for item in recorded["objects"]
+        ]
+        selected_fd, = (entry[0] for entry in inputs["objects"] if entry[1]["path"] == selected_object["path"])
+        selected_path = Path(selected_object["path"])
+        held_image = ext4.held_managed_image(selected_path, selected_fd)
+        require((held_image[0][6], held_image[1]) == (selected_object["size"], selected_object["sha256"]),
+                "held ordinary platform ELF differs from capture")
+        selected = selected_path, selected_fd, held_image
+        report["executable_sha256"] = held_image[1]
+        report["executable"] = {**selected_object, "held_stamp": list(held_image[0])}
 
-        def run_ordinary(fixture, fixture_fd, profiles, tools):
-            selected_object = image_selection.verify_capture(collector, raw, tools["llvm-cov"], target)
-            inputs["cov"] = bind_file(stack, tools["llvm-cov"], collector.FILE_LIMIT, expected=recorded["tool"])
-            require(inputs["cov"][1] == before["tools"]["llvm-cov"],
-                    "ordinary LLVM exporter differs from the prebuild tool")
-            inputs["profdata"] = bind_file(stack, tools["llvm-profdata"], collector.FILE_LIMIT,
-                                           expected=before["tools"]["llvm-profdata"])
-            require(inputs["profdata"][1] == before["tools"]["llvm-profdata"],
-                    "ordinary LLVM profile tool differs from the prebuild tool")
-            inputs["ordinary"] = bind_file(stack, Path(recorded["indexed_profile"]["path"]),
-                                          profiles_api.INDEXED_PROFILE_LIMIT, expected=recorded["indexed_profile"])
-            inputs["objects"] = [
-                bind_file(stack, Path(item["path"]), collector.FILE_LIMIT, expected=item)
-                for item in recorded["objects"]
-            ]
-            selected_fd, = (entry[0] for entry in inputs["objects"]
-                            if entry[1]["path"] == selected_object["path"])
-            with image_selection.held_listed_image(
-                    revision, before["source"]["image"], collector, temp, evidence,
-                    fixture, fixture_fd, profiles, pinned_exporter=tools["llvm-cov"]) as selected:
-                require(str(selected[0]) == selected_object["path"] and selected[2][1] == selected_object["sha256"]
-                        and os.path.samestat(os.fstat(selected[1]), os.fstat(selected_fd))
-                        and read_pair() == raw, "ordinary platform image differs from the merge campaign")
-                execute_cases(evidence, fixture, fixture_fd, profiles, selected, report)
-                require(read_pair() == raw, "ordinary renderer receipts changed during the witness campaign")
+        def check_inputs(tools):
+            require(str(tools["llvm-cov"]) == inputs["cov"][1]["path"]
+                    and str(tools["llvm-profdata"]) == inputs["profdata"][1]["path"],
+                    "native cohort tool selection differs from the held ordinary tools")
+            inputs["cov"][2]()
+            inputs["profdata"][2]()
+            cohorts.check_unprivileged_image(selected_fd)
+            report["executable"]["file_capabilities"] = "absent"
+            require(read_pair() == raw and ext4.held_managed_image(selected_path, selected_fd) == held_image
+                    and not ext4.supervision.CANCELLATION_REQUESTED,
+                    "ordinary campaign changed during native cohort")
 
-        run.qualify(revision, temp, evidence, report, ordinary=run_ordinary)
-        require(report["cleanup"] == "verified_absent" and list(report["cases"]) == list(run.CASES),
-                "ordinary witness capture lacks seven verified tests or fixture cleanup")
-        raw_profiles = admitted_runs(coverage, report["executable_sha256"])
-        raw_inputs = [bind_file(stack, evidence / p["retained"], profiles_api.RAW_LIMIT, expected=p)
-                      for p in raw_profiles]
+        cohort_root = evidence / "cohorts"
+        cohort_root.mkdir(mode=0o700)
+        for name, cases in cohorts.COHORTS:
+            cohort_evidence = cohort_root / name
+            cohort_evidence.mkdir(mode=0o700)
+            result = {"id": name, "outcome": "failed", "cleanup": "not_created",
+                      "cases": {}, "coverage": {}}
+            report["cohorts"].append(result)
+            execute_cohort(name, cases, temp, context, expected_snapshot, cohort_evidence,
+                           selected, check_inputs, result)
+
+        admitted = admitted_cohorts(report["cohorts"], held_image[1])
+        require(all(result["substrate"] == report["cohorts"][0]["substrate"] for result in report["cohorts"]),
+                "ordinary native cohorts used different runner substrates")
+        report["cleanup"] = "verified_absent"
+        raw_inputs = []
+        for name, entries in admitted:
+            cohort_evidence = cohort_root / name
+            require({path.name for path in cohort_evidence.glob("*.profraw")}
+                    == {profile["retained"] for profile in entries},
+                    "retained native profile file inventory differs")
+            raw_inputs.extend(bind_file(stack, cohort_evidence / profile["retained"], profiles_api.RAW_LIMIT,
+                                        expected=profile, private_copy=True) for profile in entries)
+        retained_nodes = [os.fstat(profile[0]) for profile in raw_inputs]
+        require(len({(node.st_dev, node.st_ino) for node in retained_nodes}) == 17,
+                "duplicate retained native profile identity")
+
         object_fds = tuple(item[0] for item in inputs["objects"])
         argv = recorded["argv"]
 
@@ -275,7 +355,7 @@ def combine(temp, context, evidence, report):
         check_before()
         check_producer()
         check_report()
-        expected_snapshot = {key: before[key] for key in ("context", "source")}
+        cohorts.check_unprivileged_image(selected_fd)
         require(read_pair() == raw and snapshot(context, evidence, "ordinary-final") == expected_snapshot
                 and not ext4.supervision.CANCELLATION_REQUESTED, "ordinary campaign changed before export admission")
         export_path = evidence / "ordinary-witness-export.stdout"
@@ -296,9 +376,8 @@ def main():
     if args.phase == "prepare":
         prepare(context, evidence)
         return 0
-    report = {"context": context, "scope": "ordinary-witness-component-coverage",
-              "revision": context["revision"], "outcome": "failed", "cleanup": "not_created",
-              "cases": {}, "coverage": {}}
+    report = {"schema_version": 2, "context": context, "scope": "ordinary-native-cohort-coverage",
+              "revision": context["revision"], "outcome": "failed", "cleanup": "pending", "cohorts": []}
     code = 1
     try:
         combine(temp, context, evidence, report)
