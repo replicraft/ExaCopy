@@ -83,7 +83,7 @@ before sealing and supplying a matching one-shot model permit. The narrow
 stage profile checks one unnamed stream of the verified extent, owner and
 DACL, creation and last-write times, and supported attributes including
 ARCHIVE. The adapter keeps identity pinned across the DELETE-access open
-and makes one held-handle `SetFileInformationByHandle(FileRenameInfo)` call
+and makes one held-handle `NtSetInformationFile(FileRenameInformation)` call
 with replacement disabled. No pathname fallback is available. After a
 successful return it rechecks both parents, absence of the former name,
 and the exact target inode, spelling, metadata and EOF. It distinguishes
@@ -91,6 +91,14 @@ pre-submission refusal, kernel collision, uncertain submission and a
 reported rename whose observations remain unconfirmed. Evidence stays
 held for reconciliation.
 [Publication component](../../crates/platform/exacopy-platform/src/windows/stage/publication.rs)
+
+The native request uses the documented WDK layout and buffer size, a held
+destination directory, one counted component and replacement disabled.
+Set-information completion is synchronous. Only exact `STATUS_SUCCESS`
+reports kernel success; unexpected statuses remain uncertain. No absolute-path
+fallback or retry is added.
+[Native rename contract](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information) ·
+[Synchronous set-information](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-ioisoperationsynchronous)
 
 The separate Windows Server 2025 x64 workflow selects the platform test
 image with the exact experimental feature, two ordinary ABI and status
@@ -100,7 +108,7 @@ reparse control. The runner binds the exact image and selectors to the
 revision, checks process drainage and removes only verified owned
 artifacts. Strict Windows cross-Clippy and copy-only library code
 generation passed. Workflow and portable selection controls passed.
-Native execution of this publication profile remains pending.
+Strict v1 still stops at its compiler-job timeout before native cases run.
 [Fixture manifest](../../crates/platform/exacopy-platform/verification/windows_ntfs_publication/fixture.toml) ·
 [Hosted workflow](../../.github/workflows/windows-ntfs-publication.yml)
 
@@ -108,7 +116,14 @@ The separate owned-build preparation profile uses the same test cases on
 the hosted Windows image. Its build first establishes whole-job quiescence,
 then admits the held test executable from verified compiler output. Case
 execution still requires strict natural completion. Native qualification of
-this profile remains pending. The strict v1 results remain separately scoped.
+this profile remains pending. At `0f6051e`, compilation, owned-job quiescence
+and held-image admission succeeded. Two ABI/status controls and two native
+refusal cases passed; three positive publication cases returned Win32 error 87
+before observation. Cleanup reported an unexpected entry and remained
+unconfirmed. The native-call correction awaits hosted qualification. The exact
+origin of the Win32 error remains unconfirmed: current Microsoft documentation
+also permits a relative held root in the former Win32 request. The strict v1
+results remain separately scoped.
 [Preparation fixture](../../crates/platform/exacopy-platform/verification/windows_ntfs_publication_preparation/fixture.toml) ·
 [Preparation workflow](../../.github/workflows/windows-ntfs-publication-preparation.yml)
 

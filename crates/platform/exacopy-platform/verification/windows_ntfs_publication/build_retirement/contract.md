@@ -25,6 +25,22 @@ deleted its fixture and retained artifact `15202671606`, SHA-256
 `049297752f47cc0956e8b10bbc23cbe59c26cf8a37130d4d085b701f33733df5`.
 The corrected admission awaits native qualification.
 
+At `0f6051e`, the corrected graph admitted all eight packages. Native compiler
+preparation returned `QuiescedAfterRootExit`: root exit zero, acknowledged
+owned-job retirement, zero active processes, both pipe EOFs and measured sink
+identities. Transcript and held x64 image admission succeeded. The two ABI/status
+controls and two refusal cases passed, while three positive publication cases
+returned Win32 error 87 before namespace observation. Fixture cleanup reported
+an unexpected entry and remained unconfirmed. Artifact `15202603661` from
+[the second v2 run](https://github.com/replicraft/ExaCopy/actions/runs/46010876078)
+retains that failure.
+
+The next candidate uses the documented native `FileRenameInformation` request
+with the same held root, one counted component and replacement disabled. It
+changes no caller sharing or identity guard and adds no fallback or retry. The
+precise origin of the Win32 error remains unconfirmed; native success and
+cleanup require a subsequent hosted result.
+
 ## Scope and entry point
 
 At `824521c`, all twelve P-078 invocations returned TLC parser exit 150 before

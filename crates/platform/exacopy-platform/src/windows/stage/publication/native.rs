@@ -3,14 +3,17 @@ use std::mem::{align_of, offset_of, size_of};
 use std::os::windows::io::{AsRawHandle, BorrowedHandle};
 
 use windows_sys::Wdk::Foundation::{NtQueryObject, ObjectBasicInformation};
+use windows_sys::Wdk::Storage::FileSystem::{
+	FILE_RENAME_INFORMATION, FileRenameInformation, NtSetInformationFile,
+};
 use windows_sys::Win32::Foundation::{
-	ERROR_ALREADY_EXISTS, ERROR_CALL_NOT_IMPLEMENTED, ERROR_FILE_EXISTS, ERROR_INVALID_FUNCTION,
-	ERROR_NOT_SUPPORTED, HANDLE, STATUS_SUCCESS,
+	HANDLE, NTSTATUS, RtlNtStatusToDosError, STATUS_INVALID_DEVICE_REQUEST, STATUS_NOT_IMPLEMENTED,
+	STATUS_NOT_SUPPORTED, STATUS_OBJECT_NAME_COLLISION, STATUS_SUCCESS,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-	FILE_CASE_SENSITIVE_INFO, FILE_NAME_OPENED, FILE_RENAME_INFO, FileCaseSensitiveInfo,
-	FileRenameInfo, GetDriveTypeW, SetFileInformationByHandle,
+	FILE_CASE_SENSITIVE_INFO, FILE_NAME_OPENED, FileCaseSensitiveInfo, GetDriveTypeW,
 };
+use windows_sys::Win32::System::IO::IO_STATUS_BLOCK;
 
 use super::{WindowsPublicationError, WindowsPublicationOutcome};
 use crate::windows::native::{local_ntfs_path, parse_volume_guid, query};
@@ -105,11 +108,17 @@ struct RenameBuffer {
 }
 
 const _: () = {
-	assert!(align_of::<RenameBuffer>() == align_of::<FILE_RENAME_INFO>());
-	assert!(offset_of!(RenameBuffer, replace_if_exists) == offset_of!(FILE_RENAME_INFO, Anonymous));
-	assert!(offset_of!(RenameBuffer, root) == offset_of!(FILE_RENAME_INFO, RootDirectory));
-	assert!(offset_of!(RenameBuffer, name_length) == offset_of!(FILE_RENAME_INFO, FileNameLength));
-	assert!(offset_of!(RenameBuffer, name) == offset_of!(FILE_RENAME_INFO, FileName));
+	assert!(align_of::<RenameBuffer>() == align_of::<FILE_RENAME_INFORMATION>());
+	assert!(
+		offset_of!(RenameBuffer, replace_if_exists)
+			== offset_of!(FILE_RENAME_INFORMATION, Anonymous)
+	);
+	assert!(offset_of!(RenameBuffer, root) == offset_of!(FILE_RENAME_INFORMATION, RootDirectory));
+	assert!(
+		offset_of!(RenameBuffer, name_length)
+			== offset_of!(FILE_RENAME_INFORMATION, FileNameLength)
+	);
+	assert!(offset_of!(RenameBuffer, name) == offset_of!(FILE_RENAME_INFORMATION, FileName));
 };
 
 impl RenameBuffer {
@@ -120,9 +129,13 @@ impl RenameBuffer {
 		let units = name.as_units();
 		let name_length = u32::try_from(size_of_val(units))
 			.map_err(|_| WindowsPublicationError::InvalidRenameLength)?;
-		let bytes = size_of::<FILE_RENAME_INFO>()
+		// The name begins at FileName, and the WDK requires the total
+		// allocation to cover sizeof(FILE_RENAME_INFORMATION) plus its bytes.
+		let header_tail =
+			size_of::<FILE_RENAME_INFORMATION>() - offset_of!(FILE_RENAME_INFORMATION, FileName);
+		let bytes = offset_of!(Self, name)
 			.checked_add(size_of_val(units))
-			.and_then(|count| count.checked_add(size_of::<u16>()))
+			.and_then(|end| end.checked_add(header_tail))
 			.filter(|&count| count <= size_of::<Self>())
 			.and_then(|count| u32::try_from(count).ok())
 			.ok_or(WindowsPublicationError::InvalidRenameLength)?;
@@ -144,35 +157,35 @@ pub(super) fn rename_no_replace(
 	root: BorrowedHandle<'_>,
 	name: WindowsComponent<'_>,
 ) -> Result<(), WindowsPublicationOutcome> {
-	let (mut buffer, bytes) = RenameBuffer::new(root.as_raw_handle(), name)
+	let (buffer, bytes) = RenameBuffer::new(root.as_raw_handle(), name)
 		.map_err(WindowsPublicationOutcome::Rejected)?;
-	// SAFETY: Both borrowed handles are live through this synchronous call.
-	// The initialized C-layout buffer has the native prefix and enough storage
-	// for the counted UTF-16 component and its zero terminator. No replacement
-	// or extended flags are set and the root is the held target directory.
-	let success = unsafe {
-		SetFileInformationByHandle(
+	let mut io_status = IO_STATUS_BLOCK::default();
+	// SAFETY: The DELETE-capable source pin was opened for synchronous I/O.
+	// NtSetInformationFile completes synchronously, with both handles and both
+	// buffers live. The initialized WDK layout uses the held directory, a
+	// counted single UTF-16 component and the legacy no-replace setting.
+	let status = unsafe {
+		NtSetInformationFile(
 			source.as_raw_handle(),
-			FileRenameInfo,
-			(&raw mut buffer).cast(),
+			&mut io_status,
+			(&raw const buffer).cast(),
 			bytes,
+			FileRenameInformation,
 		)
 	};
-	if success == 0 {
-		return Err(classify(io::Error::last_os_error()));
+	if status != STATUS_SUCCESS {
+		return Err(classify(status));
 	}
 	Ok(())
 }
 
-fn classify(cause: io::Error) -> WindowsPublicationOutcome {
-	match cause
-		.raw_os_error()
-		.and_then(|code| u32::try_from(code).ok())
-	{
-		Some(ERROR_FILE_EXISTS | ERROR_ALREADY_EXISTS) => {
-			WindowsPublicationOutcome::Conflict(cause)
-		}
-		Some(ERROR_NOT_SUPPORTED | ERROR_INVALID_FUNCTION | ERROR_CALL_NOT_IMPLEMENTED) => {
+fn classify(status: NTSTATUS) -> WindowsPublicationOutcome {
+	// SAFETY: This conversion takes the status by value and has no pointers.
+	let code = unsafe { RtlNtStatusToDosError(status) };
+	let cause = io::Error::from_raw_os_error(i32::from_ne_bytes(code.to_ne_bytes()));
+	match status {
+		STATUS_OBJECT_NAME_COLLISION => WindowsPublicationOutcome::Conflict(cause),
+		STATUS_NOT_SUPPORTED | STATUS_INVALID_DEVICE_REQUEST | STATUS_NOT_IMPLEMENTED => {
 			WindowsPublicationOutcome::Unsupported(cause)
 		}
 		_ => WindowsPublicationOutcome::Uncertain(cause),
@@ -182,21 +195,26 @@ fn classify(cause: io::Error) -> WindowsPublicationOutcome {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use windows_sys::Win32::Foundation::{
+		ERROR_INVALID_PARAMETER, STATUS_INVALID_PARAMETER, STATUS_OBJECT_NAME_EXISTS,
+		STATUS_PENDING,
+	};
 
 	#[test]
 	fn rename_buffer_has_counted_units_and_zero_replacement() {
+		let root: HANDLE = std::ptr::dangling_mut::<u8>().cast();
 		for length in [1, MAX_WINDOWS_COMPONENT_UNITS] {
 			let units = vec![u16::from(b'x'); length];
 			let (buffer, bytes) =
-				RenameBuffer::new(std::ptr::null_mut(), WindowsComponent::new(&units).unwrap())
-					.unwrap();
+				RenameBuffer::new(root, WindowsComponent::new(&units).unwrap()).unwrap();
 			assert_eq!(buffer.replace_if_exists, 0);
+			assert_eq!(buffer.root, root);
 			assert_eq!(buffer.name_length as usize, length * size_of::<u16>());
 			assert_eq!(&buffer.name[..length], &units);
 			assert_eq!(buffer.name[length], 0);
 			assert_eq!(
 				bytes as usize,
-				size_of::<FILE_RENAME_INFO>() + (length + 1) * size_of::<u16>(),
+				size_of::<FILE_RENAME_INFORMATION>() + length * size_of::<u16>(),
 			);
 			assert!(bytes as usize <= size_of::<RenameBuffer>());
 		}
@@ -205,16 +223,23 @@ mod tests {
 	#[test]
 	fn native_refusals_keep_unknown_effects_distinct() {
 		assert!(matches!(
-			classify(io::Error::from_raw_os_error(ERROR_NOT_SUPPORTED as i32)),
+			classify(STATUS_NOT_SUPPORTED),
 			WindowsPublicationOutcome::Unsupported(_)
 		));
 		assert!(matches!(
-			classify(io::Error::from_raw_os_error(ERROR_ALREADY_EXISTS as i32)),
+			classify(STATUS_OBJECT_NAME_COLLISION),
 			WindowsPublicationOutcome::Conflict(_)
 		));
 		assert!(matches!(
-			classify(io::Error::from_raw_os_error(5)),
-			WindowsPublicationOutcome::Uncertain(_)
+			classify(STATUS_INVALID_PARAMETER),
+			WindowsPublicationOutcome::Uncertain(error)
+				if error.raw_os_error() == i32::try_from(ERROR_INVALID_PARAMETER).ok()
 		));
+		for status in [STATUS_OBJECT_NAME_EXISTS, STATUS_PENDING] {
+			assert!(matches!(
+				classify(status),
+				WindowsPublicationOutcome::Uncertain(_)
+			));
+		}
 	}
 }
