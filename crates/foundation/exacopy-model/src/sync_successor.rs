@@ -91,13 +91,20 @@ pub enum EffectOutcome<'receipt, 'name> {
 	Verified(&'receipt VerifiedReceipt<'name>),
 }
 
+/// One completed full read together with its start position in the same scan.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PostReceiptMeasurement<'name> {
+	/// Producer-observed position before the first read under the bound policy.
+	pub started_at: NonZeroU64,
+	/// Completed measurement with EOF and required metadata under that policy.
+	pub measurement: Measurement<'name>,
+}
+
 /// A complete fresh inventory attempt for the single selected subject.
 ///
 /// The inventory producer holds the disjoint roots and allocates one sequence
-/// for the receipt validation marker, both completed reads, and the final name
-/// observations. The producer begins both independent full reads after receipt
-/// validation and includes EOF and required metadata under the bound policy.
-/// This guard checks completion order and trusts the producer's start ordering.
+/// for the receipt validation marker, the start and completion of both reads,
+/// and the final name observations. These positions are producer-supplied facts.
 #[derive(Debug, Eq, PartialEq)]
 pub struct Postconditions<'name> {
 	/// Exact held pair, subject, and fresh scan instance.
@@ -106,8 +113,8 @@ pub struct Postconditions<'name> {
 	pub receipt_digest: [u8; 32],
 	/// Position marking validation of that receipt in the scan sequence.
 	pub receipt_validated_at: NonZeroU64,
-	/// Left and right completed measurements. Either missing side is incomplete.
-	pub measurements: [Option<Measurement<'name>>; 2],
+	/// Left and right read intervals and completed evidence. A missing side is incomplete.
+	pub measurements: [Option<PostReceiptMeasurement<'name>>; 2],
 	/// Fresh final observations after both measurements, in left, right order.
 	pub rechecked: [Option<RecheckedObservation<'name>>; 2],
 }
@@ -152,7 +159,7 @@ pub enum SuccessorBlock {
 	PostconditionSelection,
 	/// The measurements or fresh final observations do not support matching evidence.
 	Postconditions(GenesisRefusal),
-	/// A measurement did not complete after validation of the exact receipt.
+	/// A read interval is malformed or did not start after validating the exact receipt.
 	StalePostconditions,
 	/// The ordered physical files or their evidence do not match the approved effect.
 	PostconditionBinding,
@@ -233,18 +240,27 @@ fn check_postconditions(
 	}
 	let matched = sync_genesis::admit(
 		selection,
-		postconditions.measurements,
+		postconditions
+			.measurements
+			.map(|read| read.map(|read| read.measurement)),
 		postconditions.rechecked,
 	)
 	.map_err(SuccessorBlock::Postconditions)?;
+	if postconditions
+		.measurements
+		.into_iter()
+		.flatten()
+		.any(|read| {
+			read.started_at <= postconditions.receipt_validated_at
+				|| read.started_at >= read.measurement.completed_at
+		}) {
+		return Err(SuccessorBlock::StalePostconditions);
+	}
 	let [left, right] = matched.measurements();
 	let (source, target) = match approved.from {
 		SyncSide::Left => (left, right),
 		SyncSide::Right => (right, left),
 	};
-	if source.completed_at.min(target.completed_at) <= postconditions.receipt_validated_at {
-		return Err(SuccessorBlock::StalePostconditions);
-	}
 	if source.observation.file != approved.source_file
 		|| target.observation.file != receipt.published_file
 		|| target.evidence != receipt.evidence

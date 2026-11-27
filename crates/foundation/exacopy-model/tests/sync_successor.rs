@@ -8,8 +8,8 @@ use exacopy_model::sync_genesis::{
 	Selection,
 };
 use exacopy_model::sync_successor::{
-	ApprovedCreate, DurableIntent, EffectOutcome, Postconditions, Predecessor, SuccessorBlock,
-	SuccessorDecision, SuccessorEvidence, VerifiedReceipt, assess,
+	ApprovedCreate, DurableIntent, EffectOutcome, PostReceiptMeasurement, Postconditions,
+	Predecessor, SuccessorBlock, SuccessorDecision, SuccessorEvidence, VerifiedReceipt, assess,
 };
 use exacopy_model::{CopyBinding, RegularFileEvidence, SyncSide};
 
@@ -96,16 +96,21 @@ impl Subject {
 			SyncSide::Right => (DESTINATION, SOURCE),
 		};
 		let [left_read, right_read] =
-			[(0, left, 11), (1, right, 10)].map(|(side, file, position)| Measurement {
-				observation: ObservationStamp {
-					root: roots[side],
-					scope,
-					scan: selection.scan,
-					file,
-					stability: [0x81; 32],
-				},
-				completed_at: number(position),
-				evidence: CONTENT,
+			[(0, left, 11, 13), (1, right, 10, 12)].map(|(side, file, start, end)| {
+				PostReceiptMeasurement {
+					started_at: number(start),
+					measurement: Measurement {
+						observation: ObservationStamp {
+							root: roots[side],
+							scope,
+							scan: selection.scan,
+							file,
+							stability: [0x81; 32],
+						},
+						completed_at: number(end),
+						evidence: CONTENT,
+					},
+				}
 			});
 		Self {
 			approval,
@@ -119,12 +124,12 @@ impl Subject {
 				measurements: [Some(left_read), Some(right_read)],
 				rechecked: [
 					Some(RecheckedObservation {
-						observation: left_read.observation,
-						observed_at: number(13),
+						observation: left_read.measurement.observation,
+						observed_at: number(15),
 					}),
 					Some(RecheckedObservation {
-						observation: right_read.observation,
-						observed_at: number(12),
+						observation: right_read.measurement.observation,
+						observed_at: number(14),
 					}),
 				],
 			},
@@ -271,7 +276,7 @@ fn even_complete_matched_observations_need_the_exact_receipt_and_scope() {
 	let postconditions = &mut subject.postconditions;
 	postconditions.selection.scope.name = component(b"subject-\xfe");
 	for read in postconditions.measurements.iter_mut().flatten() {
-		read.observation.scope = postconditions.selection.scope;
+		read.measurement.observation.scope = postconditions.selection.scope;
 	}
 	for recheck in postconditions.rechecked.iter_mut().flatten() {
 		recheck.observation.scope = postconditions.selection.scope;
@@ -285,6 +290,7 @@ fn even_complete_matched_observations_need_the_exact_receipt_and_scope() {
 	postconditions.measurements[1]
 		.as_mut()
 		.expect("fixture provides the right read")
+		.measurement
 		.observation
 		.root = other_root;
 	postconditions.rechecked[1]
@@ -314,8 +320,23 @@ fn neither_side_can_supply_missing_or_pre_receipt_evidence_for_the_other() {
 		subject.postconditions.measurements[side]
 			.as_mut()
 			.expect("fixture provides both reads")
+			.measurement
 			.completed_at = subject.postconditions.receipt_validated_at;
 		subject.reconcile(SuccessorBlock::StalePostconditions);
+	}
+}
+
+#[test]
+fn completion_after_receipt_validation_cannot_hide_an_earlier_or_invalid_start() {
+	for (side, completed_at) in [(0, 13), (1, 12)] {
+		for start in [8, 9, completed_at, completed_at + 1] {
+			let mut subject = Subject::complete(SyncSide::Left, 6);
+			subject.postconditions.measurements[side]
+				.as_mut()
+				.expect("fixture provides both reads")
+				.started_at = number(start);
+			subject.reconcile(SuccessorBlock::StalePostconditions);
+		}
 	}
 }
 
@@ -338,6 +359,7 @@ fn equal_streams_cannot_hide_replacement_of_either_confirmed_file() {
 		postconditions.measurements[side]
 			.as_mut()
 			.expect("fixture provides both reads")
+			.measurement
 			.observation
 			.file = FileId([0xa7; 32]);
 		postconditions.rechecked[side]
@@ -350,7 +372,7 @@ fn equal_streams_cannot_hide_replacement_of_either_confirmed_file() {
 
 	let mut subject = Subject::complete(SyncSide::Right, 6);
 	for read in subject.postconditions.measurements.iter_mut().flatten() {
-		read.evidence.content_digest = [0xa8; 32];
+		read.measurement.evidence.content_digest = [0xa8; 32];
 	}
 	subject.reconcile(SuccessorBlock::PostconditionBinding);
 }

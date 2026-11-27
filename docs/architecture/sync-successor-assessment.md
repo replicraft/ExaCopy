@@ -10,6 +10,10 @@ It returns an advisory generation;
 baseline persistence, pointer activation, native qualification, A-272 restart
 reconciliation and P-028 publication barriers remain open.
 
+The additional read-start interval guard and its regression have received source
+review. Their execution result is pending; the historical coverage above does
+not qualify the new guard.
+
 Admission requires the exact independently authenticated current predecessor
 and a representable successor generation. The observed durable intent must
 match the complete parent approval, action, child plan and copy attempt. A
@@ -18,16 +22,17 @@ required metadata, and the receipt association independently observed in the
 durable journal. Source and published identities must differ.
 
 Both complete measurements and final rechecks must bind the same ordered
-roots, subject, evidence policy and scan. Both measurements must complete after
-validation of that exact receipt, and the final observations must still match
-the measured identities and stability. Missing, stale, mismatched or uncertain
-evidence requires reconciliation.
+roots, subject, evidence policy and scan. Each measurement carries its own start
+position. Both reads must start after validation of the exact receipt and
+complete after their respective starts. The final observations must still
+match the measured identities and stability. Missing, stale, mismatched or
+uncertain evidence requires reconciliation.
 
 Approval, receipt and journal authenticity remain obligations of their
-independent producers. The held-root inventory producer must begin both full
-reads after receipt validation and truthfully report EOF, required metadata and
-scan positions. The guard checks completion ordering, not the physical start of
-those reads.
+independent producers. The held-root inventory producer must truthfully report
+the start position, EOF, required metadata and completion position of each full
+read. The guard checks the supplied scan-local order. Native evidence must
+establish that the producer actually performed and bound those reads.
 
 A current-head snapshot can admit competing proposals. A future publisher must
 compare the exact live head and activate its successor within one serialized
