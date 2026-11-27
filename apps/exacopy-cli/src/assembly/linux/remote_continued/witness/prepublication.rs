@@ -1,5 +1,6 @@
 //! Live application binding between the transfer traversal and Linux custody.
 
+use std::cell::Cell;
 use std::io::{Cursor, Read};
 
 use exacopy_endpoint::ReadView;
@@ -52,7 +53,7 @@ impl<'view, 'lease, 'scope, 'name> LinkedWitnessedStage<'view, 'lease, 'scope, '
 		prepare_witnessed_publication(request, self, scratch).map_err(Box::new)
 	}
 
-	fn check_origin(
+	pub(super) fn check_origin(
 		&self,
 		expected: WitnessedLiveCut<'_, '_>,
 	) -> Result<(), WitnessedAdapterError> {
@@ -165,6 +166,8 @@ impl HeldWitnessPrepublication for LinkedWitnessedStage<'_, '_, '_, '_> {
 		let encoded = frame.encoded();
 		let authority = self.chain.authority();
 		let plan = self.chain.plan();
+		let logical = &mut self.logical;
+		let seal_admitted_at = Cell::new(None);
 		let confirm = |input: ReservedJournalRead<'_>| {
 			confirm_successor(
 				input,
@@ -173,7 +176,13 @@ impl HeldWitnessPrepublication for LinkedWitnessedStage<'_, '_, '_, '_> {
 				intent,
 				frame.successor(),
 				successor_phase,
-			)
+			)?;
+			if frame.kind() == FrameKind::StageSealed {
+				logical
+					.seal(successor, seal_admitted_at.get())
+					.map_err(WitnessAdmissionError::Model)?;
+			}
+			Ok(())
 		};
 		self.chain
 			.append_prepublication(
@@ -207,12 +216,22 @@ impl HeldWitnessPrepublication for LinkedWitnessedStage<'_, '_, '_, '_> {
 					{
 						return Err(WitnessAdmissionError::Binding);
 					}
-					pass.approval
+					let guard = pass
+						.approval
 						.enter(pass.grant, pass.names)
-						.map_err(WitnessAdmissionError::Consent)
+						.map_err(WitnessAdmissionError::Consent)?;
+					if frame.kind() == FrameKind::StageSealed {
+						seal_admitted_at.set(guard.observed_wall_seconds());
+					}
+					Ok(guard)
 				},
 				confirm,
 			)
+			.map(|()| match frame.kind() {
+				FrameKind::VerificationRecorded => self.logical.verified(successor),
+				FrameKind::MetadataRecorded => self.logical.metadata(successor),
+				_ => {}
+			})
 			.map_err(|error| match error {
 				ContinuationReservationError::Bounds
 				| ContinuationReservationError::Admission(WitnessAdmissionError::Consent(_)) => {

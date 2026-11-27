@@ -185,6 +185,10 @@ impl<'grant, 'name> WitnessRetentionApproval<'grant, 'name> {
 }
 
 impl WitnessMutationGuard<'_> {
+	pub(in crate::assembly::linux) fn observed_wall_seconds(&self) -> Option<u64> {
+		self._approval.last_wall.map(|time| time.as_secs())
+	}
+
 	pub(in crate::assembly::linux) fn matches_invocation(&self, expected: &RemoteGrant) -> bool {
 		std::ptr::eq(self.invocation, expected)
 	}

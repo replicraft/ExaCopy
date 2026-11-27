@@ -15,6 +15,7 @@ use exacopy_transfer::remote_witnessed_finalization::{
 };
 
 use super::prepublication::WitnessedAdapterError;
+use super::publication::{self, SubmittedPublication, WitnessedSubmitError};
 
 use super::{LinkedWitnessedStage, WitnessAdmissionError, WitnessFailure, WitnessPass};
 use crate::assembly::linux::remote_continued::activation::{
@@ -43,6 +44,7 @@ pub(in crate::assembly::linux::remote_continued) enum ZeroTailWitnessFailure {
 	Link(WitnessFailure<SftpSourceError>),
 	PrepublicationInput(StreamInputError),
 	Prepublication(Box<WitnessedPrepublicationFailure<WitnessedAdapterError>>),
+	Publication(Box<WitnessedSubmitError>),
 }
 
 impl<'scope, 'name> WitnessPass<'scope, 'name> {
@@ -91,6 +93,24 @@ impl<'scope, 'name> WitnessPass<'scope, 'name> {
 				.map_err(ZeroTailWitnessFailure::Prepublication)
 		})
 		.await
+	}
+
+	/// Runs the private live compositor through a single witnessed publication.
+	pub(in crate::assembly::linux::remote_continued) async fn run_zero_tail_publication<Check, T>(
+		&self,
+		proof: VerifiedHeldRetainedPrefix<'_, SftpSource<'_, Check>, WitnessPrefix<'_>>,
+		run: ZeroTailWitness<'_>,
+		finish: impl for<'view, 'lease> FnOnce(SubmittedPublication<'view, 'lease>) -> T,
+	) -> Result<T, ZeroTailWitnessFailure>
+	where
+		Check: FnMut(ConnectionBinding) -> Result<(), RetryError>,
+	{
+		self.run_zero_tail_prepublication(proof, run, |prepared| {
+			publication::submit(prepared)
+				.map(finish)
+				.map_err(|cause| ZeroTailWitnessFailure::Publication(Box::new(cause)))
+		})
+		.await?
 	}
 
 	async fn with_zero_tail_link<Check, T>(

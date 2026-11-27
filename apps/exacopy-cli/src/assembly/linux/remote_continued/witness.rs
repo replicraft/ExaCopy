@@ -21,8 +21,9 @@ use exacopy_journal::remote_download::witness::{
 };
 use exacopy_journal::remote_download::{RemoteBootstrapTrust, RemoteDownloadError};
 use exacopy_platform::linux::{
-	ActiveWitnessReservation, ContinuationReservationError, ProtectedWitnessError,
-	SealedProtectedWitness, StageError, WitnessLinkCandidate, WitnessReservationObservationError,
+	ActiveWitnessReservation, ContinuationReservationError, ProtectedWitnessEffect,
+	ProtectedWitnessError, SealedProtectedWitness, StageError, WitnessLinkCandidate,
+	WitnessReservationObservationError,
 };
 use exacopy_sftp::{SftpSource, SftpSourceError};
 use exacopy_transfer::remote_resume::prefix::{
@@ -38,6 +39,8 @@ use crate::assembly::linux::remote_witness_authority::{
 };
 
 pub(super) mod prepublication;
+mod publication;
+use publication::{LinkedPublication, WitnessModel};
 pub(super) mod zero_tail;
 
 #[derive(Debug)]
@@ -58,6 +61,7 @@ pub(super) enum WitnessAdmissionError {
 	Binding,
 	Format(RemoteDownloadError),
 	Consent(ConsentRefusal),
+	Model(exacopy_model::witnessed_publication::Refusal),
 	Route(RetryError),
 	Custody(WitnessReservationObservationError),
 	Stage(StageError),
@@ -82,6 +86,7 @@ pub(super) struct LinkedWitnessedStage<'view, 'lease, 'scope, 'name> {
 	source: SuffixSourceObservation,
 	route: RetiredBoundRoute,
 	pass: WitnessPass<'scope, 'name>,
+	logical: LinkedPublication,
 }
 
 impl LinkedWitnessedStage<'_, '_, '_, '_> {
@@ -207,6 +212,8 @@ impl<'scope, 'name> WitnessPass<'scope, 'name> {
 			.trust
 			.from_witness_intent_frame(&frame, next, &expected)
 			.map_err(|_| Error::Binding)?;
+		let model = WitnessModel::new(*self, intent).map_err(|_| Error::Binding)?;
+		let mut logical = None;
 		let token = active
 			.append_witness_intent(
 				stage,
@@ -227,9 +234,16 @@ impl<'scope, 'name> WitnessPass<'scope, 'name> {
 					{
 						return Err(WitnessAdmissionError::Binding);
 					}
-					self.approval
+					let guard = self
+						.approval
 						.enter(self.grant, self.names)
-						.map_err(WitnessAdmissionError::Consent)
+						.map_err(WitnessAdmissionError::Consent)?;
+					logical = Some(
+						model
+							.begin(model_head(previous), &guard)
+							.map_err(WitnessAdmissionError::Model)?,
+					);
+					Ok(guard)
 				},
 				|input| {
 					let exact = self.replay(input)?;
@@ -244,16 +258,30 @@ impl<'scope, 'name> WitnessPass<'scope, 'name> {
 				},
 			)
 			.map_err(Error::Journal)?;
+		let mut logical = logical.ok_or(Error::Binding)?;
+		let mut submission = None;
 		let chain = token
-			.link_protected_witness(|held, _effect| {
+			.link_protected_witness(|held, effect| {
 				if held != model_head(next) {
 					return Err(WitnessAdmissionError::Binding);
 				}
-				self.approval
+				let guard = self
+					.approval
 					.enter(self.grant, self.names)
-					.map_err(WitnessAdmissionError::Consent)
+					.map_err(WitnessAdmissionError::Consent)?;
+				if effect == ProtectedWitnessEffect::Link {
+					submission = Some(
+						model
+							.authorize_link(&mut logical, held, &guard)
+							.map_err(WitnessAdmissionError::Model)?,
+					);
+				}
+				Ok(guard)
 			})
 			.map_err(Error::Link)?;
+		let logical = model
+			.linked(logical, submission.ok_or(Error::Binding)?, chain.head())
+			.map_err(|_| Error::Binding)?;
 		Ok(LinkedWitnessedStage {
 			chain,
 			intent,
@@ -261,6 +289,7 @@ impl<'scope, 'name> WitnessPass<'scope, 'name> {
 			source,
 			route,
 			pass: *self,
+			logical,
 		})
 	}
 
