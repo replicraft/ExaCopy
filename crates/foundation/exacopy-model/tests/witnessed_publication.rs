@@ -13,6 +13,9 @@ use exacopy_model::witnessed_publication::{
 #[path = "witnessed/kernel.rs"]
 mod kernel;
 
+#[path = "witnessed/intent.rs"]
+mod intent;
+
 fn identity(slot: u64) -> FileIdentity {
 	FileIdentity {
 		mount: NonZeroU64::new(20).unwrap(),
