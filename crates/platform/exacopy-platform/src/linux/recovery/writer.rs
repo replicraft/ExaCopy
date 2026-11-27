@@ -37,12 +37,13 @@ pub use retained::RetainedStage;
 pub use witness_reservation::{
 	ActiveWitnessReservation, ContinuationReservationError, PendingProtectedWitness,
 	PendingWitnessReservation, ReservedContinuationRequest, ReservedJournalRead,
-	SealedProtectedWitness, WitnessObservationAppend, WitnessPrepublicationAppend,
-	WitnessPrepublicationPhase, WitnessPublication, WitnessPublicationError,
-	WitnessPublicationName, WitnessPublicationNames, WitnessPublicationObservation,
-	WitnessPublicationRequest, WitnessReservationAuthority, WitnessReservationEffect,
-	WitnessReservationError, WitnessReservationGateRequest, WitnessReservationObservationError,
-	WitnessReservationPlan,
+	SealedProtectedWitness, WitnessDurabilityAppend, WitnessDurabilityEffect,
+	WitnessDurabilityError, WitnessDurabilityRequest, WitnessObservationAppend,
+	WitnessPrepublicationAppend, WitnessPrepublicationPhase, WitnessPublication,
+	WitnessPublicationError, WitnessPublicationName, WitnessPublicationNames,
+	WitnessPublicationObservation, WitnessPublicationRequest, WitnessReservationAuthority,
+	WitnessReservationEffect, WitnessReservationError, WitnessReservationGateRequest,
+	WitnessReservationObservationError, WitnessReservationPlan,
 };
 
 #[cfg(test)]

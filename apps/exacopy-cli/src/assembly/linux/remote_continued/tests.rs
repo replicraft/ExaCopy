@@ -368,6 +368,55 @@ fn check_live_prepublication_successors(
 			.is_err()
 		);
 	}
+	check_live_kind9_proposal(full, trust, selection, witness, frames);
+}
+
+fn check_live_kind9_proposal(
+	full: &[u8],
+	trust: &RemoteBootstrapTrust<'_>,
+	selection: &RemoteWitnessedReplaySelection<'_>,
+	witness: exacopy_journal::remote_download::witness::RemoteWitnessIntent,
+	mut frames: FrameReader<&[u8]>,
+) {
+	use super::witness::publication::durability::LiveDurability;
+
+	let mut prefix = FrameReader::new(full, ChainHead::start());
+	let predecessor = loop {
+		let previous = RemoteReplayBoundary {
+			head: prefix.head(),
+			offset: prefix.offset(),
+		};
+		if prefix.next_frame().unwrap().unwrap().kind() == FrameKind::RemoteCaptureContinued {
+			break previous;
+		}
+	};
+	let extent = witness.binding().coverage().end();
+	let budget = WitnessedPassBudget::plan(predecessor, extent, extent, NonZeroU16::MIN).unwrap();
+	let observation = frames.next_frame().unwrap().unwrap();
+	assert_eq!(observation.kind(), FrameKind::PublishObserved);
+	let observed = RemoteReplayBoundary {
+		head: observation.head(),
+		offset: frames.offset(),
+	};
+	let kind9 = frames.next_frame().unwrap().unwrap();
+	assert_eq!(kind9.kind(), FrameKind::DurabilityRecorded);
+	let end = observed.offset as usize;
+	let selection = LiveDurability {
+		trust,
+		selection,
+		budget,
+		witnessed: witness,
+		observed,
+		target: witness.binding().stage(),
+	};
+	let canonical = selection.prepare(&full[..end]).unwrap();
+	assert_eq!(canonical.encoded(), &full[end..frames.offset() as usize]);
+	assert!(selection.prepare(&full[..end - 1]).is_err());
+	assert!(
+		selection
+			.prepare(&full[..frames.offset() as usize])
+			.is_err()
+	);
 }
 
 mod hosted_witness;

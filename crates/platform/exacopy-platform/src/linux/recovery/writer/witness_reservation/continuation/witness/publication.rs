@@ -12,8 +12,13 @@ use crate::linux::{
 	WitnessReservationAuthority,
 };
 
+mod durability;
 mod record;
 
+pub use durability::{
+	WitnessDurabilityAppend, WitnessDurabilityEffect, WitnessDurabilityError,
+	WitnessDurabilityRequest,
+};
 pub use record::WitnessObservationAppend;
 
 /// Exact original native selection presented before the one exclusive rename.
@@ -112,6 +117,7 @@ pub struct WitnessPublication<'view, 'lease> {
 	submission: Option<RenameSubmission>,
 	observation: WitnessPublicationObservation,
 	observation_head: Option<Head>,
+	durability: durability::Progress,
 }
 
 impl WitnessPublication<'_, '_> {
@@ -204,6 +210,7 @@ impl<'view, 'lease> SealedProtectedWitness<'view, 'lease> {
 			submission: Some(submission),
 			observation,
 			observation_head: None,
+			durability: durability::Progress::Unspent,
 		})
 	}
 }

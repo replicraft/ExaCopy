@@ -6,7 +6,8 @@ use rustix::fs;
 
 use super::{StageError, WitnessedSuffixReadback, check_aliases, mount_id, open_path};
 use crate::linux::recovery::writer::witness_reservation::{
-	WitnessPublicationName, WitnessPublicationNames, WitnessPublicationObservation,
+	WitnessDurabilityEffect, WitnessPublicationName, WitnessPublicationNames,
+	WitnessPublicationObservation,
 };
 use crate::linux::source::{SourceObservation, check_logical_eof};
 use crate::linux::stage::{PublicationNames, PublishError, check_no_visible_attributes, component};
@@ -21,6 +22,12 @@ impl<'view, 'lease> WitnessedSuffixReadback<'view, 'lease> {
 		&self,
 	) -> Result<WitnessedRename<'_, 'view, 'lease>, StageError> {
 		self.observe_barriered_metadata()?;
+		self.held_names()
+	}
+
+	pub(in crate::linux::recovery::writer) fn held_names(
+		&self,
+	) -> Result<WitnessedRename<'_, 'view, 'lease>, StageError> {
 		let reader = self.stage.stage.reader;
 		let job = reader.lease.job();
 		let directory = reader
@@ -41,6 +48,66 @@ impl<'view, 'lease> WitnessedSuffixReadback<'view, 'lease> {
 }
 
 impl WitnessedRename<'_, '_, '_> {
+	/// Keeps the simultaneous name-resolved descriptors alive for the caller's
+	/// next effect. The observed rename was the only permitted ctime transition.
+	pub(in crate::linux::recovery::writer) fn pin_published(
+		&self,
+		expected: SourceObservation,
+	) -> Result<[Option<File>; 3], StageError> {
+		let (names, held) = self.inspect();
+		let actual = self.confirm(&names, &held, true)?;
+		expected.recheck(actual).map_err(StageError::ReadBack)?;
+		Ok(held)
+	}
+
+	pub(in crate::linux::recovery::writer) fn sync_published<G, E>(
+		&self,
+		effect: WitnessDurabilityEffect,
+		expected: SourceObservation,
+		enter: impl FnOnce() -> Result<G, E>,
+	) -> Result<Result<(), StageError>, E> {
+		let reader = self.original.stage.stage.reader;
+		let job = reader.lease.job();
+		let stage_directory = if effect == WitnessDurabilityEffect::StageDirectory {
+			let Some(directory) = reader.inventory.directory.as_ref() else {
+				return Ok(Err(StageError::IdentityChanged));
+			};
+			match crate::linux::recovery::lease::reopen_directory(
+				&directory.file,
+				directory.identity,
+				job.root.mount,
+			) {
+				Ok(file) => Some(file),
+				Err(error) => return Ok(Err(error)),
+			}
+		} else {
+			None
+		};
+		let file = match effect {
+			WitnessDurabilityEffect::File => &self.original.stage.stage.file.file,
+			WitnessDurabilityEffect::StageDirectory => match stage_directory.as_ref() {
+				Some(file) => file,
+				None => return Ok(Err(StageError::IdentityChanged)),
+			},
+			WitnessDurabilityEffect::DestinationDirectory => &job.root.directory,
+			WitnessDurabilityEffect::JobDirectory => &reader.lease.lock,
+			WitnessDurabilityEffect::JournalAppend => {
+				return Ok(Err(StageError::PriorBarrierFailure));
+			}
+		};
+		let _pins = match self.pin_published(expected) {
+			Ok(pins) => pins,
+			Err(error) => return Ok(Err(error)),
+		};
+		let guard = enter()?;
+		let result = fs::fsync(file);
+		drop(guard);
+		Ok(result.map_err(|source| match effect {
+			WitnessDurabilityEffect::File => StageError::BarrierFailed(source.into()),
+			_ => StageError::DirectoryBarrierFailed(source.into()),
+		}))
+	}
+
 	pub(in crate::linux::recovery::writer) fn submit<G>(
 		self,
 		guard: G,

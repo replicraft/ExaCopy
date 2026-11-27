@@ -1,6 +1,6 @@
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt as _;
-use std::os::unix::fs::MetadataExt as _;
+use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 
 use super::{Fixture, PREFIX, ReadView, fs, inventory, selection};
 use crate::linux::{
@@ -144,7 +144,10 @@ fn occupied_slot_or_refused_later_barrier_never_removes_evidence() {
 #[test]
 #[ignore = "requires a task-owned unprivileged Linux same-credential link fixture"]
 fn witnessed_native_rename_observes_success_conflict_and_nonregular_incumbent() {
-	use crate::linux::{PublishError, WitnessPublicationName, WitnessPublicationObservation};
+	use crate::linux::{
+		PublishError, WitnessDurabilityEffect, WitnessPublicationName,
+		WitnessPublicationObservation,
+	};
 
 	for incumbent in [None, Some(false), Some(true)] {
 		let fixture = Fixture::new();
@@ -187,6 +190,39 @@ fn witnessed_native_rename_observes_success_conflict_and_nonregular_incumbent() 
 				assert_eq!(fs::read(fixture.target()).unwrap(), PREFIX);
 				assert_eq!(stamp.identity().inode(), selected.file.inode);
 				assert_eq!(stamp.link_count(), 2);
+
+				let published = linked.held_names().unwrap();
+				let mut effects = Vec::new();
+				for effect in [
+					WitnessDurabilityEffect::File,
+					WitnessDurabilityEffect::StageDirectory,
+					WitnessDurabilityEffect::DestinationDirectory,
+					WitnessDurabilityEffect::JobDirectory,
+				] {
+					published
+						.sync_published(effect, stamp, || {
+							effects.push(effect);
+							Ok::<_, ()>(())
+						})
+						.unwrap()
+						.unwrap();
+				}
+				assert_eq!(effects.len(), 4);
+				assert!(published.pin_published(stamp).is_ok());
+				fs::set_permissions(&witness, fs::Permissions::from_mode(0o400)).unwrap();
+				assert!(
+					published
+						.sync_published(
+							WitnessDurabilityEffect::File,
+							stamp,
+							|| -> Result<(), ()> {
+								panic!("changed published metadata reached admission")
+							}
+						)
+						.unwrap()
+						.is_err()
+				);
+				assert_eq!(fs::read(fixture.target()).unwrap(), PREFIX);
 			}
 			(Some(false), WitnessPublicationObservation::Conflict(stamp)) => {
 				assert_ne!(stamp.identity().inode(), selected.file.inode);

@@ -4,6 +4,7 @@ use std::io::{Cursor, Read as _};
 use exacopy_content::{StreamInputError, validate_stream_input};
 use exacopy_endpoint::connection_retry::{ConnectionBinding, RetryError};
 use exacopy_journal::remote_download::continuation::RemoteContinuationExpectation;
+use exacopy_journal::remote_download::replay::RemoteReplayBoundary;
 use exacopy_platform::linux::{
 	RecoveryFile, RecoveryWriteLease, RemoteDestinationEligibility, StageError, SuffixError,
 	WitnessCredentialLane, WitnessReservationAuthority, WitnessReservationError,
@@ -16,7 +17,8 @@ use exacopy_transfer::remote_witnessed_finalization::{
 
 use super::prepublication::WitnessedAdapterError;
 use super::publication::{
-	self, SubmittedPublication, WitnessedObservationError, WitnessedSubmitError,
+	self, SubmittedPublication, WitnessedDurabilityError, WitnessedObservationError,
+	WitnessedSubmitError,
 };
 
 use super::{LinkedWitnessedStage, WitnessAdmissionError, WitnessFailure, WitnessPass};
@@ -135,6 +137,38 @@ impl<'scope, 'name> WitnessPass<'scope, 'name> {
 		self.run_zero_tail_publication(proof, run, |mut submitted| {
 			let recorded = submitted.record_observation();
 			finish(submitted, recorded)
+		})
+		.await
+	}
+
+	/// Completes the witnessed inode and directory barriers after a positive kind 8.
+	/// The note and later barrier result remain separate from the actual submission.
+	pub(in crate::assembly::linux::remote_continued) async fn run_zero_tail_durability<Check, T>(
+		&self,
+		proof: VerifiedHeldRetainedPrefix<'_, SftpSource<'_, Check>, WitnessPrefix<'_>>,
+		run: ZeroTailWitness<'_>,
+		finish: impl for<'view, 'lease> FnOnce(
+			SubmittedPublication<'view, 'lease, 'scope, 'name>,
+			Result<RemoteReplayBoundary, WitnessedObservationError>,
+			Option<Result<RemoteReplayBoundary, WitnessedDurabilityError>>,
+		) -> T,
+	) -> Result<T, ZeroTailWitnessFailure>
+	where
+		Check: FnMut(ConnectionBinding) -> Result<(), RetryError>,
+	{
+		self.run_zero_tail_observation(proof, run, |mut submitted, recorded| {
+			let durable = recorded
+				.as_ref()
+				.ok()
+				.filter(|_| {
+					matches!(
+						submitted.observation(),
+						exacopy_platform::linux::WitnessPublicationObservation::Published(_)
+					)
+				})
+				.copied()
+				.map(|kind8| submitted.record_durability(kind8));
+			finish(submitted, recorded, durable)
 		})
 		.await
 	}

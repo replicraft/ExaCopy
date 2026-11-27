@@ -16,8 +16,10 @@ mod publication;
 use prepublication::NativePrepublication;
 pub use prepublication::{WitnessPrepublicationAppend, WitnessPrepublicationPhase};
 pub use publication::{
-	WitnessObservationAppend, WitnessPublication, WitnessPublicationError, WitnessPublicationName,
-	WitnessPublicationNames, WitnessPublicationObservation, WitnessPublicationRequest,
+	WitnessDurabilityAppend, WitnessDurabilityEffect, WitnessDurabilityError,
+	WitnessDurabilityRequest, WitnessObservationAppend, WitnessPublication,
+	WitnessPublicationError, WitnessPublicationName, WitnessPublicationNames,
+	WitnessPublicationObservation, WitnessPublicationRequest,
 };
 
 // Maximum encoded kind 41: 605 payload bytes and 92 framing bytes.

@@ -14,9 +14,10 @@ mod checkpoints;
 mod witness;
 
 pub use witness::{
-	PendingProtectedWitness, SealedProtectedWitness, WitnessObservationAppend,
-	WitnessPrepublicationAppend, WitnessPrepublicationPhase, WitnessPublication,
-	WitnessPublicationError, WitnessPublicationName, WitnessPublicationNames,
+	PendingProtectedWitness, SealedProtectedWitness, WitnessDurabilityAppend,
+	WitnessDurabilityEffect, WitnessDurabilityError, WitnessDurabilityRequest,
+	WitnessObservationAppend, WitnessPrepublicationAppend, WitnessPrepublicationPhase,
+	WitnessPublication, WitnessPublicationError, WitnessPublicationName, WitnessPublicationNames,
 	WitnessPublicationObservation, WitnessPublicationRequest,
 };
 

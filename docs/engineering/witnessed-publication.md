@@ -4,9 +4,9 @@ The selector-2 Linux components preserve a protected same-inode witness
 through one live no-replace rename. Model binding `eba6c7d` and platform
 component `3f61996` bring this path through a typed native observation.
 Private application composition now carries this same model and native holder
-through submission. The same held outcome can now record kind 8 once. Subsequent durability
-barriers, kind 9, receipt publication, complete native application qualification
-and CLI dispatch remain open. [Witnessed closeout design](../architecture/remote-witnessed-closeout.md) ·
+through submission. The same held outcome can now record kind 8 once. The same positive holder can also request freshly authorized durability
+barriers and record kind 9. Receipt publication, complete native application
+qualification and CLI dispatch remain open. [Witnessed closeout design](../architecture/remote-witnessed-closeout.md) ·
 [Remote transfer release readiness](remote-transfer-readiness.md)
 
 ## From closed capture to one rename
@@ -114,11 +114,38 @@ A possibly submitted failure retires the appender while retaining the native
 outcome separately. Clean recorded uncertainty is terminal reconciliation.
 No journal error erases the already observed native call.
 
-The following file and namespace barriers and kind 9 still require the
-original matching grant and approval to be independently live again.
-The implemented kind-8 path exposes neither those barriers nor a new rename.
+The kind-8 outcome capability exposes neither subsequent barriers nor a new
+rename. Those effects require separately current admission of the exact original
+grant and matching approval, with no renewal substitution.
 [Native one-shot recording](../../crates/platform/exacopy-platform/src/linux/recovery/writer/witness_reservation/continuation/witness/publication/record.rs) ·
 [Application outcome binding](../../apps/exacopy-cli/src/assembly/linux/remote_continued/witness/publication/observation.rs)
+
+## Freshly admitted durability and kind 9
+
+A positive same-held publication with an independently confirmed kind 8 can
+attempt the four ordered barriers once: the published file, original staging
+directory, destination parent and protected job root. Native probes recheck the
+original two-link witness/target, absent private name, exact inode metadata and
+EOF, protected directories and current qualified mount. The application checks
+the original full scope and obtains a fresh guard for each barrier. A separate
+guard covers the proposed kind-9 append after all four barriers succeed.
+The canonical producer accepts only the exact positive live kind-8 predecessor;
+a historical or recovered value supplies no live capability.
+
+The appender synchronizes kind 9, independently rereads it, and confirms the
+complete semantic replay before exposing its head. Preflight refusal and an
+actual failed sync are distinct. A failed effect or uncertain append stops the
+appender while preserving the observed rename and kind-8 result. This capability
+creates no receipt and allows no repeat rename. Confirmed barriers are evidence
+under the selected native profile, not power-loss qualification.
+[Native barrier capability](../../crates/platform/exacopy-platform/src/linux/recovery/writer/witness_reservation/continuation/witness/publication/durability.rs) ·
+[Application checks](../../apps/exacopy-cli/src/assembly/linux/remote_continued/witness/publication/durability.rs)
+
+The package-owned [ext4 component profile](../../crates/platform/exacopy-platform/verification/witnessed_components_ext4/README.md)
+selects six existing lower-level tests for witness links, exclusive rename,
+barriers, reservation and exact journal append/readback. Its canonical hosted
+workflow is newly registered; execution remains pending. Its result cannot mint
+OP2 qualification, an authenticated application closeout, or receipt authority.
 
 ## Executed evidence and remaining qualification
 

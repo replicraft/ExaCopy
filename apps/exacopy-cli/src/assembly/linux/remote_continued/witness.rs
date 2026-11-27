@@ -39,7 +39,7 @@ use crate::assembly::linux::remote_witness_authority::{
 };
 
 pub(super) mod prepublication;
-mod publication;
+pub(super) mod publication;
 use publication::{LinkedPublication, WitnessModel};
 pub(super) mod zero_tail;
 
