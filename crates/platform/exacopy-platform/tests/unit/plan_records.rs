@@ -26,10 +26,11 @@ fn exclusive_create_refuses_a_detached_parent() {
 		),
 		"a detached parent must report a native creation failure"
 	);
-	assert!(
-		!detached
-			.try_exists()
-			.expect("inspect detached fixture path")
+	assert_eq!(
+		std_fs::symlink_metadata(&detached)
+			.expect_err("fixture name must remain absent")
+			.kind(),
+		ErrorKind::NotFound
 	);
 	assert_eq!(
 		std_fs::read(&incumbent).expect("read sibling fixture page"),

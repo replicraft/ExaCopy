@@ -164,10 +164,7 @@ fn held_bundle_creates_and_reuses_the_page_and_preserves_the_envelope() {
 		fs::read(&page_path).expect("read preserved page bytes"),
 		PAGE
 	);
-	assert!(
-		!output_path.exists(),
-		"page effects must leave the envelope absent"
-	);
+	assert_absent(&output_path);
 
 	let envelope = bundle
 		.create_output(OUTPUT)
@@ -264,7 +261,7 @@ fn independently_opened_bundle_rejects_foreign_pages_and_records() {
 		second.check_output(&output),
 		Err(PlanBundleError::Scope(None))
 	));
-	assert!(!fixture.output.join("pages/absent.exc").exists());
+	assert_absent(&fixture.output.join("pages/absent.exc"));
 
 	first
 		.check_page(&first_pages, existing_name, &page)
@@ -410,8 +407,18 @@ fn pages_directory_recheck_refuses_replacement_and_mode_changes() {
 		fs::read(saved.join(PAGE_NAME)).expect("read retained page"),
 		PAGE
 	);
-	assert!(!fixture.output.join(OUTPUT_NAME).exists());
+	assert_absent(&fixture.output.join(OUTPUT_NAME));
 }
 
 #[path = "linux_plan_bundle/namespace.rs"]
 mod namespace;
+
+fn assert_absent(path: &Path) {
+	assert_eq!(
+		fs::symlink_metadata(path)
+			.expect_err("fixture name must remain absent")
+			.kind(),
+		std::io::ErrorKind::NotFound,
+		"unexpected namespace entry at {path:?}",
+	);
+}

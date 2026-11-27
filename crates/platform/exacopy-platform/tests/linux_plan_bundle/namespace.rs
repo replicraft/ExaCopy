@@ -17,8 +17,8 @@ fn pages_open_refuses_an_incumbent_symlink() {
 		fs::read_link(&path).expect("observe preserved pages alias"),
 		target
 	);
-	assert!(!target.join(PAGE_NAME).exists());
-	assert!(!fixture.output.join(OUTPUT_NAME).exists());
+	assert_absent(&target.join(PAGE_NAME));
+	assert_absent(&fixture.output.join(OUTPUT_NAME));
 	fixture.assert_inputs_preserved();
 }
 
@@ -33,15 +33,15 @@ fn detached_directories_propagate_creation_errors_without_rebinding() {
 		bundle.create_page(&pages, component(PAGE_NAME), PAGE),
 		Err(PlanBundleError::Io(error)) if error.raw_os_error() == Some(Errno::NOENT.raw_os_error())
 	));
-	assert!(!path.exists());
-	assert!(!fixture.output.join(OUTPUT_NAME).exists());
+	assert_absent(&path);
+	assert_absent(&fixture.output.join(OUTPUT_NAME));
 
 	fs::remove_dir(&fixture.output).expect("detach empty bundle while its descriptor is held");
 	assert!(matches!(
 		bundle.open_pages(),
 		Err(PlanBundleError::Io(error)) if error.raw_os_error() == Some(Errno::NOENT.raw_os_error())
 	));
-	assert!(!fixture.output.exists());
+	assert_absent(&fixture.output);
 	fixture.assert_inputs_preserved();
 }
 
