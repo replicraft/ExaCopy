@@ -47,6 +47,14 @@ pub struct RenameSubmission {
 	head: Head,
 }
 
+impl RenameSubmission {
+	/// Returns the authorized head and model scope for the native submission gate.
+	#[must_use]
+	pub const fn binding(&self) -> (Head, ScopeBinding) {
+		(self.head, self.origin.scope)
+	}
+}
+
 impl Publication {
 	/// Begins after the originating live capture closed its source and writer and synchronized the stage.
 	///
