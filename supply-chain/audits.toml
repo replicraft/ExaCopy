@@ -1,6 +1,33 @@
 
 # cargo-vet audits file
 
+[[audits.aead]]
+who = "OpenAI Codex (automated dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.6.1"
+notes = """
+2026-11-27. Reviewed the complete crates.io archive SHA-256
+1973cfbc1a2daf9cf550e74e1f088c28e7f7d8c1e1418fb6c9dc5184b7e84c99,
+matching Cargo.lock and the cached crates.io index. The archive identifies
+upstream revision 3d2d90045bffc402af4edb6a5a4dbb1e217329d1.
+
+Reviewed prefix and postfix tag assembly and parsing, detached buffer
+forwarding, allocation and fixed-capacity adapters, the deprecated forwarding
+trait, optional RNG re-exports, and development helpers and tests. The library
+forbids unsafe code and the archive has no build script, proc macro, native
+code, or target-specific implementation. The dev macros consume explicit
+test fixtures and may print test vectors on failures.
+
+The adapters assume coherent Buffer lengths and successful capacity changes.
+In-place failures can leave the buffer modified. Postfix encryption mutates
+the message before trying to append its tag. Prefix encryption reserves tag
+space first, then rearranges the buffer before invoking the cipher. Nonces
+are supplied by callers and must be fresh for each encryption. Concrete
+ciphers supply tag verification and determine output on decryption failure.
+RNG implementations, cryptographic algorithms, timing and zeroization
+remain outside this exact-package source review. No compilation or execution.
+"""
+
 [[audits.anstyle]]
 who = "OpenAI Codex (dependency source review)"
 criteria = "safe-to-deploy"
@@ -555,6 +582,28 @@ checks passed. Pinned Miri passed 13 disjoint-borrow tests and two
 extraction properties. ExaCopy locks this through TOML's optional
 preserve_order path. The current workspace feature graph does not activate
 that path.
+"""
+
+[[audits.inout]]
+who = "OpenAI Codex (automated dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.2.6"
+notes = """
+2026-11-27. Reviewed the complete locked crates.io archive with SHA-256
+3a580c13f0ffc335ef42dd3f6b1a41b726051c5e1656d9a3aa6fddb3c5dfbbf9.
+The archive records RustCrypto revision d730578e69d68e185d07cb55e32eff1691133a46.
+Reviewed scalar and array views, checked slicing and iteration, Copy-only
+copy-out, XOR, and the optional block-padding path. Reserved splitting
+uses the original raw pointers with a disjoint output suffix. Detached
+padding validates input block identity and count and the output capacity.
+It retains the original input pointer and derives the output tail when
+borrowed. This includes the fix identified in GHSA-2943-gp7x-qg39.
+Raw constructors require valid, initialized, aligned regions and correct
+provenance, lifetimes and aliasing. Array casts rely on hybrid-array layout
+contracts. Callers supply nonzero supported block widths and trusted padding
+implementations. The no_std crate has no build script, proc macro, native
+code, or ambient runtime I/O. Dependency implementations are separate audit
+inputs. Source inspection only. No execution, Miri or timing qualification.
 """
 
 [[audits.itoa]]

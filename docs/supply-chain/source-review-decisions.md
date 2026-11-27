@@ -40,6 +40,16 @@ Evidence is retained in `/private/tmp/exacopy-indexmap-review.BHRJW07M`,
 
 ## Records left open
 
+The 2026-11-27 whole-package source review accepted `aead 0.6.1` and
+`inout 0.2.6`. Independent review checked all archived members against
+the locked checksums and reviewed optional features. These records cover
+the adapter and buffer contracts, without certifying concrete ciphers,
+RNGs, timing, or platform execution. No compilation or tests ran for these
+two reviews. The exact frozen Cargo Vet replay removed only their two
+missing `safe-to-deploy` entries, reducing 178 to 176. The gate still fails.
+Reports, original findings and both replay results are retained under
+`target/agent-evidence/dependency-audits-next/`.
+
 | Package | Finding or unresolved review boundary |
 | --- | --- |
 | `hax-lib-macros 0.4.2` | A native refinement fixture accepted a value contrary to its documented debug-check behavior. Selecting the debug-check opt-out instead generated a type error. The current ExaCopy range proof uses no refinement annotation. |
@@ -51,6 +61,12 @@ Evidence is retained in `/private/tmp/exacopy-indexmap-review.BHRJW07M`,
 | `serde_json 1.0.154` and `zmij 1.0.23` | The additional whole-version review was unfinished. No new audit record was issued. Existing typed CLI serialization tests are a narrower result. |
 | `proptest 1.12.0` | Source review found that a nested runner can inherit and open the outer runner's internal replay channel without selecting its own fork. The current std-only feature selection excludes that path; 13 model integration tests passed. Whole-version `safe-to-run` remains withheld pending disposition. |
 | `slab 0.4.12` | Optional Serde decoding allocates holes up to the largest map key before returning a value for caller validation. Native and Miri ownership tests passed, but the whole-version `safe-to-deploy` record remains withheld. Current locked selection uses std without Serde. Evidence: `/private/tmp/exacopy-slab-vet.CXdsE3`. |
+| `aead 0.5.2` | Optional STREAM advances its nonce position only after successful delegation; a fallible postfix tag append can fail after message mutation. The failed-call disposition remains unresolved. The inspected ExaCopy feature selection excludes STREAM. |
+| `inout 0.1.4` | Optional padding retains a mutable tail reference while reconstructing a whole-output view. The aliasing concern is a source inference; this review did not reproduce it with Miri. The inspected ExaCopy selection excludes padding for this version. |
+| `hash32 0.3.1` | Murmur3 forms references to a not-yet-fully-initialized four-byte tail. The inspected experimental WireGuard stack has no named Murmur3 or hashed-map use. No runtime activation or reproduction is claimed. |
+| `cargo-platform 0.3.3` | Runtime cfg parsing permits unbounded nesting, and identifier equality differs from derived ordering. The xtask caller's depth bound was not established. |
+| `block-padding 0.4.2` | Raw unpadding can panic on empty or oversized borrowed slices despite its fallible malformed-input API. The separately inspected fixed-width typed AES path rejects empty block lists. |
+| `const-oid 0.10.3` | Generic capacity permits an internally valid length to narrow to `u8`; runtime text parsing also permits unbounded recursive prefix zeros. The default capacity does not settle the whole-version review. |
 
 Previously withheld records, including `bitflags`, `minicbor`, `zeroize`,
 `getrandom`, `cpufeatures`, `ed25519-dalek` and Syn 2, retain their own review
