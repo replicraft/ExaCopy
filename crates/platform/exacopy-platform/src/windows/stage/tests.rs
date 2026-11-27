@@ -3,6 +3,8 @@ use std::os::windows::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use exacopy_endpoint::ReadView;
+use windows_sys::Win32::Foundation::ERROR_WRITE_FAULT;
 use windows_sys::Win32::Storage::FileSystem::{
 	FILE_ADD_FILE, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_LIST_DIRECTORY,
 	FILE_TRAVERSE,
@@ -211,25 +213,64 @@ fn partial_write_failure_retires_the_writer_without_erasing_the_prefix() {
 	let fixture = Fixture::new();
 	let parent = fixture.open();
 	let root = WindowsStageDirectory::from_authorized_handle(parent.as_handle()).unwrap();
-	let name: Vec<_> = "stage".encode_utf16().collect();
-	let mut writer = root.create(component(&name), 6).unwrap();
-	let failed = writer.write_with(0, b"abcdef", |file, offset, bytes| {
-		if offset == 0 {
-			file.seek_write(&bytes[..1], 0)
-		} else {
-			Err(io::Error::from_raw_os_error(29))
+	let write_fault = ERROR_WRITE_FAULT.cast_signed();
+	for (name, terminal_error) in [("zero-progress", None), ("write-fault", Some(write_fault))] {
+		let path = fixture.0.join(name);
+		let name: Vec<_> = name.encode_utf16().collect();
+		let mut writer = root.create(component(&name), 6).unwrap();
+		let identity = writer.identity();
+		writer.write_at(0, b"ab").unwrap();
+
+		let mut writes = [(2, b"cdef".as_slice()), (3, b"def".as_slice())].into_iter();
+		let failed = writer.write_with(2, b"cdef", |file, offset, remaining| {
+			let (expected_offset, expected_suffix) =
+				writes.next().expect("a terminal write must not retry");
+			assert_eq!(offset, expected_offset);
+			assert_eq!(remaining, expected_suffix);
+			if offset == 2 {
+				return file.seek_write(&remaining[..1], offset);
+			}
+			match terminal_error {
+				Some(code) => Err(io::Error::from_raw_os_error(code)),
+				None => Ok(0),
+			}
+		});
+		assert!(
+			writes.next().is_none(),
+			"a short write must reach the terminal call"
+		);
+		match (terminal_error, failed) {
+			(None, Err(WindowsStageError::Write(IoError::WriteZero { offset: 3 }))) => {}
+			(Some(code), Err(WindowsStageError::Write(IoError::System { offset, source }))) => {
+				assert_eq!(offset, 3);
+				assert_eq!(source.raw_os_error(), Some(code));
+			}
+			(_, result) => panic!("unexpected terminal write result: {result:?}"),
 		}
-	});
-	assert!(matches!(failed, Err(WindowsStageError::Write(_))));
-	assert!(matches!(
-		writer.write_at(0, b"abcdef"),
-		Err(WindowsStageError::WriterRetired)
-	));
-	assert!(matches!(
-		writer.finish(),
-		Err(WindowsStageError::WriterRetired)
-	));
-	assert_eq!(fs::read(fixture.0.join("stage")).unwrap(), b"a");
+		assert!(matches!(
+			writer.write_at(3, b"def"),
+			Err(WindowsStageError::WriterRetired)
+		));
+		assert!(matches!(
+			writer.sync_written_prefix(3),
+			Err(WindowsStageError::WriterRetired)
+		));
+		assert!(matches!(
+			writer.finish(),
+			Err(WindowsStageError::WriterRetired)
+		));
+
+		let retained = root
+			.inspect_retained(component(&name), identity, 3)
+			.unwrap();
+		assert_eq!(retained.identity(), identity);
+		let mut bytes = [0; 3];
+		retained.read_exact_at(0, &mut bytes).unwrap();
+		assert_eq!(&bytes, b"abc");
+		retained.recheck_observation().unwrap();
+		drop(retained);
+		assert_eq!(fs::read(path).unwrap(), b"abc");
+	}
 }
 
 #[test]

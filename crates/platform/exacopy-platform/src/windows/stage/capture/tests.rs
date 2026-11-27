@@ -1,5 +1,6 @@
 use std::fs::{self, OpenOptions};
 use std::io::Seek;
+use std::os::windows::fs::FileExt;
 
 use super::super::tests::{Fixture, component};
 use super::*;
@@ -19,7 +20,28 @@ fn capture_syncs_exact_prefix_and_reads_two_independent_views() {
 		writer.sync_written_prefix(0),
 		Err(WindowsStageError::InvalidRange)
 	));
-	writer.write_next(b"abc").unwrap();
+	let mut writes = [
+		(0, b"abc".as_slice(), Ok(())),
+		(1, b"bc".as_slice(), Err(io::ErrorKind::Interrupted)),
+		(1, b"bc".as_slice(), Ok(())),
+		(2, b"c".as_slice(), Ok(())),
+	]
+	.into_iter();
+	writer
+		.write_with(0, b"abc", |file, offset, remaining| {
+			let (expected_offset, expected_suffix, result) = writes
+				.next()
+				.expect("unexpected write after the whole prefix");
+			assert_eq!(offset, expected_offset);
+			assert_eq!(remaining, expected_suffix);
+			result?;
+			file.seek_write(&remaining[..1], offset)
+		})
+		.unwrap();
+	assert!(
+		writes.next().is_none(),
+		"the full short-write script must run"
+	);
 	assert!(matches!(
 		writer.sync_written_prefix(2),
 		Err(WindowsStageError::InvalidRange)
