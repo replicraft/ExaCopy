@@ -1,8 +1,9 @@
 # Decision: explicit genesis for one synchronization subject
 
-**Status:** Proposed. The existing [classifier](sync-classification.md)
-and P-041 are implemented. This decision defines the next read-only
-planning slice. It requires no new wire allocations or enabled commands.
+**Status:** Implemented in the experimental Linux SDK for generation-one
+publication and read-only observation. The [classifier](sync-classification.md)
+and P-041 retain their stated model scope. CLI producer activation and
+receipt-backed successor publication remain open.
 
 The [experimental Linux genesis producer](../engineering/linux-managed-sync-genesis-production.md)
 implements the private generation-one publication path under the scope and
@@ -43,9 +44,9 @@ or any incomplete observation blocks genesis and preserves both sides.
 Compare actual mode, UID and GID in the same authorized Linux ownership
 namespace. Require a regular single-link file and reject special permission
 bits. Use modification and change observations for live stability checks.
-Declare other metadata omissions explicitly. A shared future encoding must
-fix the canonical metadata projection and digest domain before use. Digest
-equality is conditional on the selected hash assumptions.
+Declare other metadata omissions explicitly. The signed Linux history format
+fixes its canonical metadata projection and digest domain. Digest equality
+is conditional on the selected hash assumptions.
 
 The seed contains one matched row, two complete present observations, a
 null predecessor, and empty transfer-action, receipt and tombstone sets.
