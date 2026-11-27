@@ -3,20 +3,22 @@
 Dispatch **CLI release** on an existing canonical `vMAJOR.MINOR.PATCH` tag
 whose commit carries this workflow and the matching Cargo CLI version.
 GitHub's dispatch API accepts a tag as the ref. The default `publish=false`
-uses an ephemeral fixture certificate on each of the three native runners.
+uses an ephemeral fixture certificate for each of the three archive targets.
 The workflow tests the generated candidate archives and keeps the unsigned
 CLI, build record, SBOM and fixture evidence as Actions artifacts. Rerun
 all jobs when retrying because downstream jobs require the same run attempt.
 
-The case for publication depends on the actual commit and artifacts. The
-current hosted matrix exercises Linux x64 on Ubuntu 22.04, macOS ARM64 on
-macOS 15 and Windows x64 on Windows Server 2025. Hosted runs retain exact
-runner versions, package verification and available native CLI smoke
-results. Release reviewers must check operation and runtime-floor evidence
-for the precise advertised profiles, including Windows install lifecycle
-and any lower OS or ABI floor. The default Windows CLI currently exercises
-an explicit-refusal profile. A signature verification pass establishes
-publisher identity and artifact integrity for the tested profile.
+The Linux x64 release-default workspace suite runs on Ubuntu 24.04 at the
+candidate tag's exact commit. The Linux GNU archive build, glibc 2.35 ABI
+check, and installed launcher checks run on Ubuntu 22.04. The release gates
+require both sets of Linux evidence. The macOS ARM64 and Windows x64 jobs
+run their workspace and archive checks on macOS 15 and Windows Server 2025,
+respectively. Hosted runs retain exact runner versions, package verification
+and available native CLI smoke results. Release reviewers must check operation
+and runtime-floor evidence for the advertised profiles, including the Windows
+install lifecycle and any lower OS or ABI floor. The default Windows CLI
+currently exercises an explicit-refusal profile. A signature verification pass
+establishes publisher identity and artifact integrity for the tested profile.
 
 ## Protected production environments
 
