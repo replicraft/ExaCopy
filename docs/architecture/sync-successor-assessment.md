@@ -2,7 +2,8 @@
 
 The pure `exacopy-model::sync_successor` guard assesses one explicitly approved
 create-new action. This is a partial source slice of R-272 and INV-026. Its ten
-synthetic regressions await hosted execution. It returns an advisory generation;
+synthetic regressions passed in the `8c1a311` hosted coverage run. The exact
+coverage inventory registration still awaits verification. It returns an advisory generation;
 baseline persistence, pointer activation, native qualification, A-272 restart
 reconciliation and P-028 publication barriers remain open.
 
