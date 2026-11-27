@@ -34,6 +34,8 @@ const LOCAL_NTFS: &str = "local-ntfs";
 mod public_stage;
 #[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
 mod remote;
+#[cfg(all(target_os = "linux", feature = "experimental-verified-prefix-resume"))]
+mod remote_inspect_witness;
 #[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
 mod sync_managed;
 mod sync_preview;
@@ -227,6 +229,8 @@ fn recovery_commands() -> Cli {
 	let cli = cli.subcommand(public_stage::definition());
 	#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
 	let cli = cli.subcommand(remote::resume_subcommand());
+	#[cfg(all(target_os = "linux", feature = "experimental-verified-prefix-resume"))]
+	let cli = cli.subcommand(remote_inspect_witness::definition());
 	cli
 }
 
@@ -345,6 +349,10 @@ fn frame_operands(
 }
 
 fn is_path_option(_command: &str, arg: &OsStr) -> bool {
+	#[cfg(all(target_os = "linux", feature = "experimental-verified-prefix-resume"))]
+	if _command == remote_inspect_witness::NAME {
+		return remote_inspect_witness::is_path_option(arg);
+	}
 	#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
 	if remote::is_remote(_command) {
 		return remote::is_path_option(arg);
@@ -452,6 +460,8 @@ fn recovery_command(mut command: ArgMatches) -> Option<Command> {
 	let action = match name.as_str() {
 		#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
 		remote::REMOTE_RESUME => return remote::resume(&mut args),
+		#[cfg(all(target_os = "linux", feature = "experimental-verified-prefix-resume"))]
+		remote_inspect_witness::NAME => return remote_inspect_witness::command(&mut args),
 		#[cfg(all(target_os = "linux", feature = "experimental-linux-public-apply"))]
 		public_stage::NAME => return public_stage::command(&mut args),
 		INSPECT => RecoveryAction::Inspect,

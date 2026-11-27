@@ -34,6 +34,8 @@ mod recovery_report;
 mod remote;
 #[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
 mod remote_frontdoor;
+#[cfg(all(target_os = "linux", feature = "experimental-verified-prefix-resume"))]
+mod remote_inspect_witness;
 #[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
 mod remote_report;
 mod report;

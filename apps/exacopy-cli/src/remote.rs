@@ -22,7 +22,7 @@ use crate::remote_report::{RemoteFailureKind as Failure, RemoteJob, RemoteOutcom
 
 mod interrupt;
 mod outcome;
-mod qualification;
+pub(crate) mod qualification;
 mod resume;
 mod retry;
 mod selection;

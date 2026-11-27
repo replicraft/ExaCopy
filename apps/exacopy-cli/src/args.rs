@@ -27,6 +27,8 @@ pub(crate) enum Command {
 	},
 	Verify(VerifyCommand),
 	Recover(RecoveryCommand),
+	#[cfg(all(target_os = "linux", feature = "experimental-verified-prefix-resume"))]
+	RemoteInspectWitness(RemoteInspectWitnessCommand),
 	#[cfg(all(target_os = "linux", feature = "experimental-linux-public-apply"))]
 	InspectPublicStage(PublicStageInspectCommand),
 	#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
@@ -103,6 +105,17 @@ pub(crate) struct VerifyCommand {
 pub(crate) struct PublicStageInspectCommand {
 	pub(crate) job: PathBuf,
 	pub(crate) owner_key: [u8; 32],
+	pub(crate) format: Format,
+}
+
+#[cfg(all(target_os = "linux", feature = "experimental-verified-prefix-resume"))]
+pub(crate) struct RemoteInspectWitnessCommand {
+	pub(crate) job: PathBuf,
+	pub(crate) selection_report: PathBuf,
+	pub(crate) destination_qualification: PathBuf,
+	pub(crate) qualification_trust: PathBuf,
+	pub(crate) continuation_qualification: PathBuf,
+	pub(crate) continuation_trust: PathBuf,
 	pub(crate) format: Format,
 }
 

@@ -82,6 +82,12 @@ pub fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
 			&mut stdout,
 			&mut stderr,
 		)),
+		#[cfg(all(target_os = "linux", feature = "experimental-verified-prefix-resume"))]
+		Command::RemoteInspectWitness(command) => ExitCode::from(crate::remote_inspect_witness::run(
+			&command,
+			&mut stdout,
+			&mut stderr,
+		)),
 		Command::Recover(recovery) => {
 			let outcome = execute_recovery(&recovery);
 			match outcome.write(recovery.format, &mut stdout, &mut stderr) {

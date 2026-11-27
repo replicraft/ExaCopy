@@ -34,8 +34,7 @@ impl Qualification {
 		if options.destination_qualification == options.qualification_trust {
 			return Err(Failure::InvalidRequest);
 		}
-		let selection = read_bounded::<MAX_TRUST_BYTES>(&options.qualification_trust)?;
-		let trust = SelectedTrust::decode(&selection)?;
+		let trust = SelectedTrust::load_v1(&options.qualification_trust)?;
 		if trust.scope.route != route
 			|| measure_running_executable().map_err(|_| Failure::Authorization)?
 				!= trust.scope.build
@@ -77,7 +76,7 @@ impl Qualification {
 	}
 }
 
-pub(super) fn read_bounded<const MAX: usize>(path: &Path) -> Result<Vec<u8>, Failure> {
+pub(crate) fn read_bounded<const MAX: usize>(path: &Path) -> Result<Vec<u8>, Failure> {
 	let mut bytes = vec![0; MAX];
 	let mut readback = [0; 1024];
 	let length = read_protected_snapshot_into(path, &mut bytes, &mut readback)
@@ -86,19 +85,24 @@ pub(super) fn read_bounded<const MAX: usize>(path: &Path) -> Result<Vec<u8>, Fai
 	Ok(bytes)
 }
 
-pub(super) struct SelectedTrust {
-	pub(super) attestor: [u8; 16],
-	pub(super) key: VerifyingKey,
-	pub(super) scope: RemoteQualificationScope,
+pub(crate) struct SelectedTrust {
+	pub(crate) attestor: [u8; 16],
+	pub(crate) key: VerifyingKey,
+	pub(crate) scope: RemoteQualificationScope,
 }
 
 impl SelectedTrust {
+	pub(crate) fn load_v1(path: &Path) -> Result<Self, Failure> {
+		let bytes = read_bounded::<MAX_TRUST_BYTES>(path)?;
+		Self::decode(&bytes)
+	}
+
 	fn decode(bytes: &[u8]) -> Result<Self, Failure> {
 		Self::decode_selection(bytes, Schema::V1)
 	}
 
 	#[cfg(feature = "experimental-verified-prefix-resume")]
-	pub(super) fn load_witness(path: &Path) -> Result<Self, Failure> {
+	pub(crate) fn load_witness(path: &Path) -> Result<Self, Failure> {
 		let bytes = read_bounded::<MAX_TRUST_BYTES>(path)?;
 		Self::decode_selection(&bytes, Schema::Witness)
 	}
