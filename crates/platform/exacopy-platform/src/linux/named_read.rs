@@ -30,6 +30,12 @@ impl<'root> NamedReadView<'root> {
 	pub fn identity(&self) -> FileIdentity {
 		self.file.identity()
 	}
+
+	pub(super) fn recheck_named_observation(&self) -> Result<SourceObservation, ReadError> {
+		self.root.recheck_regular_name(self.name, &self.file)?;
+		ReadView::recheck_observation(&self.file)?;
+		self.root.recheck_named_observation(self.name, &self.file)
+	}
 }
 
 impl ReadView for NamedReadView<'_> {
@@ -40,9 +46,7 @@ impl ReadView for NamedReadView<'_> {
 	}
 
 	fn recheck_observation(&self) -> Result<(), ReadError> {
-		self.root.recheck_regular_name(self.name, &self.file)?;
-		ReadView::recheck_observation(&self.file)?;
-		self.root.recheck_regular_name(self.name, &self.file)
+		self.recheck_named_observation().map(|_| ())
 	}
 
 	fn read_exact_at(&self, offset: u64, buffer: &mut [u8]) -> Result<(), ReadError> {

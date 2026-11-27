@@ -16,7 +16,7 @@ use super::{
 };
 use crate::linux::handle::mount_id;
 use crate::linux::mount_observation::ProcMounts;
-use crate::linux::source::SourceTimestamp;
+use crate::linux::source::{SourceObservation, SourceTimestamp};
 
 mod credentials;
 mod error;
@@ -264,6 +264,17 @@ pub struct ManagedSyncPreviewPair<'view, 'selection> {
 	pair: SyncPreviewPair<'view, 'selection>,
 }
 
+/// Current scope and freshly rechecked regular subjects from the same held pair.
+#[derive(Debug)]
+pub struct ManagedSyncSubjectRecheck<'selection> {
+	/// The exact leased basename.
+	pub subject: UnixComponent<'selection>,
+	/// Fresh native root facts in left, right order.
+	pub roots: [SyncHistoryLocation<'selection>; 2],
+	/// Fresh stat observations for present regular files, in the same order.
+	pub subjects: [Option<SourceObservation>; 2],
+}
+
 impl<'view, 'selection> ManagedSyncPreviewPair<'view, 'selection> {
 	pub(in crate::linux) fn held_roots(&self) -> &SyncPreviewRoots<'selection> {
 		self.lease.roots
@@ -288,11 +299,26 @@ impl<'view, 'selection> ManagedSyncPreviewPair<'view, 'selection> {
 		),
 		ManagedSyncError,
 	> {
+		let observed = self.recheck_history_subjects()?;
+		Ok((observed.subject, observed.roots))
+	}
+
+	/// Returns fresh observations from the existing managed history scope and subject checks.
+	///
+	/// # Errors
+	/// Refuses changed or incomplete evidence for the original held pair.
+	pub fn recheck_history_subjects(
+		&self,
+	) -> Result<ManagedSyncSubjectRecheck<'selection>, ManagedSyncError> {
 		self.lease.recheck_roots()?;
-		self.pair.recheck()?;
+		let subjects = self.pair.recheck_subjects()?;
 		self.lease.check_subject_owners(&self.pair)?;
-		let facts = self.lease.recheck_roots()?;
-		Ok((self.lease.scope.subject, facts))
+		let roots = self.lease.recheck_roots()?;
+		Ok(ManagedSyncSubjectRecheck {
+			subject: self.lease.scope.subject,
+			roots,
+			subjects,
+		})
 	}
 }
 

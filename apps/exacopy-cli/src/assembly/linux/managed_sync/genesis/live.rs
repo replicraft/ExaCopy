@@ -1,10 +1,11 @@
+use exacopy_endpoint::UnixComponent;
 use exacopy_endpoint::linux_staging::StagingSource as _;
 use exacopy_plan::workflow_sync::WorkflowTimestamp;
 use exacopy_platform::linux::{
-	ManagedSyncPreviewPair, NamedReadView, SourceObservation, SyncPreviewEntry,
+	ManagedSyncPreviewPair, NamedReadView, SourceObservation, SyncHistoryLocation, SyncPreviewEntry,
 };
 use exacopy_transfer::linux::sync_genesis_measurement::{
-	GenesisFileFacts, GenesisInput, HeldGenesisPair,
+	GenesisFileFacts, GenesisInput, GenesisPairRecheck, HeldGenesisPair,
 };
 use exacopy_transfer::linux::sync_preview::LiveSyncSelection;
 
@@ -37,10 +38,35 @@ impl<'view> HeldGenesisPair for LiveGenesisPair<'_, 'view, '_> {
 	}
 
 	fn recheck_selection(&self) -> Result<LiveSyncSelection<'_>, Self::Error> {
-		let (subject, [left_actual, right_actual]) = self
+		let (subject, roots) = self
 			.pair
 			.recheck_history_location()
 			.map_err(ManagedSyncPreviewError::Managed)?;
+		self.selection(subject, roots)
+	}
+
+	fn recheck_subjects(&self) -> Result<GenesisPairRecheck<'_>, Self::Error> {
+		let current = self
+			.pair
+			.recheck_history_subjects()
+			.map_err(ManagedSyncPreviewError::Managed)?;
+		let [left, right] = current.subjects;
+		Ok(GenesisPairRecheck {
+			selection: self.selection(current.subject, current.roots)?,
+			files: [
+				left.map(collect).transpose()?,
+				right.map(collect).transpose()?,
+			],
+		})
+	}
+}
+
+impl LiveGenesisPair<'_, '_, '_> {
+	fn selection<'name>(
+		&'name self,
+		subject: UnixComponent<'name>,
+		[left_actual, right_actual]: [SyncHistoryLocation<'name>; 2],
+	) -> Result<LiveSyncSelection<'name>, ManagedSyncPreviewError> {
 		let [left, right] = self.expected.endpoints;
 		Ok(LiveSyncSelection {
 			subject,

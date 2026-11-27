@@ -180,6 +180,14 @@ impl ReadRoot {
 		name: UnixComponent<'_>,
 		source: &SourceFile,
 	) -> Result<(), ReadError> {
+		self.recheck_named_observation(name, source).map(|_| ())
+	}
+
+	pub(super) fn recheck_named_observation(
+		&self,
+		name: UnixComponent<'_>,
+		source: &SourceFile,
+	) -> Result<SourceObservation, ReadError> {
 		let named = match self.pin_name(name) {
 			Ok(named) => named,
 			Err(Errno::NOENT | Errno::LOOP | Errno::XDEV) => {
@@ -191,9 +199,9 @@ impl ReadRoot {
 		if FileIdentity::from_stat(&stat) != source.identity() {
 			return Err(ReadError::IdentityChanged);
 		}
-		source
-			.observation
-			.recheck(SourceObservation::capture(&stat)?)
+		let current = SourceObservation::capture(&stat)?;
+		source.observation.recheck(current)?;
+		Ok(current)
 	}
 
 	fn pin_name(&self, name: UnixComponent<'_>) -> Result<OwnedFd, Errno> {

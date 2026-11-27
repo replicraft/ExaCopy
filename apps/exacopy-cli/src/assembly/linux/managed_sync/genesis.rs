@@ -17,10 +17,7 @@ use exacopy_transfer::linux::sync_genesis_measurement::{
 	GenesisMeasureFailure, HeldGenesisPair, measure_genesis_pair,
 };
 use exacopy_transfer::linux::sync_preview::LiveSyncSelection;
-use exacopy_transfer::sync_genesis::{
-	ExpectedSyncGenesis, SyncGenesisError, SyncGenesisRecords, SyncGenesisSelection,
-	assemble_sync_genesis,
-};
+use exacopy_transfer::sync_genesis::{ExpectedSyncGenesis, SyncGenesisError, SyncGenesisRecords};
 use zeroize::Zeroizing;
 
 use crate::profile::profile_id_for_key;
@@ -198,17 +195,8 @@ pub fn produce_managed_genesis(
 	let output = SyncGenesisOutput::open(request.output_parent, request.output_identity)
 		.map_err(Scope::Store)
 		.map_err(Failure::Scope)?;
-	let measured =
-		measure_genesis_pair(&current, expected, scratch).map_err(Failure::Measurement)?;
-	let selection = measured.selection();
-	let scope = SyncGenesisSelection {
-		profile: selection.profile,
-		revision: selection.revision,
-		owner: &owner,
-		subject: selection.subject,
-		endpoints: selection.endpoints,
-		scan: request.scan,
-	};
+	let measured = measure_genesis_pair(&current, expected, request.scan, scratch)
+		.map_err(Failure::Measurement)?;
 	let mut seed_check = Zeroizing::new([0; OWNER_SEED_BYTES]);
 	let mut seed_eof = Zeroizing::new([0; 1]);
 	let mut recheck = || -> Result<(), Failure> {
@@ -220,7 +208,8 @@ pub fn produce_managed_genesis(
 		approval.recheck()
 	};
 	recheck()?;
-	let assembled = assemble_sync_genesis(scope, request.records, *measured.sides(), &signer)
+	let assembled = measured
+		.assemble(request.records, &signer)
 		.map_err(Failure::Artifact)?;
 	let root = WorkflowRef {
 		digest: assembled.root_digest(),
@@ -241,14 +230,15 @@ pub fn produce_managed_genesis(
 			binding(children[2], members[3])?,
 		],
 	};
+	let selection = measured.selection();
 	let historical = ExpectedSyncGenesis {
 		root_digest: root.digest,
-		profile: scope.profile,
-		revision: scope.revision,
-		owner: scope.owner,
-		subject: scope.subject,
-		endpoints: scope.endpoints,
-		scan: Some(scope.scan),
+		profile: selection.profile,
+		revision: selection.revision,
+		owner: &owner,
+		subject: selection.subject,
+		endpoints: selection.endpoints,
+		scan: Some(measured.scan()),
 	};
 	let enter = |effect: SyncGenesisEffectRequest<'_>| {
 		if effect.intent != &intent

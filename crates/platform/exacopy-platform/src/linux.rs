@@ -94,5 +94,5 @@ pub use sync_preview::{
 #[cfg(feature = "experimental-linux-managed-sync")]
 pub use sync_preview::{
 	ManagedSyncError, ManagedSyncExpectedObject, ManagedSyncExpectedRoot, ManagedSyncNativeScope,
-	ManagedSyncPreviewPair, ManagedSyncReadLease,
+	ManagedSyncPreviewPair, ManagedSyncReadLease, ManagedSyncSubjectRecheck,
 };

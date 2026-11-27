@@ -2,12 +2,14 @@
 
 use core::{fmt, num::NonZeroU64};
 
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use exacopy_content::MAX_SCRATCH_BYTES;
 use exacopy_endpoint::ReadView;
 use exacopy_manifest::sync_baseline::{
 	Identity, LeafError, LinuxOwnerMode, Observation, SideEvidence,
 };
 use exacopy_model::SyncSide;
+use exacopy_model::sync_genesis::GenesisRefusal;
 use exacopy_plan::workflow_sync::{
 	EndpointFacts, LinuxStability, NativeObject, WorkflowError, WorkflowTimestamp,
 	linux_stability_digest, native_id, project_pair,
@@ -15,6 +17,12 @@ use exacopy_plan::workflow_sync::{
 
 use super::sync_preview::{LiveSyncSelection, MAX_PREVIEW_FILE_BYTES};
 use crate::manifest;
+use crate::sync_genesis::{
+	AssembledSyncGenesis, SyncGenesisError, SyncGenesisRecords, SyncGenesisSelection,
+	assemble_sync_genesis,
+};
+
+mod model_admission;
 
 #[cfg(test)]
 mod tests;
@@ -26,7 +34,7 @@ const RIGHT_READ: NonZeroU64 = NonZeroU64::new(2).unwrap();
 const FINAL_PAIR: NonZeroU64 = NonZeroU64::new(3).unwrap();
 
 /// Actual native facts captured from the same held file as the data view.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GenesisFileFacts {
 	/// Held file device and inode.
 	pub object: NativeObject,
@@ -62,6 +70,15 @@ pub enum GenesisInput<'view, R> {
 	Unsupported,
 }
 
+/// Fresh rooted observations sampled by one check of the same held pair.
+#[derive(Clone, Copy, Debug)]
+pub struct GenesisPairRecheck<'name> {
+	/// Current scope including the freshly verified root locations.
+	pub selection: LiveSyncSelection<'name>,
+	/// Fresh native regular-file facts in left, right order.
+	pub files: [Option<GenesisFileFacts>; 2],
+}
+
 /// Ordered observations under one independently admitted, continuously held managed lease.
 ///
 /// The production adapter must retain the actual managed read lease and both original
@@ -81,6 +98,12 @@ pub trait HeldGenesisPair {
 	/// # Errors
 	/// Reports any failed, changed or incomplete observation or scope check.
 	fn recheck_selection(&self) -> Result<LiveSyncSelection<'_>, Self::Error>;
+
+	/// Rechecks the original pair and returns the fresh observations from those checks.
+	///
+	/// # Errors
+	/// Reports any failed, changed or incomplete observation or scope check.
+	fn recheck_subjects(&self) -> Result<GenesisPairRecheck<'_>, Self::Error>;
 }
 
 /// Why exact held observations could not establish a genesis measurement.
@@ -111,6 +134,8 @@ pub enum GenesisMeasureFailure<R, P> {
 	Measure(SyncSide, manifest::Error<R>),
 	/// The held pair could not be revalidated.
 	Pair(P),
+	/// The completed and independently rechecked observations failed model admission.
+	Admission(GenesisRefusal),
 }
 
 impl<R: fmt::Display, P: fmt::Display> fmt::Display for GenesisMeasureFailure<R, P> {
@@ -141,6 +166,9 @@ impl<R: fmt::Display, P: fmt::Display> fmt::Display for GenesisMeasureFailure<R,
 				"{side:?} synchronization genesis measurement failed ({error})"
 			),
 			Self::Pair(error) => write!(f, "synchronization genesis pair recheck failed ({error})"),
+			Self::Admission(refusal) => {
+				write!(f, "synchronization genesis evidence refused ({refusal:?})")
+			}
 		}
 	}
 }
@@ -167,6 +195,7 @@ impl<R: std::error::Error + 'static, P: std::error::Error + 'static> std::error:
 pub struct MeasuredGenesisPair<'held, P> {
 	pair: &'held P,
 	selection: LiveSyncSelection<'held>,
+	scan: NonZeroU64,
 	sides: [SideEvidence; 2],
 }
 
@@ -180,6 +209,35 @@ impl<'held, P: HeldGenesisPair> MeasuredGenesisPair<'held, P> {
 	#[must_use]
 	pub const fn selection(&self) -> LiveSyncSelection<'held> {
 		self.selection
+	}
+
+	/// The scan selected before either read.
+	#[must_use]
+	pub const fn scan(&self) -> NonZeroU64 {
+		self.scan
+	}
+
+	/// Assembles an immutable P-063 closure from this held, model-admitted scan.
+	///
+	/// # Errors
+	/// Refuses a mismatching signer, invalid records or failed closure verification.
+	pub fn assemble(
+		&self,
+		records: SyncGenesisRecords,
+		signer: &SigningKey,
+	) -> Result<AssembledSyncGenesis, SyncGenesisError> {
+		let live = self.selection;
+		let owner =
+			VerifyingKey::from_bytes(&live.owner_key).map_err(|_| SyncGenesisError::Signature)?;
+		let selection = SyncGenesisSelection {
+			profile: live.profile,
+			revision: live.revision,
+			owner: &owner,
+			subject: live.subject,
+			endpoints: live.endpoints,
+			scan: self.scan,
+		};
+		assemble_sync_genesis(selection, records, self.sides, signer)
 	}
 
 	/// Left and right evidence from two independent full reads and a final pair recheck.
@@ -208,6 +266,7 @@ impl<'held, P: HeldGenesisPair> MeasuredGenesisPair<'held, P> {
 pub fn measure_genesis_pair<'held, P: HeldGenesisPair>(
 	pair: &'held P,
 	expected: LiveSyncSelection<'_>,
+	scan: NonZeroU64,
 	scratch: &mut [u8],
 ) -> Result<MeasuredGenesisPair<'held, P>, GenesisPairError<P>> {
 	use GenesisMeasureFailure as Failure;
@@ -245,11 +304,33 @@ pub fn measure_genesis_pair<'held, P: HeldGenesisPair>(
 	if left.metadata != right.metadata {
 		return Err(Failure::MetadataMismatch);
 	}
-	check_selection(pair, selection)?;
+	let final_pair = pair.recheck_subjects().map_err(Failure::Pair)?;
+	if final_pair.selection != selection {
+		return Err(Failure::Selection);
+	}
+	let [Some(left_final), Some(right_final)] = final_pair.files else {
+		return Err(Failure::Admission(GenesisRefusal::StaleRecheck));
+	};
+	let reads = [left, right];
+	let final_files = [left_final, right_final];
+	model_admission::admit(
+		[expected, selection, final_pair.selection],
+		projection.policy,
+		scan,
+		&reads,
+		final_files,
+	)
+	.map_err(Failure::Admission)?;
+	let [left, right] = reads;
+	let [left_root, right_root] = final_pair.selection.endpoints;
 	Ok(MeasuredGenesisPair {
 		pair,
 		selection,
-		sides: [left, right].map(CompletedRead::confirm),
+		scan,
+		sides: [
+			left.confirm(left_root, left_final),
+			right.confirm(right_root, right_final),
+		],
 	})
 }
 
@@ -334,16 +415,7 @@ impl<R: ReadView> AdmittedFile<'_, R> {
 			.metadata
 			.digest()
 			.map_err(|error| Failure::Metadata(side, error))?;
-		let stability = linux_stability_digest(LinuxStability {
-			file: self.identity.file,
-			length: stream.length,
-			mode: facts.native_mode,
-			uid: facts.uid,
-			gid: facts.gid,
-			links: facts.links,
-			modified: facts.modified,
-			changed: facts.changed,
-		});
+		let stability = stability_digest(self.identity.file, facts);
 		let measured = Observation {
 			identity: self.identity,
 			position: read_position,
@@ -351,6 +423,7 @@ impl<R: ReadView> AdmittedFile<'_, R> {
 		};
 		Ok(CompletedRead {
 			measured,
+			facts,
 			stream,
 			metadata: self.metadata,
 			metadata_digest,
@@ -358,21 +431,39 @@ impl<R: ReadView> AdmittedFile<'_, R> {
 	}
 }
 
+fn stability_digest(file: [u8; 32], facts: GenesisFileFacts) -> [u8; 32] {
+	linux_stability_digest(LinuxStability {
+		file,
+		length: facts.length,
+		mode: facts.native_mode,
+		uid: facts.uid,
+		gid: facts.gid,
+		links: facts.links,
+		modified: facts.modified,
+		changed: facts.changed,
+	})
+}
+
 struct CompletedRead {
 	measured: Observation,
+	facts: GenesisFileFacts,
 	stream: manifest::Measurement,
 	metadata: LinuxOwnerMode,
 	metadata_digest: [u8; 32],
 }
 
 impl CompletedRead {
-	fn confirm(self) -> SideEvidence {
+	fn confirm(self, endpoint: EndpointFacts<'_>, facts: GenesisFileFacts) -> SideEvidence {
+		let identity = Identity {
+			root: native_id(endpoint.location.boot, endpoint.location.root),
+			file: native_id(endpoint.location.boot, facts.object),
+		};
 		SideEvidence {
 			measured: self.measured,
-			// One successful pair event confirms both original native stamps.
 			rechecked: Observation {
+				identity,
 				position: FINAL_PAIR,
-				..self.measured
+				stability: stability_digest(identity.file, facts),
 			},
 			length: self.stream.length,
 			stream_digest: self.stream.digest,

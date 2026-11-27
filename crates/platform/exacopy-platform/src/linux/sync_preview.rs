@@ -12,7 +12,7 @@ use rustix::fs::{self, FileType, Mode, OFlags, ResolveFlags, Stat};
 use rustix::io::Errno;
 
 use super::handle::{FileIdentity, mount_id};
-use super::{MountObservations, NamedReadView, ReadError, ReadRoot};
+use super::{MountObservations, NamedReadView, ReadError, ReadRoot, SourceObservation};
 
 const DIRECTORY_FLAGS: OFlags = OFlags::PATH.union(OFlags::DIRECTORY).union(OFlags::CLOEXEC);
 const NO_LINKS: ResolveFlags = ResolveFlags::NO_SYMLINKS.union(ResolveFlags::NO_MAGICLINKS);
@@ -40,7 +40,7 @@ pub(in crate::linux) use history_scope::unique_mount_id;
 #[cfg(feature = "experimental-linux-managed-sync")]
 pub use managed::{
 	ManagedSyncError, ManagedSyncExpectedObject, ManagedSyncExpectedRoot, ManagedSyncNativeScope,
-	ManagedSyncPreviewPair, ManagedSyncReadLease,
+	ManagedSyncPreviewPair, ManagedSyncReadLease, ManagedSyncSubjectRecheck,
 };
 #[cfg(feature = "experimental-linux-managed-sync")]
 pub(in crate::linux) use namespaces::HeldNamespaces;
@@ -303,15 +303,21 @@ impl<'view> SyncPreviewPair<'view, '_> {
 	/// # Errors
 	/// Refuses changed names, unavailable observations or files that changed after selection.
 	pub fn recheck(&self) -> Result<(), SyncPreviewError> {
+		self.recheck_subjects().map(|_| ())
+	}
+
+	fn recheck_subjects(&self) -> Result<[Option<SourceObservation>; 2], SyncPreviewError> {
 		use exacopy_endpoint::ReadView as _;
 
 		self.roots.recheck_scope()?;
-		for (root, entry) in self.roots.roots.iter().zip(&self.entries) {
+		let mut observed = [None; 2];
+		let entries = self.roots.roots.iter().zip(&self.entries);
+		for ((root, entry), current) in entries.zip(&mut observed) {
 			match entry {
 				HeldEntry::Present(view) => {
 					view.recheck_observation()?;
 					names::confirm(root.directory(), self.subject, Some(view.identity()))?;
-					view.recheck_observation()?;
+					*current = Some(view.recheck_named_observation()?);
 				}
 				HeldEntry::Absent if pin(root, self.subject)?.is_none() => {}
 				HeldEntry::Unsupported { pin: held, stamp } => {
@@ -325,7 +331,8 @@ impl<'view> SyncPreviewPair<'view, '_> {
 				HeldEntry::Absent => return Err(SyncPreviewError::Changed),
 			}
 		}
-		self.roots.recheck_scope()
+		self.roots.recheck_scope()?;
+		Ok(observed)
 	}
 }
 

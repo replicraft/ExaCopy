@@ -123,3 +123,29 @@ fn a_bounded_directory_scan_cannot_certify_absence_when_exhausted() {
 		Err(SyncPreviewError::DirectoryLimit)
 	));
 }
+
+#[test]
+fn recheck_returns_ordered_fresh_present_stats_and_refuses_a_rebound_subject() {
+	let fixture = Fixture::new();
+	let left_path = fixture.0.join("left/file");
+	let right_path = fixture.0.join("right/file");
+	fs::write(&left_path, b"left").unwrap();
+	fs::write(&right_path, b"right").unwrap();
+	let roots = fixture.roots();
+	let pair = roots.observe(component(b"file")).unwrap();
+
+	let [left, right] = pair.recheck_subjects().unwrap();
+	for (fact, path) in [(left, &left_path), (right, &right_path)] {
+		let stat = fs::File::open(path).unwrap();
+		let stat = rustix::fs::fstat(stat).unwrap();
+		assert_eq!(fact, Some(SourceObservation::capture(&stat).unwrap()));
+	}
+
+	fs::rename(&right_path, fixture.0.join("right/retained")).unwrap();
+	fs::write(&right_path, b"right").unwrap();
+	assert!(matches!(
+		pair.recheck_subjects(),
+		Err(SyncPreviewError::Changed)
+	));
+	assert!(matches!(pair.recheck(), Err(SyncPreviewError::Changed)));
+}

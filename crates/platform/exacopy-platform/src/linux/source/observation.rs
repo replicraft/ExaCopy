@@ -116,7 +116,7 @@ impl SourceObservation {
 		self.link_count
 	}
 
-	/// The access time before adapter data reads.
+	/// The access time at this observation.
 	#[must_use]
 	pub fn accessed_at(&self) -> SourceTimestamp {
 		self.accessed_at
