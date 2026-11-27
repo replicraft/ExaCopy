@@ -22,6 +22,7 @@ SOURCES = frozenset((
     "crates/foundation/exacopy-model/src/retained_prefix/budget.rs",
     "crates/foundation/exacopy-model/src/sync.rs",
     "crates/foundation/exacopy-model/src/sync_genesis.rs",
+    "crates/foundation/exacopy-model/src/sync_successor.rs",
     "crates/foundation/exacopy-model/src/transaction.rs",
     "crates/foundation/exacopy-model/src/witnessed_publication.rs",
     "crates/foundation/exacopy-model/src/witnessed_publication/state.rs",

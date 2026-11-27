@@ -67,7 +67,7 @@ class ModelCoverageControls(unittest.TestCase):
     def test_full_and_summary_exports_accept_exact_thresholds(self):
         report = coverage.parse_report(json.dumps(export()))
         totals = coverage.validate(report, WORKSPACE)
-        self.assertEqual(totals, {"lines": (1400, 1330), "branches": (1300, 1170)})
+        self.assertEqual(totals, {"lines": (1500, 1425), "branches": (1400, 1260)})
         self.assertEqual(coverage.shortfalls(totals), [])
         dataset = report["data"][0]
         del dataset["functions"]
