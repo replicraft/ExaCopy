@@ -1,3 +1,6 @@
+#[path = "../../../../../tests/unit/recovery_resume_stage.rs"]
+mod recovery_resume_stage;
+
 use std::fs::{self, File, FileTimes, Permissions};
 use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 use std::path::PathBuf;

@@ -10,6 +10,9 @@ use exacopy_model::retained_prefix::{
 use super::{Fixture, PREFIX, ReadView, StageError, fs, inventory, selection};
 use crate::linux::{SuffixEffect, SuffixError};
 
+#[path = "../../../../../tests/unit/linux_recovery_retained_suffix.rs"]
+mod linux_recovery_retained_suffix;
+
 fn nonzero(value: u64) -> NonZeroU64 {
 	NonZeroU64::new(value).unwrap()
 }

@@ -1,3 +1,6 @@
+#[path = "../../../../../tests/unit/recovery_fresh_stage.rs"]
+mod recovery_fresh_stage;
+
 use std::fs;
 use std::os::unix::fs::{PermissionsExt as _, symlink};
 use std::path::PathBuf;

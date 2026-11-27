@@ -19,6 +19,9 @@ use crate::linux::{
 };
 use crate::scratch::Scratch;
 
+#[path = "../../../../../tests/unit/linux/recovery/retained.rs"]
+mod retained_coverage;
+
 const JOB: &str = "retained-recovery-job";
 const PART: &str = "verified-stage";
 const TARGET: &str = "public-target";

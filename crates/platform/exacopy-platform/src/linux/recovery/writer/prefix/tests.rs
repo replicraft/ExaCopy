@@ -12,6 +12,9 @@ use crate::linux::job::STAGE;
 use crate::linux::{DestinationRoot, RecoveryInventory, RecoveryWriteLease, StageError};
 use crate::scratch::Scratch;
 
+#[path = "../../../../../tests/unit/linux_recovery_retained_prefix.rs"]
+mod linux_recovery_retained_prefix;
+
 const JOB: &str = "prefix-fixture-job";
 const NAME: &[u8] = b"capture-\xff";
 const TARGET: &[u8] = b"selected-target";
