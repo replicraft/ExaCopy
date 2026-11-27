@@ -3,12 +3,19 @@ use std::sync::atomic::Ordering;
 use exacopy_endpoint::ssh_sftp::SftpVersionError;
 use exacopy_ssh::{Error, Password, connect};
 
-use super::peer::{SECRET, authority, fixture_trust, peer_with_sftp_version};
+use super::peer::{SECRET, authority, configured_peer, fixture_trust};
 
 #[tokio::test]
 async fn an_unsupported_sftp_version_cannot_create_a_read_only_session() {
 	const UNSUPPORTED_VERSION: u32 = 4;
-	let (stream, pin, calls) = peer_with_sftp_version(UNSUPPORTED_VERSION);
+	let (stream, pin, calls, _) = configured_peer(
+		true,
+		false,
+		russh::server::Config::default().limits.rekey_time_limit,
+		None,
+		None,
+		UNSUPPORTED_VERSION,
+	);
 	let target = authority("transfer");
 	let result = connect(
 		stream,

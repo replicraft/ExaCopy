@@ -419,21 +419,7 @@ pub(super) fn generated_peer(
 	(stream, fingerprint, calls)
 }
 
-pub(super) fn peer_with_sftp_version(
-	version: u32,
-) -> (DuplexStream, HostKeyFingerprint, Arc<Calls>) {
-	let (stream, pin, calls, _) = configured_peer(
-		true,
-		false,
-		server::Config::default().limits.rekey_time_limit,
-		None,
-		None,
-		version,
-	);
-	(stream, pin, calls)
-}
-
-fn configured_peer(
+pub(super) fn configured_peer(
 	subsystem: bool,
 	early_eof: bool,
 	rekey_time_limit: Duration,
