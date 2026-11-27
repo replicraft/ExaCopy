@@ -135,9 +135,7 @@ The retained OpenSSH `get` transcript ends at SFTP session start. The
 reports leave the origin of the later TX increments undetermined. The
 Azure run confirmed client drain and fixture and marker removal. All
 14 outer report commitments verified. Both native runs used synthetic
-authority. Complete embedded commissioning, including the remaining
-no-fallback and carrier-down controls, and production qualification
-remain open.
+authority and left the complete embedded campaign unfinished.
 
 The subsequent `bb6ebba` trace correlated the independent OpenSSH client
 port 55822 with the kernel peer's `ESTAB` socket. Its send queue held
@@ -170,13 +168,30 @@ the observer failed its unchanged 22-second quiet requirement within
 carrier-down did not run; client and fixture cleanup were confirmed.
 [Hosted run](https://github.com/replicraft/ExaCopy/actions/runs/45940037149)
 
-The next fixture revision performs that same exact-socket retirement at
-the process-kill rendezvous, before fresh resume can start. Uncertain
-retirement withholds resume. Fresh resume must still pass its independent
-byte, receipt and disconnect checks, followed by the original quiet and
-zero-connection checks. Portable controls passed; this revised ordering
-requires native execution. Full commissioning and production qualification
-remain open.
+The `be03bde` hosted run passed all seven independent OpenSSH and kernel
+WireGuard cases and the separate carrier-down test on AWS Linux
+`7.0.0-1014-aws`. At the process-kill rendezvous the fixture received a
+kernel acknowledgment removing the abandoned socket at client port
+64325, cookie 8193. It verified an empty peer TCP inventory before
+permitting fresh resume. Resume used distinct port 61751, restarted at
+byte zero, and passed the independent byte, receipt and graceful
+disconnect checks.
+
+The observer recorded 22.664 seconds of quiet after resume. Post-intent
+inspection produced zero SSH connections and zero kernel carrier delta.
+With the carrier down, the CLI returned exit 4, `E_IO` and
+`not_published`, with zero independent SSH connections and the
+destination namespace unchanged. The owned client cgroup drained, and
+the fixture and marker were removed. All 21 exported report commitments
+verified. The provider report SHA-256 was
+`96a21d8d151ebb43a9ebb6a158e7307f6c25f19db0df1e980afc9c85a12921f0`.
+[Hosted run](https://github.com/replicraft/ExaCopy/actions/runs/45941416793) ·
+[Provider and case reports](https://github.com/replicraft/ExaCopy/actions/runs/45941416793/artifacts/15172883910)
+
+This result applies to the exact opt-in source build and disposable
+fixture's signed synthetic authority. It establishes no production
+qualification and leaves efficient retained-range reuse open. Earlier
+public archives retain their own revision and feature scope.
 
 The observer also accepts iproute2's documented empty timer duration at
 zero milliseconds and retains a bounded sampling phase on refusal. The
@@ -293,7 +308,7 @@ exact-source-pin reproduction of the entire dependency workspace.
 | SFTP source | The experimental CLI composes a protected SSH profile, pinned host key, selected route and authenticated SFTP source. The hosted direct fixture exercised absolute paths with independent OpenSSH. | Repeat against an independently qualified deployment and exercise both path forms there. |
 | Private capture | The hosted direct fixture exercised a process kill and a fresh attempt from byte zero, retaining the unpublished partial stage. | Verify efficient range reuse separately. |
 | Remote journal | The hosted direct fixture observed receipt commits and refused a fresh attempt after recorded publication. | Exercise additional publication and receipt interruption boundaries on a qualified deployment. Recovery from post-intent uncertainty remains a separate operation. |
-| WireGuard | The experimental CLI composes the pinned userspace WireGuard/TCP route, with no direct fallback. | Confirm the actual embedded route against an independent WireGuard peer and exercise revocation, loss and renewal. |
+| WireGuard | The `be03bde` native campaign exercised the opt-in userspace route against independent Linux WireGuard and OpenSSH, including carrier-down refusal. | Exercise production qualification, revocation and renewal on a selected deployment. |
 | Fidelity | The hosted direct fixture checked the explicit `sftp-data-only-v1` omission set, bytes, receipt and barrier observations. Success reported `published_with_omissions` and exited 11. | Confirm the same observations on qualified deployments. SFTP provides live byte observations with incomplete metadata fidelity. |
 | Distribution | Latest-release download, platform archive selection, SHA-256 verification, pinned publisher verification and owned launchers are implemented. | Execute hosted release jobs and native platform lifecycle qualification. Provision production signing and trust inputs. The Windows store currently accepts one release identity. |
 
