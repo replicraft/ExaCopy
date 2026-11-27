@@ -7,6 +7,7 @@ mod range;
 pub mod retained_prefix;
 mod sync;
 pub mod sync_genesis;
+pub mod sync_successor;
 mod transaction;
 pub mod witnessed_publication;
 
