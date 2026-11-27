@@ -674,3 +674,235 @@ foreach ($case in @(
 
 Write-Output 'Windows held publication selector, exact-source, Stage isolation, fallback diagnostics and observer binding controls passed.'
 Write-Output 'Hosted nested console process tree controls passed.'
+
+# Prepared output controls are synthetic. They do not run a build or a PE image.
+function Test-PreparedPublicationOutput {
+    $manifest = 'D:\repo\crates\platform\exacopy-platform\Cargo.toml'
+    $source = 'D:\repo\crates\platform\exacopy-platform\src\lib.rs'
+    $build = 'C:\fixture\cargo-target'
+    $image = "$build\x86_64-pc-windows-msvc\deps/exacopy_platform.exe"
+    $imagePath = Convert-ReadDiffExecutableSeparators $image
+    $ids = @('platform', 'core', 'model', 'endpoint', 'diff', 'uuid', 'windows-sys', 'windows-link')
+    function Resolve-ReadDiffExecutablePath {
+        param([string] $Reported, [string] $Build)
+        $normalized = Convert-ReadDiffExecutableSeparators $Reported
+        if ($Build -cne 'C:\fixture\cargo-target\x86_64-pc-windows-msvc' -or $normalized -cne $imagePath) {
+            throw 'Unexpected prepared image path.'
+        }
+        $normalized
+    }
+
+    $events = @()
+    foreach ($id in $ids) {
+        $events += @{
+            reason = 'compiler-artifact'; package_id = $id; fresh = $false; executable = $null
+            target = @{ name = $id; kind = @('lib'); crate_types = @('lib') }
+            profile = @{
+                test = $false; opt_level = '0'; debuginfo = 2
+                debug_assertions = $true; overflow_checks = $true
+            }
+        }
+    }
+    $events[0].executable = $image
+    $events[0].target.name = 'exacopy_platform'
+    $events[0].target.src_path = $source
+    $events[0].profile.test = $true
+    $events[0].features = @('experimental-windows-copy')
+    $events[0].manifest_path = $manifest
+    $events[0].filenames = @($image)
+    $artifacts = @($events | ForEach-Object { ConvertTo-Json -InputObject $_ -Compress -Depth 8 })
+    $finished = '{"reason":"build-finished","success":true}'
+    $lines = $artifacts + $finished
+
+    function Select-CapturedImage {
+        param([string[]] $Lines)
+        $bytes = [Text.Encoding]::UTF8.GetBytes(($Lines -join "`r`n") + "`r`n")
+        Select-PreparedPublicationExecutable $bytes $manifest $source $build $ids
+    }
+    Require ((Select-CapturedImage $lines) -ceq $imagePath) 'The complete closed compiler transcript must admit its selected name.'
+    Require-Refusal { Select-CapturedImage $artifacts } 'missing terminal build record'
+    Require-Refusal { Select-CapturedImage ($lines + $finished) } 'duplicate terminal build record'
+    Require-Refusal { Select-CapturedImage ($lines + $artifacts[2]) } 'record after terminal marker'
+    Require-Refusal { Select-CapturedImage ($artifacts + '{"reason":"build-finished","success":false}') } 'unsuccessful build record'
+    Require-Refusal { Select-CapturedImage ($artifacts + '{"reason":"build-finished","success":"true"}') } 'non-Boolean build result'
+    Require-Refusal { Select-CapturedImage ($artifacts + '{"reason":"build-finished","success":false,"success":true}') } 'duplicate JSON member'
+    Require-Refusal { Select-CapturedImage ($artifacts + $artifacts[0] + $finished) } 'duplicate selected artifact'
+    Require-Refusal { Select-CapturedImage ($artifacts[0..6] + $finished) } 'missing dependency artifact'
+    Require-Refusal { Select-CapturedImage ($artifacts + '{"reason":"build-script-executed","package_id":"platform"}' + $finished) } 'extra producer record'
+    $partial = [Text.Encoding]::UTF8.GetBytes(($lines -join "`n"))
+    Require-Refusal { Select-PreparedPublicationExecutable $partial $manifest $source $build $ids } 'missing final newline'
+    $invalid = [byte[]]@(0xc0, 0x80, 0x0a)
+    Require-Refusal { Select-PreparedPublicationExecutable $invalid $manifest $source $build $ids } 'invalid UTF-8'
+    foreach ($field in @('fresh', 'features', 'manifest_path', 'executable', 'package_id', 'filenames')) {
+        $mutant = $events[0].Clone()
+        $mutant[$field] = switch ($field) {
+            fresh { $true }
+            features { ,@('other') }
+            manifest_path { 'C:\foreign\Cargo.toml' }
+            executable { 'C:\foreign\image.exe' }
+            package_id { 'core' }
+            filenames { ,@($image, $imagePath) }
+        }
+        $line = ConvertTo-Json -InputObject $mutant -Compress -Depth 8
+        Require-Refusal { Select-CapturedImage (@($line) + $artifacts[1..7] + $finished) } "changed Cargo artifact $field"
+    }
+    $wrongProfile = $events[0].Clone()
+    $wrongProfile.profile = $events[0].profile.Clone()
+    $wrongProfile.profile.debuginfo = 0
+    $line = ConvertTo-Json -InputObject $wrongProfile -Compress -Depth 8
+    Require-Refusal { Select-CapturedImage (@($line) + $artifacts[1..7] + $finished) } 'changed test build profile'
+}
+Test-PreparedPublicationOutput
+
+function Test-PreparedPublicationCompilerGraph {
+    $repository = 'D:\repo'
+    $platform = "$repository\crates\platform\exacopy-platform"
+    $manifest = "$platform\Cargo.toml"
+    $source = "$platform\src\lib.rs"
+    $parts = @(
+        @{ name = 'exacopy-platform'; dir = $platform; dev = @('exacopy-diff', 'exacopy-endpoint', 'windows-sys'); normal = @('exacopy-endpoint', 'exacopy-model', 'windows-sys') },
+        @{ name = 'exacopy-core'; dir = "$repository\crates\foundation\exacopy-core"; normal = @('uuid') },
+        @{ name = 'exacopy-model'; dir = "$repository\crates\foundation\exacopy-model"; normal = @('exacopy-core') },
+        @{ name = 'exacopy-endpoint'; dir = "$repository\crates\interfaces\exacopy-endpoint"; normal = @('exacopy-core', 'exacopy-model') },
+        @{ name = 'exacopy-diff'; dir = "$repository\crates\engines\exacopy-diff"; normal = @('exacopy-endpoint') },
+        @{ name = 'uuid'; version = '1.29.3' },
+        @{ name = 'windows-sys'; version = '0.61.2'; normal = @('windows-link') },
+        @{ name = 'windows-link'; version = '0.2.1' }
+    )
+    $metadata = @{ version = 1; workspace_root = $repository; packages = @(); resolve = @{ root = 'exacopy-platform'; nodes = @() } }
+    foreach ($part in $parts) {
+        $package = @{
+            id = $part.name; name = $part.name; version = '0.1.0'; source = $null
+            manifest_path = "$($part.dir)\Cargo.toml"
+            targets = @(@{ kind = @('lib'); crate_types = @('lib'); src_path = "$($part.dir)\src\lib.rs" })
+        }
+        if ($part.version) {
+            $package.version = $part.version
+            $package.source = 'registry+https://github.com/rust-lang/crates.io-index'
+            $package.manifest_path = "C:\cargo\registry\$($part.name)\Cargo.toml"
+        }
+        $node = @{ id = $part.name; deps = @(); features = @() }
+        if ($part.name -ceq 'exacopy-platform') { $node.features = @('experimental-windows-copy') }
+        foreach ($dependency in @(@($part.normal) + @($part.dev) | Where-Object { $_ } | Sort-Object -Unique)) {
+            $kinds = @()
+            if ($dependency -cin $part.normal) { $kinds += @{ kind = $null } }
+            if ($dependency -cin $part.dev) { $kinds += @{ kind = 'dev' } }
+            $node.deps += @{ pkg = $dependency; dep_kinds = $kinds }
+        }
+        $metadata.packages += $package
+        $metadata.resolve.nodes += $node
+    }
+    function Read-FixtureGraph {
+        $bytes = [Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject $metadata -Depth 16 -Compress))
+        Assert-PublicationCompilerGraph $bytes $manifest $source $repository
+    }
+    $ids = @(Read-FixtureGraph)
+    Require ($ids.Count -eq 8 -and $ids[0] -ceq 'exacopy-platform') 'The finite compiler graph must return the selected package first.'
+    $original = $metadata.packages[5].targets
+    foreach ($kind in @('custom-build', 'proc-macro')) {
+        $metadata.packages[5].targets = $original + @(@{ kind = @($kind); crate_types = @($kind) })
+        Require-Refusal { Read-FixtureGraph } "unreviewed dependency $kind target"
+    }
+    $metadata.packages[5].targets = $original
+    $metadata.resolve.nodes[5].deps = @(@{ pkg = 'windows-link'; dep_kinds = @(@{ kind = $null }) })
+    Require-Refusal { Read-FixtureGraph } 'unreviewed selected compiler edge'
+}
+Test-PreparedPublicationCompilerGraph
+
+function Test-PreparedPeFixture {
+    $bytes = [byte[]]::new(1024)
+    function Put16([int] $Offset, [uint16] $Value) { [BitConverter]::GetBytes($Value).CopyTo($bytes, $Offset) }
+    function Put32([int] $Offset, [uint32] $Value) { [BitConverter]::GetBytes($Value).CopyTo($bytes, $Offset) }
+    Put16 0 0x5A4D
+    Put32 0x3C 0x80
+    Put32 0x80 0x4550
+    Put16 0x84 0x8664
+    Put16 0x86 1
+    Put16 0x94 112
+    Put16 0x96 2
+    Put16 0x98 0x20B
+    Put32 0xA8 0x1000
+    Put32 0xD0 0x2000
+    Put32 0xD4 0x200
+    Put32 0x110 0x100
+    Put32 0x114 0x1000
+    Put32 0x118 0x200
+    Put32 0x11C 0x200
+    Put32 0x12C 0x20000020
+
+    function Check-FixturePe([byte[]] $Payload) {
+        $stream = [IO.MemoryStream]::new($Payload, $false)
+        try {
+            $stream.Position = 3
+            Assert-PreparedPublicationPe $stream
+            Require ($stream.Position -eq 3 -and $stream.CanRead) 'PE inspection must preserve the held stream.'
+        } finally { $stream.Dispose() }
+    }
+    Check-FixturePe $bytes
+    foreach ($mutant in @(
+        @{ offset = 0x84; word = 0x014C },
+        @{ offset = 0x96; word = 0x2002 },
+        @{ offset = 0x98; word = 0x010B },
+        @{ offset = 0x94; word = 111 }
+    )) {
+        $changed = [byte[]]$bytes.Clone()
+        [BitConverter]::GetBytes([uint16]$mutant.word).CopyTo($changed, $mutant.offset)
+        Require-Refusal { Check-FixturePe $changed } 'unsupported PE role, architecture or extent'
+    }
+    Require-Refusal { Check-FixturePe $bytes[0..511] } 'short executable section'
+}
+Test-PreparedPeFixture
+
+function Test-PreparedCargoConfig {
+    $repository = $repo
+    $cargoHome = [IO.Path]::Combine($repo, '.synthetic-cargo-home')
+    $hasConfig = $false
+    function Resolve-ExaCopyWindowsPath([string] $Path) { $Path }
+    function Confirm-ExaCopyPath([string] $Path, [switch] $File, [switch] $AllowMissing) {
+        if ($File) { return $hasConfig -and $Path -ceq [IO.Path]::Combine($cargoHome, 'config.toml') }
+        return $Path -ceq $cargoHome
+    }
+    $environment = @("CARGO_HOME=$cargoHome")
+    Assert-PreparedCargoConfiguration $repository $cargoHome $environment
+    Require-Refusal { Assert-PreparedCargoConfiguration $repository $cargoHome ($environment + 'RUSTC_WRAPPER=unreviewed') } 'ambient compiler wrapper'
+    Require-Refusal { Assert-PreparedCargoConfiguration $repository $cargoHome ($environment + 'CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER=unreviewed') } 'ambient target runner'
+    Require-Refusal { Assert-PreparedCargoConfiguration $repository $cargoHome @('CARGO_HOME=elsewhere') } 'inspected Cargo home differs from child home'
+    $hasConfig = $true
+    Require-Refusal { Assert-PreparedCargoConfiguration $repository $cargoHome $environment } 'unreviewed Cargo home configuration'
+}
+Test-PreparedCargoConfig
+
+$modeSwitch = @($runner.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -ceq 'PrepareOwnedCompilerJob' })
+Require ($modeSwitch.Count -eq 1 -and $modeSwitch[0].StaticType -eq [Management.Automation.SwitchParameter] -and
+    $null -eq $modeSwitch[0].DefaultValue) 'Owned compiler preparation must be an explicit switch with its default off.'
+$publicationWorkflow = Get-Content -Raw -LiteralPath (Join-Path $repo '.github/workflows/windows-ntfs-publication.yml')
+Require ($publicationWorkflow -cmatch '(?m)^\s*\./crates/platform/exacopy-platform/verification/windows_ntfs_publication/run\.ps1\s*$' -and
+    $publicationWorkflow -cnotmatch 'PrepareOwnedCompilerJob') 'The canonical workflow must retain the existing strict invocation.'
+
+$prepareDefinition = $runner.Find({
+    param($Node)
+    $Node -is [Management.Automation.Language.FunctionDefinitionAst] -and $Node.Name -ceq 'Invoke-OwnedPublicationBuildPreparation'
+}, $false)
+$strictDefinition = $runner.Find({
+    param($Node)
+    $Node -is [Management.Automation.Language.FunctionDefinitionAst] -and $Node.Name -ceq 'Invoke-PublicationChild'
+}, $false)
+Require ($null -ne $prepareDefinition -and $null -ne $strictDefinition -and
+    $prepareDefinition.Extent.Text.Contains('::PreparePublicationBuild(') -and
+    !$strictDefinition.Extent.Text.Contains('::PreparePublicationBuild(')) 'Owned compiler preparation must have a distinct native entry point.'
+$casesDefinition = $runner.Find({
+    param($Node)
+    $Node -is [Management.Automation.Language.FunctionDefinitionAst] -and $Node.Name -ceq 'Invoke-PublicationCases'
+}, $false)
+$recheckDefinition = $runner.Find({
+    param($Node)
+    $Node -is [Management.Automation.Language.FunctionDefinitionAst] -and $Node.Name -ceq 'Confirm-PreparedPublicationSource'
+}, $false)
+Require ($null -ne $casesDefinition -and $null -ne $recheckDefinition -and
+    $recheckDefinition.Extent.Text.Contains('Confirm-PublicationSource') -and
+    $recheckDefinition.Extent.Text.Contains('Cargo.lock') -and
+    $recheckDefinition.Extent.Text.Contains('lockfile_sha256')) 'Prepared selectors require the exact source and lock digest.'
+$casesText = $casesDefinition.Extent.Text
+$checkedAt = $casesText.IndexOf('Confirm-PreparedPublicationSource', [StringComparison]::Ordinal)
+$selectorAt = $casesText.IndexOf('Invoke-PublicationChild', [StringComparison]::Ordinal)
+Require ($checkedAt -ge 0 -and $selectorAt -gt $checkedAt) 'Prepared source and lock must be rechecked before the first selector.'

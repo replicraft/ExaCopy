@@ -1,9 +1,10 @@
 [CmdletBinding()]
-param()
+param([switch] $PrepareOwnedCompilerJob)
 
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../../..'))
 $qualification = 'windows-hosted-server2025-fixed-ntfs-publication-v1'
+if ($PrepareOwnedCompilerJob) { $qualification = 'windows-hosted-server2025-fixed-ntfs-publication-owned-preparation-v2' }
 $selected = 'x86_64-pc-windows-msvc'
 if (!$IsWindows -or $env:GITHUB_ACTIONS -cne 'true' -or
     $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or $env:RUNNER_OS -cne 'Windows' -or
@@ -127,6 +128,94 @@ function Invoke-PublicationChild {
     return $child.ExitCode
 }
 
+function Read-PublicationCapture([string] $Path, [int] $Length, [string] $ExpectedId, [string] $ExpectedHash) {
+    if ($Length -lt 0 -or $Length -gt [ExaCopyQualification.PublicationProcess]::StreamLimitBytes) {
+        throw 'The confirmed capture length exceeds its bound.'
+    }
+    [void](Confirm-ExaCopyPath $Path -File)
+    $named = [ExaCopyQualification.ReadDiffCustody]::HoldNode($Path, $false, $false)
+    try {
+        $namedId = [ExaCopyQualification.ReadDiffCustody]::Observe($named, $false).FileId
+        if ($ExpectedId) { Assert-StageSameIdentity $ExpectedId $namedId }
+        $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+        try {
+            Assert-StageSameIdentity $namedId ([ExaCopyQualification.ReadDiffCustody]::Observe($stream.SafeFileHandle, $false).FileId)
+            if ($stream.Length -ne $Length) { throw 'The captured stream extent changed.' }
+            $bytes = [byte[]]::new($Length)
+            $stream.ReadExactly($bytes, 0, $Length)
+            if ($stream.ReadByte() -ne -1) { throw 'Unexpected bytes followed the captured extent.' }
+            $digest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))
+            if ($ExpectedHash -and $digest -cne $ExpectedHash) { throw 'The captured stream digest changed.' }
+            return @{ Bytes = $bytes; Sha256 = $digest; Identity = $namedId }
+        } finally {
+            $stream.Dispose()
+        }
+    } finally {
+        $named.Dispose()
+    }
+}
+
+function Invoke-OwnedPublicationBuildPreparation([string] $Program) {
+    $diagnostic.phase = 'cargo-build-preparation'
+    $diagnostic.receipt = $diagnostic.launch = $null
+    $stdout = Join-Path $evidence 'cargo-build-preparation.stdout.log'
+    $stderr = Join-Path $evidence 'cargo-build-preparation.stderr.log'
+    $record = Join-Path $evidence 'cargo-build-preparation.process.json'
+    $state.process_drained = $false
+    $result = [ExaCopyQualification.PublicationProcess]::PreparePublicationBuild(
+        $Program, $repo, $childEnvironment, $stdout, $stderr, 480000)
+    $process = $result.Process
+    $diagnostic.receipt = $result
+    $state.process_drained = (!$process.Started -and !$process.CreationAttempted) -or
+        ($process.Drained -and $process.RootSignaled -and $null -ne $process.ActiveProcesses -and
+            $process.ActiveProcesses -eq 0)
+    $state.build_preparation = [ordered]@{
+        invocation_id = $result.InvocationId
+        disposition = $result.Disposition.ToString()
+        receipt = [IO.Path]::GetFileName($record)
+    }
+    $result | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $record -Encoding utf8
+    if ($result.Disposition.ToString() -cne 'QuiescedAfterRootExit' -or
+        !$state.process_drained -or !$process.Started -or !$process.JobListConfigured -or
+        !$process.Assigned -or !$process.Resumed -or $process.ExitCode -ne 0 -or
+        $process.TimedOut -or $process.OutputLimitExceeded -or $process.StdoutExtentUnconfirmed -or
+        $process.StderrExtentUnconfirmed -or $process.Error -or $process.CleanupError -or
+        $result.BuildBudgetMilliseconds -ne 480000 -or
+        $result.InvocationId -cnotmatch '\A[0-9a-f]{32}\z' -or
+        $result.RootExitCodeBeforeRetirement -ne 0 -or !$result.StopRequested -or
+        $result.StopSucceeded -ne $true -or $null -ne $result.StopNativeError -or
+        !$result.StdoutEof -or !$result.StderrEof -or
+        $result.StdoutSinkIdentity -cnotmatch '\A[0-9A-F]{16}:[0-9A-F]{32}\z' -or
+        $result.StderrSinkIdentity -cnotmatch '\A[0-9A-F]{16}:[0-9A-F]{32}\z' -or
+        $result.StdoutSinkIdentity -ceq $result.StderrSinkIdentity -or
+        $result.StdoutSinkSha256 -cnotmatch '\A[0-9A-F]{64}\z' -or
+        $result.StderrSinkSha256 -cnotmatch '\A[0-9A-F]{64}\z') {
+        throw 'The owned compiler job did not produce confirmed post-root quiescence.'
+    }
+    $stdoutCapture = Read-PublicationCapture $stdout $process.StdoutBytes $result.StdoutSinkIdentity $result.StdoutSinkSha256
+    $stderrCapture = Read-PublicationCapture $stderr $process.StderrBytes $result.StderrSinkIdentity $result.StderrSinkSha256
+    $state.build_preparation['stdout_sha256'] = $stdoutCapture.Sha256
+    $state.build_preparation['stderr_sha256'] = $stderrCapture.Sha256
+    return @{ InvocationId = $result.InvocationId; Stdout = $stdoutCapture.Bytes }
+}
+
+function Confirm-PreparedPublicationSource {
+    Confirm-PublicationSource $repo $env:GITHUB_SHA
+    if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $repo 'Cargo.lock')).Hash -cne $state.lockfile_sha256) {
+        throw 'The reviewed lockfile changed.'
+    }
+}
+
+function Confirm-PublicationPreparationTarget {
+    Assert-StageSameIdentity $preparationTargetId ([ExaCopyQualification.DirectoryCustody]::Observe($preparationTargetPin))
+    $named = [ExaCopyQualification.DirectoryCustody]::HoldAncestor($preparationTarget)
+    try {
+        Assert-StageSameIdentity $preparationTargetId ([ExaCopyQualification.DirectoryCustody]::Observe($named))
+    } finally {
+        $named.Dispose()
+    }
+}
+
 function Close-PublicationVendorCustody($Tool) {
     if ($null -ne $Tool.Image) { $Tool.Image.Dispose() }
     Close-StageAncestorCustody $Tool.Parents
@@ -203,6 +292,20 @@ function Confirm-PublicationImage {
 }
 
 function Invoke-PublicationCases {
+    param($PreparedImage)
+    if ($PrepareOwnedCompilerJob) {
+        if ($null -eq $PreparedImage -or $PreparedImage.InvocationId -cne $state.build_preparation.invocation_id -or
+            $PreparedImage.Path -cne $binary -or $PreparedImage.Identity -cne $imageId -or
+            $PreparedImage.Sha256 -cne $imageHash -or
+            ![object]::ReferenceEquals($PreparedImage.Stream.PSObject.BaseObject, $image.PSObject.BaseObject)) {
+            throw 'No live invocation-bound prepared test image is available.'
+        }
+        Confirm-PreparedPublicationSource
+        Confirm-StageAncestorCustody $preparedImageAncestors
+        Confirm-PublicationPreparationTarget
+        Confirm-PublicationImage
+        $state.source_rechecked_before_inventory = $true
+    }
     foreach ($item in @(@{ Name = 'inventory'; Flags = @() }, @{ Name = 'ignored'; Flags = @('--ignored') })) {
         Confirm-PublicationImage
         $inventoryArgs = @('--list', '--format', 'terse') + $item.Flags
@@ -256,7 +359,7 @@ if ($env:SystemRoot -ine ($system + 'Windows') -or
 [void](Confirm-ExaCopyPath $env:GITHUB_OUTPUT -File)
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $ancestors = $evidencePin = $fixturePin = $fixtureGuard = $buildPin = $image = $null
-$compilerAncestors = $compilerImage = $null
+$compilerAncestors = $compilerImage = $cargoImage = $preparedImageAncestors = $preparationTargetPin = $null
 $linkerTool = $null
 $fixture = $evidence = $null
 $fixtureCustodied = $false
@@ -348,7 +451,7 @@ try {
     Confirm-StageNoResidue $build
     $rustupHome = [IO.Path]::Combine($root, '.rustup')
     [void](Confirm-ExaCopyPath $rustupHome -AllowMissing)
-    $childEnvironment = New-PublicationEnvironment @{
+    $childScope = @{
         RUSTUP_HOME = $rustupHome
         CARGO_TARGET_DIR = $build; CARGO_BUILD_BUILD_DIR = $build; CARGO_TERM_COLOR = 'never'
         CARGO_INCREMENTAL = '0'; TEMP = $build; TMP = $build; RUNNER_TEMP = $build
@@ -356,6 +459,13 @@ try {
         RUST_BACKTRACE = '0'; PYTHONDONTWRITEBYTECODE = '1'; RUNNER_OS = 'Windows'; RUNNER_ARCH = 'X64'
         GIT_TERMINAL_PROMPT = '0'; GCM_INTERACTIVE = 'Never'
     }
+    if ($PrepareOwnedCompilerJob) {
+        $publicationCargoHome = [IO.Path]::Combine($root, '.cargo')
+        [void](Confirm-ExaCopyPath $publicationCargoHome)
+        $childScope['CARGO_HOME'] = $publicationCargoHome
+    }
+    $childEnvironment = New-PublicationEnvironment $childScope
+    if ($PrepareOwnedCompilerJob) { Assert-PreparedCargoConfiguration $repo $publicationCargoHome $childEnvironment }
 
     $state.tools = [ordered]@{}
     $state.tools.python = Resolve-PublicationApplication 'python.exe'
@@ -496,11 +606,72 @@ $ErrorActionPreference = 'Stop'
         'VSCMD_ARG_HOST_ARCH=x64'
         'VSCMD_ARG_TGT_ARCH=x64'
     )
-    $arguments = @('+1.100.0', 'test', '--locked', '--offline', '--jobs', '2', '--target', $selected,
-        '-p', 'exacopy-platform', '--lib', '--no-default-features', '--features', 'experimental-windows-copy', '--no-run',
-        '--message-format=json')
-    if ((Invoke-PublicationChild 'cargo-build' $cargo $arguments 480000 -ObserveBuildProcesses) -ne 0) {
-        throw 'The selected Windows platform library test image did not build.'
+    $ownerPath = Join-Path $repo 'crates/platform/exacopy-platform'
+    $manifestPath = Convert-ReadDiffExecutableSeparators ([IO.Path]::GetFullPath((Join-Path $ownerPath 'Cargo.toml')))
+    $libraryPath = Convert-ReadDiffExecutableSeparators ([IO.Path]::GetFullPath((Join-Path $ownerPath 'src/lib.rs')))
+    if ($PrepareOwnedCompilerJob) {
+        $preparationTarget = Join-Path $build 'prepared-test-target'
+        New-StagePrivateFixture $preparationTarget $owner
+        $preparationTargetPin = [ExaCopyQualification.DirectoryCustody]::HoldAncestor($preparationTarget)
+        $preparationTargetId = [ExaCopyQualification.DirectoryCustody]::Observe($preparationTargetPin)
+        Assert-StageSameVolume $buildId $preparationTargetId
+        Assert-ReadDiffTreeSecurity $preparationTarget $owner
+        Confirm-StageNoResidue $preparationTarget
+        $childEnvironment = [string[]]@($childEnvironment | Where-Object {
+            $_.Split('=', 2)[0] -notin @('CARGO_TARGET_DIR', 'CARGO_BUILD_BUILD_DIR')
+        })
+        $childEnvironment += @(
+            "CARGO_TARGET_DIR=$preparationTarget", "CARGO_BUILD_BUILD_DIR=$preparationTarget",
+            'CARGO_CACHE_RUSTC_INFO=0'
+        )
+        $state.build_preparation_target_identity = $preparationTargetId
+        $diagnostic.phase = 'physical-cargo-admission'
+        $diagnostic.receipt = $diagnostic.launch = $null
+        $physicalCargo = [IO.Path]::Combine([IO.Path]::GetDirectoryName($rustc), 'cargo.exe')
+        Confirm-PublicationVendorPath $physicalCargo -File
+        $namedCargo = [ExaCopyQualification.ReadDiffCustody]::HoldNode($physicalCargo, $false, $false)
+        try {
+            $cargoId = [ExaCopyQualification.ReadDiffCustody]::Observe($namedCargo, $false).FileId
+            Assert-StageSameVolume $compilerId $cargoId
+            $cargoImage = [IO.File]::Open($physicalCargo, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+            Assert-StageSameIdentity $cargoId ([ExaCopyQualification.ReadDiffCustody]::Observe($cargoImage.SafeFileHandle, $false).FileId)
+            $state.tools.physical_cargo = Read-PublicationApplicationRecord $physicalCargo -HeldImage $cargoImage
+            $state.tools.physical_cargo['native_identity'] = $cargoId
+        } finally {
+            $namedCargo.Dispose()
+        }
+        Assert-PreparedCargoConfiguration $repo $publicationCargoHome $childEnvironment
+        if ((Invoke-PublicationChild 'physical-cargo' $physicalCargo @('-Vv') 30000) -ne 0) {
+            throw 'The pinned physical Cargo image did not complete its version probe.'
+        }
+        $cargoVersion = Get-Content -Raw -LiteralPath (Join-Path $evidence 'physical-cargo.stdout.log')
+        if ($cargoVersion -cnotmatch '(?m)^cargo 1\.100\.0 \(3acc79c0c 2026-11-05\)\r?$' -or
+            $cargoVersion -cnotmatch '(?m)^host: x86_64-pc-windows-msvc\r?$') {
+            throw 'The physical Cargo image did not match the pinned native toolchain.'
+        }
+        $metadata = @('metadata', '--format-version', '1', '--locked', '--offline', '--filter-platform', $selected,
+            '--manifest-path', $manifestPath, '--no-default-features', '--features', 'experimental-windows-copy')
+        if ((Invoke-PublicationChild 'cargo-preparation-graph' $physicalCargo $metadata 30000) -ne 0) {
+            throw 'Cargo failed to report the offline preparation graph.'
+        }
+        $graphCapture = Read-PublicationCapture (Join-Path $evidence 'cargo-preparation-graph.stdout.log') $diagnostic.receipt.StdoutBytes
+        $packageIds = @(Assert-PublicationCompilerGraph $graphCapture.Bytes $manifestPath $libraryPath $repo)
+        $state.build_graph = [ordered]@{ sha256 = $graphCapture.Sha256; packages = $packageIds }
+        Confirm-StageNoResidue $preparationTarget
+        Confirm-PublicationPreparationTarget
+        Confirm-PreparedPublicationSource
+        Assert-PreparedCargoConfiguration $repo $publicationCargoHome $childEnvironment
+        $prepared = Invoke-OwnedPublicationBuildPreparation $physicalCargo
+        Assert-StageSameIdentity $cargoId ([ExaCopyQualification.ReadDiffCustody]::Observe($cargoImage.SafeFileHandle, $false).FileId)
+        $cargoImage.Dispose()
+        $cargoImage = $null
+    } else {
+        $arguments = @('+1.100.0', 'test', '--locked', '--offline', '--jobs', '2', '--target', $selected,
+            '-p', 'exacopy-platform', '--lib', '--no-default-features', '--features', 'experimental-windows-copy', '--no-run',
+            '--message-format=json')
+        if ((Invoke-PublicationChild 'cargo-build' $cargo $arguments 480000 -ObserveBuildProcesses) -ne 0) {
+            throw 'The selected Windows platform library test image did not build.'
+        }
     }
     Confirm-PublicationVendorCustody $linkerTool
     Close-PublicationVendorCustody $linkerTool
@@ -512,21 +683,59 @@ $ErrorActionPreference = 'Stop'
     $compilerImage = $null
     Close-StageAncestorCustody $compilerAncestors.Held
     $compilerAncestors = $null
-    $ownerPath = Join-Path $repo 'crates/platform/exacopy-platform'
-    $manifestPath = Convert-ReadDiffExecutableSeparators ([IO.Path]::GetFullPath((Join-Path $ownerPath 'Cargo.toml')))
-    $libraryPath = Convert-ReadDiffExecutableSeparators ([IO.Path]::GetFullPath((Join-Path $ownerPath 'src/lib.rs')))
-    $reported = Select-PublicationExecutable (Get-Content -LiteralPath (Join-Path $evidence 'cargo-build.stdout.log')) `
-        $manifestPath $libraryPath
-    $binary = Resolve-ReadDiffExecutablePath $reported $build
+    if ($PrepareOwnedCompilerJob) {
+        Confirm-PublicationPreparationTarget
+        $binary = Select-PreparedPublicationExecutable $prepared.Stdout $manifestPath $libraryPath $preparationTarget $packageIds
+        $state.build_preparation['transcript_verified'] = $true
+    } else {
+        $reported = Select-PublicationExecutable (Get-Content -LiteralPath (Join-Path $evidence 'cargo-build.stdout.log')) `
+            $manifestPath $libraryPath
+        $binary = Resolve-ReadDiffExecutablePath $reported $build
+    }
     [void](Confirm-ExaCopyPath $binary -File)
-    $image = [IO.File]::Open($binary, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    if ($PrepareOwnedCompilerJob) {
+        $preparedImageAncestors = New-StageAncestorCustody ([IO.Path]::GetDirectoryName($binary)) $owner -HostedSystemVolume $system -BeforeAdmission { param($Held) }
+        Confirm-PublicationPreparationTarget
+        $namedOutput = [ExaCopyQualification.ReadDiffCustody]::HoldNode($binary, $false, $false)
+        try {
+            $namedOutputFact = [ExaCopyQualification.ReadDiffCustody]::Observe($namedOutput, $false)
+            if ($namedOutputFact.Links -ne 1) { throw 'The prepared executable has an unexpected hard link.' }
+            $image = [IO.File]::Open($binary, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+            Assert-StageSameIdentity $namedOutputFact.FileId ([ExaCopyQualification.ReadDiffCustody]::Observe($image.SafeFileHandle, $false).FileId)
+            $preparedImageLength = $image.Length
+            if ($preparedImageLength -le 0 -or $preparedImageLength -gt 128MB) {
+                throw 'The prepared image is empty or exceeds the full read-back bound.'
+            }
+            Assert-PreparedPublicationPe $image
+            $image.Position = 0
+        } finally {
+            $namedOutput.Dispose()
+        }
+    } else {
+        $image = [IO.File]::Open($binary, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    }
     $imageId = [ExaCopyQualification.ReadDiffCustody]::Observe($image.SafeFileHandle, $false).FileId
     Assert-StageSameVolume $fixtureId $imageId
     $imageHash = (Get-FileHash -Algorithm SHA256 -InputStream $image).Hash
+    if ($PrepareOwnedCompilerJob -and ($image.Position -ne $preparedImageLength -or $image.Length -ne $preparedImageLength)) {
+        throw 'The prepared image did not read back over its full held extent.'
+    }
     $state.executable = @{ path = $binary; native_identity = $imageId; sha256 = $imageHash }
+    if ($PrepareOwnedCompilerJob) {
+        $state.executable['preparation_invocation_id'] = $prepared.InvocationId
+        $state.executable['bytes'] = $preparedImageLength
+    }
 
     try {
-        Invoke-PublicationCases
+        if ($PrepareOwnedCompilerJob) {
+            $preparedImage = @{
+                InvocationId = $prepared.InvocationId; Path = $binary; Identity = $imageId
+                Sha256 = $imageHash; Stream = $image
+            }
+            Invoke-PublicationCases $preparedImage
+        } else {
+            Invoke-PublicationCases
+        }
     } finally {
         Confirm-PublicationSource $repo $env:GITHUB_SHA
         if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $repo 'Cargo.lock')).Hash -cne $state.lockfile_sha256) {
@@ -540,6 +749,9 @@ $ErrorActionPreference = 'Stop'
 } finally {
     try {
         if ($null -ne $image) { $image.Dispose() }
+        if ($null -ne $preparedImageAncestors) { Close-StageAncestorCustody $preparedImageAncestors.Held }
+        if ($null -ne $preparationTargetPin) { $preparationTargetPin.Dispose() }
+        if ($null -ne $cargoImage) { $cargoImage.Dispose() }
         if ($null -ne $linkerTool) { Close-PublicationVendorCustody $linkerTool }
         if ($null -ne $compilerImage) { $compilerImage.Dispose() }
         if ($null -ne $compilerAncestors) { Close-StageAncestorCustody $compilerAncestors.Held }

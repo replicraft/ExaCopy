@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using Microsoft.Win32.SafeHandles;
@@ -44,6 +45,8 @@ namespace ExaCopyQualification
         private const int ProcessHandleList = 0x00020002;
         private const int ProcessJobList = 0x0002000d;
         private const int Server2025Build = 26100;
+        private const int FileIdInfo = 18;
+        private const string PinnedCargoPathSuffix = @"\toolchains\1.100.0-x86_64-pc-windows-msvc\bin\cargo.exe";
 
         [StructLayout(LayoutKind.Sequential)]
         private struct Security
@@ -119,6 +122,12 @@ namespace ExaCopyQualification
             internal UIntPtr ProcessId, ParentProcessId;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SinkFileIdentity
+        {
+            internal ulong Volume, Low, High;
+        }
+
         public sealed class JobProcessEvent
         {
             public string Kind { get; internal set; }
@@ -172,6 +181,42 @@ namespace ExaCopyQualification
             public string Error { get; internal set; }
             public int? CleanupNativeError { get; internal set; }
             public string CleanupError { get; internal set; }
+        }
+
+        public enum BuildPreparationDisposition
+        {
+            PreparationFailed,
+            PreparationTimedOut,
+            PreparationUncertain,
+            QuiescedAfterRootExit
+        }
+
+        public sealed class BuildPreparationReceipt
+        {
+            internal BuildPreparationReceipt(int budgetMilliseconds)
+            {
+                BuildBudgetMilliseconds = budgetMilliseconds;
+            }
+
+            public string InvocationId { get; } = Guid.NewGuid().ToString("N");
+            public int BuildBudgetMilliseconds { get; }
+            public Receipt Process { get; internal set; }
+            public BuildPreparationDisposition Disposition { get; internal set; }
+            public uint? RootExitCodeBeforeRetirement { get; internal set; }
+            public bool StopRequested { get; internal set; }
+            public bool? StopSucceeded { get; internal set; }
+            public int? StopNativeError { get; internal set; }
+            public long? RootExitObservedMilliseconds { get; internal set; }
+            public long? StopRequestedMilliseconds { get; internal set; }
+            public long? StopReturnedMilliseconds { get; internal set; }
+            public long? DrainObservedMilliseconds { get; internal set; }
+            public long? SinkEvidenceObservedMilliseconds { get; internal set; }
+            public bool StdoutEof { get; internal set; }
+            public bool StderrEof { get; internal set; }
+            public string StdoutSinkIdentity { get; internal set; }
+            public string StderrSinkIdentity { get; internal set; }
+            public string StdoutSinkSha256 { get; internal set; }
+            public string StderrSinkSha256 { get; internal set; }
         }
 
         public static bool ValidateAbi()
@@ -256,9 +301,48 @@ namespace ExaCopyQualification
                 true, false, true);
         }
 
+        public static BuildPreparationReceipt PreparePublicationBuild(string program, string workDirectory,
+            string[] environment, string stdout, string stderr, int timeoutMilliseconds)
+        {
+            // The caller holds and authenticates the actual toolchain file.
+            RequirePinnedCargoProgram(program, environment);
+            var arguments = new[]
+            {
+                "test", "--locked", "--offline", "--jobs", "2", "--target", "x86_64-pc-windows-msvc",
+                "-p", "exacopy-platform", "--lib", "--no-default-features",
+                "--features", "experimental-windows-copy", "--no-run", "--message-format=json"
+            };
+            var preparation = new BuildPreparationReceipt(timeoutMilliseconds);
+            try
+            {
+                RunOwned(program, arguments, workDirectory, environment, stdout, stderr, timeoutMilliseconds,
+                    true, false, true, preparation);
+            }
+            catch (Exception failure) when (preparation.Process != null)
+            {
+                // Sink open/disposal failures outside the owned job scope also
+                // prevent preparation, including after the job has drained.
+                RecordFailure(preparation.Process, failure, false);
+            }
+            preparation.Disposition = ClassifyBuildPreparation(preparation);
+            return preparation;
+        }
+
+        private static void RequirePinnedCargoProgram(string program, string[] environment)
+        {
+            RequireBoundedText(program, 32766, nameof(program));
+            if (!program.EndsWith(PinnedCargoPathSuffix, StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("Preparation requires Cargo in the pinned native toolchain.", nameof(program));
+            string rustupHome = program.Substring(0, program.Length - PinnedCargoPathSuffix.Length);
+            string rootAssignment = "RUSTUP_HOME=" + rustupHome;
+            if (rustupHome.Length == 0 || environment == null || environment.Length is < 1 or > 256 ||
+                Array.FindIndex(environment, entry => StringComparer.OrdinalIgnoreCase.Equals(entry, rootAssignment)) < 0)
+                throw new ArgumentException("Preparation requires the selected toolchain root.", nameof(environment));
+        }
+
         private static Receipt RunOwned(string program, string[] arguments, string workDirectory,
             string[] environment, string stdout, string stderr, int timeoutMilliseconds, bool observeJobProcesses,
-            bool refuseDiagnosticSetup, bool sampleActiveAfterRoot)
+            bool refuseDiagnosticSetup, bool sampleActiveAfterRoot, BuildPreparationReceipt preparation = null)
         {
             // The owning runner separately establishes the Windows Server 2025 SKU.
             if (!OperatingSystem.IsWindows() || Environment.OSVersion.Version.Build != Server2025Build ||
@@ -290,8 +374,12 @@ namespace ExaCopyQualification
                 SampleActiveAfterRoot = sampleActiveAfterRoot
             };
 
-            using var outputFile = new FileStream(stdout, FileMode.CreateNew, FileAccess.Write, FileShare.Read, 1);
-            using var errorFile = new FileStream(stderr, FileMode.CreateNew, FileAccess.Write, FileShare.Read, 1);
+            if (preparation != null)
+                preparation.Process = receipt;
+            FileAccess sinkAccess = preparation == null ? FileAccess.Write : FileAccess.ReadWrite;
+            var preparationClock = preparation == null ? null : Stopwatch.StartNew();
+            using var outputFile = new FileStream(stdout, FileMode.CreateNew, sinkAccess, FileShare.Read, 1);
+            using var errorFile = new FileStream(stderr, FileMode.CreateNew, sinkAccess, FileShare.Read, 1);
             try
             {
                 using var job = CreateJobObjectW(IntPtr.Zero, null);
@@ -361,7 +449,10 @@ namespace ExaCopyQualification
                     if (suspendCount != 1)
                         throw new IOException("The exact primary thread did not have one suspension.");
                     receipt.Resumed = true;
-                    Observe(job, process, capturedOutput, capturedError, receipt, timeoutMilliseconds, trace);
+                    if (preparation == null)
+                        Observe(job, process, capturedOutput, capturedError, receipt, timeoutMilliseconds, trace);
+                    else
+                        ObserveBuildPreparation(job, process, capturedOutput, capturedError, preparation, preparationClock, trace);
                 }
                 catch (Exception failure)
                 {
@@ -369,7 +460,8 @@ namespace ExaCopyQualification
                 }
                 if (!receipt.Drained)
                 {
-                    StopAndDrain(job, process, capturedOutput, capturedError, receipt, trace);
+                    StopAndDrain(job, process, capturedOutput, capturedError, receipt, trace,
+                        stopAlreadyRequested: preparation?.StopRequested == true);
                 }
                 receipt.StdoutBytes = capturedOutput.Written;
                 receipt.StderrBytes = capturedError.Written;
@@ -386,6 +478,14 @@ namespace ExaCopyQualification
                     {
                         RecordFailure(receipt, failure, true);
                     }
+                }
+                if (preparation != null)
+                {
+                    preparation.StdoutEof = capturedOutput.Eof;
+                    preparation.StderrEof = capturedError.Eof;
+                    if (preparation.DrainObservedMilliseconds.HasValue &&
+                        receipt.Error == null && receipt.CleanupError == null)
+                        MeasurePreparationSinks(outputFile, errorFile, preparation, preparationClock);
                 }
             }
             catch (Exception failure)
@@ -433,16 +533,148 @@ namespace ExaCopyQualification
             }
         }
 
-        private static void StopAndDrain(SafeFileHandle job, SafeFileHandle process,
-            Capture stdout, Capture stderr, Receipt receipt, SafeFileHandle trace)
+        private static void ObserveBuildPreparation(SafeFileHandle job, SafeFileHandle process, Capture stdout,
+            Capture stderr, BuildPreparationReceipt preparation, Stopwatch clock, SafeFileHandle trace)
         {
-            try
+            Receipt receipt = preparation.Process;
+            int buildBudget = preparation.BuildBudgetMilliseconds;
+            int observationDeadline = buildBudget;
+            byte[] buffer = new byte[16384];
+            while (true)
             {
-                Require(TerminateJobObject(job, 1), "TerminateJobObject");
+                UpdateProcessObservations(job, process, receipt);
+                bool progress = stdout.Pump(buffer, receipt);
+                progress |= stderr.Pump(buffer, receipt);
+
+                long observed = clock.ElapsedMilliseconds;
+                if (observed >= observationDeadline)
+                {
+                    receipt.TimedOut = true;
+                    return;
+                }
+                if (receipt.OutputLimitExceeded || stdout.ExtentUnconfirmed || stderr.ExtentUnconfirmed)
+                    return;
+
+                if (!preparation.StopRequested && receipt.RootSignaled)
+                {
+                    Require(GetExitCodeProcess(process, out uint exitCode), "Read held Cargo exit before retirement");
+                    preparation.RootExitCodeBeforeRetirement = exitCode;
+                    preparation.RootExitObservedMilliseconds = clock.ElapsedMilliseconds;
+                    if (exitCode != 0)
+                        return;
+
+                    long stopAt = clock.ElapsedMilliseconds;
+                    if (stopAt >= buildBudget)
+                    {
+                        receipt.TimedOut = true;
+                        return;
+                    }
+                    preparation.StopRequested = true;
+                    preparation.StopRequestedMilliseconds = stopAt;
+                    bool stopped = TerminateJobObject(job, 1);
+                    int? nativeError = stopped ? null : Marshal.GetLastWin32Error();
+                    preparation.StopSucceeded = stopped;
+                    preparation.StopNativeError = nativeError;
+                    preparation.StopReturnedMilliseconds = clock.ElapsedMilliseconds;
+                    observationDeadline = (int)Math.Min(buildBudget, stopAt + ShutdownMilliseconds);
+                    if (preparation.StopReturnedMilliseconds.Value >= observationDeadline)
+                        receipt.TimedOut = true;
+                    if (!stopped || receipt.TimedOut)
+                        return;
+
+                    // Read a new accounting and EOF sample after the native stop
+                    // return. The pre-stop sample cannot establish retirement.
+                    continue;
+                }
+                if (preparation.StopSucceeded == true && receipt.RootSignaled &&
+                    receipt.ActiveProcesses == 0 && stdout.Eof && stderr.Eof)
+                {
+                    preparation.DrainObservedMilliseconds = observed;
+                    receipt.Drained = true;
+                    ReadJobObservation(job, trace, receipt, clock, observationDeadline);
+                    return;
+                }
+
+                ReadJobObservation(job, trace, receipt, clock, observationDeadline);
+                if (receipt.RootSignaled && receipt.ActiveProcesses > 0)
+                    MaybeSampleActiveJobProcesses(job, receipt, clock, observationDeadline);
+                if (!progress)
+                    Thread.Sleep(10);
             }
-            catch (Exception failure)
+        }
+
+        private static void MeasurePreparationSinks(FileStream stdout, FileStream stderr,
+            BuildPreparationReceipt preparation, Stopwatch clock)
+        {
+            (preparation.StdoutSinkIdentity, preparation.StdoutSinkSha256) =
+                MeasurePreparationSink(stdout, preparation.Process.StdoutBytes);
+            (preparation.StderrSinkIdentity, preparation.StderrSinkSha256) =
+                MeasurePreparationSink(stderr, preparation.Process.StderrBytes);
+            preparation.SinkEvidenceObservedMilliseconds = clock.ElapsedMilliseconds;
+            if (preparation.SinkEvidenceObservedMilliseconds.Value >= preparation.BuildBudgetMilliseconds ||
+                preparation.SinkEvidenceObservedMilliseconds.Value - preparation.StopRequestedMilliseconds.Value >= ShutdownMilliseconds)
+                preparation.Process.TimedOut = true;
+        }
+
+        private static (string Identity, string Sha256) MeasurePreparationSink(FileStream sink, int expectedBytes)
+        {
+            sink.Flush();
+            if (sink.Length != expectedBytes)
+                throw new IOException("The held preparation sink extent changed.");
+            Require(GetFileInformationByHandleEx(sink.SafeFileHandle, FileIdInfo, out SinkFileIdentity id,
+                (uint)Marshal.SizeOf<SinkFileIdentity>()), "Identify held preparation sink");
+            if (id.Volume == 0 || (id.Low | id.High) == 0)
+                throw new IOException("The held preparation sink lacks native identity.");
+            sink.Position = 0;
+            string digest = Convert.ToHexString(SHA256.HashData(sink));
+            if (sink.Position != expectedBytes || sink.Length != expectedBytes)
+                throw new IOException("The held preparation sink read-back disagreed with its extent.");
+            return (FormattableString.Invariant($"{id.Volume:X16}:{id.High:X16}{id.Low:X16}"), digest);
+        }
+
+        private static BuildPreparationDisposition ClassifyBuildPreparation(BuildPreparationReceipt preparation)
+        {
+            Receipt process = preparation.Process;
+            if (process.TimedOut)
+                return BuildPreparationDisposition.PreparationTimedOut;
+            if ((process.CreationAttempted && !process.Drained) || process.CleanupError != null ||
+                process.StdoutExtentUnconfirmed || process.StderrExtentUnconfirmed ||
+                (preparation.StopRequested && !preparation.StopSucceeded.HasValue))
+                return BuildPreparationDisposition.PreparationUncertain;
+            if (!process.JobListConfigured || !process.Started || !process.Assigned || !process.Resumed ||
+                !process.RootSignaled || !process.Drained || process.ActiveProcesses != 0 ||
+                process.Error != null || process.OutputLimitExceeded || process.ExitCode != 0 ||
+                preparation.RootExitCodeBeforeRetirement != 0 ||
+                !preparation.StopRequested || preparation.StopSucceeded != true || preparation.StopNativeError != null ||
+                !preparation.StdoutEof || !preparation.StderrEof ||
+                preparation.StdoutSinkIdentity == null || preparation.StderrSinkIdentity == null ||
+                StringComparer.Ordinal.Equals(preparation.StdoutSinkIdentity, preparation.StderrSinkIdentity) ||
+                preparation.StdoutSinkSha256 == null || preparation.StderrSinkSha256 == null)
+                return BuildPreparationDisposition.PreparationFailed;
+            if (preparation.RootExitObservedMilliseconds is not long rootAt ||
+                preparation.StopRequestedMilliseconds is not long stopAt ||
+                preparation.StopReturnedMilliseconds is not long stoppedAt ||
+                preparation.DrainObservedMilliseconds is not long drainedAt ||
+                preparation.SinkEvidenceObservedMilliseconds is not long measuredAt ||
+                rootAt < 0 || rootAt > stopAt || stopAt > stoppedAt || stoppedAt > drainedAt || drainedAt > measuredAt ||
+                measuredAt >= preparation.BuildBudgetMilliseconds || measuredAt - stopAt >= ShutdownMilliseconds)
+                return BuildPreparationDisposition.PreparationUncertain;
+            return BuildPreparationDisposition.QuiescedAfterRootExit;
+        }
+
+        private static void StopAndDrain(SafeFileHandle job, SafeFileHandle process,
+            Capture stdout, Capture stderr, Receipt receipt, SafeFileHandle trace, bool stopAlreadyRequested)
+        {
+            if (!stopAlreadyRequested)
             {
-                RecordFailure(receipt, failure, true);
+                try
+                {
+                    Require(TerminateJobObject(job, 1), "TerminateJobObject");
+                }
+                catch (Exception failure)
+                {
+                    RecordFailure(receipt, failure, true);
+                }
             }
 
             if (!receipt.Assigned)
@@ -948,6 +1180,10 @@ namespace ExaCopyQualification
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
         private static extern SafeFileHandle CreateJobObjectW(IntPtr attributes, string name);
+
+        [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
+        private static extern bool GetFileInformationByHandleEx(SafeFileHandle handle, int kind,
+            out SinkFileIdentity identity, uint length);
 
         [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
         private static extern bool SetInformationJobObject(SafeFileHandle job, int kind, ref JobExtendedLimits limits, uint length);

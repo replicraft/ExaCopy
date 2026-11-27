@@ -147,8 +147,72 @@ $overCap = $jobIds.Clone()
 [BitConverter]::GetBytes([uint32]33).CopyTo($overCap, 4)
 Assert-InvalidJobPidList $overCap 24
 
+# Preparation authority is separate from ordinary strict completion. The
+# synthetic receipts exercise the classifier without starting a Windows job.
+Assert-Refusal {
+    [ExaCopyQualification.PublicationProcess]::PreparePublicationBuild(
+        'C:\fixture\.cargo\bin\cargo.exe', 'C:\fixture',
+        [string[]]@('RUSTUP_HOME=C:\fixture\.rustup'), 'C:\fixture\out', 'C:\fixture\err', 20000)
+}
+Assert-Refusal {
+    [ExaCopyQualification.PublicationProcess]::PreparePublicationBuild(
+        'C:\fixture\.rustup\toolchains\1.100.0-x86_64-pc-windows-msvc\bin\cargo.exe',
+        'C:\fixture', [string[]]@('RUSTUP_HOME=C:\elsewhere'), 'C:\fixture\out', 'C:\fixture\err', 20000)
+}
+$preparationType = [ExaCopyQualification.PublicationProcess+BuildPreparationReceipt]
+$preparationConstructor = $preparationType.GetConstructor(
+    [Reflection.BindingFlags]'NonPublic,Instance', $null, [type[]]@([int]), $null)
+$classifyPreparation = [ExaCopyQualification.PublicationProcess].GetMethod(
+    'ClassifyBuildPreparation', [Reflection.BindingFlags]'NonPublic,Static')
+function Set-PreparationFields([object] $Target, [hashtable] $Values) {
+    foreach ($field in $Values.GetEnumerator()) {
+        $value = $field.Value
+        if ($null -ne $value) { $value = $value.PSObject.BaseObject }
+        $Target.GetType().GetProperty($field.Key).SetValue($Target, $value)
+    }
+}
+$cases = @(
+    @{ Expected = 'QuiescedAfterRootExit'; ProcessFields = @{}; PreparationFields = @{} }
+    @{ Expected = 'PreparationTimedOut'; ProcessFields = @{ TimedOut = $true }; PreparationFields = @{} }
+    @{ Expected = 'PreparationUncertain'; ProcessFields = @{ ActiveProcesses = $null }; PreparationFields = @{ StopSucceeded = $null } }
+    @{ Expected = 'PreparationUncertain'; ProcessFields = @{ Drained = $false }; PreparationFields = @{} }
+    @{ Expected = 'PreparationUncertain'; ProcessFields = @{ StderrExtentUnconfirmed = $true }; PreparationFields = @{} }
+    @{ Expected = 'PreparationUncertain'; ProcessFields = @{}; PreparationFields = @{ DrainObservedMilliseconds = [long]19 } }
+    @{ Expected = 'PreparationUncertain'; ProcessFields = @{}; PreparationFields = @{ SinkEvidenceObservedMilliseconds = [long]10020 } }
+    @{ Expected = 'PreparationFailed'; ProcessFields = @{}; PreparationFields = @{ StopSucceeded = $false; StopNativeError = [int]5 } }
+    @{ Expected = 'PreparationFailed'; ProcessFields = @{}; PreparationFields = @{ StopRequested = $false } }
+    @{ Expected = 'PreparationFailed'; ProcessFields = @{}; PreparationFields = @{ RootExitCodeBeforeRetirement = $null } }
+    @{ Expected = 'PreparationFailed'; ProcessFields = @{ RootSignaled = $false }; PreparationFields = @{} }
+    @{ Expected = 'PreparationFailed'; ProcessFields = @{ ExitCode = [uint32]9 }; PreparationFields = @{} }
+    @{ Expected = 'PreparationFailed'; ProcessFields = @{}; PreparationFields = @{ StdoutEof = $false } }
+    @{ Expected = 'PreparationFailed'; ProcessFields = @{ OutputLimitExceeded = $true }; PreparationFields = @{} }
+    @{ Expected = 'PreparationFailed'; ProcessFields = @{ Error = 'synthetic sink write failure' }; PreparationFields = @{} }
+    @{ Expected = 'PreparationFailed'; ProcessFields = @{}; PreparationFields = @{ StdoutSinkIdentity = 'stderr' } }
+    @{ Expected = 'PreparationFailed'; ProcessFields = @{}; PreparationFields = @{ StderrSinkSha256 = $null } }
+)
+foreach ($case in $cases) {
+    $process = [ExaCopyQualification.PublicationProcess+Receipt]::new()
+    Set-PreparationFields $process @{
+        JobListConfigured = $true; CreationAttempted = $true; Started = $true; Assigned = $true; Resumed = $true
+        RootSignaled = $true; Drained = $true; ActiveProcesses = [uint32]0; ExitCode = [uint32]0
+    }
+    Set-PreparationFields $process $case.ProcessFields
+    $preparation = $preparationConstructor.Invoke([object[]]@([int]20000))
+    Set-PreparationFields $preparation @{
+        Process = $process; RootExitCodeBeforeRetirement = [uint32]0; StopRequested = $true; StopSucceeded = $true
+        RootExitObservedMilliseconds = [long]10; StopRequestedMilliseconds = [long]20
+        StopReturnedMilliseconds = [long]21; DrainObservedMilliseconds = [long]22
+        SinkEvidenceObservedMilliseconds = [long]23; StdoutEof = $true; StderrEof = $true
+        StdoutSinkIdentity = 'stdout'; StderrSinkIdentity = 'stderr'
+        StdoutSinkSha256 = ('A' * 64); StderrSinkSha256 = ('B' * 64)
+    }
+    Set-PreparationFields $preparation $case.PreparationFields
+    $disposition = $classifyPreparation.Invoke($null, [object[]]@($preparation.PSObject.BaseObject))
+    Assert-Equal $disposition.ToString() $case.Expected
+}
+
 if (!$NativeOutputDirectory) {
-    'Process ABI, quoting, Unicode environment, input bounds, failed-sink and job PID list controls passed.'
+    'Process ABI, quoting, Unicode environment, input bounds, failed-sink, job PID list and owned build preparation controls passed.'
     return
 }
 
