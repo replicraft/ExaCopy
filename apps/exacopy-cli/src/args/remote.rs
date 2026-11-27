@@ -9,8 +9,24 @@ pub(crate) struct RemoteCommand {
 }
 
 pub(crate) enum RemoteRequest {
-	Get { source: OsString, target: PathBuf },
-	Resume { job: PathBuf },
+	Get {
+		source: OsString,
+		target: PathBuf,
+	},
+	Resume {
+		job: PathBuf,
+		#[cfg(feature = "experimental-verified-prefix-resume")]
+		strategy: RemoteResumeStrategy,
+	},
+}
+
+#[cfg(feature = "experimental-verified-prefix-resume")]
+pub(crate) enum RemoteResumeStrategy {
+	Fresh,
+	VerifiedPrefixWithWitness {
+		qualification: PathBuf,
+		trust: PathBuf,
+	},
 }
 
 pub(crate) struct RemoteOptions {

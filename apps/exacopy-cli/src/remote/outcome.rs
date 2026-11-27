@@ -240,7 +240,7 @@ fn job_error(error: RemoteJobError, job: RemoteJob, cancelled: bool) -> RemoteOu
 	}
 }
 
-fn source_error(error: &SftpSourceError, cancelled: bool) -> Failure {
+pub(super) fn source_error(error: &SftpSourceError, cancelled: bool) -> Failure {
 	if cancelled {
 		return Failure::Cancelled;
 	}

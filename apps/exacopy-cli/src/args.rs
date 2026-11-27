@@ -8,6 +8,8 @@ mod parser;
 mod remote;
 
 pub(crate) use parser::parse;
+#[cfg(all(target_os = "linux", feature = "experimental-verified-prefix-resume"))]
+pub(crate) use remote::RemoteResumeStrategy;
 #[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
 pub(crate) use remote::{RemoteCommand, RemoteMetadata, RemoteOptions, RemoteRequest};
 

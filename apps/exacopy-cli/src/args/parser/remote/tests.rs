@@ -64,7 +64,7 @@ fn campaign_vectors_parse_exact_operands_and_grants() {
 				assert_eq!(source, OsStr::new(expected_source));
 				assert_eq!(target, Path::new(expected_target));
 			}
-			(RemoteRequest::Resume { job }, [expected_job]) => {
+			(RemoteRequest::Resume { job, .. }, [expected_job]) => {
 				assert_eq!(job, Path::new(expected_job));
 			}
 			_ => panic!("wrong typed request for {:?}", case.subcommand),
@@ -84,6 +84,50 @@ fn campaign_vectors_parse_exact_operands_and_grants() {
 			RemoteMetadata::SftpDataOnlyV1
 		));
 	}
+}
+
+#[cfg(feature = "experimental-verified-prefix-resume")]
+#[test]
+fn witnessed_resume_requires_consent_and_both_independent_inputs() {
+	let invocation = ["recover", "remote-resume", "job"];
+	let witnessed = [
+		&["--strategy", VERIFIED_PREFIX][..],
+		&["--allow-witness-retention"],
+		&["--continuation-qualification", "-op2"],
+		&["--continuation-trust", "/trust/op2"],
+	];
+	let input = |omit| {
+		witnessed
+			.iter()
+			.enumerate()
+			.filter(move |(index, _)| Some(*index) != omit)
+			.flat_map(|(_, option)| option.iter().map(OsString::from))
+	};
+	let selected = remote(args(&invocation).chain(input(None)));
+	let RemoteRequest::Resume {
+		strategy: RemoteResumeStrategy::VerifiedPrefixWithWitness {
+			qualification,
+			trust,
+		},
+		..
+	} = selected.request
+	else {
+		panic!("expected witnessed resume");
+	};
+	assert_eq!(qualification, Path::new("-op2"));
+	assert_eq!(trust, Path::new("/trust/op2"));
+	for index in 0..witnessed.len() {
+		assert!(parse(args(&invocation).chain(input(Some(index)))).is_err());
+	}
+	assert!(parse(args(&["get", "user@host:file", "target"]).chain(input(None))).is_err());
+	let plain = remote(args(&invocation));
+	assert!(matches!(
+		plain.request,
+		RemoteRequest::Resume {
+			strategy: RemoteResumeStrategy::Fresh,
+			..
+		}
+	));
 }
 
 fn args(operands: &[&str]) -> impl Iterator<Item = OsString> {
@@ -131,7 +175,7 @@ fn get_preserves_raw_absolute_ssh_and_native_operand_bytes() {
 #[test]
 fn resume_uses_only_retained_job_and_explicit_grants() {
 	let remote = remote(args(&["recover", "remote-resume", "--", "-job"]));
-	let RemoteRequest::Resume { job } = remote.request else {
+	let RemoteRequest::Resume { job, .. } = remote.request else {
 		panic!("expected remote resume");
 	};
 	assert_eq!(job, PathBuf::from("-job"));

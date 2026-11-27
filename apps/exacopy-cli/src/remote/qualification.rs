@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use ed25519_dalek::VerifyingKey;
+use exacopy_endpoint::linux_remote_qualification::RemoteDestinationQualification;
 use exacopy_journal::remote_download::qualification::{
 	MAX_REMOTE_QUALIFICATION_BYTES, RemoteQualificationRouteClass, RemoteQualificationScope,
 	RemoteQualificationTrust, verify_remote_destination_qualification,
@@ -20,7 +21,7 @@ const MAX_TRUST_BYTES: usize = 2048;
 pub(super) struct Qualification {
 	record: Vec<u8>,
 	trust: SelectedTrust,
-	pub(super) digest: [u8; 32],
+	confirmed: RemoteDestinationQualification,
 }
 
 impl Qualification {
@@ -58,8 +59,12 @@ impl Qualification {
 		Ok(Self {
 			record,
 			trust,
-			digest: confirmed.digest(),
+			confirmed,
 		})
+	}
+
+	pub(super) fn digest(&self) -> [u8; 32] {
+		self.confirmed.digest()
 	}
 
 	pub(super) fn attestation(&self) -> RemoteDestinationAttestation<'_> {
@@ -72,7 +77,7 @@ impl Qualification {
 	}
 }
 
-fn read_bounded<const MAX: usize>(path: &Path) -> Result<Vec<u8>, Failure> {
+pub(super) fn read_bounded<const MAX: usize>(path: &Path) -> Result<Vec<u8>, Failure> {
 	let mut bytes = vec![0; MAX];
 	let mut readback = [0; 1024];
 	let length = read_protected_snapshot_into(path, &mut bytes, &mut readback)
@@ -81,19 +86,32 @@ fn read_bounded<const MAX: usize>(path: &Path) -> Result<Vec<u8>, Failure> {
 	Ok(bytes)
 }
 
-struct SelectedTrust {
-	attestor: [u8; 16],
-	key: VerifyingKey,
-	scope: RemoteQualificationScope,
+pub(super) struct SelectedTrust {
+	pub(super) attestor: [u8; 16],
+	pub(super) key: VerifyingKey,
+	pub(super) scope: RemoteQualificationScope,
 }
 
 impl SelectedTrust {
 	fn decode(bytes: &[u8]) -> Result<Self, Failure> {
+		Self::decode_selection(bytes, Schema::V1)
+	}
+
+	#[cfg(feature = "experimental-verified-prefix-resume")]
+	pub(super) fn load_witness(path: &Path) -> Result<Self, Failure> {
+		let bytes = read_bounded::<MAX_TRUST_BYTES>(path)?;
+		Self::decode_selection(&bytes, Schema::Witness)
+	}
+
+	fn decode_selection(bytes: &[u8], schema: Schema) -> Result<Self, Failure> {
 		if bytes.len() > MAX_TRUST_BYTES {
 			return Err(Failure::InvalidRequest);
 		}
 		let trust: WireTrust =
 			serde_json::from_slice(bytes).map_err(|_| Failure::InvalidRequest)?;
+		if trust.schema != schema {
+			return Err(Failure::InvalidRequest);
+		}
 		let attestor = fixed_hex(&trust.attestor)?;
 		let key = VerifyingKey::from_bytes(&fixed_hex(&trust.attestor_key)?)
 			.map_err(|_| Failure::InvalidRequest)?;
@@ -116,8 +134,7 @@ impl SelectedTrust {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct WireTrust {
-	#[serde(rename = "schema")]
-	_schema: Schema,
+	schema: Schema,
 	attestor: Box<str>,
 	attestor_key: Box<str>,
 	build: Box<str>,
@@ -126,10 +143,13 @@ struct WireTrust {
 	campaign_evidence: Box<str>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, PartialEq)]
 enum Schema {
 	#[serde(rename = "exacopy-remote-qualification-trust-v1")]
 	V1,
+	#[cfg(feature = "experimental-verified-prefix-resume")]
+	#[serde(rename = "exacopy-remote-witness-qualification-trust-v1")]
+	Witness,
 }
 
 #[derive(Deserialize)]

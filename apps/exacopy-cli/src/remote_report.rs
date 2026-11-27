@@ -96,11 +96,15 @@ struct PublishedReceipt {
 	#[serde(flatten)]
 	job: JobReport,
 	length: String,
-	blake3: String,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	blake3: Option<String>,
 	receipt_digest: String,
 	qualification_digest: String,
 	metadata_policy: &'static str,
 	omissions: Vec<&'static str>,
+	#[cfg(feature = "experimental-verified-prefix-resume")]
+	#[serde(skip_serializing_if = "Option::is_none")]
+	retained_witness: Option<RetainedWitnessReport>,
 }
 
 #[derive(Serialize)]
@@ -131,9 +135,20 @@ struct RemoteFailure {
 }
 
 #[derive(Serialize)]
-struct Report<'outcome> {
+struct ReportHeader {
 	schema: &'static str,
 	schema_version: &'static str,
+}
+
+const REPORT_HEADER: ReportHeader = ReportHeader {
+	schema: "exacopy.cli.remote_download",
+	schema_version: "1.0",
+};
+
+#[derive(Serialize)]
+struct Report<'outcome> {
+	#[serde(flatten)]
+	header: &'static ReportHeader,
 	completed: u8,
 	pending: u8,
 	publication: RemotePublication,
@@ -154,7 +169,7 @@ impl RemoteOutcome {
 				receipt: PublishedReceipt {
 					job: job.into(),
 					length: receipt.capture.length.to_string(),
-					blake3: digest_hex(&receipt.capture.source_digest),
+					blake3: Some(digest_hex(&receipt.capture.source_digest)),
 					receipt_digest: digest_hex(receipt.digest.as_bytes()),
 					qualification_digest: digest_hex(&qualification),
 					metadata_policy: SftpDataOnlyV1::NAME,
@@ -162,6 +177,8 @@ impl RemoteOutcome {
 						.iter()
 						.map(|item| item.name())
 						.collect(),
+					#[cfg(feature = "experimental-verified-prefix-resume")]
+					retained_witness: None,
 				},
 			}),
 			None => Self::recovery_required(RemotePublication::Published, job),
@@ -199,12 +216,22 @@ impl RemoteOutcome {
 	pub(crate) fn with_unconfirmed_route_retirement(self, _cause: RemoteRouteCloseError) -> Self {
 		let mut error = match self.0 {
 			Outcome::Failed { error } => error,
-			Outcome::PublishedWithOmissions { receipt } => RemoteFailure {
-				code: RemoteFailureKind::RecoveryRequired,
-				publication: RemotePublication::Published,
-				message: RemoteFailureKind::RecoveryRequired.message().into(),
-				job: Some(receipt.job),
-			},
+			Outcome::PublishedWithOmissions { receipt } => {
+				#[cfg(feature = "experimental-verified-prefix-resume")]
+				if let Some(witness) = receipt.retained_witness {
+					let mut error =
+						witness::witness_publication_failure(receipt.job, witness.link_count);
+					error.message =
+						format!("{} (transport retirement unconfirmed)", error.message).into();
+					return Self(Outcome::Failed { error });
+				}
+				RemoteFailure {
+					code: RemoteFailureKind::RecoveryRequired,
+					publication: RemotePublication::Published,
+					message: RemoteFailureKind::RecoveryRequired.message().into(),
+					job: Some(receipt.job),
+				}
+			}
 		};
 		error.message = format!("{} (transport retirement unconfirmed)", error.message).into();
 		Self(Outcome::Failed { error })
@@ -246,11 +273,23 @@ impl RemoteOutcome {
 			}
 			Format::Human => match &self.0 {
 				Outcome::PublishedWithOmissions { receipt } => {
-					writeln!(
-						stdout,
-						"Published {} bytes with BLAKE3 read-back and metadata omissions.",
-						receipt.length,
-					)?;
+					#[cfg(feature = "experimental-verified-prefix-resume")]
+					if let Some(witness) = &receipt.retained_witness {
+						writeln!(
+							stdout,
+							"Published {} bytes after verifying the retained prefix and reading back the completed stage.",
+							receipt.length,
+						)?;
+						writeln!(
+							stdout,
+							"Retained a private hard link to the published file. Observed {} links.",
+							witness.link_count,
+						)?;
+					} else {
+						write_ordinary_published(stdout, receipt)?;
+					}
+					#[cfg(not(feature = "experimental-verified-prefix-resume"))]
+					write_ordinary_published(stdout, receipt)?;
 					writeln!(
 						stdout,
 						"Observed the file and directory barriers. The destination selection is process-crash qualified.",
@@ -307,13 +346,22 @@ impl RemoteOutcome {
 			Outcome::PublishedWithOmissions { .. } => RemotePublication::Published,
 			Outcome::Failed { error } => error.publication,
 		};
+		let header = &REPORT_HEADER;
+		let verification = complete.then_some("hash_readback");
+		#[cfg(feature = "experimental-verified-prefix-resume")]
+		let (header, verification) = match &self.0 {
+			Outcome::PublishedWithOmissions { receipt } if receipt.retained_witness.is_some() => (
+				&witness::REPORT_HEADER,
+				Some("verified_prefix_with_witness_readback"),
+			),
+			_ => (header, verification),
+		};
 		Report {
-			schema: "exacopy.cli.remote_download",
-			schema_version: "1.0",
+			header,
 			completed: u8::from(complete),
 			pending: u8::from(!complete),
 			publication,
-			verification: complete.then_some("hash_readback"),
+			verification,
 			consistency: complete.then_some("live_observed"),
 			durability: if complete {
 				"file_and_directory_barriers_observed"
@@ -326,6 +374,17 @@ impl RemoteOutcome {
 			outcome: &self.0,
 		}
 	}
+}
+
+fn write_ordinary_published(
+	output: &mut impl io::Write,
+	receipt: &PublishedReceipt,
+) -> io::Result<()> {
+	writeln!(
+		output,
+		"Published {} bytes with BLAKE3 read-back and metadata omissions.",
+		receipt.length,
+	)
 }
 
 fn checked_receipt(receipt: &CommittedRemoteReceipt, job: JournalJobId) -> Option<[u8; 32]> {
@@ -421,6 +480,13 @@ fn write_publication(
 		RemotePublication::NotPublished => Ok(()),
 	}
 }
+
+#[cfg(feature = "experimental-verified-prefix-resume")]
+mod witness;
+#[cfg(feature = "experimental-verified-prefix-resume")]
+use witness::RetainedWitnessReport;
+#[cfg(feature = "experimental-verified-prefix-resume")]
+pub(crate) use witness::WitnessedSummary;
 
 #[cfg(test)]
 mod tests;

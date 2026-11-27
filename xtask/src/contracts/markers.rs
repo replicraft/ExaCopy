@@ -41,6 +41,16 @@ enum Marker {
 
 pub(super) const BINDINGS: &[Binding] = &[
 	Binding::new(
+		"exacopy.cli.remote_download",
+		"apps/exacopy-cli/src/remote_report.rs",
+		Marker::Report,
+	),
+	Binding::new(
+		"exacopy.cli.witnessed_remote_download",
+		"apps/exacopy-cli/src/remote_report/witness.rs",
+		Marker::Report,
+	),
+	Binding::new(
 		"workflow-local-sync-endpoint",
 		"crates/formats/exacopy-plan/src/workflow_sync/wire.rs",
 		Marker::Workflow {

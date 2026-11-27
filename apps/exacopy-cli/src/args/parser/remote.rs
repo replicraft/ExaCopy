@@ -5,11 +5,16 @@ use std::ffi::{OsStr, OsString};
 use clap::builder::PossibleValuesParser;
 use clap::{Arg, ArgMatches, Command as Cli};
 
+#[cfg(feature = "experimental-verified-prefix-resume")]
+use clap::ArgAction;
+
 use super::{
 	OPERAND_ORDER, PROFILE, directory_option, operand, output_format, path, path_option,
 	selected_format,
 };
 
+#[cfg(feature = "experimental-verified-prefix-resume")]
+use crate::args::RemoteResumeStrategy;
 use crate::args::{Command, RemoteCommand, RemoteMetadata, RemoteOptions, RemoteRequest};
 
 pub(super) const GET: &str = "get";
@@ -18,6 +23,16 @@ const SSH_PROFILE: &str = "ssh-profile";
 const QUALIFICATION: &str = "destination-qualification";
 const QUALIFICATION_TRUST: &str = "qualification-trust";
 const METADATA: &str = "metadata";
+#[cfg(feature = "experimental-verified-prefix-resume")]
+const STRATEGY: &str = "strategy";
+#[cfg(feature = "experimental-verified-prefix-resume")]
+const VERIFIED_PREFIX: &str = "verified-prefix-with-witness-v1";
+#[cfg(feature = "experimental-verified-prefix-resume")]
+const RETENTION: &str = "allow-witness-retention";
+#[cfg(feature = "experimental-verified-prefix-resume")]
+const CONTINUATION_QUALIFICATION: &str = "continuation-qualification";
+#[cfg(feature = "experimental-verified-prefix-resume")]
+const CONTINUATION_TRUST: &str = "continuation-trust";
 
 pub(super) fn get_subcommand() -> Cli {
 	options(
@@ -29,11 +44,53 @@ pub(super) fn get_subcommand() -> Cli {
 }
 
 pub(super) fn resume_subcommand() -> Cli {
-	options(
+	witness_options(options(
 		Cli::new(REMOTE_RESUME)
 			.about("Resume a retained SSH download using its recorded source and target.")
 			.arg(operand("JOB", 1)),
-	)
+	))
+}
+
+fn witness_options(cli: Cli) -> Cli {
+	#[cfg(feature = "experimental-verified-prefix-resume")]
+	{
+		cli.arg(
+			Arg::new(STRATEGY)
+				.long(STRATEGY)
+				.value_parser(PossibleValuesParser::new([VERIFIED_PREFIX]))
+				.requires_all([RETENTION, CONTINUATION_QUALIFICATION, CONTINUATION_TRUST])
+				.help("Independently verify the retained prefix and append only its suffix."),
+		)
+		.arg(
+			Arg::new(RETENTION)
+				.long(RETENTION)
+				.action(ArgAction::SetTrue)
+				.requires(STRATEGY)
+				.help("Approve keeping a private hard link to the published file."),
+		)
+		.arg(
+			path_option(
+				CONTINUATION_QUALIFICATION,
+				"FILE",
+				"Select the signed witnessed continuation qualification.",
+			)
+			.required(false)
+			.requires(STRATEGY),
+		)
+		.arg(
+			path_option(
+				CONTINUATION_TRUST,
+				"FILE",
+				"Select the separately protected witnessed qualification trust.",
+			)
+			.required(false)
+			.requires(STRATEGY),
+		)
+	}
+	#[cfg(not(feature = "experimental-verified-prefix-resume"))]
+	{
+		cli
+	}
 }
 
 fn options(cli: Cli) -> Cli {
@@ -72,6 +129,10 @@ pub(super) fn is_remote(command: &str) -> bool {
 }
 
 pub(super) fn is_path_option(arg: &OsStr) -> bool {
+	#[cfg(feature = "experimental-verified-prefix-resume")]
+	if arg == "--continuation-qualification" || arg == "--continuation-trust" {
+		return true;
+	}
 	arg == "--profile"
 		|| arg == "--ssh-profile"
 		|| arg == "--destination-qualification"
@@ -93,9 +154,25 @@ pub(super) fn resume(args: &mut ArgMatches) -> Option<Command> {
 	Some(Command::Remote(RemoteCommand {
 		request: RemoteRequest::Resume {
 			job: path(args, "JOB")?,
+			#[cfg(feature = "experimental-verified-prefix-resume")]
+			strategy: resume_strategy(args)?,
 		},
 		options: read_options(args)?,
 	}))
+}
+
+#[cfg(feature = "experimental-verified-prefix-resume")]
+fn resume_strategy(args: &mut ArgMatches) -> Option<RemoteResumeStrategy> {
+	match args.remove_one::<String>(STRATEGY).as_deref() {
+		None => Some(RemoteResumeStrategy::Fresh),
+		Some(VERIFIED_PREFIX) if args.get_flag(RETENTION) => {
+			Some(RemoteResumeStrategy::VerifiedPrefixWithWitness {
+				qualification: path(args, CONTINUATION_QUALIFICATION)?,
+				trust: path(args, CONTINUATION_TRUST)?,
+			})
+		}
+		_ => None,
+	}
 }
 
 fn read_options(args: &mut ArgMatches) -> Option<RemoteOptions> {

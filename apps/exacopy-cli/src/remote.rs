@@ -7,7 +7,11 @@ use std::time::{Duration, Instant};
 use exacopy_journal::remote_download::finalization_policy::SftpDataOnlyV1;
 use tokio::runtime::Builder;
 
+#[cfg(feature = "experimental-verified-prefix-resume")]
+use crate::args::RemoteResumeStrategy;
 use crate::args::{RemoteCommand, RemoteMetadata, RemoteRequest};
+#[cfg(feature = "experimental-verified-prefix-resume")]
+use crate::assembly::linux::OriginalWitnessResume;
 use crate::assembly::linux::remote_download::{
 	AttemptAdmission, RemoteDownloadRequest, RemoteGrant, RemoteJobAction, SourceInvocation,
 };
@@ -22,6 +26,8 @@ mod qualification;
 mod resume;
 mod retry;
 mod selection;
+#[cfg(feature = "experimental-verified-prefix-resume")]
+mod witness;
 
 use interrupt::Interrupt;
 use selection::{Selected, refused};
@@ -46,7 +52,7 @@ impl Invocation {
 			)
 			.map(Self::Get)
 			.map_err(|_| Failure::InvalidRequest),
-			RemoteRequest::Resume { job } => {
+			RemoteRequest::Resume { job, .. } => {
 				let (_, name) = split(job).map_err(|_| Failure::InvalidRequest)?;
 				selection::selected_job(job, name).map(Self::Resume)
 			}
@@ -89,6 +95,18 @@ async fn run(
 	let owners = LocalProfile::open(owner_path).map_err(|_| refused(Failure::Authorization))?;
 	let root = open_destination(Path::new(parent)).map_err(|_| refused(Failure::Io))?;
 
+	#[cfg(feature = "experimental-verified-prefix-resume")]
+	let witness_inputs = match &command.request {
+		RemoteRequest::Resume {
+			strategy:
+				RemoteResumeStrategy::VerifiedPrefixWithWitness {
+					qualification,
+					trust,
+				},
+			..
+		} => Some((qualification, trust)),
+		_ => None,
+	};
 	let held_job;
 	let (selected, ssh, metadata, startup) = match &request {
 		Invocation::Get(get) => {
@@ -108,8 +126,17 @@ async fn run(
 				.open_recovery_job(name)
 				.map_err(|_| resume::uncertain(job))?;
 			let startup = resume::Startup::hold(job, &held_job)?;
-			let (selected, checked) = resume::select(startup, name, &root, &owners, &ssh, options)?;
-			(selected, ssh, metadata, Some(Box::new(checked)))
+			let (selected, checked) = resume::select(
+				startup,
+				name,
+				&root,
+				&owners,
+				&ssh,
+				options,
+				#[cfg(feature = "experimental-verified-prefix-resume")]
+				witness_inputs.is_some(),
+			)?;
+			(selected, ssh, metadata, Some(checked))
 		}
 	};
 	let Selected {
@@ -125,6 +152,20 @@ async fn run(
 		.map_err(|code| RemoteOutcome::failed(code, retained()))?;
 	let scope_digest = scope.digest().map_err(|_| refused(Failure::Integrity))?;
 	let grant_digest = blake3::derive_key(GRANT_DOMAIN, scope_digest.as_bytes());
+	#[cfg(feature = "experimental-verified-prefix-resume")]
+	let witnessed = witness_inputs
+		.map(|(qualification, trust)| {
+			witness::Selection::load(qualification, trust, options, &root, &owners, &scope)
+		})
+		.transpose()
+		.map_err(|code| RemoteOutcome::failed(code, retained()))?;
+	#[cfg(feature = "experimental-verified-prefix-resume")]
+	let grant_digest = if witnessed.is_some() {
+		witness::fresh_grant_digest(scope_digest)
+			.map_err(|code| RemoteOutcome::failed(code, retained()))?
+	} else {
+		grant_digest
+	};
 	let deadline = Instant::now()
 		.checked_add(ssh.grant_duration)
 		.ok_or_else(|| refused(Failure::InvalidRequest))?;
@@ -157,6 +198,34 @@ async fn run(
 			retained(),
 		)
 	})?;
+	#[cfg(feature = "experimental-verified-prefix-resume")]
+	if let Some(witness::Selection {
+		qualification: continuation,
+		consent,
+	}) = witnessed
+	{
+		let original = OriginalWitnessResume {
+			root: &root,
+			profile: &owners,
+			job: job.id,
+			scope: &scope,
+			initial_v1_qualification: qualification.digest(),
+			fresh_v1_qualification: qualification.digest(),
+			qualification: &continuation,
+			grant: &grant,
+			consent,
+		};
+		let Some(resume::CheckedStartup::Witnessed(startup)) = startup else {
+			return Err(resume::uncertain(&job));
+		};
+		return Ok(witness::run(original, job, connecting, &ssh, interrupted, startup).await);
+	}
+	let startup = match startup {
+		None => None,
+		Some(resume::CheckedStartup::Ordinary(checked)) => Some(checked),
+		#[cfg(feature = "experimental-verified-prefix-resume")]
+		Some(resume::CheckedStartup::Witnessed(_)) => return Err(resume::uncertain(&job)),
+	};
 	let first = retry::attempt(
 		connecting,
 		&ssh,

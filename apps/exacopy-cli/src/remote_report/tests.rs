@@ -36,6 +36,8 @@ fn published_with_omissions_uses_dedicated_nonclean_status_and_precise_evidence(
 		),
 	);
 	assert_eq!(json["receipt"]["job_directory_bytes_hex"], "6a6f622dff");
+	assert_eq!(json["receipt"]["blake3"], digest_hex(&[6; 32]));
+	assert!(json["receipt"].get("retained_witness").is_none());
 	assert!(stderr.is_empty());
 }
 
@@ -104,7 +106,7 @@ fn published_report_fixture() -> RemoteOutcome {
 		receipt: PublishedReceipt {
 			job: job().into(),
 			length: "64".into(),
-			blake3: digest_hex(&[6; 32]),
+			blake3: Some(digest_hex(&[6; 32])),
 			receipt_digest: digest_hex(&[7; 32]),
 			qualification_digest: digest_hex(&[8; 32]),
 			metadata_policy: SftpDataOnlyV1::NAME,
@@ -112,8 +114,81 @@ fn published_report_fixture() -> RemoteOutcome {
 				.iter()
 				.map(|item| item.name())
 				.collect(),
+			#[cfg(feature = "experimental-verified-prefix-resume")]
+			retained_witness: None,
 		},
 	})
+}
+
+#[cfg(feature = "experimental-verified-prefix-resume")]
+#[test]
+fn observed_incumbent_with_unconfirmed_record_preserves_conflict_evidence() {
+	let outcome = RemoteOutcome::witness_conflict_reconciliation(job());
+	let json = serde_json::to_value(outcome.report()).unwrap();
+	assert_eq!(outcome.exit_code(), 9);
+	assert_eq!(json["publication"], "not_published");
+	assert_eq!(json["error"]["code"], "E_RECOVERY_REQUIRED");
+	assert_eq!(
+		json["error"]["message"],
+		"remote download requires reconciliation (incumbent observed; conflict record unconfirmed)"
+	);
+	assert!(json.get("receipt").is_none());
+}
+
+#[cfg(feature = "experimental-verified-prefix-resume")]
+#[test]
+fn witnessed_receipt_projection_reports_committed_evidence_and_retention() {
+	use exacopy_journal::frame::ChainHead;
+	use exacopy_journal::remote_download::replay::RemoteReplayBoundary;
+
+	let outcome = RemoteOutcome::published_with_witness(
+		job(),
+		WitnessedSummary {
+			committed: RemoteReplayBoundary {
+				head: ChainHead::after(18, [9; 32]).unwrap(),
+				offset: 4096,
+			},
+			length: 64,
+			receipt_digest: [7; 32],
+			canonical_receipt_length: 1024,
+			qualification: [8; 32],
+			witness_links: 2,
+			metadata_omissions: SftpDataOnlyV1::omissions(),
+		},
+	);
+	let json = serde_json::to_value(outcome.report()).unwrap();
+	assert_eq!(outcome.exit_code(), 11);
+	assert_eq!(json["schema"], "exacopy.cli.witnessed_remote_download");
+	assert_eq!(json["schema_version"], "1.0");
+	assert!(json["receipt"].get("blake3").is_none());
+	assert_eq!(json["publication"], "published");
+	assert_eq!(
+		json["verification"],
+		"verified_prefix_with_witness_readback"
+	);
+	assert_eq!(json["receipt"]["retained_witness"]["link_count"], 2);
+	assert_eq!(
+		json["receipt"]["retained_witness"]["committed_sequence"],
+		"18"
+	);
+	assert_eq!(
+		json["receipt"]["retained_witness"]["committed_head_digest"],
+		digest_hex(&[9; 32])
+	);
+	assert_eq!(json["receipt"]["receipt_digest"], digest_hex(&[7; 32]));
+
+	#[cfg(feature = "experimental-ssh-wireguard")]
+	{
+		let pending =
+			outcome.with_unconfirmed_route_retirement(RemoteRouteCloseError::WorkerFailed);
+		let json = serde_json::to_value(pending.report()).unwrap();
+		assert_eq!(pending.exit_code(), 9);
+		assert_eq!(json["publication"], "published");
+		assert_eq!(
+			json["error"]["message"],
+			"remote download requires reconciliation (private witness retained, 2 links observed) (transport retirement unconfirmed)"
+		);
+	}
 }
 
 fn job() -> RemoteJob {

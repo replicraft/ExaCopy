@@ -4,13 +4,13 @@ use exacopy_sftp::SftpSourceError;
 use exacopy_transfer::remote_capture::CaptureError;
 use exacopy_transfer::remote_finalization::RemoteFinalizationOutcome;
 
+#[cfg(feature = "experimental-ssh-wireguard")]
+use crate::assembly::linux::remote_download::EmbeddedConnectError;
 use crate::assembly::linux::remote_download::{
 	AttemptAdmission, ConnectedRemoteSource, ConnectingRemoteSource, DirectConnectError,
-	RemoteDownloadFailure, RemoteDownloadRequest, RemoteRetryStamp, SourceInvocation,
-	download_remote, download_retry,
+	RemoteDownloadFailure, RemoteDownloadRequest, RemoteRetryStamp, RemoteRouteCloseError,
+	SourceInvocation, download_remote, download_retry,
 };
-#[cfg(feature = "experimental-ssh-wireguard")]
-use crate::assembly::linux::remote_download::{EmbeddedConnectError, RemoteRouteCloseError};
 use crate::remote_frontdoor::{ApprovedRoute, SshProfile};
 use crate::remote_report::{RemoteFailureKind as Failure, RemoteJob, RemoteOutcome};
 
@@ -41,32 +41,53 @@ pub(super) async fn attempt(
 	interrupted: &Interrupt,
 	admission: AttemptAdmission<'_>,
 ) -> Result {
+	let (result, retirement) = with_connection(
+		connecting,
+		ssh,
+		interrupted,
+		admission,
+		async |connected, admission| transfer(connected, request, interrupted, admission).await,
+	)
+	.await?;
+	#[cfg(feature = "experimental-ssh-wireguard")]
+	let result = with_embedded_retirement(result, retirement);
+	#[cfg(not(feature = "experimental-ssh-wireguard"))]
+	debug_assert!(retirement.is_none());
+	result
+}
+
+pub(super) async fn with_connection<'held, T>(
+	connecting: ConnectingRemoteSource<'_>,
+	ssh: &SshProfile,
+	interrupted: &Interrupt,
+	admission: AttemptAdmission<'held>,
+	consume: impl for<'route> AsyncFnOnce(ConnectedRemoteSource<'route>, AttemptAdmission<'held>) -> T,
+) -> std::result::Result<(T, Option<RemoteRouteCloseError>), AttemptError> {
 	interrupted.check().map_err(AttemptError::Foreground)?;
 	match &ssh.route {
 		ApprovedRoute::EmbeddedWireGuard(_) => {
 			#[cfg(feature = "experimental-ssh-wireguard")]
 			{
 				match connecting
-					.with_embedded(
-						ssh,
-						admission,
-						|| interrupted.cancelled(),
-						async |connected, admission| {
-							transfer(connected, request, interrupted, admission).await
-						},
-					)
+					.with_embedded(ssh, admission, || interrupted.cancelled(), consume)
 					.await
 				{
-					Ok(scoped) => with_embedded_retirement(scoped.outcome, scoped.retirement.err()),
-					Err(failure) => with_embedded_retirement(
-						Err(embedded_connect_failure(
+					Ok(scoped) => Ok((scoped.outcome, scoped.retirement.err())),
+					Err(failure) => {
+						let error = embedded_connect_failure(
 							failure.cause,
 							failure
 								.cancelled_at_refusal
 								.unwrap_or_else(|| interrupted.cancelled()),
-						)),
-						failure.route_failure,
-					),
+						);
+						Err(match failure.route_failure {
+							Some(cause) => AttemptError::EmbeddedRetirement {
+								outcome: Box::new(Err(error)),
+								cause,
+							},
+							None => error,
+						})
+					}
 				}
 			}
 			#[cfg(not(feature = "experimental-ssh-wireguard"))]
@@ -85,7 +106,7 @@ pub(super) async fn attempt(
 						interrupted.cancelled(),
 					)),
 				})?;
-			transfer(connected, request, interrupted, admission).await
+			Ok((consume(connected, admission).await, None))
 		}
 	}
 }
@@ -126,6 +147,10 @@ async fn transfer(
 	match admission {
 		AttemptAdmission::Initial(startup) => download_remote(request, connected, startup).await,
 		AttemptAdmission::Retry(ready) => download_retry(request, connected, ready).await,
+		#[cfg(feature = "experimental-verified-prefix-resume")]
+		AttemptAdmission::Witnessed(_) => Err(RemoteDownloadFailure::ResumeAdmission(
+			crate::assembly::linux::remote_download::RemoteJobError::Binding,
+		)),
 	}
 	.map_err(AttemptError::download)
 }
@@ -182,7 +207,12 @@ impl Attempts {
 	}
 }
 
-fn project(current: Result, job: RemoteJob, cancelled: bool, had_job: bool) -> RemoteOutcome {
+pub(super) fn project(
+	current: Result,
+	job: RemoteJob,
+	cancelled: bool,
+	had_job: bool,
+) -> RemoteOutcome {
 	match current {
 		Err(AttemptError::Foreground(code)) => RemoteOutcome::failed(code, had_job.then_some(job)),
 		Err(AttemptError::Download(error)) => outcome::finish(Err(*error), job, cancelled, had_job),

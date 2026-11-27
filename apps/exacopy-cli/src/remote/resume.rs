@@ -15,6 +15,8 @@ use crate::args::RemoteOptions;
 use crate::assembly::linux::remote_download::{
 	CheckedResumeStartup, RemoteJobAction, RemoteJobError, check_resume_startup,
 };
+#[cfg(feature = "experimental-verified-prefix-resume")]
+use crate::assembly::linux::{CheckedOriginalWitnessStartup, hold_original_witness_startup};
 use crate::profile::LocalProfile;
 use crate::remote_frontdoor::{ApprovedRoute, SshProfile};
 use crate::remote_report::{
@@ -45,6 +47,12 @@ impl<'held> Startup<'held> {
 	}
 }
 
+pub(super) enum CheckedStartup<'held> {
+	Ordinary(Box<CheckedResumeStartup<'held>>),
+	#[cfg(feature = "experimental-verified-prefix-resume")]
+	Witnessed(Box<CheckedOriginalWitnessStartup<'held>>),
+}
+
 pub(super) fn select<'held>(
 	startup: Startup<'held>,
 	name: UnixComponent<'_>,
@@ -52,7 +60,8 @@ pub(super) fn select<'held>(
 	owners: &LocalProfile,
 	ssh: &SshProfile,
 	options: &RemoteOptions,
-) -> Result<(Selected, CheckedResumeStartup<'held>), Box<RemoteOutcome>> {
+	#[cfg(feature = "experimental-verified-prefix-resume")] witnessed: bool,
+) -> Result<(Selected, CheckedStartup<'held>), Box<RemoteOutcome>> {
 	let location = startup.location;
 	let job = startup.lease.job();
 	let unknown = || uncertain(location);
@@ -97,8 +106,17 @@ pub(super) fn select<'held>(
 	}
 	.map_err(|_| unknown())?;
 	let mut segment = job.open_first_segment().map_err(|_| unknown())?;
-	let replay = replay_remote_finalization(&mut segment, &trust, qualification.digest, None)
-		.map_err(|_| unknown())?;
+	#[cfg(feature = "experimental-verified-prefix-resume")]
+	let scan = if witnessed {
+		exacopy_journal::remote_download::finalization_replay::replay_remote_finalization_with_checkpoints(
+			&mut segment, &trust, qualification.digest(), None,
+		)
+	} else {
+		replay_remote_finalization(&mut segment, &trust, qualification.digest(), None)
+	};
+	#[cfg(not(feature = "experimental-verified-prefix-resume"))]
+	let scan = replay_remote_finalization(&mut segment, &trust, qualification.digest(), None);
+	let replay = scan.map_err(|_| unknown())?;
 	recheck_startup_records(job, &owner_file, &segment).map_err(|_| unknown())?;
 	let clear = replay.issue().is_none() && replay.boundary().offset == segment.len();
 	if let Some(outcome) = startup_outcome(replay.phase(), clear, location) {
@@ -143,6 +161,16 @@ pub(super) fn select<'held>(
 	}
 	recheck_startup_records(job, &owner_file, &segment).map_err(|_| unknown())?;
 	let checked = CheckedResumeStartup::new(startup.lease, owner_file, segment, replay.boundary());
+	#[cfg(feature = "experimental-verified-prefix-resume")]
+	let checked = if witnessed {
+		let held =
+			hold_original_witness_startup(checked, &replay, target).map_err(|_| unknown())?;
+		CheckedStartup::Witnessed(Box::new(held))
+	} else {
+		CheckedStartup::Ordinary(Box::new(checked))
+	};
+	#[cfg(not(feature = "experimental-verified-prefix-resume"))]
+	let checked = CheckedStartup::Ordinary(Box::new(checked));
 	Ok((
 		Selected {
 			job: duplicate_job(location),
