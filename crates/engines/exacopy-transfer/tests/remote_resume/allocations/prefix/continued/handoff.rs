@@ -14,6 +14,8 @@ use super::{
 	source, stage,
 };
 
+#[path = "handoff/one_range.rs"]
+mod one_range;
 #[path = "handoff/prepublication.rs"]
 mod prepublication;
 
