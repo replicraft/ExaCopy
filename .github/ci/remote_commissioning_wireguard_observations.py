@@ -7,6 +7,7 @@ import re
 import time
 
 from remote_commissioning_peer import Blocked, checkpoint
+import remote_commissioning_wireguard_orphan as orphan
 from remote_commissioning_wireguard_progress import failure
 from remote_commissioning_wireguard_tcp import observe_tcp
 
@@ -42,6 +43,8 @@ class ObservationPhase(Enum):
     CASE_SAMPLE = "case-sample"
     CASE_DELTA = "case-delta"
     PEER_SETTLING = "peer-settling"
+    CRASH_SOCKET_IDENTITY = "crash-socket-identity"
+    CRASH_SOCKET_RETIREMENT = "crash-socket-retirement"
     PEER_CARRIER_SAMPLE = "peer-carrier-sample"
     PEER_TCP_SAMPLE = "peer-tcp-sample"
     PEER_SETTLING_DELTA = "peer-settling-delta"
@@ -120,6 +123,14 @@ def check_delta(before, after, connections):
         raise Blocked("campaign case connection count overruns the fixture")
 
 
+def check_same_peer_progress(before, after):
+    if (
+        after.endpoint != before.endpoint or after.handshake < before.handshake
+        or after.received < before.received or after.sent < before.sent
+    ):
+        raise Blocked("carrier settling observed changed peer or regressed counters")
+
+
 def wait_file(path, stop=lambda: False, *, timeout=CASE_TIMEOUT):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -161,11 +172,7 @@ def settle_peer(kernel, initial, halted, evidence):
         tcp_drained = all(flow.drained() for flow in flows)
         if not tcp_drained:
             evidence["tcp_latest_active"] = tcp_sample
-        if (
-            current.endpoint != initial.endpoint or current.handshake < previous.handshake
-            or current.received < previous.received or current.sent < previous.sent
-        ):
-            raise Blocked("carrier settling observed changed peer or regressed counters")
+        check_same_peer_progress(previous, current)
         del evidence["sample_phase"]
         if not tcp_drained:
             quiet_since = None
@@ -181,6 +188,8 @@ def settle_peer(kernel, initial, halted, evidence):
 def observe_cases(kernel, mailbox, halted, rows, failures):
     phase = ObservationPhase.INITIAL_SAMPLE
     name = before = after = settling = None
+    abandoned = None
+    campaign_evidence = mailbox.parent / "campaign"
     try:
         before = snapshot(kernel)
         phase = ObservationPhase.INITIAL_BASELINE
@@ -200,11 +209,29 @@ def observe_cases(kernel, mailbox, halted, rows, failures):
             phase = ObservationPhase.CASE_DELTA
             check_delta(before, after, count)
             row = {"case": name, "before": asdict(before), "after": asdict(after)}
+            if name == "process-kill":
+                phase = ObservationPhase.CRASH_SOCKET_IDENTITY
+                abandoned = orphan.identify(kernel, campaign_evidence)
+                row["abandoned_fixture_tcp"] = asdict(abandoned) if abandoned is not None else None
             next_baseline = after
             if count == 1 and index + 1 < len(CASES) and CASES[index + 1][1] == 0:
-                phase = ObservationPhase.PEER_SETTLING
                 settling = {"before_case": CASES[index + 1][0], "required_quiet_ms": PEER_QUIET_SECONDS * 1000}
-                next_baseline = settle_peer(kernel, after, halted, settling)
+                if name == "resume":
+                    phase = ObservationPhase.CRASH_SOCKET_RETIREMENT
+                    checkpoint()
+                    if halted.is_set():
+                        raise Blocked("fixture stopped before crash socket retirement")
+                    carrier_before = after if abandoned is None else snapshot(kernel)
+                    check_same_peer_progress(after, carrier_before)
+                    retirement = {"carrier_before": asdict(carrier_before)}
+                    settling["post_crash_fixture_socket_retirement"] = retirement
+                    orphan.retire(kernel, campaign_evidence, abandoned, retirement)
+                    if "kernel_reply" in retirement:
+                        next_baseline = snapshot(kernel)
+                        retirement["carrier_after"] = asdict(next_baseline)
+                        check_same_peer_progress(carrier_before, next_baseline)
+                phase = ObservationPhase.PEER_SETTLING
+                next_baseline = settle_peer(kernel, next_baseline, halted, settling)
                 kernel.recheck_link()
                 row["settling"] = settling
             rows.append(row)

@@ -25,6 +25,7 @@ class TcpFlow:
     retransmissions: int | None
     bytes_retransmitted: int | None
     segments_sent: int | None
+    cookie: int | None = None
 
     def drained(self):
         return (
@@ -76,15 +77,19 @@ def parse_tcp(raw):
                 raise Blocked("inner TCP socket retransmissions invalid")
         raw_bytes = optional_field(details, b"bytes_retrans:")
         raw_segments = optional_field(details, b"segs_out:")
+        raw_cookie = optional_field(details, b"sk:")
+        if raw_cookie is not None and re.fullmatch(rb"[0-9a-f]{1,16}", raw_cookie) is None:
+            raise Blocked("inner TCP socket cookie invalid")
         result[number] = TcpFlow(number, state.decode("ascii"), counter(recv), counter(send),
                                  timer, timer_retransmissions, retransmissions,
                                  None if raw_bytes is None else counter(raw_bytes),
-                                 None if raw_segments is None else counter(raw_segments))
+                                 None if raw_segments is None else counter(raw_segments),
+                                 None if raw_cookie is None else int(raw_cookie, 16))
     return [result[port] for port in sorted(result)]
 
 
 def observe_tcp(kernel):
     # Connected includes the TIME-WAIT minisocket and omits the fixed listener.
-    raw = kernel.call(kernel.peer, "observe exact inner OpenSSH sockets", SS, "-H4ntoiO",
+    raw = kernel.call(kernel.peer, "observe exact inner OpenSSH sockets", SS, "-H4ntoieO",
                       "state", "connected", "src", f"{SERVER}:{SSH_PORT}", "dst", CLIENT)
     return parse_tcp(raw)

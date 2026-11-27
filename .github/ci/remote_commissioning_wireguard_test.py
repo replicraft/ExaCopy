@@ -4,7 +4,9 @@ from pathlib import Path
 import hashlib
 import json
 import os
+import socket
 import stat
+import struct
 import sys
 from types import SimpleNamespace
 import tempfile
@@ -20,6 +22,7 @@ from remote_retry_commissioning import COMMAND, RetryFixture
 import remote_commissioning_wireguard_net as network
 import remote_commissioning_wireguard_lane as lane
 import remote_commissioning_wireguard_observations as observations
+import remote_commissioning_wireguard_orphan as orphan
 import remote_commissioning_wireguard_tcp as tcp
 from remote_commissioning_wireguard_progress import failure
 from remote_commissioning_peer import Blocked, Fixture
@@ -443,6 +446,8 @@ class KernelFixtureTests(unittest.TestCase):
                         initial, initial, initial, get, get, interrupted, resumed, last,
                     ]),
                     patch.object(observations, "settle_peer", side_effect=lambda _peer, after, *_: after),
+                    patch.object(orphan, "identify", return_value=None),
+                    patch.object(orphan, "retire"),
                 ):
                     with self.assertRaises(fixture.direct.EvidenceFailed):
                         fixture.execute_campaign(
@@ -537,7 +542,7 @@ class KernelFixtureTests(unittest.TestCase):
         kernel.call.return_value = active + closed
         flows = tcp.observe_tcp(kernel)
         kernel.call.assert_called_once_with(kernel.peer, "observe exact inner OpenSSH sockets", network.SS,
-                                            "-H4ntoiO", "state", "connected", "src", "198.18.0.1:2222",
+                                            "-H4ntoieO", "state", "connected", "src", "198.18.0.1:2222",
                                             "dst", "198.18.0.2")
         terminal, pending = flows
         self.assertTrue(terminal.drained())
@@ -567,6 +572,99 @@ class KernelFixtureTests(unittest.TestCase):
                 ):
                     observations.settle_peer(Mock(), carrier, Mock(wait=Mock(return_value=False)), evidence)
                 self.assertEqual(evidence, {"sample_phase": phase})
+
+    def test_crash_retirement_refuses_rebinding_and_live_resumption(self):
+        def transcript(port, *, closed=False):
+            lines = [f"Connection from 198.18.0.2 port {port} on 198.18.0.1 port 2222",
+                     f"Accepted publickey for fixture from 198.18.0.2 port {port} ssh2"]
+            if closed:
+                lines += [f"Received disconnect from 198.18.0.2 port {port}:11: ",
+                          f"Disconnected from user fixture 198.18.0.2 port {port}"]
+            return "\n".join(lines) + "\n"
+
+        old = b"ESTAB 0 0 198.18.0.1:2222 198.18.0.2:60313 timer:(keepalive,75sec,0) sk:123456789\n"
+        original, = tcp.parse_tcp(old)
+        replacement, = tcp.parse_tcp(old.replace(b"sk:123456789", b"sk:12345678a"))
+        resumed, = tcp.parse_tcp(old.replace(b"60313", b"53023").replace(b"sk:123456789", b"sk:12345678b"))
+        with tempfile.TemporaryDirectory() as scratch:
+            evidence = Path(scratch).resolve()
+            (evidence / "process-kill.journal").touch()
+            (evidence / "process-kill.openssh.log").write_text(transcript(60313))
+            resume_log = evidence / "resume.openssh.log"
+            resume_log.write_text(transcript(53023, closed=True))
+            kernel = Mock(peer=SimpleNamespace(identity=(14, 42)), fixture=SimpleNamespace(account="fixture"))
+            with patch.object(orphan, "observe_tcp", return_value=[original]):
+                self.assertEqual(orphan.identify(kernel, evidence), original)
+                (evidence / orphan.CLEANUP_MARKER).touch()
+                with self.assertRaisesRegex(Blocked, "not confirmed drained"):
+                    orphan.identify(kernel, evidence)
+                (evidence / orphan.CLEANUP_MARKER).unlink()
+            for flows in ([replacement], [original, resumed], [resumed]):
+                with patch.object(orphan, "observe_tcp", return_value=flows), self.assertRaises(Blocked):
+                    orphan.retire(kernel, evidence, original, {})
+            resume_log.write_text(transcript(53023))
+            with self.assertRaisesRegex(Blocked, "disconnect was not observed"):
+                orphan.retire(kernel, evidence, original, {})
+            kernel.call.assert_not_called()
+            resume_log.write_text(transcript(53023, closed=True))
+            kernel.call.return_value = b"removed\n"
+            report = {}
+            with patch.object(orphan, "observe_tcp", side_effect=[[original], []]):
+                orphan.retire(kernel, evidence, original, report)
+            kernel.call.assert_called_once_with(
+                kernel.peer, "retire exact socket left by fixture SIGKILL", "/usr/bin/python3",
+                "-I", "-S", "-B", "-c", orphan.DESTROY, "14", "42", "60313", str(original.cookie),
+            )
+            self.assertEqual(report["state"], "removed")
+            self.assertEqual(report["before"]["cookie"], original.cookie)
+            self.assertEqual(report["after"], [])
+            kernel.call.reset_mock()
+            kernel.call.return_value = b"not-found\n"
+            report = {}
+            with patch.object(orphan, "observe_tcp", side_effect=[[original], [replacement]]):
+                with self.assertRaisesRegex(Blocked, "did not confirm absence"):
+                    orphan.retire(kernel, evidence, original, report)
+            self.assertEqual(report["state"], "submission-uncertain")
+            kernel.call.assert_called_once()
+
+    def test_socket_destroy_frame_binds_exact_cookie_and_kernel_ack(self):
+        code = compile(orphan.DESTROY, "<fixture-netlink-helper>", "exec")
+        cookie = 0x1234567887654321
+        for sender, state in (((0, 0), None), ((7, 0), 2)):
+            with self.subTest(sender=sender):
+                diag = Mock()
+                diag.getsockname.return_value = (1234, 0)
+                header = struct.Struct("=IHHII")
+
+                def sendto(packet, address):
+                    self.assertEqual(address, (0, 0))
+                    self.assertEqual(header.unpack_from(packet), (72, 21, 5, 1, 1234))
+                    self.assertEqual(struct.unpack_from("!HH", packet, 24), (2222, 60313))
+                    self.assertEqual(packet[28:32], socket.inet_aton("198.18.0.1"))
+                    self.assertEqual(packet[44:48], socket.inet_aton("198.18.0.2"))
+                    self.assertEqual(struct.unpack_from("=III", packet, 60), (0, 0x87654321, 0x12345678))
+                    diag.recvmsg.return_value = (header.pack(36, 2, 0x100, 1, 1234)
+                                                  + struct.pack("=i", 0) + packet[:16], [], 0, sender)
+                    return len(packet)
+
+                diag.sendto.side_effect = sendto
+                argv = ["helper", "14", "42", "60313", str(cookie)]
+                with (
+                    patch.object(sys, "argv", argv),
+                    patch.object(os, "stat", return_value=SimpleNamespace(st_dev=14, st_ino=42)),
+                    patch.object(socket, "AF_NETLINK", 16, create=True),
+                    patch.object(socket, "socket", return_value=nullcontext(diag)),
+                    patch("builtins.print") as output,
+                ):
+                    if state is None:
+                        exec(code, {})
+                        output.assert_called_once_with("removed")
+                    else:
+                        with self.assertRaises(SystemExit) as error:
+                            exec(code, {})
+                        self.assertEqual(error.exception.code, state)
+                        output.assert_not_called()
+                diag.sendto.assert_called_once()
 
     def test_stable_wireguard_counters_do_not_hide_active_tcp_retransmission(self):
         carrier = observations.Counters(3490, 7552, 1, "127.0.0.1:44497")
