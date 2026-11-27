@@ -20,11 +20,17 @@ class ReportInventoryTests(unittest.TestCase):
         self.assertEqual(set(versions), JSON_REPORTS | OPT_IN_JSON_REPORTS)
         self.assertTrue(all(value == "1.0" for value in versions.values()))
 
-    def test_public_stage_inspection_is_an_opt_in_json_report(self):
-        identity = "exacopy.public_stage_inspection"
-        self.assertEqual(OPT_IN_JSON_REPORTS, {identity})
-        self.assertNotIn(identity, JSON_REPORTS)
-        self.assertEqual(report_versions(self.inventory)[identity], "1.0")
+    def test_feature_enabled_json_reports_are_separate_from_the_local_probe(self):
+        expected = {
+            "exacopy.public_stage_inspection",
+            "exacopy.cli.remote_download",
+            "exacopy.cli.witnessed_remote_download",
+        }
+        self.assertEqual(OPT_IN_JSON_REPORTS, expected)
+        self.assertTrue(JSON_REPORTS.isdisjoint(expected))
+        versions = report_versions(self.inventory)
+        self.assertEqual({identity: versions[identity] for identity in expected},
+                         dict.fromkeys(expected, "1.0"))
 
     def test_each_json_report_requires_its_version(self):
         for identity in JSON_REPORTS | OPT_IN_JSON_REPORTS:

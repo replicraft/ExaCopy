@@ -19,7 +19,13 @@ VERIFY = "exacopy.cli.verify"
 JSON_FLAGS = ("--format", "json")
 VERSION_DIAGNOSTIC = "exacopy.cli.version"
 JSON_REPORTS = frozenset((DIFF, COPY, RECOVERY, VERIFY))
-OPT_IN_JSON_REPORTS = frozenset(("exacopy.public_stage_inspection",))
+# These reports have separate feature-enabled CI coverage. probe() runs the
+# Linux local-copy profile.
+OPT_IN_JSON_REPORTS = frozenset((
+    "exacopy.public_stage_inspection",
+    "exacopy.cli.remote_download",
+    "exacopy.cli.witnessed_remote_download",
+))
 
 
 def run(cli, directory, *args):
