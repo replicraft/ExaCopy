@@ -28,6 +28,9 @@ pub(crate) use profile::SshProfile;
 pub(crate) use route::WireGuardRoute;
 pub(crate) use route::{AddressOrder, ApprovedRoute};
 
+#[cfg(all(test, unix))]
+pub(crate) use tests::ssh_profile_fixture;
+
 /// Bounded foreground inputs with explicit authority and metadata policy.
 pub(crate) struct GetRequest {
 	pub(crate) source: RemoteOperand,

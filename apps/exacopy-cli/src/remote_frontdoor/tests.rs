@@ -35,6 +35,12 @@ fn decode(value: serde_json::Value) -> Result<SshProfile, FrontdoorError> {
 	SshProfile::decode(&serde_json::to_vec(&value).unwrap())
 }
 
+pub(crate) fn ssh_profile_fixture(configure: impl FnOnce(&mut serde_json::Value)) -> SshProfile {
+	let mut input = profile();
+	configure(&mut input);
+	decode(input).expect("decode the synthetic SSH profile")
+}
+
 fn request(
 	source: &OsStr,
 	destination: PathBuf,

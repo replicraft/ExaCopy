@@ -10,6 +10,10 @@ REMOTE_CASE = (
     "assembly::linux::remote_continued::tests::"
     "actual_signed_kind40_must_form_the_exact_clean_successor"
 )
+SSH_SESSION_CASES = {
+    "assembly::ssh_session::tests::host_and_route_admission_precede_credential_offer_liveness",
+    "assembly::ssh_session::tests::protected_key_worker_rechecks_the_same_offer_before_reading",
+}
 PUBLIC_STAGE_CASES = {
     "args::parser::tests::new_commands_keep_raw_input_and_baseline_paths",
     "args::parser::tests::verification_defaults_to_human_and_defers_invalid_path_values",
@@ -23,7 +27,7 @@ PUBLIC_STAGE_CASES = {
     "public_stage_inspect::tests::accepted_owner_key_is_canonical_and_refusals_do_not_reveal_paths",
 }
 REQUIRED_CASES = {
-    "remote": {REMOTE_CASE},
+    "remote": {REMOTE_CASE} | SSH_SESSION_CASES,
     "public-stage": PUBLIC_STAGE_CASES,
 }
 

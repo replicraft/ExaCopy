@@ -2,11 +2,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use exacopy_endpoint::ssh_sftp::CredentialSource;
 use exacopy_journal::remote_download::RemoteScopeDigest;
 use exacopy_ssh::{Error as SshError, KnownHostTrust, ReadOnlySftp};
 use tokio::io::{AsyncRead, AsyncWrite};
 
+use crate::assembly::ssh_session;
 use crate::remote_frontdoor::SshProfile;
 
 use super::RemoteGrant;
@@ -20,52 +20,15 @@ pub(super) async fn authenticate(
 	offer: &OfferLease,
 	route_current: impl Fn() -> bool,
 ) -> Result<ReadOnlySftp, SshError> {
-	let authority = &profile.authority;
-	match profile.credential_source() {
-		CredentialSource::SuppliedPassword => {
-			exacopy_ssh::connect_with_password_checked(
-				stream,
-				authority,
-				profile.pin,
-				trust,
-				authority,
-				|request| profile.password(request, || route_current() && offer.0.current()),
-				|| {
-					(route_current() && offer.0.current())
-						.then_some(())
-						.ok_or(SshError::Password)
-				},
-			)
-			.await
-		}
-		CredentialSource::SuppliedKey => {
-			let acquisition = Arc::clone(&offer.0);
-			let route_current = &route_current;
-			exacopy_ssh::connect_with_ed25519_async(
-				stream,
-				authority,
-				profile.pin,
-				trust,
-				authority,
-				async move |request| {
-					if !route_current() || !acquisition.current() {
-						return Err(SshError::KeyProfile);
-					}
-					let key = profile.approve_ed25519(request)?;
-					tokio::task::spawn_blocking(move || key.acquire(|| acquisition.current()))
-						.await
-						.map_err(|_| SshError::KeyProfile)?
-				},
-				|| {
-					(route_current() && offer.0.current())
-						.then_some(())
-						.ok_or(SshError::KeyProfile)
-				},
-			)
-			.await
-		}
-		_ => Err(SshError::KeyProfile),
-	}
+	let offer = Arc::clone(&offer.0);
+	ssh_session::authenticate(
+		stream,
+		profile,
+		trust,
+		move || offer.current(),
+		route_current,
+	)
+	.await
 }
 
 pub(super) struct OfferLease(Arc<CurrentOffer>);

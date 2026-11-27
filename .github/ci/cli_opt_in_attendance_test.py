@@ -13,6 +13,11 @@ from cli_opt_in_attendance import (
 )
 
 OTHER_CASE = "assembly::linux::remote_journal::tests::unrelated_test"
+REMOTE_EXPECTED = (
+    REMOTE_CASE,
+    "assembly::ssh_session::tests::host_and_route_admission_precede_credential_offer_liveness",
+    "assembly::ssh_session::tests::protected_key_worker_rechecks_the_same_offer_before_reading",
+)
 
 
 class CliOptInAttendanceTests(unittest.TestCase):
@@ -36,9 +41,25 @@ class CliOptInAttendanceTests(unittest.TestCase):
     def write_xml(self, root):
         ElementTree.ElementTree(root).write(self.report, encoding="utf-8", xml_declaration=True)
 
-    def test_remote_requires_the_exact_owning_case_and_allows_other_passing_cases(self):
-        self.write_report([OTHER_CASE, REMOTE_CASE])
-        self.assertEqual(check_attendance(self.report, "remote"), [REMOTE_CASE])
+    def test_remote_requires_the_exact_owning_cases_and_allows_other_passing_cases(self):
+        self.write_report([OTHER_CASE, *REMOTE_EXPECTED])
+        self.assertEqual(check_attendance(self.report, "remote"), sorted(REMOTE_EXPECTED))
+
+    def test_remote_refuses_each_missing_case_even_with_a_wrong_module_lookalike(self):
+        for missing in REMOTE_EXPECTED:
+            with self.subTest(missing=missing):
+                present = [name for name in REMOTE_EXPECTED if name != missing]
+                wrong_module = missing.replace("::tests::", "::other_tests::")
+                self.write_report([*present, wrong_module])
+                with self.assertRaisesRegex(ValueError, f"required testcases missing: {missing}$"):
+                    check_attendance(self.report, "remote")
+
+    def test_incomplete_session_record_cannot_satisfy_remote_attendance(self):
+        root = self.write_report(REMOTE_EXPECTED)
+        ElementTree.SubElement(root[0][1], "skipped")
+        self.write_xml(root)
+        with self.assertRaisesRegex(ValueError, "execution record"):
+            check_attendance(self.report, "remote")
 
     def test_public_stage_requires_the_exact_inventory(self):
         expected = sorted(PUBLIC_STAGE_CASES)
