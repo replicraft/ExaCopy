@@ -16,10 +16,15 @@ mod error;
 mod files;
 mod intent;
 mod operation;
+mod recovery_observation;
 
 pub use error::SyncGenesisPublishError;
 pub use intent::{SyncGenesisIntent, SyncGenesisMemberBinding, SyncGenesisNativeIdentity};
 pub use operation::SyncGenesisOperation;
+pub use recovery_observation::{
+	SyncGenesisRecoveryDisposition, SyncGenesisRecoveryExpectation, SyncGenesisRecoveryIssue,
+	SyncGenesisRecoveryObservation, SyncGenesisRecoverySession, SyncGenesisRecoverySlots,
+};
 
 use files::{Stage, StageDirectory, create_record};
 use intent::{INTENT_BYTES, IntentRecord};

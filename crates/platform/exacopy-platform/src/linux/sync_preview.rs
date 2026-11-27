@@ -42,6 +42,7 @@ pub use managed::{
 	ManagedSyncError, ManagedSyncExpectedObject, ManagedSyncExpectedRoot, ManagedSyncNativeScope,
 	ManagedSyncPreviewPair, ManagedSyncReadLease,
 };
+pub(in crate::linux) use namespaces::HeldNamespaces;
 
 /// Failure to obtain a complete live observation of the selected pair.
 #[derive(Debug)]

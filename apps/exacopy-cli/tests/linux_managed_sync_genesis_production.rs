@@ -10,6 +10,7 @@ use std::os::unix::ffi::OsStrExt as _;
 use std::os::unix::fs::{FileExt as _, MetadataExt as _};
 
 use ed25519_dalek::SigningKey;
+use exacopy_cli::assembly::linux::managed_sync::genesis::recovery_observation::observe_managed_genesis_recovery;
 use exacopy_cli::assembly::linux::managed_sync::genesis::{
 	ManagedGenesisEnrollment, ManagedGenesisError, ManagedGenesisRequest, produce_managed_genesis,
 };
@@ -23,7 +24,8 @@ use exacopy_model::{SyncCopyTarget, SyncPathDecision, SyncSide};
 use exacopy_plan::workflow_sync::{EndpointFacts, LinuxLocation, WorkflowTimestamp};
 use exacopy_platform::linux::{
 	ManagedSyncError, ManagedSyncExpectedRoot, ManagedSyncNativeScope, SyncGenesisNativeIdentity,
-	SyncGenesisOperation, SyncGenesisPublishError, SyncPreviewError, SyncPreviewRoots,
+	SyncGenesisOperation, SyncGenesisPublishError, SyncGenesisRecoveryDisposition,
+	SyncGenesisRecoveryIssue, SyncGenesisRecoverySlots, SyncPreviewError, SyncPreviewRoots,
 	SyncProfileStore, SyncProfileStoreError,
 };
 use exacopy_transfer::linux::sync_genesis_measurement::GenesisMeasureFailure;
@@ -37,6 +39,8 @@ mod approval;
 mod evidence;
 #[path = "managed_sync_genesis_production/observe.rs"]
 mod observe;
+#[path = "managed_sync_genesis_production/recovery.rs"]
+mod recovery;
 #[path = "managed_sync_genesis_production/rig.rs"]
 mod rig;
 
@@ -297,9 +301,33 @@ fn exercise(sandbox: &mut Sandbox, anchor: &observe::Anchor) -> TestResult<serde
 	assert_occupied(&request);
 	assert_eq!(evidence::inventory(&output)?, before);
 	request.operation = operation;
+	let observe_slots = || {
+		observe_managed_genesis_recovery(
+			request.output_parent,
+			request.output_identity,
+			operation,
+			None,
+		)
+	};
+	let absent = observe_slots()?;
+	assert!(matches!(
+		absent.disposition,
+		SyncGenesisRecoveryDisposition::AllAbsent
+	));
+	assert_eq!(
+		absent.slots,
+		SyncGenesisRecoverySlots {
+			published: None,
+			stage: None,
+			intent: None
+		}
+	);
+	assert_eq!(evidence::inventory(&output)?, before);
 
 	let source_stamps =
 		evidence::live_sources(sources, [&left_file, &right_file], [INITIAL, INITIAL])?;
+	let intent =
+		recovery::select_intent(&request, owner_profile, &signer, [&left_file, &right_file])?;
 	let published = produce_managed_genesis(&request, &mut [0; 32])?;
 	let checked = Published::read(&output, &request, owner_profile, &published)?;
 	assert_eq!(
@@ -307,6 +335,29 @@ fn exercise(sandbox: &mut Sandbox, anchor: &observe::Anchor) -> TestResult<serde
 		source_stamps
 	);
 	let after = evidence::inventory(&output)?;
+	let observed = observe_slots()?;
+	assert_eq!(
+		observed.slots.published,
+		Some(published.publication.identity)
+	);
+	assert_eq!(observed.slots.stage, None);
+	assert!(observed.slots.intent.is_some());
+	assert!(matches!(
+		observed.disposition,
+		SyncGenesisRecoveryDisposition::Unresolved(
+			SyncGenesisRecoveryIssue::IndependentEvidenceUnavailable
+		)
+	));
+	assert_eq!(evidence::inventory(&output)?, after);
+	recovery::assert_exact_final(
+		&request,
+		&intent,
+		owner_profile,
+		&signer.verifying_key(),
+		&published,
+	)?;
+	assert_eq!(evidence::inventory(&output)?, after);
+	checked.recheck(&output)?;
 	assert_occupied(&request);
 	assert_eq!(evidence::inventory(&output)?, after);
 	checked.recheck(&output)?;

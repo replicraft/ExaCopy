@@ -196,16 +196,16 @@ impl Stage {
 	) -> Result<(), SyncProfileStoreError> {
 		require_directory(parent, name, &self.directory, self.identity, owner, mount)?;
 		let identities = self.pins.each_ref().map(|pin| pin.stamp.identity);
-		check_inventory(&self.directory, identities)?;
+		check_inventory(&self.directory, identities, OFlags::empty())?;
 		for (pin, bytes) in self.pins.iter().zip(members) {
 			recheck_record(&self.directory, pin, bytes)?;
 		}
-		check_inventory(&self.directory, identities)?;
+		check_inventory(&self.directory, identities, OFlags::empty())?;
 		require_directory(parent, name, &self.directory, self.identity, owner, mount)
 	}
 }
 
-fn require_directory(
+pub(super) fn require_directory(
 	parent: &File,
 	name: &[u8],
 	directory: &File,
@@ -228,7 +228,7 @@ fn require_directory(
 }
 
 fn check_empty(directory: &File) -> Result<(), SyncProfileStoreError> {
-	let fresh = readdir_file(directory)?;
+	let fresh = readdir_file(directory, OFlags::empty())?;
 	let mut scratch = [MaybeUninit::uninit(); 1024];
 	let mut entries = RawDir::new(fresh, &mut scratch);
 	for _ in 0..2 {
@@ -245,22 +245,23 @@ fn check_empty(directory: &File) -> Result<(), SyncProfileStoreError> {
 	Ok(())
 }
 
-fn readdir_file(directory: &File) -> Result<File, SyncProfileStoreError> {
+fn readdir_file(directory: &File, flags: OFlags) -> Result<File, SyncProfileStoreError> {
 	Ok(fs::openat2(
 		directory,
 		c".",
-		DIRECTORY | OFlags::RDONLY | OFlags::NOFOLLOW,
+		DIRECTORY | OFlags::RDONLY | OFlags::NOFOLLOW | flags,
 		Mode::empty(),
 		BELOW,
 	)?
 	.into())
 }
 
-fn check_inventory(
+pub(super) fn check_inventory(
 	directory: &File,
 	identities: [FileIdentity; 4],
+	flags: OFlags,
 ) -> Result<(), SyncProfileStoreError> {
-	let fresh = readdir_file(directory)?;
+	let fresh = readdir_file(directory, flags)?;
 	let mut scratch = [MaybeUninit::uninit(); 1024];
 	let mut entries = RawDir::new(fresh, &mut scratch);
 	let mut found = [false; 4];

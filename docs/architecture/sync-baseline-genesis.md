@@ -65,6 +65,32 @@ dependency closure. A conflict, failed barrier or uncertain output retains
 the incumbent and any private artifacts for reconciliation. This decision
 creates no mutation capability for either synchronized root.
 
+## Read-only recovery observation
+
+The experimental Linux SDK can observe one selected genesis operation in
+its protected output parent. It checks only the derived final, staging and
+intent names under a shared nonblocking lease. It reports exact current
+absence or occupancy and a typed unresolved reason when the evidence is
+insufficient.
+
+An exact staged or final closure observation requires independently
+retained original stage identity, exact intent and member commitments,
+owner and historical P-063 selection. The current boot, mount and user
+namespaces and unique mount must match the retained scope. The platform
+holds the protected directory and records and rechecks names, inventory
+and bounded member bytes. The application verifies the ordered raw digests
+and authenticated P-063 closure. A matching device and inode describes the
+current observation. It cannot establish continuity across an interval
+without a held descriptor.
+
+The producer does not export an independent pre-effect basis on failure.
+An unresolved return and the files found at its output cannot supply the
+missing pins. The observer reads no owner seed, performs no publication
+or repair, and provides no receipt, barrier result, retry permission,
+baseline selection or CLI command. Exact observer qualification requires
+native execution on the declared profile. Process-crash and power-loss
+qualification remain separate.
+
 ## Preview and compatibility
 
 Preview accepts either explicit no history or an exact authenticated seed

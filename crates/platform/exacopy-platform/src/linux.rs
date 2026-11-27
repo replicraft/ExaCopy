@@ -79,8 +79,11 @@ pub use mount_observation::MountObservations;
 pub use sync_profile_store::{
 	SyncGenesisEffect, SyncGenesisEffectRequest, SyncGenesisIntent, SyncGenesisMember,
 	SyncGenesisMemberBinding, SyncGenesisNativeIdentity, SyncGenesisOperation, SyncGenesisOutput,
-	SyncGenesisPublishError, SyncGenesisPublishRequest, SyncGenesisPublished, SyncProfileHistory,
-	SyncProfileSeed, SyncProfileStore, SyncProfileStoreError, SyncProfileStoreRecord,
+	SyncGenesisPublishError, SyncGenesisPublishRequest, SyncGenesisPublished,
+	SyncGenesisRecoveryDisposition, SyncGenesisRecoveryExpectation, SyncGenesisRecoveryIssue,
+	SyncGenesisRecoveryObservation, SyncGenesisRecoverySession, SyncGenesisRecoverySlots,
+	SyncProfileHistory, SyncProfileSeed, SyncProfileStore, SyncProfileStoreError,
+	SyncProfileStoreRecord,
 };
 
 pub use sync_preview::{

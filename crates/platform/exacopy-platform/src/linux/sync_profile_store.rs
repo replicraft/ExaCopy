@@ -25,6 +25,8 @@ pub use genesis_output::{
 	SyncGenesisEffect, SyncGenesisEffectRequest, SyncGenesisIntent, SyncGenesisMember,
 	SyncGenesisMemberBinding, SyncGenesisNativeIdentity, SyncGenesisOperation, SyncGenesisOutput,
 	SyncGenesisPublishError, SyncGenesisPublishRequest, SyncGenesisPublished,
+	SyncGenesisRecoveryDisposition, SyncGenesisRecoveryExpectation, SyncGenesisRecoveryIssue,
+	SyncGenesisRecoveryObservation, SyncGenesisRecoverySession, SyncGenesisRecoverySlots,
 };
 use pin::{Pin, Stamp};
 use scope::DirectoryStamp;

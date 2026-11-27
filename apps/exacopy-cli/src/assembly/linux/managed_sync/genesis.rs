@@ -29,6 +29,7 @@ use super::ManagedSyncPreviewError;
 
 mod approval;
 mod live;
+pub mod recovery_observation;
 mod staged;
 
 use approval::Approval;

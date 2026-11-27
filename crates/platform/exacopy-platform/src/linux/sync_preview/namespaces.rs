@@ -23,19 +23,19 @@ const LINK_CAPACITY: usize = 28;
 mod tests;
 
 #[derive(Debug)]
-pub(super) struct HeldNamespaces {
+pub(in crate::linux) struct HeldNamespaces {
 	mount: NamespacePin,
 	user: NamespacePin,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct NamespaceFacts {
-	pub(super) mount: FileIdentity,
-	pub(super) user: FileIdentity,
+pub(in crate::linux) struct NamespaceFacts {
+	pub(in crate::linux) mount: FileIdentity,
+	pub(in crate::linux) user: FileIdentity,
 }
 
 impl HeldNamespaces {
-	pub(super) fn current() -> Result<Self, SyncPreviewError> {
+	pub(in crate::linux) fn current() -> Result<Self, SyncPreviewError> {
 		let directory = namespace_directory()?;
 		let pins = Self {
 			mount: NamespaceKind::Mount.pin(&directory)?,
@@ -47,14 +47,14 @@ impl HeldNamespaces {
 		Ok(pins)
 	}
 
-	pub(super) const fn facts(&self) -> NamespaceFacts {
+	pub(in crate::linux) const fn facts(&self) -> NamespaceFacts {
 		NamespaceFacts {
 			mount: self.mount.identity,
 			user: self.user.identity,
 		}
 	}
 
-	pub(super) fn recheck_current(&self) -> Result<(), SyncPreviewError> {
+	pub(in crate::linux) fn recheck_current(&self) -> Result<(), SyncPreviewError> {
 		self.mount.recheck()?;
 		self.user.recheck()?;
 		let current = Self::current()?;
