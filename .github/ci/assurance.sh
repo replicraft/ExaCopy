@@ -17,7 +17,23 @@ case "$1" in
 		report="$evidence/endpoint-coverage.json"
 		summary="$evidence/endpoint-coverage-summary.json"
 		minimum_line_coverage=85
-		cargo +1.100.0 llvm-cov nextest --locked -p exacopy-core -p exacopy-endpoint -p exacopy-platform \
+		set --
+		if [[ "${EXACOPY_CAPTURE_ENDPOINT_LLVM_EXPORT:-}" == 1 &&
+			-z "${LLVM_COV+x}" && -z "${LLVM_PROFDATA+x}" &&
+			-z "${CARGO_LLVM_COV_DENY_WARNINGS+x}" ]] &&
+			sysroot=$(rustc +1.100.0 --print sysroot 2>/dev/null) &&
+			[[ -x "$sysroot/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-cov" ]] &&
+			[[ -x "$sysroot/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-profdata" ]] &&
+			[[ -x /usr/bin/python3 && -x "$PWD/.github/ci/endpoint_llvm_export_capture.py" ]] &&
+			(umask 077; mkdir -- "$evidence/endpoint-llvm-export") 2>/dev/null; then
+			set -- env \
+				"LLVM_COV=$PWD/.github/ci/endpoint_llvm_export_capture.py" \
+				"LLVM_PROFDATA=$sysroot/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-profdata" \
+				"EXACOPY_ENDPOINT_LLVM_TOOL=$sysroot/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-cov" \
+				"EXACOPY_ENDPOINT_LLVM_TARGET=$PWD/target/llvm-cov-target" \
+				"EXACOPY_ENDPOINT_LLVM_EVIDENCE=$evidence/endpoint-llvm-export"
+		fi
+		"$@" cargo +1.100.0 llvm-cov nextest --locked -p exacopy-core -p exacopy-endpoint -p exacopy-platform \
 			--json --show-missing-lines --output-path "$report" --no-tests fail
 		jq '
 			def source_lines($path):

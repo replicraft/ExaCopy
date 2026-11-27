@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/coverage.yml'
       - '.github/ci/assurance.sh'
+      - '.github/ci/endpoint_llvm_export_capture*.py'
       - '.github/ci/model_coverage*.py'
       - '.github/ci/capture.sh'
       - '.github/ci/common.sh'
@@ -40,6 +41,7 @@ on:
     paths:
       - '.github/workflows/coverage.yml'
       - '.github/ci/assurance.sh'
+      - '.github/ci/endpoint_llvm_export_capture*.py'
       - '.github/ci/model_coverage*.py'
       - '.github/ci/capture.sh'
       - '.github/ci/common.sh'
@@ -118,9 +120,15 @@ jobs:
         id: endpoint_tools
         if: ${{ !cancelled() && steps.coverage_tools.outcome == 'success' }}
         run: bash .github/ci/capture.sh endpoint-coverage-setup rustup component add --toolchain 1.100.0 llvm-tools
+      - name: Check advisory LLVM export capture controls
+        id: endpoint_capture_controls
+        if: ${{ !cancelled() && steps.endpoint_tools.outcome == 'success' }}
+        run: bash .github/ci/capture.sh endpoint-export-controls python3 -B .github/ci/endpoint_llvm_export_capture_test.py -v
       - name: Require 85 percent line coverage in each endpoint crate
         if: ${{ !cancelled() && steps.endpoint_tools.outcome == 'success' }}
         timeout-minutes: 20
+        env:
+          EXACOPY_CAPTURE_ENDPOINT_LLVM_EXPORT: ${{ steps.endpoint_capture_controls.outcome == 'success' && '1' || '0' }}
         run: bash .github/ci/capture.sh endpoint-coverage bash .github/ci/assurance.sh endpoint-coverage
       - name: Retain coverage reports
         if: always()
