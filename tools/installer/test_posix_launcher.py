@@ -49,8 +49,8 @@ class Installation:
             arguments += ["--offline-bundle", Path(self.release["directory"]) / bundle]
         return arguments
 
-    def run(self, action, label, version, *options, error=None, root=None, cwd=None):
-        result = subprocess.run(self.command(action, version, *options, root=root),
+    def run(self, action, label, version, *options, error=None, root=None, cwd=None, source=REPO):
+        result = subprocess.run(self.command(action, version, *options, root=root, source=source),
                                 env=self.environment(), cwd=cwd, capture_output=True, text=True, timeout=45)
         if error is None:
             assert result.returncode == 0, (label, result)
@@ -245,7 +245,32 @@ def test_launcher(temporary, release):
     assert sha256(case.executable(old).read_bytes()).digest() == old_digest
     case.clear_fixture_locks()
     selected_inode = case.launcher.lstat().st_ino
-    case.run("install", "revalidate already switched release after post-switch kill", new)
+    selected_record = case.record.read_bytes()
+    selected_record_inode = case.record.stat().st_ino
+    history = case.store / ".high-water"
+    selected_history = history.read_bytes()
+    selected_history_inode = history.stat().st_ino
+    new_digest = sha256(case.executable(new).read_bytes()).digest()
+    with TemporaryDirectory(prefix="fixture-flush-failure-", dir=case.temporary) as source_dir:
+        source = Path(source_dir)
+        shutil.copytree(REPO / "tools" / "installer", source / "tools" / "installer")
+        shutil.copy2(REPO / "install.sh", source / "install.sh")
+        # Simulate an unavailable flush after the real process interruption.
+        with (source / "tools" / "installer" / "posix.sh").open("a") as setup:
+            setup.write("\nsync() { return 1; }\n")
+        output = case.run("install", "refuse to complete pending activation when the retry cannot flush",
+                          new, source=source, error="cannot flush the verified launcher selection")
+        assert not output
+    case.assert_selection(new)
+    assert case.launcher.lstat().st_ino == selected_inode
+    assert case.record.read_bytes() == selected_record
+    assert case.record.stat().st_ino == selected_record_inode
+    assert history.read_bytes() == selected_history
+    assert history.stat().st_ino == selected_history_inode
+    assert sha256(case.executable(new).read_bytes()).digest() == new_digest
+    assert sha256(case.executable(old).read_bytes()).digest() == old_digest
+    output = case.run("install", "complete the verified selection after post-switch kill", new)
+    assert f"Already installed: {case.executable(new)}\n" in output
     assert case.launcher.lstat().st_ino == selected_inode
     assert (leftover[0] / "link").is_symlink()
 

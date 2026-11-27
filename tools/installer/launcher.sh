@@ -252,6 +252,9 @@ verify_launcher_metadata() {
 
 activate_launcher() {
 	if [ "${launcher_current%%|*}" = "$version" ]; then
+		# An exact selection may have been interrupted before its flush.
+		confirm_launcher_state
+		sync || fail 'cannot flush the verified launcher selection. Reconcile before retry'
 		confirm_launcher_state
 		return
 	fi
