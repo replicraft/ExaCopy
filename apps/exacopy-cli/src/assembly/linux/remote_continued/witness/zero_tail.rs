@@ -15,7 +15,9 @@ use exacopy_transfer::remote_witnessed_finalization::{
 };
 
 use super::prepublication::WitnessedAdapterError;
-use super::publication::{self, SubmittedPublication, WitnessedSubmitError};
+use super::publication::{
+	self, SubmittedPublication, WitnessedObservationError, WitnessedSubmitError,
+};
 
 use super::{LinkedWitnessedStage, WitnessAdmissionError, WitnessFailure, WitnessPass};
 use crate::assembly::linux::remote_continued::activation::{
@@ -100,7 +102,7 @@ impl<'scope, 'name> WitnessPass<'scope, 'name> {
 		&self,
 		proof: VerifiedHeldRetainedPrefix<'_, SftpSource<'_, Check>, WitnessPrefix<'_>>,
 		run: ZeroTailWitness<'_>,
-		finish: impl for<'view, 'lease> FnOnce(SubmittedPublication<'view, 'lease>) -> T,
+		finish: impl for<'view, 'lease> FnOnce(SubmittedPublication<'view, 'lease, 'scope, 'name>) -> T,
 	) -> Result<T, ZeroTailWitnessFailure>
 	where
 		Check: FnMut(ConnectionBinding) -> Result<(), RetryError>,
@@ -111,6 +113,30 @@ impl<'scope, 'name> WitnessPass<'scope, 'name> {
 				.map_err(|cause| ZeroTailWitnessFailure::Publication(Box::new(cause)))
 		})
 		.await?
+	}
+
+	/// Records the one live outcome while keeping its original custody and diagnostic.
+	/// A kind-8 journal failure is reported beside the actual native result.
+	pub(in crate::assembly::linux::remote_continued) async fn run_zero_tail_observation<Check, T>(
+		&self,
+		proof: VerifiedHeldRetainedPrefix<'_, SftpSource<'_, Check>, WitnessPrefix<'_>>,
+		run: ZeroTailWitness<'_>,
+		finish: impl for<'view, 'lease> FnOnce(
+			SubmittedPublication<'view, 'lease, 'scope, 'name>,
+			Result<
+				exacopy_journal::remote_download::replay::RemoteReplayBoundary,
+				WitnessedObservationError,
+			>,
+		) -> T,
+	) -> Result<T, ZeroTailWitnessFailure>
+	where
+		Check: FnMut(ConnectionBinding) -> Result<(), RetryError>,
+	{
+		self.run_zero_tail_publication(proof, run, |mut submitted| {
+			let recorded = submitted.record_observation();
+			finish(submitted, recorded)
+		})
+		.await
 	}
 
 	async fn with_zero_tail_link<Check, T>(

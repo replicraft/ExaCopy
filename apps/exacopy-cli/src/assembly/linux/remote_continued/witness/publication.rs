@@ -2,6 +2,7 @@
 
 use std::num::NonZeroU64;
 
+use exacopy_journal::remote_download::replay::RemoteReplayBoundary;
 use exacopy_journal::remote_download::witness::RemoteWitnessIntent;
 use exacopy_journal::remote_download::witness::replay::RemoteWitnessedReplayPhase;
 use exacopy_model::retained_prefix::Head;
@@ -17,7 +18,10 @@ use exacopy_transfer::remote_witnessed_finalization::{
 
 use super::prepublication::{WitnessedAdapterError, confirm_successor};
 use super::{LinkedWitnessedStage, WitnessAdmissionError, WitnessPass, model_head};
+
+mod observation;
 use crate::assembly::linux::remote_witness_authority::WitnessMutationGuard;
+pub(in crate::assembly::linux::remote_continued) use observation::WitnessedObservationError;
 
 #[derive(Debug)]
 pub(super) struct WitnessModel {
@@ -220,14 +224,22 @@ impl LinkedPublication {
 	}
 }
 
-pub(in crate::assembly::linux::remote_continued) struct SubmittedPublication<'view, 'lease> {
+pub(in crate::assembly::linux::remote_continued) struct SubmittedPublication<
+	'view,
+	'lease,
+	'scope,
+	'name,
+> {
 	// Keep the single matching model state under the original native custody for
 	// later consumption of the actual submission observation.
 	logical: LinkedPublication,
 	native: WitnessPublication<'view, 'lease>,
+	pass: WitnessPass<'scope, 'name>,
+	witness: RemoteWitnessIntent,
+	intent_cut: RemoteReplayBoundary,
 }
 
-impl SubmittedPublication<'_, '_> {
+impl SubmittedPublication<'_, '_, '_, '_> {
 	pub(in crate::assembly::linux::remote_continued) fn observation(
 		&self,
 	) -> &exacopy_platform::linux::WitnessPublicationObservation {
@@ -241,9 +253,9 @@ pub(in crate::assembly::linux::remote_continued) enum WitnessedSubmitError {
 	Native(WitnessPublicationError<WitnessAdmissionError>),
 }
 
-pub(super) fn submit<'view, 'lease>(
-	prepared: WitnessedPublicationIntent<LinkedWitnessedStage<'view, 'lease, '_, '_>>,
-) -> Result<SubmittedPublication<'view, 'lease>, WitnessedSubmitError> {
+pub(super) fn submit<'view, 'lease, 'scope, 'name>(
+	prepared: WitnessedPublicationIntent<LinkedWitnessedStage<'view, 'lease, 'scope, 'name>>,
+) -> Result<SubmittedPublication<'view, 'lease, 'scope, 'name>, WitnessedSubmitError> {
 	let (linked, previous) = prepared.into_parts();
 	let pass = linked.pass;
 	let witness = linked.intent;
@@ -305,7 +317,13 @@ pub(super) fn submit<'view, 'lease>(
 			},
 		)
 		.map_err(WitnessedSubmitError::Native)?;
-	Ok(SubmittedPublication { logical, native })
+	Ok(SubmittedPublication {
+		logical,
+		native,
+		pass,
+		witness,
+		intent_cut: previous,
+	})
 }
 
 #[cfg(test)]

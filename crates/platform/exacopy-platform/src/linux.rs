@@ -49,11 +49,12 @@ pub use recovery::{
 	ReservedContinuationRequest, ReservedJournalRead, RetainedPrefixRead, RetainedPrefixSelection,
 	RetainedStage, RetainedSuffixReadback, RetainedSuffixWriter, SealedProtectedWitness,
 	SuffixEffect, SuffixError, SyncedRetainedPrefix, SyncedSuffixRange, WitnessCredentialLane,
-	WitnessLinkCandidate, WitnessPrepublicationAppend, WitnessPrepublicationPhase,
-	WitnessPublication, WitnessPublicationError, WitnessPublicationName, WitnessPublicationNames,
-	WitnessPublicationObservation, WitnessPublicationRequest, WitnessReservationAuthority,
-	WitnessReservationEffect, WitnessReservationError, WitnessReservationGateRequest,
-	WitnessReservationObservationError, WitnessReservationPlan, WitnessedSuffixReadback,
+	WitnessLinkCandidate, WitnessObservationAppend, WitnessPrepublicationAppend,
+	WitnessPrepublicationPhase, WitnessPublication, WitnessPublicationError,
+	WitnessPublicationName, WitnessPublicationNames, WitnessPublicationObservation,
+	WitnessPublicationRequest, WitnessReservationAuthority, WitnessReservationEffect,
+	WitnessReservationError, WitnessReservationGateRequest, WitnessReservationObservationError,
+	WitnessReservationPlan, WitnessedSuffixReadback,
 };
 pub use running_image::RunningExecutable;
 pub use source::{

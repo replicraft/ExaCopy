@@ -4,8 +4,9 @@ The selector-2 Linux components preserve a protected same-inode witness
 through one live no-replace rename. Model binding `eba6c7d` and platform
 component `3f61996` bring this path through a typed native observation.
 Private application composition now carries this same model and native holder
-through submission. Kind-8 closeout, receipt publication, complete native
-application qualification and CLI dispatch remain open. [Witnessed closeout design](../architecture/remote-witnessed-closeout.md) ·
+through submission. The same held outcome can now record kind 8 once. Subsequent durability
+barriers, kind 9, receipt publication, complete native application qualification
+and CLI dispatch remain open. [Witnessed closeout design](../architecture/remote-witnessed-closeout.md) ·
 [Remote transfer release readiness](remote-transfer-readiness.md)
 
 ## From closed capture to one rename
@@ -92,12 +93,32 @@ metadata and extent, logical EOF and stable named bindings.
 
 The component can retain the fact of the submitted call when authorization
 expires after the gate. Its result supplies no subsequent effect. It does
-not issue post-rename file or directory barriers, append kind 8, produce
-a receipt or turn a historical kind 7 into a new live rename. The model's
+not issue post-rename file or directory barriers, produce a receipt or turn a
+historical kind 7 into a new live rename. The model's
 recovery path can admit an independently held observation of an already
 published object under its stricter recovery conditions. The implemented
 native submission component provides no recovery mutation or closeout
 dispatcher. [Native outcome checks](../../crates/platform/exacopy-platform/src/linux/recovery/writer/prefix/suffix/witness/publication.rs)
+
+## Recording the actual submitted outcome
+
+The one-shot outcome capability consumes the original model submission and
+confirms the exact accepted kind-7 journal before constructing kind 8.
+The application records only the actual native fact and checked namespace
+observation. A raw kernel conflict with uncertain names remains uncertainty;
+it cannot become a confirmed incumbent conflict. The narrow existing-outcome
+rule permits this record after consent expiry and supplies no new mutation
+authority. The same held appender confirms the proposed replay, writes and
+synchronizes the bounded frame, then independently rereads and confirms it.
+A possibly submitted failure retires the appender while retaining the native
+outcome separately. Clean recorded uncertainty is terminal reconciliation.
+No journal error erases the already observed native call.
+
+The following file and namespace barriers and kind 9 still require the
+original matching grant and approval to be independently live again.
+The implemented kind-8 path exposes neither those barriers nor a new rename.
+[Native one-shot recording](../../crates/platform/exacopy-platform/src/linux/recovery/writer/witness_reservation/continuation/witness/publication/record.rs) ·
+[Application outcome binding](../../apps/exacopy-cli/src/assembly/linux/remote_continued/witness/publication/observation.rs)
 
 ## Executed evidence and remaining qualification
 
@@ -127,8 +148,8 @@ The retained local records are under
 native executable digest, test logs, TLC traces and confirmed cleanup.
 Operation-2 deployment qualification still requires the complete admitted
 application path, retained approval and expiry controls, restart
-observations, post-rename barriers, kind 8 and later journal and receipt
-phases, and the full closed native campaign. Its coverage mask requires
+observations, actual kind-8 recording, post-rename barriers and later journal
+and receipt phases, and the full closed native campaign. Its coverage mask requires
 all 24 case families on the exact selected native profile. This tmpfs
 component run supplies no production mount, process-crash or power-loss
 qualification. [Operation-2 evidence contract](../architecture/remote-witnessed-closeout.md#exact-v2-qualification-extension)

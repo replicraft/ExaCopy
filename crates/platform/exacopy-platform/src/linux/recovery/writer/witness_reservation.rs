@@ -22,10 +22,10 @@ mod types;
 
 pub use continuation::{
 	ActiveWitnessReservation, ContinuationReservationError, PendingProtectedWitness,
-	ReservedContinuationRequest, SealedProtectedWitness, WitnessPrepublicationAppend,
-	WitnessPrepublicationPhase, WitnessPublication, WitnessPublicationError,
-	WitnessPublicationName, WitnessPublicationNames, WitnessPublicationObservation,
-	WitnessPublicationRequest,
+	ReservedContinuationRequest, SealedProtectedWitness, WitnessObservationAppend,
+	WitnessPrepublicationAppend, WitnessPrepublicationPhase, WitnessPublication,
+	WitnessPublicationError, WitnessPublicationName, WitnessPublicationNames,
+	WitnessPublicationObservation, WitnessPublicationRequest,
 };
 pub use types::{
 	WitnessReservationAuthority, WitnessReservationEffect, WitnessReservationError,

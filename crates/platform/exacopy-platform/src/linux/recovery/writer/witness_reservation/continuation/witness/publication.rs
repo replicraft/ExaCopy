@@ -12,6 +12,10 @@ use crate::linux::{
 	WitnessReservationAuthority,
 };
 
+mod record;
+
+pub use record::WitnessObservationAppend;
+
 /// Exact original native selection presented before the one exclusive rename.
 #[derive(Clone, Copy, Debug)]
 pub struct WitnessPublicationRequest<'name> {
@@ -104,9 +108,10 @@ pub enum WitnessPublicationObservation {
 /// The one consumed live submission and its read-only observation, still held under the original lease.
 #[must_use]
 pub struct WitnessPublication<'view, 'lease> {
-	_held: SealedProtectedWitness<'view, 'lease>,
-	submission: RenameSubmission,
+	held: SealedProtectedWitness<'view, 'lease>,
+	submission: Option<RenameSubmission>,
 	observation: WitnessPublicationObservation,
+	observation_head: Option<Head>,
 }
 
 impl WitnessPublication<'_, '_> {
@@ -116,8 +121,14 @@ impl WitnessPublication<'_, '_> {
 		&self.observation
 	}
 
-	/// Releases original custody and returns the logical submission and native fact.
-	pub fn into_observation(self) -> (RenameSubmission, WitnessPublicationObservation) {
+	/// Exact durable and independently confirmed outcome boundary, when recorded.
+	#[must_use]
+	pub const fn observation_head(&self) -> Option<Head> {
+		self.observation_head
+	}
+
+	/// Releases original custody and returns the native fact, and its token if unspent.
+	pub fn into_observation(self) -> (Option<RenameSubmission>, WitnessPublicationObservation) {
 		(self.submission, self.observation)
 	}
 }
@@ -189,9 +200,10 @@ impl<'view, 'lease> SealedProtectedWitness<'view, 'lease> {
 		}
 		let observation = rename.submit(guard);
 		Ok(WitnessPublication {
-			_held: self,
-			submission,
+			held: self,
+			submission: Some(submission),
 			observation,
+			observation_head: None,
 		})
 	}
 }

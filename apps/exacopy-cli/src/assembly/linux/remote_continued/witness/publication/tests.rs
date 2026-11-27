@@ -116,3 +116,40 @@ fn live_application_submission_requires_both_exact_prepublication_heads() {
 		Err(Refusal::Binding)
 	));
 }
+
+#[test]
+fn submitted_kernel_conflict_without_exact_names_closes_as_uncertain_without_fresh_consent() {
+	use exacopy_journal::NamespaceObservation;
+	use exacopy_journal::remote_download::witness::records::RemoteWitnessedOutcome;
+	use exacopy_platform::linux::{
+		PublishError, StageError, WitnessPublicationNames, WitnessPublicationObservation,
+	};
+
+	let mut submitted = original_pass();
+	let live = live(&submitted.model, 6);
+	let token = submitted.authorize_rename(live).unwrap();
+	let native = WitnessPublicationObservation::Reconcile {
+		submission: Err(PublishError::Conflict),
+		names: Box::new(WitnessPublicationNames::default()),
+		observation_failure: Some(StageError::IdentityChanged),
+	};
+	assert_eq!(
+		submitted.observe_native(token, head(6), &native).unwrap(),
+		RemoteWitnessedOutcome::Uncertain {
+			target: NamespaceObservation::Unobserved,
+			stage: NamespaceObservation::Unobserved,
+			witness: NamespaceObservation::Unobserved,
+		},
+	);
+	assert!(matches!(
+		submitted.authorize_rename(live),
+		Err(Refusal::Order)
+	));
+	assert!(matches!(
+		native,
+		WitnessPublicationObservation::Reconcile {
+			submission: Err(PublishError::Conflict),
+			..
+		}
+	));
+}
