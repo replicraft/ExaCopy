@@ -545,12 +545,28 @@ class KernelFixtureTests(unittest.TestCase):
         self.assertEqual((pending.client_port, pending.timer, pending.send_queue, pending.timer_retransmissions,
                           pending.retransmissions, pending.bytes_retransmitted, pending.segments_sent),
                          (61899, "on", 192, 5, 5, 960, 24))
+        self.assertEqual(tcp.parse_tcp(active.replace(b"208ms", b"")), [pending])
         for invalid in (
             active + active, active.replace(b"198.18.0.2", b"192.0.2.2"),
             active.replace(b"retrans:1/5", b"retrans:6/5"), active.replace(b"61899", b"65536"),
+            active.replace(b",208ms,5", b",5"), active.replace(b",208ms,5", b",,"),
         ):
             with self.assertRaises(Blocked):
                 tcp.parse_tcp(invalid)
+
+    def test_settling_identifies_the_refused_sample_without_raw_details(self):
+        carrier = observations.Counters(3490, 5420, 1, "127.0.0.1:51314")
+        for function, phase in (("snapshot", "peer-carrier-sample"), ("observe_tcp", "peer-tcp-sample")):
+            with self.subTest(phase=phase):
+                evidence = {}
+                with (
+                    patch.object(observations, "snapshot", return_value=carrier),
+                    patch.object(observations, "observe_tcp", return_value=[]),
+                    patch.object(observations, function, side_effect=Blocked("unretained observation text")),
+                    self.assertRaises(Blocked),
+                ):
+                    observations.settle_peer(Mock(), carrier, Mock(wait=Mock(return_value=False)), evidence)
+                self.assertEqual(evidence, {"sample_phase": phase})
 
     def test_stable_wireguard_counters_do_not_hide_active_tcp_retransmission(self):
         carrier = observations.Counters(3490, 7552, 1, "127.0.0.1:44497")

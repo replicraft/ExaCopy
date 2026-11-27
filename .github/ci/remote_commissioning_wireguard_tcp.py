@@ -64,7 +64,8 @@ def parse_tcp(raw):
             raise Blocked("inner TCP socket port absent or ambiguous")
         timer = timer_retransmissions = retransmissions = None
         if (raw_timer := optional_field(details, b"timer:")) is not None:
-            match = re.fullmatch(rb"\((" + TCP_TIMERS + rb"),[^,\s()]{1,24},([0-9]{1,20})\)", raw_timer)
+            # iproute2's print_ms_timer emits an empty duration at zero milliseconds.
+            match = re.fullmatch(rb"\((" + TCP_TIMERS + rb"),[^,\s()]{0,24},([0-9]{1,20})\)", raw_timer)
             if match is None:
                 raise Blocked("inner TCP socket timer invalid")
             timer = match[1].decode("ascii")

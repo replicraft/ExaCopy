@@ -42,6 +42,9 @@ class ObservationPhase(Enum):
     CASE_SAMPLE = "case-sample"
     CASE_DELTA = "case-delta"
     PEER_SETTLING = "peer-settling"
+    PEER_CARRIER_SAMPLE = "peer-carrier-sample"
+    PEER_TCP_SAMPLE = "peer-tcp-sample"
+    PEER_SETTLING_DELTA = "peer-settling-delta"
     CASE_ACKNOWLEDGEMENT = "case-acknowledgement"
 
 
@@ -143,8 +146,11 @@ def settle_peer(kernel, initial, halted, evidence):
         if halted.wait(min(PEER_SAMPLE_SECONDS, remaining)):
             raise Blocked("carrier settling interrupted")
         checkpoint()
+        evidence["sample_phase"] = ObservationPhase.PEER_CARRIER_SAMPLE.value
         current = snapshot(kernel)
+        evidence["sample_phase"] = ObservationPhase.PEER_TCP_SAMPLE.value
         flows = observe_tcp(kernel)
+        evidence["sample_phase"] = ObservationPhase.PEER_SETTLING_DELTA.value
         now = time.monotonic()
         elapsed_ms = int((now - started) * 1000)
         evidence.update(latest=asdict(current), elapsed_ms=elapsed_ms)
@@ -160,6 +166,7 @@ def settle_peer(kernel, initial, halted, evidence):
             or current.received < previous.received or current.sent < previous.sent
         ):
             raise Blocked("carrier settling observed changed peer or regressed counters")
+        del evidence["sample_phase"]
         if not tcp_drained:
             quiet_since = None
         elif current != previous or quiet_since is None:
