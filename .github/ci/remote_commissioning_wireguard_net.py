@@ -27,6 +27,7 @@ SERVER = "198.18.0.1"
 CLIENT = "198.18.0.2"
 SSH_PORT = 2222
 OUTER_MTU = 1500
+KEEPER_SECONDS = 1800
 # This index is reserved only inside the two freshly owned fixture namespaces.
 LINK_IFINDEX = 4242
 
@@ -104,13 +105,13 @@ class Keeper:
         self.attempted = True
         properties = [
             "Type=exec", "KillMode=control-group", "Delegate=no", "ProtectControlGroups=yes",
-            "PrivateNetwork=yes", "RuntimeMaxSec=1800s", "Restart=no", "TimeoutStopSec=10s",
+            "PrivateNetwork=yes", f"RuntimeMaxSec={KEEPER_SECONDS}s", "Restart=no", "TimeoutStopSec=10s",
             "StandardOutput=null", "StandardError=null",
         ]
         self.setup.advance(Step.KEEPER_START, role)
         command(self.work, "isolated namespace keeper", [
             SYSTEMD_RUN, "--quiet", "--unit", self.unit,
-            *(f"--property={item}" for item in properties), "--", "/usr/bin/sleep", "1800",
+            *(f"--property={item}" for item in properties), "--", "/usr/bin/sleep", str(KEEPER_SECONDS),
         ])
         self.setup.advance(Step.KEEPER_STATUS, role)
         current = unit_status(self.unit)

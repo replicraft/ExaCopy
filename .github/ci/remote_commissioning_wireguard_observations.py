@@ -74,8 +74,8 @@ def check_delta(before, after, connections):
         raise Blocked("campaign case connection count overruns the fixture")
 
 
-def wait_file(path, stop=lambda: False):
-    deadline = time.monotonic() + CASE_TIMEOUT
+def wait_file(path, stop=lambda: False, *, timeout=CASE_TIMEOUT):
+    deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         checkpoint()
         if stop():

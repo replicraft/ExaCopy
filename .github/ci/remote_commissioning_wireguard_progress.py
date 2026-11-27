@@ -42,6 +42,7 @@ class Step(Enum):
     LINK_ROUTE = "link-route"
     LINK_LISTEN = "link-listen"
     TOPOLOGY_VERIFY = "topology-verify"
+    CLIENT_OBSERVATIONS = "client-observations"
     SSH_SETUP = "ssh-setup"
     CAMPAIGN = "campaign"
     CARRIER_DOWN = "carrier-down"
@@ -83,6 +84,10 @@ class LinkUnconfirmed(CleanupUnconfirmed):
         self.predicate = predicate
 
 
+class ClientBudgetExpired(Blocked):
+    pass
+
+
 class CommandRefused(Blocked):
     def __init__(self, operation, result):
         self.operation = operation if isinstance(operation, Step) else None
@@ -109,6 +114,8 @@ def failure(error):
         return result
     if isinstance(error, CleanupUnconfirmed):
         return {"kind": "ownership-unconfirmed"}
+    if isinstance(error, ClientBudgetExpired):
+        return {"kind": "client-supervision-budget-exhausted"}
     if isinstance(error, Blocked):
         return {"kind": "refused"}
     if isinstance(error, OSError):

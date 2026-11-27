@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Commission the ordinary embedded CLI against an isolated hosted kernel peer."""
+from contextlib import contextmanager
 from dataclasses import asdict
 from enum import Enum
 import ipaddress
@@ -20,7 +21,7 @@ from remote_commissioning import native
 from native_supervision import CleanupUnconfirmed, file_digest, interrupted, logged_command, write_json
 from remote_commissioning_authority import make_authority, read_json
 from remote_commissioning_peer import Blocked, Fixture, INSTALL, SSHD, checkpoint, directory_identity, run, unit_status
-from remote_commissioning_wireguard_lane import ClientLane
+from remote_commissioning_wireguard_lane import ClientBudget, ClientLane, ClientStep
 from remote_commissioning_wireguard_net import CLIENT, SERVER, SSH_PORT, SET_PRIV, SS, KernelPeer, command
 from remote_commissioning_wireguard_observations import CASES, Counters, check_delta, file_signal, snapshot, wait_file
 import remote_commissioning_wireguard_provider as provider
@@ -31,12 +32,12 @@ from remote_commissioning_wireguard_progress import Progress, Step
 SCHEMA = "exacopy.linux-kernel-wireguard-commissioning.v1"
 JOB = "exacopy-wireguard-commissioning"
 ROUTE_REVISION = b"ExaCopy/ssh-profile/embedded-route/v2\0"
-CLIENT_MODES = ("campaign", "carrier-down")
+CAMPAIGN_SECONDS = 1500
 EXTRA_EVIDENCE = {
     "retained-destination.json": 16 * 1024,
     "carrier-down/carrier-down.stdout": 16 * 1024,
     "carrier-down/carrier-down.openssh.log": 64 * 1024,
-    **{f"lane-{mode}/{name}.json": 4096 for mode in CLIENT_MODES for name in ("identity", "disposition")},
+    **{f"lane-campaign/{name}.json": 4096 for name in ("identity", "mount", "disposition")},
 }
 
 
@@ -130,53 +131,49 @@ def observe_cases(kernel, mailbox, halted, rows, failures):
         file_signal(mailbox / "blocked")
 
 
-def client_command(fixture, kernel, work, b3sum, mode):
-    observed_mount = provider.namespace_identity("mnt")
-    if observed_mount is None:
-        raise Blocked("caller mount namespace identity unavailable")
+def client_command(fixture, kernel, work, b3sum, env, host_mount):
     return kernel.client.enter(
         SET_PRIV, f"--reuid={os.geteuid()}", f"--regid={os.getegid()}", "--clear-groups",
         "--bounding-set=-all", "--inh-caps=-all", "--ambient-caps=-all", "--no-new-privs",
         "/usr/bin/env", "-i", f"RUNNER_TEMP={work.parent.parent}",
-        f"PATH={b3sum.parent}:/usr/bin:/usr/sbin", "LC_ALL=C",
+        f"PATH={b3sum.parent}:{env['PATH']}", "LC_ALL=C",
+        *(f"{name}={env[name]}" for name in ("HOME", "CARGO_HOME", "RUSTUP_HOME", "TMPDIR") if name in env),
         "/usr/bin/python3", "-B", native.REPO / ".github/ci/remote_commissioning_wireguard_client.py",
         fixture.nonce, ":".join(map(str, kernel.client.identity)),
-        f"{observed_mount['device']}:{observed_mount['inode']}", str(os.geteuid()), mode,
+        f"{host_mount['device']}:{host_mount['inode']}", str(os.geteuid()),
     )
 
 
-def execute_campaign(fixture, kernel, work, b3sum, binary, report, input_digests):
+def process_evidence(result):
+    return {"status": result.status, "exit_status": result.exit_status}
+
+
+def execute_campaign(kernel, lane, handoff, work, binary, report, input_digests, budget):
     mailbox = work / "telemetry"
     mailbox.mkdir(mode=0o700)
-    args = client_command(fixture, kernel, work, b3sum, "campaign")
     rows, failures = [], []
     halted = threading.Event()
     observer = threading.Thread(target=observe_cases, args=(kernel, mailbox, halted, rows, failures), daemon=True)
     observer.start()
     try:
-        if not wait_file(mailbox / "start", lambda: bool(failures)):
+        if not wait_file(mailbox / "start", lambda: bool(failures), timeout=budget.time_for(120)):
             raise failures[0]
-        result = run_client(fixture, work, "campaign", args, 1500)
-        write_json(work / "campaign-process.json", {"status": result.status, "exit_status": result.exit_status})
+        seconds = budget.time_for(CAMPAIGN_SECONDS)
+        file_signal(handoff / ClientStep.CAMPAIGN.value)
+        result = lane.wait(seconds, signal=handoff / ClientStep.CAMPAIGN_COMPLETE.value,
+                           stop=lambda: bool(failures))
+        write_json(work / "campaign-process.json", process_evidence(result))
     finally:
         halted.set()
         observer.join(timeout=75)
         if observer.is_alive():
             raise CleanupUnconfirmed("kernel telemetry observer cleanup is unconfirmed")
         report["kernel_cases"] = rows
-        try:
-            (work / "campaign/cleanup-unconfirmed.json").lstat()
-        except FileNotFoundError:
-            pass
-        except OSError as error:
-            raise CleanupUnconfirmed("campaign cleanup state could not be confirmed") from error
-        else:
-            raise CleanupUnconfirmed("nested campaign cleanup is unconfirmed")
     if failures:
         if isinstance(failures[0], CleanupUnconfirmed):
             raise failures[0]
         raise direct.EvidenceFailed("kernel peer observations differ from the executed campaign") from failures[0]
-    if not result.passed():
+    if result.status != "rendezvous":
         return 1 if result.exit_status == 1 else 77
     summary = read_json(work / "campaign/summary.json")
     if (
@@ -193,10 +190,8 @@ def execute_campaign(fixture, kernel, work, b3sum, binary, report, input_digests
     return 0
 
 
-def client_unit_name(fixture, mode):
-    if mode not in CLIENT_MODES:
-        raise ValueError("unknown fixture client lane")
-    return f"exacopy-wg-{fixture.nonce}-{mode}.service"
+def client_unit_name(fixture):
+    return f"exacopy-wg-{fixture.nonce}-campaign.service"
 
 
 def lane_evidence(handoff, lane, disposition):
@@ -205,20 +200,26 @@ def lane_evidence(handoff, lane, disposition):
     })
 
 
-def run_client(fixture, work, mode, args, budget):
-    handoff = work / f"lane-{mode}"
+@contextmanager
+def owned_client(fixture, work, args, budget):
+    handoff = work / "lane-campaign"
     handoff.mkdir(mode=0o700)
-    lane = ClientLane(client_unit_name(fixture, mode), work, budget)
+    lane = ClientLane(client_unit_name(fixture), work, budget.time_for())
     try:
         lane.start(args)
         write_json(handoff / "identity.json", {"unit": lane.unit, "invocation": lane.invocation, "cgroup": lane.group})
-        if not wait_file(handoff / "ready"):
-            raise Blocked("isolated client lane did not enter")
-        file_signal(handoff / "go")
-        return lane.wait()
+        yield lane, handoff
     finally:
         try:
             lane.stop()
+            for marker in (handoff / "observations-cleanup-pending",
+                           work / "campaign/cleanup-unconfirmed.json",
+                           work / "carrier-down/cleanup-unconfirmed.json"):
+                try:
+                    marker.lstat()
+                except FileNotFoundError:
+                    continue
+                raise CleanupUnconfirmed("nested client cleanup is unconfirmed")
         except Exception as error:
             try:
                 lane_evidence(handoff, lane, "unconfirmed")
@@ -229,18 +230,46 @@ def run_client(fixture, work, mode, args, budget):
             lane_evidence(handoff, lane, "confirmed-drained" if lane.attempted else "not-started")
 
 
-def carrier_down(fixture, kernel, work, b3sum, evidence):
+def observe_client(lane, handoff, work, host_mount, evidence, budget):
+    result = lane.wait(budget.time_for(120), signal=handoff / ClientStep.READY.value)
+    evidence["client_start"] = process_evidence(result)
+    if result.status != "rendezvous":
+        raise Blocked("protected client did not enter")
+    mount = lane.mount_namespace()
+    if mount == (host_mount["device"], host_mount["inode"]):
+        raise Blocked("client did not establish the protected mount namespace")
+    seconds = budget.time_for()
+    file_signal(handoff / ClientStep.OBSERVE.value)
+    result = lane.wait(seconds, signal=handoff / ClientStep.OBSERVED.value)
+    evidence["client_observations"] = process_evidence(result)
+    if result.status != "rendezvous":
+        raise Blocked("protected native observations did not complete")
+    require_client_mount(lane, mount)
+    first = read_json(work / "native-facts/facts.json")
+    second = read_json(work / "native-facts-recheck/facts.json")
+    if first != second or first["destination"]["mount_namespace"] != str(mount[1]):
+        raise Blocked("native facts do not match the held client mount namespace")
+    if provider.namespace_identity("mnt") != host_mount:
+        raise Blocked("host mount namespace changed during client observations")
+    write_json(handoff / "mount.json", {"host": host_mount, "client": mount})
+    return mount
+
+
+def require_client_mount(lane, mount):
+    if lane.mount_namespace() != mount:
+        raise CleanupUnconfirmed("protected client mount namespace changed")
+
+
+def carrier_down(kernel, lane, handoff, evidence, budget):
     kernel.recheck_link()
     kernel.call(kernel.peer, "lower owned carrier", "/usr/sbin/ip", "link", "set", "dev", kernel.name, "down")
     sockets = kernel.call(kernel.client, "confirm lowered carrier", SS, "-H", "-lun")
     if re.search(rb":" + str(kernel.port).encode() + rb"\s", sockets):
         raise Blocked("lowered carrier still has an outer UDP socket")
-    try:
-        result = run_client(fixture, work, "carrier-down", client_command(fixture, kernel, work, b3sum, "carrier-down"), 55)
-    finally:
-        if os.path.lexists(work / "carrier-down/cleanup-unconfirmed.json"):
-            raise CleanupUnconfirmed("carrier-down command cleanup is unconfirmed")
-    evidence["carrier_down"] = {"status": result.status, "exit_status": result.exit_status}
+    seconds = budget.time_for(55)
+    file_signal(handoff / ClientStep.CARRIER_DOWN.value)
+    result = lane.wait(seconds)
+    evidence["carrier_down"] = process_evidence(result)
     if not result.passed():
         raise direct.EvidenceFailed("ordinary CLI did not confirm no publication after carrier shutdown")
 
@@ -288,7 +317,7 @@ def execute(parent, work, report, evidence, choice=ProviderChoice.EXISTING):
     write_json(marker, {
         "root": str(fixture.root), "account": fixture.account, "unit": fixture.unit,
         "keepers": [f"exacopy-wg-{fixture.nonce}-{role}.service" for role in ("client", "peer")],
-        "client_lanes": [client_unit_name(fixture, mode) for mode in CLIENT_MODES],
+        "client_lanes": [client_unit_name(fixture)],
     })
     setup, cleanup = Progress(), Progress()
     evidence["fixture_progress"] = {"setup": setup.evidence, "cleanup": cleanup.evidence}
@@ -322,48 +351,61 @@ def execute(parent, work, report, evidence, choice=ProviderChoice.EXISTING):
                 if expected_provider != (boot, "already-live"):
                     raise Blocked("provider B did not establish WireGuard Live on the same boot")
             kernel = KernelPeer(fixture, work, protected_wg, setup=setup, cleanup=cleanup)
+            budget = ClientBudget.before_keepers()
             kernel.prepare(lambda: check_provider(evidence, expected_provider))
             evidence["topology"] = {
                 "namespaces": {"client": kernel.client.identity, "peer": kernel.peer.identity},
                 "kernel_ifindex": kernel.ifindex, "outer_port": kernel.port, "wg_sha256": staged_wg_sha,
                 "client_inner": CLIENT, "server_inner": SERVER, "sshd_sha256": sshd_sha,
             }
-            setup.advance(Step.SSH_SETUP)
-            route = kernel.profile()
-            revision = route_revision(route, b3sum)
-            evidence["topology"]["route_revision"] = revision
-            direct.observations(fixture, manifest, binary, env, work, verify)
-            _, _, evidence["authority"] = make_authority(fixture, work, manifest, b3sum, route=native.EMBEDDED, route_revision=revision)
-            owner = fixture.private / "owner"
-            init = logged_command([binary, "profile", "init", owner], work / "owner-init.log", 10, env=env, output_limit=8192)
-            if not init.passed():
-                raise Blocked("ordinary CLI failed to initialize fixture owner")
-            directory_identity(owner, os.geteuid(), 0o700)
-            fixture.make_sources()
-            fixture.make_account()
-            kernel.peer.recheck()
-            profile, _, evidence["peer"] = fixture.make_selected_peer(SERVER, SSH_PORT, CLIENT, kernel.peer.pin, route)
-            inputs = {
-                "ssh_profile_sha256": profile,
-                "trust_sha256": fixture.private / "synthetic-trust.json",
-                "qualification_sha256": fixture.private / "synthetic-record",
-            }
-            input_digests = {name: file_digest(path) for name, path in inputs.items()}
-            validate_listener(fixture, kernel)
-            verify()
-            setup.advance(Step.CAMPAIGN)
-            result = execute_campaign(fixture, kernel, work, b3sum, binary, evidence, input_digests)
-            if result == 0:
-                setup.advance(Step.CARRIER_DOWN)
-                kernel.check_geometry()
+            host_mount = provider.namespace_identity("mnt")
+            if host_mount is None:
+                raise Blocked("caller mount namespace identity unavailable")
+            setup.advance(Step.CLIENT_OBSERVATIONS)
+            args = client_command(fixture, kernel, work, b3sum, env, host_mount)
+            with owned_client(fixture, work, args, budget) as (lane, handoff):
+                mount = observe_client(lane, handoff, work, host_mount, evidence, budget)
+                verify()
+                setup.advance(Step.SSH_SETUP)
+                route = kernel.profile()
+                revision = route_revision(route, b3sum)
+                evidence["topology"]["route_revision"] = revision
+                require_client_mount(lane, mount)
+                _, _, evidence["authority"] = make_authority(
+                    fixture, work, manifest, b3sum, route=native.EMBEDDED, route_revision=revision,
+                )
+                owner = fixture.private / "owner"
+                init = logged_command([binary, "profile", "init", owner], work / "owner-init.log", 10, env=env, output_limit=8192)
+                if not init.passed():
+                    raise Blocked("ordinary CLI failed to initialize fixture owner")
+                directory_identity(owner, os.geteuid(), 0o700)
+                fixture.make_sources()
+                fixture.make_account()
+                kernel.peer.recheck()
+                profile, _, evidence["peer"] = fixture.make_selected_peer(SERVER, SSH_PORT, CLIENT, kernel.peer.pin, route)
+                inputs = {
+                    "ssh_profile_sha256": profile,
+                    "trust_sha256": fixture.private / "synthetic-trust.json",
+                    "qualification_sha256": fixture.private / "synthetic-record",
+                }
+                input_digests = {name: file_digest(path) for name, path in inputs.items()}
                 validate_listener(fixture, kernel)
                 verify()
-                if file_digest(Path(SSHD)) != sshd_sha or file_digest(protected_wg) != staged_wg_sha:
-                    raise Blocked("kernel or OpenSSH tool custody changed")
-                carrier_down(fixture, kernel, work, b3sum, evidence)
-                verify()
-                if any(file_digest(path) != input_digests[name] for name, path in inputs.items()):
-                    raise direct.EvidenceFailed("protected route or authority inputs changed")
+                require_client_mount(lane, mount)
+                setup.advance(Step.CAMPAIGN)
+                result = execute_campaign(kernel, lane, handoff, work, binary, evidence, input_digests, budget)
+                if result == 0:
+                    setup.advance(Step.CARRIER_DOWN)
+                    require_client_mount(lane, mount)
+                    kernel.check_geometry()
+                    validate_listener(fixture, kernel)
+                    verify()
+                    if file_digest(Path(SSHD)) != sshd_sha or file_digest(protected_wg) != staged_wg_sha:
+                        raise Blocked("kernel or OpenSSH tool custody changed")
+                    carrier_down(kernel, lane, handoff, evidence, budget)
+                    verify()
+                    if any(file_digest(path) != input_digests[name] for name, path in inputs.items()):
+                        raise direct.EvidenceFailed("protected route or authority inputs changed")
             setup.completed()
         except Exception as error:
             unresolved = isinstance(error, CleanupUnconfirmed)

@@ -21,7 +21,7 @@ import remote_commissioning_wireguard_lane as lane
 import remote_commissioning_wireguard_observations as observations
 from remote_commissioning_wireguard_progress import failure
 from remote_commissioning_peer import Blocked, Fixture
-from native_supervision import CleanupUnconfirmed
+from native_supervision import CleanupUnconfirmed, ProcessResult
 
 
 class KernelFixtureTests(unittest.TestCase):
@@ -566,7 +566,7 @@ class KernelFixtureTests(unittest.TestCase):
 
     def test_passing_outcome_requires_each_exact_kernel_artifact(self):
         required = list(fixture.EXTRA_EVIDENCE)
-        self.assertEqual(len(required), 7)
+        self.assertEqual(len(required), 6)
 
         def report_for(outcome, missing=None):
             with tempfile.TemporaryDirectory() as scratch:
@@ -604,7 +604,7 @@ class KernelFixtureTests(unittest.TestCase):
             status, report = report_for(outcome, required[0])
             self.assertEqual((status, report["status"]), (outcome, label))
             self.assertNotIn("missing_artifacts", report)
-            self.assertEqual(len(report["artifacts_sha256"]), 6)
+            self.assertEqual(len(report["artifacts_sha256"]), len(required) - 1)
 
     def test_client_stop_io_failure_preserves_identity_and_uncertainty(self):
         with tempfile.TemporaryDirectory() as scratch:
@@ -612,18 +612,154 @@ class KernelFixtureTests(unittest.TestCase):
             work = Path(scratch)
             with (
                 patch.object(fixture, "ClientLane", return_value=unit),
-                patch.object(fixture, "wait_file", return_value=True),
-                patch.object(fixture, "file_signal"),
                 patch.object(unit, "start", create=True),
-                patch.object(unit, "wait", create=True),
                 patch.object(unit, "stop", create=True, side_effect=OSError("stop failed")),
             ):
                 with self.assertRaisesRegex(CleanupUnconfirmed, "lane cleanup is unconfirmed"):
-                    fixture.run_client(Fixture("0" * 20, 1), work, "campaign", [], 10)
+                    with fixture.owned_client(Fixture("0" * 20, 1), work, [], lane.ClientBudget.before_keepers()):
+                        pass
             facts = json.loads((work / "lane-campaign/identity.json").read_text())
             self.assertEqual(facts, {"unit": "test.service", "invocation": "one", "cgroup": [9, 10]})
             disposition = json.loads((work / "lane-campaign/disposition.json").read_text())
             self.assertEqual(disposition, facts | {"cleanup": "unconfirmed"})
+
+    def test_protected_client_admits_its_private_mount_and_rejects_the_old_host_mount(self):
+        nonce = "0" * 20
+        net = {"device": 5, "inode": 100}
+        host = {"device": 5, "inode": 200}
+        private = {"device": 5, "inode": 300}
+        requirements = {
+            "/proc/self/status": "CapInh: 0\nCapPrm: 0\nCapEff: 0\nCapBnd: 0\nCapAmb: 0\nNoNewPrivs: 1\n",
+            "/proc/self/cgroup": f"0::/system.slice/exacopy-wg-{nonce}-campaign.service\n",
+        }
+        with (
+            patch.object(client.os, "geteuid", return_value=1001),
+            patch.object(client.os, "getuid", return_value=1001),
+            patch.object(client.os, "getgroups", return_value=[]),
+            patch.object(client.os, "statvfs", return_value=SimpleNamespace(f_flag=os.ST_RDONLY)) as cgroup,
+            patch.object(client, "Path", side_effect=lambda path: SimpleNamespace(
+                read_text=lambda **_kw: requirements[path],
+            )),
+            patch.object(client.provider, "namespace_identity", side_effect=[net, private, net, host, net, private]),
+        ):
+            self.assertEqual(client.isolated_client("5:100", "5:200", "1001", nonce), private)
+            with self.assertRaisesRegex(Blocked, "private mount namespace"):
+                client.isolated_client("5:100", "5:200", "1001", nonce)
+            cgroup.return_value = SimpleNamespace(f_flag=0)
+            with self.assertRaisesRegex(Blocked, "protected cgroup"):
+                client.isolated_client("5:100", "5:200", "1001", nonce)
+
+    def test_client_observation_requires_same_held_mount_before_facts_authority(self):
+        host = {"device": 5, "inode": 200}
+        mounted = (5, 300)
+        for problem in ("none", "host-mount", "measurement-drift", "leader-drift", "early-exit"):
+            with self.subTest(problem=problem), tempfile.TemporaryDirectory() as scratch:
+                work = Path(scratch)
+                handoff = work / "lane-campaign"
+                handoff.mkdir()
+                unit = Mock()
+                unit.mount_namespace.side_effect = [
+                    (5, 200) if problem == "host-mount" else mounted,
+                    (5, 301) if problem == "leader-drift" else mounted,
+                ]
+                unit.wait.side_effect = [
+                    ProcessResult("rendezvous"),
+                    ProcessResult("exited", 77) if problem == "early-exit" else ProcessResult("rendezvous"),
+                ]
+                facts = {"destination": {"mount_namespace": "200" if problem == "measurement-drift" else "300"}}
+                for name in ("native-facts", "native-facts-recheck"):
+                    (work / name).mkdir()
+                    (work / name / "facts.json").write_text(json.dumps(facts))
+                evidence = {}
+                with patch.object(fixture.provider, "namespace_identity", return_value=host):
+                    if problem == "none":
+                        self.assertEqual(fixture.observe_client(unit, handoff, work, host, evidence, lane.ClientBudget.before_keepers()), mounted)
+                        self.assertEqual(json.loads((handoff / "mount.json").read_text()), {
+                            "host": host, "client": list(mounted),
+                        })
+                    else:
+                        refusal = CleanupUnconfirmed if problem == "leader-drift" else Blocked
+                        with self.assertRaises(refusal):
+                            fixture.observe_client(unit, handoff, work, host, evidence, lane.ClientBudget.before_keepers())
+                        self.assertFalse((handoff / "mount.json").exists())
+                signal = handoff / lane.ClientStep.OBSERVE.value
+                self.assertEqual(signal.exists(), problem != "host-mount")
+                self.assertFalse((handoff / lane.ClientStep.CAMPAIGN.value).exists())
+                if problem == "early-exit":
+                    self.assertEqual(evidence["client_observations"], {"status": "exited", "exit_status": 77})
+
+    def test_client_phases_share_one_deadline_before_network_keeper_expiry(self):
+        with patch.object(lane.time, "monotonic", side_effect=[100, 110, 200, 1570, 1600]):
+            budget = lane.ClientBudget.before_keepers()
+            self.assertEqual(budget.deadline, 100 + network.KEEPER_SECONDS - lane.NAMESPACE_CLEANUP_RESERVE)
+            self.assertEqual(budget.time_for(120), 120)
+            self.assertEqual(budget.time_for(), 1400)
+            self.assertEqual(budget.time_for(55), 30)
+            with self.assertRaisesRegex(Blocked, "supervision budget is exhausted") as expired:
+                budget.time_for()
+            self.assertEqual(failure(expired.exception), {"kind": "client-supervision-budget-exhausted"})
+
+    def test_observations_cleanup_uncertainty_retains_lane_after_drain(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            work = Path(scratch)
+            unit = Mock(unit="test.service", invocation="one", group=(9, 10), attempted=True)
+            with patch.object(fixture, "ClientLane", return_value=unit):
+                with self.assertRaisesRegex(CleanupUnconfirmed, "lane cleanup is unconfirmed"):
+                    with fixture.owned_client(Fixture("0" * 20, 1), work, [], lane.ClientBudget.before_keepers()) as (_, handoff):
+                        (handoff / "observations-cleanup-pending").touch()
+                unit.stop.assert_called_once()
+            retained = json.loads((work / "lane-campaign/disposition.json").read_text())
+            self.assertEqual(retained["cleanup"], "unconfirmed")
+
+    def test_one_client_carries_observations_campaign_and_carrier_down_in_order(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            runner = Path(scratch)
+            work = runner / fixture.JOB / "private"
+            handoff = work / "lane-campaign"
+            handoff.mkdir(parents=True)
+            mount = {"device": 5, "inode": 300}
+            sequence = []
+            env = {}
+
+            def wait_for(path, **_options):
+                sequence.append(path.name)
+                return True
+
+            def observe(_fixture, _manifest, _binary, selected_env, evidence, verify):
+                self.assertEqual(evidence, work)
+                self.assertEqual(selected_env["CARGO_BUILD_JOBS"], "2")
+                self.assertTrue((handoff / "observations-cleanup-pending").exists())
+                verify()
+                sequence.append("facts")
+
+            def campaign_main(_observer, _retained):
+                self.assertTrue((handoff / lane.ClientStep.OBSERVED.value).exists())
+                self.assertFalse((handoff / "observations-cleanup-pending").exists())
+                sequence.append("transfer")
+                return 0
+
+            def carrier(_campaign, _paths, _evidence, _retained):
+                self.assertTrue((handoff / lane.ClientStep.CAMPAIGN_COMPLETE.value).exists())
+                sequence.append("carrier-work")
+                return 0
+
+            with (
+                patch.dict(os.environ, {"RUNNER_TEMP": str(runner), "PATH": "/scoped/bin:/usr/bin"}),
+                patch.object(client, "wait_file", side_effect=wait_for),
+                patch.object(client, "no_direct_route", return_value=True) as no_direct,
+                patch.object(client.direct, "read_build_manifest", return_value=({"source_after": "same-order"}, "digest")),
+                patch.object(client.direct, "verify_build_custody") as verify,
+                patch.object(client.direct, "observations", side_effect=observe),
+                patch.object(client.native, "source_identity", return_value="same-order"),
+                patch.object(client.native, "build_environment", return_value=env),
+                patch.object(campaign, "main", side_effect=campaign_main),
+                patch.object(client, "carrier_down", side_effect=carrier),
+                patch.object(sys, "argv", []),
+            ):
+                self.assertEqual(client.run_client("0" * 20, mount, lambda: mount), 0)
+            self.assertEqual(sequence, ["observe", "facts", "campaign", "transfer", "carrier-down", "carrier-work"])
+            self.assertEqual(verify.call_count, 3)
+            self.assertEqual(no_direct.call_count, 3)
 
     def test_exact_independent_route_revision_bytes(self):
         route = {
