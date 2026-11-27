@@ -13,6 +13,7 @@ use crate::workspace::APP_VERSION;
 mod closed_ext4;
 mod integration;
 mod managed_sync;
+mod public_stage;
 
 const FIXTURE_MANIFEST: &str = "fixture.toml";
 const RESULT: &str = "result.json";
@@ -48,6 +49,8 @@ enum Profile {
 	UnprivilegedWholeExt4SyncStatmount,
 	#[serde(rename = "linux-unprivileged-whole-ext4-managed-sync-production-v1")]
 	UnprivilegedWholeExt4ManagedSyncProduction,
+	#[serde(rename = "linux-unprivileged-whole-ext4-public-stage-v1")]
+	UnprivilegedWholeExt4PublicStage,
 }
 
 impl Profile {
@@ -59,7 +62,8 @@ impl Profile {
 			| Self::UnprivilegedWholeExt4SyncHistory
 			| Self::UnprivilegedWholeExt4WitnessedComponents
 			| Self::UnprivilegedWholeExt4SyncStatmount
-			| Self::UnprivilegedWholeExt4ManagedSyncProduction => Target::LinuxX86_64Gnu,
+			| Self::UnprivilegedWholeExt4ManagedSyncProduction
+			| Self::UnprivilegedWholeExt4PublicStage => Target::LinuxX86_64Gnu,
 		}
 	}
 
@@ -199,6 +203,7 @@ fn check_manifest(
 
 	if !managed_sync::check(package, manifest, &path, &fixture, findings)
 		|| !closed_ext4::check(package, manifest, &path, &fixture, findings)
+		|| !public_stage::check(package, manifest, &path, &fixture, findings)
 	{
 		return;
 	}
@@ -324,7 +329,9 @@ fn check_cases(
 				case,
 				findings,
 			),
-			CaseKind::RustUnit => check_rust_case(metadata, package, manifest, case, findings),
+			CaseKind::RustUnit => {
+				check_rust_case(metadata, package, manifest, fixture.profile, case, findings);
+			}
 			CaseKind::Command => {
 				if case.owner.is_some()
 					|| case.ignored
@@ -357,6 +364,7 @@ fn check_rust_case(
 	metadata: &Metadata,
 	package: &Package,
 	manifest: &Path,
+	profile: Profile,
 	case: &Case,
 	findings: &mut Findings,
 ) {
@@ -386,14 +394,15 @@ fn check_rust_case(
 		);
 		return;
 	}
-	let Some((modules, leaf)) = selector(&case.source, &case.selector) else {
+	let app_stage = public_stage::matches_case(owner.name.as_str(), profile, case);
+	let Some((modules, leaf)) = selector(&case.source, &case.selector, app_stage) else {
 		findings.add(
 			manifest,
 			format_args!("invalid native test selector {}", case.selector),
 		);
 		return;
 	};
-	if !check_module_chain(root, &modules, findings) {
+	if !check_module_chain(root, &modules, usize::from(app_stage), findings) {
 		return;
 	}
 	let Some(contents) = artifact_text(root, &case.source, findings) else {
@@ -428,8 +437,9 @@ fn check_rust_case(
 	}
 }
 
-fn selector(source: &Path, selector: &str) -> Option<(Vec<String>, String)> {
-	if source.extension() != Some(OsStr::new("rs")) || !source.starts_with("src/linux") {
+fn selector(source: &Path, selector: &str, app_stage: bool) -> Option<(Vec<String>, String)> {
+	let accepted_root = app_stage || source.starts_with("src/linux");
+	if !accepted_root || source.extension() != Some(OsStr::new("rs")) {
 		return None;
 	}
 	let stem = source.strip_prefix("src").ok()?.with_extension("");
@@ -442,7 +452,12 @@ fn selector(source: &Path, selector: &str) -> Option<(Vec<String>, String)> {
 		.then(|| (modules, leaf.to_owned()))
 }
 
-fn check_module_chain(root: &Path, modules: &[String], findings: &mut Findings) -> bool {
+fn check_module_chain(
+	root: &Path,
+	modules: &[String],
+	linux_module: usize,
+	findings: &mut Findings,
+) -> bool {
 	let mut directory = PathBuf::from("src");
 	let mut parent = directory.join("lib.rs");
 	for (index, module) in modules.iter().enumerate() {
@@ -459,7 +474,7 @@ fn check_module_chain(root: &Path, modules: &[String], findings: &mut Findings) 
 					&& !decl.attrs.iter().any(|attr| {
 						attr.path().is_ident("path") || attr.path().is_ident("cfg_attr")
 					})
-					&& (index != 0
+					&& (index != linux_module
 						|| decl.attrs.iter().any(|attr| {
 							attr.path().is_ident("cfg")
 								&& attr.parse_args::<MetaNameValue>().is_ok_and(|cfg| {

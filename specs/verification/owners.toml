@@ -19,6 +19,7 @@ exacopy-wireguard = ["rust"]
 exacopy-cli = [
 	"verification/sync_preview/fixture.toml",
 	"verification/managed_sync_production/fixture.toml",
+	"verification/public_stage_ext4/fixture.toml",
 ]
 exacopy-platform = [
 	"verification/protected_slot/fixture.toml",

@@ -1,0 +1,15 @@
+schema_version = 1
+id = "linux-public-stage-ext4"
+target = "x86_64-unknown-linux-gnu"
+profile = "linux-unprivileged-whole-ext4-public-stage-v1"
+rust_toolchain = "1.100.0"
+runner = "verification/public_stage_ext4/run.py"
+controls = "verification/public_stage_ext4/test_runner.py"
+workflow = ".github/workflows/linux-public-stage-ext4-qualification.yml"
+result = "result.json"
+
+[[case]]
+kind = "rust-unit"
+selector = "assembly::linux::public_stage::tests::approved_stage_reopens_with_exact_owner_and_preserves_uncertain_evidence"
+source = "src/assembly/linux/public_stage/tests.rs"
+ignored = true
