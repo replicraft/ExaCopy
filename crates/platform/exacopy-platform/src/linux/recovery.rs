@@ -27,9 +27,9 @@ mod writer;
 pub use anchor::RecoveryStageAnchor;
 pub use lease::RecoveryReadLease;
 pub use terminal::{
-	WitnessedPublishedArtifacts, WitnessedPublishedSelection, WitnessedReceiptLocation,
-	WitnessedTerminalArtifacts, WitnessedTerminalJournal, WitnessedTerminalSegment,
-	WitnessedTerminalSelection,
+	WitnessedPublicPins, WitnessedPublicSelection, WitnessedPublishedArtifacts,
+	WitnessedPublishedSelection, WitnessedReceiptLocation, WitnessedTerminalArtifacts,
+	WitnessedTerminalJournal, WitnessedTerminalSegment, WitnessedTerminalSelection,
 };
 pub use writer::{
 	ActiveWitnessReservation, ContinuationReservationError, FreshRecoveryStage,

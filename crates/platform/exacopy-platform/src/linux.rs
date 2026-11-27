@@ -58,9 +58,10 @@ pub use recovery::{
 	WitnessReceiptPlacement, WitnessReceiptPlan, WitnessReceiptRequest,
 	WitnessReservationAuthority, WitnessReservationEffect, WitnessReservationError,
 	WitnessReservationGateRequest, WitnessReservationObservationError, WitnessReservationPlan,
-	WitnessedPublishedArtifacts, WitnessedPublishedSelection, WitnessedReceiptLocation,
-	WitnessedSuffixReadback, WitnessedTerminalArtifacts, WitnessedTerminalJournal,
-	WitnessedTerminalSegment, WitnessedTerminalSelection,
+	WitnessedPublicPins, WitnessedPublicSelection, WitnessedPublishedArtifacts,
+	WitnessedPublishedSelection, WitnessedReceiptLocation, WitnessedSuffixReadback,
+	WitnessedTerminalArtifacts, WitnessedTerminalJournal, WitnessedTerminalSegment,
+	WitnessedTerminalSelection,
 };
 pub use running_image::RunningExecutable;
 pub use source::{

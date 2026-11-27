@@ -14,7 +14,10 @@ use crate::linux::job::OWNER;
 use crate::linux::stage::check_no_visible_attributes;
 
 mod published;
-pub use published::{WitnessedPublishedArtifacts, WitnessedPublishedSelection};
+pub use published::{
+	WitnessedPublicPins, WitnessedPublicSelection, WitnessedPublishedArtifacts,
+	WitnessedPublishedSelection,
+};
 
 const MAX_FIRST_SEGMENT: u64 = 64 * 1024 * 1024;
 const MAX_RECEIPT_LENGTH: u16 = 6_144;

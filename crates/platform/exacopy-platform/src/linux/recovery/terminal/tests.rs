@@ -7,10 +7,11 @@ use exacopy_endpoint::UnixComponent;
 
 use super::{
 	FIRST_SEGMENT, JOURNAL, JobFileIdentity, OWNER, RetainedPrefixSelection, StageError,
-	WitnessedPublishedSelection, WitnessedReceiptLocation, WitnessedTerminalSelection,
+	WitnessedPublicSelection, WitnessedPublishedSelection, WitnessedReceiptLocation,
+	WitnessedTerminalSelection,
 };
-use crate::linux::DestinationRoot;
 use crate::linux::job::STAGE;
+use crate::linux::{DestinationRoot, RecoveryWriteLease};
 use crate::scratch::Scratch;
 
 #[path = "../../../../tests/unit/linux/recovery/terminal.rs"]
@@ -73,6 +74,29 @@ impl Fixture {
 			receipt_len: u16::try_from(RECEIPT_BYTES.len()).unwrap(),
 			journal_end: JOURNAL_BYTES.len() as u64,
 		}
+	}
+
+	fn public_selection(&self) -> WitnessedPublicSelection<'static> {
+		let selected = self.selection();
+		WitnessedPublishedSelection {
+			job: selected.job,
+			destination: selected.destination,
+			stage: selected.stage,
+			witness_name: selected.witness_name,
+			uid: selected.uid,
+			gid: selected.gid,
+			extent: selected.extent,
+			journal_end: selected.journal_end,
+		}
+		.into()
+	}
+
+	fn exclusive_lease(&self) -> RecoveryWriteLease<'_> {
+		let name = UnixComponent::new(JOB.as_bytes()).unwrap();
+		let job = self.root.open_recovery_job(name).unwrap();
+		self.root
+			.try_recovery_write_lease(name, job.identity())
+			.unwrap()
 	}
 
 	fn path(&self, name: &[u8]) -> PathBuf {
@@ -271,6 +295,81 @@ fn receipt_ready_view_requires_one_exact_name_and_rejects_late_name_changes() {
 	assert_eq!(fs::read(&final_name).unwrap(), RECEIPT_BYTES);
 	fs::remove_file(&final_name).unwrap();
 	assert!(records.inspect_receipt_ready(selected).is_err());
+}
+
+#[test]
+fn exclusive_pins_recheck_same_public_aliases_across_journal_append() {
+	const APPENDED: &[u8] = b"new journal bytes";
+	let fixture = Fixture::new();
+	let selection = fixture.public_selection();
+	let lease = fixture.exclusive_lease();
+	let other_fixture = Fixture::new();
+	let other_lease = other_fixture.exclusive_lease();
+
+	fs::remove_file(fixture.path(FINAL)).unwrap();
+	let pins = lease.hold_witnessed_public(selection).unwrap();
+	assert!(pins.matches_lease(&lease));
+	assert!(!pins.matches_lease(&other_lease));
+	assert_eq!(
+		JobFileIdentity::from(pins.target().identity()),
+		selection.stage.file
+	);
+	assert_eq!(pins.target().observation().link_count(), 2);
+
+	let before = lease.job().open_first_segment().unwrap();
+	let mut writer = lease.open_first_segment_for_append(&before).unwrap();
+	pins.recheck().unwrap();
+	writer.write_all(APPENDED).unwrap();
+	pins.recheck().unwrap();
+	drop(writer);
+	assert!(before.recheck_observation().is_err());
+
+	let mut data = [0; DATA.len()];
+	pins.target().read_exact_at(0, &mut data).unwrap();
+	assert_eq!(data, DATA);
+	assert_eq!(fs::read(fixture.path(WITNESS)).unwrap(), DATA);
+	assert!(!fixture.path(FINAL).exists());
+
+	let stage = fixture.scratch.path(JOB).join(STAGE).join(STAGE_NAME);
+	write_fixture(&stage, b"unselected private bytes");
+	assert!(matches!(pins.recheck(), Err(StageError::IdentityChanged)));
+	assert_eq!(fs::read(stage).unwrap(), b"unselected private bytes");
+	assert_eq!(fs::read(fixture.scratch.path(TARGET)).unwrap(), DATA);
+}
+
+#[test]
+fn exclusive_pins_refuse_wrong_metadata_and_changed_two_link_namespace() {
+	let fixture = Fixture::new();
+	let selection = fixture.public_selection();
+	let lease = fixture.exclusive_lease();
+	let wrong_extent = WitnessedPublicSelection {
+		extent: selection.extent + 1,
+		..selection
+	};
+	assert!(matches!(
+		lease.hold_witnessed_public(wrong_extent),
+		Err(StageError::IdentityChanged)
+	));
+
+	let pins = lease.hold_witnessed_public(selection).unwrap();
+	let target = fixture.scratch.path(TARGET);
+	let extra = fixture.path(b"unexpected-link");
+	fs::hard_link(&target, &extra).unwrap();
+	assert!(matches!(pins.recheck(), Err(StageError::UnsafeFile)));
+	assert_eq!(fs::read(&extra).unwrap(), DATA);
+
+	let witness = fixture.path(WITNESS);
+	fs::remove_file(&witness).unwrap();
+	write_fixture(&witness, DATA);
+	let foreign_alias = fixture.path(b"foreign-witness-alias");
+	fs::hard_link(&witness, &foreign_alias).unwrap();
+	assert!(matches!(
+		lease.hold_witnessed_public(selection),
+		Err(StageError::IdentityChanged)
+	));
+	assert_eq!(fs::read(target).unwrap(), DATA);
+	assert_eq!(fs::read(witness).unwrap(), DATA);
+	assert_eq!(fs::read(foreign_alias).unwrap(), DATA);
 }
 
 fn write_fixture(path: &Path, bytes: &[u8]) {
