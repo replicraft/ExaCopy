@@ -1,8 +1,9 @@
-use std::fs::{self, DirBuilder, File};
+use std::fs::{self, DirBuilder, File, FileTimes};
 use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _, OpenOptionsExt as _, symlink};
 use std::path::{Path, PathBuf};
 use std::process::{self, Command};
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::SystemTime;
 
 use ed25519_dalek::SigningKey;
 use exacopy_endpoint::UnixComponent;
@@ -333,6 +334,10 @@ struct Fixture(PathBuf, ManagedSourceName<'static>);
 
 impl Fixture {
 	fn new() -> Self {
+		Self::with_source_modification_time(None)
+	}
+
+	fn with_source_modification_time(modified: Option<SystemTime>) -> Self {
 		static NEXT: AtomicU32 = AtomicU32::new(0);
 		let path = Path::new("/private/tmp").join(format!(
 			"exacopy-apfs-bootstrap-{}-{}",
@@ -365,14 +370,17 @@ impl Fixture {
 			);
 		}
 		use std::io::Write as _;
-		File::options()
+		let mut file = File::options()
 			.write(true)
 			.create_new(true)
 			.mode(0o600)
 			.open(fixture.0.join(SOURCE))
-			.unwrap()
-			.write_all(PAYLOAD)
 			.unwrap();
+		file.write_all(PAYLOAD).unwrap();
+		if let Some(modified) = modified {
+			file.set_times(FileTimes::new().set_modified(modified))
+				.unwrap();
+		}
 		fixture
 	}
 

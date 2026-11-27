@@ -1,0 +1,66 @@
+name: macOS strict APFS publication fixture
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_profile:
+        description: Synthetic source metadata profile
+        type: choice
+        default: ordinary
+        options:
+          - ordinary
+          - timestamp-eligible
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    if: github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: never
+      CARGO_INCREMENTAL: "0"
+      EXPECTED_RUST_HOST: aarch64-apple-darwin
+      SOURCE_PROFILE: ${{ inputs.source_profile }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify exact hosted checkout
+        run: |
+          bash .github/ci/capture.sh hosted-checkout bash -euo pipefail -c '
+            test "$RUNNER_ENVIRONMENT" = github-hosted
+            test "$RUNNER_OS" = macOS
+            test "$RUNNER_ARCH" = ARM64
+            test "$(git --no-replace-objects rev-parse HEAD)" = "$GITHUB_SHA"
+            test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+            changes=$(git status --porcelain=v1 --untracked-files=all --ignored=matching)
+            test -z "$changes"
+          '
+      - name: Provision pinned dependency sources
+        run: |
+          bash .github/ci/capture.sh apfs-source python3 -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh transport-source python3 -B tools/transport_source.py --fetch
+      - name: Install pinned Rust and nextest
+        run: |
+          bash .github/ci/capture.sh rust-setup bash .github/ci/install.sh rust
+          bash .github/ci/capture.sh nextest-setup bash .github/ci/install.sh nextest
+      - name: Run the selected native copy-through-receipt fixture
+        run: |
+          bash .github/ci/capture.sh strict-apfs-publication \
+            bash apps/exacopy-cli/verification/macos_apfs_publication/run.sh "$SOURCE_PROFILE"
+          grep -Eq '^[[:space:]]*qualification=pass$' "$RUNNER_TEMP/exacopy-evidence/strict-apfs-publication.log"
+          test -s target/nextest/ci-experimental-apfs-copy/junit.xml
+      - name: Retain native evidence and refusals
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: strict-apfs-publication-${{ inputs.source_profile }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-evidence/
+            target/nextest/ci-experimental-apfs-copy/junit.xml
+          if-no-files-found: error
+          retention-days: 90
