@@ -6,7 +6,7 @@ use exacopy_journal::remote_download::finalization_replay::RemoteFinalizationRep
 use exacopy_journal::remote_download::replay::{MAX_REMOTE_REPLAY_ATTEMPTS, RemoteReplayBoundary};
 use exacopy_platform::linux::{RecoveryFile, RecoveryJob, RecoveryReadLease};
 
-use super::lease::inspect_capture;
+use super::lease::{check_record, inspect_capture};
 use super::{Error, ResumeCapacity, record_identity};
 
 /// The exact ordinary replay selected under the shared startup lease.
@@ -75,14 +75,6 @@ impl ResumeHistory<'_> {
 	pub(super) const fn boundary(&self) -> RemoteReplayBoundary {
 		self.boundary
 	}
-}
-
-fn check_record(original: &RecoveryFile, reopened: &RecoveryFile) -> Result<(), Error> {
-	if original.identity() != reopened.identity() {
-		return Err(Error::Binding);
-	}
-	original.recheck_same_observation(reopened)?;
-	Ok(())
 }
 
 /// Checks the fixed bounds for spending a fresh allocation on this segment.

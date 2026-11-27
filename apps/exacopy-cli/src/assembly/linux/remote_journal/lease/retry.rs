@@ -15,8 +15,8 @@ use crate::profile::LocalProfile;
 use super::super::startup::check_capacity as check_attempt_capacity;
 use super::super::{RetryCaptureStamp, next_epochs};
 use super::{
-	Error, RemoteActivation, RemoteJobLease, check_current, component, context, record_identity,
-	require_live_phase,
+	Error, RemoteActivation, RemoteJobLease, check_current, check_record, component, context,
+	record_identity, require_live_phase,
 };
 
 /// One retained capture rechecked under its freshly acquired exclusive native lease.
@@ -130,13 +130,11 @@ impl<'root> RemoteRetryLease<'root> {
 			|| lease.activation.grant_digest != stamp.grant
 			|| lease.activation.qualification_digest != stamp.qualification
 			|| lease.stage_directory != record_identity(stamp.directory)
-			|| lease.owner_file.observation() != stamp.owner.observation()
-			|| lease.segment.observation() != stamp.segment.observation()
 		{
 			return Err(Error::Binding);
 		}
-		stamp.owner.recheck_observation()?;
-		stamp.segment.recheck_observation()?;
+		check_record(&stamp.owner, &lease.owner_file)?;
+		check_record(&stamp.segment, &lease.segment)?;
 		let mut current = self.check_records()?;
 		let replay = lease.scan(&mut current)?;
 		require_live_phase(&replay, lease.activation)?;
@@ -184,10 +182,7 @@ impl<'root> RemoteRetryLease<'root> {
 			stamp.segment.identity(),
 			stamp.boundary.offset,
 		)?;
-		if current.observation() != stamp.segment.observation() {
-			return Err(Error::Binding);
-		}
-		stamp.segment.recheck_observation()?;
+		check_record(&stamp.segment, &current)?;
 		Ok(current)
 	}
 

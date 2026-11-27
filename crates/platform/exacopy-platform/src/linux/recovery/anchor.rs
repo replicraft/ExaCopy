@@ -54,22 +54,23 @@ impl RecoveryStageAnchor {
 	///
 	/// # Errors
 	/// Refuses changed scope, missing or changed stage and unexpected target
-	/// occupancy. A successful comparison is a live observation.
+	/// occupancy. An ordinary read may advance atime on the private stage.
 	pub fn recheck(&self, current: &RecoveryInventory<'_>) -> Result<(), StageError> {
 		current.recheck()?;
+		let stage = current.stage().ok_or(StageError::IdentityChanged)?;
 		if self.mount != current.job.root.mount
 			|| self.stage_name != current.stage_name
 			|| self.target_name != current.target_name
 			|| file_identity(&self.root)? != current.job.destination_identity()
 			|| file_identity(&self.job)? != current.job.identity()
 			|| current.stage_directory_identity() != Some(file_identity(&self.directory)?)
-			|| current.stage().map(RecoveryFile::observation) != Some(self.stage.observation())
+			|| stage.identity() != self.stage.identity()
 			|| current.target().is_some()
 		{
 			return Err(StageError::IdentityChanged);
 		}
 		self.stage
-			.recheck_observation()
+			.recheck_same_observation(stage)
 			.map_err(StageError::ReadBack)?;
 		current.recheck()
 	}

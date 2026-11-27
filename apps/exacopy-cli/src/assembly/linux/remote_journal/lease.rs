@@ -328,6 +328,14 @@ pub(in crate::assembly::linux) struct CheckedCandidate<'job> {
 	pub(super) name: exacopy_endpoint::UnixComponent<'job>,
 }
 
+pub(super) fn check_record(original: &RecoveryFile, reopened: &RecoveryFile) -> Result<(), Error> {
+	if original.identity() != reopened.identity() {
+		return Err(Error::Binding);
+	}
+	original.recheck_same_observation(reopened)?;
+	Ok(())
+}
+
 pub(super) fn check_current(
 	job: &RecoveryJob<'_>,
 	owner: &RecoveryFile,

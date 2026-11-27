@@ -5,7 +5,7 @@ use exacopy_endpoint::UnixComponent;
 use exacopy_journal::remote_download::RemoteSourceObservation;
 
 use super::super::RetryCaptureStamp;
-use super::super::lease::{CheckedCandidate, retry::FreshRetryAllocation};
+use super::super::lease::{CheckedCandidate, check_record, retry::FreshRetryAllocation};
 use super::{Attempt, Error, RemoteJobJournal, component, context};
 
 impl<'lease> RemoteJobJournal<'lease> {
@@ -54,9 +54,7 @@ impl<'lease> RemoteJobJournal<'lease> {
 		let segment = self.checked_current()?;
 		let job = self.lease.job();
 		let owner = job.open_owner()?;
-		if owner.observation() != self.owner_file.observation() {
-			return Err(Error::Binding);
-		}
+		check_record(self.owner_file, &owner)?;
 		let target = component(self.owner.manifest().scope.destination.target())?;
 		let inventory = job.inventory(name, target)?;
 		if inventory.target().is_some() {

@@ -1,19 +1,28 @@
 use super::super::lease::retry::{check_capacity, check_preparation_capacity, preview_frame};
 use super::super::{RemoteRetryLease, RetryCaptureStamp};
 use super::{
-	Error, Fixture, NONCE, RemoteJobLease, RemoteSourceObservation, STAGE, StageError, component,
-	epoch, observation,
+	BootstrapIdentity, Error, Fixture, NONCE, RemoteJobLease, RemoteSourceObservation, STAGE,
+	StageError, component, epoch, observation,
 };
-use std::fs::{self, OpenOptions};
+use std::fs::{self, FileTimes, OpenOptions};
 use std::io::Write as _;
 use std::os::unix::fs::OpenOptionsExt as _;
+use std::time::SystemTime;
 
 const PREFIX: &[u8] = b"prefix";
 const FRESH: &[u8] = b"capture-2";
 const FRESH_NONCE: [u8; 16] = [0x62; 16];
 
 fn stamp(fixture: &Fixture) -> RetryCaptureStamp {
-	let lease = fixture.open_bootstrap(fixture.bootstrap());
+	stamp_capture(fixture, fixture.bootstrap(), || {})
+}
+
+fn stamp_capture(
+	fixture: &Fixture,
+	created: BootstrapIdentity,
+	before_stamp: impl FnOnce(),
+) -> RetryCaptureStamp {
+	let lease = fixture.open_bootstrap(created);
 	let name = component(STAGE).unwrap();
 	let candidate = lease.candidate(name).unwrap();
 	let mut ledger = lease.open_writer(&candidate).unwrap();
@@ -29,6 +38,7 @@ fn stamp(fixture: &Fixture) -> RetryCaptureStamp {
 		Err(Error::Native(StageError::JobBusy))
 	));
 	drop(allocation);
+	before_stamp();
 	assert!(matches!(
 		ledger.stamp_failed_read(name, epoch(2), extent),
 		Err(Error::Binding)
@@ -89,6 +99,53 @@ fn retry_stamp_holds_pins_without_retaining_the_old_flock() {
 	assert!(!fixture.target().exists());
 	drop(retry);
 	assert!(inspect.try_read_lease().is_ok());
+}
+
+#[test]
+fn ordinary_reads_preserve_retry_admission_for_the_exact_capture() {
+	let fixture = Fixture::new();
+	let created = fixture.bootstrap();
+	let owner = fixture.job_path().join("owner.cbor");
+	let segment = fixture.segment();
+	let stage = fixture.stage("capture-1");
+	for file in [&owner, &segment] {
+		std::fs::File::open(file)
+			.unwrap()
+			.set_times(FileTimes::new().set_accessed(SystemTime::UNIX_EPOCH))
+			.unwrap();
+	}
+	let stamp = stamp_capture(&fixture, created, || {
+		assert!(!ordinary_read(&owner).is_empty());
+		std::fs::File::open(&stage)
+			.unwrap()
+			.set_times(FileTimes::new().set_accessed(SystemTime::UNIX_EPOCH))
+			.unwrap();
+	});
+	let boundary = stamp.boundary;
+	let journal = ordinary_read(&segment);
+	assert_eq!(u64::try_from(journal.len()).unwrap(), boundary.offset);
+	assert_eq!(ordinary_read(&stage), PREFIX);
+
+	let retry = reopen(&fixture, stamp).unwrap();
+	retry.recheck().unwrap();
+	assert_eq!(fixture.replay().boundary(), boundary);
+	assert_eq!(fs::read(segment).unwrap(), journal);
+	assert_eq!(fs::read(stage).unwrap(), PREFIX);
+	assert!(!fixture.stage("capture-2").exists());
+	assert!(!fixture.target().exists());
+}
+
+fn ordinary_read(path: &std::path::Path) -> Vec<u8> {
+	assert_eq!(
+		fs::metadata(path).unwrap().accessed().unwrap(),
+		SystemTime::UNIX_EPOCH
+	);
+	let contents = fs::read(path).unwrap();
+	assert_ne!(
+		fs::metadata(path).unwrap().accessed().unwrap(),
+		SystemTime::UNIX_EPOCH
+	);
+	contents
 }
 
 #[test]
