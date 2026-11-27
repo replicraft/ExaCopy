@@ -124,12 +124,28 @@ retains the exact result and capture logs. [Fixture manifest](../../apps/exacopy
 [Native test](../../apps/exacopy-cli/tests/linux_managed_sync_production.rs) ·
 [Hosted workflow](../../.github/workflows/linux-managed-sync-production-qualification.yml)
 
-The retained integration packet records four passing portable runner controls
-and successful strict Linux x64 cross-Clippy of the compiled fixture. Native
-qualification of the bundled Init and preview fixture remains open. The first
-[hosted execution at `37ba6a1`](https://github.com/replicraft/ExaCopy/actions/runs/45918433791)
-compiled and selected the exact case but failed its first root-mismatch assertion;
-the bare assertion did not retain the returned error. The runner confirmed cleanup.
-This failed observation is retained while its cause is investigated. The intended
-scope is ordinary protected ext4 and the finite cooperative enrollment above.
-Process-crash and power-loss qualification remain open.
+The [hosted execution at `90ed5bd`](https://github.com/replicraft/ExaCopy/actions/runs/45919881456)
+built and ran the exact selected test once, with all eight controls passing and
+no ignored cases in that invocation. The observed host used Linux
+`7.0.0-1018-aws`, an unprivileged UID/GID 1001, full identity maps and a
+whole ext4 mount. Independent checks matched the selected boot, namespace,
+ordinary and unique mount IDs, and six distinct anchor/live directory identities.
+The test confirmed fixture cleanup; the wrapper confirmed process drain and
+absence of its owned work directory. The held executable SHA-256 was
+`cf053d5c5551e26fd2d2fc04ecbc5e536d230dd342cf26c089991221344811e6`.
+The retained artifact archives and their uncompressed members were verified.
+This qualifies the executed Init and read-only preview controls under that
+native profile and finite cooperative enrollment, with synthetic signed history.
+It does not qualify future CLI receipt import or mutation.
+
+The earlier [execution at `37ba6a1`](https://github.com/replicraft/ExaCopy/actions/runs/45918433791)
+compiled and selected the exact case but failed its first root-mismatch assertion.
+The bare assertion did not retain its returned error; cleanup was confirmed.
+The subsequent fix removed an invalid `O_NONBLOCK` flag from an `O_PATH`
+`openat2` call, made the wrong-root identity distinct from every selected
+directory, and retained typed refusal diagnostics. The original error variant
+remains unavailable. That failed observation is preserved separately.
+
+The observed mount had `nobarrier` and `data=writeback`. Process-crash and
+power-loss qualification remain open; passing these live controls supplies
+neither claim.
