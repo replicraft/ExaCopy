@@ -14,9 +14,14 @@ exacopy --help
 
 Cargo installs `exacopy` into its executable directory, normally
 `$HOME/.cargo/bin` (`%USERPROFILE%\.cargo\bin` on Windows). Add that directory
-to `PATH` if your Rust installation has not already done so. The crates.io
-command `cargo install --locked exacopy` is the intended registry entrypoint;
-registry publication is still pending.
+to `PATH` if needed. Run `exacopy --version` to see the build version and
+executable path reported by the operating system.
+
+For an update, check out the intended revision, prepare its pinned
+dependencies, and rerun the same installation command. Remove the
+Cargo-managed executable with `cargo uninstall exacopy-cli`. If you installed
+with `--root`, pass the same `--root` when updating or uninstalling.
+Registry publication for `cargo install --locked exacopy` is pending.
 
 Unsigned archives for Linux, Apple Silicon macOS and Windows are available
 in the [v0.1.0 testing prerelease](https://github.com/replicraft/ExaCopy/releases/tag/v0.1.0).
