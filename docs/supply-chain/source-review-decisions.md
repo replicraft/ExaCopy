@@ -83,6 +83,19 @@ still failed; 164 `safe-to-deploy` and one `safe-to-run` records remain open.
 The local review and inventories are retained under
 `target/agent-evidence/dependency-source-continuation/zmij/`.
 
+The paired source and artifact review of `windows_i686_msvc 0.52.6`
+accepted an exact-version `safe-to-deploy` record. Both readers matched all
+eight published members to the locked archive and inspected its i386 COFF
+import library. Both indexes agree across 41,845 keys, and the packaged
+objects have no executable or linker-directive sections. The record assumes
+trusted Cargo build paths, linker and deployment module lookup. Imported
+module basenames do not authenticate resolved modules. Native linking,
+external ABI behavior and independent generation remain unverified. No package
+code ran. Cargo Vet evaluation of this added record is pending; the last
+verified report above still had 165 gaps. The record, two independent reviews
+and complete member inventories remain under
+`target/agent-evidence/dependency-source-next/`.
+
 ## Records left open
 
 | Package | Finding or unresolved review boundary |

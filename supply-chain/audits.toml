@@ -1457,6 +1457,40 @@ The eight target-specific Windows import-library packages are separate
 artifacts outside this exact package audit. Static source review only.
 """
 
+[[audits.windows_i686_msvc]]
+who = "OpenAI Codex (automated paired dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.52.6"
+notes = """
+2026-11-27. Two independent automated reviews covered all eight members of
+the exact locked registry archive SHA-256
+240948bc05c5e7c6dabba28bf89d89ffce3e303022809e73deaefe4f6ec56c66.
+The empty no_std library has no features, dependencies, or unsafe Rust.
+The build script reads Cargo's CARGO_MANIFEST_DIR and emits one
+rustc-link-search=native directive for that directory's lib subdirectory.
+The review assumes the Cargo-provided manifest path and native link search
+environment remain under the trusted build owner's control. The archive
+attributes its source to
+db06b51c2ebb743efb544d40e3064efa49f28d38 in crates/targets/i686_msvc.
+
+The packaged i386 import library SHA-256
+820506ebd44db30b5f429891fe629f31be412e583001b13df7ed8847886ad178
+contains 20,551 short import descriptors and 1,113 COFF scaffolding objects
+for 371 PE modules, with no packaged executable or linker-directive sections.
+Both archive indexes agree across 41,845 keys. The two GetDeviceID imports
+remain distinct through their decorated linker names and import-pointer aliases.
+
+The review assumes the locked Microsoft distribution, a trusted Windows
+linker and target OS, and a deployment environment that controls module
+lookup through its loader policy and search paths. The import metadata
+stores module basenames. Resolved paths and module identities depend on
+that environment. The review covers packaged metadata. External module
+implementations, declaration ABI, independent regeneration, and
+linker-generated thunks remain unverified.
+No compilation, native linkage or execution, tests, or Cargo Vet replay ran
+for these reviews.
+"""
+
 [[audits.x25519-dalek]]
 who = "OpenAI Codex (automated dependency source review)"
 criteria = "safe-to-deploy"
