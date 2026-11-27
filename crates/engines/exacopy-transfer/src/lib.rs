@@ -6,6 +6,12 @@ pub mod copy_planning;
 
 #[cfg(target_os = "linux")]
 pub mod manifest;
+#[cfg(any(
+	target_os = "linux",
+	all(target_os = "macos", feature = "experimental-apfs-copy")
+))]
+pub mod protected_admission;
+
 #[cfg(target_os = "linux")]
 pub mod public_plan;
 

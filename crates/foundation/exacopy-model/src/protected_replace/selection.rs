@@ -111,7 +111,9 @@ pub struct CurrentGrant<'name> {
 }
 
 impl CurrentGrant<'_> {
-	pub(super) fn admits(self, expected: Context<'_>, grant: Grant) -> bool {
+	/// Checks the exact context, grant revision and exclusive deadline of a live report.
+	#[must_use]
+	pub fn admits(self, expected: Context<'_>, grant: Grant) -> bool {
 		self.context == expected && self.grant == grant && self.now < grant.expires_before.get()
 	}
 }

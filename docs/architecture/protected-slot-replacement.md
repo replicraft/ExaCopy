@@ -132,6 +132,23 @@ after capture. Require negative controls for wrong-object publication,
 early publication and a clobbered late arrival. Process and power-loss
 qualification remain separate from these pure checks.
 
+## Advisory engine admission
+
+The transfer engine's `protected_admission` module checks one explicitly
+approved selection while retaining a caller-supplied exclusive lease. It
+requires the exact nonzero owner, complete visibility and retention disclosure,
+independently agreeing pre-intent replay and durable head, and the model's
+incumbent and verified stage checks. Capture and publication grants must be
+distinct, match their selected context and revision, and both remain valid at
+one shared clock sample.
+
+The capability provider remains responsible for authenticating approval,
+truthful independent observations, physical layout exclusions and serialization.
+The returned guard keeps the lease and private model session. It exposes no
+journal append, relocation, publication, restoration or CLI operation. Its new
+source regressions and affected hosted checks are pending; no native protected
+effect or additional formal qualification follows from this advisory API.
+
 ## Native observation component
 
 Linux now exposes a metadata-only `HeldSlot` under a caller-authorized held
