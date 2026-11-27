@@ -106,9 +106,11 @@ thunks whose relocations select their own import-address slots. The complete
 module and export routing matched the independently inspected MSVC encoding.
 Trusted build inputs, linker and deployment module lookup remain assumptions;
 external ABI behavior, native linking and independent regeneration are
-unverified. No package code ran. Cargo Vet evaluation of this added record is
-pending; the last verified report still had 164 gaps. Both source reviews,
-complete member inventories and artifact readers remain under
+unverified. No package code ran. At `82d8d74`, hosted Cargo Vet removed only
+this package's missing audit row, reducing the report from 164 to 163 gaps.
+The gate still fails; all other rows remain unchanged and in the same order.
+[Exact dependency-policy job](https://github.com/replicraft/ExaCopy/actions/runs/46067206611/job/140735317015).
+Both source reviews, complete member inventories and artifact readers remain under
 `target/agent-evidence/dependency-source-next-4831/`.
 
 ## Records left open
