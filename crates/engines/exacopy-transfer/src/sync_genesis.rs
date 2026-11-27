@@ -13,8 +13,12 @@ use exacopy_plan::workflow_sync::{
 	WorkflowRef, decode_endpoint, decode_envelope, decode_root, project_pair, scope_digest,
 };
 
+mod assemble;
 mod manual;
 
+pub use assemble::{
+	AssembledSyncGenesis, SyncGenesisRecords, SyncGenesisSelection, assemble_sync_genesis,
+};
 pub use manual::{SelectedSyncGenesisMember, inspect_selected_sync_genesis};
 
 /// Independent historical selection. Values must come from owner-approved state.
