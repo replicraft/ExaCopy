@@ -99,6 +99,73 @@ foreach ($preserved in @(
     Require $stage.Contains($preserved) "The existing Stage native selector count changed: $preserved"
 }
 
+# The shared cleanup helper and its ACL writer must resolve when Stage is not run.
+. (Join-Path $repo '.github/ci/windows-ntfs-custody.ps1')
+$heldCleanup = Get-Command Remove-HeldStageFixture -CommandType Function
+$aclWriter = Get-Command Write-StageAclEvidence -CommandType Function
+Require ($heldCleanup.Parameters.ContainsKey('EvidencePath') -and
+    $aclWriter.Parameters.ContainsKey('EvidencePath')) 'Held cleanup must have a callable ACL writer with explicit evidence custody.'
+
+# Exercise the actual ordering and the pre-build cleanup branch without native I/O.
+$runnerTokens = $runnerErrors = $null
+$runnerAst = [System.Management.Automation.Language.Parser]::ParseFile(
+    (Join-Path $PSScriptRoot 'run.ps1'), [ref]$runnerTokens, [ref]$runnerErrors)
+Require ($runnerErrors.Count -eq 0) 'The publication runner must parse.'
+$fixtureCalls = $runnerAst.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+        $node.Static -and $node.Arguments.Count -eq 1 -and
+        $node.Arguments[0].Extent.Text -ceq '$fixture'
+}, $true)
+$probe = @($fixtureCalls | Where-Object { $_.Member.Value -ceq 'ControlAncestorDeleteSharing' })
+$guard = @($fixtureCalls | Where-Object { $_.Member.Value -ceq 'HoldAncestor' })
+Require ($probe.Count -eq 1 -and $guard.Count -eq 1 -and
+    $probe[0].Extent.EndOffset -lt $guard[0].Extent.StartOffset) 'The two-sided DELETE probe must precede the persistent fixture guard.'
+$build = @($runnerAst.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.CommandAst] -and
+        $node.GetCommandName() -ceq 'New-StagePrivateFixture' -and
+        $node.CommandElements[1].Extent.Text -ceq '$build'
+}, $true))
+Require ($build.Count -eq 1 -and $guard[0].Extent.EndOffset -lt $build[0].Extent.StartOffset) 'The persistent guard must precede build acquisition.'
+
+$cleanup = @($runnerAst.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.IfStatementAst] -and
+        $node.Clauses[0].Item1.Extent.Text -ceq '$fixtureCustodied -and $state.process_drained'
+}, $true))
+Require ($cleanup.Count -eq 1) 'Fixture cleanup must require established custody and process drain.'
+$cleanupScript = [scriptblock]::Create($cleanup[0].Extent.Text)
+function Test-PreBuildCleanup {
+    param([bool] $fixtureCustodied, [bool] $Drained, [bool] $Empty, [bool] $Deleted)
+    $state = @{ cleanup = 'retained-or-unconfirmed'; process_drained = $Drained }
+    $fixture = 'synthetic-fixture'
+    $evidence = 'synthetic-evidence'
+    $fixtureGuard = $null
+    $buildPin = $null
+    $fixturePin = [pscustomobject]@{ Closed = $false }
+    $fixturePin | Add-Member ScriptMethod Dispose { $this.Closed = $true }
+    $calls = [Collections.Generic.List[string]]::new()
+    function Confirm-StageNoResidue {
+        param([string] $Path)
+        Require ($Path -ceq $fixture) 'Cleanup selected a different fixture.'
+        if (!$Empty) { throw 'unexpected fixture residue' }
+    }
+    function Remove-HeldStageFixture {
+        param($Path, $FixtureIdentity, $FixturePin, $Ancestors, $EvidencePath)
+        Require ($Path -ceq $fixture -and $EvidencePath -ceq $evidence) 'Held cleanup selected the wrong custody or evidence.'
+        $calls.Add('nonrecursive-held-cleanup')
+    }
+    function Get-ExaCopyNodeExists { return $false }
+    & $cleanupScript
+    Require (($state.cleanup -ceq 'deleted') -eq $Deleted) 'Unexpected cleanup result.'
+    Require ($fixturePin.Closed -eq $Deleted -and $calls.Count -eq [int]$Deleted) 'Unexpected disposal effect.'
+}
+Test-PreBuildCleanup $true $true $true $true
+Test-PreBuildCleanup $false $true $true $false
+Test-PreBuildCleanup $true $false $true $false
+Test-PreBuildCleanup $true $true $false $false
+
 $source = [IO.Directory]::CreateTempSubdirectory('exacopy-publication-source-control-')
 try {
     $work = $source.FullName

@@ -155,7 +155,7 @@ if ($env:SystemRoot -ine ($system + 'Windows') -or
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $ancestors = $evidencePin = $fixturePin = $fixtureGuard = $buildPin = $image = $null
 $fixture = $evidence = $null
-$fixtureAdmitted = $false
+$fixtureCustodied = $false
 $evidenceExported = $false
 $diagnostic = @{ phase = 'fixture-admission'; receipt = $null }
 $state = @{
@@ -207,16 +207,30 @@ try {
     New-StagePrivateFixture $fixture $owner
     $state.cleanup = 'retained-or-unconfirmed'
     $fixturePin = [ExaCopyQualification.DirectoryCustody]::HoldFixture($fixture)
-    $fixtureGuard = [ExaCopyQualification.DirectoryCustody]::HoldAncestor($fixture)
     $fixtureId = [ExaCopyQualification.DirectoryCustody]::Observe($fixturePin)
     $state.fixture_identity = $fixtureId
-    Assert-StageSameIdentity $fixtureId ([ExaCopyQualification.DirectoryCustody]::Observe($fixtureGuard))
     Assert-StageSameVolume $ancestors.Held[0].Identity $fixtureId
-    Assert-ReadDiffTreeSecurity $fixture $owner
+    Write-StageAclEvidence $fixture $owner 'before' $evidence
     Confirm-StageNoResidue $fixture
     Confirm-StageAncestorCustody $ancestors
-    [ExaCopyQualification.DirectoryCustody]::ControlAncestorDeleteSharing($fixture)
-    $fixtureAdmitted = $true
+    $fixtureCustodied = $true
+    # The control first needs an authorized DELETE open without the deny-delete
+    # guard. The original fixture pin and trusted ancestor holds remain live.
+    try {
+        [ExaCopyQualification.DirectoryCustody]::ControlAncestorDeleteSharing($fixture)
+    } catch {
+        $cause = $_.Exception
+        while ($cause.InnerException) { $cause = $cause.InnerException }
+        if ($cause -is [ComponentModel.Win32Exception]) {
+            $state.fixture_sharing_win32_error = $cause.NativeErrorCode
+        }
+        throw
+    }
+    $fixtureGuard = [ExaCopyQualification.DirectoryCustody]::HoldAncestor($fixture)
+    Assert-StageSameIdentity $fixtureId ([ExaCopyQualification.DirectoryCustody]::Observe($fixtureGuard))
+    Write-StageAclEvidence $fixture $owner 'guarded' $evidence
+    Confirm-StageNoResidue $fixture
+    Confirm-StageAncestorCustody $ancestors
 
     $build = Join-Path $fixture 'cargo-target'
     New-StagePrivateFixture $build $owner
@@ -301,14 +315,14 @@ try {
 } finally {
     try {
         if ($null -ne $image) { $image.Dispose() }
-        if ($fixtureAdmitted -and $state.process_drained) {
+        if ($fixtureCustodied -and $state.process_drained) {
             try {
                 if ($null -ne $buildPin) {
                     Remove-HeldReadDiffFixture $fixture $build $fixturePin $fixtureGuard $fixtureId $buildPin $buildId $volume $ancestors
                 } else {
                     Confirm-StageNoResidue $fixture
-                    $fixtureGuard.Dispose()
-                    Remove-HeldStageFixture $fixture $fixtureId $fixturePin $ancestors
+                    if ($null -ne $fixtureGuard) { $fixtureGuard.Dispose() }
+                    Remove-HeldStageFixture $fixture $fixtureId $fixturePin $ancestors $evidence
                     $fixturePin.Dispose()
                 }
                 if (Get-ExaCopyNodeExists $fixture) { throw 'The fixture name remains occupied after disposal.' }

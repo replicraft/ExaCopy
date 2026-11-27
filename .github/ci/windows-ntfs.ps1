@@ -177,27 +177,6 @@ function Run-TestLane {
     return 0
 }
 
-function Write-StageAclEvidence {
-    param([string] $Path, [Security.Principal.SecurityIdentifier] $Owner, [string] $Phase)
-
-    Confirm-ExaCopyOwnerAcl $Path $Owner -Root
-    $acl = Get-Acl -LiteralPath $Path
-    Assert-StagePlainAcl $acl
-    $inheritance = [Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
-        [Security.AccessControl.InheritanceFlags]::ObjectInherit
-    $access = $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])
-    if ($access[0].InheritanceFlags -ne $inheritance -or
-        $access[0].PropagationFlags -ne [Security.AccessControl.PropagationFlags]::None) {
-        throw 'The private Stage owner rule does not apply to the root and both descendant kinds.'
-    }
-    [ordered]@{
-        path = $Path
-        owner_sid = $Owner.Value
-        protected = $acl.AreAccessRulesProtected
-        sddl = $acl.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]'Owner, Access')
-    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence.FullName ("stage-acl-$Phase.json"))
-}
-
 function Test-StageSymlink {
     param([string] $Path)
 
@@ -300,7 +279,7 @@ try {
         $stageFixtureIdentity = [ExaCopyQualification.DirectoryCustody]::Observe($stagePin)
         Confirm-StageAncestorCustody $stageAncestors
         Assert-StageSameVolume $stageAncestors.Held[0].Identity $stageFixtureIdentity
-        Write-StageAclEvidence $scratch.FullName $stageOwner 'before'
+        Write-StageAclEvidence $scratch.FullName $stageOwner 'before' $evidence.FullName
         Confirm-StageNoResidue $scratch.FullName
         [ExaCopyQualification.DirectoryCustody]::ControlAncestorDeleteSharing($scratch.FullName)
         $stageAdmitted = $true
@@ -502,7 +481,7 @@ try {
                     if (!$stageAdmitted) {
                         throw 'Original NTFS fixture custody was not fully admitted.'
                     }
-                    Remove-HeldStageFixture $scratch.FullName $stageFixtureIdentity $stagePin $stageAncestors
+                    Remove-HeldStageFixture $scratch.FullName $stageFixtureIdentity $stagePin $stageAncestors $evidence.FullName
                     $stagePin.Dispose()
                 } elseif ($HostedReadDiff) {
                     $cleanupCustody = @{

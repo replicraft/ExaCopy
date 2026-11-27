@@ -173,15 +173,37 @@ function Confirm-StageNoResidue {
     Assert-ExaCopyNoNamedStreams $Path
 }
 
+function Write-StageAclEvidence {
+    param([string] $Path, [Security.Principal.SecurityIdentifier] $Owner, [string] $Phase,
+        [string] $EvidencePath)
+
+    Confirm-ExaCopyOwnerAcl $Path $Owner -Root
+    $acl = Get-Acl -LiteralPath $Path
+    Assert-StagePlainAcl $acl
+    $inheritance = [Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
+        [Security.AccessControl.InheritanceFlags]::ObjectInherit
+    $access = $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])
+    if ($access[0].InheritanceFlags -ne $inheritance -or
+        $access[0].PropagationFlags -ne [Security.AccessControl.PropagationFlags]::None) {
+        throw 'The private Stage owner rule does not apply to the root and both descendant kinds.'
+    }
+    [ordered]@{
+        path = $Path
+        owner_sid = $Owner.Value
+        protected = $acl.AreAccessRulesProtected
+        sddl = $acl.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]'Owner, Access')
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $EvidencePath ("stage-acl-$Phase.json"))
+}
+
 function Remove-HeldStageFixture {
-    param([string] $Path, [string] $FixtureIdentity, $FixturePin, $Ancestors)
+    param([string] $Path, [string] $FixtureIdentity, $FixturePin, $Ancestors, [string] $EvidencePath)
 
     Confirm-StageAncestorCustody $Ancestors
     Assert-StageSameIdentity $FixtureIdentity ([ExaCopyQualification.DirectoryCustody]::Observe($FixturePin))
     $selected = [ExaCopyQualification.DirectoryCustody]::OpenForDisposition($Path)
     try {
         Assert-StageSameIdentity $FixtureIdentity ([ExaCopyQualification.DirectoryCustody]::Observe($selected))
-        Write-StageAclEvidence $Path $Ancestors.Owner 'after'
+        Write-StageAclEvidence $Path $Ancestors.Owner 'after' $EvidencePath
         Confirm-StageNoResidue $Path
         Confirm-StageAncestorCustody $Ancestors
         Assert-StageSameIdentity $FixtureIdentity ([ExaCopyQualification.DirectoryCustody]::Observe($FixturePin))
