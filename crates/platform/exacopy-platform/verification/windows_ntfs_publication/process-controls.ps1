@@ -199,8 +199,18 @@ function Invoke-ContainmentControl([string] $Name, [string] $ScriptText, [int] $
     if ($RefuseObserver) {
         $method = [ExaCopyQualification.PublicationProcess].GetMethod('Run',
             [Reflection.BindingFlags]'NonPublic,Static')
-        $result = $method.Invoke($null, [object[]]@(
-            $application, $arguments, $directory, $allowed, $stdout, $stderr, $Timeout, $true, $true))
+        # MethodInfo.Invoke does not use the PowerShell method binder. Pass the
+        # underlying values in fixed slots so neither string array is expanded.
+        $parameters = [object[]]@(
+            $application.PSObject.BaseObject, $arguments.PSObject.BaseObject,
+            $directory.PSObject.BaseObject, $allowed.PSObject.BaseObject,
+            $stdout.PSObject.BaseObject, $stderr.PSObject.BaseObject, $Timeout, $true, $true)
+        if ($parameters[0] -isnot [string] -or $parameters[1] -isnot [string[]] -or
+            $parameters[2] -isnot [string] -or $parameters[3] -isnot [string[]] -or
+            $parameters[4] -isnot [string] -or $parameters[5] -isnot [string]) {
+            throw 'Observer refusal controls require the selected application, paths, and typed launch vectors.'
+        }
+        $result = $method.Invoke($null, $parameters)
     } else {
         $result = [ExaCopyQualification.PublicationProcess]::Run(
             $application, $arguments, $directory, $allowed, $stdout, $stderr, $Timeout, [bool]$ObserveJob)

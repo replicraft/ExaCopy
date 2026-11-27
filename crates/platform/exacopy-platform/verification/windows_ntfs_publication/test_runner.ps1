@@ -402,4 +402,67 @@ foreach ($errorText in @("synthetic failure`n::error::injected`r`n##[error]other
     )
 }
 
-Write-Output 'Windows held publication selector, exact-source, Stage isolation and fallback diagnostic controls passed.'
+# Run the production PowerShell branch with a managed stand-in for the native
+# supervisor. Its private signature matches the reflection boundary.
+$definition = $controlAst.Find({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -ceq 'Invoke-ContainmentControl'
+}, $false)
+Require ($null -ne $definition) 'The observer refusal control must have its exact source.'
+. ([scriptblock]::Create($definition.Extent.Text))
+
+Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Text;
+
+namespace ExaCopyQualification
+{
+    public static class PublicationProcess
+    {
+        private static void Run(string program, string[] arguments, string directory, string[] environment,
+            string stdout, string stderr, int timeout, bool observe, bool refuse)
+        {
+            if (program != "selected fixture.exe" ||
+                arguments.Length != 5 || arguments[0] != "-NoLogo" || arguments[1] != "-NoProfile" ||
+                arguments[2] != "-NonInteractive" || arguments[3] != "-EncodedCommand" ||
+                Encoding.Unicode.GetString(Convert.FromBase64String(arguments[4])) != "exit 0" ||
+                directory != Path.GetFullPath(directory) ||
+                stdout != Path.Join(directory, "reflection-control.stdout.log") ||
+                stderr != Path.Join(directory, "reflection-control.stderr.log") ||
+                environment.Length != 2 || environment[0] != "A=first" || environment[1] != "B=second" ||
+                timeout != 42 || !observe || !refuse)
+                throw new InvalidOperationException("Incorrect observer reflection arguments.");
+            // Stop before the control writes a receipt or performs native work.
+            throw new InvalidOperationException("Reached the typed observer control.");
+        }
+    }
+}
+'@
+
+function Require-ObserverBindingResult([string] $Expected) {
+    try {
+        [void](Invoke-ContainmentControl 'reflection-control' 'exit 0' 42 -RefuseObserver)
+    } catch {
+        $cause = $_.Exception
+        while ($cause.InnerException) { $cause = $cause.InnerException }
+        if ($cause.Message -ceq $Expected) { return }
+        throw
+    }
+    throw 'The observer binding control did not reach its expected outcome.'
+}
+
+$directory = [psobject]::AsPSObject($PSScriptRoot)
+$application = [psobject]::AsPSObject('selected fixture.exe')
+$allowed = [psobject]::AsPSObject([string[]]@('A=first', 'B=second'))
+Require-ObserverBindingResult 'Reached the typed observer control.'
+
+$invalidObserverArguments = 'Observer refusal controls require the selected application, paths, and typed launch vectors.'
+$application = [pscustomobject]@{ Path = 'selected fixture.exe' }
+Require-ObserverBindingResult $invalidObserverArguments
+$application = [psobject]::AsPSObject('selected fixture.exe')
+$allowed = [object[]]@('A=first', 'B=second')
+Require-ObserverBindingResult $invalidObserverArguments
+
+Write-Output 'Windows held publication selector, exact-source, Stage isolation, fallback diagnostics and observer binding controls passed.'
