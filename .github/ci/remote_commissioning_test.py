@@ -384,7 +384,7 @@ class PortableCommissioningControls(unittest.TestCase):
         stop = Mock()
         stop_peer = Mock()
         with (
-            patch.dict(os.environ, {"GITHUB_SHA": "selected"}),
+            patch.dict(os.environ, {"GITHUB_SHA": "selected"}, clear=True),
             patch.object(commission, "preflight", return_value=65534),
             patch.object(commission.shutil, "which", return_value=str(tool)),
             patch.object(commission, "run", return_value=b"1:9.6p1-3ubuntu13.14"),
@@ -409,7 +409,7 @@ class PortableCommissioningControls(unittest.TestCase):
 
     def test_candidate_request_refusal_precedes_privileged_preflight(self):
         with (
-            patch.dict(os.environ, {"GITHUB_SHA": "selected"}),
+            patch.dict(os.environ, {"GITHUB_SHA": "selected"}, clear=True),
             patch.object(commission.native, "source_identity", return_value={"revision": "selected"}),
             patch.object(commission.CandidateRequest, "from_hosted_environment",
                          side_effect=peer.Blocked("candidate request incomplete")) as admit,
@@ -435,7 +435,7 @@ class PortableCommissioningControls(unittest.TestCase):
         evidence = {"fixture_id": self.fixture.nonce}
         request = object()
         with (
-            patch.dict(os.environ, {"GITHUB_SHA": "selected"}),
+            patch.dict(os.environ, {"GITHUB_SHA": "selected"}, clear=True),
             patch.object(commission.native, "source_identity", return_value={"revision": "selected"}),
             patch.object(commission.CandidateRequest, "from_hosted_environment", return_value=request),
             patch.object(commission, "preflight", return_value=65534),
