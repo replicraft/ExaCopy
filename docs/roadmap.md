@@ -26,6 +26,11 @@ branches against the existing 95% line and 90% branch minimums. Platform
 line coverage failed with 4,937/8,590 against the existing 85% minimum.
 [Exact coverage job](https://github.com/replicraft/ExaCopy/actions/runs/45990398793/job/140476447859)
 
+At `04da507`, model coverage passed again with 941/956 lines and 409/434
+branches. Platform line coverage rose to 6,180/8,633 (71.5858%), with
+1,243 more covered lines and 43 more measured lines. It remained below
+the 85% minimum. [Exact coverage job](https://github.com/replicraft/ExaCopy/actions/runs/45991706462/job/140480861918)
+
 Workspace Clippy failed on Linux, macOS, and Windows at `aea84c9`.
 The follow-up `4bfcee0` uses local type aliases in two protected-model
 tests and awaits hosted verification. Cargo Vet reported 166 unvetted
