@@ -555,6 +555,28 @@ A const fixture checked output bytes from mixed-case hexadecimal digits,
 whitespace, and adjacent literals.
 """
 
+[[audits.hybrid-array]]
+who = "OpenAI Codex (dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.4.15"
+notes = """
+2026-11-26. Reviewed the complete crate source in the lock-matched registry
+archive SHA-256
+27f864f10dfb56725ce5ce5472bc52252c8f93a4ab86327122cebf62c5f59a17.
+The archive names commit 09310c55b75e2cd408951c7e2e86dba16c63fc68.
+This no_std library has no build script, native linkage, or ambient I/O.
+
+Checked transparent core-array layout, slice bounds and disjoint mutable
+ranges, ownership transfers in split and flatten operations, and initialized
+prefix cleanup on failure. Static decoding against the locked typenum release
+confirmed 553 base and 267 optional length mappings. Reviewed the optional
+allocation, input generation, tuple codec, byte-layout, conditional operation
+and zeroization adapters. The constant-time and zeroization properties depend
+on the element implementations. Callers control array sizes and diagnostic
+formatting. The source review includes disabled features. No compiler, tests,
+Miri or Cargo Vet execution was performed for this review.
+"""
+
 [[audits.indexmap]]
 who = "OpenAI Codex (dependency source review)"
 criteria = "safe-to-deploy"
@@ -1228,6 +1250,45 @@ Rust 1.100.0 Apple ARM64, both properties matched Unicode 18.0.0 UCD data for
 all 1112064 valid scalars. The archive ships the tables as Rust constants.
 The upstream generation tool is outside the package, and the package's CI
 configuration is outside Cargo's dependency build.
+"""
+
+[[audits.universal-hash]]
+who = "OpenAI Codex (automated dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.5.1"
+notes = """
+2026-11-27. Reviewed the complete locked registry archive SHA-256
+fc1de2c688dc15305988b563c3854064043356019f97a4b46276fe734c4f07ea.
+The archive records RustCrypto revision 742af86f821d7f79e76962d302c819b14622a485.
+Reviewed scalar and parallel dispatch, padding, finalization, reset, tag
+comparison and the optional std feature. The single shared-slice cast is
+bounded by the exact full-block prefix and relies on generic-array's layout
+for valid representable dimensions. Trusted hasher implementations select
+positive block widths appropriate to their stack budgets. The default
+update_padded method panics for an undocumented zero type-level width even
+with empty input. Message bytes and length cannot select that width. Locked
+Poly1305 uses U16. No build script, proc macro or ambient runtime I/O.
+Caller framing, key lifecycle, backend correctness and generated-code timing
+are separate obligations. Source inspection only.
+"""
+
+[[audits.universal-hash]]
+who = "OpenAI Codex (automated dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.6.1"
+notes = """
+2026-11-27. Reviewed the complete locked registry archive SHA-256
+f4987bdc12753382e0bec4a65c50738ffaabc998b9cdd1f952fb5f39b0048a96.
+The archive records RustCrypto revision 82279a5a9ff2af5f10194b9147fe60050cda1851.
+Reviewed scalar and parallel dispatch, checked hybrid-array grouping,
+padding, finalization, reset and ctutils tag comparison. Trusted hasher
+implementations select positive block widths appropriate to their stack
+budgets. The default update_padded method panics for an undocumented zero
+type-level width even with empty input. Message bytes and length cannot
+select that width. Locked Poly1305 and POLYVAL use U16. Library source forbids
+unsafe code. No package features, build script, proc macro or ambient runtime
+I/O. Caller framing, key lifecycle, backend correctness and generated-code
+timing are separate obligations. Source inspection only.
 """
 
 [[audits.uuid]]

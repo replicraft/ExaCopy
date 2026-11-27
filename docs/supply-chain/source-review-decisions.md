@@ -38,8 +38,6 @@ Evidence is retained in `/private/tmp/exacopy-indexmap-review.BHRJW07M`,
 `/private/tmp/exacopy-rand-source-review.9cfLEYzW` and
 `/private/tmp/exacopy-proptest-audit.2hCiYI`.
 
-## Records left open
-
 The 2026-11-27 whole-package source review accepted `aead 0.6.1` and
 `inout 0.2.6`. Independent review checked all archived members against
 the locked checksums and reviewed optional features. These records cover
@@ -49,6 +47,18 @@ two reviews. The exact frozen Cargo Vet replay removed only their two
 missing `safe-to-deploy` entries, reducing 178 to 176. The gate still fails.
 Reports, original findings and both replay results are retained under
 `target/agent-evidence/dependency-audits-next/`.
+
+The next independent source adjudication accepted `hybrid-array 0.4.15`
+and `universal-hash 0.5.1` and `0.6.1`. The latter retain an undocumented
+zero-width panic: trusted backend implementations select a positive
+supported block width at compile time, and message input cannot select it.
+The prior holds and this disposition remain recorded. These are source
+reviews, with no new compiler, Miri, runtime or timing result. A frozen
+replay removed exactly those three missing entries, reducing 176 to 173;
+the gate still fails. Evidence is retained under
+`target/agent-evidence/dependency-audits-round2/`.
+
+## Records left open
 
 | Package | Finding or unresolved review boundary |
 | --- | --- |
@@ -67,6 +77,10 @@ Reports, original findings and both replay results are retained under
 | `cargo-platform 0.3.3` | Runtime cfg parsing permits unbounded nesting, and identifier equality differs from derived ordering. The xtask caller's depth bound was not established. |
 | `block-padding 0.4.2` | Raw unpadding can panic on empty or oversized borrowed slices despite its fallible malformed-input API. The separately inspected fixed-width typed AES path rejects empty block lists. |
 | `const-oid 0.10.3` | Generic capacity permits an internally valid length to narrow to `u8`; runtime text parsing also permits unbounded recursive prefix zeros. The default capacity does not settle the whole-version review. |
+| `serdect 0.4.3` | Fixed-size text decoding can accept a short hex value after initializing the remaining output to zero; binary decoding enforces the exact length. The recorded application feature graph excludes this path. |
+| `ed25519 3.0.0` | PKCS#8 import normalizes a present, non-octet-aligned public-key BIT STRING to absence. Optional Serde handling also inherits the short fixed-array text issue. These format findings do not assess the signature algorithm. |
+| `cmov 0.5.4` | The 32-bit x86 backend uses conditional-move instructions without establishing their availability on the advertised i586 baseline. The recorded x86-64 and AArch64 profiles have the respective instructions. No timing result is claimed. |
+| `log 0.4.35` | The no-pointer-atomics unsafe setter contract does not establish exclusion of concurrent readers. Optional Serde enum decoding also narrows a `u64` identifier before validation on narrow targets. The recorded application graph uses pointer atomics without that Serde branch. |
 
 Previously withheld records, including `bitflags`, `minicbor`, `zeroize`,
 `getrandom`, `cpufeatures`, `ed25519-dalek` and Syn 2, retain their own review
