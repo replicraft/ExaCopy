@@ -95,8 +95,8 @@ fn interior_code_unit_admission_matches_the_literal_filename_alphabet() {
 		AmbiguousEdge, Colon, DotComponent, InvalidCharacter, Nul, ReservedDevice, Separator,
 	};
 
-	let [x, c, o, m, n, space, dot] = [b'x', b'C', b'o', b'M', b'N', b' ', b'.'].map(u16::from);
-	let [l, p, t] = [b'L', b'p', b'T'].map(u16::from);
+	let [x, c, o, m, n, space, dot] = (*b"xCoMN .").map(u16::from);
+	let [l, p, t] = (*b"LpT").map(u16::from);
 	for unit in 0..=u16::MAX {
 		// Surrogates have no scalar value and are valid raw units in every fixture.
 		let scalar = char::from_u32(u32::from(unit));
