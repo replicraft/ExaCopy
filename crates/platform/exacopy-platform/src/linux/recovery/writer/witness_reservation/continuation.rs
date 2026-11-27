@@ -18,7 +18,9 @@ pub use witness::{
 	WitnessDurabilityEffect, WitnessDurabilityError, WitnessDurabilityRequest,
 	WitnessObservationAppend, WitnessPrepublicationAppend, WitnessPrepublicationPhase,
 	WitnessPublication, WitnessPublicationError, WitnessPublicationName, WitnessPublicationNames,
-	WitnessPublicationObservation, WitnessPublicationRequest,
+	WitnessPublicationObservation, WitnessPublicationRequest, WitnessReceiptAppend,
+	WitnessReceiptEffect, WitnessReceiptError, WitnessReceiptIdentity, WitnessReceiptNames,
+	WitnessReceiptPlacement, WitnessReceiptPlan, WitnessReceiptRequest,
 };
 
 // The owner codec bounds the payload to 1,024 bytes and framing to 92 bytes.

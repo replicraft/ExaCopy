@@ -53,9 +53,12 @@ pub use recovery::{
 	WitnessDurabilityRequest, WitnessLinkCandidate, WitnessObservationAppend,
 	WitnessPrepublicationAppend, WitnessPrepublicationPhase, WitnessPublication,
 	WitnessPublicationError, WitnessPublicationName, WitnessPublicationNames,
-	WitnessPublicationObservation, WitnessPublicationRequest, WitnessReservationAuthority,
-	WitnessReservationEffect, WitnessReservationError, WitnessReservationGateRequest,
-	WitnessReservationObservationError, WitnessReservationPlan, WitnessedSuffixReadback,
+	WitnessPublicationObservation, WitnessPublicationRequest, WitnessReceiptAppend,
+	WitnessReceiptEffect, WitnessReceiptError, WitnessReceiptIdentity, WitnessReceiptNames,
+	WitnessReceiptPlacement, WitnessReceiptPlan, WitnessReceiptRequest,
+	WitnessReservationAuthority, WitnessReservationEffect, WitnessReservationError,
+	WitnessReservationGateRequest, WitnessReservationObservationError, WitnessReservationPlan,
+	WitnessedSuffixReadback,
 };
 pub use running_image::RunningExecutable;
 pub use source::{

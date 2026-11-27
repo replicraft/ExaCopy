@@ -19,6 +19,14 @@ pub(super) struct AnonymousReceipt {
 }
 
 impl AnonymousReceipt {
+	pub(super) fn file(&self) -> &File {
+		&self.file
+	}
+
+	pub(super) fn close_writer(&mut self, independently_opened: File) {
+		self.file = independently_opened;
+	}
+
 	pub(super) fn observe(
 		file: File,
 		held: &HeldReservation<'_>,

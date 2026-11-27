@@ -41,9 +41,11 @@ pub use witness_reservation::{
 	WitnessDurabilityError, WitnessDurabilityRequest, WitnessObservationAppend,
 	WitnessPrepublicationAppend, WitnessPrepublicationPhase, WitnessPublication,
 	WitnessPublicationError, WitnessPublicationName, WitnessPublicationNames,
-	WitnessPublicationObservation, WitnessPublicationRequest, WitnessReservationAuthority,
-	WitnessReservationEffect, WitnessReservationError, WitnessReservationGateRequest,
-	WitnessReservationObservationError, WitnessReservationPlan,
+	WitnessPublicationObservation, WitnessPublicationRequest, WitnessReceiptAppend,
+	WitnessReceiptEffect, WitnessReceiptError, WitnessReceiptIdentity, WitnessReceiptNames,
+	WitnessReceiptPlacement, WitnessReceiptPlan, WitnessReceiptRequest,
+	WitnessReservationAuthority, WitnessReservationEffect, WitnessReservationError,
+	WitnessReservationGateRequest, WitnessReservationObservationError, WitnessReservationPlan,
 };
 
 #[cfg(test)]

@@ -36,13 +36,18 @@ impl ActiveWitnessReservation<'_> {
 	/// # Errors
 	/// Refuses retired or changed authorization/namespace/file observations.
 	pub fn check_active(&self) -> Result<(), WitnessReservationObservationError> {
+		self.check_active_journal()?;
+		self.reservation.receipt.recheck(&self.reservation.held)?;
+		Ok(())
+	}
+
+	pub(super) fn check_active_journal(&self) -> Result<(), WitnessReservationObservationError> {
 		if !self.healthy {
 			return Err(StageError::PriorBarrierFailure.into());
 		}
 		let reservation = &self.reservation;
 		let held = &reservation.held;
 		held.eligibility.recheck_for(held.lease.job().root)?;
-		reservation.receipt.recheck(held)?;
 		reservation
 			.journal
 			.recheck(held.lease, &reservation.readback)?;

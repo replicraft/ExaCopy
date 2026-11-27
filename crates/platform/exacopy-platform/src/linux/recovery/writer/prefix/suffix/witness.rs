@@ -293,6 +293,10 @@ fn check_aliases(
 }
 
 impl WitnessedSuffixReadback<'_, '_> {
+	pub(in crate::linux::recovery::writer) fn witness_name(&self) -> &[u8; 40] {
+		&self.name
+	}
+
 	pub(in crate::linux::recovery::writer) fn observe_barriered_metadata(
 		&self,
 	) -> Result<SourceObservation, StageError> {

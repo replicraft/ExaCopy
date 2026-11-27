@@ -37,3 +37,8 @@ ignored = true
 selector = "linux::recovery::writer::witness_reservation::continuation::tests::original_reserved_descriptor_writes_and_rereads_only_the_exact_successor"
 source = "src/linux/recovery/writer/witness_reservation/continuation/tests.rs"
 ignored = true
+
+[[case]]
+selector = "linux::recovery::writer::witness_reservation::continuation::witness::publication::receipt::tests::readonly_reopened_anonymous_receipt_links_and_promotes_original_inode"
+source = "src/linux/recovery/writer/witness_reservation/continuation/witness/publication/receipt/tests.rs"
+ignored = true

@@ -33,6 +33,8 @@ CASES = (
     PREFIX + "witness_reservation::tests::native_allocation_preserves_the_named_segment_and_anonymous_eof",
     PREFIX + "witness_reservation::tests::only_a_submitted_journal_allocation_latches_the_lease_even_on_syscall_error",
     PREFIX + "witness_reservation::continuation::tests::original_reserved_descriptor_writes_and_rereads_only_the_exact_successor",
+    PREFIX + "witness_reservation::continuation::witness::publication::receipt::tests::"
+             "readonly_reopened_anonymous_receipt_links_and_promotes_original_inode",
 )
 COMPILER_OVERRIDES = (
     "RUSTC", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS",

@@ -13,11 +13,16 @@ use crate::linux::{
 };
 
 mod durability;
+mod receipt;
 mod record;
 
 pub use durability::{
 	WitnessDurabilityAppend, WitnessDurabilityEffect, WitnessDurabilityError,
 	WitnessDurabilityRequest,
+};
+pub use receipt::{
+	WitnessReceiptAppend, WitnessReceiptEffect, WitnessReceiptError, WitnessReceiptIdentity,
+	WitnessReceiptNames, WitnessReceiptPlacement, WitnessReceiptPlan, WitnessReceiptRequest,
 };
 pub use record::WitnessObservationAppend;
 
@@ -118,6 +123,7 @@ pub struct WitnessPublication<'view, 'lease> {
 	observation: WitnessPublicationObservation,
 	observation_head: Option<Head>,
 	durability: durability::Progress,
+	receipt: receipt::Progress,
 }
 
 impl WitnessPublication<'_, '_> {
@@ -211,6 +217,7 @@ impl<'view, 'lease> SealedProtectedWitness<'view, 'lease> {
 			observation,
 			observation_head: None,
 			durability: durability::Progress::Unspent,
+			receipt: receipt::Progress::default(),
 		})
 	}
 }

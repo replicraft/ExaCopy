@@ -19,7 +19,9 @@ pub use publication::{
 	WitnessDurabilityAppend, WitnessDurabilityEffect, WitnessDurabilityError,
 	WitnessDurabilityRequest, WitnessObservationAppend, WitnessPublication,
 	WitnessPublicationError, WitnessPublicationName, WitnessPublicationNames,
-	WitnessPublicationObservation, WitnessPublicationRequest,
+	WitnessPublicationObservation, WitnessPublicationRequest, WitnessReceiptAppend,
+	WitnessReceiptEffect, WitnessReceiptError, WitnessReceiptIdentity, WitnessReceiptNames,
+	WitnessReceiptPlacement, WitnessReceiptPlan, WitnessReceiptRequest,
 };
 
 // Maximum encoded kind 41: 605 payload bytes and 92 framing bytes.

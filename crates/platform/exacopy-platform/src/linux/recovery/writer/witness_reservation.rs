@@ -26,7 +26,9 @@ pub use continuation::{
 	WitnessDurabilityEffect, WitnessDurabilityError, WitnessDurabilityRequest,
 	WitnessObservationAppend, WitnessPrepublicationAppend, WitnessPrepublicationPhase,
 	WitnessPublication, WitnessPublicationError, WitnessPublicationName, WitnessPublicationNames,
-	WitnessPublicationObservation, WitnessPublicationRequest,
+	WitnessPublicationObservation, WitnessPublicationRequest, WitnessReceiptAppend,
+	WitnessReceiptEffect, WitnessReceiptError, WitnessReceiptIdentity, WitnessReceiptNames,
+	WitnessReceiptPlacement, WitnessReceiptPlan, WitnessReceiptRequest,
 };
 pub use types::{
 	WitnessReservationAuthority, WitnessReservationEffect, WitnessReservationError,

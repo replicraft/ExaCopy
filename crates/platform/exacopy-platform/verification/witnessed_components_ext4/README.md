@@ -1,6 +1,6 @@
 # Witnessed Linux components on whole ext4
 
-The platform crate owns six existing tests exercised by exact selector on the
+The platform crate owns seven tests exercised by exact selector on the
 canonical GitHub-hosted Linux x86-64 push. The runner uses the package's held
 whole-ext4 mount observations and a private mode-0700 scratch parent. It runs
 as an ordinary unprivileged actor. The locked offline platform build selects
@@ -15,7 +15,10 @@ witness collision and refused later barrier, native exclusive publication with
 success and two incumbent classes, the four postpublication file/directory
 barriers and metadata-change refusal, anonymous and named KEEP_SIZE
 allocation, lease behavior on submission failure, and same-descriptor journal
-append/fsync with independent exact readback and EOF checks.
+append/fsync with independent exact readback and EOF checks. The receipt
+control also exercises closing the original anonymous writer, descriptor-linking
+through the independently reopened read-only handle, and promoting the same
+sealed inode to an absent final name.
 
 These are local adapter controls for R-008, R-253, R-255 and
 INV-002/003/004/006/009/013/018/019. The effect callbacks are component-test

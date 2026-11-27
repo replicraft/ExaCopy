@@ -14,7 +14,7 @@ const WITNESSED_ID: &str = "linux-witnessed-components-ext4";
 const WITNESSED_WORKFLOW: &str =
 	".github/workflows/linux-witnessed-components-ext4-qualification.yml";
 
-const WITNESSED_CASES: [(&str, &str); 6] = [
+const WITNESSED_CASES: [(&str, &str); 7] = [
 	(
 		"prefix::tests::witness",
 		"actual_descriptor_link_keeps_both_names_and_held_exclusion",
@@ -38,6 +38,10 @@ const WITNESSED_CASES: [(&str, &str); 6] = [
 	(
 		"witness_reservation::continuation::tests",
 		"original_reserved_descriptor_writes_and_rereads_only_the_exact_successor",
+	),
+	(
+		"witness_reservation::continuation::witness::publication::receipt::tests",
+		"readonly_reopened_anonymous_receipt_links_and_promotes_original_inode",
 	),
 ];
 
@@ -67,7 +71,7 @@ pub(super) fn check(
 	if !witnessed(owner, manifest, fixture) {
 		findings.add(
 			path,
-			"witnessed component fixture requires its exact platform owner, manifest and six unit cases",
+			"witnessed component fixture requires its exact platform owner, manifest and seven unit cases",
 		);
 		return false;
 	}
