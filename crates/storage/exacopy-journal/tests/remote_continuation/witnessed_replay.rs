@@ -13,6 +13,8 @@ use exacopy_journal::remote_download::witness::replay::{
 
 use super::*;
 
+#[path = "witnessed_committed_inspection.rs"]
+mod committed_inspection;
 #[path = "continued_coverage.rs"]
 mod continued_coverage;
 #[path = "witnessed_live_durability.rs"]

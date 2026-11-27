@@ -1,11 +1,13 @@
-use crate::StreamLength;
 use crate::frame::{ChainHead, Frame, FrameKind};
+use crate::remote_download::RemoteDownloadDestination;
 use crate::remote_download::continuation::replay::RemoteContinuedCapture;
+use crate::remote_download::finalization::RemoteLocalMetadata;
 use crate::remote_download::finalization_replay::RemoteFinalizationPhase;
 use crate::remote_download::qualification::continuation::VerifiedRemoteWitnessQualification;
 use crate::remote_download::replay::{
 	RemoteDownloadReplay, RemoteRecordedUncertainty, RemoteReplayBoundary, RemoteReplayMismatch,
 };
+use crate::{StreamDigest, StreamLength};
 
 use super::super::records::{
 	RemoteRetainedWitness, RemoteWitnessCloseoutBody as Body,
@@ -36,6 +38,9 @@ pub(super) struct CloseoutFacts {
 	pub(super) prepublication_heads: Option<(ChainHead, ChainHead)>,
 	pub(super) durability_metadata_head: Option<ChainHead>,
 	pub(super) continued_extent: Option<StreamLength>,
+	pub(super) verified_stage_digest: Option<StreamDigest>,
+	pub(super) metadata: Option<RemoteLocalMetadata>,
+	pub(super) committed_destination: Option<RemoteDownloadDestination>,
 }
 
 impl CloseoutFacts {
@@ -119,6 +124,8 @@ impl<'qualification> WitnessCloseoutHistory<'qualification> {
 		self.facts.phase = None;
 		self.facts.witness = None;
 		self.facts.continued_extent = None;
+		self.facts.verified_stage_digest = None;
+		self.facts.metadata = None;
 		self.phases.clear();
 	}
 
@@ -251,9 +258,18 @@ impl<'qualification> WitnessCloseoutHistory<'qualification> {
 			}
 			body => {
 				let phase = validation::closeout(self, trust, body)?;
-				if let Body::Observed(outcome) = body {
-					self.facts.outcome = Some(outcome);
-					self.observed = Some(end);
+				match body {
+					Body::Verify { stage, .. } => self.facts.verified_stage_digest = Some(stage),
+					Body::Metadata(metadata) => self.facts.metadata = Some(metadata),
+					Body::Observed(outcome) => {
+						self.facts.outcome = Some(outcome);
+						self.observed = Some(end);
+					}
+					Body::CommittedReceipt { .. } => {
+						self.facts.committed_destination =
+							Some(trust.owner().manifest().scope.destination.clone());
+					}
+					_ => {}
 				}
 				if phase == Phase::Durable {
 					self.facts.receipt_cut = Some(receipt::Cut {

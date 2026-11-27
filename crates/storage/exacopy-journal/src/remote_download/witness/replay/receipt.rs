@@ -12,9 +12,11 @@ use super::super::{
 };
 
 mod basis;
+mod committed;
 mod live;
 
 pub use basis::{RemoteDurableReceiptBasis, RemoteReceiptReadyInspection};
+pub use committed::RemoteCommittedReceiptInspection;
 
 const DOMAIN: &[u8] = b"ExaCopy/linux-remote-witnessed-continued-download-receipt/v1\0";
 const VERSION: [u64; 3] = [1, 0, 15];
