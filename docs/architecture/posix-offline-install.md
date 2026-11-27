@@ -80,7 +80,26 @@ From a trusted source tree, run the shell checks and the fixture suite as an unp
 ```sh
 shellcheck -x install.sh uninstall.sh
 python3 -B tools/installer/test_posix.py
+python3 -B tools/installer/test_latest.py
 python3 -B tools/installer/test_posix_launcher.py
 ```
 
-Use `--artifact /absolute/path/to/exacopy` to repeat the suite with actual locally built CLI bytes. The suite generates a temporary test-only publisher and operates in a disposable home. The macOS arm64 controls check signed installation, exact repeated installation, signature and metadata rejection, path and history conflicts, and byte preservation on uninstall. The launcher fixture also exercises direct invocation, competing stores, incumbent preservation and process interruption around activation and removal. Linux native execution, macOS x86-64, release keys and artifacts, real installation/reboot, and power-loss behavior are unqualified.
+Use `--artifact /absolute/path/to/exacopy` with `test_posix.py` to repeat that
+suite with actual locally built CLI bytes. The suites generate temporary
+test-only publishers and operate in disposable homes. The launcher fixture
+also exercises direct invocation, competing stores, incumbent preservation
+and process interruption around activation and removal.
+
+At `57581c1`, the hosted Linux x86-64 and macOS arm64 installer jobs passed.
+Each latest-release fixture reported 56 passing cases, including authenticated
+installation, exact repeat, offline uninstall, and refusal of malformed CDN
+redirects. Curl receives the validated download URL through stdin; the fixtures
+check that the signed query stays out of curl arguments and installer output.
+They also require a failed curl exit to stop installation even when its body
+and response metadata otherwise indicate success. The fixtures checked removal
+of their download directories and preservation of incumbent bytes.
+[Exact installer run](https://github.com/replicraft/ExaCopy/actions/runs/46026139382).
+
+These results cover the synthetic publisher and fixture profiles. macOS
+x86-64, official release keys and signed artifacts, real installation/reboot,
+and power-loss behavior remain unqualified.
