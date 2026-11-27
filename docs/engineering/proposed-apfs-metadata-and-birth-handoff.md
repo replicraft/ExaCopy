@@ -169,3 +169,20 @@ below before use in this operation.
 An explicitly chosen native qualification source must satisfy its profile
 as observed. The reported fixture refusals remain recorded; fixture
 surgery or metadata exemptions would invalidate the evidence.
+
+## Hosted profile observations on 2026-11-27
+
+The [ordinary-source run at `ea2b867`](https://github.com/replicraft/ExaCopy/actions/runs/45972819734)
+reached private metadata application on ARM64 macOS 15.8.2 and local journaled
+APFS, then refused an observed birth-time adjustment. Before cleanup, its
+oracle checked unchanged source bytes, retained stage identity, absent target
+and receipt, and no publication intent or later publication frames.
+
+The [separate timestamp-eligible run at `9a3f6b8`](https://github.com/replicraft/ExaCopy/actions/runs/45973390568)
+passed the exact copy-through-receipt fixture with a synthetic source mtime
+later than stage birth. Strict metadata and identity checks remained active.
+This result qualifies that synthetic case, leaving ordinary-source success,
+restart and power-loss qualification open. The current `6b211a7` companion pin
+has identical mounted code and build inputs to the pin used by both runs.
+The [fixture profiles](../../apps/exacopy-cli/verification/macos_apfs_publication/README.md)
+describe their separate input conditions and oracles.
