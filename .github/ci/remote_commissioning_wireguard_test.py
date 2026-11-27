@@ -424,8 +424,10 @@ class KernelFixtureTests(unittest.TestCase):
         initial = observations.Counters(0, 0, 0, None)
         get = observations.Counters(96, 112, 1, "127.0.0.1:49152")
         interrupted = observations.Counters(192, 224, 2, "127.0.0.1:49153")
+        retired = observations.Counters(192, 304, 2, "127.0.0.1:49153")
         resumed = observations.Counters(288, 336, 3, "127.0.0.1:49154")
         unexpected = observations.Counters(320, 336, 3, "127.0.0.1:49154")
+        abandoned, = tcp.parse_tcp(b"ESTAB 0 0 198.18.0.1:2222 198.18.0.2:60313 sk:8193\n")
         for last, phase, after in (
             (unexpected, "case-delta", asdict(unexpected)),
             (Blocked("synthetic private failure details"), "case-sample", None),
@@ -438,31 +440,76 @@ class KernelFixtureTests(unittest.TestCase):
                 def complete_cases(_seconds, *, signal, stop):
                     for index, _ in enumerate(observations.CASES):
                         observations.file_signal(mailbox / f"case-{index}.done")
+                        if index < len(observations.CASES) - 1:
+                            self.assertTrue(observations.wait_file(mailbox / f"case-{index}.observed", stop, timeout=5))
                     self.assertTrue(observations.wait_file(mailbox / "blocked", timeout=5))
                     self.assertTrue(stop())
                     return ProcessResult("observer-stopped")
 
+                def retire(_kernel, selected, evidence):
+                    self.assertEqual(selected, abandoned)
+                    self.assertTrue((mailbox / "case-4.done").exists())
+                    self.assertFalse((mailbox / "case-4.observed").exists())
+                    self.assertFalse((mailbox / "case-5.done").exists())
+                    evidence["state"] = "removed"
+
                 with (
                     patch.object(observations, "snapshot", side_effect=[
-                        initial, initial, initial, get, get, interrupted, resumed, last,
+                        initial, initial, initial, get, get, interrupted, interrupted, retired, resumed, last,
                     ]),
                     patch.object(observations, "settle_peer", side_effect=lambda _peer, after, *_: after),
-                    patch.object(orphan, "identify", return_value=None),
-                    patch.object(orphan, "retire"),
+                    patch.object(orphan, "identify", return_value=(60313, abandoned)),
+                    patch.object(orphan, "retire", side_effect=retire),
+                    patch.object(orphan, "confirm_resumed", return_value=53023) as disconnected,
                 ):
                     with self.assertRaises(fixture.direct.EvidenceFailed):
                         fixture.execute_campaign(
                             Mock(), SimpleNamespace(wait=complete_cases), work, work,
                             work / "unused", report, {}, Mock(time_for=Mock(return_value=10)),
                         )
+                self.assertEqual(disconnected.call_args.args[2], 60313)
                 self.assertEqual([row["case"] for row in report["kernel_cases"]], [
                     name for name, _ in observations.CASES[:-1]
                 ])
+                retirement = report["kernel_cases"][4]["post_crash_fixture_socket_retirement"]
+                self.assertEqual(retirement["carrier_before"], asdict(interrupted))
+                self.assertEqual(retirement["carrier_after"], asdict(retired))
+                self.assertEqual(report["kernel_cases"][5]["before"], asdict(retired))
+                self.assertEqual(report["kernel_cases"][5]["resumed_client_port"], 53023)
                 self.assertEqual(report["kernel_case_failure"], {
                     "case": "post-intent", "phase": phase,
                     "before": asdict(resumed), "after": after, "failure": {"kind": "refused"},
                 })
                 self.assertFalse((mailbox / "case-6.observed").exists())
+
+    def test_uncertain_prior_socket_retirement_withholds_resume(self):
+        initial = observations.Counters(0, 0, 0, None)
+        interrupted = observations.Counters(192, 224, 2, "127.0.0.1:49153")
+        abandoned, = tcp.parse_tcp(b"ESTAB 0 0 198.18.0.1:2222 198.18.0.2:60313 sk:8193\n")
+        rows, failures = [], []
+
+        def uncertain(_kernel, _selected, report):
+            report["state"] = "submission-uncertain"
+            raise Blocked("fixture retirement outcome unconfirmed")
+
+        with tempfile.TemporaryDirectory() as scratch:
+            mailbox = Path(scratch)
+            observations.file_signal(mailbox / "case-0.done")
+            with (
+                patch.object(observations, "CASES", (("process-kill", 1), ("resume", 1))),
+                patch.object(observations, "snapshot", side_effect=[initial, interrupted, interrupted]),
+                patch.object(orphan, "identify", return_value=(60313, abandoned)),
+                patch.object(orphan, "retire", side_effect=uncertain),
+                patch.object(orphan, "confirm_resumed") as reopened,
+            ):
+                observations.observe_cases(Mock(), mailbox, SimpleNamespace(is_set=lambda: False), rows, failures)
+            self.assertFalse((mailbox / "case-0.observed").exists())
+            self.assertTrue((mailbox / "blocked").exists())
+        reopened.assert_not_called()
+        self.assertEqual(rows, [])
+        error, = failures
+        self.assertEqual(error.phase, observations.ObservationPhase.CRASH_SOCKET_RETIREMENT)
+        self.assertEqual(error.evidence()["post_crash_fixture_socket_retirement"]["state"], "submission-uncertain")
 
     def test_local_case_uses_quiet_baseline_after_prior_connection(self):
         initial = observations.Counters(0, 0, 0, None)
@@ -592,26 +639,29 @@ class KernelFixtureTests(unittest.TestCase):
             (evidence / "process-kill.journal").touch()
             (evidence / "process-kill.openssh.log").write_text(transcript(60313))
             resume_log = evidence / "resume.openssh.log"
-            resume_log.write_text(transcript(53023, closed=True))
             kernel = Mock(peer=SimpleNamespace(identity=(14, 42)), fixture=SimpleNamespace(account="fixture"))
             with patch.object(orphan, "observe_tcp", return_value=[original]):
-                self.assertEqual(orphan.identify(kernel, evidence), original)
+                self.assertEqual(orphan.identify(kernel, evidence), (60313, original))
                 (evidence / orphan.CLEANUP_MARKER).touch()
                 with self.assertRaisesRegex(Blocked, "not confirmed drained"):
                     orphan.identify(kernel, evidence)
                 (evidence / orphan.CLEANUP_MARKER).unlink()
             for flows in ([replacement], [original, resumed], [resumed]):
                 with patch.object(orphan, "observe_tcp", return_value=flows), self.assertRaises(Blocked):
-                    orphan.retire(kernel, evidence, original, {})
+                    orphan.retire(kernel, original, {})
+            self.assertFalse(resume_log.exists())
             resume_log.write_text(transcript(53023))
             with self.assertRaisesRegex(Blocked, "disconnect was not observed"):
-                orphan.retire(kernel, evidence, original, {})
+                orphan.confirm_resumed(kernel, evidence, 60313)
+            resume_log.write_text(transcript(60313, closed=True))
+            with self.assertRaisesRegex(Blocked, "distinct OpenSSH client port"):
+                orphan.confirm_resumed(kernel, evidence, 60313)
             kernel.call.assert_not_called()
-            resume_log.write_text(transcript(53023, closed=True))
+            resume_log.unlink()
             kernel.call.return_value = b"removed\n"
             report = {}
             with patch.object(orphan, "observe_tcp", side_effect=[[original], []]):
-                orphan.retire(kernel, evidence, original, report)
+                orphan.retire(kernel, original, report)
             kernel.call.assert_called_once_with(
                 kernel.peer, "retire exact socket left by fixture SIGKILL", "/usr/bin/python3",
                 "-I", "-S", "-B", "-c", orphan.DESTROY, "14", "42", "60313", str(original.cookie),
@@ -624,9 +674,11 @@ class KernelFixtureTests(unittest.TestCase):
             report = {}
             with patch.object(orphan, "observe_tcp", side_effect=[[original], [replacement]]):
                 with self.assertRaisesRegex(Blocked, "did not confirm absence"):
-                    orphan.retire(kernel, evidence, original, report)
+                    orphan.retire(kernel, original, report)
             self.assertEqual(report["state"], "submission-uncertain")
             kernel.call.assert_called_once()
+            resume_log.write_text(transcript(53023, closed=True))
+            self.assertEqual(orphan.confirm_resumed(kernel, evidence, 60313), 53023)
 
     def test_socket_destroy_frame_binds_exact_cookie_and_kernel_ack(self):
         code = compile(orphan.DESTROY, "<fixture-netlink-helper>", "exec")

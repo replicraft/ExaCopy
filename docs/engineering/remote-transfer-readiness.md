@@ -156,9 +156,27 @@ proof. A reset, revocation, cancellation or timeout refuses completion.
 The wait is bounded by 32 seconds and the original grant deadline. The
 application still fences and joins the original route, then rechecks its
 generation and authority before finalization. Failed and interrupted
-captures retain their previous hard-fence behavior. Hosted execution of
-this integrated repair, resumed-flow retirement and carrier-down remain
-separate gates.
+captures retain their previous hard-fence behavior. The `09b96f5` and
+`993668d` hosted runs independently observed clean disconnects for both
+ordinary get and fresh resume.
+
+At `993668d`, the fixture also removed the exact socket left by deliberate
+SIGKILL: client port 56902, kernel cookie 8193. A native cookie-bound
+acknowledgment and subsequent empty TCP inventory confirmed the effect.
+The distinct resume connection used port 58687 and disconnected cleanly.
+Nevertheless, carrier TX rose another 1,332 bytes with RX unchanged, so
+the observer failed its unchanged 22-second quiet requirement within
+60.084 seconds. Packet types were not recorded. Post-intent and
+carrier-down did not run; client and fixture cleanup were confirmed.
+[Hosted run](https://github.com/replicraft/ExaCopy/actions/runs/45940037149)
+
+The next fixture revision performs that same exact-socket retirement at
+the process-kill rendezvous, before fresh resume can start. Uncertain
+retirement withholds resume. Fresh resume must still pass its independent
+byte, receipt and disconnect checks, followed by the original quiet and
+zero-connection checks. Portable controls passed; this revised ordering
+requires native execution. Full commissioning and production qualification
+remain open.
 
 The observer also accepts iproute2's documented empty timer duration at
 zero milliseconds and retains a bounded sampling phase on refusal. The

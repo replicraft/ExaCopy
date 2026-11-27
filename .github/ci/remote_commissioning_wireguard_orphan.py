@@ -98,25 +98,23 @@ def identify(kernel, evidence):
     port = connection(evidence, "process-kill", kernel.fixture.account)
     flows = live_flows(kernel)
     if not flows:
-        return None
+        return port, None
     if len(flows) != 1 or flows[0].client_port != port or flows[0].state != "ESTAB":
         raise Blocked("the abandoned OpenSSH flow is not uniquely identified")
     selected = flows[0]
     if selected.cookie is None or not 0 < selected.cookie < 2**64 - 1:
         raise Blocked("the abandoned OpenSSH socket lacks an exact cookie")
-    return selected
+    return port, selected
 
 
-def retire(kernel, evidence, selected, report):
-    resumed = connection(evidence, "resume", kernel.fixture.account, disconnected=True)
-    report["resumed_client_port"] = resumed
+def retire(kernel, selected, report):
     kernel.recheck_link()
     flows = live_flows(kernel)
     if not flows:
         report["state"] = "already-drained"
         return
     if (
-        selected is None or len(flows) != 1 or flows[0].state != "ESTAB" or resumed == selected.client_port
+        selected is None or len(flows) != 1 or flows[0].state != "ESTAB"
         or (flows[0].client_port, flows[0].cookie) != (selected.client_port, selected.cookie)
     ):
         raise Blocked("TCP inventory does not contain only the original abandoned socket")
@@ -134,3 +132,10 @@ def retire(kernel, evidence, selected, report):
         raise Blocked("socket retirement did not confirm absence in the pinned namespace")
     kernel.recheck_link()
     report["state"] = "removed" if result == b"removed\n" else "confirmed-absent"
+
+
+def confirm_resumed(kernel, evidence, interrupted_port):
+    resumed = connection(evidence, "resume", kernel.fixture.account, disconnected=True)
+    if interrupted_port is None or resumed == interrupted_port:
+        raise Blocked("fresh resume did not use a distinct OpenSSH client port")
+    return resumed

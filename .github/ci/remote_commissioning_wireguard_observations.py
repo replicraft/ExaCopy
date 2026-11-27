@@ -45,6 +45,7 @@ class ObservationPhase(Enum):
     PEER_SETTLING = "peer-settling"
     CRASH_SOCKET_IDENTITY = "crash-socket-identity"
     CRASH_SOCKET_RETIREMENT = "crash-socket-retirement"
+    RESUME_DISCONNECT = "resume-disconnect"
     PEER_CARRIER_SAMPLE = "peer-carrier-sample"
     PEER_TCP_SAMPLE = "peer-tcp-sample"
     PEER_SETTLING_DELTA = "peer-settling-delta"
@@ -59,6 +60,7 @@ class ObservationFailure:
     before: Counters | None
     after: Counters | None
     settling: dict | None
+    retirement: dict | None
 
     def evidence(self):
         evidence = {
@@ -70,6 +72,8 @@ class ObservationFailure:
         }
         if self.settling is not None:
             evidence["settling"] = self.settling
+        if self.retirement is not None:
+            evidence["post_crash_fixture_socket_retirement"] = self.retirement
         return evidence
 
 
@@ -187,8 +191,8 @@ def settle_peer(kernel, initial, halted, evidence):
 
 def observe_cases(kernel, mailbox, halted, rows, failures):
     phase = ObservationPhase.INITIAL_SAMPLE
-    name = before = after = settling = None
-    abandoned = None
+    name = before = after = settling = retirement = None
+    interrupted_port = None
     campaign_evidence = mailbox.parent / "campaign"
     try:
         before = snapshot(kernel)
@@ -198,7 +202,7 @@ def observe_cases(kernel, mailbox, halted, rows, failures):
         phase = ObservationPhase.START_SIGNAL
         file_signal(mailbox / "start")
         for index, (name, count) in enumerate(CASES):
-            after = settling = None
+            after = settling = retirement = None
             phase = ObservationPhase.CASE_RENDEZVOUS
             if not wait_file(mailbox / f"case-{index}.done", halted.is_set):
                 return
@@ -209,28 +213,33 @@ def observe_cases(kernel, mailbox, halted, rows, failures):
             phase = ObservationPhase.CASE_DELTA
             check_delta(before, after, count)
             row = {"case": name, "before": asdict(before), "after": asdict(after)}
-            if name == "process-kill":
-                phase = ObservationPhase.CRASH_SOCKET_IDENTITY
-                abandoned = orphan.identify(kernel, campaign_evidence)
-                row["abandoned_fixture_tcp"] = asdict(abandoned) if abandoned is not None else None
             next_baseline = after
+            if name == "process-kill":
+                # The client cannot start the fresh resume until this case is acknowledged.
+                phase = ObservationPhase.CRASH_SOCKET_IDENTITY
+                interrupted_port, abandoned = orphan.identify(kernel, campaign_evidence)
+                phase = ObservationPhase.CRASH_SOCKET_RETIREMENT
+                checkpoint()
+                if halted.is_set():
+                    raise Blocked("fixture stopped before crash socket retirement")
+                carrier_before = after if abandoned is None else snapshot(kernel)
+                check_same_peer_progress(after, carrier_before)
+                retirement = {
+                    "interrupted_client_port": interrupted_port,
+                    "abandoned_fixture_tcp": asdict(abandoned) if abandoned is not None else None,
+                    "carrier_before": asdict(carrier_before),
+                }
+                orphan.retire(kernel, abandoned, retirement)
+                next_baseline = snapshot(kernel)
+                retirement["carrier_after"] = asdict(next_baseline)
+                check_same_peer_progress(carrier_before, next_baseline)
+                row["post_crash_fixture_socket_retirement"] = retirement
+            if name == "resume":
+                phase = ObservationPhase.RESUME_DISCONNECT
+                row["resumed_client_port"] = orphan.confirm_resumed(kernel, campaign_evidence, interrupted_port)
             if count == 1 and index + 1 < len(CASES) and CASES[index + 1][1] == 0:
-                settling = {"before_case": CASES[index + 1][0], "required_quiet_ms": PEER_QUIET_SECONDS * 1000}
-                if name == "resume":
-                    phase = ObservationPhase.CRASH_SOCKET_RETIREMENT
-                    checkpoint()
-                    if halted.is_set():
-                        raise Blocked("fixture stopped before crash socket retirement")
-                    carrier_before = after if abandoned is None else snapshot(kernel)
-                    check_same_peer_progress(after, carrier_before)
-                    retirement = {"carrier_before": asdict(carrier_before)}
-                    settling["post_crash_fixture_socket_retirement"] = retirement
-                    orphan.retire(kernel, campaign_evidence, abandoned, retirement)
-                    if "kernel_reply" in retirement:
-                        next_baseline = snapshot(kernel)
-                        retirement["carrier_after"] = asdict(next_baseline)
-                        check_same_peer_progress(carrier_before, next_baseline)
                 phase = ObservationPhase.PEER_SETTLING
+                settling = {"before_case": CASES[index + 1][0], "required_quiet_ms": PEER_QUIET_SECONDS * 1000}
                 next_baseline = settle_peer(kernel, next_baseline, halted, settling)
                 kernel.recheck_link()
                 row["settling"] = settling
@@ -239,7 +248,7 @@ def observe_cases(kernel, mailbox, halted, rows, failures):
             file_signal(mailbox / f"case-{index}.observed")
             before = next_baseline
     except Exception as error:
-        failures.append(ObservationFailure(error, phase, name, before, after, settling))
+        failures.append(ObservationFailure(error, phase, name, before, after, settling, retirement))
         file_signal(mailbox / "blocked")
 
 
