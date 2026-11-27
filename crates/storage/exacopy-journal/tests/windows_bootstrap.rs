@@ -1,3 +1,5 @@
+//! Independent wire and refusal controls for portable Windows bootstrap history.
+
 #[path = "windows_bootstrap/fixture.rs"]
 mod fixture;
 #[path = "windows_bootstrap/isolation.rs"]
