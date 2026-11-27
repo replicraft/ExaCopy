@@ -170,3 +170,6 @@ fn exact_held_destination_and_independently_provisioned_fixture_projection_are_r
 fn different(value: u64) -> u64 {
 	if value == 1 { 2 } else { 1 }
 }
+
+#[path = "../../../../tests/unit/remote_destination_facts.rs"]
+mod coverage;

@@ -68,3 +68,7 @@ fn is_shared(field: &[u8]) -> bool {
 		.and_then(nonzero_decimal)
 		.is_some()
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/process_crash_mount_facts.rs"]
+mod tests;

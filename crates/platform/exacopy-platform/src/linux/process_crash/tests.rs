@@ -113,3 +113,6 @@ fn qualified_fixture_checks_held_mount_and_expected_environment_before_use() {
 		Err(ProcessCrashProfileError::UnsupportedMount)
 	));
 }
+
+#[path = "../../../tests/unit/process_crash_facts.rs"]
+mod facts;
