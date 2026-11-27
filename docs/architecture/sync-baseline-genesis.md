@@ -91,6 +91,18 @@ baseline selection or CLI command. Exact observer qualification requires
 native execution on the declared profile. Process-crash and power-loss
 qualification remain separate.
 
+At `379b30c`, hosted run `45951731110` executed the observer on whole
+ext4 with AWS kernel `7.0.0-1018` and UID/GID 1001. The acknowledged
+producer supplied the original stage identity; member and intent
+expectations were selected independently before publication. The exact
+final observation passed. Substituted stage, approval, boot and historical
+scan evidence were refused, and observation left the output inventory
+unchanged. The independent oracle checked all four signed members and
+fixture cleanup confirmed absence. This covers the acknowledged final
+state, rather than an ambiguous producer return, exact staged state,
+process interruption or power loss. The result SHA-256 is
+`30af5b9b2e75741ae4365839b6a5ed7f9409dcef40f4aa7c05d26ef0da60b341`.
+
 ## Preview and compatibility
 
 Preview accepts either explicit no history or an exact authenticated seed
