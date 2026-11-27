@@ -228,7 +228,7 @@ def exercise(base):
         return row
 
     def run(label, *flags, error=None, special_routes=None, expected_requests=None,
-            install_root=root, auth=credentials, operation="install"):
+            install_root=root, auth=credentials, operation="install", exact_error=False):
         routes.write_text(json.dumps(allowed if special_routes is None else allowed | special_routes))
         requests.write_text("")
         executable = source / f"{operation}.sh"
@@ -240,6 +240,8 @@ def exercise(base):
             assert output.returncode == 0, (label, output)
         else:
             assert output.returncode != 0 and error in output.stderr, (label, output)
+            if exact_error:
+                assert output.stderr == f"exacopy {operation}: {error}\n", (label, output)
         for stream in (output.stdout, output.stderr):
             assert "sig=A%2BB%2FC" not in stream, (label, output)
             for private_url in (checksum_storage, archive_storage):
@@ -257,6 +259,21 @@ def exercise(base):
         error="independently trusted", expected_requests=[])
     run("wrong supplied publisher pin stops before HTTP", auth=[*credentials[:-1], "0" * 64],
         error="does not match supplied pin", expected_requests=[])
+    valid_certificate = Path(metadata["publisher_certificate"]).read_bytes()
+    for name, invalid_certificate in {
+        "malformed-der": b"not a DER certificate",
+        "trailing-bytes": valid_certificate + b"\x00",
+        "second-certificate": valid_certificate * 2,
+    }.items():
+        path = base / f"publisher-{name}.der"
+        path.write_bytes(invalid_certificate)
+        stdout = run(f"refuse the correctly pinned {name} input before HTTP",
+                     auth=["--publisher-cert", str(path), "--publisher-sha256", sha256(invalid_certificate).hexdigest()],
+                     error="publisher trust input must contain exactly one certificate",
+                     expected_requests=[], exact_error=True)
+        assert stdout == ""
+        assert path.read_bytes() == invalid_certificate
+        assert not root.exists() and not default.exists()
     run("reject contradictory latest and offline inputs", "--latest", "--version", version,
         "--offline-bundle", str(fixtures / "valid"), error="mutually exclusive", expected_requests=[])
     run("latest makes no network request during uninstall", "--latest", "--version", version,

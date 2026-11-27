@@ -203,7 +203,8 @@ cleanup() {
 	fi
 	if [ -n "$scratch" ]; then
 		rm -f "$scratch/exacopy" "$scratch/release.manifest" "$scratch/release.sig" \
-			"$scratch/publisher.der" "$scratch/publisher.pem" "$scratch/attribute-names" || :
+			"$scratch/publisher.der" "$scratch/publisher-encoded.der" "$scratch/publisher.pem" \
+			"$scratch/attribute-names" || :
 		if [ "$latest" = yes ]; then
 			rm -f "$scratch/redirect" "$scratch/checksums" "$scratch/archive.tar.gz" \
 				"$scratch/bundle/exacopy" "$scratch/bundle/release.manifest" "$scratch/bundle/release.sig" || :
@@ -243,6 +244,7 @@ installer_main() {
 	trap 'exit 1' HUP INT TERM
 	scratch=$(mktemp -d "$temp_base/exacopy-release.XXXXXXXX") || fail 'cannot create verification directory'
 	snapshot "$publisher_cert" "$scratch/publisher.der" 16384
+	verify_publisher_certificate_framing
 	if [ "$latest" = yes ]; then
 		# shellcheck source=tools/installer/download.sh
 		. "$script_dir/tools/installer/download.sh"

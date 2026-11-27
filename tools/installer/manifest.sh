@@ -118,6 +118,16 @@ verify_publisher_pin() {
 	[ "$actual_pin" = "$publisher_pin" ] || fail 'publisher certificate does not match supplied pin'
 }
 
+verify_publisher_certificate_framing() {
+	verify_publisher_pin
+	# A successful X.509 read alone does not check the rest of the pinned file.
+	# This checks whole-file framing, not canonicality within signed ASN.1.
+	/usr/bin/openssl x509 -inform DER -outform DER 2>/dev/null \
+		< "$scratch/publisher.der" > "$scratch/publisher-encoded.der" &&
+		cmp -s "$scratch/publisher.der" "$scratch/publisher-encoded.der" 2>/dev/null ||
+		fail 'publisher trust input must contain exactly one certificate'
+}
+
 verify_signature() {
 	verify_publisher_pin
 	/usr/bin/openssl x509 -inform DER -in "$scratch/publisher.der" -pubkey -noout > "$scratch/publisher.pem" ||
