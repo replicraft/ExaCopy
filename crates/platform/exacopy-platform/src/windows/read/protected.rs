@@ -31,6 +31,8 @@ use super::{
 };
 
 mod acl;
+#[cfg(feature = "experimental-windows-copy")]
+pub(crate) mod bootstrap;
 #[allow(
 	unsafe_code,
 	reason = "bounded Windows token and self-relative descriptor queries"

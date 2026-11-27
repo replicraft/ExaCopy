@@ -67,7 +67,7 @@ pub struct ObjectId {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct VolumeGuid([u8; 36]);
+pub(super) struct VolumeGuid(pub(super) [u8; 36]);
 
 // Keep C BOOLEAN values as bytes at the FFI boundary, even if a driver returns values
 // outside the canonical Rust bool representation.
