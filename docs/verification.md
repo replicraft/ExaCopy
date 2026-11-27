@@ -48,9 +48,15 @@ profile. Independent review verified the exact source and helper, distinct
 private mount namespace, observer UID/GID 1001 with empty supplementary
 groups, all five capability sets zero, and no-new-privileges. The same
 service invocation preserved the covered inode and sentinels after unmount,
-and confirmed fixture and service cleanup. The original unprivileged
-user-namespace profile still refused its UID-map setup. Neither result
-authorizes protected replacement, retirement or reclamation.
+and confirmed fixture and service cleanup.
+
+At `99fdf66`, the [original user-namespace run](https://github.com/replicraft/ExaCopy/actions/runs/45924705332)
+again passed all six ordinary selectors and verified fixture cleanup.
+The bind-mount case remained blocked because `unshare` could not write
+`/proc/self/uid_map`. The fixture returned exit 77 and retained that
+blocked result. The [separate hosted root-setup run](https://github.com/replicraft/ExaCopy/actions/runs/45924705308)
+at the same revision passed its observation qualification. Neither
+profile authorizes protected replacement, retirement or reclamation.
 
 Keep proofs, extraction, models, harnesses and obligation ownership in
 `<crate>/verification/`. Root tooling [captures](../tools/record_evidence.py)

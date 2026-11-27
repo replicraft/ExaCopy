@@ -54,6 +54,29 @@ peer transcripts. The budget invocation reported `E_AUTHORIZATION`, no
 publication and 52.006 seconds, with all three held sessions closed.
 Fixture removal and process-group drainage were confirmed.
 
+The `56f7b84` budget case returned `E_IO` after 41.253 seconds with no
+publication. Its SFTP log records two authenticated sessions whose held
+READs each lasted about 20 seconds before transport closure. No third
+connection opened. The retained report leaves the CLI's internal timing
+unobserved. [Failed hosted run](https://github.com/replicraft/ExaCopy/actions/runs/45920923086)
+
+The `896552b` repair handles a direct socket closing during either of the
+two checks that follow a held READ deadline. It rechecks the original
+grant and connection binding, waits for the exact old route to retire,
+and requires the existing retained-stage evidence before retrying.
+Deterministic controls reproduced the closed-socket refusal with the
+previous check and passed with the repair.
+
+The `99fdf66` READ-timeout campaign passed all five cases on Ubuntu 24.04,
+Linux `7.0.0-1018-aws`, and a whole ext4 root. The budget case opened and
+closed three authenticated sessions. Each started at byte zero. The first
+two held READs ended at their data deadlines. The third stopped when the
+original 52-second grant expired. The CLI returned `E_AUTHORIZATION` at
+52.005 seconds without publication. The fixture rechecked the identity and
+bytes of the original 64 KiB stage. The redial case also published verified
+bytes to a distinct inode and retained its old stage. The report confirms
+fixture removal and process-group drainage. [Passing hosted run](https://github.com/replicraft/ExaCopy/actions/runs/45924705323)
+
 ## Independent kernel WireGuard campaign
 
 The commissioning harness can run the unchanged embedded BoringTun CLI
@@ -121,6 +144,13 @@ The campaign used a synthetic, one-use fixture authority with assumed
 qualification claims. Production destination qualification, power-loss
 durability, independent embedded WireGuard commissioning and efficient
 verified range reuse remain open.
+
+The `99fdf66` hosted run also passed all seven ordinary cases on Ubuntu
+24.04 and Linux `7.0.0-1018-aws` with a whole ext4 root. Both direct jobs
+recorded the same staged executable digest. The ordinary job retained seven
+OpenSSH case logs and confirmed fixture removal and process-group drainage.
+The qualification record was specific to that synthetic fixture.
+[Hosted run](https://github.com/replicraft/ExaCopy/actions/runs/45924705323)
 
 ## Earlier native destination evidence
 
