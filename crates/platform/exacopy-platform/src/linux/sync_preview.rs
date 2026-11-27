@@ -25,6 +25,8 @@ const ORDINARY_PERMISSION_BITS: u32 = 0o777;
 mod history_members;
 mod history_scope;
 #[cfg(feature = "experimental-linux-managed-sync")]
+mod managed;
+#[cfg(feature = "experimental-linux-managed-sync")]
 mod managed_mount;
 mod names;
 mod namespaces;
@@ -33,6 +35,11 @@ mod tests;
 
 pub use history_members::{SyncHistoryDirectory, SyncHistoryReader};
 pub use history_scope::SyncHistoryLocation;
+#[cfg(feature = "experimental-linux-managed-sync")]
+pub use managed::{
+	ManagedSyncError, ManagedSyncExpectedObject, ManagedSyncExpectedRoot, ManagedSyncNativeScope,
+	ManagedSyncPreviewPair, ManagedSyncReadLease,
+};
 
 /// Failure to obtain a complete live observation of the selected pair.
 #[derive(Debug)]
@@ -222,7 +229,7 @@ impl<'selection> SyncPreviewRoots<'selection> {
 		})
 	}
 
-	fn recheck_scope(&self) -> Result<(), SyncPreviewError> {
+	pub(in crate::linux) fn recheck_scope(&self) -> Result<(), SyncPreviewError> {
 		self.namespaces.recheck_current()?;
 		let current = open_parent(self.parent_path).map_err(rebound_error)?;
 		let current_identity = FileIdentity::from_stat(&fs::fstat(&current)?);

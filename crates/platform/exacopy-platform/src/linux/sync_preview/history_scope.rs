@@ -4,7 +4,7 @@ use std::os::fd::AsFd;
 use exacopy_endpoint::UnixComponent;
 use rustix::fs::{self, AtFlags, Mode, OFlags, StatxFlags};
 
-use super::{CHILD_RESOLUTION, FileIdentity, SyncPreviewError, SyncPreviewPair};
+use super::{CHILD_RESOLUTION, FileIdentity, SyncPreviewError, SyncPreviewPair, SyncPreviewRoots};
 use crate::linux::handle::{file_identity, mount_id};
 use crate::linux::mount_observation::ProcMounts;
 use crate::linux::process_crash::{KERNEL_BOOT_ID_BYTES, parse_boot_id};
@@ -51,19 +51,41 @@ impl<'view> SyncPreviewPair<'view, '_> {
 		&self,
 	) -> Result<(UnixComponent<'view>, [SyncHistoryLocation<'view>; 2]), SyncPreviewError> {
 		self.recheck()?;
-		let first = self.observe_history_location()?;
+		let first = self.roots.observe_history_location()?;
 		self.recheck()?;
-		let second = self.observe_history_location()?;
+		let second = self.roots.observe_history_location()?;
 		if first != second {
 			return Err(SyncPreviewError::Changed);
 		}
 		Ok((self.subject, first))
 	}
+}
 
-	fn observe_history_location(
+impl<'selection> SyncPreviewRoots<'selection> {
+	/// Returns exact ext4 history location facts for the held roots before subject lookup.
+	///
+	/// These are observations for independent provisioning. They carry no managed lease.
+	///
+	/// # Errors
+	/// Refuses an unavailable or unsupported filesystem, changed roots or unknown facts.
+	#[cfg(feature = "experimental-linux-managed-sync")]
+	pub fn recheck_history_roots(
 		&self,
-	) -> Result<[SyncHistoryLocation<'view>; 2], SyncPreviewError> {
-		let pair = self.roots;
+	) -> Result<[SyncHistoryLocation<'selection>; 2], SyncPreviewError> {
+		self.recheck_scope()?;
+		let first = self.observe_history_location()?;
+		self.recheck_scope()?;
+		let second = self.observe_history_location()?;
+		self.recheck_scope()?;
+		if first != second {
+			return Err(SyncPreviewError::Changed);
+		}
+		Ok(second)
+	}
+
+	pub(super) fn observe_history_location(
+		&self,
+	) -> Result<[SyncHistoryLocation<'selection>; 2], SyncPreviewError> {
 		let proc = ProcMounts::open().map_err(SyncPreviewError::System)?;
 		let boot = parse_boot_id(
 			&proc
@@ -71,24 +93,24 @@ impl<'view> SyncPreviewPair<'view, '_> {
 				.map_err(SyncPreviewError::System)?,
 		)
 		.ok_or(SyncPreviewError::UnsupportedNamespace)?;
-		let namespaces = pair.namespaces.facts();
-		let unique_mount = whole_ext4_mount(&proc, &pair.parent, pair.mount)?;
-		check_directory(&pair.parent, pair.parent_identity, pair.mount, unique_mount)?;
-		let [left, right] = &pair.roots;
-		check_directory(left.directory(), left.identity(), pair.mount, unique_mount)?;
+		let namespaces = self.namespaces.facts();
+		let unique_mount = whole_ext4_mount(&proc, &self.parent, self.mount)?;
+		check_directory(&self.parent, self.parent_identity, self.mount, unique_mount)?;
+		let [left, right] = &self.roots;
+		check_directory(left.directory(), left.identity(), self.mount, unique_mount)?;
 		check_directory(
 			right.directory(),
 			right.identity(),
-			pair.mount,
+			self.mount,
 			unique_mount,
 		)?;
-		let [left_name, right_name] = pair.names;
+		let [left_name, right_name] = self.names;
 		let fact = |root, root_name| SyncHistoryLocation {
 			boot,
 			mount_namespace: namespaces.mount,
 			user_namespace: namespaces.user,
 			unique_mount,
-			parent: pair.parent_identity,
+			parent: self.parent_identity,
 			root,
 			root_name,
 		};
@@ -121,7 +143,7 @@ pub(super) fn whole_ext4_mount(
 	unique_mount_id(fd)
 }
 
-fn unique_mount_id(descriptor: impl AsFd) -> Result<NonZeroU64, SyncPreviewError> {
+pub(super) fn unique_mount_id(descriptor: impl AsFd) -> Result<NonZeroU64, SyncPreviewError> {
 	let stat = fs::statx(descriptor, c"", AtFlags::EMPTY_PATH, MOUNT_ID_UNIQUE)?;
 	if stat.stx_mask & MOUNT_ID_UNIQUE.bits() == 0 {
 		return Err(SyncPreviewError::UnsupportedMount);

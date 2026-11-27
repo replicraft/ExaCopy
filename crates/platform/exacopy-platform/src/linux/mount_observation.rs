@@ -62,6 +62,15 @@ impl ProcMounts {
 		read_proc(&self.thread, c"status", MAX_CREDENTIAL_STATUS_BYTES)
 	}
 
+	#[cfg(feature = "experimental-linux-managed-sync")]
+	pub(super) fn identity_maps(&self) -> io::Result<[Vec<u8>; 2]> {
+		const IDENTITY_MAP_LIMIT: usize = 128;
+		Ok([
+			read_proc(&self.thread, c"uid_map", IDENTITY_MAP_LIMIT)?,
+			read_proc(&self.thread, c"gid_map", IDENTITY_MAP_LIMIT)?,
+		])
+	}
+
 	fn thread_namespace(&self, name: &CStr, prefix: &[u8]) -> io::Result<u64> {
 		let namespace = fs::openat2(
 			&self.thread,

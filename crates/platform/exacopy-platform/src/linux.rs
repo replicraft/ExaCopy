@@ -19,6 +19,8 @@ mod source;
 mod stage;
 mod staging_capabilities;
 mod sync_preview;
+#[cfg(feature = "experimental-linux-managed-sync")]
+mod sync_profile_store;
 
 pub use handle::FileIdentity;
 pub use job::{
@@ -65,7 +67,19 @@ pub use stage::{
 
 pub use mount_observation::MountObservations;
 
+#[cfg(feature = "experimental-linux-managed-sync")]
+pub use sync_profile_store::{
+	SyncProfileHistory, SyncProfileSeed, SyncProfileStore, SyncProfileStoreError,
+	SyncProfileStoreRecord,
+};
+
 pub use sync_preview::{
 	SyncHistoryDirectory, SyncHistoryLocation, SyncHistoryReader, SyncPreviewEntry,
 	SyncPreviewError, SyncPreviewPair, SyncPreviewRoots, SyncPreviewSelection,
+};
+
+#[cfg(feature = "experimental-linux-managed-sync")]
+pub use sync_preview::{
+	ManagedSyncError, ManagedSyncExpectedObject, ManagedSyncExpectedRoot, ManagedSyncNativeScope,
+	ManagedSyncPreviewPair, ManagedSyncReadLease,
 };
