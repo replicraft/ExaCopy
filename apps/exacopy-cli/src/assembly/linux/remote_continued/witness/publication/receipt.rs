@@ -178,7 +178,10 @@ pub(in crate::assembly::linux::remote_continued) enum WitnessedReceiptError {
 		placement: WitnessReceiptPlacement,
 		#[cfg_attr(
 			feature = "experimental-verified-prefix-resume",
-			expect(dead_code, reason = "retains the precise failure from native receipt preparation")
+			expect(
+				dead_code,
+				reason = "retains the precise failure from native receipt preparation"
+			)
 		)]
 		cause: WitnessReceiptError<Error>,
 	},
@@ -193,12 +196,18 @@ pub(in crate::assembly::linux::remote_continued) enum WitnessedReceiptError {
 		ready: RemoteReplayBoundary,
 		#[cfg_attr(
 			feature = "experimental-verified-prefix-resume",
-			expect(dead_code, reason = "retains the observed receipt placement after failed promotion")
+			expect(
+				dead_code,
+				reason = "retains the observed receipt placement after failed promotion"
+			)
 		)]
 		placement: WitnessReceiptPlacement,
 		#[cfg_attr(
 			feature = "experimental-verified-prefix-resume",
-			expect(dead_code, reason = "retains the precise native receipt commitment failure")
+			expect(
+				dead_code,
+				reason = "retains the precise native receipt commitment failure"
+			)
 		)]
 		cause: WitnessReceiptError<Error>,
 	},
