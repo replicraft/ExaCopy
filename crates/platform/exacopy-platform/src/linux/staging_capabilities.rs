@@ -125,3 +125,7 @@ impl StageReader for ClosedStage<'_> {
 		ClosedStage::sync_stage_directory(self)
 	}
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/linux_staging_capabilities.rs"]
+mod tests;

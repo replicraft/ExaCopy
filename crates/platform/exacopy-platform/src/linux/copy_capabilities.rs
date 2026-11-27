@@ -13,6 +13,10 @@ use super::{
 	StageError,
 };
 
+#[cfg(test)]
+#[path = "../../tests/unit/linux_copy_capabilities.rs"]
+mod tests;
+
 impl CopySourceRoot for ReadRoot {
 	type Error = ReadError;
 	type Source = SourceFile;

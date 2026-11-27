@@ -216,3 +216,6 @@ fn authorization(binding: CopyBinding) -> PublishNoClobber {
 	};
 	effect
 }
+
+#[path = "../../../../tests/unit/linux/publication_stage.rs"]
+mod publication_stage;

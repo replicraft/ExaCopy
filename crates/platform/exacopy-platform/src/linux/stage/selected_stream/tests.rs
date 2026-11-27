@@ -1,5 +1,5 @@
 use std::fs::{self, File, FileTimes, Permissions};
-use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 use std::time::{Duration, SystemTime};
 
 use exacopy_endpoint::UnixComponent;
@@ -12,6 +12,9 @@ use crate::linux::job::STAGE;
 use crate::linux::source::SourceObservation;
 use crate::linux::{ClosedStage, DestinationRoot, StageDirectory, StageError};
 use crate::scratch::Scratch;
+
+#[path = "../../../../tests/unit/linux_selected_stream_admission.rs"]
+mod admission;
 
 const DIRECTORY: &str = "selected-stage";
 const PART: &str = "selected-part";
@@ -28,7 +31,18 @@ fn holds_the_original_stage_and_reports_the_local_profile() {
 		let stage = stage(&directory, bytes);
 		let identity = stage.identity();
 		let length = stage.length();
+		let location = stage.inspect_selected_stream_location().unwrap();
+		assert_eq!(location.binding, binding());
+		assert_eq!(location.stage, identity);
+		assert_eq!(location.directory, directory.identity());
+		assert_eq!(location.destination, root.identity());
+		assert_eq!(location.names.stage, component(PART));
+		assert_eq!(location.names.target, component(TARGET));
+
 		let ready = stage.prepare_selected_stream_metadata(length).unwrap();
+		let names = ready.names().unwrap();
+		assert_eq!(names.stage, component(PART));
+		assert_eq!(names.target, component(TARGET));
 		let seen = ready.observed();
 		assert_eq!(seen.binding(), binding());
 		assert_eq!(seen.destination(), root.identity());
@@ -111,19 +125,38 @@ fn recheck_refuses_changed_name_attributes_and_hard_links() {
 		let second = scratch.path(DIRECTORY).join("preserved-inode");
 		match change {
 			0 => {
+				let original = fs::metadata(&part).unwrap();
 				fs::rename(&part, &second).unwrap();
 				fs::write(&part, b"new occupant").unwrap();
+				let replacement = fs::metadata(&part).unwrap();
+				assert!(matches!(ready.recheck(), Err(StageError::IdentityChanged)));
+				let preserved = fs::metadata(&second).unwrap();
+				assert_eq!(
+					(preserved.dev(), preserved.ino()),
+					(original.dev(), original.ino())
+				);
+				let after = fs::metadata(&part).unwrap();
+				assert_eq!(
+					(after.dev(), after.ino()),
+					(replacement.dev(), replacement.ino())
+				);
+				assert_eq!(fs::read(&part).unwrap(), b"new occupant");
 			}
-			1 => fsetxattr(
-				File::open(&part).unwrap(),
-				c"user.exacopy",
-				b"visible",
-				XattrFlags::CREATE,
-			)
-			.unwrap(),
-			_ => fs::hard_link(&part, &second).unwrap(),
+			1 => {
+				fsetxattr(
+					File::open(&part).unwrap(),
+					c"user.exacopy",
+					b"visible",
+					XattrFlags::CREATE,
+				)
+				.unwrap();
+				assert!(ready.recheck().is_err());
+			}
+			_ => {
+				fs::hard_link(&part, &second).unwrap();
+				assert!(matches!(ready.recheck(), Err(StageError::UnsafeFile)));
+			}
 		}
-		assert!(ready.recheck().is_err());
 		if change != 1 {
 			assert_eq!(fs::read(second).unwrap(), PAYLOAD);
 		}
@@ -212,6 +245,23 @@ fn retained_stage_keeps_the_recovery_lease_and_requires_exact_mode() {
 		file.check_logical_eof().unwrap();
 		assert_eq!(bytes, PAYLOAD);
 		let retained = lease.prepare_retained_stage(&inventory, binding()).unwrap();
+		if mode == 0o600 {
+			let location = retained.inspect_selected_stream_location().unwrap();
+			assert_eq!(location.binding, binding());
+			assert_eq!(location.stage, file.identity());
+			assert_eq!(
+				location.directory,
+				inventory.stage_directory_identity().unwrap()
+			);
+			assert_eq!(location.destination, root.identity());
+			assert_eq!(location.names.stage, component(PART));
+			assert_eq!(location.names.target, component(TARGET));
+		} else {
+			assert!(matches!(
+				retained.inspect_selected_stream_location(),
+				Err(StageError::UnsafeFile)
+			));
+		}
 		let selected = retained.prepare_selected_stream_metadata(file.len());
 		if mode == 0o600 {
 			let ready = selected.unwrap();
