@@ -2,8 +2,11 @@
 
 The pure `exacopy-model::sync_successor` guard assesses one explicitly approved
 create-new action. This is a partial source slice of R-272 and INV-026. Its ten
-synthetic regressions passed in the `8c1a311` hosted coverage run. The exact
-coverage inventory registration still awaits verification. It returns an advisory generation;
+synthetic regressions passed in the `8c1a311` hosted coverage run. The corrected
+inventory passed at `b50ada3`: 97 model tests, 1,006/1,021 covered lines and
+441/466 covered branches under the unchanged 95% and 90% minimums.
+[Exact coverage run](https://github.com/replicraft/ExaCopy/actions/runs/46004576304).
+It returns an advisory generation;
 baseline persistence, pointer activation, native qualification, A-272 restart
 reconciliation and P-028 publication barriers remain open.
 

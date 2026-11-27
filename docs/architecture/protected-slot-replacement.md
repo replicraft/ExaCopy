@@ -145,9 +145,11 @@ one shared clock sample.
 The capability provider remains responsible for authenticating approval,
 truthful independent observations, physical layout exclusions and serialization.
 The returned guard keeps the lease and private model session. It exposes no
-journal append, relocation, publication, restoration or CLI operation. Its new
-source regressions and affected hosted checks are pending; no native protected
-effect or additional formal qualification follows from this advisory API.
+journal append, relocation, publication, restoration or CLI operation. All six
+source regressions passed in the `8c1a311` macOS opt-in test suite, which
+also passed strict Clippy. These controls exercise advisory admission; no
+native protected effect or additional formal qualification follows.
+[Exact hosted CI](https://github.com/replicraft/ExaCopy/actions/runs/46003782840).
 
 ## Native observation component
 
