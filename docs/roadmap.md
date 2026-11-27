@@ -73,7 +73,10 @@ model tests passed and the corrected inventory admitted 1,006/1,021 lines
 The stronger protected admission model in `ce1b039` adds an explicit
 authorization step before intent and five negative controls. At `b50ada3`,
 SANY rejected its initial record's closing-bracket indentation before state
-exploration. The one-bracket source correction awaits automatic verification.
+exploration. At `74dd691`, the corrected healthy search exhausted 262 states
+and the controller reported all 14 expected negative outcomes. The early
+snapshot contains the registered prior-history raw trace and summaries for
+the other 13 controls; final Rust and Miri evidence remains separate.
 The Windows short-write regressions in `576e1b0` passed both exact native
 selectors at `b50ada3`, with verified fixture cleanup. At `824521c`,
 P-078 failed before state exploration:
@@ -100,6 +103,12 @@ retains its own fixture, profile and artifact. Activation uses the passing
 P-078 model inputs and previously passed prebuild controls. Its native
 compiler preparation, image admission and five publication cases still
 require a verified hosted result. The v1 workflow and manifest are unchanged.
+
+The first v2 run at `9101b9f` refused duplicate target declarations in Cargo
+metadata before compiler preparation, ran zero publication cases and deleted
+its fixture. The target-aware correction requires the exact known declaration
+tuples while retaining the eight-package Windows closure. Its native result
+is pending. [First v2 attempt](https://github.com/replicraft/ExaCopy/actions/runs/46009182684)
 
 Workspace Clippy failed on Linux, macOS, and Windows at `aea84c9`.
 The protected-model type-alias follow-up passed Windows and macOS Clippy

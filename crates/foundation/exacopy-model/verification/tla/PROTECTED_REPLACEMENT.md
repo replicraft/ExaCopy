@@ -1,15 +1,20 @@
 # Protected replacement safety model
 
-The explicit admission transitions and five additional negative controls are
-integrated source awaiting the automatic formal gate. Earlier results apply
-to their recorded model revisions. This correspondence table identifies test
-analogues under trusted observations; it does not establish refinement or
-native qualification.
+At `74dd691`, the early TLC snapshot verified the explicit admission transitions
+and five additional negative controls. The healthy search exhausted 262 distinct
+states with an empty queue. The controller reported all 14 expected negative
+outcomes; the registered prior-history trace independently shows
+`FreshAdmission` failing at `AdmitReplacement`. The other 13 outcomes have
+source-bound controller summaries rather than separate archived raw traces.
+This correspondence table identifies test analogues under trusted observations;
+it does not establish refinement or native qualification.
+[Early TLC snapshot](https://github.com/replicraft/ExaCopy/actions/runs/46007719725/artifacts/15203546435).
 
 At `b50ada3`, SANY rejected the initial record's closing bracket at line 60
 before state exploration. The closing bracket is now indented inside the
 conjunction item. This correction changes no admission fact, transition,
-invariant, bound or negative-control oracle and awaits automatic verification.
+invariant, bound or negative-control oracle. The later snapshot verifies it;
+the earlier failed result remains retained.
 [Failed hosted CI](https://github.com/replicraft/ExaCopy/actions/runs/46004576369).
 
 This independent finite model covers one already verified regular-file
