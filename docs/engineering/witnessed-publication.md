@@ -161,14 +161,24 @@ The result JSON SHA-256 was
 Raw evidence for both hosted fixtures is retained in
 `target/agent-evidence/hosted-b82e95d/`.
 
-The component profile now registers a seventh selector for sealing, linking
-and promoting the original anonymous receipt inode through a separately
-reopened read-only descriptor after the writer closes. That selector was
-outside the six-case `b82e95d` run. Its native execution remains pending.
-The six-case run used component-level effect callbacks
-and literal journal bytes. Authenticated application kind-8/9 recording,
-receipt closeout and operational OP2 qualification require their own
-execution evidence.
+The later hosted execution at `bb6ebba` passed all seven exact component
+selectors as unprivileged UID 1001 on whole ext4, Linux `7.0.0-1018-aws`.
+The seventh selector confirmed sealing the original anonymous receipt
+inode, linking it with `AT_EMPTY_PATH` through a separately reopened
+read-only descriptor after the writer closed, and promoting the original
+inode without replacing an incumbent. The evidence confirms all 21
+listing and execution process drains and removal of the owned fixture
+and build directories. All 14 input hashes match the exact Git revision.
+The result JSON SHA-256 was
+`7f1588330c759c4eddb3863174b8eb50a2a8f872fe6c3c9c9084408850634d3f`.
+Raw evidence is retained under `target/agent-evidence/hosted-bb6ebba/`.
+[Hosted run](https://github.com/replicraft/ExaCopy/actions/runs/45930537061) ·
+[Native component report](https://github.com/replicraft/ExaCopy/actions/runs/45930537061/artifacts/15168666404)
+
+Both hosted runs used component-level effect callbacks and literal fixture
+bytes. Authenticated application kind-8/9 recording, the kind-42/18 receipt
+campaign, operational OP2 qualification, process-crash and power-loss
+qualification require separate execution evidence.
 
 ## Live receipt closeout
 
@@ -193,6 +203,31 @@ receipt reconstruction from a digest. Receipt restart and public receipt
 dispatch remain open.
 [Native receipt holder](../../crates/platform/exacopy-platform/src/linux/recovery/writer/witness_reservation/continuation/witness/publication/receipt.rs) ·
 [Application receipt binding](../../apps/exacopy-cli/src/assembly/linux/remote_continued/witness/publication/receipt.rs)
+
+## Read-only terminal inspection
+
+Private application composition can inspect a clean terminal kind 18 under
+one shared recovery lease. It independently selects the owner, signed scope
+and archived qualification before opening the job. It authenticates the
+held owner and journal from byte zero and requires the accepted terminal
+boundary to equal the actual journal extent.
+
+The native view holds the original stage directory, public target, witness
+and final receipt together. It requires the original private stage name and
+pending receipt name to be absent, the target and witness to name the exact
+two-link inode, and the final receipt to have its recorded single-link
+identity. Application read-back checks the full public BLAKE3 digest and
+exact canonical receipt bytes. It rechecks namespace, metadata, EOF and the
+selected native substrate before reporting a point-in-time association.
+The recorded live or recovered publication outcome remains unchanged.
+
+The inspector opens no mutation aperture and supplies no future authority.
+Private archive controls and Linux ARM64 compilation cover the implemented
+source. The two native component tests are ordinary Linux tests; their
+hosted execution and complete authenticated OP2 restart qualification remain
+pending. CLI dispatch remains disabled.
+[Native terminal view](../../crates/platform/exacopy-platform/src/linux/recovery/terminal.rs) ·
+[Application inspection](../../apps/exacopy-cli/src/assembly/linux/remote_journal/witnessed_inspection.rs)
 
 ## Executed evidence and remaining qualification
 

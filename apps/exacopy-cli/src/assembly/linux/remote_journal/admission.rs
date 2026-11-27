@@ -23,7 +23,7 @@ pub(in crate::assembly::linux) enum OwnerDialect {
 }
 
 impl OwnerDialect {
-	fn select(route: RemoteDownloadRoute, root: SftpPathRoot) -> Result<Self, Error> {
+	pub(super) fn select(route: RemoteDownloadRoute, root: SftpPathRoot) -> Result<Self, Error> {
 		match (route, root) {
 			(RemoteDownloadRoute::EmbeddedWireGuard { .. }, SftpPathRoot::AccountRelative) => {
 				Ok(Self::EmbeddedV1)

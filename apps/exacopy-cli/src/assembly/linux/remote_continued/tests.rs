@@ -100,6 +100,7 @@ fn actual_signed_kind40_must_form_the_exact_clean_successor() {
 		"published",
 	);
 	check_exact_live_witness_vector(&full, &trust, &selection);
+	terminal_inspection::check(&full, &trust, &selection);
 	let mut cursor = FrameReader::new(full.as_slice(), ChainHead::start());
 	let mut previous = 0;
 	let mut previous_head = ChainHead::start();
@@ -433,3 +434,4 @@ fn check_live_kind9_proposal(
 
 mod hosted_witness;
 mod receipt;
+mod terminal_inspection;

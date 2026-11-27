@@ -313,7 +313,7 @@ pub(super) fn check_current(
 	Ok(current)
 }
 
-fn read_owner(
+pub(super) fn read_owner(
 	file: &RecoveryFile,
 	profile: &LocalProfile,
 	dialect: OwnerDialect,
@@ -368,7 +368,7 @@ fn require_live_phase(
 	Ok(())
 }
 
-fn check_root(
+pub(super) fn check_root(
 	root: &DestinationRoot,
 	profile: &LocalProfile,
 	scope: &RemoteDownloadScope,

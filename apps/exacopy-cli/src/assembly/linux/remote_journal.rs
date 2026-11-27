@@ -25,6 +25,12 @@ mod lease;
 mod ledger;
 mod receipt;
 mod retry;
+#[cfg(test)]
+#[expect(
+	dead_code,
+	reason = "private selector-2 inspector awaits native qualification and application dispatch"
+)]
+pub(super) mod witnessed_inspection;
 
 pub(super) use admission::{CurrentGrant, RemoteActivation};
 pub use lease::RemoteRetryLease;
