@@ -278,6 +278,24 @@
         ],
         "purpose": "Build the opt-in local NTFS read-only CLI comparison."
       },
+      "windows-bootstrap-fixture": {
+        "status": "experimental",
+        "targets": ["x86_64-pc-windows-msvc"],
+        "enables": [
+          "dep:exacopy-journal",
+          "dep:exacopy-platform",
+          "exacopy-platform/experimental-windows-read",
+          "exacopy-platform/experimental-windows-copy"
+        ],
+        "resolution_probe": [
+          "exacopy-journal",
+          "exacopy-platform",
+          "exacopy-endpoint",
+          "exacopy-model",
+          "windows-sys"
+        ],
+        "purpose": "Compile the opt-in native Windows first-segment inspection fixture without selecting product dispatch."
+      },
       "experimental-apfs-copy": {
         "status": "experimental",
         "targets": [

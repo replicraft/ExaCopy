@@ -28,6 +28,7 @@ experimental-apfs-copy = ["dep:exacopy-content", "dep:exacopy-journal", "dep:exa
 experimental-windows-diff = ["dep:exacopy-diff", "dep:exacopy-endpoint", "dep:exacopy-platform", "exacopy-platform/experimental-windows-read"]
 
 windows-bootstrap-fixture = [
+	"dep:exacopy-journal",
 	"dep:exacopy-platform",
 	"exacopy-platform/experimental-windows-read",
 	"exacopy-platform/experimental-windows-copy",
@@ -83,11 +84,11 @@ zeroize.workspace = true
 [target.'cfg(target_os = "windows")'.dependencies]
 exacopy-diff = { workspace = true, optional = true }
 exacopy-endpoint = { workspace = true, optional = true }
+exacopy-journal = { workspace = true, optional = true }
 exacopy-platform = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "windows")'.dev-dependencies]
 ed25519-dalek.workspace = true
-exacopy-journal.workspace = true
 
 [lints]
 workspace = true
