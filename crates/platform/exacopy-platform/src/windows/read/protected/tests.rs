@@ -11,6 +11,8 @@ use super::{Error, read, read_into, security};
 fn path_admission_refuses_aliases_and_non_drive_spellings_without_reading() {
 	for path in [
 		r"C:\only-leaf",
+		"C:/private/selected",
+		r"C:\private\\selected",
 		r"C:drive-relative\selected",
 		r"\\server\share\file",
 		r"\\?\C:\private\selected",
