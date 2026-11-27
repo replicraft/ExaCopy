@@ -2,10 +2,9 @@
 
 ## Current selection and remaining work
 
-The source pin selects public APFS `8878ed18b4e4c424e0dcb3da145a1a6a29b51913`.
-The update adds mounted regressions for bounded xattr inventory and
-resource fork absence. Mounted production sources and selected dependency
-declarations match `88cb85a`.
+The source pin selects public APFS `9bba273002ebe5ffc54e7877ab636d88143df6ba`.
+The mounted package changes only its README. Mounted sources, tests and
+dependency declarations match `8878ed18`.
 Existing native results keep their recorded source and limits.
 ExaCopy uses `ReopenedStage::open_named` for read-only restart inspection,
 including bounded reads, the EOF probe and coherent live metadata.

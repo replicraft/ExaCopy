@@ -1,9 +1,9 @@
 # APFS private-stage recovery handoff
 
 The selected mounted APFS companion is public commit
-`8878ed18b4e4c424e0dcb3da145a1a6a29b51913` (`apfs-mounted` 0.1.0).
-The update adds mounted regressions for bounded xattr inventory and
-resource fork absence. Mounted production sources match `88cb85a`.
+`9bba273002ebe5ffc54e7877ab636d88143df6ba` (`apfs-mounted` 0.1.0).
+The mounted package changes only its README. Mounted sources, tests and
+dependency declarations match `8878ed18`.
 Earlier native results retain their revision and scope.
 Commit `4fa67b7` adds the owned-name and event-anchor constructor for the
 observation-only `ReopenedStage` API. ExaCopy uses it for restart read-back
