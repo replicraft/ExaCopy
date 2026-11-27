@@ -133,9 +133,10 @@ enum Schema {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "kebab-case")]
 enum WireRoute {
+	#[serde(rename = "direct-pinned-tcp-v1")]
 	DirectPinnedTcpV1,
+	#[serde(rename = "embedded-wireguard-tcp-v1")]
 	EmbeddedWireGuardTcpV1,
 }
 
@@ -194,6 +195,26 @@ mod tests {
 			"campaign_scope": "03".repeat(32),
 			"campaign_evidence": "04".repeat(32),
 		})
+	}
+
+	#[test]
+	fn trust_config_requires_the_canonical_embedded_wireguard_route() {
+		let mut trust = fixture();
+		trust["route"] = json!("embedded-wireguard-tcp-v1");
+		let selected = SelectedTrust::decode(trust.to_string().as_bytes())
+			.ok()
+			.map(|trust| trust.scope.route);
+		assert_eq!(
+			selected,
+			Some(RemoteQualificationRouteClass::EmbeddedWireGuardTcpV1),
+			"the documented embedded WireGuard route must parse"
+		);
+
+		trust["route"] = json!("embedded-wire-guard-tcp-v1");
+		assert!(matches!(
+			SelectedTrust::decode(trust.to_string().as_bytes()),
+			Err(Failure::InvalidRequest)
+		));
 	}
 
 	#[test]
