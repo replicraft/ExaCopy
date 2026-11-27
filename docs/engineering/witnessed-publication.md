@@ -223,9 +223,21 @@ The recorded live or recovered publication outcome remains unchanged.
 
 The inspector opens no mutation aperture and supplies no future authority.
 Private archive controls and Linux ARM64 compilation cover the implemented
-source. The two native component tests are ordinary Linux tests; their
-hosted execution and complete authenticated OP2 restart qualification remain
-pending. CLI dispatch remains disabled.
+source. The ordinary Ubuntu 24.04 native job at `09b96f5` passed both
+platform component tests in its 1,066-test run.
+[Ubuntu native job](https://github.com/replicraft/ExaCopy/actions/runs/45932645166/job/140288550762)
+
+- `terminal_inventory_pins_exact_records_and_refuses_late_pending_name`
+  checked the read lease's writer exclusion and exact held owner, journal,
+  public target and receipt, then refused a late pending name and preserved
+  its bytes.
+- `terminal_inventory_refuses_changed_journal_and_foreign_witness_inode`
+  refused a foreign witness with matching bytes and a replaced journal
+  segment with the original bytes.
+
+These ordinary native component tests used fixture records. Complete
+authenticated OP2 application restart qualification and CLI dispatch remain
+open.
 [Native terminal view](../../crates/platform/exacopy-platform/src/linux/recovery/terminal.rs) ·
 [Application inspection](../../apps/exacopy-cli/src/assembly/linux/remote_journal/witnessed_inspection.rs)
 

@@ -33,5 +33,9 @@ assertions, covering each approved stream comparison and private entry
 binding. This portable fixture temporarily exposes Linux coordinators for
 testing and does not execute the native Linux adapter. Raw results and
 exact source hashes remain in
-`/private/tmp/exacopy-public-apply-stage.7f8wBxAQ/review.md`. Native Linux
-execution and interruption qualification for this new path remain open.
+`/private/tmp/exacopy-public-apply-stage.7f8wBxAQ/review.md`.
+
+The later hosted whole-ext4 fixture at `09b96f5` exercised the real
+private staging coordinator and independently reopened its result under
+a read lease. Public apply, commit and interruption qualification remain
+open. [Native staging and inspection result](public-stage-inspection.md#native-stage-and-inspection-evidence)
