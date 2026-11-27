@@ -370,3 +370,7 @@ mod tests {
 		}
 	}
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/mount_observation.rs"]
+mod coverage_tests;

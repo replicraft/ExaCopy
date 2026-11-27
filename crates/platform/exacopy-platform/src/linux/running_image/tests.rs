@@ -15,3 +15,6 @@ fn pins_the_running_elf_and_refuses_reads_outside_its_observed_extent() {
 	image.read_exact_at(image.length(), &mut []).unwrap();
 	image.recheck_observation().unwrap();
 }
+
+#[path = "../../../tests/unit/running_image.rs"]
+mod size_admission;
