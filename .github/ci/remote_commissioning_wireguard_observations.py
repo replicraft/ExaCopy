@@ -15,6 +15,13 @@ CASES = (
     ("resume", 1), ("post-intent", 0),
 )
 CASE_TIMEOUT = 120
+# Linux v7.0 schedules a reactive keepalive after 10 s, can schedule one more
+# 10 s later, and can initiate a handshake after 15 s plus timer jitter. Leave
+# the client paused while the previous connection's carrier traffic settles.
+# https://github.com/torvalds/linux/blob/v7.0/drivers/net/wireguard/timers.c
+PEER_QUIET_SECONDS = 22
+PEER_SETTLE_SECONDS = 60
+PEER_SAMPLE_SECONDS = 1
 
 
 @dataclass(frozen=True)
@@ -33,6 +40,7 @@ class ObservationPhase(Enum):
     LINK_RECHECK = "link-recheck"
     CASE_SAMPLE = "case-sample"
     CASE_DELTA = "case-delta"
+    PEER_SETTLING = "peer-settling"
     CASE_ACKNOWLEDGEMENT = "case-acknowledgement"
 
 
@@ -43,15 +51,19 @@ class ObservationFailure:
     case: str | None
     before: Counters | None
     after: Counters | None
+    settling: dict | None
 
     def evidence(self):
-        return {
+        evidence = {
             "phase": self.phase.value,
             "case": self.case,
             "before": asdict(self.before) if self.before is not None else None,
             "after": asdict(self.after) if self.after is not None else None,
             "failure": failure(self.error),
         }
+        if self.settling is not None:
+            evidence["settling"] = self.settling
+        return evidence
 
 
 def numbers(fields, count):
@@ -121,9 +133,34 @@ def file_signal(path):
         pass
 
 
+def settle_peer(kernel, initial, halted, evidence):
+    quiet_since = started = time.monotonic()
+    deadline = started + PEER_SETTLE_SECONDS
+    previous = initial
+    while (remaining := deadline - time.monotonic()) > 0:
+        if halted.wait(min(PEER_SAMPLE_SECONDS, remaining)):
+            raise Blocked("carrier settling interrupted")
+        checkpoint()
+        current = snapshot(kernel)
+        now = time.monotonic()
+        evidence.update(latest=asdict(current), elapsed_ms=int((now - started) * 1000))
+        if (
+            current.endpoint != initial.endpoint or current.handshake < previous.handshake
+            or current.received < previous.received or current.sent < previous.sent
+        ):
+            raise Blocked("carrier settling observed changed peer or regressed counters")
+        if current != previous:
+            quiet_since = now
+            previous = current
+        elif now - quiet_since >= PEER_QUIET_SECONDS and now <= deadline:
+            evidence["observed_quiet_ms"] = int((now - quiet_since) * 1000)
+            return current
+    raise Blocked("carrier did not settle between network and local-only cases")
+
+
 def observe_cases(kernel, mailbox, halted, rows, failures):
     phase = ObservationPhase.INITIAL_SAMPLE
-    name = before = after = None
+    name = before = after = settling = None
     try:
         before = snapshot(kernel)
         phase = ObservationPhase.INITIAL_BASELINE
@@ -132,7 +169,7 @@ def observe_cases(kernel, mailbox, halted, rows, failures):
         phase = ObservationPhase.START_SIGNAL
         file_signal(mailbox / "start")
         for index, (name, count) in enumerate(CASES):
-            after = None
+            after = settling = None
             phase = ObservationPhase.CASE_RENDEZVOUS
             if not wait_file(mailbox / f"case-{index}.done", halted.is_set):
                 return
@@ -142,12 +179,20 @@ def observe_cases(kernel, mailbox, halted, rows, failures):
             after = snapshot(kernel)
             phase = ObservationPhase.CASE_DELTA
             check_delta(before, after, count)
-            rows.append({"case": name, "before": asdict(before), "after": asdict(after)})
+            row = {"case": name, "before": asdict(before), "after": asdict(after)}
+            next_baseline = after
+            if count == 1 and index + 1 < len(CASES) and CASES[index + 1][1] == 0:
+                phase = ObservationPhase.PEER_SETTLING
+                settling = {"before_case": CASES[index + 1][0], "required_quiet_ms": PEER_QUIET_SECONDS * 1000}
+                next_baseline = settle_peer(kernel, after, halted, settling)
+                kernel.recheck_link()
+                row["settling"] = settling
+            rows.append(row)
             phase = ObservationPhase.CASE_ACKNOWLEDGEMENT
             file_signal(mailbox / f"case-{index}.observed")
-            before = after
+            before = next_baseline
     except Exception as error:
-        failures.append(ObservationFailure(error, phase, name, before, after))
+        failures.append(ObservationFailure(error, phase, name, before, after, settling))
         file_signal(mailbox / "blocked")
 
 

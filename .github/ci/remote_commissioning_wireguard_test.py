@@ -437,9 +437,12 @@ class KernelFixtureTests(unittest.TestCase):
                     self.assertTrue(stop())
                     return ProcessResult("observer-stopped")
 
-                with patch.object(observations, "snapshot", side_effect=[
-                    initial, initial, initial, get, get, interrupted, resumed, last,
-                ]):
+                with (
+                    patch.object(observations, "snapshot", side_effect=[
+                        initial, initial, initial, get, get, interrupted, resumed, last,
+                    ]),
+                    patch.object(observations, "settle_peer", side_effect=lambda _peer, after, *_: after),
+                ):
                     with self.assertRaises(fixture.direct.EvidenceFailed):
                         fixture.execute_campaign(
                             Mock(), SimpleNamespace(wait=complete_cases), work, work,
@@ -453,6 +456,68 @@ class KernelFixtureTests(unittest.TestCase):
                     "before": asdict(resumed), "after": after, "failure": {"kind": "refused"},
                 })
                 self.assertFalse((mailbox / "case-6.observed").exists())
+
+    def test_local_case_uses_quiet_baseline_after_prior_connection(self):
+        initial = observations.Counters(0, 0, 0, None)
+        connected = observations.Counters(3490, 4780, 1, "127.0.0.1:44497")
+        late_transmit = observations.Counters(3490, 4940, 1, "127.0.0.1:44497")
+        cases = (("get", 1), ("incumbent", 0))
+        rows, failures = [], []
+        with tempfile.TemporaryDirectory() as scratch:
+            mailbox = Path(scratch)
+            now = 0
+
+            def wait(seconds):
+                nonlocal now
+                self.assertFalse((mailbox / "case-0.observed").exists())
+                now += seconds
+                return False
+
+            kernel = Mock()
+            halted = SimpleNamespace(is_set=lambda: False, wait=wait)
+            for index in range(len(cases)):
+                observations.file_signal(mailbox / f"case-{index}.done")
+            with (
+                patch.object(observations, "CASES", cases),
+                patch.object(observations, "time", SimpleNamespace(monotonic=lambda: now)),
+                patch.object(observations, "snapshot", side_effect=[
+                    initial, connected, late_transmit,
+                    *([late_transmit] * observations.PEER_QUIET_SECONDS), late_transmit,
+                ]),
+            ):
+                observations.observe_cases(kernel, mailbox, halted, rows, failures)
+            self.assertEqual(failures, [])
+            self.assertEqual(rows[0]["after"], asdict(connected))
+            self.assertEqual(rows[0]["settling"], {
+                "before_case": "incumbent", "latest": asdict(late_transmit),
+                "required_quiet_ms": 22000, "observed_quiet_ms": 22000, "elapsed_ms": 23000,
+            })
+            self.assertEqual(rows[1]["before"], asdict(late_transmit))
+            self.assertEqual(rows[1]["after"], asdict(late_transmit))
+            self.assertTrue((mailbox / "case-1.observed").exists())
+
+    def test_peer_settling_rejects_drift_and_unbounded_activity(self):
+        initial = observations.Counters(96, 112, 1, "127.0.0.1:49152")
+        changed_peer = observations.Counters(96, 128, 1, "127.0.0.1:49153")
+        regressed = observations.Counters(95, 128, 1, "127.0.0.1:49152")
+        active = [observations.Counters(96, i, 1, initial.endpoint) for i in range(113, 173)]
+        for samples, reason in (
+            ([changed_peer], "changed peer"), ([regressed], "regressed counters"), (active, "did not settle"),
+        ):
+            with self.subTest(reason=reason):
+                now = 0
+
+                def wait(seconds):
+                    nonlocal now
+                    now += seconds
+                    return False
+
+                with (
+                    patch.object(observations, "time", SimpleNamespace(monotonic=lambda: now)),
+                    patch.object(observations, "snapshot", side_effect=samples),
+                    self.assertRaisesRegex(Blocked, reason),
+                ):
+                    observations.settle_peer(Mock(), initial, SimpleNamespace(wait=wait), {})
 
     def test_public_telemetry_rejects_wrong_peer_and_non_loopback_endpoint(self):
         key = "01" * 32
