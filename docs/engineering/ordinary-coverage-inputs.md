@@ -44,6 +44,13 @@ lines. The existing per-crate 85% gate then evaluates the combined report.
 
 If native admission or measurement fails, the gate evaluates the ordinary
 report and the requested witness lane still fails. Failed capture or witness
-controls preserve the ordinary run and fail their own CI steps. This source
-integration has not yet executed in hosted CI; it grants no new filesystem
-or recovery qualification.
+controls preserve the ordinary run and fail their own CI steps.
+
+At `e95398a`, all four image controls, three campaign controls and seven
+native cases passed. Fixture cleanup was verified. The merge used exactly
+31 original objects and seven measured profiles, excluding all 14 listing
+profiles. All 90 reported files retained their ordinary line denominators.
+Platform coverage rose by 355 lines to 6,876/8,910 (77.1717%); the 85% gate
+still failed. Endpoint coverage remained 580/663 and core remained 34/34.
+[Exact coverage run](https://github.com/replicraft/ExaCopy/actions/runs/46029308664).
+These component measurements supply no restart or power-loss qualification.
