@@ -218,7 +218,16 @@ async fn run(
 		let Some(resume::CheckedStartup::Witnessed(startup)) = startup else {
 			return Err(resume::uncertain(&job));
 		};
-		return Ok(witness::run(original, job, connecting, &ssh, interrupted, startup).await);
+		return Ok(witness::run(
+			original,
+			job,
+			connecting,
+			&ssh,
+			interrupted,
+			startup,
+			grant_digest,
+		)
+		.await);
 	}
 	let startup = match startup {
 		None => None,

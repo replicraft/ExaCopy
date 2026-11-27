@@ -42,5 +42,7 @@ mod sync_preview;
 mod unix_path;
 #[cfg(all(target_os = "windows", feature = "experimental-windows-diff"))]
 mod windows;
+#[cfg(all(target_os = "linux", feature = "experimental-verified-prefix-resume"))]
+mod witness_archive;
 
 pub use command::run;

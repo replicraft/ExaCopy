@@ -29,6 +29,8 @@ use super::{outcome, resume, retry, selection};
 
 const GRANT_DOMAIN: &str = "ExaCopy Linux first witnessed resume grant binding v1";
 
+mod archive;
+
 pub(super) struct Selection {
 	pub(super) qualification: VerifiedRemoteWitnessQualification,
 	pub(super) consent: ExplicitWitnessSelection,
@@ -103,8 +105,13 @@ pub(super) async fn run(
 	ssh: &SshProfile,
 	interrupted: &Interrupt,
 	startup: Box<CheckedOriginalWitnessStartup<'_>>,
+	base_grant_digest: [u8; 32],
 ) -> RemoteOutcome {
 	let qualification = *request.qualification.digest().as_bytes();
+	let archive = match archive::SelectionSeed::capture(&request, base_grant_digest) {
+		Ok(archive) => archive,
+		Err(cause) => return RemoteOutcome::failed(cause, Some(job)),
+	};
 	// Retain the original shared lease and its donor pins through authentication.
 	let result = retry::with_connection(
 		connecting,
@@ -124,7 +131,7 @@ pub(super) async fn run(
 		Err(error) => retry::project(Err(error), job, interrupted.cancelled(), true),
 		Ok((result, retirement)) => {
 			let report = match result {
-				Ok(result) => finish(result, job, qualification, interrupted.cancelled()),
+				Ok(result) => finish(result, job, qualification, interrupted.cancelled(), archive),
 				Err(code) => RemoteOutcome::failed(code, Some(job)),
 			};
 			#[cfg(feature = "experimental-ssh-wireguard")]
@@ -144,6 +151,7 @@ fn finish(
 	job: RemoteJob,
 	qualification: [u8; 32],
 	cancelled: bool,
+	archive: archive::SelectionSeed,
 ) -> RemoteOutcome {
 	match result {
 		Ok(OriginalWitnessResult::Published {
@@ -156,6 +164,7 @@ fn finish(
 		}) => RemoteOutcome::published_with_witness(
 			job,
 			WitnessedSummary {
+				archive_selection: archive.committed(committed, receipt_digest),
 				committed,
 				length,
 				receipt_digest,

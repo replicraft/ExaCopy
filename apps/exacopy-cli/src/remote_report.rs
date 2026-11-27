@@ -91,21 +91,8 @@ enum Outcome {
 	Failed { error: RemoteFailure },
 }
 
-#[derive(Serialize)]
-struct PublishedReceipt {
-	#[serde(flatten)]
-	job: JobReport,
-	length: String,
-	#[serde(skip_serializing_if = "Option::is_none")]
-	blake3: Option<String>,
-	receipt_digest: String,
-	qualification_digest: String,
-	metadata_policy: &'static str,
-	omissions: Vec<&'static str>,
-	#[cfg(feature = "experimental-verified-prefix-resume")]
-	#[serde(skip_serializing_if = "Option::is_none")]
-	retained_witness: Option<RetainedWitnessReport>,
-}
+mod receipt;
+use receipt::PublishedReceipt;
 
 #[derive(Serialize)]
 struct JobReport {
@@ -179,6 +166,8 @@ impl RemoteOutcome {
 						.collect(),
 					#[cfg(feature = "experimental-verified-prefix-resume")]
 					retained_witness: None,
+					#[cfg(feature = "experimental-verified-prefix-resume")]
+					archive_selection: None,
 				},
 			}),
 			None => Self::recovery_required(RemotePublication::Published, job),

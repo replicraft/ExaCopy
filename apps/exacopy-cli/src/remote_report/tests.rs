@@ -38,6 +38,7 @@ fn published_with_omissions_uses_dedicated_nonclean_status_and_precise_evidence(
 	assert_eq!(json["receipt"]["job_directory_bytes_hex"], "6a6f622dff");
 	assert_eq!(json["receipt"]["blake3"], digest_hex(&[6; 32]));
 	assert!(json["receipt"].get("retained_witness").is_none());
+	assert!(json["receipt"].get("archive_selection").is_none());
 	assert!(stderr.is_empty());
 }
 
@@ -116,6 +117,8 @@ fn published_report_fixture() -> RemoteOutcome {
 				.collect(),
 			#[cfg(feature = "experimental-verified-prefix-resume")]
 			retained_witness: None,
+			#[cfg(feature = "experimental-verified-prefix-resume")]
+			archive_selection: None,
 		},
 	})
 }
@@ -138,28 +141,11 @@ fn observed_incumbent_with_unconfirmed_record_preserves_conflict_evidence() {
 #[cfg(feature = "experimental-verified-prefix-resume")]
 #[test]
 fn witnessed_receipt_projection_reports_committed_evidence_and_retention() {
-	use exacopy_journal::frame::ChainHead;
-	use exacopy_journal::remote_download::replay::RemoteReplayBoundary;
-
-	let outcome = RemoteOutcome::published_with_witness(
-		job(),
-		WitnessedSummary {
-			committed: RemoteReplayBoundary {
-				head: ChainHead::after(18, [9; 32]).unwrap(),
-				offset: 4096,
-			},
-			length: 64,
-			receipt_digest: [7; 32],
-			canonical_receipt_length: 1024,
-			qualification: [8; 32],
-			witness_links: 2,
-			metadata_omissions: SftpDataOnlyV1::omissions(),
-		},
-	);
+	let outcome = RemoteOutcome::published_with_witness(job(), archive::summary());
 	let json = serde_json::to_value(outcome.report()).unwrap();
 	assert_eq!(outcome.exit_code(), 11);
 	assert_eq!(json["schema"], "exacopy.cli.witnessed_remote_download");
-	assert_eq!(json["schema_version"], "1.0");
+	assert_eq!(json["schema_version"], "1.1");
 	assert!(json["receipt"].get("blake3").is_none());
 	assert_eq!(json["publication"], "published");
 	assert_eq!(
@@ -198,3 +184,6 @@ fn job() -> RemoteJob {
 		directory: std::ffi::OsString::from_vec(b"job-\xff".to_vec()).into(),
 	}
 }
+
+#[cfg(feature = "experimental-verified-prefix-resume")]
+mod archive;
