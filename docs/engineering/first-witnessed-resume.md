@@ -5,9 +5,12 @@ It reuses its held private stage after comparing the retained prefix with the
 current remote file through the same authenticated SFTP handle used for the tail.
 It rereads the remote prefix and does not reduce prefix network traffic.
 
-Source integration and its regression cases are present. Compilation, execution
-and native operation-2 qualification for this new CLI composition remain pending.
-Existing lower-level tests or synthetic report projections do not qualify it.
+The first hosted Linux lane at `b82d0f3` passed 183 controls, including all eleven
+required selection, authority and report cases. That cohort also exposed strict
+lint and report-inventory failures, retained with their focused follow-ups.
+The integrated repair must pass its own CI before promotion. Native operation-2
+qualification for this CLI composition remains pending; lower-level tests and
+synthetic report projections do not qualify it.
 
 ## Explicit selection
 
