@@ -2,6 +2,8 @@
 #![cfg(target_os = "windows")]
 
 use std::fmt::Write as _;
+use std::fs::{self, File, OpenOptions};
+use std::io::{Read as _, Write as _};
 use std::os::windows::ffi::OsStrExt as _;
 use std::path::Path;
 
@@ -9,8 +11,9 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use exacopy_journal::frame::{ChainHead, FrameReader};
 use exacopy_journal::windows_bootstrap::{
 	FIRST_SEGMENT_BYTES, FIRST_SEGMENT_NAME, JOURNAL_DIRECTORY_NAME, OWNER_BYTES, OWNER_FILE_NAME,
-	WindowsBootstrapInspectionError, WindowsBootstrapOwner, WindowsBootstrapOwnerError,
-	WindowsBootstrapRoles, WindowsBootstrapSelection, inspect, job_directory_name, sign,
+	WindowsBootstrapBytes, WindowsBootstrapInspectionError, WindowsBootstrapOwner,
+	WindowsBootstrapOwnerError, WindowsBootstrapPrefix, WindowsBootstrapRoles,
+	WindowsBootstrapSelection, inspect, job_directory_name, sign,
 };
 use exacopy_journal::{JournalJobId, OwnerError, OwnerProfileId, OwnerToken};
 use exacopy_platform::ProtectedSnapshotError;
@@ -22,7 +25,7 @@ use exacopy_platform::windows::{
 #[path = "windows_bootstrap/fixture.rs"]
 mod fixture;
 
-use fixture::{Provisioned, SelectedRoot, identity, read_selection};
+use fixture::{Provisioned, SelectedFixture, SelectedRoot, identity, read_selection};
 
 const JOB: [u8; 16] = [
 	0x01, 0x8d, 0x45, 0xbe, 0, 0, 0x70, 0, 0x80, 0, 0, 0, 0, 0, 0, 1,
@@ -46,27 +49,47 @@ fn component(units: &[u16]) -> WindowsComponent<'_> {
 	WindowsComponent::new(units).expect("fixed bootstrap component")
 }
 
-fn inspect_fixture(
-	root: &Path,
-	selected_root: SelectedRoot,
-	expected: &WindowsBootstrapSelection<'_>,
-	provisioned: &Provisioned,
-) {
-	let job_name = job_directory_name(expected.job);
-	let layout = WindowsBootstrapLayout {
-		job: component(&job_name),
+fn layout(job_name: &[u16]) -> WindowsBootstrapLayout<'_> {
+	WindowsBootstrapLayout {
+		job: component(job_name),
 		owner: component(&OWNER_FILE_NAME),
 		journal: component(&JOURNAL_DIRECTORY_NAME),
 		first_segment: component(&FIRST_SEGMENT_NAME),
 		owner_bytes: OWNER_BYTES,
 		first_segment_bytes: FIRST_SEGMENT_BYTES,
-	};
+	}
+}
+
+fn root_selection(selected: SelectedRoot) -> WindowsBootstrapRootSelection {
+	WindowsBootstrapRootSelection {
+		volume_guid: selected.guid,
+		volume_serial: selected.serial,
+		file_id: selected.file_id,
+	}
+}
+
+fn observed_roles(records: &WindowsBootstrapRecords<'_>) -> WindowsBootstrapRoles {
+	let observed = records.roles();
+	WindowsBootstrapRoles::new(
+		identity(observed.root),
+		identity(observed.job_directory),
+		identity(observed.owner_file),
+		identity(observed.journal_directory),
+		identity(observed.first_segment),
+	)
+	.expect("distinct same-volume held roles")
+}
+
+fn inspect_fixture(
+	root: &Path,
+	selected_root: SelectedRoot,
+	expected: &WindowsBootstrapSelection<'_>,
+	provisioned: &Provisioned,
+) -> WindowsBootstrapPrefix {
+	let job_name = job_directory_name(expected.job);
+	let layout = layout(&job_name);
 	let root_units: Vec<_> = root.as_os_str().encode_wide().collect();
-	let root_selection = WindowsBootstrapRootSelection {
-		volume_guid: selected_root.guid,
-		volume_serial: selected_root.serial,
-		file_id: selected_root.file_id,
-	};
+	let root_selection = root_selection(selected_root);
 	let foreign_serial = WindowsBootstrapRootSelection {
 		volume_serial: selected_root.serial ^ (1 << 63),
 		..root_selection
@@ -77,15 +100,7 @@ fn inspect_fixture(
 	));
 	let mut records = WindowsBootstrapRecords::open(&root_units, root_selection, layout)
 		.expect("admit all five held roles");
-	let observed = records.roles();
-	let roles = WindowsBootstrapRoles::new(
-		identity(observed.root),
-		identity(observed.job_directory),
-		identity(observed.owner_file),
-		identity(observed.journal_directory),
-		identity(observed.first_segment),
-	)
-	.expect("distinct same-volume held roles");
+	let roles = observed_roles(&records);
 	assert_eq!(roles, provisioned.roles);
 
 	let owner_bytes = records
@@ -125,6 +140,10 @@ fn inspect_fixture(
 	assert_eq!(boundary.head(), original.head());
 	assert_eq!(boundary.head().sequence(), 1);
 	assert_eq!(boundary.end_offset(), FIRST_SEGMENT_BYTES as u64);
+	boundary
+}
+
+fn print_boundary(boundary: WindowsBootstrapPrefix) {
 	let mut digest = String::with_capacity(64);
 	for byte in boundary.head().digest() {
 		write!(digest, "{byte:02x}").expect("hex format to String");
@@ -165,10 +184,132 @@ fn admits_only_the_selected_held_bootstrap_history() {
 			)
 			.expect("sign the original five native identities")
 		});
-	inspect_fixture(
+	verify_counterexamples(&fixture, &selection, &provisioned.bytes);
+	let historical = inspect_fixture(
 		&fixture.root,
 		fixture.root_observation,
 		&selection,
 		&provisioned,
 	);
+	println!(
+		r#"{{"copied_job":"refused","hardlink":"refused","named_stream":"refused","suffix":"refused"}}"#
+	);
+	print_boundary(historical);
+}
+
+fn verify_counterexamples(
+	fixture: &SelectedFixture,
+	original: &WindowsBootstrapSelection<'_>,
+	bytes: &WindowsBootstrapBytes,
+) {
+	let mut copied_job = JOB;
+	copied_job[15] = 2;
+	let copied_job = JournalJobId::from_bytes(copied_job).expect("different selected UUIDv7");
+	let copied_selection = WindowsBootstrapSelection {
+		job: copied_job,
+		..*original
+	};
+	let copied = fixture::populate(
+		&fixture.root,
+		fixture.drive,
+		fixture.copied_roles,
+		copied_selection.job,
+		|_| WindowsBootstrapBytes {
+			owner: bytes.owner,
+			first_segment: bytes.first_segment,
+		},
+	);
+	let job = job_directory_name(copied_selection.job);
+	let layout = layout(&job);
+	let root: Vec<_> = fixture.root.as_os_str().encode_wide().collect();
+	let selected_root = root_selection(fixture.root_observation);
+	let mut records = WindowsBootstrapRecords::open(&root, selected_root, layout)
+		.expect("admit separate private job and the copied record extents");
+	let roles = observed_roles(&records);
+	assert_eq!(roles, copied.roles);
+	let owner = records
+		.read_owner()
+		.expect("read the complete copied owner");
+	assert_eq!(owner.as_slice(), bytes.owner.as_slice());
+
+	let mut copy = [0; FIRST_SEGMENT_BYTES];
+	let mut segment = records.first_segment();
+	segment
+		.read_exact(&mut copy)
+		.expect("read the complete copied segment");
+	assert_eq!(segment.read(&mut [0]).expect("probe copied segment EOF"), 0);
+	segment.finish().expect("confirm copied record custody");
+	assert_eq!(copy, bytes.first_segment);
+	assert!(matches!(
+		inspect(&owner, records.first_segment(), &copied_selection, roles),
+		Err(WindowsBootstrapInspectionError::Owner(
+			WindowsBootstrapOwnerError::Job
+		))
+	));
+	drop(records);
+
+	let segment = fixture::first_segment_path(&fixture.root, copied_selection.job);
+	let alias = segment.with_file_name("owned-negative-hardlink");
+	fs::hard_link(&segment, &alias).expect("add one hardlink to the owned copied segment");
+	fixture::confirm_two_link_names(
+		fixture.drive,
+		copied.roles.first_segment(),
+		&segment,
+		&alias,
+	);
+	assert_eq!(
+		WindowsBootstrapRecords::open(&root, selected_root, layout).err(),
+		Some(ProtectedSnapshotError::Unprotected),
+		"refuse the owned second name before data open"
+	);
+	assert_eq!(
+		fs::read(&segment).unwrap().as_slice(),
+		bytes.first_segment.as_slice()
+	);
+	assert_eq!(
+		fs::read(&alias).unwrap().as_slice(),
+		bytes.first_segment.as_slice()
+	);
+	fs::remove_file(&alias).expect("remove only the owned hardlink");
+
+	let ads = segment.with_file_name("00000000000000000001.exajnl:owned-negative");
+	let mut stream = File::create_new(&ads).expect("create only the owned named stream");
+	let named_bytes = b"synthetic stream";
+	stream.write_all(named_bytes).unwrap();
+	stream.sync_all().unwrap();
+	drop(stream);
+	assert_eq!(
+		WindowsBootstrapRecords::open(&root, selected_root, layout).err(),
+		Some(ProtectedSnapshotError::Unprotected),
+		"refuse the owned named stream before data open"
+	);
+	assert_eq!(
+		fs::read(&segment).unwrap().as_slice(),
+		bytes.first_segment.as_slice()
+	);
+	assert_eq!(fs::read(&ads).unwrap().as_slice(), named_bytes);
+	fs::remove_file(&ads).expect("remove only the owned named stream");
+
+	let records = WindowsBootstrapRecords::open(&root, selected_root, layout)
+		.expect("re-admit both copied records once aliases are gone");
+	assert_eq!(observed_roles(&records), copied.roles);
+	drop(records);
+
+	let suffix = [0xA7];
+	let mut file = OpenOptions::new().append(true).open(&segment).unwrap();
+	file.write_all(&suffix).unwrap();
+	file.sync_all().unwrap();
+	drop(file);
+	assert_eq!(
+		WindowsBootstrapRecords::open(&root, selected_root, layout).err(),
+		Some(ProtectedSnapshotError::Changed),
+		"refuse the actual extra segment extent before data open"
+	);
+	let retained = fs::read(segment).expect("read preserved copied segment and suffix");
+	assert_eq!(retained.len(), FIRST_SEGMENT_BYTES + suffix.len());
+	assert_eq!(
+		&retained[..FIRST_SEGMENT_BYTES],
+		bytes.first_segment.as_slice()
+	);
+	assert_eq!(&retained[FIRST_SEGMENT_BYTES..], suffix.as_slice());
 }

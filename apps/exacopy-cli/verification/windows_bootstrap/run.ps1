@@ -68,9 +68,13 @@ function Confirm-BootstrapFixture {
             $named.Dispose()
         }
     }
-    Assert-ExaCopyExactEntries $Roles[0].Path @([IO.Path]::GetFileName($Roles[1].Path))
+    if ($Roles.Count -ne 9) { throw 'Expected the original and copied job roles.' }
+    Assert-ExaCopyExactEntries $Roles[0].Path @(
+        [IO.Path]::GetFileName($Roles[1].Path), [IO.Path]::GetFileName($Roles[5].Path))
     Assert-ExaCopyExactEntries $Roles[1].Path @('owner.cbor', 'journal')
     Assert-ExaCopyExactEntries $Roles[3].Path @('00000000000000000001.exajnl')
+    Assert-ExaCopyExactEntries $Roles[5].Path @('owner.cbor', 'journal')
+    Assert-ExaCopyExactEntries $Roles[7].Path @('00000000000000000001.exajnl')
 }
 
 $Image = Resolve-ExaCopyWindowsPath $Image
@@ -89,6 +93,7 @@ $roles = [Collections.Generic.List[object]]::new()
 $receipt = $null
 $launchAttempted = $false
 $fixtureComplete = $false
+$fixturePassed = $false
 try {
     $scratchAncestors = New-StageAncestorCustody $ScratchParent $owner {}
     $imageAncestors = New-StageAncestorCustody ([IO.Path]::GetDirectoryName($Image)) $owner {}
@@ -128,13 +133,25 @@ try {
     $segmentPath = Join-Path $journal '00000000000000000001.exajnl'
     $ownerId = New-BootstrapEmptyRecord $ownerPath $owner
     $segmentId = New-BootstrapEmptyRecord $segmentPath $owner
-    # Storage role order is also the independently selected launcher order.
+    $copyJob = Join-Path $fixture '.exacopy-018d45be-0000-7000-8000-000000000002'
+    $copyJournal = Join-Path $copyJob 'journal'
+    New-StagePrivateFixture $copyJob $owner
+    New-StagePrivateFixture $copyJournal $owner
+    $copyOwnerPath = Join-Path $copyJob 'owner.cbor'
+    $copySegmentPath = Join-Path $copyJournal '00000000000000000001.exajnl'
+    $copyOwnerId = New-BootstrapEmptyRecord $copyOwnerPath $owner
+    $copySegmentId = New-BootstrapEmptyRecord $copySegmentPath $owner
+    # Keep the same root and distinctly held role sets for both exact jobs.
     foreach ($entry in @(
         @{ Path = $fixture; Directory = $true; Created = $rootId }
         @{ Path = $job; Directory = $true; Created = $null }
         @{ Path = $ownerPath; Directory = $false; Created = $ownerId }
         @{ Path = $journal; Directory = $true; Created = $null }
         @{ Path = $segmentPath; Directory = $false; Created = $segmentId }
+        @{ Path = $copyJob; Directory = $true; Created = $null }
+        @{ Path = $copyOwnerPath; Directory = $false; Created = $copyOwnerId }
+        @{ Path = $copyJournal; Directory = $true; Created = $null }
+        @{ Path = $copySegmentPath; Directory = $false; Created = $copySegmentId }
     )) {
         $pin = [ExaCopyQualification.ReadDiffCustody]::HoldNode($entry.Path, $entry.Directory, $false)
         $role = [pscustomobject]@{ Path = $entry.Path; Directory = $entry.Directory; Pin = $pin; Id = $null }
@@ -146,8 +163,11 @@ try {
     $fixtureComplete = $true
     Write-StageAclEvidence $fixture $owner 'before' $evidence
 
-    $roleIds = ($roles | ForEach-Object { Get-BootstrapIdentity $guid $_.Id }) -join ';'
-    [ordered]@{ image_sha256 = $observedHash.ToLowerInvariant(); fixture = $fixture; role_ids = $roleIds } |
+    $roleIds = ($roles | Select-Object -First 5 | ForEach-Object { Get-BootstrapIdentity $guid $_.Id }) -join ';'
+    $copyRoles = @($roles[0]) + @($roles | Select-Object -Skip 5)
+    $copyRoleIds = ($copyRoles | ForEach-Object { Get-BootstrapIdentity $guid $_.Id }) -join ';'
+    [ordered]@{ image_sha256 = $observedHash.ToLowerInvariant(); fixture = $fixture
+        role_ids = $roleIds; copied_role_ids = $copyRoleIds } |
         ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence 'selection.json')
     $stdout = Join-Path $evidence 'fixture.stdout'
     $stderr = Join-Path $evidence 'fixture.stderr'
@@ -156,7 +176,8 @@ try {
     $receipt = [ExaCopyQualification.PublicationProcess]::Run($Image,
         @('--ignored', '--exact', $selector, '--show-output', '--test-threads=1'), $fixture,
         @("SystemRoot=$env:SystemRoot", "SystemDrive=$env:SystemDrive",
-          "EXACOPY_WINDOWS_BOOTSTRAP_ROOT=$fixture", "EXACOPY_WINDOWS_BOOTSTRAP_ROLE_IDS=$roleIds"),
+          "EXACOPY_WINDOWS_BOOTSTRAP_ROOT=$fixture", "EXACOPY_WINDOWS_BOOTSTRAP_ROLE_IDS=$roleIds",
+          "EXACOPY_WINDOWS_BOOTSTRAP_COPY_ROLE_IDS=$copyRoleIds"),
         $stdout, $stderr, 30000)
     $receipt | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $evidence 'process.json')
     if (!$receipt.Started -or !$receipt.Assigned -or !$receipt.JobListConfigured -or !$receipt.Resumed -or
@@ -169,8 +190,10 @@ try {
     Assert-ReadDiffExactResult $selector $receipt.ExitCode $output
     $heads = [regex]::Matches($output, '(?m)^\{"extent":310,"historical_head":"[0-9a-f]{64}","sequence":1\}\r?$')
     if ($heads.Count -ne 1) { throw 'Expected one historical bootstrap boundary.' }
-    Set-Content -LiteralPath (Join-Path $evidence 'historical-head.json') -Value $heads[0].Value
+    $negativeControls = [regex]::Matches($output, '(?m)^\{"copied_job":"refused","hardlink":"refused","named_stream":"refused","suffix":"refused"\}\r?$')
+    if ($negativeControls.Count -ne 1) { throw 'Expected one complete bootstrap negative-control result.' }
     Confirm-StageAncestorCustody $imageAncestors
+    $fixturePassed = $true
 } catch {
     if ($evidence -and (Get-ExaCopyNodeExists $evidence)) {
         Set-Content -LiteralPath (Join-Path $evidence 'runner-error.txt') -Value $_.ToString()
@@ -179,7 +202,7 @@ try {
 } finally {
     try {
         if ($fixtureComplete -and (!$launchAttempted -or
-            ($null -ne $receipt -and $receipt.Drained -and $receipt.ActiveProcesses -eq 0))) {
+            ($fixturePassed -and $null -ne $receipt -and $receipt.Drained -and $receipt.ActiveProcesses -eq 0))) {
             Confirm-BootstrapFixture $roles $scratchAncestors $rootId
             # The tree and exact original identities were rechecked after drain.
             # Release redundant observations before using handle-bound disposal.
@@ -189,9 +212,12 @@ try {
             $fixturePin.Dispose()
             if (Get-ExaCopyNodeExists $fixture) { throw 'The original fixture name remained after disposal.' }
             Set-Content -LiteralPath (Join-Path $evidence 'cleanup.txt') -Value 'original fixture removed'
+            if ($fixturePassed) {
+                Set-Content -LiteralPath (Join-Path $evidence 'historical-head.json') -Value $heads[0].Value
+            }
         } elseif ($fixture) {
-            Set-Content -LiteralPath (Join-Path $evidence 'cleanup.txt') -Value 'fixture retained after incomplete custody'
-            Write-Warning "Retaining the fixture because setup or process custody was incomplete. $fixture"
+            Set-Content -LiteralPath (Join-Path $evidence 'cleanup.txt') -Value 'fixture retained after incomplete qualification or custody'
+            Write-Warning "Retaining the fixture because qualification or process custody was incomplete. $fixture"
         }
     } catch {
         if ($evidence -and (Get-ExaCopyNodeExists $evidence)) {

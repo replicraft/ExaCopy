@@ -38,6 +38,7 @@ pub(super) struct SelectedFixture {
 	pub(super) drive: u8,
 	pub(super) root_observation: SelectedRoot,
 	pub(super) roles: WindowsBootstrapRoles,
+	pub(super) copied_roles: WindowsBootstrapRoles,
 }
 
 pub(super) fn read_selection() -> SelectedFixture {
@@ -48,8 +49,36 @@ pub(super) fn read_selection() -> SelectedFixture {
 	let drive = u8::try_from(units.next().expect("fixture drive")).expect("ASCII fixture drive");
 	assert!(drive.is_ascii_alphabetic() && units.next() == Some(u16::from(b':')));
 	assert_eq!(units.next(), Some(u16::from(b'\\')), "absolute drive root");
-	let material =
-		std::env::var("EXACOPY_WINDOWS_BOOTSTRAP_ROLE_IDS").expect("original five role identities");
+	let (root_observation, roles) = read_roles("EXACOPY_WINDOWS_BOOTSTRAP_ROLE_IDS");
+	let (_, copied_roles) = read_roles("EXACOPY_WINDOWS_BOOTSTRAP_COPY_ROLE_IDS");
+	assert_eq!(roles.root(), copied_roles.root(), "one selected root");
+	let original = [
+		roles.job_directory(),
+		roles.owner_file(),
+		roles.journal_directory(),
+		roles.first_segment(),
+	];
+	let copied = [
+		copied_roles.job_directory(),
+		copied_roles.owner_file(),
+		copied_roles.journal_directory(),
+		copied_roles.first_segment(),
+	];
+	assert!(
+		original.iter().all(|id| !copied.contains(id)),
+		"distinct job fixtures"
+	);
+	SelectedFixture {
+		root,
+		drive: drive.to_ascii_uppercase(),
+		root_observation,
+		roles,
+		copied_roles,
+	}
+}
+
+fn read_roles(variable: &str) -> (SelectedRoot, WindowsBootstrapRoles) {
+	let material = std::env::var(variable).expect("launcher-selected five role identities");
 	const ROLE_BYTES: usize = 36 + 1 + 16 + 1 + 32;
 	assert_eq!(
 		material.len(),
@@ -57,23 +86,18 @@ pub(super) fn read_selection() -> SelectedFixture {
 		"bounded five-role selection"
 	);
 	let identities = material.split(';').map(parse_identity).collect::<Vec<_>>();
-	let [root_observation, job, owner, journal, segment] = identities.as_slice() else {
-		panic!("exactly five original role identities are required")
+	let [root, job, owner, journal, segment] = identities.as_slice() else {
+		panic!("exactly five role identities are required")
 	};
 	let roles = WindowsBootstrapRoles::new(
-		root_observation.into_identity(),
+		root.into_identity(),
 		job.into_identity(),
 		owner.into_identity(),
 		journal.into_identity(),
 		segment.into_identity(),
 	)
-	.expect("distinct selected original roles");
-	SelectedFixture {
-		root,
-		drive: drive.to_ascii_uppercase(),
-		root_observation: *root_observation,
-		roles,
-	}
+	.expect("distinct selected roles");
+	(*root, roles)
 }
 
 fn parse_identity(material: &str) -> SelectedRoot {
@@ -204,4 +228,36 @@ pub(super) fn populate(
 	drop(owner);
 	drop(segment);
 	Provisioned { roles, bytes }
+}
+
+pub(super) fn first_segment_path(root: &Path, job: JournalJobId) -> PathBuf {
+	root.join(OsString::from_wide(&job_directory_name(job)))
+		.join(OsString::from_wide(&JOURNAL_DIRECTORY_NAME))
+		.join(OsString::from_wide(&FIRST_SEGMENT_NAME))
+}
+
+pub(super) fn confirm_two_link_names(
+	drive: u8,
+	expected: WindowsBootstrapFileIdentity,
+	original: &Path,
+	link: &Path,
+) {
+	let pin = |path| {
+		OpenOptions::new()
+			.read(true)
+			.share_mode(FILE_SHARE_READ_WRITE)
+			.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+			.open(path)
+			.expect("hold one owned link name")
+	};
+	let original = pin(original);
+	let link = pin(link);
+	assert_eq!(
+		observe(drive, &original, WindowsBootstrapRoleKind::RegularFile),
+		expected
+	);
+	assert_eq!(
+		observe(drive, &link, WindowsBootstrapRoleKind::RegularFile),
+		expected
+	);
 }

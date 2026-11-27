@@ -5,11 +5,11 @@ the protected fixed-NTFS record reader. It supports read-side work toward
 R-039–041. Windows CLI copy, journal append, published-stage reconciliation
 under R-044 and durability qualification remain separate work.
 
-The provisioner exclusively creates a current-user private root, the selected
-job and journal directories, and two empty protected record files. It retains
-all five native identities before signing. The Rust fixture compares those
-identities through the original handles, writes and flushes the two records,
-rechecks the identities and closes both writers before inspection.
+The provisioner creates a private root and two private job layouts, each
+with two empty protected records. It retains the common root identity and
+all eight distinct child identities. The fixture confirms and rechecks
+the original held identities when populating each pair, then closes both
+writers before inspection.
 
 The reader admits both metadata pins before either data handle. The application
 uses the owner bytes and five role values from that same holder with an
@@ -18,11 +18,21 @@ historical head only after portable inspection and the segment's native
 `finish()` both succeed. A byte limiter or cached logical EOF cannot replace
 the final held EOF probes and namespace/security rechecks.
 
-The initial native case checks the accepted sole bootstrap, a high-bit change
-to the independently selected root serial, and a wrong selected verification
-key. It does not close the full native matrix for copied records, hard links,
-ADS/ACL changes, rebinding, torn records or terminal I/O failure. Portable
-codec controls and earlier component profiles retain their own narrower scope.
+The native case confirms the selected original history, a wrong root
+serial, and a wrong verification key. It also checks both original signed
+records copied verbatim into the second job. Both copied files match the
+original bytes through physical EOF under different native identities.
+The alternate native and logical selections use the same second UUIDv7.
+Authentication refuses the copied original owner with the typed job mismatch.
+
+The alternate segment supplies separate hardlink and named-stream refusals.
+The fixture confirms both link names refer to the same object and verifies
+that the targeted bytes survive each refusal. It removes the owned link
+and named stream and confirms admission again before adding a one-byte
+suffix. The held reader refuses the extra extent and preserves the suffix.
+The original history is successfully inspected after these controls.
+ACL mutation, in-flight rebinding, terminal I/O failure and crash behavior
+remain outside these checks.
 
 The reader requires a stable non-elevated primary user token, a fixed local
 NTFS volume and its existing strict ancestor policy. Provisioning excludes
@@ -33,9 +43,9 @@ alone do not exclude security, attribute or stream writers.
 The `windows-bootstrap-fixture` feature enables the explicit ignored test
 target `windows_bootstrap`. `run.ps1` accepts a separately selected exact test
 image and digest, uses owned process supervision, and removes the fixture only
-after confirmed drain and exact custody checks. Incomplete custody retains
-the named evidence. Native compilation and execution of this initial fixture
-remain pending. No public command or ordinary feature default is changed.
+after confirmed drain, exact outcome, control marker and custody checks.
+Failure retains the physical fixture for that run. The historical head
+is retained only after cleanup. Native execution of the new controls is pending. No public command or ordinary feature default is changed.
 
 The separate `windows-ntfs-bootstrap.yml` workflow admits one exact canonical
 main-push job and its source, attempt and image. Its provider checks the
