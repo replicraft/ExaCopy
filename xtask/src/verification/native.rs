@@ -14,6 +14,7 @@ mod closed_ext4;
 mod custody;
 mod genesis;
 mod integration;
+mod linked_unit;
 mod managed_sync;
 mod public_stage;
 mod windows_publication;
@@ -364,6 +365,10 @@ fn check_rust_case(
 			root,
 			"native Rust test owner must have a src/lib.rs library target",
 		);
+		return;
+	}
+	if case.source.starts_with("tests/unit") {
+		linked_unit::check(root, manifest, case, findings);
 		return;
 	}
 	let app_stage = public_stage::matches_case(owner.name.as_str(), profile, case);
