@@ -146,7 +146,9 @@ function Confirm-HostedBootstrapJob {
     $token = [Environment]::GetEnvironmentVariable($tokenName)
     [Environment]::SetEnvironmentVariable($tokenName, $null)
     $context.Remove($tokenName)
-    if (!$token -or $token.Length -gt 512 -or $token -cnotmatch '\A[A-Za-z0-9_-]+\z') {
+    # Accept the bounded RFC 6750 bearer alphabet without inspecting token claims.
+    if (!$token -or $token.Length -gt 4096 -or
+        ![regex]::IsMatch($token, '\A[A-Za-z0-9._~+/-]+=*\z')) {
         throw 'The scoped hosted job metadata credential is unavailable.'
     }
     $os = Get-CimInstance Win32_OperatingSystem
