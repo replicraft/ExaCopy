@@ -101,7 +101,8 @@ fn postbarrier_record_must_extend_the_exact_capture_head() {
 	let fixture = Fixture::new(ImagePolicy::RetainObject);
 	let actual = fixture.actual(RESTORED_ORIGINAL);
 	let valid = ack(2, fixture.capture_record(actual));
-	let defects: [(&str, fn(&mut Durable<CaptureRecord<'static>>)); 3] = [
+	type AlterCaptureRecord = fn(&mut Durable<CaptureRecord<'static>>);
+	let defects: [(&str, AlterCaptureRecord); 3] = [
 		("stale embedded capture head", |durable| {
 			durable.record.capture_head = head(1);
 		}),
@@ -164,7 +165,8 @@ fn image_identity_cannot_alias_a_protected_file_or_held_root() {
 fn image_cannot_use_a_stale_capture_or_expired_object_authority() {
 	let fixture = Fixture::new(independent_image());
 	let actual = fixture.actual(RESTORED_ORIGINAL);
-	let defects: [(&str, fn(&mut ImageObservation<'static>)); 3] = [
+	type AlterImage = fn(&mut ImageObservation<'static>);
+	let defects: [(&str, AlterImage); 3] = [
 		("approved inode reported at a different slot", |image| {
 			image.captured.slot = image.read.context.target;
 		}),
