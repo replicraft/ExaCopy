@@ -1468,3 +1468,33 @@ All feature paths and package source reviewed. No build script, authored unsafe,
 Source review only. No build, test, Cargo Vet replay, cryptographic,
 timing, or native execution result is claimed.
 """
+
+[[audits.zmij]]
+who = "OpenAI Codex (automated paired dependency source review)"
+criteria = "safe-to-deploy"
+version = "1.0.23"
+notes = """
+2026-11-27. Two independent whole-package source reviews of the locked
+registry archive SHA-256
+29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b.
+All 17 archive members matched the inspected source. The archive claims
+source revision 7b7cc48b58028e8af7be87e94c0c1c8936f1a57c.
+
+Reviewed sealed f32/f64 inputs, all exponent and significand classes,
+compressed power tables, fixed 24-byte output, initialized-prefix and
+UTF-8 invariants, scalar/x86/NEON paths, size/Apple configuration and the
+optional no-panic integration. The default runtime has no allocation or
+ambient I/O. The build script invokes only the configured trusted compiler.
+Dependency packages remain separate audit subjects.
+
+Recorded discretion under the built-in criterion: big-endian AArch64 NEON
+digit ordering can produce incorrect or malformed numerical text. The
+reviewed stores, extents and returned UTF-8 remain bounded and initialized;
+this record does not certify numerical equivalence or big-endian round trips.
+A private cfg(test) table accessor has an incorrect bound, but no production
+caller and no out-of-range caller in the archived tests. The original
+findings and their disposition remain in the source-review evidence.
+
+Static source review only. No dependency build, test, SIMD/native execution,
+round-trip campaign or Cargo Vet replay was performed for this record.
+"""

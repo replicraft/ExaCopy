@@ -70,6 +70,15 @@ frozen Cargo Vet replay removed exactly those six missing entries, reducing
 runs still failed the workspace gate. Evidence and the original findings
 remain under `target/agent-evidence/audit-six-integration/`.
 
+The paired source review of `zmij 1.0.23` accepted an exact-version
+`safe-to-deploy` record with explicit built-in discretion. Both readers
+verified all 17 locked archive members and reviewed buffer, table, SIMD and
+UTF-8 invariants. A big-endian AArch64 NEON numeric-order defect and a private
+test-helper bounds defect remain recorded. This is no numerical round-trip or
+native qualification. No dependency code ran; hosted Cargo Vet replay is
+pending. The local review and inventories are retained under
+`target/agent-evidence/dependency-source-continuation/zmij/`.
+
 ## Records left open
 
 | Package | Finding or unresolved review boundary |
@@ -80,7 +89,7 @@ remain under `target/agent-evidence/audit-six-integration/`.
 | `toml_parser 1.1.5+spec-1.1.0` | Standard event receivers do not automatically apply the separately available recursion guard. Explicit guarded fixtures passed. The public entry-point and receiver depth contract remains open in this review. |
 | `futures-task 0.3.34` | Borrowed-waker pointer reconstruction has an unresolved public `Arc::from_raw` precondition, despite compatibility with the inspected standard-library implementation. Ownership tests passed; they do not settle that contract question. |
 | `memchr 2.8.3` | Source/provenance and several native feature tests were inspected, but the whole-version review was unfinished, including optional logging behavior. No audit record was issued. |
-| `serde_json 1.0.154` and `zmij 1.0.23` | The additional whole-version review was unfinished. No new audit record was issued. Existing typed CLI serialization tests are a narrower result. |
+| `serde_json 1.0.154` | Two source reviews verified all 90 archive members and withheld the whole-version record: the public safe reader does not enforce the invariant needed by its unchecked UTF-8 conversion under std or alloc. Optional raw-value grammar validity is a separate concern. No reproduction ran, and no direct low-level reader use was identified in ExaCopy's bounded typed input paths. |
 | `proptest 1.12.0` | Source review found that a nested runner can inherit and open the outer runner's internal replay channel without selecting its own fork. The current std-only feature selection excludes that path; 13 model integration tests passed. Whole-version `safe-to-run` remains withheld pending disposition. |
 | `slab 0.4.12` | Optional Serde decoding allocates holes up to the largest map key before returning a value for caller validation. Native and Miri ownership tests passed, but the whole-version `safe-to-deploy` record remains withheld. Current locked selection uses std without Serde. Evidence: `/private/tmp/exacopy-slab-vet.CXdsE3`. |
 | `aead 0.5.2` | Optional STREAM advances its nonce position only after successful delegation; a fallible postfix tag append can fail after message mutation. The failed-call disposition remains unresolved. The inspected ExaCopy feature selection excludes STREAM. |
