@@ -91,25 +91,73 @@ fn refuses_spellings_subject_to_edge_rewriting() {
 
 #[test]
 fn interior_code_unit_admission_matches_the_literal_filename_alphabet() {
-	let forbidden = [
-		'\0', '\u{0001}', '\u{0002}', '\u{0003}', '\u{0004}', '\u{0005}', '\u{0006}', '\u{0007}',
-		'\u{0008}', '\t', '\n', '\u{000B}', '\u{000C}', '\r', '\u{000E}', '\u{000F}', '\u{0010}',
-		'\u{0011}', '\u{0012}', '\u{0013}', '\u{0014}', '\u{0015}', '\u{0016}', '\u{0017}',
-		'\u{0018}', '\u{0019}', '\u{001A}', '\u{001B}', '\u{001C}', '\u{001D}', '\u{001E}',
-		'\u{001F}', '<', '>', ':', '"', '/', '\\', '|', '?', '*',
-	];
-	let mut raw = [u16::from(b'x'), 0, u16::from(b'x')];
+	use WindowsNameError::{
+		AmbiguousEdge, Colon, DotComponent, InvalidCharacter, Nul, ReservedDevice, Separator,
+	};
+
+	let [x, c, o, m, n, space, dot] = [b'x', b'C', b'o', b'M', b'N', b' ', b'.'].map(u16::from);
+	let [l, p, t] = [b'L', b'p', b'T'].map(u16::from);
 	for unit in 0..=u16::MAX {
-		raw[1] = unit;
-		let valid = char::from_u32(u32::from(unit)).is_none_or(|ch| !forbidden.contains(&ch));
-		match WindowsComponent::new(&raw) {
-			Ok(name) => {
-				assert!(valid, "accepted forbidden code unit {unit:#06x}");
-				assert_eq!(name.as_units(), &raw);
+		// Surrogates have no scalar value and are valid raw units in every fixture.
+		let scalar = char::from_u32(u32::from(unit));
+		let forbidden = match scalar {
+			Some('\0') => Some(Nul),
+			Some('/' | '\\') => Some(Separator),
+			Some(':') => Some(Colon),
+			Some('\u{0001}'..='\u{001F}') => Some(InvalidCharacter),
+			Some('<' | '>' | '"' | '|' | '?' | '*') => Some(InvalidCharacter),
+			_ => None,
+		};
+		let leading = (scalar == Some(' ')).then_some(AmbiguousEdge);
+		let trailing = matches!(scalar, Some(' ' | '.')).then_some(AmbiguousEdge);
+		let singleton = match scalar {
+			Some('.') => Some(DotComponent),
+			_ => leading,
+		};
+		let serial = matches!(scalar, Some('1'..='9' | '¹' | '²' | '³')).then_some(ReservedDevice);
+		let con_middle = matches!(scalar, Some('O' | 'o')).then_some(ReservedDevice);
+
+		let cases: [(&[u16], Option<WindowsNameError>); 7] = [
+			(&[unit], singleton.or(forbidden)),
+			(&[unit, x], leading.or(forbidden)),
+			(&[x, unit], trailing.or(forbidden)),
+			(&[x, unit, x], forbidden),
+			(&[c, o, m, unit, space, dot, x], forbidden.or(serial)),
+			(&[l, p, t, unit, space, dot, x], forbidden.or(serial)),
+			(&[c, unit, n, space, dot, x], forbidden.or(con_middle)),
+		];
+		for (raw, expected) in cases {
+			match expected {
+				Some(error) => assert_eq!(WindowsComponent::new(raw), Err(error), "{raw:04x?}"),
+				None => {
+					let name = WindowsComponent::new(raw)
+						.unwrap_or_else(|error| panic!("refused {raw:04x?}: {error}"));
+					assert!(core::ptr::eq(name.as_units(), raw), "{raw:04x?}");
+				}
 			}
-			Err(error) => assert!(!valid, "refused code unit {unit:#06x}: {error}"),
 		}
 	}
+}
+
+#[test]
+fn mixed_violations_keep_the_typed_refusal_precedence() {
+	use WindowsNameError::{AmbiguousEdge, Colon, InvalidCharacter, Nul, Separator, TooLong};
+
+	for (name, expected) in [
+		(" \\file", AmbiguousEdge),
+		("file:\0.", AmbiguousEdge),
+		("NUL.\0/stream", Nul),
+		("NUL./\0stream", Separator),
+		("CON.txt:stream?", Colon),
+		("CON.txt?:stream", InvalidCharacter),
+	] {
+		assert_refused(name, expected);
+	}
+
+	let mut oversized = [u16::from(b'x'); MAX_WINDOWS_COMPONENT_UNITS + 1];
+	oversized[0] = u16::from(b' ');
+	oversized[1] = 0;
+	assert_eq!(WindowsComponent::new(&oversized), Err(TooLong));
 }
 
 #[test]
