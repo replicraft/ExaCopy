@@ -68,13 +68,51 @@ foreach ($sampleFailure in @(
     @{ Role = $build; Code = 145; Attributes = [uint32]0x10; Detail = 'BuildRoot (type=directory, win32=145, attributes=0x00000010)' },
     @{ Role = $fixture; Code = 16; Attributes = $null; Detail = 'FixtureRoot (type=unknown, win32=16, attributes=unavailable)' }
 )) {
-    $refusal = $failure.Invoke($null, [object[]]@($sampleFailure.Role, $sampleFailure.Code, $sampleFailure.Attributes))
+    $refusal = $failure.Invoke($null, [object[]]@(
+        $sampleFailure.Role, $sampleFailure.Code, $sampleFailure.Attributes, [Type]::Missing))
     if ($refusal.NativeErrorCode -ne $sampleFailure.Code -or
         $refusal.Message -cne "Native nonrecursive disposition was refused for $($sampleFailure.Detail).") {
         throw 'The fixture disposition diagnostic lost its path-free role, exact native status or type.'
     }
 }
 Write-Output 'Synthetic disposition diagnostic controls passed.'
+
+$native = [ExaCopyQualification.DirectoryCustody]
+$privateStatic = [Reflection.BindingFlags]'NonPublic, Static'
+$readOnly = $native.GetMethod('IsReadOnlyBuildFile', $privateStatic)
+if (!$readOnly.Invoke($null, [object[]]@([uint32]0x21, [uint32]0)) -or
+    $readOnly.Invoke($null, [object[]]@([uint32]0x20, [uint32]0))) {
+    throw 'Only the observed read-only regular file may select extended disposition.'
+}
+foreach ($observed in @(
+    @{ Attributes = 0x11; Tag = 0 }, @{ Attributes = 0x41; Tag = 0 },
+    @{ Attributes = 0x401; Tag = 0 }, @{ Attributes = 0x21; Tag = 1 }
+)) {
+    Assert-Refused {
+        try {
+            $readOnly.Invoke($null, [object[]]@([uint32]$observed.Attributes, [uint32]$observed.Tag))
+        } catch {
+            $cause = $_.Exception
+            while ($cause.InnerException) { $cause = $cause.InnerException }
+            throw $cause
+        }
+    } 'The selected build file is not a plain file.'
+}
+$dispositionEx = $native.GetNestedType('DispositionInfoEx', [Reflection.BindingFlags]::NonPublic)
+$infoClass = $native.GetNestedType('FileInfoClass', [Reflection.BindingFlags]::NonPublic)
+$extended = [Enum]::Parse($infoClass, 'DispositionEx')
+if ([int]$extended -ne 21 -or [Runtime.InteropServices.Marshal]::SizeOf([type]$dispositionEx) -ne 4 -or
+    $native.GetField('DispositionDelete', $privateStatic).GetRawConstantValue() -ne 0x01 -or
+    $native.GetField('DispositionIgnoreReadOnlyAttribute', $privateStatic).GetRawConstantValue() -ne 0x10) {
+    throw 'Extended disposition must match the Windows SDK class, buffer size and flags.'
+}
+$extendedRefusal = $failure.Invoke($null, [object[]]@($entry, 87, [uint32]0x21, $extended))
+if ($extendedRefusal.NativeErrorCode -ne 87 -or
+    $extendedRefusal.Message -cne
+        'Native nonrecursive extended disposition was refused for BuildEntry (type=file, win32=87, attributes=0x00000021).') {
+    throw 'Extended disposition refusal must preserve the exact native result and operation.'
+}
+Write-Output 'Synthetic read-only build disposition controls passed.'
 
 $user = 'S-1-5-21-1-2-3-1001'
 $token = @{ user_sid = $user; administrator_enabled = $true }

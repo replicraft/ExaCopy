@@ -17,7 +17,11 @@ namespace ExaCopyQualification
         private const uint OpenExisting = 3;
         private const uint OpenReparsePoint = 0x00200000;
         private const uint BackupSemantics = 0x02000000;
+        private const uint ReadOnly = 0x0001;
+        private const uint Device = 0x0040;
         private const uint ReparsePoint = 0x0400;
+        private const uint DispositionDelete = 0x00000001;
+        private const uint DispositionIgnoreReadOnlyAttribute = 0x00000010;
         private const uint Directory = 0x0010;
         private const uint FileTypeDisk = 1;
         private const int SharingViolation = 32;
@@ -36,6 +40,7 @@ namespace ExaCopyQualification
             Disposition = 4,
             AttributeTag = 9,
             Identity = 18,
+            DispositionEx = 21,
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -68,6 +73,12 @@ namespace ExaCopyQualification
         {
             // FILE_DISPOSITION_INFO.DeleteFile is a one-byte BOOLEAN.
             public byte DeleteFile;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct DispositionInfoEx
+        {
+            public uint Flags;
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -190,7 +201,35 @@ namespace ExaCopyQualification
             throw DispositionFailure(role, error, attributes);
         }
 
-        private static Win32Exception DispositionFailure(CleanupRole role, int error, uint? attributes)
+        public static void MarkBuildFileForDeletion(SafeFileHandle handle)
+        {
+            Require(GetAttributeTag(handle, FileInfoClass.AttributeTag, out var tag,
+                Size<AttributeTagInfo>()), "Could not observe the selected build file before disposition.");
+            if (!IsReadOnlyBuildFile(tag.Attributes, tag.Tag))
+            {
+                MarkForDeletion(handle, CleanupRole.BuildEntry);
+                return;
+            }
+
+            // DELETE was granted on this already selected handle. The extra flag
+            // applies only to disposition. No attribute write or POSIX unlink.
+            var information = new DispositionInfoEx { Flags = DispositionDelete | DispositionIgnoreReadOnlyAttribute };
+            if (!SetDispositionEx(handle, FileInfoClass.DispositionEx, ref information, Size<DispositionInfoEx>()))
+            {
+                var error = Marshal.GetLastWin32Error();
+                throw DispositionFailure(CleanupRole.BuildEntry, error, tag.Attributes, FileInfoClass.DispositionEx);
+            }
+        }
+
+        private static bool IsReadOnlyBuildFile(uint attributes, uint tag)
+        {
+            if ((attributes & (Directory | Device | ReparsePoint)) != 0 || tag != 0)
+                throw new IOException("The selected build file is not a plain file.");
+            return (attributes & ReadOnly) != 0;
+        }
+
+        private static Win32Exception DispositionFailure(CleanupRole role, int error, uint? attributes,
+            FileInfoClass informationClass = FileInfoClass.Disposition)
         {
             string kind = "unknown";
             string flags = "unavailable";
@@ -199,8 +238,9 @@ namespace ExaCopyQualification
                 kind = (attributes.Value & Directory) == Directory ? "directory" : "file";
                 flags = FormattableString.Invariant($"0x{attributes.Value:X8}");
             }
+            var operation = informationClass == FileInfoClass.DispositionEx ? "extended disposition" : "disposition";
             return new Win32Exception(error, FormattableString.Invariant(
-                $"Native nonrecursive disposition was refused for {role} (type={kind}, win32={error}, attributes={flags})."));
+                $"Native nonrecursive {operation} was refused for {role} (type={kind}, win32={error}, attributes={flags})."));
         }
 
         private static uint Size<T>() where T : struct
@@ -241,5 +281,9 @@ namespace ExaCopyQualification
         [DllImport("kernel32.dll", EntryPoint = "SetFileInformationByHandle", ExactSpelling = true, SetLastError = true)]
         private static extern bool SetDisposition(SafeFileHandle handle, FileInfoClass kind,
             ref DispositionInfo information, uint size);
+
+        [DllImport("kernel32.dll", EntryPoint = "SetFileInformationByHandle", ExactSpelling = true, SetLastError = true)]
+        private static extern bool SetDispositionEx(SafeFileHandle handle, FileInfoClass kind,
+            ref DispositionInfoEx information, uint size);
     }
 }

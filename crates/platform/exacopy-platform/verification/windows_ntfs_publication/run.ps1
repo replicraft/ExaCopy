@@ -370,7 +370,7 @@ try {
             try {
                 if ($null -ne $buildPin) {
                     Remove-HeldReadDiffFixture $fixture $build $fixturePin $fixtureGuard $fixtureId $buildPin $buildId $volume $ancestors `
-                        -IncludeHiddenBuildEntries
+                        -IncludeHiddenBuildEntries -AllowReadOnlyBuildFiles
                 } else {
                     Confirm-StageNoResidue $fixture
                     if ($null -ne $fixtureGuard) { $fixtureGuard.Dispose() }
