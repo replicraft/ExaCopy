@@ -14,6 +14,17 @@ bundled selection and process controls before reproducing the Cargo timeout.
 Its archive is artifact `15201400361` from run `46003782963`, SHA-256
 `b9c813d373109066d31fa2904bd325c84583d1ae284f89e4262d4b3ed2eb64b5`.
 
+The first v2 run at `9101b9f` passed both prebuild control bundles and the
+metadata child, then refused the compiler graph before preparation or test
+execution. Cargo retained Linux, macOS and Windows declarations for two
+selected dependency records. The targetless checker treated them as duplicate
+edges. The correction requires all ten exact root declarations and admits
+only their six Windows edges into the unchanged eight-package graph. Unknown,
+missing, duplicate or detached declarations still refuse. The failed run
+deleted its fixture and retained artifact `15202671606`, SHA-256
+`049297752f47cc0956e8b10bbc23cbe59c26cf8a37130d4d085b701f33733df5`.
+The corrected admission awaits native qualification.
+
 ## Scope and entry point
 
 At `824521c`, all twelve P-078 invocations returned TLC parser exit 150 before

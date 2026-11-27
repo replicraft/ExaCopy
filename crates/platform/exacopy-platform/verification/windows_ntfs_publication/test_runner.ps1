@@ -759,6 +759,9 @@ function Test-PreparedPublicationCompilerGraph {
     $platform = "$repository\crates\platform\exacopy-platform"
     $manifest = "$platform\Cargo.toml"
     $source = "$platform\src\lib.rs"
+    $windows = 'cfg(target_os = "windows")'
+    $linux = 'cfg(target_os = "linux")'
+    $macos = 'cfg(target_os = "macos")'
     $parts = @(
         @{ name = 'exacopy-platform'; dir = $platform; dev = @('exacopy-diff', 'exacopy-endpoint', 'windows-sys'); normal = @('exacopy-endpoint', 'exacopy-model', 'windows-sys') },
         @{ name = 'exacopy-core'; dir = "$repository\crates\foundation\exacopy-core"; normal = @('uuid') },
@@ -785,8 +788,12 @@ function Test-PreparedPublicationCompilerGraph {
         if ($part.name -ceq 'exacopy-platform') { $node.features = @('experimental-windows-copy') }
         foreach ($dependency in @(@($part.normal) + @($part.dev) | Where-Object { $_ } | Sort-Object -Unique)) {
             $kinds = @()
-            if ($dependency -cin $part.normal) { $kinds += @{ kind = $null } }
-            if ($dependency -cin $part.dev) { $kinds += @{ kind = 'dev' } }
+            $target = if ($part.name -ceq 'exacopy-platform') { $windows } else { $null }
+            if ($dependency -cin $part.normal) { $kinds += @{ kind = $null; target = $target } }
+            if ($dependency -cin $part.dev) { $kinds += @{ kind = 'dev'; target = $target } }
+            if ($part.name -ceq 'exacopy-platform' -and $dependency -cin @('exacopy-endpoint', 'exacopy-model')) {
+                $kinds += @{ kind = $null; target = $linux }, @{ kind = $null; target = $macos }
+            }
             $node.deps += @{ pkg = $dependency; dep_kinds = $kinds }
         }
         $metadata.packages += $package
@@ -798,13 +805,44 @@ function Test-PreparedPublicationCompilerGraph {
     }
     $ids = @(Read-FixtureGraph)
     Require ($ids.Count -eq 8 -and $ids[0] -ceq 'exacopy-platform') 'The finite compiler graph must return the selected package first.'
+    $platformNode = $metadata.resolve.nodes[0]
+    $endpoint = $platformNode.deps | Where-Object { $_.pkg -ceq 'exacopy-endpoint' }
+    $endpointKinds = $endpoint.dep_kinds
+    $endpoint.dep_kinds = @($endpointKinds | Where-Object { $null -ne $_.kind -or $_.target -cne $windows })
+    Require-Refusal { Read-FixtureGraph } 'foreign declarations cannot replace a selected Windows normal edge'
+    $endpoint.dep_kinds = $endpointKinds + @(@{ kind = $null; target = $linux })
+    Require-Refusal { Read-FixtureGraph } 'duplicate foreign target declaration'
+    $endpoint.dep_kinds = $endpointKinds + @(@{ kind = $null; target = $windows })
+    Require-Refusal { Read-FixtureGraph } 'duplicate Windows normal declaration'
+    foreach ($omitted in @($linux, $macos)) {
+        $endpoint.dep_kinds = @($endpointKinds | Where-Object { $_.target -cne $omitted })
+        Require-Refusal { Read-FixtureGraph } "missing known foreign target declaration: $omitted"
+    }
+    $endpoint.dep_kinds = @($endpointKinds | Where-Object { $_.target -cne $macos }) +
+        @(@{ kind = $null; target = 'cfg(unix)' })
+    Require-Refusal { Read-FixtureGraph } 'unreviewed target predicate'
+    $endpoint.dep_kinds = @($endpointKinds | Where-Object { $_.target -cne $macos }) +
+        @(@{ kind = 'dev'; target = $macos })
+    Require-Refusal { Read-FixtureGraph } 'foreign declaration with the wrong dependency kind'
+    $endpoint.dep_kinds = @($endpointKinds | Where-Object { $_.target -ceq $windows })
+    $platformDeps = $platformNode.deps
+    $platformNode.deps += @{ pkg = 'exacopy-endpoint'; dep_kinds = @($endpointKinds | Where-Object { $_.target -cne $windows }) }
+    Require-Refusal { Read-FixtureGraph } 'foreign declarations detached from their Windows dependency record'
+    $platformNode.deps = $platformDeps
+    $endpoint.dep_kinds = $endpointKinds
+
+    $diffNode = $metadata.resolve.nodes[4]
+    $diffDeps = $diffNode.deps
+    $diffNode.deps += @{ pkg = 'unused-dev-package'; dep_kinds = @(@{ kind = 'dev'; target = $windows }) }
+    Require (@(Read-FixtureGraph).Count -eq 8) 'Non-root dev dependencies stay outside the selected compiler graph.'
+    $diffNode.deps = $diffDeps
     $original = $metadata.packages[5].targets
     foreach ($kind in @('custom-build', 'proc-macro')) {
         $metadata.packages[5].targets = $original + @(@{ kind = @($kind); crate_types = @($kind) })
         Require-Refusal { Read-FixtureGraph } "unreviewed dependency $kind target"
     }
     $metadata.packages[5].targets = $original
-    $metadata.resolve.nodes[5].deps = @(@{ pkg = 'windows-link'; dep_kinds = @(@{ kind = $null }) })
+    $metadata.resolve.nodes[5].deps = @(@{ pkg = 'windows-link'; dep_kinds = @(@{ kind = $null; target = $null }) })
     Require-Refusal { Read-FixtureGraph } 'unreviewed selected compiler edge'
 }
 Test-PreparedPublicationCompilerGraph

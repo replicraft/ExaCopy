@@ -308,8 +308,17 @@ function Assert-PublicationCompilerGraph {
         'exacopy-diff' = 'crates\engines\exacopy-diff'
     }
     $versions = @{ 'uuid' = '1.29.3'; 'windows-sys' = '0.61.2'; 'windows-link' = '0.2.1' }
+    $windowsTarget = 'cfg(target_os = "windows")'
+    $linuxTarget = 'cfg(target_os = "linux")'
+    $macosTarget = 'cfg(target_os = "macos")'
+    # The filtered resolve preserves other declarations for these same dependency records.
     $edges = @{
-        'exacopy-platform' = @('normal:exacopy-endpoint', 'normal:exacopy-model', 'normal:windows-sys', 'dev:exacopy-diff', 'dev:exacopy-endpoint', 'dev:windows-sys')
+        'exacopy-platform' = @(
+            "normal:exacopy-endpoint:$windowsTarget", "normal:exacopy-endpoint:$linuxTarget", "normal:exacopy-endpoint:$macosTarget",
+            "normal:exacopy-model:$windowsTarget", "normal:exacopy-model:$linuxTarget", "normal:exacopy-model:$macosTarget",
+            "normal:windows-sys:$windowsTarget", "dev:exacopy-diff:$windowsTarget",
+            "dev:exacopy-endpoint:$windowsTarget", "dev:windows-sys:$windowsTarget"
+        )
         'exacopy-core' = @('normal:uuid')
         'exacopy-model' = @('normal:exacopy-core')
         'exacopy-endpoint' = @('normal:exacopy-core', 'normal:exacopy-model')
@@ -400,17 +409,33 @@ function Assert-PublicationCompilerGraph {
                 $dependency['dep_kinds'].Count -eq 0 -or $dependency['dep_kinds'].Count -gt 16) {
                 throw 'Cargo metadata contains an ambiguous dependency shape.'
             }
+            $selectedDependency = $false
             foreach ($entry in $dependency['dep_kinds']) {
+                if ($entry -isnot [Collections.IDictionary] -or !$entry.Contains('kind')) {
+                    throw 'Cargo metadata contains an ambiguous dependency kind.'
+                }
                 $kind = $entry['kind']
+                if ($null -ne $kind -and ($kind -isnot [string] -or $kind -cne 'dev')) {
+                    throw 'The compiler graph includes an unsupported dependency kind.'
+                }
                 if ($kind -ceq 'dev' -and $id -cne $root) { continue }
-                if ($null -ne $kind -and $kind -cne 'dev') { throw 'The compiler graph includes an unsupported dependency kind.' }
+                $target = $entry['target']
+                if (!$entry.Contains('target') -or ($null -ne $target -and $target -isnot [string])) {
+                    throw 'Cargo metadata contains an ambiguous dependency target.'
+                }
                 if (!$packageById.ContainsKey($child)) { throw 'A selected dependency package is missing.' }
                 $role = if ($null -eq $kind) { 'normal' } else { 'dev' }
-                if (!$expectedEdges.Remove("${role}:$($packageById[$child]['name'])")) {
+                $edge = "$($role):$($packageById[$child]['name'])"
+                if ($null -ne $target) { $edge += ":$target" }
+                if (!$expectedEdges.Remove($edge)) {
                     throw 'Cargo metadata contains an unexpected selected compiler edge.'
                 }
-                if ($visited.Add($child)) { $pending.Enqueue($child) }
+                if ($target -cnotin @($linuxTarget, $macosTarget)) { $selectedDependency = $true }
             }
+            if (!$selectedDependency -and $id -ceq $root) {
+                throw 'A root dependency record lacks its selected Windows edge.'
+            }
+            if ($selectedDependency -and $visited.Add($child)) { $pending.Enqueue($child) }
         }
         if ($expectedEdges.Count -ne 0) { throw 'Cargo metadata omitted required compiler edges.' }
     }
