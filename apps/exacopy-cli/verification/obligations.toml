@@ -11,3 +11,15 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "src/args/parser/tests.rs", test = "args::parser::tests::plan_accepts_one_explicit_profile_and_output_and_refuses_unknown_policy", oracle = "Require an explicit owner profile and output for a typed plan command and reject missing selections, overwrite and unknown options. This covers syntax admission only, not semantic plan approval, native transfers or qualification." }
+
+[[obligation]]
+id = "P-081"
+requirement_ids = ["R-253", "R-255"]
+source = "src/assembly/linux/remote_continued/original/outcome.rs"
+symbols = ["project"]
+assumptions = [
+    "The qualified adapter supplies the actual publication observation and the existing witnessed SDK supplies checked journal and receipt progress.",
+    "These synthetic Rust controls check product-result projection only. They do not establish native publication, current source equivalence, authority, crash recovery, or power-loss qualification.",
+]
+gates = ["rust"]
+rust = { file = "src/assembly/linux/remote_continued/original/outcome.rs", test = "assembly::linux::remote_continued::original::outcome::tests::confirmed_native_result_without_receipt_is_never_success", features = ["experimental-verified-prefix-resume"], oracle = "A positive native observation without the exact committed receipt remains published but unconfirmed. Unknown native effects remain uncertain, and a recorded native conflict remains distinct. Success is supplied only by the separately checked complete receipt path." }

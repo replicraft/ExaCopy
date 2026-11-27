@@ -23,6 +23,20 @@ REMOTE_EXPECTED = (
     "assembly::ssh_session::tests::protected_key_worker_rechecks_the_same_offer_before_reading",
 )
 
+WITNESSED_EXPECTED = (
+    "assembly::linux::remote_journal::startup::witnessed::tests::witnessed_donor_extent_keeps_one_window_and_room_for_a_positive_tail",
+    "assembly::linux::remote_witness_authority::tests::explicit_strategy_without_explicit_retention_is_never_consent",
+    "assembly::linux::remote_witness_authority::tests::approval_is_bound_to_the_original_grant_instance_and_revokes_permanently",
+    "assembly::linux::remote_continued::original::outcome::tests::source_refusal_is_kept_separate_from_retained_content_mismatch",
+    "remote_report::tests::observed_incumbent_with_unconfirmed_record_preserves_conflict_evidence",
+    "args::parser::remote::tests::witnessed_resume_requires_consent_and_both_independent_inputs",
+    "remote_report::tests::witnessed_receipt_projection_reports_committed_evidence_and_retention",
+    "assembly::linux::remote_continued::original::outcome::tests::confirmed_native_result_without_receipt_is_never_success",
+    "assembly::linux::remote_continued::original::outcome::tests::observed_conflict_without_a_confirmed_record_requires_reconciliation",
+    "assembly::linux::remote_continued::original::outcome::tests::confirmed_receipt_is_returned_only_for_the_actual_published_result",
+    "assembly::linux::remote_continued::tests::actual_signed_kind40_must_form_the_exact_clean_successor",
+)
+
 
 class CliOptInAttendanceTests(unittest.TestCase):
     def setUp(self):
@@ -57,6 +71,16 @@ class CliOptInAttendanceTests(unittest.TestCase):
                 self.write_report([*present, wrong_module])
                 with self.assertRaisesRegex(ValueError, f"required testcases missing: {missing}$"):
                     check_attendance(self.report, "remote")
+
+    def test_witnessed_resume_requires_every_actual_owning_case(self):
+        self.write_report([OTHER_CASE, *WITNESSED_EXPECTED])
+        self.assertEqual(check_attendance(self.report, "witnessed-resume"), sorted(WITNESSED_EXPECTED))
+        for missing in WITNESSED_EXPECTED:
+            with self.subTest(missing=missing):
+                present = [name for name in WITNESSED_EXPECTED if name != missing]
+                self.write_report([*present, missing.replace("::tests::", "::unrelated::")])
+                with self.assertRaisesRegex(ValueError, "required testcases missing"):
+                    check_attendance(self.report, "witnessed-resume")
 
     def test_incomplete_session_record_cannot_satisfy_remote_attendance(self):
         root = self.write_report(REMOTE_EXPECTED)

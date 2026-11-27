@@ -1795,3 +1795,19 @@ level = "obligation"
 state = "defined"
 path = "crates/platform/exacopy-platform/verification/obligations.toml"
 target = "P-078"
+
+[[coverage]]
+id = "first-witnessed-resume-product-projection"
+status = "experimental"
+requirement_ids = ["R-253", "R-255"]
+acceptance_ids = ["A-253", "A-255"]
+invariant_ids = ["INV-018", "INV-019", "INV-024", "INV-032"]
+scope = "The default-off first witnessed resume caller pins its donor before authentication, compares retained bytes with the current SFTP handle, and reports committed publication separately from uncertain or incomplete closeout. P-081 checks result projection."
+limits = "Only clean original V1 pre-intent checkpoint captures are selected. Independent OP1 and OP2 trust, current explicit retention consent and the same live invocation grant remain required. Source and native qualification, prior witnessed restart and process-crash or power-loss completion remain open."
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "obligation"
+state = "defined"
+path = "apps/exacopy-cli/verification/obligations.toml"
+target = "P-081"

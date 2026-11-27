@@ -83,7 +83,7 @@ jobs:
         run: |
           bash .github/ci/capture.sh cli-default-profile cargo +1.100.0 clippy --locked \
             -p exacopy-cli --all-targets --no-default-features -- -D warnings
-          for feature in experimental-ssh-capture experimental-ssh-wireguard experimental-linux-public-apply; do
+          for feature in experimental-ssh-capture experimental-ssh-wireguard experimental-verified-prefix-resume experimental-linux-public-apply; do
             bash .github/ci/capture.sh "cli-$feature-profile" cargo +1.100.0 clippy --locked \
               -p exacopy-cli --all-targets --no-default-features --features "$feature" -- -D warnings
           done
@@ -144,6 +144,19 @@ jobs:
             -E 'test(/^(args::parser::remote::|remote::|remote_(frontdoor|report)::|assembly::(remote_ssh::|ssh_session::|linux::remote_(download|journal|stage|continued)::))/)'
           bash .github/ci/capture.sh experimental-ssh-wireguard-cli-attendance \
             python3 -B .github/ci/cli_opt_in_attendance.py remote "$report"
+      - name: Run opt-in first witnessed-prefix resume controls
+        if: ${{ !cancelled() && steps.nextest.outcome == 'success' && runner.os == 'Linux' }}
+        env:
+          CARGO_TARGET_DIR: target/experimental-verified-prefix-resume
+        run: |
+          report=target/nextest/ci-experimental-verified-prefix-resume/junit.xml
+          rm -f -- "$report"
+          bash .github/ci/capture.sh experimental-verified-prefix-resume-cli cargo +1.100.0 nextest run --locked \
+            -p exacopy-cli --lib --no-default-features --features experimental-verified-prefix-resume,experimental-ssh-wireguard \
+            --profile ci-experimental-verified-prefix-resume --no-tests fail \
+            -E 'test(/^(args::parser::remote::|remote::|remote_(frontdoor|report)::|assembly::(remote_ssh::|ssh_session::|linux::remote_(download|journal|stage|continued|witness_authority)::))/)'
+          bash .github/ci/capture.sh experimental-verified-prefix-resume-attendance \
+            python3 -B .github/ci/cli_opt_in_attendance.py witnessed-resume "$report"
       - name: Run opt-in Linux CLI public-stage inspection tests
         if: ${{ !cancelled() && steps.nextest.outcome == 'success' && runner.os == 'Linux' }}
         env:
@@ -212,6 +225,7 @@ jobs:
             target/nextest/ci-experimental-sftp/junit.xml
             target/nextest/ci-experimental-ssh-capture/junit.xml
             target/nextest/ci-experimental-ssh-wireguard/junit.xml
+            target/nextest/ci-experimental-verified-prefix-resume/junit.xml
             target/nextest/ci-experimental-linux-public-apply/junit.xml
             target/nextest/ci-experimental-linux-public-command/junit.xml
             target/nextest/ci-experimental-apfs-copy/junit.xml

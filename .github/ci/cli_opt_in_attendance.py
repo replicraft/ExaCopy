@@ -30,9 +30,23 @@ PUBLIC_STAGE_CASES = {
     "public_stage_inspect::tests::public_stage_journal_reports_only_the_last_accepted_observation",
     "public_stage_inspect::tests::accepted_owner_key_is_canonical_and_refusals_do_not_reveal_paths",
 }
+WITNESSED_RESUME_CASES = {
+    "assembly::linux::remote_journal::startup::witnessed::tests::witnessed_donor_extent_keeps_one_window_and_room_for_a_positive_tail",
+    "assembly::linux::remote_witness_authority::tests::explicit_strategy_without_explicit_retention_is_never_consent",
+    "assembly::linux::remote_witness_authority::tests::approval_is_bound_to_the_original_grant_instance_and_revokes_permanently",
+    "assembly::linux::remote_continued::original::outcome::tests::source_refusal_is_kept_separate_from_retained_content_mismatch",
+    "remote_report::tests::observed_incumbent_with_unconfirmed_record_preserves_conflict_evidence",
+    "args::parser::remote::tests::witnessed_resume_requires_consent_and_both_independent_inputs",
+    "remote_report::tests::witnessed_receipt_projection_reports_committed_evidence_and_retention",
+    "assembly::linux::remote_continued::original::outcome::tests::confirmed_native_result_without_receipt_is_never_success",
+    "assembly::linux::remote_continued::original::outcome::tests::observed_conflict_without_a_confirmed_record_requires_reconciliation",
+    "assembly::linux::remote_continued::original::outcome::tests::confirmed_receipt_is_returned_only_for_the_actual_published_result",
+    "assembly::linux::remote_continued::tests::actual_signed_kind40_must_form_the_exact_clean_successor",
+}
 REQUIRED_CASES = {
     "remote": {REMOTE_CASE, REMOTE_PREFLIGHT_CASE} | SSH_SESSION_CASES,
     "public-stage": PUBLIC_STAGE_CASES,
+    "witnessed-resume": WITNESSED_RESUME_CASES,
 }
 
 
