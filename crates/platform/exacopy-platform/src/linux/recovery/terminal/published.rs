@@ -125,6 +125,7 @@ impl WitnessedPublishedArtifacts<'_, '_, '_> {
 			.observation()
 			.recheck(self.witness.observation())
 			.map_err(StageError::ReadBack)?;
+		self.records.recheck()?;
 		self.check_names()?;
 		self.records.recheck()
 	}
@@ -134,7 +135,8 @@ impl WitnessedPublishedArtifacts<'_, '_, '_> {
 		let mount = job.root.mount;
 		let parent = &job.directory.file;
 		self.stage.recheck(parent, OsStr::new(STAGE), mount)?;
-		check_absent(&self.stage.file, component(self.selection.stage.stage))?;
+		let private_name = component(self.selection.stage.stage);
+		check_absent(&self.stage.file, private_name)?;
 		recheck_regular(
 			&job.root.directory,
 			component(self.selection.stage.target),
@@ -149,6 +151,7 @@ impl WitnessedPublishedArtifacts<'_, '_, '_> {
 			FilePolicy::WitnessedPublic,
 			Some(&self.witness),
 		)?;
+		check_absent(&self.stage.file, private_name)?;
 		self.stage.recheck(parent, OsStr::new(STAGE), mount)
 	}
 }

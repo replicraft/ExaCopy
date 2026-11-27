@@ -208,6 +208,18 @@ fn witnessed_public_assessment_checks_two_aliases_without_using_receipt_names() 
 		Err(StageError::IdentityChanged)
 	));
 
+	let extra_link = fixture.path(b"unexpected-third-link");
+	fs::hard_link(fixture.scratch.path(TARGET), &extra_link).unwrap();
+	assert!(matches!(read.recheck(), Err(StageError::UnsafeFile)));
+	assert!(matches!(
+		records.inspect_published(expected),
+		Err(StageError::UnsafeFile)
+	));
+	assert_eq!(fs::read(&extra_link).unwrap(), DATA);
+	assert_eq!(fs::read(fixture.path(WITNESS)).unwrap(), DATA);
+	fs::remove_file(&extra_link).unwrap();
+	let read = records.inspect_published(expected).unwrap();
+
 	let former_private_stage = fixture.scratch.path(JOB).join(STAGE).join(STAGE_NAME);
 	write_fixture(&former_private_stage, b"unexpected private stage bytes");
 	assert!(read.recheck().is_err());
