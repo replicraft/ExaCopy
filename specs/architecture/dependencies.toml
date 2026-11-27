@@ -74,7 +74,9 @@ normal.groups = ["contracts", "operations", "platform", "core", "storage", "code
 normal.external = ["blake3", "clap", "ed25519-dalek", "rustix", "serde", "serde_json", "uuid", "zeroize"]
 normal.optional_external = ["base64ct", "tokio"]
 dev.groups = ["testkit"]
-dev.external = ["blake3", "ed25519-dalek", "rustix", "russh", "russh-sftp", "tokio", "zeroize"]
+# The managed CLI fixture independently hashes its held compiler-selected ELF.
+# This permits no production or build dependency on SHA-256 in applications.
+dev.external = ["blake3", "ed25519-dalek", "rustix", "russh", "russh-sftp", "sha2", "tokio", "zeroize"]
 
 [groups.testkit]
 members = { exacopy-testkit = "crates/engineering/exacopy-testkit" }

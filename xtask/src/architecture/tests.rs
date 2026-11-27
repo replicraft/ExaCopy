@@ -42,6 +42,28 @@ const WORKFLOW: &str = "crates/engines/exacopy-workflow";
 const TESTKIT: &str = "crates/engineering/exacopy-testkit";
 
 #[test]
+fn managed_cli_image_hash_allowance_is_development_only() {
+	let matrix: super::Matrix = toml::from_str(include_str!(
+		"../../../specs/architecture/dependencies.toml"
+	))
+	.expect("read the repository architecture policy");
+	let client = super::Member {
+		group_name: "clients",
+		group: &matrix.groups["clients"],
+		directory: std::path::Path::new("apps/exacopy-cli"),
+	};
+	for (kind, allowed) in [(Some("dev"), true), (None, false), (Some("build"), false)] {
+		let dependency: Dependency = serde_json::from_value(serde_json::json!({
+			"name": "sha2", "req": "=0.10.9", "kind": kind,
+			"optional": false, "uses_default_features": true, "features": [],
+			"target": "cfg(target_os = \"linux\")",
+		}))
+		.expect("decode the fixture's SHA-256 dependency");
+		assert_eq!(client.allows_external(&dependency), allowed, "{kind:?}");
+	}
+}
+
+#[test]
 fn accepts_valid_inversion_and_development_only_testkit() {
 	let fixture = workspace();
 	package(
