@@ -121,11 +121,16 @@ Profiles, jobs, destination-local journals, keys, and repositories remain in
 their original locations. The scripts leave execution policy, firewall,
 drivers, service settings, SSH, WireGuard, and PATH alone.
 
-A failure can leave private evidence such as an `.ExaCopy-install-*` stage
-or partially removed version directory. Inspect the named paths before
-retrying. Unrecognized evidence blocks automated adoption and deletion.
-These filesystem calls establish neither power-loss durability nor safe
-uninstall in the presence of concurrent launches.
+If private preparation fails, inspect the named `.ExaCopy-install-*` stage.
+If the installer reports an uncertain rename, inspect both the private
+stage and the public destination. If the rename completed and later
+verification or launcher publication failed, inspect the reported public
+location and launcher path before retrying the same release.
+
+Uninstall failures can leave a partially removed version directory.
+Unrecognized evidence blocks automated adoption and deletion. Power-loss
+durability remains unqualified. Uninstall relies on the caller to prevent
+concurrent launches.
 
 ## Testing
 

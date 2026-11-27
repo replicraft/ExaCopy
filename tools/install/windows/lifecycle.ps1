@@ -243,17 +243,28 @@ function Install-ExaCopySignedVersion {
             }
             if ($DryRun) { return $result }
             Assert-ExaCopyContextAncestors $Context $Context.Programs
+            $versionPath = Join-Path $installation.Versions $Context.Version
             $stage = New-ExaCopyPrivateStage $installation.Versions $Context.Owner
             try {
                 Write-ExaCopyVersionStage $stage $artifact $signed $installation.OwnerBytes $Context
                 Assert-ExaCopyContextAncestors $Context $Context.Programs
                 [void](Confirm-ExaCopyPath $installation.Versions)
-                [IO.Directory]::Move($stage, (Join-Path $installation.Versions $Context.Version))
             }
             catch {
-                throw "Version publication could not be confirmed. Inspect stage '$stage' and the selected version. $($_.Exception.Message)"
+                throw "Version stage preparation failed before publication. Inspect '$stage'. $($_.Exception.Message)"
             }
-            Publish-ExaCopyLauncher $Context $installation $certificate
+            try {
+                [IO.Directory]::Move($stage, $versionPath)
+            }
+            catch {
+                throw "Version rename outcome is uncertain. Inspect '$stage' and '$versionPath'. $($_.Exception.Message)"
+            }
+            try {
+                Publish-ExaCopyLauncher $Context $installation $certificate
+            }
+            catch {
+                throw "Version rename to '$versionPath' completed. Inspect it and launcher '$($result.launcher)' before retrying. $($_.Exception.Message)"
+            }
             return $result
         }
         finally {
@@ -269,15 +280,35 @@ function Install-ExaCopySignedVersion {
     Assert-ExaCopyContextAncestors $Context $Context.Programs
     $rootStage = New-ExaCopyPrivateStage $Context.Programs $Context.Owner
     try {
-        Publish-ExaCopyNewInstallation $rootStage $artifact $signed $Context $certificate
+        Write-ExaCopyInstallationStage $rootStage $artifact $signed $Context $certificate
+        Assert-ExaCopyContextAncestors $Context $Context.Programs
     }
     catch {
-        throw "Installation publication could not be confirmed. Inspect stage '$rootStage' and install root '$($Context.Root)'. $($_.Exception.Message)"
+        throw "Installation stage preparation failed before publication. Inspect '$rootStage'. $($_.Exception.Message)"
+    }
+    try {
+        [IO.Directory]::Move($rootStage, $Context.Root)
+    }
+    catch {
+        throw "Install root rename outcome is uncertain. Inspect '$rootStage' and '$($Context.Root)'. $($_.Exception.Message)"
+    }
+    try {
+        $published = Open-ExaCopyInstallation $Context.Root $Context $certificate
+        try {
+            Assert-ExaCopySameBytes $signed.Manifest $published.Signed.Manifest
+            Publish-ExaCopyLauncher $Context $published $certificate
+        }
+        finally {
+            $published.Lease.Dispose()
+        }
+    }
+    catch {
+        throw "Install root rename to '$($Context.Root)' completed. Inspect it and launcher '$($result.launcher)' before retrying. $($_.Exception.Message)"
     }
     return $result
 }
 
-function Publish-ExaCopyNewInstallation {
+function Write-ExaCopyInstallationStage {
     param([string] $RootStage, [string] $Artifact, $Signed, $Context, [byte[]] $Certificate)
     $ownerBytes = Get-ExaCopyOwnerBytes $Context $signed.ManifestHash
     Write-ExaCopyNewBytes (Join-Path $rootStage $ExaCopyOwnerFile) $ownerBytes
@@ -289,16 +320,13 @@ function Publish-ExaCopyNewInstallation {
     $checked = Open-ExaCopyInstallation $rootStage $Context $certificate
     try {
         Assert-ExaCopySameBytes $signed.Manifest $checked.Signed.Manifest
-        [void](Get-ExaCopyOwnedVersion $Context $checked)
+        if ($null -eq (Get-ExaCopyOwnedVersion $Context $checked)) {
+            throw 'The signed version is absent from the install stage.'
+        }
     }
     finally {
         $checked.Lease.Dispose()
     }
-    Assert-ExaCopyContextAncestors $Context $Context.Programs
-    [IO.Directory]::Move($rootStage, $Context.Root)
-    $published = Open-ExaCopyInstallation $Context.Root $Context $certificate
-    try { Publish-ExaCopyLauncher $Context $published $certificate }
-    finally { $published.Lease.Dispose() }
 }
 
 function Assert-ExaCopyExecutableIdle {
