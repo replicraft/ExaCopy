@@ -190,14 +190,21 @@ pub(super) fn verify_canonical(
 	leaf: &PairedBaselineLeaf<'_>,
 ) -> Result<(), LeafError> {
 	let mut canonical = [0; MAX_PAIRED_BASELINE_BYTES];
-	let mut encoder = Encoder::new(Cursor::new(canonical.as_mut_slice()));
-	encode_leaf(&mut encoder, leaf).map_err(|_| LeafError::Size)?;
-	let length = encoder.into_writer().position();
-	if canonical.get(..length) == Some(input) {
+	if encode(leaf, &mut canonical)? == input {
 		Ok(())
 	} else {
 		Err(LeafError::NonCanonical)
 	}
+}
+
+pub(super) fn encode<'output>(
+	leaf: &PairedBaselineLeaf<'_>,
+	output: &'output mut [u8; MAX_PAIRED_BASELINE_BYTES],
+) -> Result<&'output [u8], LeafError> {
+	let mut encoder = Encoder::new(Cursor::new(output.as_mut_slice()));
+	encode_leaf(&mut encoder, leaf).map_err(|_| LeafError::Size)?;
+	let length = encoder.into_writer().position();
+	output.get(..length).ok_or(LeafError::Size)
 }
 
 fn encode_leaf(

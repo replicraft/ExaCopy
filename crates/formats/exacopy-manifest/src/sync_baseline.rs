@@ -172,6 +172,38 @@ impl<'name> PairedBaselineLeaf<'name> {
 	}
 }
 
+/// Encodes one matched observation and returns its exact workflow commitment.
+///
+/// The caller establishes the native evidence and expected selection. This
+/// function checks the ordered roots and the same evidence rules as the
+/// reader, then writes the existing canonical leaf format.
+///
+/// # Errors
+/// Refuses sides selected for different roots, incomplete, stale, reused or
+/// unmatched evidence, or a page outside the fixed byte budget.
+pub fn encode_matched_leaf<'output>(
+	expected: ExpectedSelection<'_>,
+	sides: [SideEvidence; 2],
+	output: &'output mut [u8; MAX_PAIRED_BASELINE_BYTES],
+) -> Result<(&'output [u8], LeafCommitment), LeafError> {
+	if sides.map(|side| side.measured.identity.root) != expected.roots {
+		return Err(LeafError::SelectionMismatch);
+	}
+	verify_sides(sides)?;
+	let leaf = PairedBaselineLeaf {
+		selection: expected,
+		sides,
+	};
+	let bytes = wire::encode(&leaf, output)?;
+	let commitment = LeafCommitment {
+		digest: page_digest(bytes)?,
+		kind: PAIRED_BASELINE_KIND,
+		byte_len: u32::try_from(bytes.len()).map_err(|_| LeafError::Size)?,
+		item_count: 1,
+	};
+	Ok((bytes, commitment))
+}
+
 fn verify_sides([left, right]: [SideEvidence; 2]) -> Result<(), LeafError> {
 	if left.measured.identity.root == right.measured.identity.root
 		|| left.measured.identity.file == right.measured.identity.file

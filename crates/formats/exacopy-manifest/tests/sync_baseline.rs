@@ -5,7 +5,7 @@ use core::num::NonZeroU64;
 use exacopy_core::UnixComponent;
 use exacopy_manifest::sync_baseline::{
 	ExpectedSelection, LeafCommitment, LeafError, MAX_PAIRED_BASELINE_BYTES, PAIRED_BASELINE_KIND,
-	PairedBaselineLeaf,
+	PairedBaselineLeaf, encode_matched_leaf,
 };
 
 const VECTORS: &str = include_str!("../verification/sync_baseline/vectors.tsv");
@@ -79,6 +79,12 @@ fn independent_workflow_baseline_vectors_bind_scope_evidence_and_canonical_bytes
 			positives += 1;
 			let admitted = admitted.unwrap_or_else(|err| panic!("{}: {err}", vector.name));
 			assert_eq!(admitted.selection(), expected, "{}", vector.name);
+			let mut output = [0; MAX_PAIRED_BASELINE_BYTES];
+			let (encoded, commitment) =
+				encode_matched_leaf(expected, *admitted.sides(), &mut output)
+					.unwrap_or_else(|err| panic!("{}: {err}", vector.name));
+			assert_eq!(encoded, vector.bytes.as_slice(), "{}", vector.name);
+			assert_eq!(commitment, vector.commitment, "{}", vector.name);
 			let [left, right] = admitted.sides();
 			assert_eq!(left.measured.identity.root, expected.roots[0]);
 			assert_eq!(right.measured.identity.root, expected.roots[1]);
@@ -112,6 +118,40 @@ fn independent_workflow_baseline_vectors_bind_scope_evidence_and_canonical_bytes
 	}
 	assert_eq!(positives, 4);
 	assert_eq!(negatives, 46);
+}
+
+#[test]
+fn producer_refuses_wrong_order_and_unmatched_or_stale_evidence_before_encoding() {
+	let valid = vectors().next().expect("fixture has a valid baseline");
+	let expected = selection(NAME);
+	let leaf = PairedBaselineLeaf::verify(&valid.bytes, valid.commitment, expected).unwrap();
+	let [left, right] = *leaf.sides();
+	let mut wrong_order = expected;
+	wrong_order.roots.swap(0, 1);
+	let mut output = [0xa5; MAX_PAIRED_BASELINE_BYTES];
+	assert_eq!(
+		encode_matched_leaf(wrong_order, [left, right], &mut output),
+		Err(LeafError::SelectionMismatch),
+	);
+	assert_eq!(
+		encode_matched_leaf(expected, [right, left], &mut output),
+		Err(LeafError::SelectionMismatch),
+	);
+
+	let mut unequal = right;
+	unequal.stream_digest[0] ^= 1;
+	let mut stale = right;
+	stale.rechecked.position = left.measured.position.max(right.measured.position);
+	let mut aliased = right;
+	aliased.measured.identity.file = left.measured.identity.file;
+	aliased.rechecked.identity.file = left.measured.identity.file;
+	for refused in [unequal, stale, aliased] {
+		assert_eq!(
+			encode_matched_leaf(expected, [left, refused], &mut output),
+			Err(LeafError::InvalidEvidence),
+		);
+	}
+	assert_eq!(output, [0xa5; MAX_PAIRED_BASELINE_BYTES]);
 }
 
 #[test]
