@@ -1491,6 +1491,39 @@ remain unverified. No compilation, native linking, execution, tests or Cargo
 Vet replay ran during these reviews.
 """
 
+[[audits.windows_i686_gnullvm]]
+who = "OpenAI Codex (automated dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.52.6"
+notes = """
+2026-11-27. Complete source and artifact review of all eight members of the
+exact locked registry archive SHA-256
+0eee52d38c090b3caa76c563b86c3a4bd71ef1a819287c19d586d7334ae8ed66.
+The archive attributes its source to db06b51c2ebb743efb544d40e3064efa49f28d38
+at crates/targets/i686_gnullvm. The empty no_std library has no features,
+dependencies, or unsafe Rust. The build script uses Cargo's CARGO_MANIFEST_DIR
+to add that directory's lib subdirectory to the native link search.
+
+The included i386 import archive SHA-256
+3c4f19addd23d359f1ec7664e902ce3cc587e526cd24c6e6f9ed183678295e1f
+contains 20,551 short named code-import descriptors and 1,113 ordinary
+COFF metadata objects across 371 PE module names. It has no packaged
+executable or linker-directive sections. The verified GNU index maps
+42,215 entries across 41,845 distinct keys to the defining records.
+The only repeated key is the identical structural null descriptor.
+GetDeviceID retains separate decorated names and import-pointer aliases
+for its two modules. The checked routes agree with the locked i686 MSVC
+import encoding.
+
+The review assumes the locked Microsoft distribution, Cargo-controlled
+build paths, trusted native link search and linker, and Windows deployment
+control over module lookup. The input archive stores module basenames.
+Resolved paths and identities, linker-generated import thunks, external
+declaration ABI and OS implementations are outside the qualified evidence.
+No compiler, native linking, execution, tests, or Vet replay ran. Independent
+regeneration from the attributed upstream source remains unverified.
+"""
+
 [[audits.windows_i686_msvc]]
 who = "OpenAI Codex (automated paired dependency source review)"
 criteria = "safe-to-deploy"

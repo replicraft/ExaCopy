@@ -113,6 +113,17 @@ The gate still fails; all other rows remain unchanged and in the same order.
 Both source reviews, complete member inventories and artifact readers remain under
 `target/agent-evidence/dependency-source-next-4831/`.
 
+The paired whole-package review of `windows_i686_gnullvm 0.52.6` accepted
+a `safe-to-deploy` record for its exact locked archive. Both readers accounted
+for all eight members, 20,551 short import descriptors, 1,113 nonexecutable
+COFF objects and all 42,215 index entries. Decorated i386 routes match the
+reviewed MSVC encoding; the linker supplies any executable import thunks.
+Trusted build inputs, native linking and deployment-controlled module lookup
+remain assumptions. Native execution and upstream regeneration remain
+unqualified. Cargo Vet replay is pending; the last verified report has 163
+gaps. The reviews and complete inventories remain under
+`target/agent-evidence/dependency-gnullvm-next/`.
+
 ## Records left open
 
 | Package | Finding or unresolved review boundary |
