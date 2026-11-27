@@ -22,6 +22,9 @@ use exacopy_platform::linux::{
 use exacopy_transfer::linux::StageRequest;
 use rustix::fs::{self as unix, XattrFlags};
 
+#[path = "verified_staging/metadata.rs"]
+mod metadata;
+
 const SOURCE: &[u8] = b"input-\xff";
 const STAGE: &[u8] = b"part-\xfe";
 const TARGET: &[u8] = b"target-\xfd";
