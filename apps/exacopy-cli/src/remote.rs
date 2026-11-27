@@ -108,8 +108,8 @@ async fn run(
 				.open_recovery_job(name)
 				.map_err(|_| resume::uncertain(job))?;
 			let startup = resume::Startup::hold(job, &held_job)?;
-			let selected = resume::select(&startup, name, &root, &owners, &ssh, options)?;
-			(selected, ssh, metadata, Some(startup))
+			let (selected, checked) = resume::select(startup, name, &root, &owners, &ssh, options)?;
+			(selected, ssh, metadata, Some(Box::new(checked)))
 		}
 	};
 	let Selected {
@@ -162,7 +162,7 @@ async fn run(
 		&ssh,
 		&request,
 		interrupted,
-		AttemptAdmission::Initial(startup.map(resume::Startup::into_lease)),
+		AttemptAdmission::Initial(startup),
 	)
 	.await;
 	let attempts =

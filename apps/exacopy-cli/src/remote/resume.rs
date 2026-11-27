@@ -13,7 +13,7 @@ use exacopy_platform::linux::{
 
 use crate::args::RemoteOptions;
 use crate::assembly::linux::remote_download::{
-	RemoteJobAction, RemoteJobError, check_resume_startup,
+	CheckedResumeStartup, RemoteJobAction, RemoteJobError, check_resume_startup,
 };
 use crate::profile::LocalProfile;
 use crate::remote_frontdoor::{ApprovedRoute, SshProfile};
@@ -27,7 +27,6 @@ use super::selection::{Selected, record_identity, refused, route_class};
 /// Keeps the selected job read-locked until the authenticated carrier is ready.
 pub(super) struct Startup<'held> {
 	location: &'held RemoteJob,
-	job: &'held RecoveryJob<'held>,
 	lease: RecoveryReadLease<'held>,
 }
 
@@ -37,28 +36,25 @@ impl<'held> Startup<'held> {
 		job: &'held RecoveryJob<'held>,
 	) -> Result<Self, Box<RemoteOutcome>> {
 		let lease = job.try_read_lease().map_err(|_| uncertain(location))?;
-		Ok(Self {
-			location,
-			job,
-			lease,
-		})
+		Ok(Self { location, lease })
 	}
 
+	#[cfg(test)]
 	pub(super) fn into_lease(self) -> RecoveryReadLease<'held> {
 		self.lease
 	}
 }
 
-pub(super) fn select(
-	startup: &Startup<'_>,
+pub(super) fn select<'held>(
+	startup: Startup<'held>,
 	name: UnixComponent<'_>,
 	root: &DestinationRoot,
 	owners: &LocalProfile,
 	ssh: &SshProfile,
 	options: &RemoteOptions,
-) -> Result<Selected, Box<RemoteOutcome>> {
+) -> Result<(Selected, CheckedResumeStartup<'held>), Box<RemoteOutcome>> {
 	let location = startup.location;
-	let job = startup.job;
+	let job = startup.lease.job();
 	let unknown = || uncertain(location);
 	let owner_file = job.open_owner().map_err(|_| unknown())?;
 	let bytes = read_owner(&owner_file).map_err(|_| unknown())?;
@@ -146,12 +142,16 @@ pub(super) fn select(
 		Err(_) => return Err(unknown()),
 	}
 	recheck_startup_records(job, &owner_file, &segment).map_err(|_| unknown())?;
-	Ok(Selected {
-		job: duplicate_job(location),
-		scope: scope.clone(),
-		action: RemoteJobAction::Resume,
-		qualification,
-	})
+	let checked = CheckedResumeStartup::new(startup.lease, owner_file, segment, replay.boundary());
+	Ok((
+		Selected {
+			job: duplicate_job(location),
+			scope: scope.clone(),
+			action: RemoteJobAction::Resume,
+			qualification,
+		},
+		checked,
+	))
 }
 
 fn recheck_startup_records(

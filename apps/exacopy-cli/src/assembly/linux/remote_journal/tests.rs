@@ -29,6 +29,7 @@ use super::admission::{CurrentGrant, CurrentQualification, RemoteActivation};
 use super::lease::{RemoteJobLease, bootstrap};
 use super::{BootstrapIdentity, Error, component, job_name, record_identity};
 
+mod resume_handoff;
 mod startup;
 
 const JOB: [u8; 16] = [

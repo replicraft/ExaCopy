@@ -3,11 +3,87 @@
 use exacopy_endpoint::UnixComponent;
 use exacopy_journal::remote_download::RemoteEpochs;
 use exacopy_journal::remote_download::finalization_replay::RemoteFinalizationReplay;
-use exacopy_journal::remote_download::replay::MAX_REMOTE_REPLAY_ATTEMPTS;
-use exacopy_platform::linux::RecoveryJob;
+use exacopy_journal::remote_download::replay::{MAX_REMOTE_REPLAY_ATTEMPTS, RemoteReplayBoundary};
+use exacopy_platform::linux::{RecoveryFile, RecoveryJob, RecoveryReadLease};
 
 use super::lease::inspect_capture;
 use super::{Error, ResumeCapacity, record_identity};
+
+/// The exact ordinary replay selected under the shared startup lease.
+pub(crate) struct CheckedResumeStartup<'held> {
+	lease: RecoveryReadLease<'held>,
+	history: ResumeHistory<'held>,
+}
+
+impl<'held> CheckedResumeStartup<'held> {
+	pub(crate) fn new(
+		lease: RecoveryReadLease<'held>,
+		owner: RecoveryFile,
+		segment: RecoveryFile,
+		boundary: RemoteReplayBoundary,
+	) -> Self {
+		let job = lease.job();
+		Self {
+			lease,
+			history: ResumeHistory {
+				job,
+				owner,
+				segment,
+				boundary,
+			},
+		}
+	}
+
+	pub(super) fn release_for_exclusive(self) -> ResumeHistory<'held> {
+		let Self { lease, history } = self;
+		// Release only the cooperative lock. Retain the exact three native
+		// objects until the exclusive admission has checked the same history.
+		drop(lease);
+		history
+	}
+}
+
+pub(super) struct ResumeHistory<'held> {
+	job: &'held RecoveryJob<'held>,
+	owner: RecoveryFile,
+	segment: RecoveryFile,
+	boundary: RemoteReplayBoundary,
+}
+
+impl ResumeHistory<'_> {
+	pub(super) fn check_job(&self, reopened: &RecoveryJob<'_>) -> Result<(), Error> {
+		if self.job.identity() != reopened.identity()
+			|| self.job.destination_identity() != reopened.destination_identity()
+		{
+			return Err(Error::Binding);
+		}
+		self.job.recheck()?;
+		Ok(())
+	}
+
+	pub(super) fn check_owner(&self, reopened: &RecoveryFile) -> Result<(), Error> {
+		check_record(&self.owner, reopened)
+	}
+
+	pub(super) fn check_segment(&self, reopened: &RecoveryFile) -> Result<(), Error> {
+		if reopened.len() != self.boundary.offset {
+			return Err(Error::Binding);
+		}
+		check_record(&self.segment, reopened)
+	}
+
+	pub(super) const fn boundary(&self) -> RemoteReplayBoundary {
+		self.boundary
+	}
+}
+
+fn check_record(original: &RecoveryFile, reopened: &RecoveryFile) -> Result<(), Error> {
+	if original.identity() != reopened.identity() {
+		return Err(Error::Binding);
+	}
+	original.recheck_same_observation(reopened)?;
+	Ok(())
+}
 
 /// Checks the fixed bounds for spending a fresh allocation on this segment.
 pub(super) fn check_capacity(

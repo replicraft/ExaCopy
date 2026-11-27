@@ -44,7 +44,7 @@ pub use lease::RemoteRetryLease;
 pub(super) use lease::{RemoteJobLease, bootstrap};
 pub(super) use ledger::IntentReadback;
 pub(super) use retry::RetryCaptureStamp;
-pub(crate) use startup::check_resume_startup;
+pub(crate) use startup::{CheckedResumeStartup, check_resume_startup};
 
 /// A clean ordinary resume cannot allocate any further attempts.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

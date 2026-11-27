@@ -10,7 +10,7 @@ use exacopy_journal::remote_download::qualification::{
 };
 use exacopy_journal::remote_download::{RemoteDownloadScope, RemoteUncertainBoundary};
 use exacopy_journal::{JournalJobId, OwnerTimestamp, OwnerToken};
-use exacopy_platform::linux::{DestinationRoot, RecoveryReadLease, observe_remote_destination};
+use exacopy_platform::linux::{DestinationRoot, observe_remote_destination};
 use exacopy_sftp::SftpSourceError;
 use exacopy_transfer::remote_capture::{CaptureError, StageStep};
 use exacopy_transfer::remote_finalization::{CommittedRemoteReceipt, FinalizationFailure};
@@ -20,7 +20,7 @@ use crate::profile::LocalProfile;
 
 use super::remote_journal::Error;
 pub(crate) use super::remote_journal::{
-	Error as RemoteJobError, ResumeCapacity, check_resume_startup,
+	CheckedResumeStartup, Error as RemoteJobError, ResumeCapacity, check_resume_startup,
 };
 use super::remote_stage::{NativeCaptureStageError, StageFinalizationError};
 
@@ -67,7 +67,7 @@ pub enum RemoteJobAction {
 }
 
 pub(crate) enum AttemptAdmission<'held> {
-	Initial(Option<RecoveryReadLease<'held>>),
+	Initial(Option<Box<CheckedResumeStartup<'held>>>),
 	Retry(ReadyRetry<'held>),
 }
 

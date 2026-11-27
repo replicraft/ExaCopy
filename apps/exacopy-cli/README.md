@@ -357,9 +357,11 @@ The exclusive writer still checks the destination again before any publish
 attempt. Before connecting, resume also checks every recorded allocation's
 private stage binding and extent, including superseded attempts, and refuses
 an exhausted allocation or epoch limit. These checks retain the job for
-reconciliation and do not authorize reuse of its old bytes. The writer repeats
-the checks under its exclusive lease. Once publication intent may have been
-recorded, recovery
+reconciliation and do not authorize reuse of its old bytes. The shared read
+lease holds the selected job through SSH authentication. Before the attempt
+opens the source file, the exclusive writer rechecks the same job, owner
+record and exact accepted journal boundary. A changed history requires
+reconciliation. Once publication intent may have been recorded, recovery
 remains a reconciliation case and the command refuses another publish
 attempt. Retain the job when it reports uncertain or confirmed publication.
 

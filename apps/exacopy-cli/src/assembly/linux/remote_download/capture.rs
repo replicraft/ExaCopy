@@ -3,7 +3,7 @@ use std::num::NonZeroU64;
 use exacopy_endpoint::remote_source::{CapturedReadAt, SftpPath, SftpPathRoot, SourceEpoch};
 use exacopy_journal::StreamLength;
 use exacopy_journal::remote_download::{RemoteSourceObservation, RemoteUncertainBoundary};
-use exacopy_platform::linux::{RecoveryReadLease, RemoteDestinationEligibility};
+use exacopy_platform::linux::RemoteDestinationEligibility;
 use exacopy_sftp::{
 	PendingSftpPathRequest, PendingSourceOwner, SftpSourceError, open_pending_path_source,
 };
@@ -36,7 +36,7 @@ use super::{
 pub(crate) async fn download_remote(
 	request: &RemoteDownloadRequest<'_>,
 	connection: ConnectedRemoteSource<'_>,
-	startup_read: Option<RecoveryReadLease<'_>>,
+	startup_read: Option<Box<super::CheckedResumeStartup<'_>>>,
 ) -> Result<RemoteFinalizationOutcome, RemoteDownloadFailure> {
 	let pre_effect = |cause: Error| match request.action {
 		RemoteJobAction::Create { .. } => Error::BootstrapNotCreated(Box::new(cause)),
@@ -60,15 +60,10 @@ pub(crate) async fn download_remote(
 	let authority = activation.publication_authority();
 	let (session, owner) = connection.into_current(authority.scope, request.grant)?;
 	let existing = match (request.action, startup_read) {
-		(RemoteJobAction::Resume, Some(lease)) => {
-			// The cooperative lock has covered replay, authentication and qualification.
-			// Reopening under the exclusive lock rechecks the full held history.
-			drop(lease);
-			Some(
-				RemoteJobLease::open_existing(&profile, request.job, activation)
-					.map_err(RemoteDownloadFailure::ResumeAdmission)?,
-			)
-		}
+		(RemoteJobAction::Resume, Some(startup)) => Some(
+			RemoteJobLease::open_resumed(&profile, request.job, activation, *startup)
+				.map_err(RemoteDownloadFailure::ResumeAdmission)?,
+		),
 		(RemoteJobAction::Create { .. }, None) => None,
 		_ => return Err(pre_effect(Error::Binding).into()),
 	};

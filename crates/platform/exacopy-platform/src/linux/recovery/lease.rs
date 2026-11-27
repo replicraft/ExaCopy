@@ -16,7 +16,9 @@ pub struct RecoveryReadLease<'lease> {
 }
 
 impl<'lease> RecoveryReadLease<'lease> {
-	pub(super) fn job(&self) -> &'lease RecoveryJob<'lease> {
+	/// Borrows the exact held job for read-only observations under this lease.
+	#[must_use]
+	pub const fn job(&self) -> &'lease RecoveryJob<'lease> {
 		self.job
 	}
 

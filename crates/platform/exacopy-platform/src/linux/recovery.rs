@@ -287,6 +287,17 @@ impl RecoveryFile {
 		self.observation.recheck(SourceObservation::capture(&stat)?)
 	}
 
+	/// Rechecks the same inode and stable observation across two held opens.
+	///
+	/// An ordinary reader can advance atime between the opens.
+	/// # Errors
+	/// Refuses another inode, changed extent or metadata, or unavailable stat evidence.
+	pub fn recheck_same_observation(&self, reopened: &Self) -> Result<(), ReadError> {
+		self.observation.recheck(reopened.observation)?;
+		self.recheck_observation()?;
+		reopened.recheck_observation()
+	}
+
 	/// Checks EOF at the captured length with a bounded positional probe.
 	///
 	/// # Errors

@@ -18,6 +18,7 @@ use crate::profile::LocalProfile;
 
 use super::admission::{OwnerDialect, RemoteActivation};
 use super::ledger::{RemoteJobJournal, WriterStart, context, readback_frame};
+use super::startup::{CheckedResumeStartup, ResumeHistory};
 use super::{BootstrapIdentity, Error, ReplayIssue, component, job_name, record_identity};
 
 mod bootstrap;
@@ -45,13 +46,38 @@ pub(in crate::assembly::linux) struct RemoteJobLease<'root> {
 	key: VerifyingKey,
 }
 
+enum HeldSelection<'startup> {
+	Existing,
+	Bootstrap(BootstrapIdentity),
+	Resume(&'startup ResumeHistory<'startup>),
+}
+
 impl<'root> RemoteJobLease<'root> {
+	pub(in crate::assembly::linux) fn open_resumed(
+		profile: &LocalProfile,
+		job: JournalJobId,
+		activation: RemoteActivation<'root>,
+		startup: CheckedResumeStartup<'_>,
+	) -> Result<Self, Error> {
+		let history = startup.release_for_exclusive();
+		Self::open_selected_resume(profile, job, activation, &history)
+	}
+
+	pub(super) fn open_selected_resume(
+		profile: &LocalProfile,
+		job: JournalJobId,
+		activation: RemoteActivation<'root>,
+		history: &ResumeHistory<'_>,
+	) -> Result<Self, Error> {
+		Self::open(profile, job, activation, HeldSelection::Resume(history))
+	}
+
 	pub(in crate::assembly::linux) fn open_existing(
 		profile: &LocalProfile,
 		job: JournalJobId,
 		activation: RemoteActivation<'root>,
 	) -> Result<Self, Error> {
-		Self::open(profile, job, activation, None)
+		Self::open(profile, job, activation, HeldSelection::Existing)
 	}
 
 	pub(in crate::assembly::linux) fn open_bootstrap(
@@ -60,14 +86,19 @@ impl<'root> RemoteJobLease<'root> {
 		activation: RemoteActivation<'root>,
 		bootstrap: BootstrapIdentity,
 	) -> Result<Self, Error> {
-		Self::open(profile, job, activation, Some(bootstrap))
+		Self::open(
+			profile,
+			job,
+			activation,
+			HeldSelection::Bootstrap(bootstrap),
+		)
 	}
 
 	fn open(
 		profile: &LocalProfile,
 		job: JournalJobId,
 		activation: RemoteActivation<'root>,
-		bootstrap: Option<BootstrapIdentity>,
+		selection: HeldSelection<'_>,
 	) -> Result<Self, Error> {
 		activation.recheck()?;
 		let root = activation.root;
@@ -77,16 +108,20 @@ impl<'root> RemoteJobLease<'root> {
 		let name = component(name.as_bytes())?;
 		let observed_job = root.open_recovery_job(name)?;
 		let expected = observed_job.identity();
-		if bootstrap
-			.as_ref()
-			.is_some_and(|identity| identity.job != expected)
-		{
-			return Err(Error::Binding);
+		match &selection {
+			HeldSelection::Bootstrap(identity) if identity.job != expected => {
+				return Err(Error::Binding);
+			}
+			HeldSelection::Resume(history) => history.check_job(&observed_job)?,
+			_ => {}
 		}
 		let lease = root.try_recovery_write_lease(name, expected)?;
 		observed_job.recheck()?;
 		let held = lease.job();
 		let owner_file = held.open_owner()?;
+		if let HeldSelection::Resume(history) = &selection {
+			history.check_owner(&owner_file)?;
+		}
 		let owner = read_owner(&owner_file, profile, activation.dialect)?;
 		let manifest = owner.manifest();
 		if manifest.job != job
@@ -97,6 +132,9 @@ impl<'root> RemoteJobLease<'root> {
 			return Err(Error::Binding);
 		}
 		let mut segment = held.open_first_segment()?;
+		if let HeldSelection::Resume(history) = &selection {
+			history.check_segment(&segment)?;
+		}
 		let key = profile.verification_key();
 		let trust = activation.dialect.trust(&owner, profile.id(), &key)?;
 		let replay = replay_remote_finalization(
@@ -105,8 +143,13 @@ impl<'root> RemoteJobLease<'root> {
 			activation.qualification_digest,
 			None,
 		)?;
+		if let HeldSelection::Resume(history) = &selection
+			&& replay.boundary() != history.boundary()
+		{
+			return Err(Error::Binding);
+		}
 		require_live_phase(&replay, activation)?;
-		if let Some(bootstrap) = &bootstrap
+		if let HeldSelection::Bootstrap(bootstrap) = &selection
 			&& replay.boundary() != bootstrap.boundary
 		{
 			return Err(Error::Binding);
@@ -127,6 +170,11 @@ impl<'root> RemoteJobLease<'root> {
 		PreservedCapture::check_all(&preserved_capture, held, target, stage_directory)?;
 		segment.check_logical_eof()?;
 		segment.recheck_observation()?;
+		if let HeldSelection::Resume(history) = &selection {
+			history.check_job(held)?;
+			history.check_owner(&held.open_owner()?)?;
+			history.check_segment(&held.open_first_segment()?)?;
+		}
 		activation.recheck()?;
 		let boundary = replay.boundary();
 		let phase = replay.phase();
