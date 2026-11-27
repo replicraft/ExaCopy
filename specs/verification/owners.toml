@@ -11,6 +11,7 @@ exacopy-journal = ["rust"]
 exacopy-manifest = ["rust"]
 exacopy-model = ["rust", "lean", "kani", "tlc"]
 exacopy-plan = ["rust"]
+exacopy-platform = ["tlc"]
 exacopy-transfer = ["rust"]
 exacopy-wireguard = ["rust"]
 

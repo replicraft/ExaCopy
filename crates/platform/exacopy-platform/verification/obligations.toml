@@ -1,0 +1,30 @@
+schema_version = 1
+
+[[obligation]]
+id = "P-078"
+requirement_ids = ["R-320", "R-327"]
+source = "verification/tla/PublicationBuildRetirement.tla"
+symbols = [
+    "OwnedRetirementOnly",
+    "TimeoutIsMonotone",
+    "QuiescenceIsObserved",
+    "PreparedImageIsAdmitted",
+    "FirstSelectorRequiresFreshAuthority",
+]
+assumptions = [
+    "The Windows harness supplies truthful evidence for the exact held compiler root and owned job, the retirement result, active-zero accounting, output EOF and sink extents, and expiry. The model starts after ownership admission.",
+    "Transcript verification, held image verification, and fresh source, lockfile and image checks are trusted outcomes. This obligation models their order and use and does not establish implementation correspondence or native qualification.",
+    "Legitimate terminal states can stutter. No liveness, process-crash or power-loss claim follows.",
+]
+gates = ["tlc"]
+
+[obligation.tlc]
+spec = "verification/tla/PublicationBuildRetirement.tla"
+config = "verification/tla/PublicationBuildRetirement.cfg"
+negative_control = "verification/tla/PublicationBuildRetirement-strict-stop.cfg"
+model_bounds = [
+    "One invocation, one held root and owned job with own or foreign observations, one planned retirement, one deadline transition, one drain observation and one attempt at the first selector.",
+    "Strict and preparation modes run separately. Observations use finite return classes, ownership bindings and Boolean drain facts.",
+]
+seeds = ["TLC seed and fingerprint index 0."]
+oracle = "Exhaust the healthy preparation and strict models, require reaching the first selector in preparation mode, and obtain the expected named invariant violation and transition for each of ten single mutations."

@@ -1779,3 +1779,19 @@ level = "obligation"
 state = "defined"
 path = "crates/storage/exacopy-journal/verification/obligations.toml"
 target = "P-077"
+
+[[coverage]]
+id = "windows-publication-build-retirement-model"
+status = "experimental"
+requirement_ids = ["R-320", "R-327"]
+acceptance_ids = ["A-320", "A-327"]
+invariant_ids = ["INV-019", "INV-032"]
+scope = "P-078 checks the finite ordering and evidence bindings for a single owned compiler job and first publication-test selector, with distinct strict and preparation modes."
+limits = "Abstract checks and counterexamples are source-defined and await execution. Executor replay, native Windows process and artifact custody, publication qualification and power-loss evidence are separate."
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "obligation"
+state = "defined"
+path = "crates/platform/exacopy-platform/verification/obligations.toml"
+target = "P-078"
