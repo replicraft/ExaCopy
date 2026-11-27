@@ -140,3 +140,72 @@ fn occupied_slot_or_refused_later_barrier_never_removes_evidence() {
 		assert!(!fixture.target().exists());
 	}
 }
+
+#[test]
+#[ignore = "requires a task-owned unprivileged Linux same-credential link fixture"]
+fn witnessed_native_rename_observes_success_conflict_and_nonregular_incumbent() {
+	use crate::linux::{PublishError, WitnessPublicationName, WitnessPublicationObservation};
+
+	for incumbent in [None, Some(false), Some(true)] {
+		let fixture = Fixture::new();
+		let witness = fixture
+			.stage()
+			.ancestors()
+			.nth(2)
+			.unwrap()
+			.join(OsStr::from_bytes(&WITNESS));
+		let lease = fixture.lease();
+		let inventory = inventory(&lease);
+		let selected = selection(&inventory);
+		let reader = lease.read_retained_prefix(&inventory, selected).unwrap();
+		let candidate = reader
+			.sync_adopted(PREFIX.len() as u64, |_, _| Ok::<_, ()>(()))
+			.unwrap()
+			.zero_tail_for_witness(
+				PREFIX.len() as u64,
+				WitnessCredentialLane::observe().unwrap(),
+				|_, _| Ok::<_, ()>(()),
+			)
+			.unwrap();
+		let linked = candidate
+			.link_checked_witness(WITNESS, |_| Ok::<_, ProtectedWitnessError<()>>(()))
+			.unwrap();
+		// Standalone native control. The application-owned kind-7/model gate is
+		// deliberately outside this low-level fixture.
+		let rename = linked.prepare_rename().unwrap();
+		match incumbent {
+			Some(false) => fs::write(fixture.target(), b"incumbent").unwrap(),
+			Some(true) => fs::create_dir(fixture.target()).unwrap(),
+			None => {}
+		}
+		let observation = rename.submit(());
+		assert_eq!(fs::read(&witness).unwrap(), PREFIX);
+		assert_eq!(fs::metadata(&witness).unwrap().ino(), selected.file.inode);
+		match (incumbent, observation) {
+			(None, WitnessPublicationObservation::Published(stamp)) => {
+				assert!(!fixture.stage().exists());
+				assert_eq!(fs::read(fixture.target()).unwrap(), PREFIX);
+				assert_eq!(stamp.identity().inode(), selected.file.inode);
+				assert_eq!(stamp.link_count(), 2);
+			}
+			(Some(false), WitnessPublicationObservation::Conflict(stamp)) => {
+				assert_ne!(stamp.identity().inode(), selected.file.inode);
+				assert_eq!(fs::read(fixture.target()).unwrap(), b"incumbent");
+				assert_eq!(fs::read(fixture.stage()).unwrap(), PREFIX);
+			}
+			(
+				Some(true),
+				WitnessPublicationObservation::Reconcile {
+					submission: Err(PublishError::Conflict),
+					names,
+					..
+				},
+			) => {
+				assert_eq!(names.public_target, WitnessPublicationName::Unobserved);
+				assert!(fixture.target().is_dir());
+				assert_eq!(fs::read(fixture.stage()).unwrap(), PREFIX);
+			}
+			(_, unexpected) => panic!("unexpected native rename observation: {unexpected:?}"),
+		}
+	}
+}

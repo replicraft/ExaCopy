@@ -15,7 +15,9 @@ mod witness;
 
 pub use witness::{
 	PendingProtectedWitness, SealedProtectedWitness, WitnessPrepublicationAppend,
-	WitnessPrepublicationPhase,
+	WitnessPrepublicationPhase, WitnessPublication, WitnessPublicationError,
+	WitnessPublicationName, WitnessPublicationNames, WitnessPublicationObservation,
+	WitnessPublicationRequest,
 };
 
 // The owner codec bounds the payload to 1,024 bytes and framing to 92 bytes.

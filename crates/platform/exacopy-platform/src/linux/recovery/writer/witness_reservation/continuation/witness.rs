@@ -11,9 +11,14 @@ use crate::linux::{
 };
 
 mod prepublication;
+mod publication;
 
 use prepublication::NativePrepublication;
 pub use prepublication::{WitnessPrepublicationAppend, WitnessPrepublicationPhase};
+pub use publication::{
+	WitnessPublication, WitnessPublicationError, WitnessPublicationName, WitnessPublicationNames,
+	WitnessPublicationObservation, WitnessPublicationRequest,
+};
 
 // Maximum encoded kind 41: 605 payload bytes and 92 framing bytes.
 const MAX_ENCODED_WITNESS: usize = 697;

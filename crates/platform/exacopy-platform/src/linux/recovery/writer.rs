@@ -38,8 +38,10 @@ pub use witness_reservation::{
 	ActiveWitnessReservation, ContinuationReservationError, PendingProtectedWitness,
 	PendingWitnessReservation, ReservedContinuationRequest, ReservedJournalRead,
 	SealedProtectedWitness, WitnessPrepublicationAppend, WitnessPrepublicationPhase,
-	WitnessReservationAuthority, WitnessReservationEffect, WitnessReservationError,
-	WitnessReservationGateRequest, WitnessReservationObservationError, WitnessReservationPlan,
+	WitnessPublication, WitnessPublicationError, WitnessPublicationName, WitnessPublicationNames,
+	WitnessPublicationObservation, WitnessPublicationRequest, WitnessReservationAuthority,
+	WitnessReservationEffect, WitnessReservationError, WitnessReservationGateRequest,
+	WitnessReservationObservationError, WitnessReservationPlan,
 };
 
 #[cfg(test)]

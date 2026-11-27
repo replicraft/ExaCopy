@@ -12,6 +12,7 @@ use super::{
 };
 
 mod lane;
+mod publication;
 use crate::linux::WitnessReservationObservationError;
 use crate::linux::handle::mount_id;
 use crate::linux::recovery::{check_absent, open_path};
