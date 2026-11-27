@@ -52,6 +52,9 @@ use budgets::TailFixture;
 
 #[path = "retained_prefix/checkpoints.rs"]
 mod checkpoints;
+
+#[path = "retained_prefix/lineage.rs"]
+mod lineage;
 const PRIOR: Prior = Prior {
 	guard: GUARD,
 	head: OLD,
