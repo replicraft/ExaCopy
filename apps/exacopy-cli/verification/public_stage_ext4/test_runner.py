@@ -1,8 +1,11 @@
 """Portable guard controls for the standalone public-stage fixture runner."""
 
+import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import tomllib
 import unittest
@@ -15,6 +18,33 @@ class RunnerTests(unittest.TestCase):
     def test_profile_and_input_inventory_exist(self):
         files = run.inputs()
         self.assertIn("apps/exacopy-cli/" + run.SOURCE, files)
+        helper = run.components.COVERAGE_HELPER
+        path = helper.relative_to(run.ROOT).as_posix()
+        digest = hashlib.sha256(helper.read_bytes()).hexdigest()
+        self.assertEqual(files[path], digest)
+        self.assertEqual(run.components.inputs()[path], digest)
+
+    def test_dynamic_load_from_an_isolated_working_directory(self):
+        probe = """
+import importlib.util
+from pathlib import Path
+import sys
+
+spec = importlib.util.spec_from_file_location("public_stage_probe", sys.argv[1])
+runner = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(runner)
+components = runner.components
+helper = components.coverage_profile
+assert Path(helper.__file__) == runner.COMPONENT_DIR / "coverage_profile.py"
+assert sys.modules[helper.__name__] is helper
+assert runner.COMPONENT_DIR not in map(Path, sys.path)
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            completed = subprocess.run(
+                [sys.executable, "-I", "-B", "-Werror", "-c", probe, str(run.HERE / "run.py")],
+                cwd=directory, capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
 
     def test_only_exact_single_passing_case_and_cleanup_marker_count(self):
         def output(case=run.CASE, markers=1, count=1):

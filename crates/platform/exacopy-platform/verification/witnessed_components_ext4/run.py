@@ -12,12 +12,17 @@ import shutil
 import signal
 import stat
 import subprocess
+import sys
 import tempfile
 import tomllib
 
-import coverage_profile
-
 HERE = Path(__file__).resolve().parent
+COVERAGE_HELPER = HERE / "coverage_profile.py"
+coverage_spec = importlib.util.spec_from_file_location("witnessed_ext4_coverage_profile", COVERAGE_HELPER)
+coverage_profile = importlib.util.module_from_spec(coverage_spec)
+sys.modules[coverage_spec.name] = coverage_profile
+coverage_spec.loader.exec_module(coverage_profile)
+
 SHARED = HERE.parent / "sync_history_ext4/run.py"
 spec = importlib.util.spec_from_file_location("whole_ext4_history", SHARED)
 ext4 = importlib.util.module_from_spec(spec)
@@ -73,12 +78,12 @@ def inputs(*, coverage=False):
     files = {
         ROOT / "Cargo.lock", ROOT / "rust-toolchain.toml", ROOT / WORKFLOW,
         ROOT / "tools/qualification/native_supervision.py",
-        SHARED, manifest, HERE / "run.py", HERE / "test_runner.py",
+        SHARED, COVERAGE_HELPER, manifest, HERE / "run.py", HERE / "test_runner.py",
         PACKAGE / "tests/common/scratch.rs", PACKAGE / "Cargo.toml",
         *(PACKAGE / source(case) for case in CASES),
     }
     if coverage:
-        files.update({HERE / "coverage_profile.py", ROOT / "Cargo.toml",
+        files.update({ROOT / "Cargo.toml",
                       ROOT / ".github/ci/install.sh", ROOT / ".github/ci/common.sh",
                       ROOT / ".github/ci/capture.sh", ROOT / "tools/apfs_source.py",
                       ROOT / "tools/transport_source.py",

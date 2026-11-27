@@ -9,8 +9,8 @@ import tomllib
 import unittest
 from unittest.mock import patch
 
-import coverage_profile
 import run
+from run import coverage_profile
 
 
 class WitnessedComponents(unittest.TestCase):
