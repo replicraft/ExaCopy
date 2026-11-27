@@ -2,8 +2,10 @@
 
 **Status.** The strict v1 workflow keeps its default invocation. The separate
 push-only v2 workflow explicitly selects `PrepareOwnedCompilerJob`. The bundled
-prebuild controls passed at `8c1a311` and `b50ada3`. Native v2 qualification
-remains pending.
+prebuild controls passed at `8c1a311` and `b50ada3`. At `b116813`, v2 passed
+its two ABI/status controls and five native cases, with verified process
+drainage and fixture deletion. Its declared hosted matrix is qualified;
+Windows CLI composition, restart and power-loss behavior remain separate.
 
 The strict `windows-hosted-server2025-fixed-ntfs-publication-v1` result
 remains failed at `cb47f4a`. Its retained publication ZIP records a successful
@@ -40,6 +42,18 @@ with the same held root, one counted component and replacement disabled. It
 changes no caller sharing or identity guard and adds no fallback or retry. The
 precise origin of the Win32 error remains unconfirmed; native success and
 cleanup require a subsequent hosted result.
+
+That subsequent run at `b116813` passed all seven exact selectors. The original
+owned compiler root exited zero before acknowledged retirement; fresh accounting
+showed zero active processes and both streams reached EOF. Both captured stream
+identities and hashes, the eight-package graph, compiler transcript and held x64
+image binding were verified. The image was 1,302,016 bytes with SHA-256
+`7a0c8984ba509834d83dfe05997566cfce661a5670d59cf7924faf73c6344a6c`.
+Artifact `15204776248` from [run `46013234916`](https://github.com/replicraft/ExaCopy/actions/runs/46013234916)
+has SHA-256 `0834bb37e7f0da6bc74a0d8805bb2f6feb95189e735e6ab44612baf4076afa7f`.
+It includes the held-image receipt rather than the PE bytes. The passing result
+does not identify which former Win32 parameter caused error 87. Both earlier
+failed v2 runs remain retained.
 
 ## Scope and entry point
 

@@ -115,15 +115,24 @@ Strict v1 still stops at its compiler-job timeout before native cases run.
 The separate owned-build preparation profile uses the same test cases on
 the hosted Windows image. Its build first establishes whole-job quiescence,
 then admits the held test executable from verified compiler output. Case
-execution still requires strict natural completion. Native qualification of
-this profile remains pending. At `0f6051e`, compilation, owned-job quiescence
+execution still requires strict natural completion. At `b116813`, the profile
+passed both ABI/status controls and all five native cases, with process drainage
+and fixture deletion verified. At `0f6051e`, compilation, owned-job quiescence
 and held-image admission succeeded. Two ABI/status controls and two native
 refusal cases passed; three positive publication cases returned Win32 error 87
 before observation. Cleanup reported an unexpected entry and remained
-unconfirmed. The native-call correction awaits hosted qualification. The exact
-origin of the Win32 error remains unconfirmed: current Microsoft documentation
+unconfirmed. The native-call correction subsequently passed the declared cases.
+The exact origin of the Win32 error remains unconfirmed: current Microsoft documentation
 also permits a relative held root in the former Win32 request. The strict v1
 results remain separately scoped.
+
+The passing artifact retains the compiler transcript, graph, held-image
+identity/digest receipt, process records and exact test outputs. It does not
+include the PE image bytes; image binding relies on the on-runner held-file
+verification. This qualification covers the component and declared hosted
+fixed-NTFS matrix, not Windows CLI composition, restart or power-loss behavior.
+[Passing native v2 run](https://github.com/replicraft/ExaCopy/actions/runs/46013234916) ·
+[Artifact](https://github.com/replicraft/ExaCopy/actions/runs/46013234916/artifacts/15204776248)
 [Preparation fixture](../../crates/platform/exacopy-platform/verification/windows_ntfs_publication_preparation/fixture.toml) ·
 [Preparation workflow](../../.github/workflows/windows-ntfs-publication-preparation.yml)
 
