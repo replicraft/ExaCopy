@@ -37,6 +37,28 @@ INCUMBENT = b"ExaCopy campaign incumbent, left byte-for-byte intact\n"
 ROUTES = ("direct-pinned-tcp-v1", "embedded-wireguard-tcp-v1")
 
 
+PUBLICATION_STATES = {"not_published", "publication_uncertain", "published"}
+REMOTE_ERROR_CODES = {
+    "E_INVALID_REQUEST", "E_CONFLICT", "E_IO", "E_INTEGRITY",
+    "E_UNSUPPORTED", "E_AUTHORIZATION", "E_RECOVERY_REQUIRED", "E_CANCELLED",
+}
+
+
+class CaseExitMismatch(Failed):
+    """Keep an allowlisted outcome from the exact CLI invocation."""
+
+    def __init__(self, name, observed, expected, report):
+        super().__init__(f"{name}: exit {observed}, expected {expected}")
+        self.observation = {"case": name, "exit_status": observed, "expected_exit_status": expected}
+        publication = report.get("publication")
+        if isinstance(publication, str) and publication in PUBLICATION_STATES:
+            self.observation["publication"] = publication
+        error = report.get("error")
+        code = error.get("code") if isinstance(error, dict) else None
+        if isinstance(code, str) and code in REMOTE_ERROR_CODES:
+            self.observation["error_code"] = code
+
+
 def git(*arguments):
     return subprocess.check_output(
         ["git", *arguments], cwd=ROOT, timeout=10, text=True,
@@ -212,9 +234,11 @@ def run_case(args, name, subcommand, operands, expected, *, cut=None, qualificat
         and report.get("schema_version") == "1.0",
         f"{name}: wrong report schema",
     )
-    if report.get("error", {}).get("code") == "E_AUTHORIZATION" and name == "get":
+    error = report.get("error")
+    if isinstance(error, dict) and error.get("code") == "E_AUTHORIZATION" and name == "get":
         raise Blocked("compiled CLI refused current independent qualification or source authority")
-    require(status == expected, f"{name}: exit {status}, expected {expected}")
+    if status != expected:
+        raise CaseExitMismatch(name, status, expected, report)
     return report
 
 
@@ -525,6 +549,8 @@ def main(observe_case=None, observe_destination=None):
     except Failed as error:
         summary["status"], status = "fail", 1
         summary["reason"] = str(error)
+        if isinstance(error, CaseExitMismatch):
+            summary["failed_case"] = error.observation
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         summary["status"], status = ("fail", 1) if summary.get("fixture_ready") else ("blocked", 77)
         summary["reason"] = type(error).__name__

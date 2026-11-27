@@ -1,6 +1,6 @@
 """Harness controls without a native destination or a network peer."""
 
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 import hashlib
 import ipaddress
 import json
@@ -9,7 +9,9 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
+import campaign
 from campaign import HeldInputs, absent, command_for, namespace, receipt_absent
 from fixture import Blocked, Failed, PeerLog, checked_read, compare_files, digest_executable, hash_source, opened
 from qualification_request import (
@@ -108,6 +110,46 @@ class FixtureControls(unittest.TestCase):
                 )
                 self.assertEqual(command[0], args.binary)
                 self.assertEqual(list(map(os.fspath, command[1:])), case["argv"])
+
+    def test_campaign_retains_only_allowlisted_exit_mismatch_fields(self):
+        path = self.root / "campaign"
+        arguments = ["campaign", "--route", campaign.ROUTES[1]]
+        for name in (
+            "binary", "destination", "owner-profile", "ssh-profile", "qualification",
+            "trust", "source-small", "source-interrupt", "sshd-log", "evidence",
+        ):
+            arguments.extend((f"--{name}", str(path if name == "evidence" else self.root / name)))
+        report = {
+            "schema": "exacopy.cli.remote_download", "schema_version": "1.0", "publication": "not_published",
+            "error": {"code": "E_INVALID_REQUEST", "message": "private input", "job_directory": "/private/path"},
+        }
+        raw = json.dumps(report).encode()
+
+        @contextmanager
+        def child(_evidence, _name, _argv, _cwd, stdout, _stderr):
+            stdout.write(raw)
+            yield SimpleNamespace(returncode=2, wait_for_exit=lambda _timeout: None)
+
+        def cases(args, _summary):
+            args.inputs = SimpleNamespace(recheck=lambda: None)
+            campaign.run_case(args, "qualification-path-control", ("get",), ("source", "target"), 3)
+
+        with (
+            patch.object(campaign.sys, "argv", arguments),
+            patch.object(campaign, "cases", side_effect=cases),
+            patch.object(campaign, "owned_cli_process", side_effect=child),
+        ):
+            self.assertEqual(campaign.main(), 1)
+        summary = json.loads((path / "summary.json").read_bytes())
+        self.assertEqual(summary["failed_case"], {
+            "case": "qualification-path-control", "exit_status": 2, "expected_exit_status": 3,
+            "publication": "not_published", "error_code": "E_INVALID_REQUEST",
+        })
+        self.assertEqual(summary["artifacts_sha256"]["qualification-path-control.stdout"],
+                         hashlib.sha256(raw).hexdigest())
+        invalid = campaign.CaseExitMismatch("get", 4, 11, {"publication": [], "error": {"code": "private"}})
+        self.assertEqual(invalid.observation, {"case": "get", "exit_status": 4, "expected_exit_status": 11})
+        self.assertNotIn("private input", json.dumps(summary))
 
     def test_unsigned_facts_expect_exact_bounded_value_shapes(self):
         observation = {
