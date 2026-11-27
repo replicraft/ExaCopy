@@ -2,9 +2,10 @@
 
 ## Current selection and remaining work
 
-The source pin selects public APFS `9bba273002ebe5ffc54e7877ab636d88143df6ba`.
-The mounted package changes only its README. Mounted sources, tests and
-dependency declarations match `8878ed18`.
+The source pin selects public APFS `6b211a706e038e5b485f1d410049b068e753344e`.
+All 48 mounted-package paths and its workspace build inputs match `9bba2730`.
+The upstream changes concern container and format qualification outside the
+mounted dependency graph.
 Existing native results keep their recorded source and limits.
 ExaCopy uses `ReopenedStage::open_named` for read-only restart inspection,
 including bounded reads, the EOF probe and coherent live metadata.

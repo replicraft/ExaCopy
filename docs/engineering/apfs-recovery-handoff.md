@@ -1,9 +1,10 @@
 # APFS private-stage recovery handoff
 
 The selected mounted APFS companion is public commit
-`9bba273002ebe5ffc54e7877ab636d88143df6ba` (`apfs-mounted` 0.1.0).
-The mounted package changes only its README. Mounted sources, tests and
-dependency declarations match `8878ed18`.
+`6b211a706e038e5b485f1d410049b068e753344e` (`apfs-mounted` 0.1.0).
+All 48 mounted-package paths and its workspace build inputs match `9bba2730`.
+The upstream container and format qualification changes are outside the mounted
+dependency graph and do not change the strict birth-time contract.
 Earlier native results retain their revision and scope.
 Commit `4fa67b7` adds the owned-name and event-anchor constructor for the
 observation-only `ReopenedStage` API. ExaCopy uses it for restart read-back
