@@ -1,4 +1,5 @@
 from contextlib import nullcontext
+from dataclasses import asdict
 from pathlib import Path
 import hashlib
 import json
@@ -413,6 +414,45 @@ class KernelFixtureTests(unittest.TestCase):
         ):
             with self.assertRaises(Blocked):
                 observations.check_delta(before, after, expected)
+
+    def test_failed_post_intent_observation_is_retained_without_acknowledgement(self):
+        initial = observations.Counters(0, 0, 0, None)
+        get = observations.Counters(96, 112, 1, "127.0.0.1:49152")
+        interrupted = observations.Counters(192, 224, 2, "127.0.0.1:49153")
+        resumed = observations.Counters(288, 336, 3, "127.0.0.1:49154")
+        unexpected = observations.Counters(320, 336, 3, "127.0.0.1:49154")
+        for last, phase, after in (
+            (unexpected, "case-delta", asdict(unexpected)),
+            (Blocked("synthetic private failure details"), "case-sample", None),
+        ):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as scratch:
+                work = Path(scratch)
+                mailbox = work / "telemetry"
+                report = {}
+
+                def complete_cases(_seconds, *, signal, stop):
+                    for index, _ in enumerate(observations.CASES):
+                        observations.file_signal(mailbox / f"case-{index}.done")
+                    self.assertTrue(observations.wait_file(mailbox / "blocked", timeout=5))
+                    self.assertTrue(stop())
+                    return ProcessResult("observer-stopped")
+
+                with patch.object(observations, "snapshot", side_effect=[
+                    initial, initial, initial, get, get, interrupted, resumed, last,
+                ]):
+                    with self.assertRaises(fixture.direct.EvidenceFailed):
+                        fixture.execute_campaign(
+                            Mock(), SimpleNamespace(wait=complete_cases), work, work,
+                            work / "unused", report, {}, Mock(time_for=Mock(return_value=10)),
+                        )
+                self.assertEqual([row["case"] for row in report["kernel_cases"]], [
+                    name for name, _ in observations.CASES[:-1]
+                ])
+                self.assertEqual(report["kernel_case_failure"], {
+                    "case": "post-intent", "phase": phase,
+                    "before": asdict(resumed), "after": after, "failure": {"kind": "refused"},
+                })
+                self.assertFalse((mailbox / "case-6.observed").exists())
 
     def test_public_telemetry_rejects_wrong_peer_and_non_loopback_endpoint(self):
         key = "01" * 32

@@ -23,7 +23,7 @@ from remote_commissioning_authority import make_authority, read_json
 from remote_commissioning_peer import Blocked, Fixture, INSTALL, SSHD, checkpoint, directory_identity, run, unit_status
 from remote_commissioning_wireguard_lane import ClientBudget, ClientLane, ClientStep
 from remote_commissioning_wireguard_net import CLIENT, SERVER, SSH_PORT, SET_PRIV, SS, KernelPeer, command
-from remote_commissioning_wireguard_observations import CASES, Counters, check_delta, file_signal, snapshot, wait_file
+from remote_commissioning_wireguard_observations import CASES, file_signal, observe_cases, snapshot, wait_file
 import remote_commissioning_wireguard_provider as provider
 import remote_commissioning_wireguard_provider_b as provider_b
 from remote_commissioning_wireguard_provider_profiles import DispatchMode
@@ -111,26 +111,6 @@ def validate_listener(fixture, kernel):
         raise Blocked("the isolated client unexpectedly owns a TCP listener")
 
 
-def observe_cases(kernel, mailbox, halted, rows, failures):
-    try:
-        before = snapshot(kernel)
-        if before != Counters(0, 0, 0, None):
-            raise Blocked("kernel peer lacks a fresh quiet initial baseline")
-        file_signal(mailbox / "start")
-        for index, (name, count) in enumerate(CASES):
-            if not wait_file(mailbox / f"case-{index}.done", halted.is_set):
-                return
-            kernel.recheck_link()
-            after = snapshot(kernel)
-            check_delta(before, after, count)
-            rows.append({"case": name, "before": asdict(before), "after": asdict(after)})
-            before = after
-            file_signal(mailbox / f"case-{index}.observed")
-    except Exception as error:
-        failures.append(error)
-        file_signal(mailbox / "blocked")
-
-
 def client_command(fixture, kernel, work, b3sum, env, host_mount):
     return kernel.client.enter(
         SET_PRIV, f"--reuid={os.geteuid()}", f"--regid={os.getegid()}", "--clear-groups",
@@ -157,7 +137,7 @@ def execute_campaign(kernel, lane, handoff, work, binary, report, input_digests,
     observer.start()
     try:
         if not wait_file(mailbox / "start", lambda: bool(failures), timeout=budget.time_for(120)):
-            raise failures[0]
+            raise failures[0].error
         seconds = budget.time_for(CAMPAIGN_SECONDS)
         file_signal(handoff / ClientStep.CAMPAIGN.value)
         result = lane.wait(seconds, signal=handoff / ClientStep.CAMPAIGN_COMPLETE.value,
@@ -169,10 +149,13 @@ def execute_campaign(kernel, lane, handoff, work, binary, report, input_digests,
         if observer.is_alive():
             raise CleanupUnconfirmed("kernel telemetry observer cleanup is unconfirmed")
         report["kernel_cases"] = rows
+        if failures:
+            report["kernel_case_failure"] = failures[0].evidence()
     if failures:
-        if isinstance(failures[0], CleanupUnconfirmed):
-            raise failures[0]
-        raise direct.EvidenceFailed("kernel peer observations differ from the executed campaign") from failures[0]
+        error = failures[0].error
+        if isinstance(error, CleanupUnconfirmed):
+            raise error
+        raise direct.EvidenceFailed("kernel peer observations differ from the executed campaign") from error
     if result.status != "rendezvous":
         return 1 if result.exit_status == 1 else 77
     summary = read_json(work / "campaign/summary.json")

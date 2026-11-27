@@ -1,12 +1,13 @@
 """Finite kernel telemetry for a closed commissioning campaign."""
 import base64
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from enum import Enum
 import ipaddress
-from pathlib import Path
 import re
 import time
 
 from remote_commissioning_peer import Blocked, checkpoint
+from remote_commissioning_wireguard_progress import failure
 
 CASES = (
     ("qualification-path-control", 0), ("qualification-refusal", 0),
@@ -22,6 +23,35 @@ class Counters:
     sent: int
     handshake: int
     endpoint: str | None
+
+
+class ObservationPhase(Enum):
+    INITIAL_SAMPLE = "initial-sample"
+    INITIAL_BASELINE = "initial-baseline"
+    START_SIGNAL = "start-signal"
+    CASE_RENDEZVOUS = "case-rendezvous"
+    LINK_RECHECK = "link-recheck"
+    CASE_SAMPLE = "case-sample"
+    CASE_DELTA = "case-delta"
+    CASE_ACKNOWLEDGEMENT = "case-acknowledgement"
+
+
+@dataclass(frozen=True)
+class ObservationFailure:
+    error: Exception
+    phase: ObservationPhase
+    case: str | None
+    before: Counters | None
+    after: Counters | None
+
+    def evidence(self):
+        return {
+            "phase": self.phase.value,
+            "case": self.case,
+            "before": asdict(self.before) if self.before is not None else None,
+            "after": asdict(self.after) if self.after is not None else None,
+            "failure": failure(self.error),
+        }
 
 
 def numbers(fields, count):
@@ -89,6 +119,36 @@ def wait_file(path, stop=lambda: False, *, timeout=CASE_TIMEOUT):
 def file_signal(path):
     with path.open("xb"):
         pass
+
+
+def observe_cases(kernel, mailbox, halted, rows, failures):
+    phase = ObservationPhase.INITIAL_SAMPLE
+    name = before = after = None
+    try:
+        before = snapshot(kernel)
+        phase = ObservationPhase.INITIAL_BASELINE
+        if before != Counters(0, 0, 0, None):
+            raise Blocked("kernel peer lacks a fresh quiet initial baseline")
+        phase = ObservationPhase.START_SIGNAL
+        file_signal(mailbox / "start")
+        for index, (name, count) in enumerate(CASES):
+            after = None
+            phase = ObservationPhase.CASE_RENDEZVOUS
+            if not wait_file(mailbox / f"case-{index}.done", halted.is_set):
+                return
+            phase = ObservationPhase.LINK_RECHECK
+            kernel.recheck_link()
+            phase = ObservationPhase.CASE_SAMPLE
+            after = snapshot(kernel)
+            phase = ObservationPhase.CASE_DELTA
+            check_delta(before, after, count)
+            rows.append({"case": name, "before": asdict(before), "after": asdict(after)})
+            phase = ObservationPhase.CASE_ACKNOWLEDGEMENT
+            file_signal(mailbox / f"case-{index}.observed")
+            before = after
+    except Exception as error:
+        failures.append(ObservationFailure(error, phase, name, before, after))
+        file_signal(mailbox / "blocked")
 
 
 def observe_case(mailbox):
