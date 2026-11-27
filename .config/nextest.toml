@@ -35,6 +35,11 @@ inherits = "ci"
 slow-timeout = { period = "30s", terminate-after = 2 }
 global-timeout = "5m"
 
+[profile.ci-experimental-linux-public-command]
+inherits = "ci"
+slow-timeout = { period = "30s", terminate-after = 2 }
+global-timeout = "5m"
+
 [profile.ci-experimental-apfs-copy]
 inherits = "ci"
 
