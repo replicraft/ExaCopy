@@ -9,6 +9,15 @@ use exacopy_journal::{
 use super::fixture::{Fixture, History};
 use super::{DarwinJournalBoundary, DarwinJournalTail, DarwinReplayError, DarwinReplayStatus};
 
+impl Fixture {
+	pub(in crate::macos) fn recovered_intent(&self) -> History {
+		let mut history = self.records.prefix(6);
+		append_started(self, &mut history);
+		append_decision(self, &mut history);
+		history
+	}
+}
+
 #[test]
 fn accepts_one_recovery_generation_after_each_supported_original_attempt() {
 	let fixture = Fixture::new();
@@ -190,6 +199,27 @@ fn rejects_a_complete_decision_with_different_stream_evidence() {
 		fixture.replay(&different.bytes),
 		Err(DarwinReplayError::Phase(DarwinPhaseError::StreamMismatch))
 	));
+}
+
+#[test]
+fn rejects_recovery_decisions_that_cite_another_verification_or_metadata_frame() {
+	let fixture = Fixture::new();
+	let history = fixture.recovered_intent();
+	let decision = DarwinRecoveryDecision::from_frame(history.last()).unwrap();
+
+	for reference in [decision.verification(), decision.metadata()] {
+		let mut altered = history.prefix(7);
+		let mut payload = history.last().payload().to_vec();
+		let offset = find_digest(&payload, &reference.digest());
+		payload[offset] ^= 1;
+		altered.append(FrameKind::RecoveryDecision, &payload);
+
+		assert!(DarwinRecoveryDecision::from_frame(altered.last()).is_ok());
+		assert!(matches!(
+			fixture.replay(&altered.bytes),
+			Err(DarwinReplayError::Phase(DarwinPhaseError::BindingMismatch))
+		));
+	}
 }
 
 fn find_digest(payload: &[u8], digest: &[u8; 32]) -> usize {

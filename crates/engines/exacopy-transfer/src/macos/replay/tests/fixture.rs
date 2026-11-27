@@ -276,7 +276,7 @@ pub(super) fn name(bytes: &[u8]) -> UnixComponent<'_> {
 	UnixComponent::new(bytes).unwrap()
 }
 
-pub(super) fn identity(inode: u64) -> DarwinFileIdentity {
+pub(in crate::macos) fn identity(inode: u64) -> DarwinFileIdentity {
 	DarwinFileIdentity::new(
 		DarwinVolumeIdentity::new(9, [2, 17]).unwrap(),
 		NonZeroU64::new(inode).unwrap(),

@@ -2,12 +2,17 @@ use std::cell::RefCell;
 use std::io::{self, Cursor, Read};
 
 use exacopy_endpoint::UnixComponent;
-use exacopy_journal::{DarwinFileIdentity, JournalJobId, OwnerError};
+use exacopy_journal::frame::FrameKind;
+use exacopy_journal::{
+	DarwinFileIdentity, DarwinNamespaceObservation, DarwinPublicationNames, DarwinRecoveryDecision,
+	JournalJobId, OwnerError,
+};
 
 use crate::macos::inspection::capabilities::{
 	InspectionStageReader, ObservationError, StageMetadata, StageObservation,
 };
-use crate::macos::replay::tests::fixture::Fixture;
+use crate::macos::replay::DarwinReplayStatus;
+use crate::macos::replay::tests::fixture::{Fixture, identity};
 
 use super::{
 	DarwinInspectionAuthority, DarwinReceiptArtifact, InspectionInventory, InspectionJob,
@@ -48,7 +53,10 @@ fn authenticated_inspection_revalidates_inventory_and_journal_before_returning()
 	let result = inspect(&job, job.authority(), NamespaceOnly).unwrap().0;
 	assert_eq!(result.plan_bytes, job.history.plan.encode());
 	assert_eq!(result.receipt, DarwinReceiptArtifact::PresentUncommitted);
-	assert_eq!(result.namespace, job.history.stage.identity);
+	assert_eq!(
+		result.namespace.stage,
+		DarwinNamespaceObservation::Present(job.history.stage.identity)
+	);
 	assert_eq!(
 		*job.calls.borrow(),
 		[
@@ -65,6 +73,43 @@ fn authenticated_inspection_revalidates_inventory_and_journal_before_returning()
 			Call::Snapshot,
 		]
 	);
+}
+
+#[test]
+fn inspection_preserves_current_names_when_a_recovery_decision_records_other_names() {
+	let mut job = Job::new();
+	job.history.records = job.history.recovered_intent();
+	let incumbent = identity(50);
+	job.target = DarwinNamespaceObservation::Present(incumbent);
+
+	let inspection = crate::macos::inspection::inspect(&job, job.authority()).unwrap();
+	let decision = DarwinRecoveryDecision::from_frame(
+		inspection
+			.replay
+			.frame(FrameKind::RecoveryDecision)
+			.unwrap(),
+	)
+	.unwrap();
+	assert_eq!(
+		decision.evidence().names,
+		DarwinPublicationNames {
+			stage: DarwinNamespaceObservation::Absent,
+			target: DarwinNamespaceObservation::Present(job.history.stage.identity),
+		}
+	);
+	assert_eq!(inspection.replay.status(), DarwinReplayStatus::Uncertain);
+	assert_eq!(
+		inspection.receipt,
+		DarwinReceiptArtifact::PresentUncommitted
+	);
+	assert_eq!(
+		inspection.namespace,
+		DarwinPublicationNames {
+			stage: DarwinNamespaceObservation::Present(job.history.stage.identity),
+			target: DarwinNamespaceObservation::Present(incumbent),
+		}
+	);
+	assert!(!job.calls.borrow().contains(&Call::OpenStage));
 }
 
 #[test]
@@ -129,6 +174,7 @@ struct Job {
 	history: Fixture,
 	calls: RefCell<Vec<Call>>,
 	refusal: Option<Refusal>,
+	target: DarwinNamespaceObservation,
 	initial_uid: u32,
 	final_uid: u32,
 }
@@ -142,6 +188,7 @@ impl Job {
 			history,
 			calls: RefCell::new(Vec::new()),
 			refusal: None,
+			target: DarwinNamespaceObservation::Absent,
 		}
 	}
 
@@ -165,7 +212,7 @@ impl Job {
 
 impl InspectionJob for Job {
 	type Error = Refusal;
-	type Snapshot = DarwinFileIdentity;
+	type Snapshot = DarwinPublicationNames;
 	type Record<'job> = Record<'job>;
 	type Inventory<'job> = Inventory<'job>;
 
@@ -258,7 +305,7 @@ struct Inventory<'job>(&'job Job);
 
 impl InspectionInventory for Inventory<'_> {
 	type Error = Refusal;
-	type Snapshot = DarwinFileIdentity;
+	type Snapshot = DarwinPublicationNames;
 	type Stage = DarwinFileIdentity;
 	type Reader<'inventory>
 		= StageReader<'inventory>
@@ -296,7 +343,10 @@ impl InspectionInventory for Inventory<'_> {
 
 	fn snapshot(&self) -> Self::Snapshot {
 		self.0.calls.borrow_mut().push(Call::Snapshot);
-		self.0.history.stage.identity
+		DarwinPublicationNames {
+			stage: DarwinNamespaceObservation::Present(self.0.history.stage.identity),
+			target: self.0.target,
+		}
 	}
 }
 
