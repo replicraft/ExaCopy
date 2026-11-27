@@ -251,10 +251,12 @@ function Test-ExaCopyUnderPath {
 }
 
 function Assert-ExaCopyNoNamedStreams {
-    param([string] $Path)
+    param([string] $Path, [switch] $IncludeHidden)
     # Directory streams are also possible on NTFS. Deleting just the unnamed
     # installation record would otherwise silently remove their user data.
-    foreach ($entry in (Get-Item -LiteralPath $Path -Stream '*' -ErrorAction Stop)) {
+    $lookup = @{ LiteralPath = $Path; Stream = '*'; ErrorAction = 'Stop' }
+    if ($IncludeHidden) { $lookup.Force = $true }
+    foreach ($entry in (Get-Item @lookup)) {
         if ($entry.Stream -cne ':$DATA') {
             throw 'An owned installation entry has a named NTFS stream. No removal is authorized.'
         }

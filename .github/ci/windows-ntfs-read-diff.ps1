@@ -46,7 +46,8 @@ function Assert-ReadDiffTreeSecurity {
 }
 
 function Remove-ReadDiffBuildChildren {
-    param([string] $Build, [string] $BuildIdentity, [Security.Principal.SecurityIdentifier] $Owner)
+    param([string] $Build, [string] $BuildIdentity, [Security.Principal.SecurityIdentifier] $Owner,
+        [switch] $IncludeHidden)
     $directories = [Collections.Generic.Stack[object]]::new()
     $entries = [Collections.Generic.List[object]]::new()
     $links = @{}
@@ -64,7 +65,7 @@ function Remove-ReadDiffBuildChildren {
                 $node = [ExaCopyQualification.ReadDiffCustody]::Observe($pin, $directory)
                 Assert-StageSameVolume $BuildIdentity $node.FileId
                 Assert-ReadDiffTreeSecurity $path $Owner
-                Assert-ExaCopyNoNamedStreams $path
+                Assert-ExaCopyNoNamedStreams $path -IncludeHidden:$IncludeHidden
                 $entry.Node = $node
                 if ($directory) {
                     $entry.Guard = [ExaCopyQualification.DirectoryCustody]::HoldAncestor($path)
@@ -92,7 +93,7 @@ function Remove-ReadDiffBuildChildren {
         for ($index = $entries.Count - 1; $index -ge 0; $index--) {
             $entry = $entries[$index]
             Assert-ReadDiffTreeSecurity $entry.Path $Owner
-            Assert-ExaCopyNoNamedStreams $entry.Path
+            Assert-ExaCopyNoNamedStreams $entry.Path -IncludeHidden:$IncludeHidden
             if ($entry.Directory) {
                 Assert-ExaCopyExactEntries $entry.Path @()
                 $entry.Guard.Dispose()
@@ -124,7 +125,7 @@ function Remove-ReadDiffBuildChildren {
 
 function Remove-HeldReadDiffFixture {
     param([string] $Fixture, [string] $Build, $Pin, $Guard, [string] $Identity, $BuildPin,
-        [string] $BuildIdentity, [string] $Volume, $Ancestors)
+        [string] $BuildIdentity, [string] $Volume, $Ancestors, [switch] $IncludeHiddenBuildEntries)
     if ($null -eq $Pin -or $null -eq $Guard -or $null -eq $BuildPin) {
         throw 'Read/Diff fixture custody was not established.'
     }
@@ -143,7 +144,7 @@ function Remove-HeldReadDiffFixture {
     $buildGuard = [ExaCopyQualification.DirectoryCustody]::HoldAncestor($Build)
     try {
         Assert-StageSameIdentity $BuildIdentity ([ExaCopyQualification.DirectoryCustody]::Observe($buildGuard))
-        Remove-ReadDiffBuildChildren $Build $BuildIdentity $Ancestors.Owner
+        Remove-ReadDiffBuildChildren $Build $BuildIdentity $Ancestors.Owner -IncludeHidden:$IncludeHiddenBuildEntries
     } finally {
         $buildGuard.Dispose()
     }

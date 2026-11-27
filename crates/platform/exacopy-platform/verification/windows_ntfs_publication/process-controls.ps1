@@ -141,6 +141,7 @@ function New-GrandchildLaunch([string] $ChildScript) {
     @"
 `$start = [Diagnostics.ProcessStartInfo]::new($selected)
 `$start.UseShellExecute = `$false
+`$start.CreateNoWindow = `$true
 `$start.Arguments = '-NoLogo -NoProfile -NonInteractive -EncodedCommand $encoded'
 `$child = [Diagnostics.Process]::Start(`$start)
 `$child.Dispose()
@@ -287,7 +288,9 @@ $launch
 }
 Assert-Equal $completed.ExitCode 0
 Assert-Equal $completed.TimedOut $false
-Assert-Equal $completed.TotalProcesses 2
+if ($completed.TotalProcesses -ne 2) {
+    throw "Nested completion expected two owned processes, observed $($completed.TotalProcesses)."
+}
 if ($completed.RootSignaledWithActiveMilliseconds -lt 100) {
     throw 'The job did not show a sustained active descendant after the held root signaled.'
 }
@@ -303,7 +306,9 @@ Start-Sleep -Seconds 20
 "@
 $timed = Invoke-ContainmentControl 'nested-timeout' (New-GrandchildLaunch $child) 6000
 Assert-Equal $timed.TimedOut $true
-Assert-Equal $timed.TotalProcesses 2
+if ($timed.TotalProcesses -ne 2) {
+    throw "Nested timeout expected two owned processes, observed $($timed.TotalProcesses)."
+}
 Assert-Equal ([IO.File]::Exists($late)) $false
 
 $limit = [ExaCopyQualification.PublicationProcess]::StreamLimitBytes

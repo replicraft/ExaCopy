@@ -369,7 +369,8 @@ try {
         if ($fixtureCustodied -and $state.process_drained) {
             try {
                 if ($null -ne $buildPin) {
-                    Remove-HeldReadDiffFixture $fixture $build $fixturePin $fixtureGuard $fixtureId $buildPin $buildId $volume $ancestors
+                    Remove-HeldReadDiffFixture $fixture $build $fixturePin $fixtureGuard $fixtureId $buildPin $buildId $volume $ancestors `
+                        -IncludeHiddenBuildEntries
                 } else {
                     Confirm-StageNoResidue $fixture
                     if ($null -ne $fixtureGuard) { $fixtureGuard.Dispose() }

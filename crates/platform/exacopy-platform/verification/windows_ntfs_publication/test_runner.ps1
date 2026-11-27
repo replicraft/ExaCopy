@@ -88,6 +88,32 @@ foreach ($attributes in @(
 }
 
 . (Join-Path $repo 'tools/install/windows/paths.ps1')
+# Provider visibility must be opt-in and still inspect every selected stream.
+function Test-PublicationHiddenStreamLookup {
+    $synthetic = 'C:\fixture\cargo-target\synthetic-source\.git'
+    $calls = [Collections.Generic.List[bool]]::new()
+    $hidden = $false
+    $namedStream = $false
+    function Get-Item {
+        param([string] $LiteralPath, [string] $Stream, [string] $ErrorAction, [switch] $Force)
+        Require ($LiteralPath -ceq $synthetic -and $Stream -ceq '*' -and $ErrorAction -ceq 'Stop') (
+            'The exact path and complete stream enumeration must be requested.'
+        )
+        $calls.Add($PSBoundParameters.ContainsKey('Force') -and $Force)
+        if ($hidden -and !$Force) { throw 'hidden fixture entry is not visible by default' }
+        [pscustomobject]@{ Stream = ':$DATA' }
+        if ($namedStream) { [pscustomobject]@{ Stream = 'preserve:$DATA' } }
+    }
+    Assert-ExaCopyNoNamedStreams $synthetic
+    $hidden = $true
+    Require-Refusal { Assert-ExaCopyNoNamedStreams $synthetic } 'hidden visibility must stay opt-in'
+    Assert-ExaCopyNoNamedStreams $synthetic -IncludeHidden
+    $namedStream = $true
+    Require-Refusal { Assert-ExaCopyNoNamedStreams $synthetic -IncludeHidden } 'a hidden entry with named data must be preserved'
+    Require (($calls -join ',') -ceq 'False,False,True,True') 'Use Force only for explicitly admitted hidden metadata.'
+}
+Test-PublicationHiddenStreamLookup
+
 $knownRecord = Read-PublicationApplicationRecord $currentPowerShell
 $expected = (Get-FileHash -LiteralPath $currentPowerShell -Algorithm SHA256).Hash
 Require ($knownRecord.path -ceq $currentPowerShell -and $knownRecord.bytes -gt 0 -and $knownRecord.sha256 -ceq $expected) (
@@ -245,6 +271,28 @@ Test-PreBuildCleanup $true $true $true $true
 Test-PreBuildCleanup $false $true $true $false
 Test-PreBuildCleanup $true $false $true $false
 Test-PreBuildCleanup $true $true $false $false
+
+# Generate the actual grandchild launcher without starting a program.
+$controlTokens = $controlErrors = $null
+$controlAst = [Management.Automation.Language.Parser]::ParseFile(
+    (Join-Path $PSScriptRoot 'process-controls.ps1'), [ref]$controlTokens, [ref]$controlErrors)
+Require ($controlErrors.Count -eq 0) 'The process-control script must parse.'
+foreach ($functionName in @('Quote-Literal', 'Encode-Script', 'New-GrandchildLaunch')) {
+    $definition = $controlAst.Find({
+        param($node)
+        $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq $functionName
+    }, $false)
+    Require ($null -ne $definition) 'The grandchild launcher must have its exact source.'
+    . ([scriptblock]::Create($definition.Extent.Text))
+}
+$application = 'C:\Program Files\PowerShell\7\pwsh.exe'
+$grandchild = New-GrandchildLaunch 'exit 0'
+$noShell = $grandchild.IndexOf('$start.UseShellExecute = $false', [StringComparison]::Ordinal)
+$noWindow = $grandchild.IndexOf('$start.CreateNoWindow = $true', [StringComparison]::Ordinal)
+$effect = $grandchild.IndexOf('[Diagnostics.Process]::Start($start)', [StringComparison]::Ordinal)
+Require ($noShell -ge 0 -and $noWindow -gt $noShell -and $effect -gt $noWindow) (
+    'The nested launch must explicitly disable shell execution and console allocation before Process.Start.'
+)
 
 $source = [IO.Directory]::CreateTempSubdirectory('exacopy-publication-source-control-')
 try {
