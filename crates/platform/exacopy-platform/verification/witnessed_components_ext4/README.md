@@ -34,7 +34,8 @@ activation evidence. It changes no protocol, model transition or proof input.
 The optional runner mode is selected by `--coverage-only` on the canonical
 GitHub-hosted main push. A caller must provision the matching Rust 1.100.0
 `llvm-tools` component alongside the existing pinned build inputs. The
-existing workflow keeps its normal invocation. The coverage runner repeats
+existing qualification job keeps its normal invocation. A separate advisory
+job invokes coverage mode and retains its own evidence. The coverage runner repeats
 the checkout, actor, mount, fixture and running-image checks and adds a
 fixed instrumenting Rust flag after the compiler and loader override check.
 

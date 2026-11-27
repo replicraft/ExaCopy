@@ -105,3 +105,86 @@ jobs:
             ${{ runner.temp }}/exacopy-evidence/witnessed-components-ext4.txt
           if-no-files-found: ignore
           retention-days: 90
+
+  coverage:
+    name: Witnessed component coverage (advisory)
+    if: github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Confirm exact canonical hosted input
+        id: admission
+        run: |
+          test "$GITHUB_SERVER_URL" = https://github.com
+          test "${GITHUB_REPOSITORY,,}" = replicraft/exacopy
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_EVENT_NAME" = push
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = Linux
+          test "$RUNNER_ARCH" = X64
+          head=$(git rev-parse HEAD)
+          status=$(git status --porcelain)
+          test "$head" = "$GITHUB_SHA"
+          test -z "$status"
+          (umask 077; mkdir -- "$RUNNER_TEMP/exacopy-evidence")
+      - name: Validate portable evidence controls
+        run: |
+          bash .github/ci/capture.sh witnessed-components-coverage-controls python3 -B -Werror \
+            crates/platform/exacopy-platform/verification/witnessed_components_ext4/test_runner.py -v
+      - name: Prepare pinned build inputs
+        run: |
+          bash .github/ci/capture.sh witnessed-components-coverage-apfs python3 -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh witnessed-components-coverage-transport python3 -B tools/transport_source.py --fetch
+          bash .github/ci/capture.sh witnessed-components-coverage-rust bash .github/ci/install.sh rust
+          bash .github/ci/capture.sh witnessed-components-coverage-lock cargo +1.100.0 fetch --locked \
+            --target "$EXPECTED_RUST_HOST"
+      - name: Install Rust 1.100.0 LLVM tools
+        run: |
+          bash .github/ci/capture.sh witnessed-components-coverage-llvm \
+            rustup component add --toolchain 1.100.0 llvm-tools
+      - name: Measure held Linux witness component coverage
+        id: coverage-run
+        run: |
+          bash .github/ci/capture.sh witnessed-components-coverage-ext4 python3 -B -Werror \
+            crates/platform/exacopy-platform/verification/witnessed_components_ext4/run.py \
+            --revision "$GITHUB_SHA" --coverage-only
+      - name: Require the coverage result on success
+        env:
+          EVIDENCE_PATH: ${{ steps.coverage-run.outputs.evidence_path }}
+        run: |
+          test -n "$EVIDENCE_PATH"
+          test -s "$EVIDENCE_PATH/coverage-result.json"
+      - name: Retain exact witnessed component coverage evidence
+        if: always() && steps.coverage-run.outputs.evidence_path != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-witnessed-components-ext4-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.coverage-run.outputs.evidence_path }}
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain coverage workflow capture logs
+        if: always() && steps.admission.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-witnessed-components-ext4-coverage-capture-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-coverage-controls.log
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-coverage-controls.txt
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-coverage-apfs.log
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-coverage-apfs.txt
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-coverage-transport.log
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-coverage-transport.txt
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-coverage-rust.log
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-coverage-rust.txt
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-coverage-lock.log
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-coverage-lock.txt
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-coverage-llvm.log
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-coverage-llvm.txt
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-coverage-ext4.log
+            ${{ runner.temp }}/exacopy-evidence/witnessed-components-coverage-ext4.txt
+          if-no-files-found: ignore
+          retention-days: 90
