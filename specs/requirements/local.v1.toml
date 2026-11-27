@@ -1811,3 +1811,19 @@ level = "obligation"
 state = "defined"
 path = "apps/exacopy-cli/verification/obligations.toml"
 target = "P-081"
+
+[[coverage]]
+id = "first-witnessed-terminal-inspection"
+status = "experimental"
+requirement_ids = ["R-261"]
+acceptance_ids = ["A-261"]
+invariant_ids = ["INV-009", "INV-018", "INV-019"]
+scope = "Read-only historical attribution of a first witnessed continuation under independent archive selection. A verified submitted kind-18 terminal boundary must match the archived head and receipt commitment."
+limits = "The synthetic terminal-selector test covers replay shape and matching commitments. It does not cover actual native file custody, live or recovered publication, or process-crash and power-loss qualification."
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/remote_continued/tests.rs"
+target = "actual_signed_kind40_must_form_the_exact_clean_successor"

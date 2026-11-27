@@ -406,6 +406,14 @@ notes = "Ordinary foreground remote report and common failure envelope. Witness 
 id = "exacopy.cli.witnessed_remote_download"
 kind = "cli_output"
 status = "implemented"
-version = "1.0"
+version = "1.1"
 owner = "apps/exacopy-cli/src/remote_report/witness.rs"
-notes = "Default-off first witnessed resume success report. Includes exact receipt commitment and retained link evidence without claiming an ordinary full-file BLAKE3 value. Native production qualification remains separate."
+notes = "Default-off first witnessed resume success report. Includes exact receipt commitment, retained link evidence and archive selection without claiming an ordinary full-file BLAKE3 value. Native production qualification remains separate."
+
+[[contract]]
+id = "exacopy.cli.witnessed_remote_inspection"
+kind = "cli_output"
+status = "implemented"
+version = "1.0"
+owner = "apps/exacopy-cli/src/remote_inspect_witness/report.rs"
+notes = "Default-off read-only inspection of an explicitly selected witnessed remote terminal archive. Historical evidence only. Witnessed download report 1.0 lacks archive selection and is not an inspection input."

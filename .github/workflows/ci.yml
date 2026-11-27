@@ -144,7 +144,7 @@ jobs:
             -E 'test(/^(args::parser::remote::|remote::|remote_(frontdoor|report)::|assembly::(remote_ssh::|ssh_session::|linux::remote_(download|journal|stage|continued)::))/)'
           bash .github/ci/capture.sh experimental-ssh-wireguard-cli-attendance \
             python3 -B .github/ci/cli_opt_in_attendance.py remote "$report"
-      - name: Run opt-in first witnessed-prefix resume controls
+      - name: Run opt-in first witnessed-prefix resume and inspection controls
         if: ${{ !cancelled() && steps.nextest.outcome == 'success' && runner.os == 'Linux' }}
         env:
           CARGO_TARGET_DIR: target/experimental-verified-prefix-resume
@@ -154,7 +154,7 @@ jobs:
           bash .github/ci/capture.sh experimental-verified-prefix-resume-cli cargo +1.100.0 nextest run --locked \
             -p exacopy-cli --lib --no-default-features --features experimental-verified-prefix-resume,experimental-ssh-wireguard \
             --profile ci-experimental-verified-prefix-resume --no-tests fail \
-            -E 'test(/^(args::parser::remote::|remote::|remote_(frontdoor|report)::|assembly::(remote_ssh::|ssh_session::|linux::remote_(download|journal|stage|continued|witness_authority)::))/)'
+            -E 'test(/^(args::parser::(remote|remote_inspect_witness)::|remote::|remote_(frontdoor|report|inspect_witness)::|witness_archive::|assembly::(remote_ssh::|ssh_session::|linux::remote_(download|journal|stage|continued|witness_authority)::))/)'
           bash .github/ci/capture.sh experimental-verified-prefix-resume-attendance \
             python3 -B .github/ci/cli_opt_in_attendance.py witnessed-resume "$report"
       - name: Run opt-in Linux CLI public-stage inspection tests

@@ -35,6 +35,24 @@ WITNESSED_EXPECTED = (
     "assembly::linux::remote_continued::original::outcome::tests::observed_conflict_without_a_confirmed_record_requires_reconciliation",
     "assembly::linux::remote_continued::original::outcome::tests::confirmed_receipt_is_returned_only_for_the_actual_published_result",
     "assembly::linux::remote_continued::tests::actual_signed_kind40_must_form_the_exact_clean_successor",
+    (
+        "args::parser::remote_inspect_witness::tests::"
+        "witness_inspection_accepts_only_explicit_read_only_inputs"
+    ),
+    (
+        "remote_inspect_witness::report::tests::"
+        "witness_inspection_projects_verified_commitment_and_redacts_refusals"
+    ),
+    (
+        "remote_report::tests::"
+        "published_with_omissions_uses_dedicated_nonclean_status_and_precise_evidence"
+    ),
+    "witness_archive::tests::valid_strict_report_preserves_independent_selection",
+    "witness_archive::tests::duplicate_unknown_and_positional_fields_are_refused",
+    "witness_archive::tests::incoherent_or_noncanonical_report_is_refused",
+    "witness_archive::tests::complete_report_is_bounded_and_requires_one_document",
+    "remote_report::tests::archive::producer_report_roundtrips_the_independently_selected_archive",
+    "remote_report::tests::archive::inconsistent_archive_cannot_be_reported_as_committed_success",
 )
 
 
@@ -79,7 +97,7 @@ class CliOptInAttendanceTests(unittest.TestCase):
             with self.subTest(missing=missing):
                 present = [name for name in WITNESSED_EXPECTED if name != missing]
                 self.write_report([*present, missing.replace("::tests::", "::unrelated::")])
-                with self.assertRaisesRegex(ValueError, "required testcases missing"):
+                with self.assertRaisesRegex(ValueError, f"required testcases missing: {missing}$"):
                     check_attendance(self.report, "witnessed-resume")
 
     def test_incomplete_session_record_cannot_satisfy_remote_attendance(self):
