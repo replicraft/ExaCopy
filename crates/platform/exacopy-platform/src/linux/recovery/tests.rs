@@ -14,6 +14,11 @@ use crate::linux::job::{FIRST_SEGMENT, JOURNAL, OWNER, PLAN, RECEIPT, RECEIPTS, 
 use crate::linux::{DestinationRoot, ReadError, RecoveryFile, StageError};
 use crate::scratch::Scratch;
 
+#[path = "../../../tests/unit/linux/recovery/anchors.rs"]
+mod anchors;
+#[path = "../../../tests/unit/linux/recovery/records.rs"]
+mod records;
+
 const JOB: &str = "private-fixture-job";
 const PARKED: &str = "detached-original";
 const TARGET: &str = "public-fixture-name";

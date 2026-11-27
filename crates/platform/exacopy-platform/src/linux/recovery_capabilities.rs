@@ -10,6 +10,10 @@ use super::{
 	StageError,
 };
 
+#[cfg(test)]
+#[path = "../../tests/unit/linux_recovery_capabilities.rs"]
+mod tests;
+
 impl ReadView for RecoveryFile {
 	type Error = ReadError;
 

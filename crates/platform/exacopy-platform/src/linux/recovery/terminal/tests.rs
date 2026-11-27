@@ -13,6 +13,9 @@ use crate::linux::DestinationRoot;
 use crate::linux::job::STAGE;
 use crate::scratch::Scratch;
 
+#[path = "../../../../tests/unit/linux/recovery/terminal.rs"]
+mod refusal_tests;
+
 const JOB: &str = "terminal-job";
 const TARGET: &str = "target";
 const STAGE_NAME: &str = "old-stage";
@@ -175,13 +178,35 @@ fn witnessed_public_assessment_checks_two_aliases_without_using_receipt_names() 
 		extent: selection.extent,
 		journal_end: selection.journal_end,
 	};
+	let wrong_stage_directory = WitnessedPublishedSelection {
+		stage: RetainedPrefixSelection {
+			directory: selection.job,
+			..selection.stage
+		},
+		..expected
+	};
+	assert!(matches!(
+		records.inspect_published(wrong_stage_directory),
+		Err(StageError::IdentityChanged)
+	));
+	let malformed_witness = WitnessedPublishedSelection {
+		witness_name: *b"witness.1112131415161718191a1b1c1d1e1f2G",
+		..expected
+	};
+	assert!(matches!(
+		records.inspect_published(malformed_witness),
+		Err(StageError::IdentityChanged)
+	));
 	let receipt = fixture.path(FINAL);
 	fs::remove_file(&receipt).unwrap();
 	let read = records.inspect_published(expected).unwrap();
 	let mut data = [0; DATA.len()];
 	read.target().read_exact_at(0, &mut data).unwrap();
 	assert_eq!(data, DATA);
-	assert!(records.inspect(selection).is_err());
+	assert!(matches!(
+		records.inspect(selection),
+		Err(StageError::IdentityChanged)
+	));
 
 	let former_private_stage = fixture.scratch.path(JOB).join(STAGE).join(STAGE_NAME);
 	write_fixture(&former_private_stage, b"unexpected private stage bytes");
