@@ -1,0 +1,79 @@
+name: Windows fixed NTFS bootstrap history qualification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows-ntfs-bootstrap.yml'
+      - '.github/ci/install.sh'
+      - '.github/ci/common.sh'
+      - '.github/ci/windows-ntfs-custody.*'
+      - '.github/ci/windows-ntfs-read-diff*'
+      - 'tools/install/windows/paths.ps1'
+      - 'tools/apfs_source.py'
+      - 'tools/transport_source.py'
+      - 'specs/dependencies/apfs-source.toml'
+      - 'specs/dependencies/transport-source.toml'
+      - 'specs/dependencies/transport-source/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'apps/exacopy-cli/**'
+      - 'crates/foundation/**'
+      - 'crates/interfaces/exacopy-endpoint/**'
+      - 'crates/storage/exacopy-journal/**'
+      - 'crates/platform/exacopy-platform/**'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  qualify:
+    if: github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+    name: Windows bootstrap history (fixed NTFS)
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Admit the exact hosted job and check the existing data volume
+        id: admission
+        shell: pwsh
+        env:
+          EXACOPY_BOOTSTRAP_ACTIONS_READ_TOKEN: ${{ github.token }}
+        run: ./apps/exacopy-cli/verification/windows_bootstrap/run_hosted.ps1 -AdmissionOnly
+      - name: Provision pinned source and tools
+        shell: bash
+        env:
+          EXPECTED_RUST_HOST: x86_64-pc-windows-msvc
+          CARGO_TERM_COLOR: never
+        run: |
+          python -B tools/apfs_source.py --fetch
+          python -B tools/transport_source.py --fetch
+          bash .github/ci/install.sh rust
+          cargo +1.100.0 fetch --locked --target x86_64-pc-windows-msvc
+      - name: Qualify the exact held bootstrap case as the standard actor
+        id: native
+        shell: pwsh
+        env:
+          EXACOPY_BOOTSTRAP_ACTIONS_READ_TOKEN: ${{ github.token }}
+        run: ./apps/exacopy-cli/verification/windows_bootstrap/run_hosted.ps1
+      - name: Retain exact source and volume eligibility receipts
+        if: always() && steps.admission.outputs.evidence_path != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-ntfs-bootstrap-admission-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.admission.outputs.evidence_path }}
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain exact owned build and native fixture evidence
+        if: always() && steps.native.outputs.evidence_path != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-ntfs-bootstrap-native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.native.outputs.evidence_path }}
+          if-no-files-found: error
+          retention-days: 90

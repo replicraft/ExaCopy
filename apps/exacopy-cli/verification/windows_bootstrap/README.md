@@ -36,3 +36,17 @@ image and digest, uses owned process supervision, and removes the fixture only
 after confirmed drain and exact custody checks. Incomplete custody retains
 the named evidence. Native compilation and execution of this initial fixture
 remain pending. No public command or ordinary feature default is changed.
+
+The separate `windows-ntfs-bootstrap.yml` workflow admits one exact canonical
+main-push job and its source, attempt and image. Its provider checks the
+checkout's existing non-system fixed-NTFS volume and keeps the native reader's
+strict ancestry policy. It changes no volume or volume ACL. The controller
+derives a same-SID restricted primary token and checks the planned token and
+actual suspended child's session, elevation and storage privileges before
+resume. The documented process API may temporarily enable a possessed caller
+privilege; the provider adds no explicit privilege adjustment.
+
+Build retirement, held image selection, process drain and fixture cleanup have
+separate receipts. Ineligible volume or actor evidence fails admission without
+a fallback. A passing initial fixture covers only the cases above. It does not
+qualify Windows copy, restart recovery, publication or power-loss durability.

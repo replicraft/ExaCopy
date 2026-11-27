@@ -1,10 +1,12 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Text;
 using System.Threading;
 using Microsoft.Win32.SafeHandles;
@@ -328,6 +330,121 @@ namespace ExaCopyQualification
             return preparation;
         }
 
+        // Separate fixed Cargo invocation for the Windows bootstrap fixture.
+        // Publication v2 retains its original scope.
+        public static BuildPreparationReceipt PrepareBootstrapBuild(string program, string workDirectory,
+            string[] environment, string stdout, string stderr, int timeoutMilliseconds)
+        {
+            RequirePinnedCargoProgram(program, environment);
+            var arguments = new[]
+            {
+                "test", "--locked", "--offline", "--jobs", "2", "--target", "x86_64-pc-windows-msvc",
+                "-p", "exacopy-cli", "--test", "windows_bootstrap", "--no-default-features",
+                "--features", "windows-bootstrap-fixture", "--no-run", "--message-format=json"
+            };
+            var preparation = new BuildPreparationReceipt(timeoutMilliseconds);
+            try
+            {
+                RunOwned(program, arguments, workDirectory, environment, stdout, stderr, timeoutMilliseconds,
+                    true, false, true, preparation);
+            }
+            catch (Exception failure) when (preparation.Process != null)
+            {
+                RecordFailure(preparation.Process, failure, false);
+            }
+            preparation.Disposition = ClassifyBuildPreparation(preparation);
+            return preparation;
+        }
+
+        // The fixed bootstrap provider supplies its admitted PowerShell image,
+        // exact tracked runner and held fixture/image selections. No caller
+        // supplies a token; derive it from the controller's own primary token.
+        public static Receipt RunBootstrapActor(string program, string[] arguments, string workDirectory,
+            string[] environment, string stdout, string stderr, int timeoutMilliseconds)
+        {
+            using var impersonation = WindowsIdentity.GetCurrent(true);
+            if (impersonation != null)
+                throw new IOException("The bootstrap controller must not impersonate.");
+            using var current = WindowsIdentity.GetCurrent();
+            string sid = current.User?.Value;
+            if (String.IsNullOrEmpty(sid) || current.IsSystem ||
+                !new WindowsPrincipal(current).IsInRole(WindowsBuiltInRole.Administrator))
+                throw new IOException("An admitted hosted bootstrap controller token is required.");
+            const uint tokenQueryDuplicateAssignPrimary = 0x0008 | 0x0002 | 0x0001;
+            // DISABLE_MAX_PRIVILEGE and LUA_TOKEN are documented Win32 flags.
+            const uint disableMaxPrivilegeAndLuaToken = 0x0001 | 0x0004;
+            using var original = OpenBootstrapToken(GetCurrentProcess(), tokenQueryDuplicateAssignPrimary);
+            Require(CreateRestrictedToken(original, disableMaxPrivilegeAndLuaToken,
+                0, IntPtr.Zero, 0, IntPtr.Zero, 0, IntPtr.Zero, out var restricted),
+                "CreateRestrictedToken(bootstrap)");
+            using (restricted)
+            {
+                uint session = BootstrapTokenValue(original, 12); // TokenSessionId
+                ConfirmBootstrapToken(restricted, sid, session);
+                return RunOwned(program, arguments, workDirectory, environment, stdout, stderr,
+                    timeoutMilliseconds, false, false, false, null, restricted, sid, session);
+            }
+        }
+
+        private static SafeFileHandle OpenBootstrapToken(IntPtr process, uint access)
+        {
+            Require(OpenProcessToken(process, access, out var token), "OpenProcessToken(bootstrap)");
+            if (token.IsInvalid)
+            {
+                token.Dispose();
+                throw new IOException("The bootstrap process token is unavailable.");
+            }
+            return token;
+        }
+
+        private static uint BootstrapTokenValue(SafeFileHandle token, int informationClass)
+        {
+            Require(GetTokenInformation(token, informationClass, out uint value, 4, out uint written),
+                "GetTokenInformation(bootstrap)");
+            if (written != 4)
+                throw new IOException("The bootstrap token response has unexpected extent.");
+            return value;
+        }
+
+        private static void ConfirmBootstrapToken(SafeFileHandle token, string sid, uint session)
+        {
+            const int tokenType = 8, tokenSessionId = 12, tokenElevation = 20, tokenHasRestrictions = 21;
+            using var identity = new WindowsIdentity(token.DangerousGetHandle());
+            if (identity.User?.Value != sid || BootstrapTokenValue(token, tokenType) != 1 ||
+                BootstrapTokenValue(token, tokenSessionId) != session ||
+                BootstrapTokenValue(token, tokenElevation) != 0 ||
+                BootstrapTokenValue(token, tokenHasRestrictions) == 0 ||
+                new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator))
+                throw new IOException("The bootstrap actor is not a same-session restricted standard primary token.");
+
+            // TOKEN_PRIVILEGES contains a DWORD count and inline 12-byte
+            // LUID_AND_ATTRIBUTES records. The held adapter repeats this check.
+            const int tokenPrivileges = 3, header = 4, entry = 12, maxEntries = 256;
+            var privileges = new byte[header + maxEntries * entry];
+            if (Marshal.SizeOf<BootstrapLuid>() != 8)
+                throw new IOException("The bootstrap LUID ABI is unsupported.");
+            Require(GetBootstrapTokenBytes(token, tokenPrivileges, privileges, (uint)privileges.Length, out uint written),
+                "GetTokenInformation(TokenPrivileges)");
+            if (written < header || written > privileges.Length)
+                throw new IOException("The bootstrap token privilege response has unexpected extent.");
+            uint count = BinaryPrimitives.ReadUInt32LittleEndian(privileges);
+            if (count > maxEntries || written != header + entry * count)
+                throw new IOException("The bootstrap token privilege membership has unexpected extent.");
+            foreach (string name in new[] { "SeBackupPrivilege", "SeRestorePrivilege",
+                "SeTakeOwnershipPrivilege", "SeManageVolumePrivilege" })
+            {
+                Require(LookupPrivilegeValueW(null, name, out var value), "LookupPrivilegeValueW(bootstrap)");
+                for (int index = 0; index < count; index++)
+                {
+                    int offset = header + index * entry;
+                    if (BinaryPrimitives.ReadUInt32LittleEndian(privileges.AsSpan(offset)) == value.Low &&
+                        BinaryPrimitives.ReadInt32LittleEndian(privileges.AsSpan(offset + 4)) == value.High &&
+                        (BinaryPrimitives.ReadUInt32LittleEndian(privileges.AsSpan(offset + 8)) & 2) != 0)
+                        throw new IOException("The bootstrap actor has an enabled storage privilege.");
+                }
+            }
+        }
+
         private static void RequirePinnedCargoProgram(string program, string[] environment)
         {
             RequireBoundedText(program, 32766, nameof(program));
@@ -340,9 +457,17 @@ namespace ExaCopyQualification
                 throw new ArgumentException("Preparation requires the selected toolchain root.", nameof(environment));
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        private struct BootstrapLuid
+        {
+            public uint Low;
+            public int High;
+        }
+
         private static Receipt RunOwned(string program, string[] arguments, string workDirectory,
             string[] environment, string stdout, string stderr, int timeoutMilliseconds, bool observeJobProcesses,
-            bool refuseDiagnosticSetup, bool sampleActiveAfterRoot, BuildPreparationReceipt preparation = null)
+            bool refuseDiagnosticSetup, bool sampleActiveAfterRoot, BuildPreparationReceipt preparation = null,
+            SafeFileHandle bootstrapToken = null, string bootstrapSid = null, uint bootstrapSession = 0)
         {
             // The owning runner separately establishes the Windows Server 2025 SKU.
             if (!OperatingSystem.IsWindows() || Environment.OSVersion.Version.Build != Server2025Build ||
@@ -414,9 +539,19 @@ namespace ExaCopyQualification
                     // Associate the job as part of process creation. There is no
                     // returned, unassociated suspended child between native calls.
                     receipt.CreationAttempted = true;
-                    Require(CreateProcessW(program, command, IntPtr.Zero, IntPtr.Zero, true,
-                        Suspended | UnicodeEnvironment | ExtendedStartup | NoWindow,
-                        pinnedEnvironment.AddrOfPinnedObject(), workDirectory, ref startup, out created), "CreateProcessW");
+                    if (bootstrapToken == null)
+                    {
+                        Require(CreateProcessW(program, command, IntPtr.Zero, IntPtr.Zero, true,
+                            Suspended | UnicodeEnvironment | ExtendedStartup | NoWindow,
+                            pinnedEnvironment.AddrOfPinnedObject(), workDirectory, ref startup, out created), "CreateProcessW");
+                    }
+                    else
+                    {
+                        Require(CreateProcessAsUserW(bootstrapToken, program, command,
+                            IntPtr.Zero, IntPtr.Zero, true, Suspended | UnicodeEnvironment | ExtendedStartup | NoWindow,
+                            pinnedEnvironment.AddrOfPinnedObject(), workDirectory, ref startup, out created),
+                            "CreateProcessAsUserW(bootstrap)");
+                    }
                 }
                 finally
                 {
@@ -441,6 +576,11 @@ namespace ExaCopyQualification
                     if (!member)
                         throw new IOException("The suspended process was not in the exact creation-time job.");
                     receipt.Assigned = true;
+                    if (bootstrapToken != null)
+                    {
+                        using var childToken = OpenBootstrapToken(process.DangerousGetHandle(), 0x0008 | 0x0002);
+                        ConfirmBootstrapToken(childToken, bootstrapSid, bootstrapSession);
+                    }
                     if (trace != null)
                         RecordJobBaseline(job, receipt);
                     uint suspendCount = ResumeThread(thread);
@@ -1256,6 +1396,34 @@ namespace ExaCopyQualification
 
         [DllImport("kernel32.dll", ExactSpelling = true)]
         private static extern void DeleteProcThreadAttributeList(IntPtr list);
+
+        [DllImport("kernel32.dll", ExactSpelling = true)]
+        private static extern IntPtr GetCurrentProcess();
+
+        [DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true)]
+        private static extern bool OpenProcessToken(IntPtr process, uint access, out SafeFileHandle token);
+
+        [DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true)]
+        private static extern bool CreateRestrictedToken(SafeFileHandle existing, uint flags,
+            uint disableSidCount, IntPtr sidsToDisable, uint deletePrivilegeCount, IntPtr privilegesToDelete,
+            uint restrictedSidCount, IntPtr restrictedSids, out SafeFileHandle token);
+
+        [DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true)]
+        private static extern bool GetTokenInformation(SafeFileHandle token, int informationClass,
+            out uint value, uint length, out uint written);
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        private static extern bool LookupPrivilegeValueW(string system, string name, out BootstrapLuid value);
+
+        [DllImport("advapi32.dll", EntryPoint = "GetTokenInformation", ExactSpelling = true, SetLastError = true)]
+        private static extern bool GetBootstrapTokenBytes(SafeFileHandle token, int informationClass,
+            [Out] byte[] bytes, uint length, out uint written);
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        private static extern bool CreateProcessAsUserW(SafeFileHandle token, string application,
+            [In, Out] StringBuilder command, IntPtr processAttributes, IntPtr threadAttributes,
+            bool inherit, uint flags, IntPtr environment, string currentDirectory,
+            ref StartupExtended startup, out ProcessInformation information);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
         private static extern bool CreateProcessW(string application, [In, Out] StringBuilder command, IntPtr processAttributes,
