@@ -6,6 +6,7 @@ import json
 import math
 import os
 from pathlib import Path, PurePosixPath
+import posixpath
 import re
 import stat
 
@@ -20,7 +21,9 @@ EXPORT_LIMIT = 32 * 1024 * 1024
 INDEXED_PROFILE_LIMIT = 32 * 1024 * 1024
 EXPORT_TYPE = "llvm.coverage.json.export"
 EXPORT_VERSION = "3.1.0"
-SOURCE_PREFIX = "crates/platform/exacopy-platform/src/"
+CRATE_PREFIX = "crates/platform/exacopy-platform/"
+SOURCE_PREFIX = CRATE_PREFIX + "src/"
+TEST_PREFIX = CRATE_PREFIX + "tests/"
 TOOL_ENV = {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}
 
 
@@ -211,9 +214,12 @@ class Profiles:
         require(checked_file(image_path, image_fd, IMAGE_LIMIT) == image_receipt,
                 "instrumented executable changed during coverage export")
         self.check_cleanup()
-        tracked = command(self.evidence, "coverage-sources", ["git", "ls-files", "-z", SOURCE_PREFIX])
-        inventory = sorted(path for path in tracked.split("\0") if path.endswith(".rs"))
-        mapping = summarize(parse_export(output), self.ext4.ROOT, inventory)
+        tracked = command(self.evidence, "coverage-sources",
+                          ["git", "ls-files", "-z", "--", SOURCE_PREFIX, TEST_PREFIX])
+        sources = sorted(path for path in tracked.split("\0") if path.endswith(".rs"))
+        inventory = [path for path in sources if path.startswith(SOURCE_PREFIX)]
+        test_inventory = [path for path in sources if path.startswith(TEST_PREFIX)]
+        mapping = summarize(parse_export(output), self.ext4.ROOT, inventory, test_inventory)
         encoded = output.encode("utf-8")
         mapping["export_sha256"] = hashlib.sha256(encoded).hexdigest()
         mapping["export_size"] = len(encoded)
@@ -287,23 +293,55 @@ def counts(summary, metric):
     return {"total": total, "covered": covered, "uncovered": uncovered}
 
 
-def summarize(export, root, inventory):
+def linked_test_source(filename, tracked_tests):
+    # Interpret the LLVM label, without opening or resolving any filesystem path.
+    parts = []
+    for part in filename.relative_to(CRATE_PREFIX).parts:
+        if part == "..":
+            require(parts, "platform coverage alias leaves the owning crate")
+            parts.pop()
+        else:
+            parts.append(part)
+    name = PurePosixPath(CRATE_PREFIX, *parts).as_posix()
+    require(name.startswith(TEST_PREFIX) and name in tracked_tests,
+            "platform coverage alias does not name a tracked owning-crate test source")
+    return name
+
+
+def summarize(export, root, inventory, test_inventory):
     require(field(export, "type", str) == EXPORT_TYPE and field(export, "version", str) == EXPORT_VERSION,
             "wrong LLVM coverage export type or version")
     datasets = field(export, "data", list)
     require(len(datasets) == 1, "expected one LLVM coverage dataset")
     files = {}
+    excluded = {}
     governed = set(inventory)
+    tracked_tests = set(test_inventory)
+    crate = root / CRATE_PREFIX
     for row in field(datasets[0], "files", list):
-        filename = Path(field(row, "filename", str))
+        label = field(row, "filename", str)
+        filename = PurePosixPath(label)
+        exact_spelling = filename.as_posix() == label
         if filename.is_absolute():
             if not filename.is_relative_to(root):
+                require(not PurePosixPath(posixpath.normpath(filename)).is_relative_to(crate),
+                        "noncanonical coverage path enters the owning crate")
                 continue
             filename = filename.relative_to(root)
         name = filename.as_posix()
+        if name.startswith(CRATE_PREFIX):
+            require(exact_spelling, "noncanonical platform coverage path spelling")
+        if ".." in filename.parts:
+            if name.startswith(SOURCE_PREFIX):
+                require(name not in excluded, "duplicate linked test coverage mapping")
+                excluded[name] = linked_test_source(filename, tracked_tests)
+                continue
+            normalized = PurePosixPath(posixpath.normpath(root / filename))
+            require(not name.startswith(CRATE_PREFIX) and not normalized.is_relative_to(crate),
+                    "noncanonical coverage path enters or leaves the owning crate")
         if not name.startswith(SOURCE_PREFIX):
             continue
-        require(name in governed and ".." not in PurePosixPath(name).parts and name not in files,
+        require(name in governed and name not in files,
                 "unexpected or duplicate platform source mapping")
         summary = field(row, "summary", dict)
         files[name] = {metric: counts(summary, metric) for metric in ("lines", "regions")}
@@ -314,4 +352,5 @@ def summarize(export, root, inventory):
               for metric in ("lines", "regions")}
     return {"scope": "witnessed-component-coverage", "export": "coverage-export.stdout",
             "governed_source_inventory": inventory, "unmapped_sources": sorted(governed - files.keys()),
+            "tracked_test_source_inventory": test_inventory, "excluded_linked_test_mappings": excluded,
             "files": files, "totals_for_mapped_sources": totals}

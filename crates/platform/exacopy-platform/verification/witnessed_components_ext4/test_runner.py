@@ -331,7 +331,7 @@ class WitnessedComponents(unittest.TestCase):
         row = {"filename": name, "summary": {"lines": summary, "regions": summary}}
         report = {"type": coverage_profile.EXPORT_TYPE, "version": coverage_profile.EXPORT_VERSION,
                   "data": [{"files": [row, {"filename": "other/crate.rs"}]}]}
-        coverage_profile.summarize(coverage_profile.parse_export(json.dumps(report)), run.ROOT, [name])
+        coverage_profile.summarize(coverage_profile.parse_export(json.dumps(report)), run.ROOT, [name], [])
         for invalid in (
             None,
             report | {"version": "0.0.0"},
@@ -344,10 +344,63 @@ class WitnessedComponents(unittest.TestCase):
             }}]}]},
         ):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
-                coverage_profile.summarize(invalid, run.ROOT, [name])
+                coverage_profile.summarize(invalid, run.ROOT, [name], [])
         for invalid in ('{"field":0,"field":1}', '{"metric":NaN}', '{"metric":1e999}'):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 coverage_profile.parse_export(invalid)
+
+
+    def test_llvm_export_excludes_only_linked_tracked_platform_test_sources(self):
+        root = Path("/checked/repository")
+        source_prefix = coverage_profile.SOURCE_PREFIX
+        test_prefix = coverage_profile.TEST_PREFIX
+        crate_prefix = coverage_profile.CRATE_PREFIX
+        name = f"{source_prefix}linux.rs"
+        scratch = f"{test_prefix}common/scratch.rs"
+        journal = f"{test_prefix}unit/journal_segment.rs"
+        scratch_alias = f"{source_prefix}../tests/common/scratch.rs"
+        journal_alias = f"{source_prefix}linux/../../tests/unit/journal_segment.rs"
+        summary = {"count": 2, "covered": 1, "notcovered": 1, "percent": 50}
+        fixture_counts = {"count": 100, "covered": 100, "notcovered": 0, "percent": 100}
+        row = {"filename": name, "summary": {"lines": summary, "regions": summary}}
+
+        def mapping(*aliases, tracked_tests=(scratch, journal)):
+            test_rows = [{"filename": str(path),
+                          "summary": {"lines": fixture_counts, "regions": fixture_counts}}
+                         for path in aliases]
+            export = {"type": coverage_profile.EXPORT_TYPE, "version": coverage_profile.EXPORT_VERSION,
+                      "data": [{"files": [row, *test_rows]}]}
+            return coverage_profile.summarize(export, root, [name], tracked_tests)
+
+        result = mapping(root / scratch_alias, journal_alias)
+        self.assertEqual(result["tracked_test_source_inventory"], (scratch, journal))
+        self.assertEqual(result["excluded_linked_test_mappings"],
+                         {scratch_alias: scratch, journal_alias: journal})
+        self.assertEqual(list(result["files"]), [name])
+        self.assertEqual(result["totals_for_mapped_sources"]["lines"],
+                         {"total": 2, "covered": 1, "uncovered": 1})
+
+        for invalid in (
+            f"{source_prefix}../tests/untracked.rs",
+            f"{source_prefix}linux/../linux.rs",
+            f"{source_prefix}./linux.rs",
+            f"{source_prefix}/linux.rs",
+            f"{source_prefix}../tests/./common/scratch.rs",
+            f"{source_prefix}../../exacopy-platform/tests/common/scratch.rs",
+            f"{source_prefix}../../other/tests/common/scratch.rs",
+            f"{crate_prefix}tests/../src/linux.rs",
+            f"unrelated/../{name}",
+            f"../repository/{name}",
+            f"/checked/other/../repository/{name}",
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                mapping(invalid)
+        with self.assertRaisesRegex(ValueError, "tracked owning-crate test source"):
+            mapping(scratch_alias, tracked_tests=())
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            mapping(scratch_alias, root / scratch_alias)
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            mapping(root / name)
 
 
 if __name__ == "__main__":
