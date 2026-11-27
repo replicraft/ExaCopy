@@ -258,6 +258,10 @@ impl RecordDirectory<'_> {
 }
 
 #[cfg(test)]
+#[path = "../../../tests/unit/job_admission.rs"]
+mod setup_tests;
+
+#[cfg(test)]
 mod tests {
 	use std::fs;
 	use std::os::unix::fs::PermissionsExt as _;

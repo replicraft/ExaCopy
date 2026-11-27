@@ -238,3 +238,6 @@ fn write_private_fixture(path: &Path, bytes: &[u8]) {
 		.write_all(bytes)
 		.expect("write fixture record");
 }
+
+#[path = "../../../../tests/unit/job_checkpoint_scope.rs"]
+mod coverage;
