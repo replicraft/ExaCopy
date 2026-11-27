@@ -10,9 +10,11 @@ It returns an advisory generation;
 baseline persistence, pointer activation, native qualification, A-272 restart
 reconciliation and P-028 publication barriers remain open.
 
-The additional read-start interval guard and its regression have received source
-review. Their execution result is pending; the historical coverage above does
-not qualify the new guard.
+The additional read-start interval guard and its regression passed in the
+`9761682` hosted coverage run. All 98 model tests passed, with 1,015/1,030
+covered lines and 443/468 covered branches under the unchanged model minimums.
+[Read-start regression run](https://github.com/replicraft/ExaCopy/actions/runs/46039849658).
+These synthetic results do not qualify a native inventory producer.
 
 Admission requires the exact independently authenticated current predecessor
 and a representable successor generation. The observed durable intent must
