@@ -73,7 +73,40 @@ impl RecoveryWriteLease<'_> {
 		expected_segment: &RecoveryFile,
 		plan: WitnessReservationPlan,
 		authority: WitnessReservationAuthority,
-		mut enter_gate: impl FnMut(WitnessReservationGateRequest<'_>) -> Result<G, E>,
+		enter_gate: impl FnMut(WitnessReservationGateRequest<'_>) -> Result<G, E>,
+	) -> Result<PendingWitnessReservation<'lease>, WitnessReservationError<E>> {
+		self.reserve_witness_closeout_observed(
+			eligibility,
+			stage,
+			expected_segment,
+			plan,
+			authority,
+			(|| Ok(()), enter_gate),
+		)
+	}
+
+	/// Reserves capacity with an additional read-only observation before each gate.
+	///
+	/// Supply this operation the same preauthenticated evidence as
+	/// [`Self::reserve_witness_closeout`]. The observer runs after the native
+	/// checks and before authority serialization, with the held write locks
+	/// still in place. It may inspect independent read-only custody, but must not
+	/// acquire write leases or stage or journal writer locks.
+	///
+	/// # Errors
+	/// Also refuses unavailable or changed observations before submitting the
+	/// affected syscall. Previous allocations can require reconciliation.
+	pub fn reserve_witness_closeout_observed<'lease, G, E>(
+		&'lease self,
+		eligibility: &'lease RemoteDestinationEligibility<'_>,
+		stage: &'lease RetainedPrefixRead<'_>,
+		expected_segment: &RecoveryFile,
+		plan: WitnessReservationPlan,
+		authority: WitnessReservationAuthority,
+		(mut observe, mut enter_gate): (
+			impl FnMut() -> Result<(), WitnessReservationObservationError>,
+			impl FnMut(WitnessReservationGateRequest<'_>) -> Result<G, E>,
+		),
 	) -> Result<PendingWitnessReservation<'lease>, WitnessReservationError<E>> {
 		use WitnessReservationError as Error;
 
@@ -109,6 +142,7 @@ impl RecoveryWriteLease<'_> {
 
 		held.recheck_before(&journal, expected_segment)
 			.map_err(Error::Preflight)?;
+		observe().map_err(Error::Preflight)?;
 		let receipt_file = submit(&mut enter_gate, request, || {
 			open_anonymous(&job.directory.file)
 		})?;
@@ -122,6 +156,7 @@ impl RecoveryWriteLease<'_> {
 		initial_receipt
 			.recheck(&held)
 			.map_err(|error| Error::after(Effect::ReceiptCreate, error))?;
+		observe().map_err(|error| Error::after(Effect::ReceiptCreate, error))?;
 		submit(&mut enter_gate, request, || initial_receipt.allocate())?;
 		let receipt = initial_receipt
 			.after_allocation(&held, segment)
@@ -133,6 +168,7 @@ impl RecoveryWriteLease<'_> {
 			.recheck(&held)
 			.map_err(|error| Error::after(Effect::ReceiptAllocate, error))?;
 		request.effect = Effect::JournalAllocate;
+		observe().map_err(|error| Error::after(Effect::ReceiptAllocate, error))?;
 		self.submit_journal_allocation(&journal, &mut enter_gate, request)?;
 
 		PendingWitnessReservation::observe(

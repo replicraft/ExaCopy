@@ -45,6 +45,7 @@ pub(in crate::assembly::linux::remote_continued) enum ZeroTailWitnessFailure {
 	Binding,
 	Preflight(StageError),
 	Reservation(WitnessReservationError<WitnessAdmissionError>),
+	PendingReservation(WitnessReservationError),
 	Prefix(SuffixError<WitnessAdmissionError>),
 	Continuation(AdmissionError<WitnessAdmissionError>),
 	Link(WitnessFailure<SftpSourceError>),
@@ -190,12 +191,8 @@ impl<'scope, 'name> WitnessPass<'scope, 'name> {
 	where
 		Check: FnMut(ConnectionBinding) -> Result<(), RetryError>,
 	{
-		self.run_zero_tail_durability(proof, run, |mut submitted, recorded, durable| {
-			let receipt = durable
-				.as_ref()
-				.and_then(|result| result.as_ref().ok())
-				.copied()
-				.map(|kind9| submitted.record_receipt(kind9));
+		self.run_zero_tail_publication(proof, run, |mut submitted| {
+			let (recorded, durable, receipt) = publication::complete_receipt(&mut submitted);
 			finish(submitted, recorded, durable, receipt)
 		})
 		.await
@@ -248,7 +245,6 @@ impl<'scope, 'name> WitnessPass<'scope, 'name> {
 				};
 				let lane = WitnessCredentialLane::observe().map_err(Error::Preflight)?;
 				let enter = || {
-					lane.recheck().map_err(WitnessAdmissionError::Stage)?;
 					let approval = self
 						.approval
 						.enter(self.grant, self.names)
@@ -266,6 +262,7 @@ impl<'scope, 'name> WitnessPass<'scope, 'name> {
 					budget: self.budget,
 				};
 				let proposed = {
+					lane.recheck().map_err(Error::Preflight)?;
 					let _guard = enter().map_err(|_| Error::Binding)?;
 					admission
 						.preview(
@@ -278,12 +275,43 @@ impl<'scope, 'name> WitnessPass<'scope, 'name> {
 				verify_held_prior(&run, &admission, proposed)?;
 				let reservation = run
 					.lease
-					.reserve_witness_closeout(
+					.reserve_witness_closeout_observed(
 						run.eligibility,
 						reader,
 						run.segment,
 						plan,
 						authority,
+						(
+							|| lane.recheck().map_err(Into::into),
+							|request| {
+								if request.authority != authority
+									|| request.stage != self.names.retained
+									|| request.plan != plan
+								{
+									return Err(WitnessAdmissionError::Binding);
+								}
+								enter()
+							},
+						),
+					)
+					.map_err(Error::Reservation)?;
+				lane.recheck()
+					.map_err(|cause| Error::Prefix(SuffixError::Observation(cause)))?;
+				reservation.recheck().map_err(Error::PendingReservation)?;
+				let synced = reader
+					.sync_adopted(source_end, |actual, _| {
+						if actual != self.names.retained {
+							return Err(WitnessAdmissionError::Binding);
+						}
+						enter()
+					})
+					.map_err(Error::Prefix)?;
+				let active = admission
+					.commit(
+						&live,
+						reservation,
+						&synced,
+						|| lane.recheck().map_err(WitnessAdmissionError::Stage),
 						|request| {
 							if request.authority != authority
 								|| request.stage != self.names.retained
@@ -294,25 +322,6 @@ impl<'scope, 'name> WitnessPass<'scope, 'name> {
 							enter()
 						},
 					)
-					.map_err(Error::Reservation)?;
-				let synced = reader
-					.sync_adopted(source_end, |actual, _| {
-						if actual != self.names.retained {
-							return Err(WitnessAdmissionError::Binding);
-						}
-						enter()
-					})
-					.map_err(Error::Prefix)?;
-				let active = admission
-					.commit(&live, reservation, &synced, |request| {
-						if request.authority != authority
-							|| request.stage != self.names.retained
-							|| request.plan != plan
-						{
-							return Err(WitnessAdmissionError::Binding);
-						}
-						enter()
-					})
 					.map_err(Error::Continuation)?;
 				let stage = synced
 					.zero_tail_for_witness(source_end, lane, |actual, interval| {

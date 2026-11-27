@@ -1,7 +1,5 @@
 use std::fs::File;
-use std::io;
 use std::ops::Range;
-use std::os::unix::fs::FileExt as _;
 use std::sync::atomic::Ordering;
 
 use exacopy_endpoint::{MAX_FILE_LENGTH, ReadView};
@@ -17,12 +15,12 @@ use crate::linux::source::{SourceObservation, reopen_regular_for_write};
 
 mod custody;
 mod witness;
+mod write;
 pub use custody::SyncedSuffixRange;
 pub use witness::{
 	ProtectedWitnessEffect, ProtectedWitnessError, WitnessCredentialLane, WitnessLinkCandidate,
 	WitnessedSuffixReadback,
 };
-const MAX_INTERRUPTS: usize = 8;
 
 /// An actual syscall about to be submitted for the same retained stage.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -264,79 +262,6 @@ impl<'view, 'lease> RetainedSuffixWriter<'view, 'lease> {
 			confirmed_end: self.stamp.len(),
 			cause,
 		})?;
-		self.phase = Phase::Writing { range };
-		Ok(())
-	}
-
-	/// Writes a complete nonempty subwindow at the current suffix cursor.
-	///
-	/// Every syscall checks the exact native predecessor and takes its own
-	/// application authority. A positive short result advances only by its
-	/// confirmed count. Failed operations permanently stop this descriptor.
-	///
-	/// # Errors
-	/// Refuses invalid extents, changed native observations, authority refusal,
-	/// and any unconfirmed write.
-	pub fn write_next<G, E>(
-		&mut self,
-		bytes: &[u8],
-		mut enter: impl FnMut(RetainedPrefixSelection<'_>, SuffixEffect) -> Result<G, E>,
-	) -> Result<(), SuffixError<E>> {
-		let Phase::Writing { range } = std::mem::replace(&mut self.phase, Phase::Stopped) else {
-			return Err(SuffixError::Observation(StageError::PriorBarrierFailure));
-		};
-		u64::try_from(bytes.len())
-			.ok()
-			.filter(|length| *length > 0 && *length <= range.end - self.stamp.len())
-			.ok_or(SuffixError::Observation(StageError::InvalidLength))?;
-		let mut remaining = bytes;
-		let mut interrupts = 0;
-		while !remaining.is_empty() {
-			let offset = self.stamp.len();
-			self.check_current().map_err(|cause| {
-				if offset == range.start {
-					SuffixError::Observation(cause)
-				} else {
-					SuffixError::Submitted {
-						confirmed_end: offset,
-						cause,
-					}
-				}
-			})?;
-			let guard = enter(
-				self.reader.selection(),
-				SuffixEffect::Write {
-					offset,
-					length: remaining.len(),
-				},
-			)
-			.map_err(|cause| SuffixError::Admission {
-				confirmed_end: offset,
-				cause,
-			})?;
-			let outcome = self.file.write_at(remaining, offset);
-			drop(guard);
-			let after = |cause| SuffixError::Submitted {
-				confirmed_end: offset,
-				cause,
-			};
-			match outcome {
-				Ok(n) if n > 0 && n <= remaining.len() => {
-					let next = offset + u64::try_from(n).expect("bounded subwindow length");
-					self.stamp = self.observe(next).map_err(after)?;
-					remaining = &remaining[n..];
-				}
-				Err(error)
-					if error.kind() == io::ErrorKind::Interrupted
-						&& interrupts < MAX_INTERRUPTS =>
-				{
-					self.check_current().map_err(after)?;
-					interrupts += 1;
-				}
-				Ok(_) => return Err(after(StageError::System(io::ErrorKind::WriteZero.into()))),
-				Err(error) => return Err(after(StageError::System(error))),
-			}
-		}
 		self.phase = Phase::Writing { range };
 		Ok(())
 	}

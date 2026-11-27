@@ -1,5 +1,6 @@
 use std::cell::Cell;
 use std::num::NonZeroU64;
+use std::os::unix::fs::FileExt as _;
 
 use exacopy_model::retained_prefix::{
 	BudgetReservation, Continuation, Guard, Head, History, Live, Pass, PrefixProof, Prior,
@@ -200,6 +201,59 @@ fn boundary_failure_keeps_private_data_and_the_descriptor_cannot_skip_the_range(
 	let physical = fs::read(fixture.stage()).unwrap();
 	assert_eq!(&physical[..PREFIX.len()], PREFIX);
 	assert_eq!(&physical[PREFIX.len()..], b"xy");
+	assert!(!fixture.target().exists());
+}
+
+#[test]
+fn suffix_observation_refusal_stops_before_the_authority_gate() {
+	let fixture = Fixture::new();
+	let lease = fixture.lease();
+	let inventory = inventory(&lease);
+	let reader = lease
+		.read_retained_prefix(&inventory, selection(&inventory))
+		.unwrap();
+	let base = PREFIX.len() as u64;
+	let mut writer = reader
+		.sync_adopted(base, |_, _| Ok::<_, ()>(()))
+		.unwrap()
+		.open_suffix_writer(base + 4, |_, _| Ok::<_, ()>(()))
+		.unwrap();
+	writer
+		.begin_range(&issued_tail(4), |_| Ok::<_, ()>(()))
+		.unwrap();
+
+	let observations = Cell::new(0);
+	let gates = Cell::new(0);
+	assert!(matches!(
+		writer.write_next_with(
+			b"xyz!",
+			|| {
+				observations.set(observations.get() + 1);
+				if observations.get() == 1 {
+					Ok(())
+				} else {
+					Err("journal changed")
+				}
+			},
+			|_, effect| {
+				assert_eq!(observations.get(), 1);
+				gates.set(gates.get() + 1);
+				assert_eq!(effect, SuffixEffect::Write { offset: base, length: 4 });
+				Ok(())
+			},
+			|file, remaining, offset| {
+				assert_eq!(gates.get(), 1);
+				assert_eq!(remaining, b"xyz!");
+				file.write_at(&remaining[..2], offset)
+			},
+		),
+		Err(SuffixError::Admission { confirmed_end, cause: "journal changed" })
+			if confirmed_end == base + 2
+	));
+	assert_eq!(observations.get(), 2);
+	assert_eq!(gates.get(), 1);
+	assert!(writer.finish().is_err());
+	assert_eq!(fs::read(fixture.stage()).unwrap(), [PREFIX, b"xy"].concat());
 	assert!(!fixture.target().exists());
 }
 

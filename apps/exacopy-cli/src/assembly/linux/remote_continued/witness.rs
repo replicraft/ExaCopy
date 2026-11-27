@@ -38,6 +38,7 @@ use crate::assembly::linux::remote_witness_authority::{
 	BoundWitnessStage, ConsentRefusal, WitnessRetentionApproval,
 };
 
+pub(super) mod positive_tail;
 pub(super) mod prepublication;
 pub(super) mod publication;
 use publication::{LinkedPublication, WitnessModel};

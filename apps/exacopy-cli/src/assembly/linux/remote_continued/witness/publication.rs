@@ -26,6 +26,36 @@ use crate::assembly::linux::remote_witness_authority::WitnessMutationGuard;
 pub(in crate::assembly::linux::remote_continued) use durability::WitnessedDurabilityError;
 pub(in crate::assembly::linux::remote_continued) use observation::WitnessedObservationError;
 
+pub(in crate::assembly::linux::remote_continued) type WitnessedReceiptProgress = (
+	Result<RemoteReplayBoundary, WitnessedObservationError>,
+	Option<Result<RemoteReplayBoundary, WitnessedDurabilityError>>,
+	Option<Result<receipt::WitnessedReceiptCompletion, receipt::WitnessedReceiptError>>,
+);
+
+/// Records the exact observed result and proceeds only along a confirmed positive path.
+pub(super) fn complete_receipt(
+	submitted: &mut SubmittedPublication<'_, '_, '_, '_>,
+) -> WitnessedReceiptProgress {
+	let recorded = submitted.record_observation();
+	let durable = recorded
+		.as_ref()
+		.ok()
+		.filter(|_| {
+			matches!(
+				submitted.observation(),
+				exacopy_platform::linux::WitnessPublicationObservation::Published(_)
+			)
+		})
+		.copied()
+		.map(|kind8| submitted.record_durability(kind8));
+	let receipt = durable
+		.as_ref()
+		.and_then(|result| result.as_ref().ok())
+		.copied()
+		.map(|kind9| submitted.record_receipt(kind9));
+	(recorded, durable, receipt)
+}
+
 #[derive(Debug)]
 pub(super) struct WitnessModel {
 	scope: ScopeBinding,

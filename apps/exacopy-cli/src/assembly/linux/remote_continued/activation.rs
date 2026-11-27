@@ -25,6 +25,7 @@ pub(super) enum AdmissionError<E> {
 	Binding,
 	Format(RemoteDownloadError),
 	Frame(FrameWriteError),
+	Observation(E),
 	Gate(E),
 	Native(Box<ContinuationReservationError<Self>>),
 }
@@ -43,6 +44,7 @@ impl Kind40Admission<'_, '_> {
 		live: &LentRetainedSuffix<'_, '_, R, WitnessPrefix<'lease>>,
 		reservation: PendingWitnessReservation<'lease>,
 		prefix: &SyncedRetainedPrefix<'_, '_>,
+		observe: impl FnOnce() -> Result<(), E>,
 		enter: impl FnOnce(ReservedContinuationRequest<'_>) -> Result<G, E>,
 	) -> Result<ActiveWitnessReservation<'lease>, AdmissionError<E>> {
 		let proof = live.initial_prefix().ok_or(AdmissionError::Binding)?;
@@ -62,7 +64,8 @@ impl Kind40Admission<'_, '_> {
 						self.trust,
 						self.selection,
 						successor,
-					)
+					)?;
+					observe().map_err(AdmissionError::Observation)
 				},
 				|request| enter(request).map_err(AdmissionError::Gate),
 				|actual| confirm_selected(actual, self.trust, self.selection, successor),

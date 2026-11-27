@@ -154,6 +154,23 @@ The operation-2 pair, mask, signed domains and byte ceilings are unchanged. In b
 
 ## Verification ownership and product boundary
 
+The private Linux CLI test composition now accepts a clean original V1
+checkpoint for the first positive-tail continuation. It independently
+authenticates the held owner and exact journal boundary, checks reserved
+capacity and syncs the approved prefix before kind 40, then writes and
+rereads checkpoints for the bounded suffix on the same inode. Each
+submission follows fresh native observations before taking the current
+grant, retention approval and route locks. The original writer closes,
+the authenticated source reaches exact EOF and closes, and the route
+retires before whole-file read-back and the existing witnessed closeout.
+
+This composition covers R-253/A-253 and R-255, with INV-003/004/009/013/019/021/024
+and the existing retained-prefix and closeout obligations. Its application
+tests exercise original journal selection and suffix effect boundaries.
+The full native operation-2 positive-tail path and its crash cuts remain
+unqualified. The ordinary remote CLI still starts a fresh private attempt
+at byte zero.
+
 Storage owns typed format/replay/selections/receipt and version-refusal vectors. The owning [width checker](../../crates/storage/exacopy-journal/verification/remote_download/witness_closeout_widths.py) is arithmetic only. Require independent deterministic CBOR/frame/digest fixtures and mutated decoder oracles for wrong ancestry, actual predecessor, scope, operation pair, old/signed/fallback selectors, witness raw name/identity, approval absence/wrong binding/expiry and signed owner mismatch, checked bounds, receipt 42/18 order or digest mismatch. Model/transfer own exact checked phase graph, protected alias cardinality, epoch/append/retirement decisions and witness/receipt capabilities. Independent bounded model must include dual append checkpoints, repeat continuation, retirement at each pre-intent state, independent consent and observed-with-late-expiry, no stage rename after 7, and deterministic pending/final convergence. Kill cuts and closed qualification case matrix are native platform/application operations with independent observations, including both route profiles. Keep existing model gates unchanged. Native toolchains and cases require actual evidence on exact eligible environment. Do not issue attestation or enable production writer from this proposal.
 
 ### P-071 Linux native reservation

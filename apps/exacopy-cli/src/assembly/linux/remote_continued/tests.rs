@@ -122,6 +122,13 @@ fn actual_signed_kind40_must_form_the_exact_clean_successor() {
 	let end = usize::try_from(next.offset).unwrap();
 	let mut proposed = full[previous..end].to_vec();
 	let physical = &full[..previous];
+	super::witness::positive_tail::check_original_vector(
+		&full,
+		prior,
+		next,
+		&trust,
+		selection.initial_v1_qualification,
+	);
 	confirm_selected::<()>(
 		physical.chain(proposed.as_slice()),
 		&trust,

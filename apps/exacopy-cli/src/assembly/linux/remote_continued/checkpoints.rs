@@ -43,16 +43,25 @@ pub(super) enum CheckpointFailure<R, E> {
 	Model(Refusal),
 	Budget(WitnessedPassBudgetError),
 	Source(PrefixVerificationError<R, Infallible>),
-	Stage(SuffixError<E>),
+	Stage(SuffixError<CheckpointStageError<E>>),
 	Observation(StageError),
+	PreEffectObservation(E),
 	Custody(WitnessReservationObservationError),
 	Journal(ContinuationReservationError<CheckpointGateError<E>>),
+}
+
+#[derive(Debug)]
+pub(super) enum CheckpointStageError<E> {
+	Custody(WitnessReservationObservationError),
+	Observation(E),
+	Authority(E),
 }
 
 #[derive(Debug)]
 pub(super) enum CheckpointGateError<E> {
 	Binding,
 	Format(RemoteDownloadError),
+	Observation(E),
 	Authority(E),
 }
 
@@ -98,6 +107,7 @@ impl CheckpointPass<'_> {
 		&self,
 		checked: CheckedRange<'_, '_, '_, '_, '_, '_, R>,
 		planned: PlannedRange,
+		observe: impl Fn() -> Result<(), E>,
 		stage_gate: impl FnMut(RetainedPrefixSelection<'_>, SuffixEffect) -> Result<G, E>,
 		journal_gate: impl FnOnce(ReservedContinuationRequest<'_>) -> Result<H, E>,
 	) -> Result<(), CheckpointFailure<R::Error, E>> {
@@ -106,7 +116,13 @@ impl CheckpointPass<'_> {
 			stopping: true,
 		};
 		let outcome = self
-			.run_range(&mut guarded.checked, planned, stage_gate, journal_gate)
+			.run_range(
+				&mut guarded.checked,
+				planned,
+				observe,
+				stage_gate,
+				journal_gate,
+			)
 			.await;
 		guarded.stopping = outcome.is_err();
 		outcome
@@ -116,6 +132,7 @@ impl CheckpointPass<'_> {
 		&self,
 		checked: &mut CheckedRange<'_, '_, '_, '_, '_, '_, R>,
 		planned: PlannedRange,
+		observe: impl Fn() -> Result<(), E>,
 		mut stage_gate: impl FnMut(RetainedPrefixSelection<'_>, SuffixEffect) -> Result<G, E>,
 		journal_gate: impl FnOnce(ReservedContinuationRequest<'_>) -> Result<H, E>,
 	) -> Result<(), CheckpointFailure<R::Error, E>> {
@@ -199,14 +216,30 @@ impl CheckpointPass<'_> {
 				.await
 				.map_err(Error::Source)?
 				.ok_or(Error::Binding)?;
-			journal.check_active().map_err(Error::Custody)?;
 			writer
-				.write_next(bytes, &mut stage_gate)
+				.write_next_observed(
+					bytes,
+					|| {
+						journal
+							.check_active()
+							.map_err(CheckpointStageError::Custody)?;
+						observe().map_err(CheckpointStageError::Observation)
+					},
+					|actual, effect| {
+						stage_gate(actual, effect).map_err(CheckpointStageError::Authority)
+					},
+				)
 				.map_err(Error::Stage)?;
 			range_hash.update(bytes);
 			remaining -= bytes.len() as u64;
 		}
-		let physical_end = writer.sync_range(stage_gate).map_err(Error::Stage)?;
+		observe().map_err(Error::PreEffectObservation)?;
+		journal.check_active().map_err(Error::Custody)?;
+		let physical_end = writer
+			.sync_range(|actual, effect| {
+				stage_gate(actual, effect).map_err(CheckpointStageError::Authority)
+			})
+			.map_err(Error::Stage)?;
 		if physical_end != budget.tail_end {
 			return Err(Error::Binding);
 		}
@@ -245,9 +278,15 @@ impl CheckpointPass<'_> {
 						old.chain(Cursor::new(encoded.as_slice())),
 						successor,
 						physical_end,
-					)
+					)?;
+					observe().map_err(CheckpointGateError::Observation)
 				},
-				|request| journal_gate(request).map_err(CheckpointGateError::Authority),
+				|request| {
+					if request.previous != live.head || request.successor != model_head(successor) {
+						return Err(CheckpointGateError::Binding);
+					}
+					journal_gate(request).map_err(CheckpointGateError::Authority)
+				},
 				|actual| self.confirm_range(actual, successor, physical_end),
 			)
 			.map_err(Error::Journal)?;
