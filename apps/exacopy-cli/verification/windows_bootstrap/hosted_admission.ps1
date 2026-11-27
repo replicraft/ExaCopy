@@ -217,24 +217,36 @@ function Assert-BootstrapUpperAcl {
     $acl = [IO.FileSystemAclExtensions]::GetAccessControl([IO.DirectoryInfo]::new($Path))
     $raw = [Security.AccessControl.RawSecurityDescriptor]::new($acl.GetSecurityDescriptorBinaryForm(), 0)
     $trusted = @($Actor.Value, 'S-1-5-18', 'S-1-5-32-544')
-    if ($null -eq $raw.Owner -or $raw.Owner.Value -cnotin $trusted -or
-        $null -eq $raw.DiscretionaryAcl -or $raw.DiscretionaryAcl.Count -gt 256 -or
-        ($raw.ControlFlags -band [Security.AccessControl.ControlFlags]'DiscretionaryAclPresent, SelfRelative') -ne
-            [Security.AccessControl.ControlFlags]'DiscretionaryAclPresent, SelfRelative') {
-        throw 'The hosted data-volume ancestor lacks an admissible owner or DACL.'
+    if ($null -eq $raw.Owner) {
+        throw "Hosted bootstrap data-volume ancestor '$Path' has no owner in its security descriptor."
+    }
+    if ($raw.Owner.Value -cnotin $trusted) {
+        throw "Hosted bootstrap data-volume ancestor '$Path' has an owner outside the allowed principals."
+    }
+    if ($null -eq $raw.DiscretionaryAcl) {
+        throw "Hosted bootstrap data-volume ancestor '$Path' has no discretionary ACL."
+    }
+    if ($raw.DiscretionaryAcl.Count -gt 256) {
+        throw "Hosted bootstrap data-volume ancestor '$Path' has more than 256 discretionary access entries."
+    }
+    if (($raw.ControlFlags -band [Security.AccessControl.ControlFlags]::DiscretionaryAclPresent) -eq 0) {
+        throw "Hosted bootstrap data-volume ancestor '$Path' lacks the discretionary ACL present flag."
+    }
+    if (($raw.ControlFlags -band [Security.AccessControl.ControlFlags]::SelfRelative) -eq 0) {
+        throw "Hosted bootstrap data-volume ancestor '$Path' lacks the self-relative descriptor flag."
     }
     foreach ($ace in $raw.DiscretionaryAcl) {
         if ($ace -isnot [Security.AccessControl.CommonAce] -or $ace.IsCallback -or
             $ace.AceQualifier -cnotin @([Security.AccessControl.AceQualifier]::AccessAllowed,
                 [Security.AccessControl.AceQualifier]::AccessDenied) -or ($ace.AceFlags -band 0xe0) -ne 0) {
-            throw 'The hosted data-volume ancestor has an unsupported access entry.'
+            throw "Hosted bootstrap data-volume ancestor '$Path' has an unsupported discretionary access entry."
         }
         $access = ([long]$ace.AccessMask) -band 0xffffffffL
         if ($ace.AceQualifier -eq [Security.AccessControl.AceQualifier]::AccessAllowed -and
             $ace.SecurityIdentifier.Value -cnotin $trusted -and
             ($ace.AceFlags -band [Security.AccessControl.AceFlags]::InheritOnly) -eq 0 -and
             ($access -band (0xffffffffL -bxor 0xa01200afL)) -ne 0) {
-            throw 'The hosted data-volume ancestor permits competing non-actor access.'
+            throw "Hosted bootstrap data-volume ancestor '$Path' permits competing non-actor access."
         }
     }
 }
