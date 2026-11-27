@@ -346,6 +346,61 @@ async fn typed_absolute_source_preserves_leading_slash_on_the_same_handle() {
 }
 
 #[tokio::test]
+async fn typed_source_sends_exact_posix_names_for_both_path_roots() {
+	use exacopy_endpoint::UnixComponent;
+	use exacopy_endpoint::remote_source::SftpPath;
+
+	use crate::{PendingSftpPathRequest, open_pending_path_source};
+
+	let components = [UnixComponent::new(br"C:\folder").unwrap(), path()[0]];
+	for (selected_path, wire_name) in [
+		(
+			SftpPath::AccountRelative(&components),
+			b"C:\\folder/\xfffile".as_slice(),
+		),
+		(
+			SftpPath::Absolute(&components),
+			b"/C:\\folder/\xfffile".as_slice(),
+		),
+	] {
+		let mut generated = Generated::new(3);
+		generated.selected_name = wire_name;
+		let (mut session, calls) = peer_source(generated).await;
+		let (mut owner, attempt) = Owner::start(NonZeroU128::MIN);
+		let pending = open_pending_path_source(
+			&mut session,
+			PendingSftpPathRequest {
+				path: selected_path,
+				attempt,
+				epoch: EPOCH,
+			},
+			&mut owner,
+		)
+		.await
+		.unwrap();
+		assert_eq!(calls.named_stat.load(Ordering::Relaxed), 1);
+		assert_eq!(calls.open.load(Ordering::Relaxed), 1);
+		assert_eq!(calls.read.load(Ordering::Relaxed), 0);
+
+		let binding = owner.admit(pending.attempt(), pending.epoch());
+		let mut source = pending
+			.activate(binding, |binding| owner.check_binding(binding))
+			.unwrap();
+		let mut bytes = [0; 3];
+		source.read_exact_at(0, &mut bytes).await.unwrap();
+		let named_stats = calls.named_stat.load(Ordering::Relaxed);
+		source.finish().await.unwrap();
+		drop(source);
+		owner.check_attempt(attempt).unwrap();
+		assert_eq!(bytes, [0, 1, 2]);
+		assert_eq!(calls.named_stat.load(Ordering::Relaxed), named_stats + 1);
+		assert_eq!(calls.open.load(Ordering::Relaxed), 1);
+		assert_eq!(calls.close.load(Ordering::Relaxed), 1);
+		assert_eq!(calls.unsupported.load(Ordering::Relaxed), 0);
+	}
+}
+
+#[tokio::test]
 async fn empty_absolute_root_is_not_a_relative_dot_request() {
 	use exacopy_endpoint::remote_source::SftpPath;
 
@@ -367,6 +422,49 @@ async fn empty_absolute_root_is_not_a_relative_dot_request() {
 		result,
 		Err(SftpSourceError::Sftp(exacopy_ssh::Error::UnsupportedSource))
 	));
+	assert_eq!(calls.named_stat.load(Ordering::Relaxed), 0);
 	assert_eq!(calls.open.load(Ordering::Relaxed), 0);
+	assert_eq!(calls.held_stat.load(Ordering::Relaxed), 0);
 	assert_eq!(calls.read.load(Ordering::Relaxed), 0);
+	assert_eq!(calls.close.load(Ordering::Relaxed), 0);
+	assert_eq!(calls.unsupported.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
+async fn oversized_paths_are_refused_before_any_source_request() {
+	use exacopy_endpoint::remote_source::SftpPath;
+	use exacopy_endpoint::{MAX_UNIX_COMPONENT_BYTES, UnixComponent};
+
+	use crate::{PendingSftpPathRequest, open_pending_path_source};
+
+	let name = [b'a'; MAX_UNIX_COMPONENT_BYTES];
+	// Identical 255-byte components plus separators exceed the 4096-byte limit.
+	let components = [UnixComponent::new(&name).unwrap(); 17];
+	for path in [
+		SftpPath::AccountRelative(&components),
+		SftpPath::Absolute(&components),
+	] {
+		let (mut session, calls) = peer_source(Generated::new(3)).await;
+		let (mut owner, attempt) = Owner::start(NonZeroU128::MIN);
+		let result = open_pending_path_source(
+			&mut session,
+			PendingSftpPathRequest {
+				path,
+				attempt,
+				epoch: EPOCH,
+			},
+			&mut owner,
+		)
+		.await;
+		assert!(matches!(
+			result,
+			Err(SftpSourceError::Sftp(exacopy_ssh::Error::Limit))
+		));
+		assert_eq!(calls.named_stat.load(Ordering::Relaxed), 0);
+		assert_eq!(calls.open.load(Ordering::Relaxed), 0);
+		assert_eq!(calls.held_stat.load(Ordering::Relaxed), 0);
+		assert_eq!(calls.read.load(Ordering::Relaxed), 0);
+		assert_eq!(calls.close.load(Ordering::Relaxed), 0);
+		assert_eq!(calls.unsupported.load(Ordering::Relaxed), 0);
+	}
 }
