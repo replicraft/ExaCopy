@@ -4,8 +4,11 @@ The endpoint coverage workflow can retain advisory pre-execution receipts for
 the ordinary LLVM export. Its six Python controls run first. Failed controls
 disable capture and fail the job, while the existing ordinary coverage command
 still runs. The original test selection, source inventory, LLVM argument order
-and per-crate 85% line minimum are unchanged. Hosted validation of this new
-capture path is pending.
+and per-crate 85% line minimum are unchanged. At `49b5633`, all six hosted
+controls passed. The two pre-execution receipts were byte-identical and
+recorded 31 distinct ordered objects, the pinned tool and indexed profile.
+They survived the unchanged platform threshold failure at 6,520/8,910 lines.
+[Exact hosted coverage](https://github.com/replicraft/ExaCopy/actions/runs/46006579812).
 
 The delegate records the canonical campaign directory, exact export arguments
 and filename filter, and bounded SHA-256 receipts for the pinned LLVM tool,

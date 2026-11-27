@@ -1,6 +1,6 @@
 # Windows publication compiler preparation with owned-job retirement
 
-**Status.** Integrated source with an explicit, default-off `PrepareOwnedCompilerJob` switch. The hosted Windows workflow still selects strict v1. Portable controls and native preparation qualification remain pending; P-078 is registered separately with the formal dispatcher. The strict `windows-hosted-server2025-fixed-ntfs-publication-v1` result remains failed at `cb47f4a`. Its retained publication ZIP records a successful Cargo root and emitted executable, with `vctip.exe` as the sole sampled job member at 479862 ms. The job timed out, drained, and was deleted. No publication case ran.
+**Status.** Integrated source with an explicit, default-off `PrepareOwnedCompilerJob` switch. The hosted Windows workflow still selects strict v1. The bundled prebuild controls passed at `8c1a311` and `b50ada3`; native preparation qualification remains pending. P-078 is registered separately with the formal dispatcher. The strict `windows-hosted-server2025-fixed-ntfs-publication-v1` result remains failed at `cb47f4a`. Its retained publication ZIP records a successful Cargo root and emitted executable, with `vctip.exe` as the sole sampled job member at 479862 ms. The job timed out, drained, and was deleted. No publication case ran.
 
 ## Scope and entry point
 
