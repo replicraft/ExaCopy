@@ -12,6 +12,11 @@ use exacopy_model::protected_replace::{
 #[path = "protected_replace/fixture.rs"]
 mod fixture;
 
+#[path = "protected_replace/admission.rs"]
+mod admission;
+#[path = "protected_replace/outcomes.rs"]
+mod outcomes;
+
 use fixture::{
 	CAPTURE_GRANT, DEST_FS, FOREIGN, Fixture, IMAGE, IMAGE_READ_GRANT, PUBLICATION_GRANT,
 	RESTORED_ORIGINAL, SOURCE, SOURCE_FS, STAGE, VERIFIED, ack, directory, entry, grant, head,
