@@ -22,7 +22,7 @@ use super::super::remote_journal::{
 use super::super::remote_stage::{
 	FinalizingCaptureStage, NativeCaptureStage, PrefixBarrier, PublicationContext,
 };
-use super::source::{RetirementCheck, SourceOwner};
+use super::source::{RetirementCheck, SourceOwner, VerifiedReads};
 use super::{
 	ConnectedRemoteSource, EffectAuthority, ReadyRetry, RemoteDownloadFailure,
 	RemoteDownloadRequest, RemoteJobAction, RemoteRetryLease, RemoteRetryStamp, capture_failure,
@@ -259,6 +259,7 @@ async fn download_prepared(
 	.map_err(Error::from)?;
 	let stage = FinalizingCaptureStage(native, publication);
 	let mut scratch = vec![0; 64 * 1024];
+	let mut source = VerifiedReads::new(source, || owner.observe_read_health(source_binding));
 	let captured = capture_live(
 		&mut source,
 		epoch,

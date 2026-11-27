@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use exacopy_endpoint::connection_retry::{
 	ConnectionAttempt, ConnectionBinding, ConnectionFailure, FailureDecision, FailureSubject,
 	PermanentFailure, ReconnectEvidence, RetryBlock, RetryDecision, RetryError, RetryOwner,
-	RetrySupervisor, TransientFailure,
+	RetrySupervisor, TransientFailure, VerifiedHealth,
 };
 use exacopy_endpoint::ssh_sftp::HostKeyFingerprint;
 use exacopy_journal::remote_download::{
@@ -30,12 +30,14 @@ mod route_binding;
 pub(in crate::assembly::linux) use route_binding::BoundRouteRetirement;
 #[cfg(test)]
 pub(in crate::assembly::linux) use route_binding::RetiredBoundRoute;
+mod read_health;
 mod retirement;
 mod route_lifetime;
 
 pub(crate) use direct::DirectConnectError;
 #[cfg(feature = "experimental-ssh-wireguard")]
 pub(crate) use embedded::EmbeddedConnectError;
+pub(super) use read_health::VerifiedReads;
 pub(super) use retirement::RetirementCheck;
 pub use route_lifetime::RemoteRouteCloseError;
 use route_lifetime::RouteTask;
@@ -393,12 +395,27 @@ impl SourceOwner<'_> {
 	}
 
 	pub(in crate::assembly::linux) fn check_binding(
-		&mut self,
+		&self,
 		binding: ConnectionBinding,
 	) -> Result<(), RetryError> {
 		self.check_transport()?;
 		self.supervisor
 			.observe(|retry, now| retry.check_completion(now, binding))
+	}
+
+	pub(super) fn observe_read_health(&self, binding: ConnectionBinding) -> Result<(), RetryError> {
+		if binding.attempt() != self.attempt {
+			return Err(RetryError::StaleWork);
+		}
+		self.check_transport()?;
+		let control = &self.supervisor;
+		let _grant = control.grant.source_lock(control.digest)?;
+		let mut retry = control.retry.lock().map_err(|_| RetryError::StaleWork)?;
+		retry.observe_health(
+			control.start.elapsed(),
+			binding,
+			VerifiedHealth::SuccessfulOperation,
+		)
 	}
 
 	fn check_transport(&self) -> Result<(), RetryError> {

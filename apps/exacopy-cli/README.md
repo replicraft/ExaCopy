@@ -362,7 +362,10 @@ lease during backoff, and rechecks the exact retained files and journal
 under a fresh lease before dialing. Each attempt starts at byte zero in a
 distinct stage; prior bytes remain retained. Authentication, host-key and
 route refusals, uncertain storage outcomes, and prior publication intent
-stop automatic retries. A hosted direct-route campaign with synthetic
+stop automatic retries. A completed positive read on the current connection
+can reset the backoff penalty after 30 seconds of verified connection health.
+The reset retains the original grant expiry and refuses stale or revoked work.
+A hosted direct-route campaign with synthetic
 fixture authority verified timeout-to-redial, grant expiry, revocation,
 the original retry budget and wrong-host-key refusal. Deployment
 qualification and embedded-route acceptance remain separate. See the
