@@ -127,10 +127,16 @@ stage and the public destination. If the rename completed and later
 verification or launcher publication failed, inspect the reported public
 location and launcher path before retrying the same release.
 
-Uninstall failures can leave a partially removed version directory.
-Unrecognized evidence blocks automated adoption and deletion. Power-loss
-durability remains unqualified. Uninstall relies on the caller to prevent
-concurrent launches.
+Uninstall withdraws the version directory to a private sibling under
+`Programs` while its version owner marker is still present. It checks the
+retired directory before removing that marker and the empty directory.
+If withdrawal completes and cleanup fails, inspect the reported
+`.ExaCopy-version-retired-*` path. A later invocation checks the live version
+path and leaves retired evidence for separate reconciliation. If withdrawal
+could not be confirmed, inspect both paths. An older interrupted uninstall
+can leave an unmarked live version directory that still requires independent
+ownership evidence. Power-loss durability remains unqualified. Uninstall
+relies on the caller to prevent concurrent launches.
 
 ## Testing
 

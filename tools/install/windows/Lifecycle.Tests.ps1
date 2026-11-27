@@ -27,8 +27,8 @@ Describe 'Offline installer lifecycle on user-owned local NTFS' {
             $local = Join-Path $fixture $Name
             $programs = Join-Path $local 'Programs'
             [void][IO.Directory]::CreateDirectory($local)
-            # The fixture only assembles a private path context. Install and
-            # uninstall themselves run without mocks or production overrides.
+            # Use a disposable context. Cases can explicitly inject a failure
+            # at one lifecycle boundary without using the ordinary install root.
             [pscustomobject]@{
                 Local = $local
                 Programs = $programs
@@ -132,12 +132,39 @@ Describe 'Offline installer lifecycle on user-owned local NTFS' {
 
         (Uninstall-ExaCopySignedVersion $context -Quiesced).status | Should -BeExactly 'uninstalled'
         (Get-ExaCopyNodeExists $first.path) | Should -BeFalse
+        Assert-ExaCopyExactEntries $context.Programs @('ExaCopy')
         Assert-ExactFile (Join-Path $context.Root 'release.manifest') (Get-ExaCopySha256 $manifest)
         Assert-ExactFile (Join-Path $context.Root 'release.sig') (Get-ExaCopySha256 $signature)
         (Uninstall-ExaCopySignedVersion $context -Quiesced).status | Should -BeExactly 'already_absent'
         (Install-ExaCopySignedVersion $bundle $context).status | Should -BeExactly 'installed'
         Assert-ExactFile $first.path $artifactHash
         (Uninstall-ExaCopySignedVersion $context -Quiesced).status | Should -BeExactly 'uninstalled'
+    }
+
+    It 'keeps the recorded version absent when cleanup stops after the retired marker is deleted' {
+        $context = New-CaseContext 'retired-cleanup-failure'
+        $install = Install-ExaCopySignedVersion $bundle $context
+        $liveVersion = [IO.Path]::GetDirectoryName($install.path)
+        Mock Assert-ExaCopyExactEntries { throw 'Injected retired-directory removal failure.' } -ParameterFilter {
+            [IO.Path]::GetFileName($Directory).StartsWith('.ExaCopy-version-retired-', [StringComparison]::Ordinal) -and
+                ($null -eq $Names -or $Names.Count -eq 0)
+        }
+
+        { Uninstall-ExaCopySignedVersion $context -Quiesced } |
+            Should -Throw '*withdrawal*completed*Injected retired-directory removal failure.*'
+        (Get-ExaCopyNodeExists $liveVersion) | Should -BeFalse
+        (Get-ExaCopyNodeExists (Join-Path $context.Root 'bin')) | Should -BeFalse
+        $retired = @([IO.Directory]::EnumerateDirectories($context.Programs, '.ExaCopy-version-retired-*'))
+        $retired.Count | Should -Be 1
+        @([IO.Directory]::EnumerateFileSystemEntries($retired[0])).Count | Should -Be 0
+
+        (Uninstall-ExaCopySignedVersion $context -Quiesced).status | Should -BeExactly 'already_absent'
+        (Install-ExaCopySignedVersion $bundle $context).status | Should -BeExactly 'installed'
+        Assert-ExactFile $install.path $artifactHash
+        Assert-ExactFile (Join-Path $context.Root 'release.manifest') (Get-ExaCopySha256 $manifest)
+        Assert-ExactFile (Join-Path $context.Root 'release.sig') (Get-ExaCopySha256 $signature)
+        (Get-ExaCopyNodeExists $retired[0]) | Should -BeTrue
+        @([IO.Directory]::EnumerateFileSystemEntries($retired[0])).Count | Should -Be 0
     }
 
     It 'refuses an unowned root and a junction without modifying either incumbent' {

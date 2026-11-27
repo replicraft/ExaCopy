@@ -351,6 +351,18 @@ function Assert-ExaCopyExecutableIdle {
     $exclusive.Dispose()
 }
 
+function Get-ExaCopyRetirementMarker {
+    param([string] $Directory, $Owner, [byte[]] $OwnerBytes)
+
+    Confirm-ExaCopyOwnerAcl $Directory $Owner
+    Assert-ExaCopyExactEntries $Directory @($ExaCopyOwnerFile)
+    $marker = Join-Path $Directory $ExaCopyOwnerFile
+    Assert-ExaCopySameBytes $OwnerBytes (Read-ExaCopyBoundedBytes $marker $ExaCopyOwnerLimit)
+    Assert-ExaCopyNoNamedStreams $Directory -IncludeHidden
+    Assert-ExaCopyNoNamedStreams $marker -IncludeHidden
+    return $marker
+}
+
 function Uninstall-ExaCopySignedVersion {
     param($Context, [switch] $DryRun, [switch] $Quiesced)
 
@@ -393,10 +405,33 @@ function Uninstall-ExaCopySignedVersion {
             [IO.File]::Delete($owned.Executable)
             if (Get-ExaCopyNodeExists $owned.Executable) { throw 'Executable removal could not be confirmed.' }
         }
-        Assert-ExaCopyExactEntries $owned.Path @($ExaCopyOwnerFile)
-        Assert-ExaCopySameBytes $installation.OwnerBytes (Read-ExaCopyBoundedBytes $owned.OwnerPath $ExaCopyOwnerLimit)
-        [IO.File]::Delete($owned.OwnerPath)
-        [IO.Directory]::Delete($owned.Path, $false)
+        Confirm-ExaCopyOwnerAcl $Context.Root $Context.Owner -Root
+        Confirm-ExaCopyOwnerAcl $installation.Versions $Context.Owner
+        Assert-ExaCopyExactEntries $installation.Versions @($Context.Version)
+        [void](Get-ExaCopyRetirementMarker $owned.Path $Context.Owner $installation.OwnerBytes)
+        Assert-ExaCopyContextAncestors $Context $Context.Programs
+        $retired = Join-Path $Context.Programs ('.ExaCopy-version-retired-' + [Guid]::NewGuid().ToString('N'))
+        try {
+            # Withdraw the directory with its ownership evidence still present.
+            [IO.Directory]::Move($owned.Path, $retired)
+        }
+        catch {
+            throw "Version withdrawal could not be confirmed. Inspect '$($owned.Path)' and '$retired'. $($_.Exception.Message)"
+        }
+        try {
+            Assert-ExaCopyContextAncestors $Context $Context.Programs
+            Confirm-ExaCopyOwnerAcl $Context.Root $Context.Owner -Root
+            Confirm-ExaCopyOwnerAcl $installation.Versions $Context.Owner
+            Assert-ExaCopyExactEntries $installation.Versions @()
+            $marker = Get-ExaCopyRetirementMarker $retired $Context.Owner $installation.OwnerBytes
+            [IO.File]::Delete($marker)
+            Assert-ExaCopyExactEntries $retired @()
+            Assert-ExaCopyNoNamedStreams $retired -IncludeHidden
+            [IO.Directory]::Delete($retired, $false)
+        }
+        catch {
+            throw "Version withdrawal to '$retired' completed but cleanup could not be confirmed. Inspect the retired path. $($_.Exception.Message)"
+        }
         $result.status = 'uninstalled'
         return $result
     }

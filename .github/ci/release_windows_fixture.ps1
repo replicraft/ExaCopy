@@ -21,6 +21,94 @@ $root = if ($SourceRoot) { Join-Path $SourceRoot 'tools/install/windows' }
 foreach ($file in @('paths', 'release', 'lifecycle', 'download', 'archive')) {
     . (Join-Path $root "$file.ps1")
 }
+
+function Get-FixtureRefusal {
+    param([scriptblock] $Attempt)
+    try { [void](& $Attempt) }
+    catch { return $_.Exception.Message }
+    throw 'Expected the installer fixture to refuse.'
+}
+
+function Invoke-FixtureWithdrawalFault {
+    param($Context)
+
+    $exactEntries = ${function:Assert-ExaCopyExactEntries}
+    $programs = $Context.Programs
+    # Local function scope restores the shipped helper on return, including on error.
+    function Assert-ExaCopyExactEntries {
+        param([string] $Directory, [string[]] $Names)
+        & $exactEntries $Directory $Names
+        if ([IO.Path]::GetDirectoryName($Directory) -ceq $programs -and
+            [IO.Path]::GetFileName($Directory) -cmatch '\A[.]ExaCopy-version-retired-[0-9a-f]{32}\z' -and
+            ($null -eq $Names -or $Names.Count -eq 0)) {
+            throw 'Fixture stopped after removing the retired version marker.'
+        }
+    }
+
+    Uninstall-ExaCopySignedVersion $Context -Quiesced
+}
+
+function Test-ExaCopyWithdrawalRetry {
+    param([string] $Bundle, $Context, $Signed, [string] $Executable)
+
+    $versionPath = [IO.Path]::GetDirectoryName($Executable)
+    $versions = [IO.Path]::GetDirectoryName($versionPath)
+    $bin = Join-Path $Context.Root 'bin'
+    $lookalikeName = '.ExaCopy-version-retired-' + ('0' * 32)
+    $lookalike = Join-Path $Context.Programs $lookalikeName
+    [void][IO.Directory]::CreateDirectory($lookalike)
+    $sentinel = Join-Path $lookalike 'unrelated.txt'
+    [IO.File]::WriteAllText($sentinel, 'preserve a retirement-looking directory')
+    if ((Install-ExaCopySignedVersion $Bundle $Context).status -cne 'installed') {
+        throw 'Could not reinstall the exact package for the withdrawal control.'
+    }
+
+    $failure = Get-FixtureRefusal { Invoke-FixtureWithdrawalFault $Context }
+    $retired = @([IO.Directory]::EnumerateDirectories($Context.Programs, '.ExaCopy-version-retired-*') |
+        Where-Object { $_ -cne $lookalike })
+    if ($retired.Count -ne 1) { throw "Expected one retired version directory. $failure" }
+    $prefix = "Version withdrawal to '$($retired[0])' completed but cleanup could not be confirmed."
+    if (!$failure.StartsWith($prefix, [StringComparison]::Ordinal) -or
+        !$failure.EndsWith('Fixture stopped after removing the retired version marker.', [StringComparison]::Ordinal) -or
+        (Get-ExaCopyNodeExists $bin)) {
+        throw "The withdrawal fault did not retain exact retirement evidence. $failure"
+    }
+    Assert-ExaCopyExactEntries $versions @()
+    Assert-ExaCopyExactEntries $retired[0] @()
+    if ((Uninstall-ExaCopySignedVersion $Context -Quiesced).status -cne 'already_absent') {
+        throw 'Uninstall retry did not recognize that the live version was withdrawn.'
+    }
+
+    # An old interrupted uninstall can leave an empty live path with no ownership proof.
+    [void][IO.Directory]::CreateDirectory($versionPath)
+    $installRefusal = Get-FixtureRefusal { Install-ExaCopySignedVersion $Bundle $Context }
+    $removeRefusal = Get-FixtureRefusal { Uninstall-ExaCopySignedVersion $Context -Quiesced }
+    if ($installRefusal -cnotlike 'Version directory is incomplete.*' -or
+        $removeRefusal -cne 'Directory lacks one or more required entries.' -or (Get-ExaCopyNodeExists $bin)) {
+        throw 'An unmarked live version was not refused at the ownership boundary.'
+    }
+    Assert-ExaCopyExactEntries $versionPath @()
+    [IO.Directory]::Delete($versionPath, $false)
+
+    if ((Install-ExaCopySignedVersion $Bundle $Context).status -cne 'installed') {
+        throw 'Retirement evidence blocked reinstall of the exact package.'
+    }
+    Confirm-ExaCopyArtifact $Executable $Signed.Release
+    if ((Uninstall-ExaCopySignedVersion $Context -Quiesced).status -cne 'uninstalled' -or
+        (Get-ExaCopyNodeExists $bin) -or
+        [IO.File]::ReadAllText($sentinel) -cne 'preserve a retirement-looking directory') {
+        throw 'Normal cleanup did not preserve the unrelated sibling.'
+    }
+    Assert-ExaCopyExactEntries $versions @()
+    Assert-ExaCopyExactEntries $Context.Programs @('ExaCopy', $lookalikeName, [IO.Path]::GetFileName($retired[0]))
+    Assert-ExaCopyExactEntries $retired[0] @()
+    Assert-ExaCopyExactEntries $lookalike @('unrelated.txt')
+    [IO.Directory]::Delete($retired[0], $false)
+    [IO.File]::Delete($sentinel)
+    [IO.Directory]::Delete($lookalike, $false)
+    Write-Output 'Windows verified withdrawal retry, legacy unmarked version refusal, and unrelated sibling preservation.'
+}
+
 function Test-ExaCopyPackagedLauncher {
     param([string] $Bundle, [string] $Target, $Signed)
 
@@ -67,6 +155,7 @@ function Test-ExaCopyPackagedLauncher {
     $expectedExecutable = Join-Path (Join-Path (Join-Path $installRoot 'versions') $Version) 'exacopy.exe'
     $expectedLauncher = Join-Path $bin 'exacopy.ps1'
     if ($installed.status -cne 'installed') { throw 'The installer did not publish the package.' }
+    $smokePassed = $false
     try {
         if ($installed.path -cne $expectedExecutable -or
             $installed.launcher -cne $expectedLauncher -or ![IO.File]::Exists($expectedLauncher)) {
@@ -90,6 +179,7 @@ function Test-ExaCopyPackagedLauncher {
         if ($LASTEXITCODE -ne 0 -or $versionText.Count -eq 0 -or $versionText[0] -cne "exacopy $Version") {
             throw 'The exact selected CLI did not report the expected version.'
         }
+        $smokePassed = $true
     }
     finally {
         $removed = Uninstall-ExaCopySignedVersion $context -Quiesced
@@ -97,6 +187,11 @@ function Test-ExaCopyPackagedLauncher {
             (Get-ExaCopyNodeExists (Split-Path -Parent $expectedExecutable)) -or
             [IO.File]::ReadAllText($incumbent) -cne 'preserve a neighboring owner file') {
             throw 'The uninstall did not withdraw exactly the owned launcher and version.'
+        }
+
+        if ($smokePassed -and !$SourceRoot) {
+            Assert-ExaCopyExactEntries $programs @('ExaCopy')
+            Test-ExaCopyWithdrawalRetry $Bundle $context $Signed $expectedExecutable
         }
 
         # The production uninstall retains the authenticated root. The runner
