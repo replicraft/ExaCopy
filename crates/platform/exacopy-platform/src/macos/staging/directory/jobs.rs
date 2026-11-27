@@ -4,6 +4,7 @@ use std::fmt;
 use std::fs::File;
 use std::os::fd::AsFd as _;
 
+use apfs_mounted::writer::sync_directory;
 use exacopy_endpoint::UnixComponent;
 use rustix::fs::{self, FileType, Mode, Stat};
 
@@ -273,8 +274,8 @@ fn create_directory(
 	let directory = PrivateDirectory { lease, identity };
 	directory.check_current(parent, name)?;
 	creation.step = Some(JobStep::NamespaceBarrier);
-	fs::fsync(&directory.lease.file)?;
-	fs::fsync(&parent.file)?;
+	sync_directory(&directory.lease.directory).map_err(|error| error.error)?;
+	sync_directory(&parent.directory).map_err(|error| error.error)?;
 	creation.step = Some(JobStep::Revalidate);
 	check_parent()?;
 	directory.check_current(parent, name)?;

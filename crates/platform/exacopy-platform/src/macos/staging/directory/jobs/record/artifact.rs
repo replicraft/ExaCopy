@@ -1,14 +1,13 @@
-use std::fs::File;
 use std::io;
 
 use apfs_mounted::metadata::{MAX_EXTENDED_SECURITY_BYTES, MetadataView};
 use apfs_mounted::writer::{
 	ArtifactCheckPhase, ArtifactError, ArtifactPhase, InitialFlags, LifecycleEffect, WriterError,
-	write_private_artifact_checked,
+	sync_directory, write_private_artifact_checked,
 };
 use apfs_mounted::{EntryName, IdentityError};
 use exacopy_endpoint::UnixComponent;
-use rustix::fs::{self, FileType};
+use rustix::fs::FileType;
 
 use super::super::super::super::super::{FILE_MODE, acl, with_materialization_disabled};
 use super::super::StageError;
@@ -21,8 +20,8 @@ pub(super) fn write_record(
 	creation: Creation,
 	check_parent: impl Fn() -> Result<(), JobError>,
 ) -> Result<ManagedObjectIdentity, JobError> {
-	write_record_with_namespace_barrier(lease, name, bytes, creation, check_parent, |file| {
-		fs::fsync(file)
+	write_record_with_namespace_barrier(lease, name, bytes, creation, check_parent, || {
+		sync_directory(&lease.directory).map_err(|error| error.error)
 	})
 }
 
@@ -32,7 +31,7 @@ pub(in super::super) fn write_record_with_namespace_barrier(
 	bytes: &[u8],
 	mut creation: Creation,
 	check_parent: impl Fn() -> Result<(), JobError>,
-	namespace_barrier: impl FnOnce(&File) -> rustix::io::Result<()>,
+	namespace_barrier: impl FnOnce() -> io::Result<()>,
 ) -> Result<ManagedObjectIdentity, JobError> {
 	let length = record_length(bytes)?;
 	let native_name = EntryName::new(name.as_bytes()).map_err(StageError::Name)?;
@@ -60,7 +59,7 @@ pub(in super::super) fn write_record_with_namespace_barrier(
 	creation.step = Some(JobStep::Revalidate);
 	creation.run(|creation| {
 		creation.step = Some(JobStep::NamespaceBarrier);
-		namespace_barrier(&lease.file)?;
+		namespace_barrier()?;
 		creation.step = Some(JobStep::Revalidate);
 		check_parent()?;
 		let named = lease.named_stat(name)?;

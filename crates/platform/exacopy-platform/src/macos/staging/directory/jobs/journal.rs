@@ -4,6 +4,7 @@ use std::fmt;
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 
+use apfs_mounted::writer::full_file_sync;
 use exacopy_endpoint::{JournalFileBarrier, JournalSegment};
 use rustix::fs;
 
@@ -82,7 +83,7 @@ impl JournalSegment for DarwinJournalSegment<'_> {
 			let held = fs::fstat(&self.file)?;
 			let length = u64::try_from(held.st_size).map_err(|_| JobError::IdentityChanged)?;
 			self.check_current(length)?;
-			fs::fcntl_fullfsync(&self.file)?;
+			full_file_sync(&self.file).map_err(|error| error.error)?;
 			self.check_current(length)
 		})
 		.map_err(io::Error::other)

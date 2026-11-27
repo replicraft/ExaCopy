@@ -402,7 +402,7 @@ fn failed_record_namespace_barrier_reports_reconciliation_and_preserves_artifact
 		bytes,
 		Creation::new(job.name(), JobArtifact::Owner),
 		|| job.check_current(),
-		|_| Err(Errno::IO),
+		|| Err(Errno::IO.into()),
 	);
 	let Err(JobError::Uncertain {
 		job: reported_job,

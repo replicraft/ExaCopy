@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::os::fd::AsFd as _;
 
+use apfs_mounted::writer::sync_directory;
 use exacopy_endpoint::UnixComponent;
 use rustix::fs::{self, FileType, Mode, OFlags};
 
@@ -80,7 +81,7 @@ impl<'job> JournalDirectory<'job> {
 				let (file, identity) =
 					create_empty_with_access(lease, name, creation, OFlags::RDWR)?;
 				creation.step = Some(JobStep::NamespaceBarrier);
-				fs::fsync(&lease.file)?;
+				sync_directory(&lease.directory).map_err(|error| error.error)?;
 				creation.step = Some(JobStep::Revalidate);
 				self.check_current()?;
 				check_record(lease, name, &file, 0, Some(identity))?;
