@@ -28,12 +28,14 @@ mod metadata;
 	reason = "verified Windows object query and single handle-relative no-replace rename"
 )]
 mod native;
+mod reopen;
 
 pub use destination::{
 	WindowsPublicationDestination, WindowsPublicationRoot, WindowsUnconfirmedPublicationDirectory,
 };
 pub use error::WindowsPublicationError;
 pub use metadata::WindowsPublicationMetadata;
+pub use reopen::{WindowsPublicationTargetObservation, inspect_windows_publication_target};
 
 const OBSERVATION_ACCESS: u32 = READ_ACCESS | READ_CONTROL;
 const OBSERVATION_SHARE: u32 = FILE_SHARE_READ | FILE_SHARE_DELETE;

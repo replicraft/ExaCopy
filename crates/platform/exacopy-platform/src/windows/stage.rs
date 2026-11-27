@@ -36,8 +36,9 @@ pub use error::{NativeStageError, WindowsStageError};
 pub use publication::{
 	WindowsClosedPublicationStage, WindowsPublicationAttempt, WindowsPublicationBinding,
 	WindowsPublicationDestination, WindowsPublicationError, WindowsPublicationMetadata,
-	WindowsPublicationOutcome, WindowsPublicationRoot, WindowsSealedPublicationStage,
-	WindowsUnconfirmedPublicationDirectory,
+	WindowsPublicationOutcome, WindowsPublicationRoot, WindowsPublicationTargetObservation,
+	WindowsSealedPublicationStage, WindowsUnconfirmedPublicationDirectory,
+	inspect_windows_publication_target,
 };
 
 /// Maximum bytes admitted for one synchronous stage read or write.

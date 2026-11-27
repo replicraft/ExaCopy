@@ -19,6 +19,7 @@ use crate::windows::WindowsStageDirectory;
 use crate::windows::native::query;
 
 mod profile;
+mod reopen;
 
 const STAGE: &[u16] = &[115, 116, 97, 103, 101];
 const DESTINATION: &[u16] = &[100, 101, 115, 116, 105, 110, 97, 116, 105, 111, 110];
@@ -353,6 +354,7 @@ fn writer_and_changed_stage_refuse_before_rename() {
 #[test]
 #[ignore = "requires the hosted fixed local NTFS publication fixture"]
 fn bound_target_and_metadata_refusals_preserve_entries() {
+	reopen::inspect_retained_stage_and_unrelated_destination();
 	profile::refuse_existing_destination_after_removed_predecessor();
 	profile::refuse_reparse_destination();
 	profile::refuse_initial_archive_transition();
@@ -436,9 +438,13 @@ fn native_success_with_observation_failure_requires_reconciliation() {
 	assert!(result.rename_pin.is_some() && result.target_pin.is_some());
 	assert_absent(&private);
 	assert_bytes(&public, exact.stage, DATA);
-	let stage_identity = exact.stage;
+	let root_identity = observe(root_file.as_handle(), Kind::Directory).unwrap();
 	drop(result);
 	drop(stage_file);
 	drop(root_file);
-	fixture.clean([(public, stage_identity)]);
+
+	reopen::inspect_reopened_publication(&fixture, root_identity, exact);
+	assert_absent(&private);
+	assert_bytes(&public, exact.stage, DATA);
+	fixture.clean([(public, exact.stage)]);
 }

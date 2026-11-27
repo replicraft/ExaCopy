@@ -28,9 +28,10 @@ pub use stage::{
 	MAX_WINDOWS_STAGE_IO_BYTES, NativeStageError, WindowsClosedPublicationStage,
 	WindowsPublicationAttempt, WindowsPublicationBinding, WindowsPublicationDestination,
 	WindowsPublicationError, WindowsPublicationMetadata, WindowsPublicationOutcome,
-	WindowsPublicationRoot, WindowsRetainedStage, WindowsSealedPublicationStage,
-	WindowsStageDirectory, WindowsStageError, WindowsStagePrefix, WindowsStageReadBack,
-	WindowsStageView, WindowsStageWriter, WindowsUnconfirmedPublicationDirectory,
+	WindowsPublicationRoot, WindowsPublicationTargetObservation, WindowsRetainedStage,
+	WindowsSealedPublicationStage, WindowsStageDirectory, WindowsStageError, WindowsStagePrefix,
+	WindowsStageReadBack, WindowsStageView, WindowsStageWriter,
+	WindowsUnconfirmedPublicationDirectory, inspect_windows_publication_target,
 };
 
 #[cfg(all(target_os = "windows", feature = "experimental-windows-read"))]

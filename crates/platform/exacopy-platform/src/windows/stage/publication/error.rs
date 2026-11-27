@@ -28,6 +28,8 @@ pub enum WindowsPublicationError {
 	},
 	/// The admitted directory is not on a fixed local NTFS volume.
 	UnsupportedVolume,
+	/// The admitted destination parent uses case-sensitive lookup.
+	CaseSensitiveDestination,
 	/// The parents are identical or do not share an exact physical volume.
 	ParentScope,
 	/// The held parent differs from its originally admitted identity.
@@ -86,6 +88,8 @@ impl fmt::Display for WindowsPublicationError {
 				"the destination directory needs reconciliation ({cause})"
 			),
 			Self::UnsupportedVolume => formatter.write_str("publication requires fixed local NTFS"),
+			Self::CaseSensitiveDestination => formatter
+				.write_str("reopened destination inspection requires case-insensitive lookup"),
 			Self::ParentScope => {
 				formatter.write_str("publication requires distinct parents on one physical volume")
 			}

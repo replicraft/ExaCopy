@@ -108,5 +108,26 @@ This component supplies no product copy command, durable intent writer,
 receipt, namespace durability, process-crash or power-loss qualification.
 The separate Stage qualification retains its own scope.
 
+## Reopened target inspection
+
+The default-off copy feature includes a read-only probe for an existing
+destination parent. It uses the caller's freshly held, authenticated root,
+recorded root identity, exact parent component and independently admitted
+placement binding. It checks fixed local NTFS, case-insensitive directory
+mode, direct parent identity and spelling, and the target's full physical
+identity and exact spelling.
+A missing target lookup, the expected native ID and an unrelated regular
+entry are distinct observations. Other results, including aliases that
+resolve without matching the stored spelling, require reconciliation.
+The caller must hold the root and its ancestry and exclude concurrent
+namespace changes during inspection.
+
+The probe returns a sampled name/identity fact without any file handle,
+publication permit, or proof of content, metadata, journal admission, or
+durability. The native fixture includes cases for a retained private stage with an
+absent or unrelated public entry and for reopening the target after releasing
+all original attempt handles. Their native execution remains unqualified. It contributes to R-044/A-044 and INV-009
+without executing the required process-kill or barrier-replay campaign.
+
 Successful cross-compilation alone does not qualify this capability or
 enable Windows product copy/recovery.

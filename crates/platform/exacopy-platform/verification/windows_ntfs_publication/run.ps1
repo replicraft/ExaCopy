@@ -299,8 +299,10 @@ try {
     $state.source_tree = $state.source_tree[0]
     $fileHashes = [ordered]@{}
     foreach ($source in @(
+        'crates/platform/exacopy-platform/src/windows/stage/publication/reopen.rs',
         'crates/platform/exacopy-platform/src/windows/stage/publication/tests.rs',
         'crates/platform/exacopy-platform/src/windows/stage/publication/tests/profile.rs',
+        'crates/platform/exacopy-platform/src/windows/stage/publication/tests/reopen.rs',
         'fixture.toml', 'run.ps1', 'selection.ps1', 'process.cs', 'test_runner.ps1', 'process-controls.ps1'
     )) {
         $sourcePath = if ($source.Contains('/')) { Join-Path $repo $source } else { Join-Path $PSScriptRoot $source }

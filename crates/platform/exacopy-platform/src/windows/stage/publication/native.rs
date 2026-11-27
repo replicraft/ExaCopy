@@ -8,11 +8,12 @@ use windows_sys::Win32::Foundation::{
 	ERROR_NOT_SUPPORTED, HANDLE, STATUS_SUCCESS,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-	FILE_NAME_OPENED, FILE_RENAME_INFO, FileRenameInfo, GetDriveTypeW, SetFileInformationByHandle,
+	FILE_CASE_SENSITIVE_INFO, FILE_NAME_OPENED, FILE_RENAME_INFO, FileCaseSensitiveInfo,
+	FileRenameInfo, GetDriveTypeW, SetFileInformationByHandle,
 };
 
 use super::{WindowsPublicationError, WindowsPublicationOutcome};
-use crate::windows::native::{local_ntfs_path, parse_volume_guid};
+use crate::windows::native::{local_ntfs_path, parse_volume_guid, query};
 use crate::windows::{MAX_WINDOWS_COMPONENT_UNITS, WindowsComponent};
 
 // PUBLIC_OBJECT_BASIC_INFORMATION from the Windows SDK. The object manager has
@@ -72,6 +73,19 @@ pub(super) fn require_fixed_ntfs(
 	// its trailing backslash and a terminating zero in the live buffer.
 	if unsafe { GetDriveTypeW(path.as_ptr()) } != DRIVE_FIXED {
 		return Err(WindowsPublicationError::UnsupportedVolume);
+	}
+	Ok(())
+}
+
+pub(super) fn require_case_insensitive(
+	parent: BorrowedHandle<'_>,
+) -> Result<(), WindowsPublicationError> {
+	let mut info = FILE_CASE_SENSITIVE_INFO::default();
+	// SAFETY: The class matches the initialized, correctly sized output type.
+	unsafe { query(parent, FileCaseSensitiveInfo, &mut info) }
+		.map_err(WindowsPublicationError::native)?;
+	if info.Flags != 0 {
+		return Err(WindowsPublicationError::CaseSensitiveDestination);
 	}
 	Ok(())
 }
