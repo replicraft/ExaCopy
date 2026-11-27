@@ -1457,6 +1457,40 @@ The eight target-specific Windows import-library packages are separate
 artifacts outside this exact package audit. Static source review only.
 """
 
+[[audits.windows_i686_gnu]]
+who = "OpenAI Codex (automated paired dependency source review)"
+criteria = "safe-to-deploy"
+version = "0.52.6"
+notes = """
+2026-11-27. Two independent automated reviews covered all eight published
+members of the exact locked registry archive SHA-256
+8e9b5ad5ab802e97eb8e295ac6720e509ee4c243f69d781394014ebfe8bbfa0b.
+The package attributes its contents to db06b51c2ebb743efb544d40e3064efa49f28d38
+at crates/targets/i686_gnu. Its empty no_std library has no features,
+dependencies, or unsafe Rust. The build script reads Cargo's CARGO_MANIFEST_DIR
+and adds that directory's lib subdirectory to the native link search.
+
+The bundled i386 GNU archive SHA-256
+5a94ca1fca8c0f897380a2c857f246c0a34a0796218f2700d70cd724b5fe127c
+has 21,293 COFF objects and 41,844 distinct linker index keys. All 20,551
+nonempty executable sections are fixed eight-byte import thunks, each an
+indirect jump with two padding bytes. Each text relocation targets its own
+import-address table slot. The checked COFF relocation and index map binds
+each decorated symbol and import-pointer alias to its named export and
+one of 371 PE module basenames. The other objects are import descriptors
+and module-name records with empty text. The two GetDeviceID imports preserve
+separate decorated linker names and import-pointer aliases.
+
+The review assumes the locked Microsoft distribution, Cargo-controlled
+manifest path and native search inputs, a trusted Windows linker and target
+OS, and deployment-controlled module lookup. The archive stores module
+basenames. Actual paths and identities depend on the deployment's loader
+and search policy. External ABI correctness, OS implementations and export
+availability, actual module resolution, and independent archive regeneration
+remain unverified. No compilation, native linking, execution, tests or Cargo
+Vet replay ran during these reviews.
+"""
+
 [[audits.windows_i686_msvc]]
 who = "OpenAI Codex (automated paired dependency source review)"
 criteria = "safe-to-deploy"

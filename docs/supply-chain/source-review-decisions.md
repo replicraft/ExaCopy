@@ -98,6 +98,19 @@ The gate still fails; its other rows and dependency-policy outputs are unchanged
 The record, two independent reviews and complete member inventories remain under
 `target/agent-evidence/dependency-source-next/`.
 
+The paired review of `windows_i686_gnu 0.52.6` accepted a whole-version
+`safe-to-deploy` record. Both readers verified all eight locked archive members
+and accounted for 21,293 i386 COFF objects and 41,844 index keys. Unlike the
+MSVC archive, it contains executable code: 20,551 fixed eight-byte import
+thunks whose relocations select their own import-address slots. The complete
+module and export routing matched the independently inspected MSVC encoding.
+Trusted build inputs, linker and deployment module lookup remain assumptions;
+external ABI behavior, native linking and independent regeneration are
+unverified. No package code ran. Cargo Vet evaluation of this added record is
+pending; the last verified report still had 164 gaps. Both source reviews,
+complete member inventories and artifact readers remain under
+`target/agent-evidence/dependency-source-next-4831/`.
+
 ## Records left open
 
 | Package | Finding or unresolved review boundary |
