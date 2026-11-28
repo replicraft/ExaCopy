@@ -186,8 +186,13 @@ fn admits_only_the_selected_held_bootstrap_history() {
 		root: fixture.roles.root(),
 	};
 
-	let provisioned =
-		fixture::populate(&fixture.root, fixture.drive, fixture.roles, job, |roles| {
+	let provisioned = fixture::populate(
+		&fixture.root,
+		fixture.drive,
+		fixture.roles,
+		job,
+		fixture::SegmentPopulation::OriginalBootstrap,
+		|roles| {
 			sign(
 				&WindowsBootstrapOwner {
 					profile,
@@ -198,7 +203,8 @@ fn admits_only_the_selected_held_bootstrap_history() {
 				&signer,
 			)
 			.expect("sign the original five native identities")
-		});
+		},
+	);
 	verify_counterexamples(&fixture, &selection, &provisioned.bytes);
 	let historical = inspect_fixture(
 		&fixture.root,
@@ -229,6 +235,7 @@ fn verify_counterexamples(
 		fixture.drive,
 		fixture.copied_roles,
 		copied_selection.job,
+		fixture::SegmentPopulation::CopiedCounterexample,
 		|_| WindowsBootstrapBytes {
 			owner: bytes.owner,
 			first_segment: bytes.first_segment,

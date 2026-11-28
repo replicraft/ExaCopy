@@ -69,7 +69,7 @@ pub(crate) use read::protected as protected_snapshot;
 	feature = "experimental-windows-read"
 ))]
 pub use read::protected::bootstrap::{
-	WindowsBootstrapLayout, WindowsBootstrapRecords, WindowsBootstrapRoleKind,
-	WindowsBootstrapRoleObservations, WindowsBootstrapRootSelection, WindowsBootstrapSegment,
-	observe_windows_bootstrap_role_identity,
+	WindowsBootstrapFreshSegment, WindowsBootstrapLayout, WindowsBootstrapRecords,
+	WindowsBootstrapRoleKind, WindowsBootstrapRoleObservations, WindowsBootstrapRootSelection,
+	WindowsBootstrapSegment, observe_windows_bootstrap_role_identity,
 };

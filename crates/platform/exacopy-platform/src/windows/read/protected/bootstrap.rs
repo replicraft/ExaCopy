@@ -1,19 +1,23 @@
-use std::fs::File;
 use std::io::{self, Read};
-use std::os::windows::fs::FileExt as _;
-use std::os::windows::io::{AsHandle as _, BorrowedHandle, OwnedHandle};
+use std::os::windows::io::{AsHandle as _, BorrowedHandle};
 
-use windows_sys::Win32::Storage::FileSystem::{FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_NORMAL};
+use windows_sys::Win32::Storage::FileSystem::{FILE_SHARE_READ, FILE_SHARE_WRITE};
 
 use crate::windows::{WindowsStageIdentity, native::observe};
 
 use super::{
-	Binding, DIRECTORY_ACCESS, Directory, DrivePath, Error, FILE_METADATA_ACCESS, FILE_READ_DATA,
-	Kind, LeafStamp, WindowsComponent, acl, hold_root, named_identity, observe_fixed_root,
-	observe_leaf, open_relative, read_at, refused, security,
+	Binding, DIRECTORY_ACCESS, Directory, DrivePath, Error, Kind, WindowsComponent, acl, hold_root,
+	named_identity, observe_fixed_root, open_relative, read_at, refused, security,
 };
 
 const MAX_RECORD_BYTES: usize = 4096;
+
+mod record;
+mod writer;
+
+use record::{MetadataPin, Record};
+
+pub use writer::WindowsBootstrapFreshSegment;
 
 /// Expected native kind of a held fixture or provisioned bootstrap role.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -60,7 +64,7 @@ pub struct WindowsBootstrapRootSelection {
 	pub file_id: [u8; 16],
 }
 
-/// Exact components and nonzero record lengths supplied by the selected layout.
+/// Exact components and nonzero record bounds supplied by the selected layout.
 #[derive(Clone, Copy, Debug)]
 pub struct WindowsBootstrapLayout<'name> {
 	/// The independently selected job directory component.
@@ -73,7 +77,8 @@ pub struct WindowsBootstrapLayout<'name> {
 	pub first_segment: WindowsComponent<'name>,
 	/// The exact owner record extent, up to 4096 bytes.
 	pub owner_bytes: usize,
-	/// The exact first segment extent, up to 4096 bytes.
+	/// Exact read-only segment extent, or capacity for an originally empty fresh writer.
+	/// The selected value must be nonzero and at most 4096 bytes.
 	pub first_segment_bytes: usize,
 }
 
@@ -129,6 +134,15 @@ impl<'name> WindowsBootstrapRecords<'name> {
 		expected: WindowsBootstrapRootSelection,
 		layout: WindowsBootstrapLayout<'name>,
 	) -> Result<Self, Error> {
+		Self::open_with_access(root_path, expected, layout, None)
+	}
+
+	fn open_with_access(
+		root_path: &'name [u16],
+		expected: WindowsBootstrapRootSelection,
+		layout: WindowsBootstrapLayout<'name>,
+		fresh_roles: Option<WindowsBootstrapRoleObservations>,
+	) -> Result<Self, Error> {
 		for length in [layout.owner_bytes, layout.first_segment_bytes] {
 			if length == 0 || length > MAX_RECORD_BYTES {
 				return Err(Error::TooLarge);
@@ -162,27 +176,50 @@ impl<'name> WindowsBootstrapRecords<'name> {
 		}
 		let job = open_directory(&root, layout.job, &subject, acl::Role::Private)?;
 		let journal = open_directory(&job, layout.journal, &subject, acl::Role::Private)?;
-		let owner = MetadataPin::open(&job, layout.owner, &subject, layout.owner_bytes)?;
+		let owner = MetadataPin::open(
+			&job,
+			layout.owner,
+			&subject,
+			layout.owner_bytes,
+			FILE_SHARE_READ,
+		)?;
+		let fresh = fresh_roles.is_some();
+		let (initial_segment_length, segment_share) = if fresh {
+			(0, FILE_SHARE_READ | FILE_SHARE_WRITE)
+		} else {
+			(layout.first_segment_bytes, FILE_SHARE_READ)
+		};
 		let segment = MetadataPin::open(
 			&journal,
 			layout.first_segment,
 			&subject,
-			layout.first_segment_bytes,
+			initial_segment_length,
+			segment_share,
 		)?;
-		let roles = [
-			observed,
-			job.binding.identity,
-			journal.binding.identity,
-			owner.binding.identity,
-			segment.binding.identity,
+		let roles = WindowsBootstrapRoleObservations {
+			root: observed,
+			job_directory: job.binding.identity,
+			owner_file: owner.binding.identity,
+			journal_directory: journal.binding.identity,
+			first_segment: segment.binding.identity,
+		};
+		if fresh_roles.is_some_and(|expected| expected != roles) {
+			return Err(Error::Changed);
+		}
+		let unique = [
+			roles.root,
+			roles.job_directory,
+			roles.owner_file,
+			roles.journal_directory,
+			roles.first_segment,
 		];
-		for (index, role) in roles.iter().enumerate() {
-			if roles[..index].contains(role) {
+		for (index, role) in unique.iter().enumerate() {
+			if unique[..index].contains(role) {
 				return Err(Error::Unprotected);
 			}
 		}
-		let owner = owner.open_data(&job, layout.owner)?;
-		let segment = segment.open_data(&journal, layout.first_segment)?;
+		let owner = owner.open_data(&job, layout.owner, false)?;
+		let segment = segment.open_data(&journal, layout.first_segment, fresh)?;
 		let records = Self {
 			subject,
 			path,
@@ -312,102 +349,6 @@ fn check_directory(
 			.recheck(handle, named_identity(handle, Kind::Directory, name)?)?;
 	}
 	Ok(())
-}
-
-struct MetadataPin {
-	handle: OwnedHandle,
-	binding: Binding,
-	stamp: LeafStamp,
-}
-
-impl MetadataPin {
-	fn open(
-		parent: &Directory,
-		name: WindowsComponent<'_>,
-		subject: &security::Subject,
-		extent: usize,
-	) -> Result<Self, Error> {
-		let handle = open_relative(
-			parent.handle.as_handle(),
-			name,
-			Kind::RegularFile,
-			FILE_METADATA_ACCESS,
-		)?;
-		let (binding, stamp) = observe_leaf(handle.as_handle(), name, subject)?;
-		super::super::same_volume(binding.identity, parent.binding.identity).map_err(refused)?;
-		let supported = FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_NORMAL;
-		if stamp.attributes == 0 || stamp.attributes & !supported != 0 {
-			return Err(Error::Unprotected);
-		}
-		if stamp.length != extent {
-			return Err(Error::Changed);
-		}
-		stamp.check_stream(handle.as_handle(), Error::Unprotected)?;
-		Ok(Self {
-			handle,
-			binding,
-			stamp,
-		})
-	}
-
-	fn open_data(self, parent: &Directory, name: WindowsComponent<'_>) -> Result<Record, Error> {
-		let file = open_relative(
-			parent.handle.as_handle(),
-			name,
-			Kind::RegularFile,
-			FILE_METADATA_ACCESS | FILE_READ_DATA,
-		)?;
-		self.check_handle(file.as_handle(), name)?;
-		Ok(Record {
-			pin: self,
-			file: file.into(),
-		})
-	}
-
-	fn check_handle(
-		&self,
-		handle: BorrowedHandle<'_>,
-		name: WindowsComponent<'_>,
-	) -> Result<(), Error> {
-		let identity = named_identity(handle, Kind::RegularFile, name)?;
-		self.binding.recheck(handle, identity)?;
-		if LeafStamp::capture(handle)? != self.stamp {
-			return Err(Error::Changed);
-		}
-		self.stamp.check_stream(handle, Error::Changed)
-	}
-}
-
-struct Record {
-	pin: MetadataPin,
-	file: File,
-}
-
-impl Record {
-	fn check(&self, parent: &Directory, name: WindowsComponent<'_>) -> Result<(), Error> {
-		let named = open_relative(
-			parent.handle.as_handle(),
-			name,
-			Kind::RegularFile,
-			FILE_METADATA_ACCESS,
-		)?;
-		for handle in [
-			self.pin.handle.as_handle(),
-			self.file.as_handle(),
-			named.as_handle(),
-		] {
-			self.pin.check_handle(handle, name)?;
-		}
-		Ok(())
-	}
-
-	fn eof(&self) -> Result<(), Error> {
-		match self.file.seek_read(&mut [0], self.pin.stamp.length as u64) {
-			Ok(0) => Ok(()),
-			Ok(_) => Err(Error::Changed),
-			Err(error) => Err(super::io_error(&error)),
-		}
-	}
 }
 
 /// Sequential, exact-extent reader over the held first segment.

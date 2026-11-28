@@ -1,18 +1,22 @@
 use std::ffi::OsString;
 use std::fs::{File, OpenOptions};
-use std::io::Write as _;
+use std::io::{self, Seek as _, SeekFrom, Write as _};
 use std::os::windows::ffi::{OsStrExt as _, OsStringExt as _};
 use std::os::windows::fs::OpenOptionsExt as _;
 use std::os::windows::io::AsHandle as _;
 use std::path::{Path, PathBuf};
 
-use exacopy_journal::JournalJobId;
+use exacopy_journal::frame::{ChainHead, FrameKind, FrameReader};
 use exacopy_journal::windows_bootstrap::{
-	FIRST_SEGMENT_NAME, JOURNAL_DIRECTORY_NAME, OWNER_FILE_NAME, WindowsBootstrapBytes,
-	WindowsBootstrapFileIdentity, WindowsBootstrapRoles, job_directory_name,
+	FIRST_SEGMENT_BYTES, FIRST_SEGMENT_NAME, JOURNAL_DIRECTORY_NAME, OWNER_BYTES, OWNER_FILE_NAME,
+	WindowsBootstrapBytes, WindowsBootstrapFileIdentity, WindowsBootstrapRoles, job_directory_name,
 };
+use exacopy_journal::{DurableJournal, JournalJobId};
+use exacopy_platform::ProtectedSnapshotError;
 use exacopy_platform::windows::{
-	WindowsBootstrapRoleKind, WindowsStageIdentity, observe_windows_bootstrap_role_identity,
+	WindowsBootstrapFreshSegment, WindowsBootstrapLayout, WindowsBootstrapRoleKind,
+	WindowsBootstrapRoleObservations, WindowsComponent, WindowsStageIdentity,
+	observe_windows_bootstrap_role_identity,
 };
 
 const FILE_SHARE_READ_WRITE: u32 = 0x0000_0003;
@@ -166,11 +170,17 @@ pub(super) struct Provisioned {
 	pub(super) bytes: WindowsBootstrapBytes,
 }
 
+pub(super) enum SegmentPopulation {
+	OriginalBootstrap,
+	CopiedCounterexample,
+}
+
 pub(super) fn populate(
 	root: &Path,
 	drive: u8,
 	selected_roles: WindowsBootstrapRoles,
 	job: JournalJobId,
+	population: SegmentPopulation,
 	sign: impl FnOnce(WindowsBootstrapRoles) -> WindowsBootstrapBytes,
 ) -> Provisioned {
 	use WindowsBootstrapRoleKind::{Directory, RegularFile};
@@ -198,16 +208,27 @@ pub(super) fn populate(
 	let mut segment =
 		open_empty_record(&journal_path.join(OsString::from_wide(&FIRST_SEGMENT_NAME)));
 	let observe_roles = |owner: &File, segment: &File| {
-		WindowsBootstrapRoles::new(
-			observe(drive, &root_handle, Directory),
-			observe(drive, &job_handle, Directory),
-			observe(drive, owner, RegularFile),
-			observe(drive, &journal_handle, Directory),
-			observe(drive, segment, RegularFile),
-		)
-		.expect("independent original five roles")
+		let sample = |file: &File, kind| {
+			observe_windows_bootstrap_role_identity(drive, file.as_handle(), kind)
+				.expect("observe original fixture role")
+		};
+		WindowsBootstrapRoleObservations {
+			root: sample(&root_handle, Directory),
+			job_directory: sample(&job_handle, Directory),
+			owner_file: sample(owner, RegularFile),
+			journal_directory: sample(&journal_handle, Directory),
+			first_segment: sample(segment, RegularFile),
+		}
 	};
-	let roles = observe_roles(&owner, &segment);
+	let original = observe_roles(&owner, &segment);
+	let roles = WindowsBootstrapRoles::new(
+		identity(original.root),
+		identity(original.job_directory),
+		identity(original.owner_file),
+		identity(original.journal_directory),
+		identity(original.first_segment),
+	)
+	.expect("independent original five roles");
 	assert_eq!(roles, selected_roles);
 	assert_eq!(owner.metadata().expect("original owner extent").len(), 0);
 	assert_eq!(
@@ -219,15 +240,89 @@ pub(super) fn populate(
 	owner
 		.write_all(&bytes.owner)
 		.expect("populate original owner file");
-	segment
-		.write_all(&bytes.first_segment)
-		.expect("populate original segment");
 	owner.sync_all().expect("flush fixture owner bytes");
-	segment.sync_all().expect("flush fixture segment bytes");
-	assert_eq!(observe_roles(&owner, &segment), roles);
-	drop(owner);
-	drop(segment);
+	match population {
+		SegmentPopulation::OriginalBootstrap => {
+			assert_eq!(observe_roles(&owner, &segment), original);
+			drop(owner);
+			drop(segment);
+			append_original_prepared(root, job, original, &bytes.first_segment);
+		}
+		SegmentPopulation::CopiedCounterexample => {
+			segment
+				.write_all(&bytes.first_segment)
+				.expect("populate the deliberately untrusted copied segment");
+			segment.sync_all().expect("flush copied segment bytes");
+			assert_eq!(observe_roles(&owner, &segment), original);
+		}
+	}
 	Provisioned { roles, bytes }
+}
+
+fn append_original_prepared(
+	root: &Path,
+	job: JournalJobId,
+	roles: WindowsBootstrapRoleObservations,
+	encoded: &[u8; FIRST_SEGMENT_BYTES],
+) {
+	let mut frames = FrameReader::new(encoded.as_slice(), ChainHead::start());
+	let prepared = frames.next_frame().unwrap().unwrap();
+	assert_eq!(prepared.kind(), FrameKind::JobPrepared);
+	assert!(frames.next_frame().unwrap().is_none());
+
+	let root_units: Vec<_> = root.as_os_str().encode_wide().collect();
+	let job_name = job_directory_name(job);
+	let layout = WindowsBootstrapLayout {
+		job: WindowsComponent::new(&job_name).unwrap(),
+		owner: WindowsComponent::new(&OWNER_FILE_NAME).unwrap(),
+		journal: WindowsComponent::new(&JOURNAL_DIRECTORY_NAME).unwrap(),
+		first_segment: WindowsComponent::new(&FIRST_SEGMENT_NAME).unwrap(),
+		owner_bytes: OWNER_BYTES,
+		first_segment_bytes: FIRST_SEGMENT_BYTES,
+	};
+	let different = WindowsBootstrapRoleObservations {
+		first_segment: roles.owner_file,
+		..roles
+	};
+	assert!(matches!(
+		WindowsBootstrapFreshSegment::open_provisioned(&root_units, different, layout),
+		Err(ProtectedSnapshotError::Changed)
+	));
+	let mut original = WindowsBootstrapFreshSegment::open_provisioned(&root_units, roles, layout)
+		.expect("admit the exact original empty segment");
+	assert!(matches!(
+		WindowsBootstrapFreshSegment::open_provisioned(&root_units, roles, layout),
+		Err(ProtectedSnapshotError::Busy)
+	));
+	assert_eq!(
+		original.seek(SeekFrom::Start(1)).unwrap_err().kind(),
+		io::ErrorKind::InvalidInput
+	);
+	assert_eq!(
+		original
+			.write(&[0; FIRST_SEGMENT_BYTES + 1])
+			.unwrap_err()
+			.kind(),
+		io::ErrorKind::InvalidInput
+	);
+	let mut journal = DurableJournal::from_new_segment(original)
+		.expect("confirm original empty native segment and cursor");
+	let written = journal
+		.append(FrameKind::JobPrepared, prepared.payload())
+		.expect("append and flush the canonical prepared frame");
+	assert_eq!(written.head(), prepared.head());
+	journal
+		.confirm_current_frame(&written)
+		.expect("confirm exact held frame and physical EOF");
+	drop(journal);
+	assert_eq!(
+		std::fs::read(first_segment_path(root, job)).unwrap(),
+		encoded
+	);
+	assert!(matches!(
+		WindowsBootstrapFreshSegment::open_provisioned(&root_units, roles, layout),
+		Err(ProtectedSnapshotError::Changed)
+	));
 }
 
 pub(super) fn first_segment_path(root: &Path, job: JournalJobId) -> PathBuf {
