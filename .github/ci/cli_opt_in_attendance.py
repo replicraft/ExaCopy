@@ -84,6 +84,14 @@ MANAGED_SYNC_RECREATE_CASES = {
         "manual_recreate_refuses_nonabsence_and_the_absent_peers_read_ceiling"
     ),
 }
+WINDOWS_BOOTSTRAP_CASES = {
+    "args::parser::recovery::windows_bootstrap::tests::windows_bootstrap_parser_requires_exact_independent_selection",
+    "windows_bootstrap_inspect::tests::windows_bootstrap_report_projects_only_historical_evidence",
+    "windows_bootstrap_inspect::tests::windows_bootstrap_weak_key_refuses_with_no_reported_history",
+}
+WINDOWS_BOOTSTRAP_DEFAULT_CASE = (
+    "args::parser::recovery::tests::inspect_windows_bootstrap_is_hidden_without_the_exact_target_and_feature"
+)
 REQUIRED_CASES = {
     "remote": {REMOTE_CASE, REMOTE_PREFLIGHT_CASE} | SSH_SESSION_CASES,
     "public-stage": PUBLIC_STAGE_CASES,
@@ -91,6 +99,8 @@ REQUIRED_CASES = {
     "apfs-copy": APFS_CASES,
     "apfs-default": {APFS_DEFAULT_CASE},
     "managed-sync-recreate": MANAGED_SYNC_RECREATE_CASES,
+    "windows-bootstrap-inspect": WINDOWS_BOOTSTRAP_CASES,
+    "windows-bootstrap-default": {WINDOWS_BOOTSTRAP_DEFAULT_CASE},
 }
 
 
@@ -109,7 +119,7 @@ def check_attendance(report, lane):
     root = ElementTree.fromstring(data, parser=ElementTree.XMLParser(target=NoDoctype()))
     if root.tag != "testsuites" or root.get("name") != "nextest-run":
         raise ValueError("expected a nextest JUnit report")
-    if lane not in ("apfs-copy", "apfs-default") and len(root) != 1:
+    if lane not in ("apfs-copy", "apfs-default", "windows-bootstrap-default") and len(root) != 1:
         raise ValueError("expected one nextest JUnit suite")
 
     suites = {}

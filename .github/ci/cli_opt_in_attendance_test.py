@@ -77,6 +77,14 @@ RECREATE_EXPECTED = (
         "manual_recreate_refuses_nonabsence_and_the_absent_peers_read_ceiling"
     ),
 )
+WINDOWS_BOOTSTRAP_EXPECTED = (
+    "args::parser::recovery::windows_bootstrap::tests::windows_bootstrap_parser_requires_exact_independent_selection",
+    "windows_bootstrap_inspect::tests::windows_bootstrap_report_projects_only_historical_evidence",
+    "windows_bootstrap_inspect::tests::windows_bootstrap_weak_key_refuses_with_no_reported_history",
+)
+WINDOWS_BOOTSTRAP_DEFAULT_EXPECTED = (
+    "args::parser::recovery::tests::inspect_windows_bootstrap_is_hidden_without_the_exact_target_and_feature"
+)
 
 
 class CliOptInAttendanceTests(unittest.TestCase):
@@ -180,6 +188,32 @@ class CliOptInAttendanceTests(unittest.TestCase):
         self.write_xml(root)
         with self.assertRaisesRegex(ValueError, "lacks a successful execution record"):
             check_attendance(self.report, "managed-sync-recreate")
+
+    def test_windows_bootstrap_requires_every_completed_owning_case(self):
+        self.write_report(WINDOWS_BOOTSTRAP_EXPECTED)
+        self.assertEqual(
+            check_attendance(self.report, "windows-bootstrap-inspect"), sorted(WINDOWS_BOOTSTRAP_EXPECTED),
+        )
+        for missing in WINDOWS_BOOTSTRAP_EXPECTED:
+            with self.subTest(missing=missing):
+                present = [name for name in WINDOWS_BOOTSTRAP_EXPECTED if name != missing]
+                self.write_report([*present, missing.replace("::tests::", "::other_tests::")])
+                with self.assertRaisesRegex(ValueError, f"required testcases missing: {missing}$"):
+                    check_attendance(self.report, "windows-bootstrap-inspect")
+        root = self.write_report(WINDOWS_BOOTSTRAP_EXPECTED)
+        ElementTree.SubElement(root[0][0], "skipped")
+        self.write_xml(root)
+        with self.assertRaisesRegex(ValueError, "lacks a successful execution record"):
+            check_attendance(self.report, "windows-bootstrap-inspect")
+
+    def test_windows_bootstrap_default_guard_requires_the_workspace_cli_suite(self):
+        self.write_report((WINDOWS_BOOTSTRAP_DEFAULT_EXPECTED,), (("exacopy-model", (OTHER_CASE,)),))
+        self.assertEqual(
+            check_attendance(self.report, "windows-bootstrap-default"), [WINDOWS_BOOTSTRAP_DEFAULT_EXPECTED],
+        )
+        self.write_report((OTHER_CASE,), (("exacopy-cli::command", (WINDOWS_BOOTSTRAP_DEFAULT_EXPECTED,)),))
+        with self.assertRaisesRegex(ValueError, f"required testcases missing: {WINDOWS_BOOTSTRAP_DEFAULT_EXPECTED}$"):
+            check_attendance(self.report, "windows-bootstrap-default")
 
     def test_incomplete_session_record_cannot_satisfy_remote_attendance(self):
         root = self.write_report(REMOTE_EXPECTED)
