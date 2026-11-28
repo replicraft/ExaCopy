@@ -36,7 +36,7 @@ struct Case {
 
 #[test]
 fn rust_gate_matches_the_shared_nextest_transcript_corpus() {
-	let raw = include_str!("../../../verification/nextest-transcript-corpus.json");
+	let raw = include_str!("fixtures/transcripts.json");
 	let corpus: Corpus =
 		serde_json::from_str(raw).expect("shared transcript fixture is canonical JSON");
 	assert!(corpus.cases.iter().any(|case| case.accepted));

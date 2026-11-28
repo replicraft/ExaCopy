@@ -24,7 +24,7 @@ RUN_TIMEOUT_SECONDS = 900
 TOOL_QUERY_TIMEOUT_SECONDS = 30
 NEXTEST_VERSION = "0.9.151"
 NEXTEST_VERSION_LINE = re.compile(rf"[ \t]*cargo-nextest[ \t]+{re.escape(NEXTEST_VERSION)}(?:[ \t]|\Z)")
-# Match the importer grammar exercised by xtask/verification/nextest-transcript-corpus.json.
+# Match the importer grammar exercised by xtask/src/evidence/nextest/fixtures/transcripts.json.
 NEXTEST_MAX_LINE_BYTES = 4096
 NEXTEST_MAX_TRANSCRIPT_BYTES = 16 * 1024 * 1024
 NEXTEST_SEPARATOR = "────────────"

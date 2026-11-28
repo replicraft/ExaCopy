@@ -65,7 +65,7 @@ class RustGateFeatureTests(unittest.TestCase):
 
 class RustGateTranscriptTests(unittest.TestCase):
     def test_exact_nextest_transcript_corpus(self):
-        path = record_evidence.ROOT / "xtask/verification/nextest-transcript-corpus.json"
+        path = record_evidence.ROOT / "xtask/src/evidence/nextest/fixtures/transcripts.json"
         corpus = json.loads(path.read_text(encoding="utf-8"))
         self.assertTrue(corpus["cases"])
         with TemporaryDirectory() as temporary:
