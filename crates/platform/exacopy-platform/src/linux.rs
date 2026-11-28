@@ -83,13 +83,13 @@ pub use mount_observation::MountObservations;
 
 #[cfg(feature = "experimental-linux-managed-sync")]
 pub use sync_profile_store::{
-	SyncGenesisEffect, SyncGenesisEffectRequest, SyncGenesisIntent, SyncGenesisMember,
-	SyncGenesisMemberBinding, SyncGenesisNativeIdentity, SyncGenesisOperation, SyncGenesisOutput,
-	SyncGenesisPublishError, SyncGenesisPublishRequest, SyncGenesisPublished,
-	SyncGenesisRecoveryDisposition, SyncGenesisRecoveryExpectation, SyncGenesisRecoveryIssue,
-	SyncGenesisRecoveryObservation, SyncGenesisRecoverySession, SyncGenesisRecoverySlots,
-	SyncProfileHistory, SyncProfileSeed, SyncProfileStore, SyncProfileStoreError,
-	SyncProfileStoreRecord,
+	HeldSyncExportProfile, HeldSyncExportSeed, SyncGenesisEffect, SyncGenesisEffectRequest,
+	SyncGenesisIntent, SyncGenesisMember, SyncGenesisMemberBinding, SyncGenesisNativeIdentity,
+	SyncGenesisOperation, SyncGenesisOutput, SyncGenesisPublishError, SyncGenesisPublishRequest,
+	SyncGenesisPublished, SyncGenesisRecoveryDisposition, SyncGenesisRecoveryExpectation,
+	SyncGenesisRecoveryIssue, SyncGenesisRecoveryObservation, SyncGenesisRecoverySession,
+	SyncGenesisRecoverySlots, SyncProfileHistory, SyncProfileSeed, SyncProfileStore,
+	SyncProfileStoreError, SyncProfileStoreRecord,
 };
 
 pub use sync_preview::{

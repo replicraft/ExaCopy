@@ -6,6 +6,7 @@ use rustix::fs::{self, AtFlags, FileType, Mode, OFlags, Stat};
 
 use super::{BELOW, FileIdentity, PRIVATE_FILE, SyncProfileStoreError, mount_id};
 use crate::linux::SourceTimestamp;
+use crate::linux::owner_seed::{KEY_NAME, OWNER_SEED_BYTES};
 use crate::linux::source::reopen_regular_without_atime;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -74,6 +75,32 @@ pub(super) struct Pin {
 }
 
 impl Pin {
+	pub(super) fn open_seed(
+		parent: &File,
+		owner: u32,
+		mount: u64,
+		bytes: &mut [u8; OWNER_SEED_BYTES],
+		eof: &mut [u8; 1],
+	) -> Result<Self, SyncProfileStoreError> {
+		let pin = Self::open(parent, KEY_NAME.to_bytes(), owner, mount)?;
+		pin.read(parent, bytes, eof)?;
+		Ok(pin)
+	}
+
+	pub(super) fn recheck_seed_bytes(
+		&self,
+		parent: &File,
+		expected: &[u8; OWNER_SEED_BYTES],
+		scratch: &mut [u8; OWNER_SEED_BYTES],
+		eof: &mut [u8; 1],
+	) -> Result<(), SyncProfileStoreError> {
+		self.read(parent, scratch, eof)?;
+		if scratch != expected {
+			return Err(SyncProfileStoreError::Changed);
+		}
+		Ok(())
+	}
+
 	pub(super) fn open(
 		parent: &File,
 		name: &[u8],

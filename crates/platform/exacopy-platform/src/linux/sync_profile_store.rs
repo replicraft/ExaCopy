@@ -11,16 +11,18 @@ use rustix::io::Errno;
 use rustix::process::{geteuid, getuid};
 
 use super::handle::mount_id;
-use super::owner_seed::{KEY_NAME, OWNER_SEED_BYTES};
+use super::owner_seed::OWNER_SEED_BYTES;
 use super::{FileIdentity, MountObservations};
 use crate::protected_snapshot::checked_components;
 
+mod export;
 mod genesis_output;
 mod pin;
 mod scope;
 #[cfg(test)]
 mod tests;
 
+pub use export::{HeldSyncExportProfile, HeldSyncExportSeed};
 pub use genesis_output::{
 	SyncGenesisEffect, SyncGenesisEffectRequest, SyncGenesisIntent, SyncGenesisMember,
 	SyncGenesisMemberBinding, SyncGenesisNativeIdentity, SyncGenesisOperation, SyncGenesisOutput,
@@ -235,11 +237,7 @@ impl SyncProfileStore {
 		eof: &mut [u8; 1],
 	) -> Result<SyncProfileSeed<'_>, SyncProfileStoreError> {
 		let lease = self.lease(FlockOperation::NonBlockingLockExclusive)?;
-		let pin = Pin::open(&lease, KEY_NAME.to_bytes(), self.owner, self.mount)?;
-		if pin.stamp.extent != OWNER_SEED_BYTES {
-			return Err(SyncProfileStoreError::InvalidExtent);
-		}
-		pin.read(&lease, bytes, eof)?;
+		let pin = Pin::open_seed(&lease, self.owner, self.mount, bytes, eof)?;
 		self.recheck()?;
 		Ok(SyncProfileSeed {
 			store: self,
@@ -407,10 +405,8 @@ impl<'store> SyncProfileSeed<'store> {
 		eof: &mut [u8; 1],
 	) -> Result<(), SyncProfileStoreError> {
 		self.store.recheck()?;
-		self.pin.read(&self.lease, scratch, eof)?;
-		if scratch != expected {
-			return Err(SyncProfileStoreError::Changed);
-		}
+		self.pin
+			.recheck_seed_bytes(&self.lease, expected, scratch, eof)?;
 		self.store.recheck()
 	}
 }

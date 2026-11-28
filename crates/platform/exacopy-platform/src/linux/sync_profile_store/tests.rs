@@ -114,6 +114,98 @@ fn init_rechecks_seed_and_withdraws_no_incumbent_or_existing_bytes() {
 
 #[test]
 #[ignore = "requires a protected nonroot whole ext4 TMPDIR and cooperating fixture owner"]
+fn export_seed_shares_the_original_policy_lease_and_excludes_init() {
+	let scratch = Scratch::new();
+	let profile = scratch.path("profile");
+	private_directory(&profile);
+	let record_path = profile.join(std::ffi::OsStr::from_bytes(&slot(ID).unwrap()));
+	private_file(&record_path, RECORD);
+	let seed_path = profile.join("owner.seed");
+	let original = [3; OWNER_SEED_BYTES];
+	private_file(&seed_path, &original);
+	let store = SyncProfileStore::open(&profile).unwrap();
+	let other = SyncProfileStore::open(&profile).unwrap();
+	let mut seed = [0; OWNER_SEED_BYTES];
+	let mut check = [0; OWNER_SEED_BYTES];
+	let mut eof = [0];
+	let init = other.open_seed(&mut seed, &mut eof).unwrap();
+	assert!(matches!(
+		store.read_for_export(ID),
+		Err(SyncProfileStoreError::Busy)
+	));
+	drop(init);
+
+	let export = store.read_for_export(ID).unwrap();
+	assert_eq!(export.record().bytes(), RECORD);
+	let preview = other.read(ID).unwrap();
+	assert_eq!(preview.bytes(), RECORD);
+	{
+		let held = export.hold_seed_for_export(&mut seed, &mut eof).unwrap();
+		assert_eq!(seed, original);
+		held.recheck_seed(&seed, &mut check, &mut eof).unwrap();
+		assert!(matches!(
+			other.open_seed(&mut check, &mut eof),
+			Err(SyncProfileStoreError::Busy)
+		));
+	}
+	drop(preview);
+	assert!(matches!(
+		other.open_seed(&mut check, &mut eof),
+		Err(SyncProfileStoreError::Busy)
+	));
+	drop(export);
+	assert!(other.open_seed(&mut check, &mut eof).is_ok());
+	assert_eq!(fs::read(seed_path).unwrap(), original);
+	assert_eq!(fs::read(record_path).unwrap(), RECORD);
+}
+
+#[test]
+#[ignore = "requires a protected nonroot whole ext4 TMPDIR and cooperating fixture owner"]
+fn export_seed_recheck_refuses_byte_identical_seed_or_policy_replacement() {
+	let scratch = Scratch::new();
+	let profile = scratch.path("profile");
+	private_directory(&profile);
+	let record = profile.join(std::ffi::OsStr::from_bytes(&slot(ID).unwrap()));
+	let seed_path = profile.join("owner.seed");
+	let original = [3; OWNER_SEED_BYTES];
+	private_file(&record, RECORD);
+	private_file(&seed_path, &original);
+	let store = SyncProfileStore::open(&profile).unwrap();
+	let mut seed = [0; OWNER_SEED_BYTES];
+	let mut check = [0; OWNER_SEED_BYTES];
+	let mut eof = [0];
+	let retained_seed = profile.join("retained-seed");
+	{
+		let export = store.read_for_export(ID).unwrap();
+		let held = export.hold_seed_for_export(&mut seed, &mut eof).unwrap();
+		held.recheck_seed(&seed, &mut check, &mut eof).unwrap();
+		fs::rename(&seed_path, &retained_seed).unwrap();
+		private_file(&seed_path, &original);
+		assert!(matches!(
+			held.recheck_seed(&seed, &mut check, &mut eof),
+			Err(SyncProfileStoreError::Changed)
+		));
+		export.record().recheck().unwrap();
+	}
+
+	let export = store.read_for_export(ID).unwrap();
+	let held = export.hold_seed_for_export(&mut seed, &mut eof).unwrap();
+	held.recheck_seed(&seed, &mut check, &mut eof).unwrap();
+	let retained_record = profile.join("retained-record");
+	fs::rename(&record, &retained_record).unwrap();
+	private_file(&record, RECORD);
+	assert!(matches!(
+		held.recheck_seed(&seed, &mut check, &mut eof),
+		Err(SyncProfileStoreError::Changed)
+	));
+	assert_eq!(fs::read(retained_seed).unwrap(), original);
+	assert_eq!(fs::read(seed_path).unwrap(), original);
+	assert_eq!(fs::read(retained_record).unwrap(), RECORD);
+	assert_eq!(fs::read(record).unwrap(), RECORD);
+}
+
+#[test]
+#[ignore = "requires a protected nonroot whole ext4 TMPDIR and cooperating fixture owner"]
 fn profile_history_and_live_roots_may_share_an_ancestor_but_never_overlap() {
 	let scratch = Scratch::new();
 	let common = scratch.path("common");
