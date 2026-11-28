@@ -13,6 +13,7 @@ MINIMUM = {"lines": 95, "branches": 90}
 SOURCES = frozenset((
     "crates/foundation/exacopy-core/src/identity.rs",
     "crates/foundation/exacopy-model/src/binding.rs",
+    "crates/foundation/exacopy-model/src/grant_time.rs",
     "crates/foundation/exacopy-model/src/protected_replace.rs",
     "crates/foundation/exacopy-model/src/protected_replace/effect.rs",
     "crates/foundation/exacopy-model/src/protected_replace/evidence.rs",

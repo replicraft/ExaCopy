@@ -1,8 +1,14 @@
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use exacopy_journal::OwnerTimestamp;
+use exacopy_model::grant_time::{
+	GrantTimeRefusal, MonotonicObservation, UtcWindow, check_grant_time,
+};
 
 use super::LocalApplyGrantError;
+
+#[cfg(test)]
+mod tests;
 
 #[derive(Clone, Copy)]
 pub(super) struct ClockSample {
@@ -75,21 +81,30 @@ impl GrantClock {
 		&mut self,
 		sample: ClockSample,
 	) -> Result<OwnerTimestamp, LocalApplyGrantError> {
-		let utc = stamp(sample.utc);
-		if sample.monotonic < self.last.monotonic || utc < stamp(self.last.utc) {
-			return Err(LocalApplyGrantError::Clock);
-		}
-		if sample.monotonic >= self.deadline
-			|| utc < stamp(self.not_before)
-			|| utc >= stamp(self.plan_expiry)
-		{
-			return Err(LocalApplyGrantError::Expired);
-		}
-		if let Some(window) = self.qualification
-			&& (utc < stamp(window.starts_at) || utc >= stamp(window.expires_at))
-		{
-			return Err(LocalApplyGrantError::Expired);
-		}
+		let monotonic = if sample.monotonic < self.last.monotonic {
+			MonotonicObservation::Regressed
+		} else if sample.monotonic >= self.deadline {
+			MonotonicObservation::Expired
+		} else {
+			MonotonicObservation::Current
+		};
+		check_grant_time(
+			monotonic,
+			stamp(sample.utc),
+			stamp(self.last.utc),
+			UtcWindow {
+				starts_at: stamp(self.not_before),
+				expires_at: stamp(self.plan_expiry),
+			},
+			self.qualification.map(|window| UtcWindow {
+				starts_at: stamp(window.starts_at),
+				expires_at: stamp(window.expires_at),
+			}),
+		)
+		.map_err(|refusal| match refusal {
+			GrantTimeRefusal::Regressed => LocalApplyGrantError::Clock,
+			GrantTimeRefusal::Expired => LocalApplyGrantError::Expired,
+		})?;
 		self.last = sample;
 		Ok(sample.utc)
 	}

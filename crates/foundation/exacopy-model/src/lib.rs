@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 mod binding;
+pub mod grant_time;
 pub mod protected_replace;
 mod range;
 pub mod retained_prefix;
