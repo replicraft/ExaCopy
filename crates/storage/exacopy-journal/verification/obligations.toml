@@ -338,3 +338,16 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/windows_capture.rs", test = "independent_windows_capture_wire_requires_exact_selected_history", oracle = "Check independently signed literal 43/44 frames and a short terminal checkpoint. Refuse wrong independently selected grant, re-signed changes to either payload version, anchor, role, source, target or inner predecessor, wrong domain or signer for either payload, skipped enclosing sequence, every terminating frame cut and oversized range before allocation. Failures retain only previously authenticated boundaries." }
+
+[[obligation]]
+id = "P-086"
+requirement_ids = ["R-272"]
+source = "src/managed_activation_claim.rs"
+symbols = ["encode_managed_activation_claim", "match_managed_activation_claim"]
+assumptions = [
+    "All expected facts are selected independently of the candidate bytes. Activation, host, parent, grant, child and role-projection producers and native custody are separate obligations.",
+    "CRC32C detects accidental corruption and BLAKE3 provides the stated domain-separated byte commitment. Neither checksum nor matching bytes establishes a grant, acknowledged barrier, current predecessor or recovered writer.",
+    "This exact selector checks one independently constructed canonical specimen. Supplementary malformed-field, boundary and substitution controls run in the ordinary journal package tests; they are not implied by this one golden-vector record.",
+]
+gates = ["rust"]
+rust = { file = "tests/managed_activation_claim.rs", test = "managed_activation_claim_matches_frozen_record_and_domain_digest", oracle = "Require the fixed 496-byte production encoding to equal an independent literal specimen with nontrivial field patterns and CRC32C; match the full independent selection and require the separately computed all-byte BLAKE3 derive-key commitment. This supplies no native spend or baseline evidence." }

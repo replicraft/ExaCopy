@@ -1,6 +1,54 @@
 use super::Marker;
 
 #[test]
+fn paired_private_record_binds_magic_version_and_zero_features_together() {
+	use super::super::Contract;
+	use crate::test_support::Fixture;
+
+	let fixture = Fixture::new();
+	fixture.write(
+		"claim.rs",
+		"const VERSION_MAJOR: u8 = 1; const VERSION_MINOR: u8 = 0; const REQUIRED_FEATURES: u16 = 0; const MAGIC: &[u8; 8] = b\"EXMACT01\";",
+	);
+	let declared = r#"id = "fixture-claim"
+kind = "transfer_journal"
+status = "implemented_private"
+version = "1.0"
+required_features = 0
+magic = "EXMACT01"
+owner = "claim.rs"
+"#;
+	let binding = super::Binding::new(
+		"fixture-claim",
+		"claim.rs",
+		Marker::pair_with_magic(
+			"VERSION_MAJOR",
+			"VERSION_MINOR",
+			"REQUIRED_FEATURES",
+			"MAGIC",
+		),
+	);
+	let record: Contract = toml::from_str(declared).expect("parse exact claim contract");
+	assert_eq!(binding.check(fixture.root(), &record), Ok(()));
+	for (before, after, expected) in [
+		("EXMACT01", "EXMACT02", "magic differs"),
+		("version = \"1.0\"", "version = \"1.1\"", "version differs"),
+		(
+			"required_features = 0",
+			"required_features = 1",
+			"required feature mask differs",
+		),
+	] {
+		let record: Contract =
+			toml::from_str(&declared.replace(before, after)).expect("parse mismatching contract");
+		let refusal = binding
+			.check(fixture.root(), &record)
+			.expect_err("refuse drift");
+		assert!(refusal.contains(expected), "{refusal}");
+	}
+}
+
+#[test]
 fn owned_report_strings_require_literal_values_in_any_scope() {
 	for initializer in [
 		r#"Report { schema: "fixture.report", schema_version: "1.0" }"#,

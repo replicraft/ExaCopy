@@ -2,6 +2,16 @@ use super::{Binding, Marker};
 
 pub(in crate::contracts) const BINDINGS: &[Binding] = &[
 	Binding::new(
+		"linux-managed-activation-claim",
+		"crates/storage/exacopy-journal/src/managed_activation_claim.rs",
+		Marker::pair_with_magic(
+			"VERSION_MAJOR",
+			"VERSION_MINOR",
+			"REQUIRED_FEATURES",
+			"MAGIC",
+		),
+	),
+	Binding::new(
 		"exacopy.cli.managed_sync_recreate_export",
 		"apps/exacopy-cli/src/sync_preview/managed_command/export_recreate.rs",
 		Marker::Report,

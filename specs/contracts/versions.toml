@@ -2,6 +2,16 @@ inventory_version = 1
 policy = "docs/architecture/contract-versioning.md"
 
 [[contract]]
+id = "linux-managed-activation-claim"
+kind = "transfer_journal"
+status = "implemented_private"
+version = "1.0"
+required_features = 0
+magic = "EXMACT01"
+owner = "crates/storage/exacopy-journal/src/managed_activation_claim.rs"
+notes = "Fixed 496-byte unsigned occupancy record with CRC32C and an external domain-separated BLAKE3 commitment. Matching requires the full independently selected activation, host, owner, pair, predecessor, parent/action/grant, ordinary child, native-role projections and prepared boundary. Bytes confer no grant, acknowledged barrier or recovered writer. Native issuer and independent executable-parent, grant and identity-projection producers remain unimplemented. No new workflow or frame discriminant."
+
+[[contract]]
 id = "workflow-sync-recreate-plan"
 kind = "workflow_record"
 status = "implemented_private"

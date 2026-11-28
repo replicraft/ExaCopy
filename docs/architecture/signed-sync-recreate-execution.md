@@ -110,6 +110,12 @@ child settlement rules apply to an already submitted rename. Uncertainty
 is terminal for this invocation and authorizes no second bootstrap or
 rename.
 
+The storage owner now defines the
+[private activation claim bytes](managed-activation-claim.md) needed by the
+proposed issuer. Matching those bytes supplies no spend acknowledgement or
+native writer. The independently provisioned slot and native issuer are
+still pending.
+
 ## Open decisions before execution
 
 - **Current predecessor.** Choose an authoritative current selection

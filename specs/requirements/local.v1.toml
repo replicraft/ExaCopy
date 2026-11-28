@@ -2492,3 +2492,53 @@ owner = "exacopy-model"
 level = "documentation"
 state = "reported"
 path = "crates/foundation/exacopy-model/verification/tla/MANAGED_ACTION.md"
+
+[[coverage]]
+id = "managed-sync-activation-claim-codec"
+status = "experimental"
+requirement_ids = ["R-272"]
+acceptance_ids = ["A-272"]
+invariant_ids = ["INV-026"]
+scope = "Private fixed-size occupancy bytes bind an independently selected activation, host, owner, pair, predecessor, parent/action/grant, ordinary child, native-role projections and prepared boundary. P-086 checks the independent canonical specimen and byte commitment."
+limits = "The unsigned codec grants no effect, native writer or acknowledged durability. Native spend, authenticated producer formats, prepared-segment replay, current selection, successor capacity, child provenance and baseline advancement remain separate. P-086 runs one golden selector; other codec controls require ordinary journal test attendance."
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "obligation"
+state = "defined"
+path = "crates/storage/exacopy-journal/verification/obligations.toml"
+target = "P-086"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/managed_activation_claim.rs"
+target = "managed_activation_claim_refuses_nonexact_length_and_bad_header"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/managed_activation_claim.rs"
+target = "managed_activation_claim_refuses_invalid_fields_with_valid_crc"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/managed_activation_claim.rs"
+target = "managed_activation_claim_checks_exact_sequence_and_extent_bounds"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/managed_activation_claim.rs"
+target = "managed_activation_claim_requires_every_independently_selected_role"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/managed-activation-claim.md"

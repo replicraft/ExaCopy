@@ -42,6 +42,7 @@ enum Marker {
 		major: &'static str,
 		minor: &'static str,
 		features: &'static str,
+		magic: Option<&'static str>,
 	},
 	Array {
 		version: &'static str,
@@ -111,6 +112,21 @@ impl Marker {
 			major,
 			minor,
 			features,
+			magic: None,
+		}
+	}
+
+	const fn pair_with_magic(
+		major: &'static str,
+		minor: &'static str,
+		features: &'static str,
+		magic: &'static str,
+	) -> Self {
+		Self::Pair {
+			major,
+			minor,
+			features,
+			magic: Some(magic),
 		}
 	}
 
@@ -169,6 +185,7 @@ impl Marker {
 				major,
 				minor,
 				features,
+				magic,
 			} => (
 				format!(
 					"{}.{}",
@@ -176,7 +193,7 @@ impl Marker {
 					number(constant(file, minor)?)?
 				),
 				Some(number(constant(file, features)?)?),
-				None,
+				magic.map(|name| bytes(constant(file, name)?)).transpose()?,
 			),
 			Self::Array { version, width } => {
 				let Expr::Array(values) = constant(file, version)? else {
