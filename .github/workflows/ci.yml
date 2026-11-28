@@ -585,7 +585,7 @@ jobs:
         run: bash .github/ci/capture.sh vet cargo vet --locked
       - name: Retain complete dependency audit graph
         if: ${{ !cancelled() && steps.vet.outcome == 'success' }}
-        run: bash .github/ci/capture.sh vet-graph cargo vet --locked --output-format=json dump-graph --depth full
+        run: bash .github/ci/capture.sh vet-graph cargo vet dump-graph --locked --output-format=json --depth full
       - name: Retain dependency evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
