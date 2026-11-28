@@ -411,9 +411,15 @@ mod tests {
 			);
 			assert_eq!(result.exit_code(), exit);
 			let mut json = Vec::new();
-			result
-				.write(Format::Json, &mut json, &mut Vec::new())
-				.unwrap();
+			assert_eq!(
+				result.write(
+					Format::Json,
+					crate::args::JobPathDisplay::Redacted,
+					&mut json,
+					&mut Vec::new(),
+				),
+				exit,
+			);
 			let json: serde_json::Value = serde_json::from_slice(&json).unwrap();
 			assert_eq!(json["schema_version"], "1.0");
 			assert_eq!(json["result"], "failed");
@@ -423,9 +429,15 @@ mod tests {
 				serde_json::json!({"code": code, "message": message}),
 			);
 			let mut human = Vec::new();
-			result
-				.write(Format::Human, &mut Vec::new(), &mut human)
-				.unwrap();
+			assert_eq!(
+				result.write(
+					Format::Human,
+					crate::args::JobPathDisplay::Redacted,
+					&mut Vec::new(),
+					&mut human,
+				),
+				exit,
+			);
 			assert_eq!(
 				String::from_utf8(human).unwrap(),
 				format!("exacopy: {message}\n")
