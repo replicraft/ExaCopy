@@ -1,4 +1,4 @@
-"""Positive and negative controls for the Linux CLI nextest attendance gate."""
+"""Positive and negative controls for CLI nextest attendance gates."""
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -54,6 +54,13 @@ WITNESSED_EXPECTED = (
     "remote_report::tests::archive::producer_report_roundtrips_the_independently_selected_archive",
     "remote_report::tests::archive::inconsistent_archive_cannot_be_reported_as_committed_success",
 )
+APFS_EXPECTED = (
+    "args::parser::recovery::apfs::tests::inspect_apfs_requires_independent_exact_selectors_and_keeps_raw_container_bytes",
+    "apfs_inspect::report::tests::apfs_inspection_keeps_reconciliation_separate_from_history_and_receipt",
+    "assembly::macos::job::tests::cli_inspection::apfs_inspect_dispatch_binds_the_independent_selection_and_preserves_the_job",
+)
+APFS_DEFAULT_EXPECTED = "args::parser::tests::inspect_apfs_is_hidden_without_the_exact_target_and_feature"
+TRANSFER_CASE = "macos::tests::fixture_transfer_test"
 
 
 class CliOptInAttendanceTests(unittest.TestCase):
@@ -62,15 +69,19 @@ class CliOptInAttendanceTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.report = Path(directory.name) / "junit.xml"
 
-    def write_report(self, cases):
-        summary = {"tests": str(len(cases)), "skipped": "0", "failures": "0", "errors": "0"}
-        root = ElementTree.Element("testsuites", name="nextest-run", **summary)
-        suite = ElementTree.SubElement(root, "testsuite", name="exacopy-cli", **summary)
-        for name in cases:
-            ElementTree.SubElement(
-                suite, "testcase", name=name, classname="exacopy-cli",
-                timestamp="2026-11-27T12:00:00.000+00:00", time="0.001",
-            )
+    def write_report(self, cases, siblings=()):
+        statuses = {"skipped": "0", "failures": "0", "errors": "0"}
+        suites = (("exacopy-cli", cases), *siblings)
+        root = ElementTree.Element(
+            "testsuites", name="nextest-run", tests=str(sum(len(names) for _, names in suites)), **statuses,
+        )
+        for suite_name, names in suites:
+            suite = ElementTree.SubElement(root, "testsuite", name=suite_name, tests=str(len(names)), **statuses)
+            for name in names:
+                ElementTree.SubElement(
+                    suite, "testcase", name=name, classname=suite_name,
+                    timestamp="2026-11-27T12:00:00.000+00:00", time="0.001",
+                )
         self.write_xml(root)
         return root
 
@@ -99,6 +110,45 @@ class CliOptInAttendanceTests(unittest.TestCase):
                 self.write_report([*present, missing.replace("::tests::", "::unrelated::")])
                 with self.assertRaisesRegex(ValueError, f"required testcases missing: {missing}$"):
                     check_attendance(self.report, "witnessed-resume")
+        self.write_report(WITNESSED_EXPECTED, (("exacopy-transfer", (TRANSFER_CASE,)),))
+        with self.assertRaisesRegex(ValueError, "expected one nextest JUnit suite"):
+            check_attendance(self.report, "witnessed-resume")
+
+    def test_apfs_copy_requires_exact_cli_cases_alongside_other_suites(self):
+        self.write_report(APFS_EXPECTED, (
+            ("exacopy-cli::command", (OTHER_CASE,)), ("exacopy-transfer", (TRANSFER_CASE,)),
+        ))
+        self.assertEqual(check_attendance(self.report, "apfs-copy"), sorted(APFS_EXPECTED))
+        for missing in APFS_EXPECTED:
+            with self.subTest(missing=missing):
+                present = [name for name in APFS_EXPECTED if name != missing]
+                self.write_report([*present, missing.replace("::tests::", "::unrelated::")], (
+                    ("exacopy-transfer", (TRANSFER_CASE, missing)),
+                ))
+                with self.assertRaisesRegex(ValueError, f"required testcases missing: {missing}$"):
+                    check_attendance(self.report, "apfs-copy")
+
+    def test_apfs_copy_refuses_unsuccessful_or_missing_sibling_evidence(self):
+        root = self.write_report(APFS_EXPECTED, (("exacopy-transfer", (TRANSFER_CASE,)),))
+        ElementTree.SubElement(root[1][0], "failure")
+        self.write_xml(root)
+        with self.assertRaisesRegex(ValueError, "lacks a successful execution record"):
+            check_attendance(self.report, "apfs-copy")
+        for siblings in ((), (("exacopy-transfer", ()),)):
+            with self.subTest(siblings=siblings):
+                self.write_report(APFS_EXPECTED, siblings)
+                with self.assertRaisesRegex(ValueError, "expected the exacopy-transfer unit-test suite"):
+                    check_attendance(self.report, "apfs-copy")
+        self.write_report(APFS_EXPECTED, (("exacopy-cli", (OTHER_CASE,)),))
+        with self.assertRaisesRegex(ValueError, "expected unique named nextest JUnit suites"):
+            check_attendance(self.report, "apfs-copy")
+
+    def test_apfs_default_requires_the_owning_parser_case_in_workspace_evidence(self):
+        self.write_report((APFS_DEFAULT_EXPECTED,), (("exacopy-model", (OTHER_CASE,)),))
+        self.assertEqual(check_attendance(self.report, "apfs-default"), [APFS_DEFAULT_EXPECTED])
+        self.write_report((OTHER_CASE,), (("exacopy-cli::command", (APFS_DEFAULT_EXPECTED,)),))
+        with self.assertRaisesRegex(ValueError, f"required testcases missing: {APFS_DEFAULT_EXPECTED}$"):
+            check_attendance(self.report, "apfs-default")
 
     def test_incomplete_session_record_cannot_satisfy_remote_attendance(self):
         root = self.write_report(REMOTE_EXPECTED)

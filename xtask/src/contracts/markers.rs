@@ -58,6 +58,11 @@ pub(super) const BINDINGS: &[Binding] = &[
 		Marker::Report,
 	),
 	Binding::new(
+		"exacopy.cli.apfs_recovery_inspection",
+		"apps/exacopy-cli/src/apfs_inspect/report.rs",
+		Marker::Report,
+	),
+	Binding::new(
 		"workflow-local-sync-endpoint",
 		"crates/formats/exacopy-plan/src/workflow_sync/wire.rs",
 		Marker::Workflow {

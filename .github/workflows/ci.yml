@@ -94,8 +94,13 @@ jobs:
       - name: Run nextest
         if: ${{ !cancelled() && steps.nextest.outcome == 'success' }}
         run: |
+          report=target/nextest/ci/junit.xml
+          rm -f -- "$report"
           bash .github/ci/capture.sh nextest cargo +1.100.0 nextest run --locked --workspace --profile ci --no-tests fail
-          test -s target/nextest/ci/junit.xml
+          attendance_python=python3
+          if [[ "$RUNNER_OS" == Windows ]]; then attendance_python=python; fi
+          bash .github/ci/capture.sh apfs-default-cli-attendance \
+            "$attendance_python" -B .github/ci/cli_opt_in_attendance.py apfs-default "$report"
       - name: Run in-process SSH tests
         if: ${{ !cancelled() && steps.nextest.outcome == 'success' }}
         env:
@@ -206,9 +211,12 @@ jobs:
         env:
           CARGO_TARGET_DIR: target/experimental-apfs-copy
         run: |
+          report=target/nextest/ci-experimental-apfs-copy/junit.xml
+          rm -f -- "$report"
           bash .github/ci/capture.sh experimental-apfs-copy cargo +1.100.0 nextest run --locked \
             -p exacopy-cli -p exacopy-transfer --features exacopy-cli/experimental-apfs-copy --profile ci-experimental-apfs-copy --no-tests fail
-          test -s target/nextest/ci-experimental-apfs-copy/junit.xml
+          bash .github/ci/capture.sh experimental-apfs-copy-cli-attendance \
+            python3 -B .github/ci/cli_opt_in_attendance.py apfs-copy "$report"
       - name: Run doctests
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
         run: bash .github/ci/capture.sh doctest cargo +1.100.0 test --locked --workspace --all-features --doc
@@ -296,7 +304,7 @@ jobs:
         run: |
           bash .github/ci/capture.sh build-policy-controls python3 -B -m unittest discover \
             -s tools -p '*_test.py'
-      - name: Run Linux CLI opt-in attendance controls
+      - name: Run CLI nextest attendance controls
         if: ${{ !cancelled() }}
         run: bash .github/ci/capture.sh cli-opt-in-attendance-controls python3 -B .github/ci/cli_opt_in_attendance_test.py -v
       - name: Run P-071 reservation attendance controls

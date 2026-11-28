@@ -6,6 +6,7 @@ from xml.etree import ElementTree
 
 MAX_REPORT_BYTES = 1024 * 1024
 CLI_SUITE = "exacopy-cli"
+TRANSFER_SUITE = "exacopy-transfer"
 REMOTE_CASE = (
     "assembly::linux::remote_continued::tests::"
     "actual_signed_kind40_must_form_the_exact_clean_successor"
@@ -61,10 +62,18 @@ WITNESSED_RESUME_CASES = {
     "remote_report::tests::archive::producer_report_roundtrips_the_independently_selected_archive",
     "remote_report::tests::archive::inconsistent_archive_cannot_be_reported_as_committed_success",
 }
+APFS_CASES = {
+    "args::parser::recovery::apfs::tests::inspect_apfs_requires_independent_exact_selectors_and_keeps_raw_container_bytes",
+    "apfs_inspect::report::tests::apfs_inspection_keeps_reconciliation_separate_from_history_and_receipt",
+    "assembly::macos::job::tests::cli_inspection::apfs_inspect_dispatch_binds_the_independent_selection_and_preserves_the_job",
+}
+APFS_DEFAULT_CASE = "args::parser::tests::inspect_apfs_is_hidden_without_the_exact_target_and_feature"
 REQUIRED_CASES = {
     "remote": {REMOTE_CASE, REMOTE_PREFLIGHT_CASE} | SSH_SESSION_CASES,
     "public-stage": PUBLIC_STAGE_CASES,
     "witnessed-resume": WITNESSED_RESUME_CASES,
+    "apfs-copy": APFS_CASES,
+    "apfs-default": {APFS_DEFAULT_CASE},
 }
 
 
@@ -81,29 +90,27 @@ def check_attendance(report, lane):
         raise ValueError("JUnit report exceeds 1 MiB")
 
     root = ElementTree.fromstring(data, parser=ElementTree.XMLParser(target=NoDoctype()))
-    if root.tag != "testsuites" or root.get("name") != "nextest-run" or len(root) != 1:
+    if root.tag != "testsuites" or root.get("name") != "nextest-run":
+        raise ValueError("expected a nextest JUnit report")
+    if lane not in ("apfs-copy", "apfs-default") and len(root) != 1:
         raise ValueError("expected one nextest JUnit suite")
-    suite = root[0]
-    if suite.tag != "testsuite" or suite.get("name") != CLI_SUITE:
+
+    suites = {}
+    for suite in root:
+        name = suite.get("name")
+        if suite.tag != "testsuite" or not name or name in suites:
+            raise ValueError("expected unique named nextest JUnit suites")
+        if lane == "apfs-copy" and name.partition("::")[0] not in (CLI_SUITE, TRANSFER_SUITE):
+            raise ValueError(f"unexpected APFS JUnit suite: {name}")
+        suites[name] = suite
+    if CLI_SUITE not in suites:
         raise ValueError(f"expected the {CLI_SUITE} unit-test suite")
+    if lane == "apfs-copy" and len(suites.get(TRANSFER_SUITE, ())) == 0:
+        raise ValueError(f"expected the {TRANSFER_SUITE} unit-test suite with completed cases")
 
-    for summary in (root, suite):
-        if summary.get("tests") != str(len(suite)):
-            raise ValueError("JUnit test count does not match the suite")
-        if any(summary.get(status) != "0" for status in ("skipped", "failures", "errors")):
-            raise ValueError("JUnit reports skipped or unsuccessful tests")
-
-    attended = set()
-    for case in suite:
-        name = case.get("name")
-        if case.tag != "testcase" or case.get("classname") != CLI_SUITE or not name:
-            raise ValueError(f"expected a named {CLI_SUITE} testcase")
-        if name in attended:
-            raise ValueError(f"duplicate testcase {name!r}")
-        # These CI profiles disable retries and omit output from successful tests.
-        if len(case) or not case.get("timestamp") or not case.get("time"):
-            raise ValueError(f"testcase {name!r} lacks a successful execution record")
-        attended.add(name)
+    check_summary(root, sum(map(len, suites.values())))
+    cases = {name: checked_cases(suite, name) for name, suite in suites.items()}
+    attended = cases[CLI_SUITE]
 
     missing = required - attended
     if missing:
@@ -111,6 +118,29 @@ def check_attendance(report, lane):
     if lane == "public-stage" and (unexpected := attended - required):
         raise ValueError(f"unexpected public-stage testcases: {', '.join(sorted(unexpected))}")
     return sorted(required)
+
+
+def check_summary(summary, length):
+    if summary.get("tests") != str(length):
+        raise ValueError("JUnit test count does not match the suite")
+    if any(summary.get(status) != "0" for status in ("skipped", "failures", "errors")):
+        raise ValueError("JUnit reports skipped or unsuccessful tests")
+
+
+def checked_cases(suite, suite_name):
+    check_summary(suite, len(suite))
+    attended = set()
+    for case in suite:
+        name = case.get("name")
+        if case.tag != "testcase" or case.get("classname") != suite_name or not name:
+            raise ValueError(f"expected a named {suite_name} testcase")
+        if name in attended:
+            raise ValueError(f"duplicate testcase {name!r}")
+        # These CI profiles disable retries and omit output from successful tests.
+        if len(case) or not case.get("timestamp") or not case.get("time"):
+            raise ValueError(f"testcase {name!r} lacks a successful execution record")
+        attended.add(name)
+    return attended
 
 
 def main():

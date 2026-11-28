@@ -683,7 +683,7 @@ requirement_ids = ["R-008", "R-013", "R-016", "R-018", "R-021", "R-023", "R-025"
 acceptance_ids = ["A-008", "A-013", "A-016", "A-018", "A-021", "A-023", "A-025", "A-026", "A-027", "A-028", "A-039", "A-040", "A-045", "A-051", "A-056", "A-062", "A-194"]
 invariant_ids = ["INV-002", "INV-003", "INV-004", "INV-005", "INV-006", "INV-009", "INV-013", "INV-019", "INV-020"]
 scope = "The opt-in runtime composes the managed APFS adapter with transfer policy for copy, receipts and read-only inspection. Native cases exercise stage writes, full file barriers, independent read-back, exclusive rename and name reconciliation."
-limits = "Strict end-to-end acceptance is blocked on the tested host’s visible source provenance attribute. CLI copy/recovery, Darwin process-kill recovery and power-loss qualification remain open."
+limits = "Strict end-to-end acceptance is blocked on the tested host’s visible source provenance attribute. CLI copy and mutating recovery, Darwin process-kill recovery and power-loss qualification remain open. The default-off read-only CLI inspector has separately defined namespace and history controls; it does not qualify those effects."
 
 [[coverage.evidence]]
 owner = "exacopy-platform"
@@ -1827,3 +1827,19 @@ level = "test"
 state = "defined"
 path = "apps/exacopy-cli/src/assembly/linux/remote_continued/tests.rs"
 target = "actual_signed_kind40_must_form_the_exact_clean_successor"
+
+[[coverage]]
+id = "managed-apfs-read-only-cli-inspection"
+status = "experimental"
+requirement_ids = ["R-013", "R-016", "R-045", "R-056"]
+acceptance_ids = ["A-013", "A-016", "A-045", "A-056"]
+invariant_ids = ["INV-002", "INV-005", "INV-009", "INV-019", "INV-020"]
+scope = "The default-off macOS command authenticates job history with independently selected owner and logical root inputs, checks the actual held root against the signed plan, and reports namespace observations separately from historical receipt evidence. The signed fixture distinguishes a rebound native root while preserving job and incumbent bytes."
+limits = "The trusted producer assigns logical root IDs uniquely and stably; the input is not an independent native-tuple pin. Source-defined native controls await execution. Payload verification, copy or recovery mutation, process-crash and power-loss qualification remain separate."
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "native"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/macos/job/tests/cli_inspection.rs"
+target = "apfs_inspect_dispatch_binds_the_independent_selection_and_preserves_the_job"

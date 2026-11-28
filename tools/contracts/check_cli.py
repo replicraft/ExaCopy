@@ -26,6 +26,7 @@ OPT_IN_JSON_REPORTS = frozenset((
     "exacopy.cli.remote_download",
     "exacopy.cli.witnessed_remote_download",
     "exacopy.cli.witnessed_remote_inspection",
+    "exacopy.cli.apfs_recovery_inspection",
 ))
 
 
