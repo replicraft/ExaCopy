@@ -175,7 +175,7 @@ Withdraw ==
 Crash ==
     /\ process = "foreground"
     /\ process' = "down" /\ live' = FALSE
-    /\ uncertain' = uncertain \/ (issuer.spends # 0 /\ observation.confirmed = NoActor)
+    /\ uncertain' = (uncertain \/ (issuer.spends # 0 /\ observation.confirmed = NoActor))
     /\ UNCHANGED <<selected, issuer, interrupted, refused, intent, child, observation>>
 
 Reopen ==
