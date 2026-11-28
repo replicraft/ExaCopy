@@ -20,6 +20,16 @@ control also exercises closing the original anonymous writer, descriptor-linking
 through the independently reopened read-only handle, and promoting the same
 sealed inode to an absent final name.
 
+The same journal selector also exercises the public continuation and
+checkpoint appenders. The checkpoint component writes one owned suffix byte,
+confirms its real file barrier, and appends the supplied canonical range frame
+through the original reserved journal. Bounds and admission refusals retain
+the earlier journal. A rejected successor replay retains submitted bytes
+while leaving the accepted head unchanged and retiring the appender.
+The [frozen inputs](fixtures/README.md) are owned copies of storage vectors;
+their logical scope differs from the native fixture. Both qualification and
+ordinary coverage record the helper and vector hashes.
+
 These are local adapter controls for R-008, R-253, R-255 and
 INV-002/003/004/006/009/013/018/019. The effect callbacks are component-test
 inputs. The fixture does not create an OP2 grant, consent, eligibility record,
@@ -27,7 +37,7 @@ transport, or authentic kind-7/8/9 application transaction. In particular the
 journal case exercises the native append and readback primitives with its
 literal fixture bytes. It does not exercise the authenticated kind-8 or kind-9
 recorder. The run provides no process-kill, power-loss, receipt, or CLI
-activation evidence. It changes no protocol, model transition or proof input.
+activation evidence. It defines no new protocol or production model transition.
 
 ## Separately reported coverage
 

@@ -22,6 +22,8 @@ use super::{ContinuationReservationError, append_held, observe_successor};
 
 #[path = "../../../../../../tests/unit/linux/witness_continuation/bounds.rs"]
 mod bounds;
+#[path = "checkpoints/tests.rs"]
+mod checkpoint_controls;
 #[path = "../../../../../../tests/unit/linux/witness_continuation/held_segment.rs"]
 mod held_segment;
 
@@ -76,6 +78,7 @@ fn original_reserved_descriptor_writes_and_rereads_only_the_exact_successor() {
 
 	check_live_continuation(Admission::Expire);
 	check_live_continuation(Admission::Allow);
+	checkpoint_controls::exercise();
 }
 
 enum Admission {

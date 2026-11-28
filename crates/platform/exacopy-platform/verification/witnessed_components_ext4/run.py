@@ -44,6 +44,12 @@ CASES = (
     PREFIX + "witness_reservation::continuation::witness::publication::receipt::tests::"
              "readonly_reopened_anonymous_receipt_links_and_promotes_original_inode",
 )
+CHECKPOINT_INPUTS = (
+    PACKAGE / "src/linux/recovery/writer/witness_reservation/continuation/checkpoints/tests.rs",
+    HERE / "fixtures/checkpoint-journal.hex",
+    HERE / "fixtures/checkpoint-successor.hex",
+    HERE / "fixtures/README.md",
+)
 COMPILER_OVERRIDES = (
     "RUSTC", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS",
     "CARGO_BUILD_RUSTC", "CARGO_BUILD_RUSTC_WRAPPER", "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER",
@@ -81,6 +87,7 @@ def inputs(*, coverage=False):
         SHARED, COVERAGE_HELPER, manifest, HERE / "run.py", HERE / "test_runner.py",
         PACKAGE / "tests/common/scratch.rs", PACKAGE / "Cargo.toml",
         *(PACKAGE / source(case) for case in CASES),
+        *CHECKPOINT_INPUTS,
     }
     if coverage:
         files.update({ROOT / "Cargo.toml",

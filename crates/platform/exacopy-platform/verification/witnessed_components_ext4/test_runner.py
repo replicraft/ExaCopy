@@ -1,6 +1,7 @@
 """Portable negative controls for the closed hosted component fixture."""
 
 from contextlib import ExitStack
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,23 @@ from run import coverage_profile
 
 
 class WitnessedComponents(unittest.TestCase):
+    def test_checkpoint_helper_and_owned_vectors_are_bound_in_both_campaigns(self):
+        import ordinary_coverage_cohorts as cohorts
+
+        expected = (
+            "src/linux/recovery/writer/witness_reservation/continuation/checkpoints/tests.rs",
+            "verification/witnessed_components_ext4/fixtures/checkpoint-journal.hex",
+            "verification/witnessed_components_ext4/fixtures/checkpoint-successor.hex",
+            "verification/witnessed_components_ext4/fixtures/README.md",
+        )
+        qualification = run.inputs()
+        for relative in expected:
+            source = run.PACKAGE / relative
+            key = str(source.relative_to(run.ROOT))
+            with self.subTest(source=relative):
+                self.assertEqual(qualification[key], hashlib.sha256(source.read_bytes()).hexdigest())
+                self.assertIn(key, cohorts.SOURCE_INPUTS)
+
     def test_manifest_refuses_selector_scope_and_binding_drift(self):
         fixture = run.HERE / "fixture.toml"
         run.binding(fixture)

@@ -34,6 +34,7 @@ COHORTS = (
 )
 SOURCE_INPUTS = (
     str(Path(__file__).relative_to(run.ROOT)),
+    *(str(path.relative_to(run.ROOT)) for path in run.CHECKPOINT_INPUTS),
     *(str((run.PACKAGE / source).relative_to(run.ROOT)) for source in sorted({
         run.source(case) for _, cases in COHORTS for case in cases
     })),
