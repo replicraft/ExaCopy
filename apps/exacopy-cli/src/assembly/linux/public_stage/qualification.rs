@@ -26,7 +26,8 @@ mod record;
 #[cfg(test)]
 mod tests;
 
-use record::{Qualification, RECORD_BYTES, verify};
+pub(super) use record::Qualification;
+use record::{RECORD_BYTES, verify};
 
 /// Separately provisioned selection for a local Linux apply qualification.
 ///
@@ -132,40 +133,13 @@ pub fn stage_qualified_public_apply<'name>(
 ) -> Result<PublicApplyIntent<'name>, QualifiedPublicApplyProposalError> {
 	use QualifiedPublicApplyProposalError as Failure;
 
-	let mut bytes = [0; RECORD_BYTES];
-	let mut readback = [0; RECORD_BYTES];
-	let length = read_protected_snapshot_into(enrollment.record_path, &mut bytes, &mut readback)
-		.map_err(Failure::Snapshot)?;
-	let owner = request.profile.signer.verifying_key();
-	let qualification = verify(&bytes[..length], enrollment, &owner)?;
-	check_scope(&qualification, roots, &request)?;
+	let qualification = read_selection(roots, enrollment, &request)?;
 	let expiry = request.binding.expires_at.ok_or(Failure::Time)?;
 	let mut last_time = now()?;
 	qualification.check_time(last_time, expiry)?;
 
-	let image = RunningExecutable::open().map_err(Failure::Executable)?;
-	if image.length() != qualification.image_length
-		|| running_build::measure(&image, blake3::Hasher::new()).map_err(Failure::Executable)?
-			!= qualification.image
-	{
-		return Err(Failure::BuildMismatch);
-	}
-	let eligible =
-		ProcessCrashEligibility::admit(qualification.environment, roots.source, roots.destination)
-			.map_err(Failure::Native)?;
-	let profile = match eligible.profile_id() {
-		ProcessCrashProfileId::Arm64UbuntuExt4FixtureV1 => {
-			ApplyCrashProfile::Arm64UbuntuExt4FixtureV1
-		}
-	};
-	let selection = PublicApplyIntentSelection {
-		approved_plan: ApprovedPublicPlanDigest::from_bytes(qualification.plan),
-		qualification: ApplyQualification {
-			record: qualification.digest,
-			profile,
-			environment: project_environment(qualification.environment),
-		},
-	};
+	let qualified = RunningQualification::open(roots, qualification)?;
+	let selection = qualified.selection;
 	let mut refused = None;
 	let proposal = stage_public_apply_and_propose_intent(
 		roots,
@@ -175,10 +149,9 @@ pub fn stage_qualified_public_apply<'name>(
 		|_| {},
 		|| {
 			let mut sample = || {
-				image.recheck_observation().map_err(Failure::Executable)?;
-				let observed = eligible.recheck_observed().map_err(Failure::Native)?;
+				let environment = qualified.observe_environment()?;
 				let current_time = now()?;
-				qualification.check_time(current_time, expiry)?;
+				qualified.record.check_time(current_time, expiry)?;
 				if (current_time.seconds(), current_time.nanoseconds())
 					< (last_time.seconds(), last_time.nanoseconds())
 				{
@@ -187,8 +160,8 @@ pub fn stage_qualified_public_apply<'name>(
 				last_time = current_time;
 				Ok(PublicApplyIntentObservation {
 					now: current_time,
-					profile,
-					environment: project_environment(observed),
+					profile: selection.qualification.profile,
+					environment,
 				})
 			};
 			match sample() {
@@ -201,6 +174,84 @@ pub fn stage_qualified_public_apply<'name>(
 		},
 	);
 	proposal.map_err(|error| refused.unwrap_or_else(|| Failure::Proposal(Box::new(error))))
+}
+
+pub(super) fn read_selection(
+	roots: CopyRoots<'_>,
+	enrollment: &LocalApplyQualificationEnrollment<'_>,
+	request: &PublicApplyStageRequest<'_, '_, '_>,
+) -> Result<Qualification, QualifiedPublicApplyProposalError> {
+	use QualifiedPublicApplyProposalError as Failure;
+
+	let mut bytes = [0; RECORD_BYTES];
+	let mut readback = [0; RECORD_BYTES];
+	let length = read_protected_snapshot_into(enrollment.record_path, &mut bytes, &mut readback)
+		.map_err(Failure::Snapshot)?;
+	let owner = request.profile.signer.verifying_key();
+	let qualification = verify(&bytes[..length], enrollment, &owner)?;
+	check_scope(&qualification, roots, request)?;
+	Ok(qualification)
+}
+
+pub(super) struct RunningQualification<'root> {
+	image: RunningExecutable,
+	eligible: ProcessCrashEligibility<'root>,
+	pub(super) record: Qualification,
+	pub(super) selection: PublicApplyIntentSelection,
+}
+
+impl<'root> RunningQualification<'root> {
+	pub(super) fn open(
+		roots: CopyRoots<'root>,
+		qualification: Qualification,
+	) -> Result<Self, QualifiedPublicApplyProposalError> {
+		use QualifiedPublicApplyProposalError as Failure;
+
+		let image = RunningExecutable::open().map_err(Failure::Executable)?;
+		if image.length() != qualification.image_length
+			|| running_build::measure(&image, blake3::Hasher::new()).map_err(Failure::Executable)?
+				!= qualification.image
+		{
+			return Err(Failure::BuildMismatch);
+		}
+		let eligible = ProcessCrashEligibility::admit(
+			qualification.environment,
+			roots.source,
+			roots.destination,
+		)
+		.map_err(Failure::Native)?;
+		let profile = match eligible.profile_id() {
+			ProcessCrashProfileId::Arm64UbuntuExt4FixtureV1 => {
+				ApplyCrashProfile::Arm64UbuntuExt4FixtureV1
+			}
+		};
+		let selection = PublicApplyIntentSelection {
+			approved_plan: ApprovedPublicPlanDigest::from_bytes(qualification.plan),
+			qualification: ApplyQualification {
+				record: qualification.digest,
+				profile,
+				environment: project_environment(qualification.environment),
+			},
+		};
+		Ok(Self {
+			image,
+			eligible,
+			record: qualification,
+			selection,
+		})
+	}
+
+	pub(super) fn observe_environment(
+		&self,
+	) -> Result<ApplyProcessCrashEnvironment, QualifiedPublicApplyProposalError> {
+		use QualifiedPublicApplyProposalError as Failure;
+
+		self.image
+			.recheck_observation()
+			.map_err(Failure::Executable)?;
+		let observed = self.eligible.recheck_observed().map_err(Failure::Native)?;
+		Ok(project_environment(observed))
+	}
 }
 
 fn check_scope(

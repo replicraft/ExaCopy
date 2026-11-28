@@ -86,7 +86,21 @@ impl<'name> EntryEvidence<'name> {
 		journal: &mut DurableJournal<impl JournalSegment>,
 		stage: LinuxFileIdentity,
 	) -> Result<SourceMeasurementId, crate::linux_staging::StageFailure<R, S>> {
-		let entry = EntryPrepared::new(
+		let entry = self
+			.prepared(stage)
+			.map_err(StageFailure::EntryPreparation)?;
+		let payload = entry.encode();
+		let _ = journal
+			.append(FrameKind::EntryPrepared, &payload)
+			.map_err(StageFailure::EntryJournal)?;
+		Ok(SourceMeasurementId::from_prepared_payload(&payload))
+	}
+
+	pub(super) fn prepared(
+		&self,
+		stage: LinuxFileIdentity,
+	) -> Result<EntryPrepared<'name>, exacopy_journal::PreparedError> {
+		EntryPrepared::new(
 			self.context,
 			self.entry,
 			EntryPreparation {
@@ -96,12 +110,6 @@ impl<'name> EntryEvidence<'name> {
 				source_metadata: self.metadata,
 			},
 		)
-		.map_err(StageFailure::EntryPreparation)?;
-		let payload = entry.encode();
-		let _ = journal
-			.append(FrameKind::EntryPrepared, &payload)
-			.map_err(StageFailure::EntryJournal)?;
-		Ok(SourceMeasurementId::from_prepared_payload(&payload))
 	}
 
 	pub(in crate::linux) fn seal_stream(
@@ -155,15 +163,15 @@ impl<'name> EntryEvidence<'name> {
 }
 
 pub(in crate::linux) struct SealEvidence {
-	sealed: StageSealed,
+	pub(super) sealed: StageSealed,
 	pub(in crate::linux) verification: VerificationRecorded,
-	metadata: MetadataRecorded,
+	pub(super) metadata: MetadataRecorded,
 }
 
 pub(super) struct RecordedSeal<'seal> {
-	seal: &'seal SealEvidence,
-	verification: SyncedFrame,
-	metadata: SyncedFrame,
+	pub(super) seal: &'seal SealEvidence,
+	pub(super) verification: SyncedFrame,
+	pub(super) metadata: SyncedFrame,
 }
 
 impl RecordedSeal<'_> {

@@ -19,7 +19,9 @@ mod public_plan;
 pub(crate) mod public_stage;
 #[cfg(feature = "experimental-linux-public-apply")]
 pub use public_stage::{
-	LocalApplyQualificationEnrollment, QualifiedPublicApplyProposalError,
+	AppliedPublicPlanError, LiveQualificationError, LocalApplyGrant, LocalApplyGrantError,
+	LocalApplyHostSelection, LocalApplyIssuer, LocalApplyQualificationEnrollment,
+	LocalApplyRootSelection, QualifiedPublicApplyProposalError, apply_qualified_public_plan,
 	stage_qualified_public_apply,
 };
 mod recovery;

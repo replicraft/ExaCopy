@@ -141,9 +141,15 @@ impl Fixture {
 	}
 
 	pub(super) fn plan(roots: CopyRoots<'_>) -> (PlannedCopy, ExpectedCopyPlan<'static>) {
+		Self::plan_at(roots, UnixTimestamp::new(1_800_000_000, 0).unwrap())
+	}
+
+	pub(super) fn plan_at(
+		roots: CopyRoots<'_>,
+		observed_at: UnixTimestamp,
+	) -> (PlannedCopy, ExpectedCopyPlan<'static>) {
 		let source = component(SOURCE);
 		let destination = component(TARGET);
-		let observed_at = UnixTimestamp::new(1_800_000_000, 0).unwrap();
 		let bundle = plan_public_new_file(
 			roots.source,
 			roots.destination,

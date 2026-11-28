@@ -11,8 +11,17 @@ use super::RecoveryInspectError;
 #[cfg(test)]
 use super::{CopyRoots, LocalCopyError};
 
+mod checked;
+mod grant;
 #[cfg(any(test, feature = "experimental-linux-public-apply"))]
 mod qualification;
+#[cfg(feature = "experimental-linux-public-apply")]
+pub use checked::{AppliedPublicPlanError, LiveQualificationError, apply_qualified_public_plan};
+#[cfg(feature = "experimental-linux-public-apply")]
+pub use grant::{
+	LocalApplyGrant, LocalApplyGrantError, LocalApplyHostSelection, LocalApplyIssuer,
+	LocalApplyRootSelection,
+};
 #[cfg(feature = "experimental-linux-public-apply")]
 pub use qualification::{
 	LocalApplyQualificationEnrollment, QualifiedPublicApplyProposalError,

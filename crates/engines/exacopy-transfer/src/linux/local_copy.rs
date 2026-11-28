@@ -32,8 +32,9 @@ use planning::{
 pub(super) use protocol::ProtocolError;
 pub(super) use protocol::Publication;
 pub use public_apply::{
+	CheckedApply, CheckedApplyAuthority, CheckedApplyError, CheckedApplyFence, CheckedCopyError,
 	PublicApplyIntentObservation, PublicApplyIntentPreparationError, PublicApplyIntentSelection,
-	PublicApplyStage, PublicApplyStageRequest, stage_public_apply,
+	PublicApplyStage, PublicApplyStageRequest, apply_checked_public_plan, stage_public_apply,
 	stage_public_apply_and_propose_intent,
 };
 use records::EntryEvidence;

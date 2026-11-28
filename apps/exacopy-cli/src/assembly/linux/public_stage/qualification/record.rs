@@ -21,8 +21,8 @@ pub(super) struct Root {
 }
 
 #[derive(Debug)]
-pub(super) struct Qualification {
-	pub(super) digest: ApplyQualificationDigest,
+pub(in crate::assembly::linux::public_stage) struct Qualification {
+	pub(in crate::assembly::linux::public_stage) digest: ApplyQualificationDigest,
 	pub(super) image_length: u64,
 	pub(super) image: [u8; 32],
 	pub(super) environment: ProcessCrashEnvironment,
@@ -37,6 +37,13 @@ pub(super) struct Qualification {
 }
 
 impl Qualification {
+	pub(in crate::assembly::linux::public_stage) fn window(
+		&self,
+	) -> Result<(OwnerTimestamp, OwnerTimestamp), Failure> {
+		let at = |seconds| OwnerTimestamp::new(seconds, 0).map_err(|_| Failure::Time);
+		Ok((at(self.valid_from)?, at(self.valid_until)?))
+	}
+
 	pub(super) fn check_time(
 		&self,
 		now: OwnerTimestamp,

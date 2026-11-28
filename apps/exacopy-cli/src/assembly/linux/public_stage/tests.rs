@@ -18,6 +18,7 @@ use exacopy_transfer::linux::{
 use super::super::{CopyRoots, inspect_recovery, plan_new_file};
 use super::{inspect, stage};
 
+mod checked_apply;
 mod fixture;
 mod late_journal;
 
@@ -67,6 +68,7 @@ fn approved_stage_reopens_with_exact_owner_and_preserves_uncertain_evidence() {
 	));
 	assert!(!fixture.job(original).try_exists().unwrap());
 	assert_missing_qualification_refuses(&fixture, roots, &request, &mut scratch);
+	checked_apply::assert_unenrolled_grant_refused(&fixture, roots, &mut scratch);
 	assert_proposal_uses_held_stage(&fixture, roots, &request, &mut scratch);
 	late_journal::assert_late_readback_refusal(&fixture, roots, &request, &mut scratch);
 	let staged = stage(roots, PublicApplyStageRequest { ..request }, &mut scratch).unwrap();

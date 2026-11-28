@@ -170,7 +170,7 @@ where
 	}
 }
 
-fn check_selection<R, S, P>(
+pub(super) fn check_selection<R, S, P>(
 	request: &PublicApplyStageRequest<'_, '_, '_>,
 	selection: PublicApplyIntentSelection,
 ) -> Result<(), PublicApplyIntentPreparationError<R, S, P>> {
@@ -196,7 +196,7 @@ fn check_selection<R, S, P>(
 	Ok(())
 }
 
-fn check_current<R, S, P>(
+pub(super) fn check_current<R, S, P>(
 	request: &PublicApplyStageRequest<'_, '_, '_>,
 	selection: PublicApplyIntentSelection,
 	current: Option<PublicApplyIntentObservation>,
@@ -222,7 +222,7 @@ fn check_current<R, S, P>(
 	Ok(current.now)
 }
 
-fn propose<'name, R, S, P>(
+pub(super) fn propose<'name, R, S, P>(
 	request: &PublicApplyStageRequest<'_, '_, 'name>,
 	selection: PublicApplyIntentSelection,
 	now: OwnerTimestamp,

@@ -13,10 +13,11 @@ pub mod sync_preview;
 pub use checkpoint::CopyCheckpoint;
 pub use job::{BootstrapError, JobBootstrap, JobStep, PreparedJob};
 pub use local_copy::{
+	CheckedApply, CheckedApplyAuthority, CheckedApplyError, CheckedApplyFence, CheckedCopyError,
 	CopyError, CopyProfile, PlanningRoots, PublicApplyIntentObservation,
 	PublicApplyIntentPreparationError, PublicApplyIntentSelection, PublicApplyStage,
-	PublicApplyStageRequest, copy_with_capabilities, plan_with_capabilities, stage_public_apply,
-	stage_public_apply_and_propose_intent,
+	PublicApplyStageRequest, apply_checked_public_plan, copy_with_capabilities,
+	plan_with_capabilities, stage_public_apply, stage_public_apply_and_propose_intent,
 };
 pub use plan::{
 	DestinationPlanBinding, LocalCopyPlan, LocalCopyPlanError, MAX_LOCAL_COPY_PLAN_BYTES,

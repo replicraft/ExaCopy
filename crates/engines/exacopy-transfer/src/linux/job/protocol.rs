@@ -180,7 +180,7 @@ where
 	})
 }
 
-fn validate_owner_token(request: JobBootstrap<'_>) -> Result<(), OwnerError> {
+pub(crate) fn validate_owner_token(request: JobBootstrap<'_>) -> Result<(), OwnerError> {
 	if request.owner_token.as_bytes() == request.context.job.as_bytes()
 		|| request.owner_token.as_bytes() == request.profile.as_bytes()
 	{
@@ -189,7 +189,7 @@ fn validate_owner_token(request: JobBootstrap<'_>) -> Result<(), OwnerError> {
 	Ok(())
 }
 
-fn owner_manifest(
+pub(crate) fn owner_manifest(
 	request: JobBootstrap<'_>,
 	destination: LinuxFileIdentity,
 	job: JobFileIdentity,

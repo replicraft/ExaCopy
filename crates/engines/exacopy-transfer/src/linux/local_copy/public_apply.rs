@@ -25,10 +25,15 @@ use super::{
 	CopyCheckpoint, CopyError, CopyProfile, LocalCopyPlan, PlanningRoots, preflight_source,
 };
 
+mod checked;
 mod proposal;
 #[cfg(test)]
 mod tests;
 
+pub use checked::{
+	CheckedApply, CheckedApplyAuthority, CheckedApplyError, CheckedApplyFence, CheckedCopyError,
+	apply_checked_public_plan,
+};
 pub use proposal::{
 	PublicApplyIntentObservation, PublicApplyIntentPreparationError, PublicApplyIntentSelection,
 	stage_public_apply_and_propose_intent,

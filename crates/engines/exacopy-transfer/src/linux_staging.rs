@@ -17,7 +17,8 @@ mod error;
 #[cfg(test)]
 mod tests;
 
-use effects::{OrdinaryEffects, StageEffects};
+use effects::OrdinaryEffects;
+pub(crate) use effects::{GuardedEffects, StageEffects};
 pub use error::{StageCopyError, StageFailure};
 
 const SPECIAL_MODE_BITS: u32 = 0o7000;
@@ -145,7 +146,7 @@ where
 	)
 }
 
-fn stage_verified_with<'stage, S, D, E>(
+pub(crate) fn stage_verified_with<'stage, S, D, E>(
 	source: &S,
 	directory: &'stage D,
 	request: StageRequest<'_>,

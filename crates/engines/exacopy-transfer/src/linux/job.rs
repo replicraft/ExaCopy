@@ -16,6 +16,7 @@ use super::LocalCopyPlan;
 use protocol::{BootstrapFailure, InitialJournal};
 
 mod protocol;
+pub(super) use protocol::{owner_manifest, validate_owner_token};
 
 #[cfg(test)]
 mod tests;
@@ -166,7 +167,7 @@ where
 	))
 }
 
-fn copy_bootstrap_request<'name>(
+pub(super) fn copy_bootstrap_request<'name>(
 	plan: &LocalCopyPlan<'name>,
 	profile: super::CopyProfile<'_>,
 ) -> JobBootstrap<'name> {
