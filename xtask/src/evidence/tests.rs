@@ -321,8 +321,12 @@ kani = {{ {declaration}harness = "kani_checks::phase::exact", file = "verificati
 			let path = fixture.write(log, contents);
 			candidate["artifact_digest"] = json!(file_digest(&path).expect("read fixture digest"));
 		};
-		if command == &selected_command {
-			let profile = "EXACOPY_EVS_KANI_PROFILE_V1 --no-default-features --features experimental,strict\n";
+		let profile = if command == &selected_command {
+			"EXACOPY_EVS_KANI_PROFILE_V1 --no-default-features --features experimental,strict\n"
+		} else {
+			""
+		};
+		if !profile.is_empty() {
 			assert_eq!(matches(&candidate), (true, false));
 			write_log(
 				&mut candidate,
@@ -360,7 +364,15 @@ kani = {{ {declaration}harness = "kani_checks::phase::exact", file = "verificati
 			truncated_digest["artifact_digest"] = marker_only_digest;
 			assert_eq!(matches(&truncated_digest), (true, false));
 		}
+		let solver_success = "Verification result: SUCCESSFUL\n";
+		let clean = format!("{profile}{solver_success}");
+		write_log(&mut candidate, &clean);
 		assert_eq!(matches(&candidate), (true, true));
+		let omitted = "not enough arguments, inserting non-deterministic value";
+		let padding = "x".repeat(8192 - clean.len() - 20);
+		write_log(&mut candidate, &format!("{clean}{padding}{omitted}\n"));
+		assert_eq!(matches(&candidate), (true, false));
+		write_log(&mut candidate, &clean);
 
 		let valid = candidate.clone();
 		for wrong in [

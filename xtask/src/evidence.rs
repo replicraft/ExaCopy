@@ -15,6 +15,8 @@ mod record;
 use record::{Outcome, Record};
 
 const LOCKFILE: &str = "Cargo.lock";
+const KANI_OMITTED_ARGUMENT: &[u8] = b"not enough arguments, inserting non-deterministic value";
+const KANI_OVERLAP: usize = KANI_OMITTED_ARGUMENT.len() - 1;
 const KANI_PROFILE: &str = "EXACOPY_EVS_KANI_PROFILE_V1 ";
 
 #[derive(Debug)]
@@ -77,17 +79,15 @@ fn check_records(
 			);
 			continue;
 		}
-		let log = PathBuf::from(format!("{}.log", record.evidence_id));
-		let feature_bound_log = gate == Gate::Kani && !record.matches_features(&[]);
-		// The feature-bound gate checks the digest of the stream it scans for acknowledgement.
-		if !feature_bound_log
-			&& !matches_digest(directory, &log, record.artifact_digest.as_deref(), findings)
-		{
-			continue;
-		}
-		if fs::metadata(directory.join(&log)).is_ok_and(|metadata| metadata.len() == 0) {
-			findings.add(&file, "executed evidence has an empty tool log");
-			continue;
+		if gate != Gate::Kani {
+			let log = PathBuf::from(format!("{}.log", record.evidence_id));
+			if !matches_digest(directory, &log, record.artifact_digest.as_deref(), findings) {
+				continue;
+			}
+			if fs::metadata(directory.join(&log)).is_ok_and(|metadata| metadata.len() == 0) {
+				findings.add(&file, "executed evidence has an empty tool log");
+				continue;
+			}
 		}
 		for id in &record.obligation_ids {
 			let Some((project, entry)) = required.iter().find(|(_, entry)| entry.id == *id) else {
@@ -246,7 +246,7 @@ fn matches_gate(
 		Gate::Kani => entry.kani.as_ref().is_some_and(|link| {
 			record.detail.harness.as_deref() == Some(&link.harness)
 				&& record.matches_features(&link.features)
-				&& matches_kani_profile(directory, record, &link.features)
+				&& matches_kani_log(directory, record, &link.features, findings)
 				&& oracle_matches(record, &link.oracle)
 				&& record.model_bounds == link.model_bounds
 				&& record
@@ -283,33 +283,51 @@ fn matches_gate(
 	}
 }
 
-fn matches_kani_profile(directory: &Path, record: &Record, features: &[String]) -> bool {
-	if features.is_empty() {
-		return true;
-	}
+fn matches_kani_log(
+	directory: &Path,
+	record: &Record,
+	features: &[String],
+	findings: &mut Findings,
+) -> bool {
 	let relative = PathBuf::from(format!("{}.log", record.evidence_id));
-	let Ok(log) = owned_file(directory, &relative).and_then(File::open) else {
-		return false;
-	};
+	owned_file(directory, &relative)
+		.and_then(File::open)
+		.and_then(|source| {
+			let mut log = BufReader::new(KaniLog {
+				source,
+				hash: Sha256::new(),
+				tail: Vec::with_capacity(2 * KANI_OVERLAP),
+			});
+			let profile_matches = if features.is_empty() {
+				io::copy(&mut log, &mut io::sink())? > 0
+			} else {
+				read_kani_profile(&mut log, features)?
+			};
+			let digest = format!("{:x}", log.into_inner().hash.finalize());
+			Ok(profile_matches && record.artifact_digest.as_deref() == Some(digest.as_str()))
+		})
+		.unwrap_or_else(|error| {
+			findings.add(&directory.join(relative), error);
+			false
+		})
+}
+
+fn read_kani_profile(log: &mut impl BufRead, features: &[String]) -> io::Result<bool> {
 	let expected = format!(
 		"{KANI_PROFILE}--no-default-features --features {}",
 		features.join(",")
 	);
 	// Allow CRLF and one byte to detect an oversized acknowledgement.
 	let limit = expected.len() + 3;
-	let mut log = BufReader::new(HashedLog {
-		source: log,
-		hash: Sha256::new(),
-	});
 	let mut line = Vec::with_capacity(limit);
 	let mut found = false;
 	loop {
 		line.clear();
-		let Ok(read) = (&mut log).take(limit as u64).read_until(b'\n', &mut line) else {
-			return false;
-		};
+		let read = (&mut *log)
+			.take(limit as u64)
+			.read_until(b'\n', &mut line)?;
 		if read == 0 {
-			break;
+			return Ok(found);
 		}
 		if line.starts_with(KANI_PROFILE.as_bytes()) {
 			let ack = line
@@ -318,28 +336,48 @@ fn matches_kani_profile(directory: &Path, record: &Record, features: &[String]) 
 					terminated.strip_suffix(b"\r").unwrap_or(terminated)
 				});
 			if found || ack != expected.as_bytes() {
-				return false;
+				return Ok(false);
 			}
 			found = true;
 		}
 		// Discard the rest of this physical line without buffering it.
-		if read == limit && !line.ends_with(b"\n") && log.skip_until(b'\n').is_err() {
-			return false;
+		if read == limit && !line.ends_with(b"\n") {
+			log.skip_until(b'\n')?;
 		}
 	}
-	let digest = format!("{:x}", log.into_inner().hash.finalize());
-	found && record.artifact_digest.as_deref() == Some(digest.as_str())
 }
 
-struct HashedLog {
+struct KaniLog {
 	source: File,
 	hash: Sha256,
+	tail: Vec<u8>,
 }
 
-impl Read for HashedLog {
+impl Read for KaniLog {
 	fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
 		let count = self.source.read(output)?;
-		self.hash.update(&output[..count]);
+		let chunk = &output[..count];
+		// Only cross-read matches need the previous tail and the new chunk's prefix.
+		self.tail
+			.extend_from_slice(&chunk[..chunk.len().min(KANI_OVERLAP)]);
+		if [&self.tail[..], chunk].into_iter().any(|part| {
+			part.windows(KANI_OMITTED_ARGUMENT.len())
+				.any(|window| window == KANI_OMITTED_ARGUMENT)
+		}) {
+			return Err(io::Error::other(
+				"Kani supplied a nondeterministic value for an omitted call argument",
+			));
+		}
+		if chunk.len() >= KANI_OVERLAP {
+			self.tail.clear();
+			self.tail
+				.extend_from_slice(&chunk[chunk.len() - KANI_OVERLAP..]);
+		} else {
+			let start = self.tail.len().saturating_sub(KANI_OVERLAP);
+			self.tail.copy_within(start.., 0);
+			self.tail.truncate(KANI_OVERLAP);
+		}
+		self.hash.update(chunk);
 		Ok(count)
 	}
 }

@@ -81,18 +81,37 @@ class KaniGateFeatureTests(unittest.TestCase):
                     ):
                         list(record_evidence.workspace_obligations("kani"))
 
-    def test_successful_kani_process_requires_one_exact_selected_profile_confirmation(self):
+    def test_kani_record_acceptance_preserves_tool_status_and_artifact(self):
         exact = b"EXACOPY_EVS_KANI_PROFILE_V1 --no-default-features --features strict,protocol\n"
-        for fixture_log, exit_status, expected in (
-            (b"legacy dispatcher output\n", 0, 1),
-            (b"EXACOPY_EVS_KANI_PROFILE_V1 --no-default-features --features protocol,strict\n", 0, 1),
-            (exact + exact, 0, 1),
-            (b"raw solver output\n" + exact, 0, 0),
-            (b"solver failure\n" + exact, 1, 1),
-            (b"solver timeout\n" + exact, 124, 124),
+        omitted = b"not enough arguments, inserting non-deterministic value"
+        crossing = b"x" * (8192 - len(exact) - 20) + omitted + b"\n"
+        for selected, fixture_log, exit_status, expected, explanation in (
+            (True, b"legacy dispatcher output\n", 0, "fail", "exact requested feature profile"),
+            (True, exact.replace(b"strict,protocol", b"protocol,strict"), 0,
+             "fail", "exact requested feature profile"),
+            (True, exact + exact, 0, "fail", "exact requested feature profile"),
+            (True, exact + b"raw solver output\n", 0, "pass", None),
+            (False, b"raw solver output\n", 0, "pass", None),
+            (True, exact + crossing, 0, "fail", "omitted call argument"),
+            (False, b"Warning: " + omitted + b"\n", 0, "fail", "omitted call argument"),
+            (True, b"Warning: " + omitted + b"\n", 0, "fail", "omitted call argument"),
+            (True, exact + crossing, 1, "fail", None),
+            (True, exact + crossing, 124, "fail", None),
         ):
-            with self.subTest(fixture_log=fixture_log), TemporaryDirectory() as temporary:
-                scratch = Path(temporary)
+            with (
+                self.subTest(selected=selected, exit_status=exit_status, expected=expected),
+                TemporaryDirectory() as temporary,
+            ):
+                root = Path(temporary)
+                (root / "Cargo.lock").write_bytes(b"fixture lockfile\n")
+                (root / "source.rs").write_bytes(b"fixture source\n")
+                obligation = {
+                    "id": "P-123", "source": "source.rs", "assumptions": [],
+                    "kani": {
+                        "unwind_bound": 1, "oracle": "Fixture oracle.",
+                        "features": ["strict", "protocol"] if selected else [],
+                    },
+                }
                 process = mock.MagicMock()
                 process.__enter__.return_value = process
                 process.wait.return_value = exit_status
@@ -101,19 +120,34 @@ class KaniGateFeatureTests(unittest.TestCase):
                     stdout.write(fixture_log)
                     return process
 
-                log = scratch / "kani.log"
-                with mock.patch.object(record_evidence.subprocess, "Popen", side_effect=start):
-                    _, _, result, _ = record_evidence.run_gate(
-                        ["mock-kani-gate"], "kani", {"features": ["strict", "protocol"]},
-                        log, scratch / "trace",
-                    )
-                self.assertEqual(result, expected)
-                retained = log.read_bytes()
-                self.assertTrue(retained.startswith(fixture_log))
-                self.assertEqual(
-                    b"did not confirm the exact requested feature profile" in retained,
-                    exit_status == 0 and expected != 0,
-                )
+                revision = "1234567890abcdef"
+                with (
+                    mock.patch.object(record_evidence, "ROOT", root),
+                    mock.patch.object(record_evidence, "revision", return_value=(revision, False)),
+                    mock.patch.object(record_evidence, "tool_version", return_value=("kani", "1.0")),
+                    mock.patch.object(record_evidence.subprocess, "Popen", side_effect=start),
+                ):
+                    self.assertEqual(record_evidence.record_gate(
+                        root, "example", root, obligation, "kani", revision, "x86_64-unknown-linux-gnu",
+                    ), expected == "pass")
+                report_file, = root.glob("*.json")
+                retained_log, = root.glob("*.log")
+                report = json.loads(report_file.read_text(encoding="utf-8"))
+                self.assertEqual(report["outcome"], expected)
+                self.assertEqual(report["exit_status"], exit_status)
+                self.assertEqual(retained_log.read_bytes(), fixture_log)
+                self.assertEqual(report["artifact_digest"], record_evidence.digest(retained_log))
+                if explanation:
+                    self.assertIn(explanation, report["review"]["justification"])
+
+    def test_kani_omitted_argument_scan_propagates_read_failure(self):
+        reader = mock.MagicMock()
+        reader.__enter__.return_value = reader
+        reader.read.side_effect = [b"x" * 8192, OSError("read failed after clean chunk")]
+        with mock.patch.object(Path, "open", return_value=reader):
+            with self.assertRaisesRegex(OSError, "read failed after clean chunk"):
+                record_evidence.kani_log_issue(Path("solver.log"), [])
+        self.assertEqual(reader.read.call_args_list, [mock.call(8192), mock.call(8192)])
 
     def test_kani_acknowledgement_uses_physical_lines_with_bounded_reads(self):
         acknowledgement = b"EXACOPY_EVS_KANI_PROFILE_V1 --no-default-features --features strict"
@@ -169,7 +203,12 @@ class KaniGateFeatureTests(unittest.TestCase):
                 with self.subTest(gate=gate, link=link):
                     def run_gate(observed, _gate, _link, log, _trace):
                         self.assertEqual(observed, command)
-                        log.write_bytes(b"fixture gate log\n")
+                        if gate == "kani" and features:
+                            log.write_bytes(
+                                b"EXACOPY_EVS_KANI_PROFILE_V1 --no-default-features --features strict,protocol\n"
+                            )
+                        else:
+                            log.write_bytes(b"fixture gate log\n")
                         return datetime(2026, 11, 28, tzinfo=timezone.utc), 1, 0, None
 
                     with (

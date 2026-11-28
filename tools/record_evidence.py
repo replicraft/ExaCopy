@@ -22,6 +22,7 @@ DEFAULT_KANI_PIN = Path("crates/foundation/exacopy-model/verification/kani/toolc
 GATES = ("rust", "lean", "kani", "tlc")
 RUN_TIMEOUT_SECONDS = 900
 TOOL_QUERY_TIMEOUT_SECONDS = 30
+KANI_OMITTED_ARGUMENT = b"not enough arguments, inserting non-deterministic value"
 KANI_PROFILE = b"EXACOPY_EVS_KANI_PROFILE_V1 "
 TLC_COUNTS = re.compile(r"^\d+ states generated, (\d+) distinct states found, 0 states left on queue\.$", re.M)
 
@@ -151,6 +152,19 @@ def matches_kani_profile(log, features):
     return found
 
 
+def kani_log_issue(log, features):
+    overlap = b""
+    with log.open("rb") as source:
+        while chunk := source.read(8192):
+            window = overlap + chunk
+            if KANI_OMITTED_ARGUMENT in window:
+                return "Kani supplied a nondeterministic value for an omitted call argument."
+            overlap = window[1 - len(KANI_OMITTED_ARGUMENT):]
+    if features and not matches_kani_profile(log, features):
+        return "Kani dispatcher did not confirm the exact requested feature profile."
+    return None
+
+
 def run_gate(command, gate, link, log, trace):
     """Include both full TLC reports and distribute the negative trace separately."""
     started = datetime.now(timezone.utc)
@@ -187,11 +201,6 @@ def run_gate(command, gate, link, log, trace):
             except OSError as error:
                 output.write(f"\nCould not start evidence command: {error}\n".encode())
                 result = 127
-            if gate == "kani" and result == 0 and (features := profile_features(gate, link)):
-                output.flush()
-                if not matches_kani_profile(log, features):
-                    output.write(b"\nKani dispatcher did not confirm the exact requested feature profile.\n")
-                    result = 1
             if gate == "tlc":
                 positive = Path(scratch) / (Path(link["config"]).stem + ".log")
                 negative = Path(scratch) / (Path(link["negative_control"]).stem + ".log")
@@ -240,8 +249,20 @@ def record_gate(output_dir, package, crate_root, obligation, gate, source_revisi
             output.write(f"\nCould not verify evidence inputs after execution: {error}\n".encode())
         dirty, same_inputs = True, False
     outcome = "fail" if status else "pass"
-    if status == 0 and (dirty or not same_inputs or version == "unavailable"):
-        outcome = "blocked"
+    justification = "Recorded from tool execution. Independent review is pending."
+    if status == 0:
+        if dirty or not same_inputs or version == "unavailable":
+            outcome = "blocked"
+        if gate == "kani":
+            try:
+                issue = kani_log_issue(log, profile_features(gate, link))
+            except OSError:
+                outcome = "blocked"
+                justification = "Kani command exited zero. Its log could not be read for acceptance."
+            else:
+                if issue:
+                    outcome = "fail"
+                    justification = f"Kani command exited zero. {issue}"
     detail = {
         "theorem": link.get("theorem"),
         "extraction_digest": extraction_digest,
@@ -293,7 +314,7 @@ def record_gate(output_dir, package, crate_root, obligation, gate, source_revisi
         "review": {
             "reviewer": None,
             "independent": False,
-            "justification": "Recorded from tool execution. Independent review is pending.",
+            "justification": justification,
         },
         "synthetic": False,
     }
