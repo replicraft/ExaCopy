@@ -82,7 +82,17 @@ fn zero_tail_refuses_target_that_appears_at_continuation_admission() {
 #[test]
 fn positive_tail_reopen_refuses_late_native_changes() {
 	const INCUMBENT: &[u8] = b"independent late incumbent";
-	for change_stage_stamp in [true, false] {
+	enum LateChange {
+		None,
+		StageMtime,
+		Incumbent,
+	}
+
+	for change in [
+		LateChange::None,
+		LateChange::StageMtime,
+		LateChange::Incumbent,
+	] {
 		let fixture = Fixture::new();
 		let stage = fixture.stage();
 		let target = fixture.target();
@@ -99,7 +109,14 @@ fn positive_tail_reopen_refuses_late_native_changes() {
 				.set_times(fs::FileTimes::new().set_modified(time))
 				.unwrap();
 		};
-		set_stage_mtime(UNIX_EPOCH);
+		fs::File::open(&stage)
+			.unwrap()
+			.set_times(
+				fs::FileTimes::new()
+					.set_accessed(UNIX_EPOCH)
+					.set_modified(UNIX_EPOCH),
+			)
+			.unwrap();
 		let stage_before = fs::symlink_metadata(&stage).unwrap();
 		let lease = fixture.lease();
 		let inventory = inventory(&lease);
@@ -109,6 +126,11 @@ fn positive_tail_reopen_refuses_late_native_changes() {
 		reader.read_exact_at(0, &mut compared).unwrap();
 		assert_eq!(compared, live_source[..PREFIX.len()]);
 		let synced = reader.sync_adopted(end, |_, _| Ok::<_, ()>(())).unwrap();
+		let after_read = fs::symlink_metadata(&stage).unwrap();
+		assert_eq!(
+			(after_read.atime(), after_read.atime_nsec()),
+			(stage_before.atime(), stage_before.atime_nsec())
+		);
 
 		let mut admitted = false;
 		let mut incumbent = None;
@@ -116,32 +138,42 @@ fn positive_tail_reopen_refuses_late_native_changes() {
 			assert_eq!(actual, expected);
 			assert_eq!(extent, end..source_end);
 			admitted = true;
-			if change_stage_stamp {
-				set_stage_mtime(UNIX_EPOCH + Duration::from_secs(4));
-				assert_ne!(
-					fs::symlink_metadata(&stage).unwrap().mtime(),
-					stage_before.mtime()
-				);
-			} else {
-				super::super::private_file(&target, INCUMBENT);
-				incumbent = Some(fs::symlink_metadata(&target).unwrap());
+			match change {
+				LateChange::None => {}
+				LateChange::StageMtime => {
+					set_stage_mtime(UNIX_EPOCH + Duration::from_secs(4));
+					assert_ne!(
+						fs::symlink_metadata(&stage).unwrap().mtime(),
+						stage_before.mtime()
+					);
+				}
+				LateChange::Incumbent => {
+					super::super::private_file(&target, INCUMBENT);
+					incumbent = Some(fs::symlink_metadata(&target).unwrap());
+				}
 			}
 			Ok::<_, ()>(())
 		});
 		assert!(admitted);
-		assert!(matches!(
-			result,
-			Err(SuffixError::Observation(StageError::IdentityChanged))
-		));
+		match change {
+			LateChange::None => {
+				let writer = result.expect("unchanged compared prefix must admit the writer");
+				assert!(writer.matches_reader(&reader));
+			}
+			LateChange::StageMtime | LateChange::Incumbent => assert!(matches!(
+				result,
+				Err(SuffixError::Observation(StageError::IdentityChanged))
+			)),
+		}
 		assert_same_file(&stage, &stage_before, PREFIX);
 		assert_same_file(&source, &source_before, &source_bytes);
-		if change_stage_stamp {
+		if let Some(incumbent) = incumbent {
+			assert_same_file(&target, &incumbent, INCUMBENT);
+		} else {
 			assert_eq!(
 				fs::symlink_metadata(&target).unwrap_err().kind(),
 				ErrorKind::NotFound
 			);
-		} else {
-			assert_same_file(&target, &incumbent.unwrap(), INCUMBENT);
 		}
 	}
 }
