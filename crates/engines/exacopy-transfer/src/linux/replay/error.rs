@@ -90,6 +90,9 @@ impl fmt::Display for JournalReplayError {
 			Self::Intent(error) => {
 				write!(formatter, "publication intent payload refused ({error})")
 			}
+			Self::PublicIntent(error) => {
+				write!(formatter, "checked public intent payload refused ({error})")
+			}
 			Self::Publication(error) => write!(formatter, "publication evidence refused ({error})"),
 			Self::Recovery(error) => write!(formatter, "recovery evidence refused ({error})"),
 		}
