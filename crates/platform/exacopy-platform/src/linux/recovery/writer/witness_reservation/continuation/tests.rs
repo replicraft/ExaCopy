@@ -10,8 +10,8 @@ use exacopy_model::retained_prefix::Head;
 
 use crate::linux::job::{FIRST_SEGMENT, JOURNAL, STAGE};
 use crate::linux::{
-	DestinationRoot, RemoteDestinationEligibility, RetainedPrefixSelection, StageError, SuffixEffect,
-	WitnessReservationAuthority, WitnessReservationEffect, WitnessReservationPlan,
+	DestinationRoot, RemoteDestinationEligibility, RetainedPrefixSelection, StageError,
+	SuffixEffect, WitnessReservationAuthority, WitnessReservationEffect, WitnessReservationPlan,
 	observe_remote_destination,
 };
 use crate::scratch::Scratch;
@@ -105,11 +105,9 @@ fn refused_live_continuation_retains_the_original_prefix_and_journal() {
 
 	// Match the real held ext4 facts. The digest, source replay and authority
 	// callbacks are fixture inputs at the platform boundary.
-	let qualification = RemoteDestinationQualification::new(
-		observe_remote_destination(&root).unwrap(),
-		[0x35; 32],
-	)
-	.unwrap();
+	let qualification =
+		RemoteDestinationQualification::new(observe_remote_destination(&root).unwrap(), [0x35; 32])
+			.unwrap();
 	let eligible = RemoteDestinationEligibility::admit(&root, Some(&qualification)).unwrap();
 	let job_id = root.open_recovery_job(name(JOB)).unwrap().identity();
 	let lease = root.try_recovery_write_lease(name(JOB), job_id).unwrap();
@@ -214,7 +212,9 @@ fn refused_live_continuation_retains_the_original_prefix_and_journal() {
 	);
 	assert_eq!(fs::read(stage_path).unwrap(), PREFIX);
 	assert_eq!(
-		fs::symlink_metadata(scratch.path(TARGET)).unwrap_err().kind(),
+		fs::symlink_metadata(scratch.path(TARGET))
+			.unwrap_err()
+			.kind(),
 		ErrorKind::NotFound
 	);
 	assert!(matches!(
