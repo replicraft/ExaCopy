@@ -165,4 +165,10 @@ impl RetryOwner {
 	pub const fn new(id: NonZeroU128) -> Self {
 		Self(id)
 	}
+
+	/// Returns the full caller-reserved supervisor identifier without narrowing.
+	#[must_use]
+	pub const fn id(self) -> NonZeroU128 {
+		self.0
+	}
 }

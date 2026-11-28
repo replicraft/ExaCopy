@@ -389,3 +389,11 @@ impl RetrySupervisor {
 			&& phase_matches
 	}
 }
+
+impl ConnectionAttempt {
+	/// Returns the caller-reserved supervisor identity of this exact attempt.
+	#[must_use]
+	pub const fn owner(self) -> RetryOwner {
+		self.owner
+	}
+}
