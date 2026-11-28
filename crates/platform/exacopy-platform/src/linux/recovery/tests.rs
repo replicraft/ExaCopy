@@ -201,6 +201,60 @@ fn snapshots_distinguish_absence_from_a_late_name_or_directory() {
 }
 
 #[test]
+fn stage_directory_selection_refuses_a_source_directory_link() {
+	let (fixture, root) = fixture();
+	let job_path = fixture.path(JOB);
+	let stage = job_path.join(STAGE);
+	let saved = job_path.join(PARKED);
+	let source_directory = fixture.path("independent-source");
+	let stage_leaf = std::ffi::OsStr::from_bytes(RAW_STAGE);
+	let stage_file = stage.join(stage_leaf);
+	let source = source_directory.join(stage_leaf);
+	let incumbent = fixture.path(TARGET);
+	let source_bytes = b"retained source bytes";
+	let incumbent_bytes = b"retained incumbent bytes";
+	private_directory(&source_directory);
+	private_file(&source, source_bytes);
+	private_file(&incumbent, incumbent_bytes);
+
+	let job = root.open_recovery_job(name(JOB)).unwrap();
+	let _lease = job.try_read_lease().unwrap();
+	assert_eq!(job.stage_directory_identity().unwrap(), None);
+	private_directory(&stage);
+	private_file(&stage_file, PAYLOAD);
+	let stage_metadata = fs::symlink_metadata(&stage).unwrap();
+	let observed = job.stage_directory_identity().unwrap().unwrap();
+	assert_eq!(observed.device(), stage_metadata.dev());
+	assert_eq!(observed.inode(), stage_metadata.ino());
+
+	let original =
+		[&stage_file, &source, &incumbent].map(|path| fs::symlink_metadata(path).unwrap());
+	fs::rename(&stage, &saved).unwrap();
+	symlink(&source_directory, &stage).unwrap();
+	assert!(matches!(
+		job.stage_directory_identity(),
+		Err(StageError::UnsafeDirectory)
+	));
+
+	assert!(fs::symlink_metadata(&stage).unwrap().is_symlink());
+	assert_eq!(fs::read_link(&stage).unwrap(), source_directory);
+	for ((path, expected), before) in [
+		(saved.join(stage_leaf), PAYLOAD),
+		(source, source_bytes.as_slice()),
+		(incumbent, incumbent_bytes.as_slice()),
+	]
+	.into_iter()
+	.zip(original)
+	{
+		let after = fs::symlink_metadata(&path).unwrap();
+		assert!(after.is_file());
+		assert_eq!((after.dev(), after.ino()), (before.dev(), before.ino()));
+		assert_eq!(after.mode(), before.mode());
+		assert_eq!(fs::read(path).unwrap(), expected);
+	}
+}
+
+#[test]
 fn renamed_stage_directory_and_detached_job_fail_rechecks() {
 	let (fixture, root) = fixture();
 	let job_path = fixture.path(JOB);
