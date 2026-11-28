@@ -1849,6 +1849,13 @@ state = "defined"
 path = "apps/exacopy-cli/verification/obligations.toml"
 target = "P-081"
 
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/remote_journal/tests/capture/witnessed.rs"
+target = "held_native_donor_compares_a_live_positive_tail_and_refuses_a_changed_prefix"
+
 [[coverage]]
 id = "first-witnessed-terminal-inspection"
 status = "experimental"

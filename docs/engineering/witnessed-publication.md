@@ -309,3 +309,19 @@ and receipt phases, and the full closed native campaign. Its coverage mask requi
 all 24 case families on the exact selected native profile. Both the tmpfs
 and hosted ext4 component observations leave combined lifecycle,
 process-crash and power-loss qualification open. [Operation-2 evidence contract](../architecture/remote-witnessed-closeout.md#exact-v2-qualification-extension)
+
+The owned Linux remote-journal fixture now has a separate live donor
+comparison control. It first captures an authenticated in-process SFTP
+stream into a native private stage and records its checkpoint. A new
+authenticated SFTP pass compares the retained 13-byte prefix and reads the
+five-byte tail through the same source handle, checking the full digest,
+EOF and close. A changed-prefix pass must refuse at offset zero after seven
+fragmented reads, before any tail read or reservation. Both paths check
+unchanged owner, journal and stage identities, bytes, link counts and
+modification/change timestamps, plus absent public target and receipts.
+
+This nonignored case is required by the Linux witnessed attendance gate.
+Its route and historical V1 qualification remain fixture inputs. It stops
+before witnessed reservation and supplies no OP2, publication, terminal
+inspection, process-crash or power-loss qualification. Execution must be
+established from the exact integrated revision's hosted test evidence.
