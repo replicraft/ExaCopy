@@ -431,9 +431,9 @@ notes = "Default-off read-only inspection of an explicitly selected witnessed re
 id = "exacopy.cli.apfs_recovery_inspection"
 kind = "cli_output"
 status = "implemented"
-version = "1.0"
+version = "1.1"
 owner = "apps/exacopy-cli/src/apfs_inspect/report.rs"
-notes = "Default-off managed APFS recovery inspection. Separates authenticated historical journal and receipt evidence from current namespace observations. No payload verification or mutation authority."
+notes = "Default-off managed APFS recovery inspection. Separates authenticated historical journal and receipt evidence from current namespace observations. Version 1.1 distinguishes unsupported frame headers from generic history refusals with the same exit status and refusal shape as version 1.0. No payload verification or mutation authority."
 
 [[contract]]
 id = "exacopy.cli.managed_sync_recreate_plan"

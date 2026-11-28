@@ -80,11 +80,15 @@ reads journal and receipt records, which can advance access times. It never
 reads source, stage, or target payload bytes and grants no mutation authority.
 
 Human output is the default. JSON uses `exacopy.cli.apfs_recovery_inspection`
-version `1.0`. Exit `0` means a clean, determinate observation, which can include
+version `1.1`. Exit `0` means a clean, determinate observation, which can include
 incomplete or conflict history. Exit `9` requires reconciliation after an
 uncertain or torn observation, incomplete publication, or an uncommitted or
 missing expected receipt. It also covers custody, binding, or history refusal.
-Syntax and selection refusals use exit `2`, and output failure uses `4`.
+Report version `1.1` adds `E_APFS_JOURNAL_UNSUPPORTED` for a header declaring
+an unsupported frame version or kind. Version `1.0` reported those refusals
+as `E_APFS_HISTORY`. The new refusal reports no accepted history or namespace
+observations. Syntax and selection refusals use exit `2`, and output failure
+uses `4`.
 
 ## Experimental local NTFS comparison on Windows
 

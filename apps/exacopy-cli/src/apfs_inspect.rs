@@ -2,6 +2,7 @@ use std::io::Write;
 use std::path::Path;
 
 use ed25519_dalek::VerifyingKey;
+use exacopy_journal::frame::{FrameProblem, FrameReadError};
 use exacopy_platform::macos::staging::ManagedStageGrant;
 use exacopy_platform::macos::staging::jobs::with_provisioned_recovery_job;
 
@@ -9,6 +10,7 @@ use crate::args::InspectApfsCommand;
 use crate::assembly::macos::inspection::{
 	DarwinInspectionAuthority, DarwinInspectionError, DarwinJobInspection, inspect_job,
 };
+use crate::assembly::macos::replay::DarwinReplayError;
 use crate::unix_path::split;
 
 mod report;
@@ -57,6 +59,10 @@ fn observe(command: &InspectApfsCommand) -> Result<DarwinJobInspection, Failure>
 	.map_err(|error| match error {
 		DarwinInspectionError::PlanBinding => Failure::Binding,
 		DarwinInspectionError::Platform(_) | DarwinInspectionError::Identity(_) => Failure::Custody,
+		DarwinInspectionError::Replay(DarwinReplayError::Frame(FrameReadError::Corrupt {
+			problem: FrameProblem::UnsupportedVersion(_) | FrameProblem::UnsupportedKind(_),
+			..
+		})) => Failure::JournalUnsupported,
 		_ => Failure::History,
 	})
 }

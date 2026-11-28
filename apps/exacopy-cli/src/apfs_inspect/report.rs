@@ -18,6 +18,8 @@ pub(super) enum Failure {
 	Binding,
 	#[serde(rename = "E_APFS_HISTORY")]
 	History,
+	#[serde(rename = "E_APFS_JOURNAL_UNSUPPORTED")]
+	JournalUnsupported,
 }
 
 impl Failure {
@@ -27,6 +29,9 @@ impl Failure {
 			Self::Custody => "the selected managed APFS job could not be held and observed",
 			Self::Binding => "the selected APFS job or held destination differs from the plan",
 			Self::History => "the selected APFS job history could not be authenticated or verified",
+			Self::JournalUnsupported => {
+				"the selected APFS journal declares an unsupported frame version or kind"
+			}
 		}
 	}
 }
@@ -134,7 +139,10 @@ impl Report {
 	pub(super) fn refused(code: Failure) -> Self {
 		let exit_code = match code {
 			Failure::Selection => 2,
-			Failure::Custody | Failure::Binding | Failure::History => 9,
+			Failure::Custody
+			| Failure::Binding
+			| Failure::History
+			| Failure::JournalUnsupported => 9,
 		};
 		Self::new(
 			exit_code,
@@ -148,7 +156,7 @@ impl Report {
 	fn new(exit_code: u8, outcome: Outcome) -> Self {
 		Self {
 			schema: "exacopy.cli.apfs_recovery_inspection",
-			schema_version: "1.0",
+			schema_version: "1.1",
 			exit_code,
 			outcome,
 		}

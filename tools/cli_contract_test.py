@@ -27,7 +27,7 @@ class ReportInventoryTests(unittest.TestCase):
             "exacopy.cli.remote_download": "1.0",
             "exacopy.cli.witnessed_remote_download": "1.1",
             "exacopy.cli.witnessed_remote_inspection": "1.0",
-            "exacopy.cli.apfs_recovery_inspection": "1.0",
+            "exacopy.cli.apfs_recovery_inspection": "1.1",
             "exacopy.cli.managed_sync_recreate_plan": "1.0",
             "exacopy.cli.windows_bootstrap_inspection": "1.0",
         }

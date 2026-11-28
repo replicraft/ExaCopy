@@ -2,16 +2,22 @@ use std::ffi::OsString;
 use std::io::Write as _;
 use std::process::ExitCode;
 
+use exacopy_journal::frame::{FrameKind, FrameWriter};
+
 use serde_json::Value;
 
 use super::*;
+
+// These are the version and kind fields in the v1 frame header.
+const VERSION_OFFSET: usize = 8;
+const KIND_OFFSET: usize = 10;
 
 #[test]
 fn apfs_inspect_dispatch_binds_the_independent_selection_and_preserves_the_job() {
 	let fixture = Fixture::new();
 	let signer = SigningKey::from_bytes(&[4; 32]);
 	let private = fixture.0.join(PRIVATE);
-	let (name, profile_id, root_id_bytes, native_root) = {
+	let (name, profile_id, root_id_bytes, native_root, journal_head) = {
 		let root = fixture.root();
 		let source = fixture.source(&root);
 		let container = root.open_stage_directory(component(PRIVATE)).unwrap();
@@ -19,8 +25,9 @@ fn apfs_inspect_dispatch_binds_the_independent_selection_and_preserves_the_job()
 		let plan = fixture.plan(&root, request);
 		let name = JobName::from_uuid_bytes(*plan.attempt().job.as_bytes()).unwrap();
 		let destination = admit_destination(plan.destination(), request).unwrap();
-		with_admitted_job(&plan, request, name, destination, |job| {
-			job.with_admitted_entry(|_| ()).unwrap();
+		let journal_head = with_admitted_job(&plan, request, name, destination, |job| {
+			job.with_admitted_entry(|entry| entry.synced().head())
+				.unwrap()
 		})
 		.unwrap();
 		(
@@ -28,6 +35,7 @@ fn apfs_inspect_dispatch_binds_the_independent_selection_and_preserves_the_job()
 			*request.profile.id.as_bytes(),
 			*request.destination_root_id.as_bytes(),
 			native_identity(root.observe_identity().unwrap()).unwrap(),
+			journal_head,
 		)
 	};
 	let key = signer.verifying_key().to_bytes();
@@ -59,7 +67,7 @@ fn apfs_inspect_dispatch_binds_the_independent_selection_and_preserves_the_job()
 
 	let report = invoke(selected.clone(), 0);
 	assert_eq!(report["schema"], "exacopy.cli.apfs_recovery_inspection");
-	assert_eq!(report["schema_version"], "1.0");
+	assert_eq!(report["schema_version"], "1.1");
 	assert_eq!(report["result"], "inspected");
 	assert_eq!(report["historical_status"], "incomplete");
 	assert_eq!(report["journal_sequence"], "2");
@@ -155,7 +163,7 @@ fn apfs_inspect_dispatch_binds_the_independent_selection_and_preserves_the_job()
 		.write_all(&[first])
 		.unwrap();
 	let torn = files(&paths);
-	let observed = invoke(selected, 9);
+	let observed = invoke(selected.clone(), 9);
 	assert_eq!(observed["result"], "inspected");
 	assert_eq!(observed["journal_tail"], "torn");
 	assert_eq!(observed["torn_bytes"], "1");
@@ -165,6 +173,33 @@ fn apfs_inspect_dispatch_binds_the_independent_selection_and_preserves_the_job()
 		report["journal_head_digest"]
 	);
 	assert_eq!(files(&paths), torn);
+	assert_eq!(inventory(&job), names);
+	assert_eq!(files(&[source.clone(), incumbent.clone()]), outside);
+
+	let mut writer = FrameWriter::new(Vec::new(), journal_head);
+	writer.append(FrameKind::StageSealed, b"").unwrap();
+	let suffix = writer.into_inner();
+	for offset in [VERSION_OFFSET, KIND_OFFSET] {
+		let mut unsupported = suffix.clone();
+		unsupported[offset..offset + 2].copy_from_slice(&u16::MAX.to_le_bytes());
+		let bytes = [before[2].2.as_slice(), unsupported.as_slice()].concat();
+		fs::write(&segment, &bytes).unwrap();
+		let retained = files(&paths);
+		assert_eq!(retained[2].2, bytes);
+		assert_refused(invoke(selected.clone(), 9), "E_APFS_JOURNAL_UNSUPPORTED");
+		assert_eq!(files(&paths), retained);
+		assert_eq!(inventory(&job), names);
+		assert_eq!(files(&[source.clone(), incumbent.clone()]), outside);
+	}
+
+	let mut damaged = suffix;
+	*damaged.last_mut().unwrap() ^= 0xff;
+	let bytes = [before[2].2.as_slice(), damaged.as_slice()].concat();
+	fs::write(&segment, &bytes).unwrap();
+	let retained = files(&paths);
+	assert_eq!(retained[2].2, bytes);
+	assert_refused(invoke(selected, 9), "E_APFS_HISTORY");
+	assert_eq!(files(&paths), retained);
 	assert_eq!(inventory(&job), names);
 	assert_eq!(files(&[source, incumbent]), outside);
 }

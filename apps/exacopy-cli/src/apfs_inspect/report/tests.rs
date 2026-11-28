@@ -34,10 +34,36 @@ fn apfs_inspection_keeps_reconciliation_separate_from_history_and_receipt() {
 		json,
 		serde_json::json!({
 			"schema": "exacopy.cli.apfs_recovery_inspection",
-			"schema_version": "1.0",
+			"schema_version": "1.1",
 			"result": "refused",
 			"code": "E_APFS_BINDING",
 			"message": "the selected APFS job or held destination differs from the plan"
+		})
+	);
+}
+
+#[test]
+fn apfs_inspection_reports_an_unsupported_journal_as_a_bounded_refusal() {
+	let refused = Report::refused(Failure::JournalUnsupported);
+	assert_eq!(refused.exit_code(), 9);
+	let mut stdout = Vec::new();
+	let mut stderr = Vec::new();
+	refused
+		.write(Format::Human, &mut stdout, &mut stderr)
+		.unwrap();
+	assert!(stdout.is_empty());
+	assert_eq!(
+		stderr,
+		b"exacopy: the selected APFS journal declares an unsupported frame version or kind\n"
+	);
+	assert_eq!(
+		serde_json::to_value(refused).unwrap(),
+		serde_json::json!({
+			"schema": "exacopy.cli.apfs_recovery_inspection",
+			"schema_version": "1.1",
+			"result": "refused",
+			"code": "E_APFS_JOURNAL_UNSUPPORTED",
+			"message": "the selected APFS journal declares an unsupported frame version or kind"
 		})
 	);
 }
