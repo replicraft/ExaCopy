@@ -7,6 +7,7 @@ schema_version = 1
 exacopy-cli = ["rust"]
 exacopy-core = ["kani"]
 exacopy-diff = ["rust", "tlc"]
+exacopy-endpoint = ["kani"]
 exacopy-journal = ["rust"]
 exacopy-manifest = ["rust"]
 exacopy-model = ["rust", "lean", "kani", "tlc"]

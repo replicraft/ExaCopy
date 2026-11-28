@@ -22,8 +22,10 @@ must establish those facts and match each request, job, entry and stage.
 Tests include a five-day simulated outage, stale and cross-owner evidence,
 expiry, waiting-state revocation and ambiguity preservation. Ten compiling
 guard-removal controls failed their targeted assertions. This is scheduler
-test evidence; P-020's extracted proof, real transport recovery, persistent
-jobs, credential reacquisition and verified range resume remain open.
+test evidence. The [endpoint Kani gate](../../crates/interfaces/exacopy-endpoint/verification/README.md)
+defines six bounded scheduler harnesses. Execution and full P-020 extraction
+remain open. The harnesses supply no actual transport, custody, or native
+qualification evidence.
 
 The experimental Linux embedded transport explicitly stops and observes its
 bounded route worker after every returned post-spawn authentication, binding
