@@ -86,6 +86,10 @@ pub enum FrameKind {
 	RemoteWitnessIntent = 41,
 	/// Durable sealed receipt is ready for exclusive promotion.
 	RemoteReceiptReady = 42,
+	/// Authenticated preparation for a fresh Windows capture sibling.
+	WindowsCapturePrepared = 43,
+	/// Authenticated contiguous checkpoint in that Windows capture.
+	WindowsCaptureRange = 44,
 }
 
 impl FrameKind {
@@ -141,6 +145,8 @@ impl FrameKind {
 			code if code == Self::RemoteCaptureContinued.code() => Self::RemoteCaptureContinued,
 			code if code == Self::RemoteWitnessIntent.code() => Self::RemoteWitnessIntent,
 			code if code == Self::RemoteReceiptReady.code() => Self::RemoteReceiptReady,
+			code if code == Self::WindowsCapturePrepared.code() => Self::WindowsCapturePrepared,
+			code if code == Self::WindowsCaptureRange.code() => Self::WindowsCaptureRange,
 			_ => return None,
 		})
 	}

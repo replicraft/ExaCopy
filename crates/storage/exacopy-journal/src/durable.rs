@@ -108,6 +108,18 @@ impl<S: JournalSegment> DurableJournal<S> {
 		&mut self,
 		expected: &SyncedFrame,
 	) -> Result<(), DurableJournalError> {
+		self.confirm_current_frame_using(expected, reread_boundary)
+	}
+
+	pub(crate) fn current_boundary(&self) -> Option<(ChainHead, u64)> {
+		self.writer.as_ref().map(|writer| (writer.head(), self.end))
+	}
+
+	pub(crate) fn confirm_current_frame_using(
+		&mut self,
+		expected: &SyncedFrame,
+		reread: impl FnOnce(&mut S, u64) -> Result<ChainHead, DurableJournalError>,
+	) -> Result<(), DurableJournalError> {
 		let mut writer = self.writer.take().ok_or(DurableJournalError::Retired)?;
 		if writer.head() != expected.head() {
 			self.writer = Some(writer);
@@ -123,7 +135,7 @@ impl<S: JournalSegment> DurableJournal<S> {
 
 		let segment = writer.sink_mut();
 		check_segment(segment, self.end)?;
-		let head = reread_boundary(segment, self.end)?;
+		let head = reread(segment, self.end)?;
 		if head != expected.head() {
 			return Err(DurableJournalError::UnexpectedHead);
 		}

@@ -326,3 +326,15 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/windows_bootstrap.rs", test = "terminal_io_and_suffixes_preserve_only_the_first_boundary", oracle = "Accept only the single exact prepared frame followed by clean logical EOF. Terminal I/O failure, a byte suffix, an extra zero-payload frame or a nonzero extra frame must return failure with only the first validated head and offset retained diagnostically; cap the terminal payload before reading its body." }
+
+[[obligation]]
+id = "P-084"
+requirement_ids = ["R-039", "R-040", "R-041"]
+source = "src/windows_capture/replay.rs"
+symbols = ["inspect"]
+assumptions = [
+    "The caller independently authenticates the original V1 owner and frame, selects the invocation commitment and source facts outside the candidate segment, and supplies truthful role and logical EOF observations.",
+    "Ed25519 strict verification and BLAKE3 meet their cryptographic contract. Native custody, actual source and stage observations, physical EOF, live grant admission and durability qualification remain separate.",
+]
+gates = ["rust"]
+rust = { file = "tests/windows_capture.rs", test = "independent_windows_capture_wire_requires_exact_selected_history", oracle = "Check independently signed literal 43/44 frames and a short terminal checkpoint. Refuse wrong independently selected grant, re-signed changes to anchor, role, source, target or inner predecessor, wrong signature domain, skipped enclosing sequence, every terminating frame cut and oversized range before allocation. Failures retain only previously authenticated boundaries." }

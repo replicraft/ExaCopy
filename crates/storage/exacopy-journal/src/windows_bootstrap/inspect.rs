@@ -54,10 +54,15 @@ impl WindowsBootstrapPrefix {
 pub struct WindowsBootstrapEvidence {
 	owner: WindowsBootstrapOwner,
 	owner_digest: OwnerDigest,
+	owner_key: VerifyingKey,
 	boundary: WindowsBootstrapPrefix,
 }
 
 impl WindowsBootstrapEvidence {
+	pub(crate) const fn owner_key(&self) -> &VerifyingKey {
+		&self.owner_key
+	}
+
 	/// Returns the authenticated owner claims.
 	#[must_use]
 	pub const fn owner(&self) -> &WindowsBootstrapOwner {
@@ -120,6 +125,7 @@ pub fn inspect(
 		Ok(None) => Ok(WindowsBootstrapEvidence {
 			owner,
 			owner_digest,
+			owner_key: *selection.key,
 			boundary: prefix,
 		}),
 		Ok(Some(_)) => Err(Error::ExtraFrame { prefix }),
