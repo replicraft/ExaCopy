@@ -1518,6 +1518,43 @@ path = "crates/engines/exacopy-transfer/src/linux/receipt/public_apply/tests.rs"
 target = "independently_encoded_v2_artifact_fixes_the_exact_receipt_domain"
 
 [[coverage]]
+id = "held-public-apply-journal-confirmation"
+status = "experimental"
+requirement_ids = ["R-015", "R-155"]
+acceptance_ids = ["A-015", "A-155"]
+invariant_ids = ["INV-003", "INV-013", "INV-018", "INV-019"]
+scope = "The existing public-apply proposer confirms its original synced metadata frame by bounded envelope-chain reread through exact physical EOF on the original held journal before constructing historical intent evidence."
+limits = "Readback only. Native alias custody, arbitrary-file owner authentication and semantic replay, action authorization, publication, receipt commitment and process-crash or power-loss qualification remain separate. Tests are registered controls, not a durability claim."
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/src/durable/tests/memory.rs"
+target = "current_confirmation_reads_the_frozen_chain_and_keeps_the_append_cursor"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/src/durable/tests/memory.rs"
+target = "current_confirmation_checks_the_extra_eof_byte_and_retires_on_failed_restore"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/public_stage/tests.rs"
+target = "approved_stage_reopens_with_exact_owner_and_preserves_uncertain_evidence"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/public-apply-staging.md"
+target = "original-descriptor readback and publication limits"
+
+[[coverage]]
 id = "experimental-wireguard-protocol"
 status = "implemented"
 requirement_ids = ["R-245", "R-247", "R-249"]

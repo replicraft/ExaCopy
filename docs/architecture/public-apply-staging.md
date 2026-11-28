@@ -26,6 +26,29 @@ eligibility must gate eventual publication; public-aware inspection,
 resume and retry are separate work. No native durability claim follows
 from requesting process-crash durability in the Plan.
 
+The separate `stage_public_apply_and_propose_intent` entry point prepares a
+historical v2 intent proposal. Its private continuation holds the original
+job, stage directory, verified reader and model session, copy binding, and
+durable journal together until the proposal returns. It checks the source,
+target absence, caller's current observation and original expiry interval.
+It then rereads the original journal descriptor through the exact synced
+metadata frame and physical EOF before constructing the proposal.
+
+This readback checks the complete envelope chain under the existing 64 MiB
+segment bound, with one extra byte for EOF detection. It restores and checks
+the append cursor without writing or issuing another barrier. A stale
+expected head refuses without I/O and leaves the writer usable. Once the
+expected head matches, an uncertain extent, cursor, read or chain retires
+the writer and retains its bytes. The proposal returns a typed seal-readback
+refusal rather than producing evidence from an uncertain journal.
+
+The check establishes envelope consistency on the original descriptor.
+Owner authentication, semantic replay, live journal-name custody and native
+durability remain separate obligations. Neither the proposal nor the private
+continuation appends an intent, grants publication authority or performs a
+rename. Publication still needs fresh, serialized authorization and native
+checks, followed by independent intent, receipt and namespace confirmation.
+
 The exact Linux-target transfer tests and implementation passed strict
 cross Clippy. A separately labeled macOS portable capability fixture ran
 85 transfer tests. Five guard-removal controls failed their expected
