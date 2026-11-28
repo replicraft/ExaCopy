@@ -41,7 +41,13 @@ the exact action, owner, measured running image, held roots, native
 environment and finite validity interval. It checks current observations
 at both prebootstrap and sealed-stage boundaries. This SDK has no default
 enrollment or CLI route. Its returned proposal retains the same historical
-meaning. Live authorization and checked publication remain open.
+meaning. Operational enrollment and runtime qualification of publication remain open.
+
+The separate [checked SDK continuation](checked-local-public-apply.md) now has
+a source implementation retaining the original stage and appender through
+publication and receipt commitment under a one-use local grant. Its runtime
+verification and operational enrollment remain open. This does not change
+the historical proposer's return value or grant it effect authority.
 
 This readback checks the complete envelope chain under the existing 64 MiB
 segment bound, with one extra byte for EOF detection. It restores and checks

@@ -6,8 +6,10 @@ The canonical body and page codecs and the [read-only Linux export](read-only-pl
 are implemented. Private staging now uses the signed public apply owner and
 supports authenticated read-only inspection. Its bounded native fixture has
 executed. The engine also prepares the existing v2 publication intent from
-the active staging attempt. Intent append, exclusive publication, mutating
-recovery and public apply dispatch remain open.
+the active staging attempt. A separate [checked SDK continuation](checked-local-public-apply.md)
+has a source implementation for guarded intent, publication and receipt
+closeout. Runtime verification, operational enrollment, public-v2 recovery
+and public apply dispatch remain open.
 [Staging and native evidence](public-apply-staging.md) ·
 [Read-only inspection](public-stage-inspection.md)
 
@@ -85,7 +87,7 @@ JSON cannot select a bundle member or a source/destination root.
 
 ## Apply admission and authority
 
-Apply accepts the caller's explicit bundle, `--source-root DIR`,
+Planned CLI apply accepts the caller's explicit bundle, `--source-root DIR`,
 `--destination-root DIR`, `--profile DIR` and `--approve PLAN_DIGEST`.
 The root arguments convey the local intent to read one file and create one
 new file through authorized held directories. This is bounded operating

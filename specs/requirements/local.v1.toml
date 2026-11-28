@@ -1528,6 +1528,77 @@ target = "exact_cuts_and_profile_limit_preserve_accepted_boundary"
 
 
 [[coverage]]
+id = "checked-local-public-apply-continuation"
+status = "experimental"
+requirement_ids = ["R-015", "R-155"]
+acceptance_ids = ["A-015", "A-155"]
+invariant_ids = ["INV-003", "INV-013", "INV-018", "INV-019"]
+scope = "The separately approved Linux SDK consumes one local grant and retains original source, job records, metadata-ready stage, model session, journal, published inode and receipt across one guarded no-replace attempt and exact v2 terminal suffix readback. Each subsequent journal or receipt mutation requires fresh same-grant admission."
+limits = "Source integration only. No operational enrollment, CLI activation, public-v2 recovery writer, automatic retry, positive native SDK qualification or process-crash/power-loss claim. Compilation, execution and new policy proof gates remain open."
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/public_stage/grant/tests.rs"
+target = "a_poisoned_mutex_refuses_all_later_grant_acquisitions"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/public_stage/grant/tests.rs"
+target = "current_grant_admits_exact_closeout_and_refuses_reuse"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/public_stage/grant/tests.rs"
+target = "spent_rename_can_settle_after_revocation_without_closeout_authority"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/src/durable/suffix/tests.rs"
+target = "a_full_suffix_leaves_the_independent_eof_probe_outside_capture_capacity"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/src/durable/suffix/tests.rs"
+target = "all_framed_reads_and_the_terminal_probe_share_one_interruption_budget"
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "test"
+state = "defined"
+path = "crates/platform/exacopy-platform/src/linux/job/apply/tests.rs"
+target = "held_owner_and_plan_reject_same_byte_name_rebinding_and_preserve_both_inodes"
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "test"
+state = "defined"
+path = "crates/platform/exacopy-platform/src/linux/stage/file/metadata/checked_publication/tests.rs"
+target = "settlement_attempts_both_original_barriers_even_after_ambiguous_return_or_failure"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/public_stage/tests.rs"
+target = "approved_stage_reopens_with_exact_owner_and_preserves_uncertain_evidence"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/checked-local-public-apply.md"
+
+[[coverage]]
 id = "local-public-apply-qualification-consumer"
 status = "experimental"
 requirement_ids = ["R-015", "R-155"]
