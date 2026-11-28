@@ -48,6 +48,78 @@ pub fn inspect_selected_sync_genesis<'root, 'selection, Locator, Reader>(
 where
 	Reader: Read,
 {
+	inspect_selected(
+		root,
+		root_length,
+		root_buffer,
+		expected,
+		members,
+		open_member,
+		|_, _| {},
+	)
+}
+
+/// Exact canonical members retained by one successful authenticated selection.
+pub struct RetainedSyncGenesisMembers([Vec<u8>; 4]);
+
+impl RetainedSyncGenesisMembers {
+	/// Returns the root, left endpoint, right endpoint and leaf in signed order.
+	#[must_use]
+	pub fn members(&self) -> [&[u8]; 4] {
+		self.0.each_ref().map(Vec::as_slice)
+	}
+}
+
+/// Authenticates an exact selected genesis closure and retains the original member bytes.
+///
+/// As in [`inspect_selected_sync_genesis`], root admission and the independent named
+/// inventory precede child opens. Each retained member is copied from the same
+/// verified buffer, with no second read or path resolution.
+///
+/// # Errors
+/// Refuses incomplete or mismatched resources, malformed bytes and untrusted history.
+pub fn inspect_selected_sync_genesis_retained<'root, 'selection, Locator, Reader>(
+	root: impl Read,
+	root_length: NonZeroU16,
+	root_buffer: &'root mut [u8; MAX_MEMBER_BYTES],
+	expected: &ExpectedSyncGenesis<'selection>,
+	members: [SelectedSyncGenesisMember<Locator>; 3],
+	open_member: impl FnMut(Locator) -> io::Result<Reader>,
+) -> Result<
+	(
+		AuthenticatedSyncGenesis<'root, 'selection>,
+		RetainedSyncGenesisMembers,
+	),
+	SyncGenesisError,
+>
+where
+	Reader: Read,
+{
+	let mut retained = [const { Vec::new() }; 4];
+	let authenticated = inspect_selected(
+		root,
+		root_length,
+		root_buffer,
+		expected,
+		members,
+		open_member,
+		|index, bytes| retained[index].extend_from_slice(bytes),
+	)?;
+	Ok((authenticated, RetainedSyncGenesisMembers(retained)))
+}
+
+fn inspect_selected<'root, 'selection, Locator, Reader>(
+	root: impl Read,
+	root_length: NonZeroU16,
+	root_buffer: &'root mut [u8; MAX_MEMBER_BYTES],
+	expected: &ExpectedSyncGenesis<'selection>,
+	members: [SelectedSyncGenesisMember<Locator>; 3],
+	open_member: impl FnMut(Locator) -> io::Result<Reader>,
+	retain: impl FnMut(usize, &[u8]),
+) -> Result<AuthenticatedSyncGenesis<'root, 'selection>, SyncGenesisError>
+where
+	Reader: Read,
+{
 	let bytes = root_buffer
 		.get_mut(..usize::from(root_length.get()))
 		.ok_or(SyncGenesisError::Wire(WorkflowError::Size))?;
@@ -56,7 +128,13 @@ where
 		members: members.map(Some),
 		open_member,
 	};
-	verify_sync_genesis_with_inventory(root, expected, &mut resolver, SelectedMembers::check)
+	verify_sync_genesis_with_inventory(
+		root,
+		expected,
+		&mut resolver,
+		SelectedMembers::check,
+		retain,
+	)
 }
 
 struct SelectedMembers<Locator, Open> {

@@ -15,11 +15,16 @@ use exacopy_plan::workflow_sync::{
 
 mod assemble;
 mod manual;
+#[cfg(target_os = "linux")]
+pub mod recreate;
 
 pub use assemble::{
 	AssembledSyncGenesis, SyncGenesisRecords, SyncGenesisSelection, assemble_sync_genesis,
 };
-pub use manual::{SelectedSyncGenesisMember, inspect_selected_sync_genesis};
+pub use manual::{
+	RetainedSyncGenesisMembers, SelectedSyncGenesisMember, inspect_selected_sync_genesis,
+	inspect_selected_sync_genesis_retained,
+};
 
 /// Independent historical selection. Values must come from owner-approved state.
 #[derive(Clone, Copy)]
@@ -153,7 +158,7 @@ pub fn verify_sync_genesis<'root, 'selection>(
 	expected: &ExpectedSyncGenesis<'selection>,
 	resolver: &mut impl SyncGenesisResolver,
 ) -> Result<AuthenticatedSyncGenesis<'root, 'selection>, SyncGenesisError> {
-	verify_sync_genesis_with_inventory(root_bytes, expected, resolver, |_, _| Ok(()))
+	verify_sync_genesis_with_inventory(root_bytes, expected, resolver, |_, _| Ok(()), |_, _| {})
 }
 
 fn verify_sync_genesis_with_inventory<'root, 'selection, Resolver: SyncGenesisResolver>(
@@ -161,6 +166,7 @@ fn verify_sync_genesis_with_inventory<'root, 'selection, Resolver: SyncGenesisRe
 	expected: &ExpectedSyncGenesis<'selection>,
 	resolver: &mut Resolver,
 	check_inventory: impl FnOnce(&Resolver, [WorkflowRef; 3]) -> Result<(), SyncGenesisError>,
+	mut retain: impl FnMut(usize, &[u8]),
 ) -> Result<AuthenticatedSyncGenesis<'root, 'selection>, SyncGenesisError> {
 	use SyncGenesisError as Error;
 
@@ -215,11 +221,12 @@ fn verify_sync_genesis_with_inventory<'root, 'selection, Resolver: SyncGenesisRe
 
 	let mut buffer = [0; MAX_MEMBER_BYTES];
 	let mut ids = [root.id; 2];
-	for ((reference, facts), last_id) in root
+	for (index, ((reference, facts), last_id)) in root
 		.endpoints
 		.into_iter()
 		.zip(expected.endpoints)
 		.zip(&mut ids)
+		.enumerate()
 	{
 		let bytes = read_member(resolver, reference, &mut buffer)?;
 		let endpoint = decode_endpoint(authenticate(
@@ -236,13 +243,15 @@ fn verify_sync_genesis_with_inventory<'root, 'selection, Resolver: SyncGenesisRe
 			return Err(Error::Selection);
 		}
 		*last_id = endpoint.id;
+		retain(index + 1, bytes);
 	}
 	if ids[0] == ids[1] || ids.contains(&root.id) {
 		return Err(Error::Closure);
 	}
 
+	let leaf_bytes = read_member(resolver, root.leaf, &mut buffer)?;
 	let leaf = PairedBaselineLeaf::verify(
-		read_member(resolver, root.leaf, &mut buffer)?,
+		leaf_bytes,
 		LeafCommitment {
 			digest: root.leaf.digest,
 			kind: root.leaf.kind as u16,
@@ -270,6 +279,8 @@ fn verify_sync_genesis_with_inventory<'root, 'selection, Resolver: SyncGenesisRe
 			return Err(Error::Closure);
 		}
 	}
+	retain(3, leaf_bytes);
+	retain(0, root_bytes);
 	Ok(AuthenticatedSyncGenesis {
 		digest: expected.root_digest,
 		root,

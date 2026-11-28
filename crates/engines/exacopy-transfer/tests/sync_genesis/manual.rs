@@ -4,7 +4,10 @@ use std::io::{self, Cursor};
 use exacopy_plan::workflow_sync::{
 	MAX_MEMBER_BYTES, WorkflowError, WorkflowKind, WorkflowRef, decode_envelope, decode_root,
 };
-use exacopy_transfer::sync_genesis::{SelectedSyncGenesisMember, inspect_selected_sync_genesis};
+use exacopy_transfer::sync_genesis::{
+	SelectedSyncGenesisMember, inspect_selected_sync_genesis,
+	inspect_selected_sync_genesis_retained,
+};
 
 use super::{ExpectedSyncGenesis, Fixture, SyncGenesisError, first, owner};
 
@@ -157,4 +160,51 @@ fn wrong_manual_inventory_refuses_before_opening_any_child() {
 		);
 		assert!(matches!(result, Err(SyncGenesisError::Closure)));
 	}
+}
+
+#[test]
+fn retained_selection_copies_the_same_verified_bounded_bytes_without_reopening() {
+	let fixture = first();
+	let key = owner();
+	let expected = fixture.expected(&key);
+	let mut buffer = [0; MAX_MEMBER_BYTES];
+	let mut calls = Vec::new();
+	let (history, retained) = inspect_selected_sync_genesis_retained(
+		Cursor::new(&fixture.root),
+		extent(fixture.root.len()),
+		&mut buffer,
+		&expected,
+		selected_members(&fixture),
+		|locator| {
+			assert!(!calls.contains(&locator));
+			calls.push(locator);
+			Ok(Cursor::new(&fixture.members[locator]))
+		},
+	)
+	.unwrap();
+	let [left, right, leaf] = fixture.members.each_ref().map(Vec::as_slice);
+	assert_eq!(calls, [0, 1, 2]);
+	assert_eq!(history.digest(), expected.root_digest);
+	assert_eq!(
+		retained.members(),
+		[fixture.root.as_slice(), left, right, leaf]
+	);
+
+	let mut tailed = fixture.members[2].clone();
+	tailed.push(0);
+	assert!(matches!(
+		inspect_selected_sync_genesis_retained(
+			Cursor::new(&fixture.root),
+			extent(fixture.root.len()),
+			&mut buffer,
+			&expected,
+			selected_members(&fixture),
+			|locator| Ok(Cursor::new(if locator == 2 {
+				&tailed
+			} else {
+				&fixture.members[locator]
+			})),
+		),
+		Err(SyncGenesisError::Closure)
+	));
 }

@@ -13,6 +13,10 @@ use exacopy_transfer::sync_genesis::{
 #[path = "sync_genesis/manual.rs"]
 mod manual;
 
+#[cfg(target_os = "linux")]
+#[path = "sync_genesis/recreate.rs"]
+mod recreate;
+
 const VECTORS: &str = include_str!("../verification/sync_genesis/vectors.tsv");
 
 fn hex(value: &str) -> Vec<u8> {
