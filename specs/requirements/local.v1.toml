@@ -2542,3 +2542,110 @@ owner = "exacopy-journal"
 level = "documentation"
 state = "reported"
 path = "docs/architecture/managed-activation-claim.md"
+
+[[coverage]]
+id = "managed-sync-action-prepared-origin"
+status = "experimental"
+requirement_ids = ["R-272"]
+acceptance_ids = ["A-272"]
+invariant_ids = ["INV-026"]
+scope = "Private kind-45 prepared origin binds one independently selected allocation, predecessor, review, ordinary child and native-role projections to the exact sequence-one head and extent. The ordinary reader refuses kind 45. The private matcher explicitly opts in."
+limits = "Source-defined byte correspondence and refusal checks. P-087 selects only the independent canonical specimen. Its byte slice cannot establish physical EOF, native custody, enrollment or barriers. No restart or baseline advancement evidence is recorded."
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "obligation"
+state = "defined"
+path = "crates/storage/exacopy-journal/verification/obligations.toml"
+target = "P-087"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/managed_action_prepared.rs"
+target = "managed_action_prepared_refuses_nonexact_extent_and_envelope"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/managed_action_prepared.rs"
+target = "managed_action_prepared_checks_semantics_under_valid_envelopes"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/managed_action_prepared.rs"
+target = "managed_action_prepared_requires_independently_selected_fields_and_boundary"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/managed_action_prepared.rs"
+target = "ordinary_reader_refuses_managed_kind_at_every_complete_discriminator_cut"
+
+[[coverage]]
+id = "managed-sync-scoped-prepared-approval"
+status = "experimental"
+requirement_ids = ["R-272", "R-277"]
+acceptance_ids = ["A-272", "A-277"]
+invariant_ids = ["INV-026"]
+scope = "Opt-in Linux SDK approval preparation and scoped read-only verification for one reviewed recreate. Detached approval records bind the exact selection and independently expected origin. The owned ext4 fixture runs the ignored production selector with experimental-linux-managed-sync and experimental-linux-public-apply and requires the managed-recreate-read-only-prepared-component result after successful component checks and fixture cleanup."
+limits = "Source-defined fixtures and tests, with no execution outcome recorded here. The dual-feature fixture uses synthetic current-selector and attestation commitments. The detached private dialect provides no live grant, independently current head, attestation qualification, spend, child execution, restart or baseline advancement evidence."
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "native"
+state = "defined"
+path = "apps/exacopy-cli/tests/linux_managed_sync_production.rs"
+target = "production_managed_init_then_preview_exact_p063_history"
+
+[[coverage.evidence]]
+owner = "workspace"
+level = "configuration"
+state = "defined"
+path = ".github/workflows/linux-managed-sync-production-qualification.yml"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/managed_sync/activation/wire/tests.rs"
+target = "host_grant_parent_and_activation_match_independent_vectors"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/managed_sync/activation/wire/tests.rs"
+target = "approval_refuses_substituted_roles_and_stale_artifacts"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/managed_sync/activation/wire/tests.rs"
+target = "approval_refuses_wrong_signature_role_or_purpose"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/managed_sync/activation/wire/tests.rs"
+target = "approval_window_refuses_unavailable_or_exclusive_time"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/managed_sync/activation/wire/tests.rs"
+target = "approval_role_projections_match_independent_slot_and_segment_vectors"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/managed-recreate-preparation.md"

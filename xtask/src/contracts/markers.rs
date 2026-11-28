@@ -39,6 +39,7 @@ enum Marker {
 		width: usize,
 	},
 	Pair {
+		kind: Kind,
 		major: &'static str,
 		minor: &'static str,
 		features: &'static str,
@@ -65,6 +66,7 @@ impl Binding {
 				(Kind::DocumentPage, Status::Implemented)
 			}
 			Marker::Workflow { .. } => (Kind::WorkflowRecord, Status::ImplementedPrivate),
+			Marker::Pair { kind, .. } => (kind, Status::ImplementedPrivate),
 			Marker::PlanBody | Marker::PlanJson => (Kind::Plan, Status::Implemented),
 			_ => (Kind::TransferJournal, Status::ImplementedPrivate),
 		};
@@ -109,6 +111,7 @@ impl Marker {
 
 	const fn pair(major: &'static str, minor: &'static str, features: &'static str) -> Self {
 		Self::Pair {
+			kind: Kind::TransferJournal,
 			major,
 			minor,
 			features,
@@ -122,7 +125,18 @@ impl Marker {
 		features: &'static str,
 		magic: &'static str,
 	) -> Self {
+		Self::pair_kind_with_magic(Kind::TransferJournal, major, minor, features, magic)
+	}
+
+	const fn pair_kind_with_magic(
+		kind: Kind,
+		major: &'static str,
+		minor: &'static str,
+		features: &'static str,
+		magic: &'static str,
+	) -> Self {
 		Self::Pair {
+			kind,
 			major,
 			minor,
 			features,
@@ -186,6 +200,7 @@ impl Marker {
 				minor,
 				features,
 				magic,
+				..
 			} => (
 				format!(
 					"{}.{}",

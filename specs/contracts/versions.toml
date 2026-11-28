@@ -9,7 +9,56 @@ version = "1.0"
 required_features = 0
 magic = "EXMACT01"
 owner = "crates/storage/exacopy-journal/src/managed_activation_claim.rs"
-notes = "Fixed 496-byte unsigned occupancy record with CRC32C and an external domain-separated BLAKE3 commitment. Matching requires the full independently selected activation, host, owner, pair, predecessor, parent/action/grant, ordinary child, native-role projections and prepared boundary. Bytes confer no grant, acknowledged barrier or recovered writer. Native issuer and independent executable-parent, grant and identity-projection producers remain unimplemented. No new workflow or frame discriminant."
+notes = "Fixed 496-byte unsigned occupancy record with CRC32C and an external domain-separated BLAKE3 commitment. Matching requires the full independently selected activation, host, owner, pair, predecessor, parent/action/grant, ordinary child, native-role projections and prepared boundary. Detached approval artifacts and held native-role projection checks have a separate read-only SDK. Bytes confer no live grant, acknowledged barrier or recovered writer. Operational issuance, current selection, qualification and native spend remain pending. No new workflow or frame discriminant."
+
+[[contract]]
+id = "linux-managed-action-prepared"
+kind = "transfer_journal"
+status = "implemented_private"
+version = "1.0"
+required_features = 0
+owner = "crates/storage/exacopy-journal/src/managed_action_prepared.rs"
+notes = "Private kind-45 origin in the common V1 journal envelope. The exact 340-byte body and sequence-one 432-byte frame bind the independently selected allocation, predecessor, review, child and native-role projections. The ordinary reader refuses kind 45. The private matcher opts in and supplies a byte boundary only. Enrollment authenticity, physical EOF, custody and barriers require separate evidence."
+
+[[contract]]
+id = "linux-managed-approval-host"
+kind = "local_profile"
+status = "implemented_private"
+version = "1.0"
+required_features = 0
+magic = "EXMAH001"
+owner = "apps/exacopy-cli/src/assembly/linux/managed_sync/activation/wire.rs"
+notes = "Fixed-width 838-byte host selection binds the original managed profile, review and child, selected role projections and origin boundary, owner and approver selections, and the selected time window. Admission compares the exact body to an independently retained BLAKE3 commitment. Current selection and attestation require independent establishment."
+
+[[contract]]
+id = "linux-managed-approval-grant"
+kind = "workflow_record"
+status = "implemented_private"
+version = "1.0"
+required_features = 0
+magic = "EXMAG001"
+owner = "apps/exacopy-cli/src/assembly/linux/managed_sync/activation/wire.rs"
+notes = "Private detached 293-byte scoped grant body commits to the selected host, review, child, observed content and metadata, qualification reference, bounds and window for one recreate. It is linked by the selected activation signature. Live grant issuance and admission are separate."
+
+[[contract]]
+id = "linux-managed-approval-parent"
+kind = "workflow_record"
+status = "implemented_private"
+version = "1.0"
+required_features = 0
+magic = "EXMAE001"
+owner = "apps/exacopy-cli/src/assembly/linux/managed_sync/activation/wire.rs"
+notes = "Private detached 268-byte executable parent body binds the review and scoped grant, selected predecessor and P-063 pair, and exact ordinary child. This dialect is separate from WorkflowRoot encoding and provides no current-head check or execution authority."
+
+[[contract]]
+id = "linux-managed-approval-activation"
+kind = "workflow_record"
+status = "implemented_private"
+version = "1.0"
+required_features = 0
+magic = "EXMAA001"
+owner = "apps/exacopy-cli/src/assembly/linux/managed_sync/activation/wire.rs"
+notes = "Private detached 196-byte activation body and 64-byte Ed25519 signature bind the exact host, grant, executable parent, review, action and selected window under a dedicated signing purpose. Verification uses a separately selected approver and envelope commitment. The artifact supplies no native spend or live attestation."
 
 [[contract]]
 id = "workflow-sync-recreate-plan"

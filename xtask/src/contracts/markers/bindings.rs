@@ -1,4 +1,7 @@
-use super::{Binding, Marker};
+use super::{Binding, Kind, Marker};
+
+const MANAGED_APPROVAL_WIRE: &str =
+	"apps/exacopy-cli/src/assembly/linux/managed_sync/activation/wire.rs";
 
 pub(in crate::contracts) const BINDINGS: &[Binding] = &[
 	Binding::new(
@@ -9,6 +12,55 @@ pub(in crate::contracts) const BINDINGS: &[Binding] = &[
 			"VERSION_MINOR",
 			"REQUIRED_FEATURES",
 			"MAGIC",
+		),
+	),
+	Binding::new(
+		"linux-managed-action-prepared",
+		"crates/storage/exacopy-journal/src/managed_action_prepared.rs",
+		Marker::pair("VERSION_MAJOR", "VERSION_MINOR", "REQUIRED_FEATURES"),
+	),
+	Binding::new(
+		"linux-managed-approval-host",
+		MANAGED_APPROVAL_WIRE,
+		Marker::pair_kind_with_magic(
+			Kind::LocalProfile,
+			"VERSION_MAJOR",
+			"VERSION_MINOR",
+			"REQUIRED_FEATURES",
+			"HOST_MAGIC",
+		),
+	),
+	Binding::new(
+		"linux-managed-approval-grant",
+		MANAGED_APPROVAL_WIRE,
+		Marker::pair_kind_with_magic(
+			Kind::WorkflowRecord,
+			"VERSION_MAJOR",
+			"VERSION_MINOR",
+			"REQUIRED_FEATURES",
+			"GRANT_MAGIC",
+		),
+	),
+	Binding::new(
+		"linux-managed-approval-parent",
+		MANAGED_APPROVAL_WIRE,
+		Marker::pair_kind_with_magic(
+			Kind::WorkflowRecord,
+			"VERSION_MAJOR",
+			"VERSION_MINOR",
+			"REQUIRED_FEATURES",
+			"PARENT_MAGIC",
+		),
+	),
+	Binding::new(
+		"linux-managed-approval-activation",
+		MANAGED_APPROVAL_WIRE,
+		Marker::pair_kind_with_magic(
+			Kind::WorkflowRecord,
+			"VERSION_MAJOR",
+			"VERSION_MINOR",
+			"REQUIRED_FEATURES",
+			"ACTIVATION_MAGIC",
 		),
 	),
 	Binding::new(

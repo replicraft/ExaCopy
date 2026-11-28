@@ -49,6 +49,70 @@ owner = "claim.rs"
 }
 
 #[test]
+fn paired_nonjournal_records_require_their_declared_kind() {
+	use super::super::{Contract, Kind};
+	use crate::test_support::Fixture;
+
+	let fixture = Fixture::new();
+	fixture.write(
+		"approval.rs",
+		r#"const VERSION_MAJOR: u8 = 1;
+const VERSION_MINOR: u8 = 0;
+const REQUIRED_FEATURES: u16 = 0;
+const HOST_MAGIC: &[u8; 8] = b"EXMAH001";
+const GRANT_MAGIC: &[u8; 8] = b"EXMAG001";"#,
+	);
+	for (kind, name, other, marker, magic) in [
+		(
+			Kind::LocalProfile,
+			"local_profile",
+			"workflow_record",
+			"HOST_MAGIC",
+			"EXMAH001",
+		),
+		(
+			Kind::WorkflowRecord,
+			"workflow_record",
+			"local_profile",
+			"GRANT_MAGIC",
+			"EXMAG001",
+		),
+	] {
+		let binding = super::Binding::new(
+			"fixture-approval",
+			"approval.rs",
+			Marker::pair_kind_with_magic(
+				kind,
+				"VERSION_MAJOR",
+				"VERSION_MINOR",
+				"REQUIRED_FEATURES",
+				marker,
+			),
+		);
+		let declared = |name| {
+			let wire = format!(
+				r#"id = "fixture-approval"
+kind = "{name}"
+status = "implemented_private"
+version = "1.0"
+required_features = 0
+magic = "{magic}"
+owner = "approval.rs"
+"#
+			);
+			toml::from_str::<Contract>(&wire).expect("parse approval contract")
+		};
+		assert_eq!(binding.check(fixture.root(), &declared(name)), Ok(()));
+		for wrong in [other, "transfer_journal"] {
+			let refusal = binding
+				.check(fixture.root(), &declared(wrong))
+				.expect_err("refuse the wrong private record kind");
+			assert!(refusal.contains("expected kind"), "{refusal}");
+		}
+	}
+}
+
+#[test]
 fn owned_report_strings_require_literal_values_in_any_scope() {
 	for initializer in [
 		r#"Report { schema: "fixture.report", schema_version: "1.0" }"#,

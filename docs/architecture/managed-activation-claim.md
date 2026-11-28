@@ -79,14 +79,16 @@ handoff. The live spend must follow actual file and directory barriers
 and exact same-held readback. Unknown outcomes require reconciliation.
 The native issuer remains unimplemented.
 
-The executable parent and scoped grant artifact producers are also
-unimplemented. The existing review-only action page stays unexecutable;
-an in-memory `LocalApplyGrant` is not a serialized grant artifact. The
-caller must adopt an explicit owner-role rule and independently verify
-that all referenced child records satisfy it. This record's single profile
-field cannot establish ownership from opaque child digests. Native role
-projection formats must bind the qualified held objects and their roles.
-They cannot be inferred from these bytes.
+The [read-only preparation SDK](managed-recreate-preparation.md) produces
+detached host, scoped grant, executable parent and signed activation bytes.
+It compares native role projections from the original held objects. Its
+first profile requires the same canonical owner key and owner profile for
+the managed review and ordinary child, with distinct approver and attestor
+keys. These byte and custody checks supply no operational issuer, current
+selector or qualification. The review-only action page stays unexecutable;
+an in-memory `LocalApplyGrant` is separate from the serialized grant.
+This claim's single profile field cannot establish child ownership, and
+its opaque role fields cannot select or establish native objects.
 
 No workflow kind or journal-frame discriminant is allocated by this
 format. In particular, workflow kind 6 remains `SyncBaseline`.
