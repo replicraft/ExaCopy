@@ -113,6 +113,7 @@ def run_gate(command, gate, link, log, trace):
             "RUSTC_WRAPPER": "",
             "RUSTC_WORKSPACE_WRAPPER": "",
             "CARGO_INCREMENTAL": "0",
+            "EXACOPY_VERIFICATION_SCRATCH": scratch,
         }
         if gate == "tlc":
             environment["TLC_LOG_DIR"] = scratch

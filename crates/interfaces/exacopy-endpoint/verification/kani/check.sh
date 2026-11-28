@@ -94,7 +94,7 @@ else
 		harnesses+=(--harness "${plan%=*}")
 	done
 fi
-kani_log=$(mktemp "${TMPDIR:-/tmp}/exacopy-endpoint-kani.XXXXXX")
+kani_log=$(mktemp "${EXACOPY_VERIFICATION_SCRATCH:-${TMPDIR:-/tmp}}/exacopy-endpoint-kani.XXXXXX")
 trap 'rm -f "$kani_log"' EXIT
 kani_status=0
 # Leave reachability and unwinding checks enabled. The outer evidence recorder
