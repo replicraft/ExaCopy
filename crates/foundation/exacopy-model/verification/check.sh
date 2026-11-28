@@ -22,7 +22,8 @@ case ${1:-all} in
 		python3 -B "$verification_dir/tla/check-continuation.py"
 		"$verification_dir/tla/check-protected-replacement.sh"
 		python3 -B "$verification_dir/tla/check-witness-namespace.py"
-		exec python3 -B "$verification_dir/tla/check-witnessed-closeout.py"
+		python3 -B "$verification_dir/tla/check-witnessed-closeout.py"
+		exec "$verification_dir/tla/check-managed-action.sh"
 		;;
 	miri) check_miri ;;
 	all)

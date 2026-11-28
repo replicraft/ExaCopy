@@ -142,3 +142,32 @@ model_bounds = [
     "The same runner requires the full-width separately verified production comparator contract before accepting the composition evidence. Exactly that comparator may be substituted in the decision harness.",
 ]
 oracle = "Run the actual comparator contract against exact signed i128 nanosecond ordering and check its four boundary covers. Invoke the real decision (with only that verified comparator) against the conjunction of selected half-open windows, exact refusal precedence and non-widening qualification. Require all twelve decision covers."
+
+[[obligation]]
+id = "P-085"
+requirement_ids = ["R-272"]
+source = "verification/tla/ManagedAction.tla"
+symbols = [
+    "CreateRequiresConfirmedIntent",
+    "AtMostOneChildCreation",
+    "AtMostOneActivation",
+    "AssociationRequiresBoundReceipt",
+    "AssociationRequiresConfirmedEvidence",
+]
+assumptions = [
+    "A trusted persistent issuer atomically spends the exact activation before parent append. Its state survives the modeled process restart independently of the physical ledger. This issuer is a design premise, not an implemented native capability.",
+    "The coordinator receives truthful authenticated projections of the selected scope, held exclusive lease, finite live authority, physical append and barrier outcomes, bounded independent readback, and exact child v2 terminal evidence. The model does not establish these projections or their native implementation.",
+    "The child uses an assumed no-clobber primitive. The model checks proposed action sequencing only; it supplies no Rust correspondence, baseline advancement, native restart, process-crash qualification, or power-loss claim.",
+]
+gates = ["tlc"]
+
+[obligation.tlc]
+spec = "verification/tla/ManagedAction.tla"
+config = "verification/tla/ManagedAction.cfg"
+negative_control = "verification/tla/ManagedActionTrustPristine.cfg"
+seeds = ["TLC seed and fingerprint index 0."]
+model_bounds = [
+    "Two competing claimants, one selected activation, one prepared action slot, one child attempt per claimant, and at most one process restart.",
+    "Separate submitted, persisted and confirmed parent records, finite child settlement and receipt-binding choices, and an independent persistent activation claim.",
+]
+oracle = "Exhaust the healthy action-ordering graph with nonzero attendance for both confirmed records, child creation, settlement, uncertainty and restart refusal. Require five named single-guard counterexamples for early creation, duplicate creation, pristine-ledger reactivation, foreign receipt association and early association confirmation. Acceptance requires complete raw reports; retain bounded diagnostics and input and report hashes on refusal."

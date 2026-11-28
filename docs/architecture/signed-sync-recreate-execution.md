@@ -5,7 +5,8 @@ action for an owner-managed Linux subject with a CommonPresent baseline and
 one absent peer. It composes the existing checked local copy executor with
 an independent managed activation and an owner-private action journal.
 This document records the selected design direction. The execution frontend,
-effect capabilities, action records and executable proof model are pending.
+effect capabilities and action records are pending. The bounded model below
+records a separate design prerequisite.
 Exact wire and replay contracts remain subject to separate selection.
 
 The [signed recreate export](signed-sync-recreate-export.md) remains a review
@@ -158,3 +159,19 @@ assessment still requires fresh complete reads of both roots after
 receipt validation. Restart reconciliation and P-028 baseline
 publication remain separate. This profile contains no baseline
 persistence or pointer update.
+
+## Model prerequisite
+
+[P-085](../../crates/foundation/exacopy-model/verification/tla/MANAGED_ACTION.md)
+checks the proposed ordering in a finite model with two claimants, one
+activation and one restart. A trusted durable issuer atomically spends the
+activation independently of the ledger. That issuer and truthful held
+observations are model assumptions; the native issuer remains unimplemented.
+An apparently pristine ledger cannot replace that authority after restart.
+
+The gate checks child creation after confirmed intent and association of the
+same child's verified terminal projection. Its results apply to the exact
+model, configurations and tool inputs in the evidence record. Complete paired
+successor observations, preservation of the old baseline and publication of a
+successor, Rust correspondence and native restart reconciliation remain
+separate requirements.

@@ -2470,3 +2470,25 @@ level = "native"
 state = "defined"
 path = "apps/exacopy-cli/tests/windows_sftp_capture.rs"
 target = "captures_real_sftp_only_into_the_selected_original_ntfs_job"
+
+[[coverage]]
+id = "managed-sync-action-ordering-model"
+status = "experimental"
+requirement_ids = ["R-272"]
+acceptance_ids = ["A-272"]
+invariant_ids = ["INV-026"]
+scope = "P-085 explores a bounded one-action coordinator with two claimants and one modeled restart. It checks confirmed kind-27 before child creation, one-use activation under an assumed durable issuer, and kind-28 confirmation only for exact bound child terminal evidence."
+limits = "Design prerequisite for selected R-272/A-272/INV-026 sequencing. It models no baseline generation, pointer, complete paired postconditions, real crash or effect recovery, conflict-version retention, Rust correspondence, or native barriers. The persistent issuer is unimplemented and assumed."
+
+[[coverage.evidence]]
+owner = "exacopy-model"
+level = "obligation"
+state = "defined"
+path = "crates/foundation/exacopy-model/verification/obligations.toml"
+target = "P-085"
+
+[[coverage.evidence]]
+owner = "exacopy-model"
+level = "documentation"
+state = "reported"
+path = "crates/foundation/exacopy-model/verification/tla/MANAGED_ACTION.md"
