@@ -290,3 +290,102 @@ fn interrupted_write_rechecks_the_same_cursor_and_zero_progress_stops_it() {
 	assert_eq!(fs::read(fixture.stage()).unwrap(), PREFIX);
 	assert!(!fixture.target().exists());
 }
+
+#[test]
+fn late_incumbent_stops_active_suffix_before_and_after_submitted_bytes() {
+	const TAIL: &[u8; 4] = b"tail";
+	const INCUMBENT: &[u8] = b"independent closing incumbent";
+
+	for already_written in [0, 2] {
+		let fixture = Fixture::new();
+		let stage = fixture.stage();
+		let source = fixture.scratch.path("independent-source");
+		let target = fixture.target();
+		let source_bytes = [PREFIX, TAIL].concat();
+		super::super::private_file(&source, &source_bytes);
+		let source_before = fs::symlink_metadata(&source).unwrap();
+		let stage_before = fs::symlink_metadata(&stage).unwrap();
+		let observed_source = fs::read(&source).unwrap();
+		let lease = fixture.lease();
+		let inventory = inventory(&lease);
+		let selected = selection(&inventory);
+		let reader = lease.read_retained_prefix(&inventory, selected).unwrap();
+		let base = PREFIX.len() as u64;
+		let end = base + TAIL.len() as u64;
+		let mut compared = [0; PREFIX.len()];
+		reader.read_exact_at(0, &mut compared).unwrap();
+		assert_eq!(compared, observed_source[..PREFIX.len()]);
+		let mut writer = reader
+			.sync_adopted(base, |_, _| Ok::<_, ()>(()))
+			.unwrap()
+			.open_suffix_writer(end, |_, _| Ok::<_, ()>(()))
+			.unwrap();
+		writer
+			.begin_range(&issued_tail(TAIL.len() as u64), |_| Ok::<_, ()>(()))
+			.unwrap();
+
+		let suffix = &observed_source[PREFIX.len()..];
+		let submitted_end = base
+			.checked_add(u64::try_from(already_written).unwrap())
+			.unwrap();
+		if already_written != 0 {
+			writer
+				.write_next_observed(
+					&suffix[..already_written],
+					|| Ok::<_, ()>(()),
+					|actual, effect| {
+						assert_eq!(actual, selected);
+						let SuffixEffect::Write { offset, length } = effect else {
+							panic!("expected a private suffix write");
+						};
+						assert!((base..submitted_end).contains(&offset));
+						assert!(length > 0);
+						assert_eq!(
+							offset.checked_add(u64::try_from(length).unwrap()),
+							Some(submitted_end)
+						);
+						Ok(())
+					},
+				)
+				.unwrap();
+		}
+		let physical = fs::symlink_metadata(&stage).unwrap();
+		assert_eq!(physical.len(), submitted_end);
+		assert!(!target.exists());
+		super::super::private_file(&target, INCUMBENT);
+		let target_before = fs::symlink_metadata(&target).unwrap();
+		let result = writer.write_next_observed(
+			&suffix[already_written..],
+			|| -> Result<(), ()> { panic!("an incumbent must refuse before extra observation") },
+			|_, _| -> Result<(), ()> { panic!("an incumbent must refuse before authority") },
+		);
+		match (already_written, result) {
+			(0, Err(SuffixError::Observation(StageError::IdentityChanged))) => {}
+			(
+				2,
+				Err(SuffixError::Submitted {
+					confirmed_end,
+					cause: StageError::IdentityChanged,
+				}),
+			) => assert_eq!(confirmed_end, base + 2),
+			(case, unexpected) => {
+				panic!("unexpected refusal after {case} submitted bytes: {unexpected:?}")
+			}
+		}
+
+		assert!(matches!(
+			writer.sync_range(|_, _| -> Result<(), ()> {
+				panic!("a stopped suffix must not reach its checkpoint barrier")
+			}),
+			Err(SuffixError::Observation(StageError::PriorBarrierFailure))
+		));
+		assert!(matches!(writer.finish(), Err(StageError::Unflushed)));
+		assert_same_file(
+			&stage,
+			&stage_before,
+			&observed_source[..PREFIX.len() + already_written],
+		);
+		assert_same_file(&source, &source_before, &source_bytes);
+		assert_same_file(&target, &target_before, INCUMBENT);
+	}
+}
