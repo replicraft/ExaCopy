@@ -40,6 +40,8 @@ mod history;
 mod manual_recreate;
 #[path = "managed_sync_production/post_creation.rs"]
 mod post_creation;
+#[path = "../verification/managed_sync_production/record_scope.rs"]
+mod record_scope;
 #[path = "managed_sync_production/rig.rs"]
 mod rig;
 
@@ -366,6 +368,7 @@ fn exercise(
 		assert_eq!(read(&history_fd, name.as_bytes())?, artifact.bytes);
 	}
 	assert_live(live, [b"abc", b"xyzz"])?;
+	record_scope::exercise(sandbox, &profile, &profile_dir, &roots)?;
 	Ok((live_identity, Some(cli_sha256)))
 }
 
