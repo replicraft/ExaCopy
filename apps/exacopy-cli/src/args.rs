@@ -1,6 +1,6 @@
-#[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
-use std::num::NonZeroU64;
 use std::num::NonZeroUsize;
+#[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
+use std::num::{NonZeroU32, NonZeroU64};
 use std::path::PathBuf;
 
 mod parser;
@@ -89,13 +89,17 @@ pub(crate) enum SyncManagedCommand {
 		owner_key: [u8; 32],
 		selection: [u8; 16],
 	},
-	PrepareRecreate {
-		profile: PathBuf,
-		owner_key: [u8; 32],
-		selection: [u8; 16],
-		from: exacopy_model::SyncSide,
-		reviewed: exacopy_model::SyncConflict,
-	},
+	PrepareRecreate(ManagedSyncRecreateArgs),
+}
+
+#[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
+pub(crate) struct ManagedSyncRecreateArgs {
+	pub(crate) profile: PathBuf,
+	pub(crate) owner_key: [u8; 32],
+	pub(crate) selection: [u8; 16],
+	pub(crate) from: exacopy_model::SyncSide,
+	pub(crate) reviewed: exacopy_model::SyncConflict,
+	pub(crate) expires_in_seconds: Option<NonZeroU32>,
 }
 
 #[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]

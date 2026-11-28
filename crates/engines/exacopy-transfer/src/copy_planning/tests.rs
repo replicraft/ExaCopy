@@ -378,3 +378,48 @@ fn forbidden_held_identity_is_checked_before_source_metadata_or_content() {
 	assert!(matches!(result, Err(PlanningError::SourceForbidden)));
 	assert_eq!(*trace.borrow(), [Visit::Target]);
 }
+
+#[test]
+fn optional_expiry_changes_only_the_canonical_body_and_refuses_nonfuture_values() {
+	let trace = Trace::default();
+	let request = request();
+	let legacy = plan(request, Source::regular(&trace, b"a"), None, &mut [0]).unwrap();
+	let plan_with_expiry = |expiry| {
+		trace.borrow_mut().clear();
+		plan_create_new_with_expiry(
+			request,
+			expiry,
+			|_| {
+				trace.borrow_mut().push(Visit::Open);
+				Ok(Source::regular(&trace, b"a"))
+			},
+			|_| true,
+			&Target {
+				trace: &trace,
+				checks: Cell::new(0),
+				occupied_check: None,
+			},
+			&mut [0],
+		)
+	};
+	let default = plan_with_expiry(None).unwrap();
+	assert_eq!(default.canonical_body(), legacy.canonical_body());
+	assert_eq!(default.digest(), legacy.digest());
+
+	let same_second = UnixTimestamp::new(10, 6).unwrap();
+	let expiring = plan_with_expiry(Some(same_second)).unwrap();
+	assert_eq!(expiring.canonical_page(), legacy.canonical_page());
+	assert_eq!(expiring.page_ref(), legacy.page_ref());
+	assert_ne!(expiring.digest(), legacy.digest());
+	let body = PlanBody::from_canonical_cbor(expiring.digest(), expiring.canonical_body()).unwrap();
+	assert_eq!(body.fields().expires_at, Some(same_second));
+	assert!(body.fields().approval_required);
+
+	for expiry in [UnixTimestamp::new(10, 4).unwrap(), request.observed_at] {
+		assert!(matches!(
+			plan_with_expiry(Some(expiry)),
+			Err(PlanningError::InvalidExpiry)
+		));
+		assert!(trace.borrow().is_empty());
+	}
+}

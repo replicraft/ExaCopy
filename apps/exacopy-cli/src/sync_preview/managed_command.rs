@@ -31,7 +31,7 @@ pub(crate) fn run_stdio(
 ) -> u8 {
 	let unavailable = match &command {
 		SyncManagedCommand::Init(_) => "exacopy: managed sync Init refused (output_unavailable)",
-		SyncManagedCommand::PrepareRecreate { .. } => {
+		SyncManagedCommand::PrepareRecreate(_) => {
 			"exacopy: managed sync prepare-recreate refused (output_unavailable)"
 		}
 		_ => return run(command, stdin, stdout, stderr),
@@ -62,21 +62,9 @@ fn run(
 				INCONCLUSIVE
 			}
 		},
-		SyncManagedCommand::PrepareRecreate {
-			profile,
-			owner_key,
-			selection,
-			from,
-			reviewed,
-		} => recreate::run(
-			&profile,
-			owner_key,
-			selection,
-			(from, reviewed),
-			stdin,
-			stdout,
-			stderr,
-		),
+		SyncManagedCommand::PrepareRecreate(command) => {
+			recreate::run(&command, stdin, stdout, stderr)
+		}
 		SyncManagedCommand::Preview {
 			profile,
 			owner_key,

@@ -1,11 +1,11 @@
 use std::ffi::OsString;
-use std::num::NonZeroU64;
+use std::num::{NonZeroU32, NonZeroU64};
 
 use clap::builder::OsStringValueParser;
 use clap::{Arg, ArgAction, ArgMatches, Command as Cli};
 use exacopy_model::{SyncConflict, SyncSide};
 
-use crate::args::{ManagedSyncInitArgs, SyncManagedCommand};
+use crate::args::{ManagedSyncInitArgs, ManagedSyncRecreateArgs, SyncManagedCommand};
 
 use super::{INIT, PROFILE, path};
 
@@ -13,6 +13,7 @@ pub(super) const NAME: &str = "sync-managed";
 const PREVIEW: &str = "preview";
 const PREPARE_RECREATE: &str = "prepare-recreate";
 const FROM: &str = "from";
+const EXPIRES_IN_SECONDS: &str = "expires-in-seconds";
 const REVIEWED_CONFLICT: &str = "reviewed-conflict";
 const PROFILE_IDENTITY: &str = "profile-identity";
 const PROFILE_DEVICE: &str = "profile-device";
@@ -91,7 +92,15 @@ pub(super) fn definition() -> Cli {
 				REVIEWED_CONFLICT,
 				"CONFLICT",
 				"Select deletion-against-unchanged or edit-against-deletion.",
-			)),
+			))
+			.arg(
+				value(
+					EXPIRES_IN_SECONDS,
+					"NONZERO_DECIMAL",
+					"Bound the unsigned child Plan lifetime in seconds from its creation.",
+				)
+				.required(false),
+			),
 		)
 }
 
@@ -176,13 +185,20 @@ pub(super) fn command(mut command: ArgMatches) -> Option<SyncManagedCommand> {
 				b"edit-against-deletion" => SyncConflict::EditAgainstDeletion { edited: from },
 				_ => return None,
 			};
-			Some(SyncManagedCommand::PrepareRecreate {
-				profile,
-				owner_key,
-				selection,
-				from,
-				reviewed,
-			})
+			let expires_in_seconds = match bytes(&args, EXPIRES_IN_SECONDS) {
+				Some(raw) => Some(NonZeroU32::new(u32::try_from(decimal(raw)?).ok()?)?),
+				None => None,
+			};
+			Some(SyncManagedCommand::PrepareRecreate(
+				ManagedSyncRecreateArgs {
+					profile,
+					owner_key,
+					selection,
+					from,
+					reviewed,
+					expires_in_seconds,
+				},
+			))
 		}
 		_ => None,
 	}

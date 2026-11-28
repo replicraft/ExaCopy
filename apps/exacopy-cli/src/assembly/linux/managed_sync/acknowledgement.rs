@@ -5,6 +5,7 @@ use std::path::Path;
 
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use exacopy_model::{SyncConflict, SyncSide};
+use exacopy_plan::UnixTimestamp;
 use exacopy_platform::linux::{FileIdentity, OWNER_SEED_BYTES, SyncProfileStore};
 use exacopy_transfer::linux::sync_preview::FirstSyncPreview;
 
@@ -108,7 +109,7 @@ pub(crate) fn prepare_recreate_acknowledged(
 	selection: [u8; 16],
 	acknowledgement: &[u8],
 	(from, reviewed): (SyncSide, SyncConflict),
-	ids: ManualRecreatePlanIds,
+	(ids, expires_at): (ManualRecreatePlanIds, Option<UnixTimestamp>),
 	scratch: &mut [u8],
 ) -> Result<(ManualRecreateCandidate, NonZeroU64), ManualRecreateError> {
 	with_acknowledgement(
@@ -116,7 +117,7 @@ pub(crate) fn prepare_recreate_acknowledged(
 		owner_key,
 		selection,
 		acknowledgement,
-		|store, pin| prepare_held(store, pin, from, reviewed, ids, scratch),
+		|store, pin| prepare_held(store, pin, from, reviewed, ids, expires_at, scratch),
 	)
 }
 

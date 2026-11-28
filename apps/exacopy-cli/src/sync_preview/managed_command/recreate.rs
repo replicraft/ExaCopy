@@ -1,16 +1,16 @@
 use std::fmt::Write as _;
 use std::io::{self, Read, Write};
-use std::num::NonZeroU64;
-use std::path::Path;
+use std::num::{NonZeroU32, NonZeroU64};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use exacopy_model::{SyncConflict, SyncSide};
-use exacopy_plan::{PlanBody, PlanCreationTime, plan_reference};
+use exacopy_plan::{PlanBody, PlanCreationTime, UnixTimestamp, plan_reference};
 use exacopy_platform::linux::FileIdentity;
 use serde::Serialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use crate::args::ManagedSyncRecreateArgs;
 use crate::assembly::linux::managed_sync::{
 	ManualRecreateCandidate, ManualRecreateError, ManualRecreatePlanIds,
 	prepare_recreate_acknowledged,
@@ -60,28 +60,25 @@ impl Report {
 }
 
 pub(super) fn run(
-	profile: &Path,
-	owner_key: [u8; 32],
-	selection: [u8; 16],
-	reviewed: (SyncSide, SyncConflict),
+	command: &ManagedSyncRecreateArgs,
 	stdin: &mut impl Read,
 	stdout: &mut impl Write,
 	stderr: &mut impl Write,
 ) -> u8 {
 	let observed = (|| {
 		let receipt = read_bounded(stdin, MANAGED_ACK_BYTES)?;
-		let ids = plan_ids()?;
+		let plan = plan_ids(command.expires_in_seconds)?;
 		prepare_recreate_acknowledged(
-			profile,
-			owner_key,
-			selection,
+			&command.profile,
+			command.owner_key,
+			command.selection,
 			&receipt,
-			reviewed,
-			ids,
+			(command.from, command.reviewed),
+			plan,
 			&mut [0; SCRATCH_BYTES],
 		)
 		.map_err(recreate_reason)
-		.and_then(|(candidate, revision)| review(selection, revision, &candidate))
+		.and_then(|(candidate, revision)| review(command.selection, revision, &candidate))
 	})();
 	let (outcome, status) = match observed {
 		Ok(review) => (Outcome::Prepared { review }, 0),
@@ -159,20 +156,41 @@ fn recreate_reason(error: ManualRecreateError) -> &'static str {
 	}
 }
 
-fn plan_ids() -> Result<ManualRecreatePlanIds, &'static str> {
+fn plan_ids(
+	duration: Option<NonZeroU32>,
+) -> Result<(ManualRecreatePlanIds, Option<UnixTimestamp>), &'static str> {
 	let elapsed = SystemTime::now()
 		.duration_since(UNIX_EPOCH)
 		.map_err(|_| "clock_unavailable")?;
 	let creation = PlanCreationTime::new(elapsed).ok_or("clock_unavailable")?;
+	let observed_at = creation.timestamp();
+	let expires_at = plan_expiry(observed_at, duration)?;
 	let mut entropy = [0; 10];
 	kernel_random(&mut entropy).map_err(|_| "entropy_unavailable")?;
-	Ok(ManualRecreatePlanIds {
+	let ids = ManualRecreatePlanIds {
 		plan: creation.plan_id(&entropy),
 		entry: fresh_reference()?,
 		source_view: fresh_reference()?,
 		measurement: fresh_reference()?,
-		observed_at: creation.timestamp(),
-	})
+		observed_at,
+	};
+	Ok((ids, expires_at))
+}
+
+fn plan_expiry(
+	created_at: UnixTimestamp,
+	duration: Option<NonZeroU32>,
+) -> Result<Option<UnixTimestamp>, &'static str> {
+	let Some(duration) = duration else {
+		return Ok(None);
+	};
+	let seconds = created_at
+		.seconds()
+		.checked_add(i64::from(duration.get()))
+		.ok_or("child_plan_expiry_overflow")?;
+	UnixTimestamp::new(seconds, created_at.nanoseconds())
+		.map(Some)
+		.map_err(|_| "child_plan_expiry_overflow")
 }
 
 fn fresh_reference() -> Result<Uuid, &'static str> {

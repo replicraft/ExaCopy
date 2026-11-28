@@ -155,6 +155,40 @@ where
 	S: StagingSource<Identity: Into<JobFileIdentity>>,
 	D: CopyDestinationView + ?Sized,
 {
+	plan_create_new_with_expiry(
+		request,
+		None,
+		open_source,
+		allow_source,
+		destination,
+		scratch,
+	)
+}
+
+/// Measures one selected source and constructs a public create-new Plan
+/// whose exact canonical body includes the selected optional expiry.
+///
+/// Records the selected expiry for independent eligibility checks. Separate
+/// approval and eligibility are required for any application.
+///
+/// # Errors
+/// Refuses an expiry at or before creation before measuring either endpoint.
+/// The remaining observations and refusals match [`plan_create_new`].
+pub fn plan_create_new_with_expiry<'name, S, D>(
+	request: CreateNewRequest<'name>,
+	expires_at: Option<UnixTimestamp>,
+	open_source: impl FnOnce(UnixComponent<'name>) -> Result<S, S::Error>,
+	allow_source: impl FnOnce(S::Identity) -> bool,
+	destination: &D,
+	scratch: &mut [u8],
+) -> Result<PlannedCopy, PlanningError<S::Error, D::Error>>
+where
+	S: StagingSource<Identity: Into<JobFileIdentity>>,
+	D: CopyDestinationView + ?Sized,
+{
+	if expires_at.is_some_and(|expiry| expiry <= request.observed_at) {
+		return Err(PlanningError::InvalidExpiry);
+	}
 	let limits = admit_request(request, scratch.len())?;
 	check_target(destination, request.destination.component)?;
 	let source = open_source(request.source.component).map_err(PlanningError::OpenSource)?;
@@ -165,7 +199,13 @@ where
 	let measured = manifest::measure(&source, scratch).map_err(PlanningError::Measure)?;
 	check_target(destination, request.destination.component)?;
 	check_source::<_, Infallible>(&source).map_err(PlanningError::SourcePolicy)?;
-	encode(request, limits, source.identity().into(), measured)
+	encode(
+		request,
+		expires_at,
+		limits,
+		source.identity().into(),
+		measured,
+	)
 }
 
 fn admit_request<S, D>(
@@ -208,6 +248,7 @@ fn check_target<S, D: CopyDestinationView + ?Sized>(
 
 fn encode<S, D>(
 	request: CreateNewRequest<'_>,
+	expires_at: Option<UnixTimestamp>,
 	limits: PlanResourceLimits,
 	identity: JobFileIdentity,
 	measurement: manifest::Measurement,
@@ -237,7 +278,7 @@ fn encode<S, D>(
 		plan_id: request.plan_id,
 		operation: PlanOperation::Copy,
 		created_at: request.observed_at,
-		expires_at: None,
+		expires_at,
 		source_roots: vec![request.source.root_id],
 		destination_root: request.destination.root_id,
 		entry_pages: vec![page_ref],

@@ -14,7 +14,7 @@ use exacopy_platform::linux::{
 };
 use exacopy_transfer::copy_planning::{
 	CreateNewRequest, PlanSelection, PlannedCopy, PlanningError,
-	linux_baseline_metadata_policy_digest, plan_create_new,
+	linux_baseline_metadata_policy_digest, plan_create_new_with_expiry,
 };
 use exacopy_transfer::linux::sync_preview::{
 	FirstSyncPreview, HeldSyncPreview as _, MAX_PREVIEW_FILE_BYTES, preview_with_history,
@@ -148,7 +148,7 @@ pub fn prepare_manual_recreate(
 	scratch: &mut [u8],
 ) -> Result<ManualRecreateCandidate, ManualRecreateError> {
 	let store = selected_store(selection)?;
-	prepare_held(&store, &selection.pin, from, reviewed, ids, scratch)
+	prepare_held(&store, &selection.pin, from, reviewed, ids, None, scratch)
 }
 
 pub(super) fn prepare_held(
@@ -157,6 +157,7 @@ pub(super) fn prepare_held(
 	from: SyncSide,
 	reviewed: SyncConflict,
 	ids: ManualRecreatePlanIds,
+	expires_at: Option<UnixTimestamp>,
 	scratch: &mut [u8],
 ) -> Result<ManualRecreateCandidate, ManualRecreateError> {
 	with_history_view(store, pin, |baseline, current, key| {
@@ -206,8 +207,9 @@ pub(super) fn prepare_held(
 			},
 			observed_at: ids.observed_at,
 		};
-		let child = plan_create_new(
+		let child = plan_create_new_with_expiry(
 			request,
+			expires_at,
 			|name| {
 				if name == subject {
 					Ok(BorrowedSource(view))

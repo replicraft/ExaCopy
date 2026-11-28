@@ -12,6 +12,8 @@ use crate::{linux_staging::StageFailure, manifest};
 pub enum PlanningError<Source, Target> {
 	/// An identity was malformed or the selected paths or root aliases were contradictory.
 	InvalidIdentity,
+	/// The selected expiry did not follow Plan creation.
+	InvalidExpiry,
 	/// The supplied stream buffer fell outside the supported bound.
 	InvalidBuffer,
 	/// An existing object occupied the selected target.
@@ -36,6 +38,7 @@ impl<S: fmt::Display, D: fmt::Display> fmt::Display for PlanningError<S, D> {
 	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
 			Self::InvalidIdentity => formatter.write_str("plan identity or root alias is invalid"),
+			Self::InvalidExpiry => formatter.write_str("plan expiry must follow creation"),
 			Self::InvalidBuffer => {
 				formatter.write_str("plan measurement buffer is outside its bound")
 			}

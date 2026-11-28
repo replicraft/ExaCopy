@@ -1,7 +1,7 @@
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt as _;
 
-use exacopy_plan::{PlanBody, PlanEntriesPage, PlanOperation};
+use exacopy_plan::{PlanBody, PlanEntriesPage, PlanOperation, UnixTimestamp};
 use rustix::fs::{FlockOperation, flock};
 
 use super::*;
@@ -41,7 +41,16 @@ pub(super) fn exercise(
 		assert!(output.stderr.is_empty());
 		let report: Value = serde_json::from_slice(&output.stdout)?;
 		assert_envelope(&report, "prepared");
-		assert_prepared(&report["review"], approval, inputs, right_id)?;
+		assert_prepared(&report["review"], approval, inputs, right_id, None)?;
+
+		let mut expiring = args.clone();
+		expiring.extend(["--expires-in-seconds".into(), "120".into()]);
+		let output = cli.invoke(&expiring, acknowledgement, None)?;
+		assert_eq!(output.status.code(), Some(0), "stderr {:?}", output.stderr);
+		assert!(output.stderr.is_empty());
+		let report: Value = serde_json::from_slice(&output.stdout)?;
+		assert_envelope(&report, "prepared");
+		assert_prepared(&report["review"], approval, inputs, right_id, Some(120))?;
 		let mut wrong = args.clone();
 		*wrong.last_mut().unwrap() = "deletion-against-unchanged".into();
 		refused(
@@ -109,6 +118,7 @@ fn assert_prepared(
 	approval: &Approval,
 	inputs: &Inputs<'_>,
 	(device, inode): (u64, u64),
+	lifetime_seconds: Option<i64>,
 ) -> TestResult {
 	let subject = super::super::SUBJECT;
 	assert_eq!(review["selection"]["id"], hex(&approval.selection));
@@ -154,6 +164,22 @@ fn assert_prepared(
 	let fields = body.fields();
 	assert!(fields.approval_required);
 	assert_eq!(fields.operation, PlanOperation::Copy);
+	assert_eq!(
+		fields.expires_at,
+		lifetime_seconds.map(|seconds| {
+			UnixTimestamp::new(
+				fields.created_at.seconds() + seconds,
+				fields.created_at.nanoseconds(),
+			)
+			.unwrap()
+		})
+	);
+	if lifetime_seconds.is_some() {
+		let mut unbounded = fields.clone();
+		unbounded.expires_at = None;
+		let unbounded = PlanBody::new(unbounded)?;
+		assert!(PlanBody::from_canonical_cbor(body.digest(), unbounded.canonical_cbor()).is_err());
+	}
 	let [reference] = fields.entry_pages.as_slice() else {
 		return Err("expected one entry page".into());
 	};

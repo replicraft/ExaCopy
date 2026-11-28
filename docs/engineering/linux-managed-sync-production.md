@@ -176,6 +176,13 @@ hex. A prepared report sets `approval_required: true`, `authority: "none"`,
 the prepared report to stdout. Selection, classification, planning and output
 refusals use exit `2`.
 
+Add `--expires-in-seconds N` to select a finite child Plan lifetime, using a
+positive decimal integer through `4294967295`. The deadline uses the Plan's
+original creation timestamp, preserves its nanoseconds, and is included before
+canonical encoding and digest calculation. Omitting the option preserves the
+existing no-expiry output. This changes the unsigned child Plan; approval,
+current eligibility checks and baseline advancement remain separate.
+
 The predecessor identifies the selected authenticated history. The command makes
 no current-head assertion. It provides no parent action, approval ledger,
 publication permit, copy or other mutation, or baseline advancement.

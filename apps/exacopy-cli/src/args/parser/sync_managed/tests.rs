@@ -246,13 +246,14 @@ fn prepare_recreate_requires_explicit_direction_conflict_and_receipt() {
 		"--reviewed-conflict",
 		"edit-against-deletion",
 	]);
-	let Command::SyncManaged(SyncManagedCommand::PrepareRecreate {
+	let Command::SyncManaged(SyncManagedCommand::PrepareRecreate(ManagedSyncRecreateArgs {
 		profile,
 		owner_key,
 		selection,
 		from,
 		reviewed,
-	}) = from_args(&args).unwrap()
+		expires_in_seconds: None,
+	})) = from_args(&args).unwrap()
 	else {
 		panic!("expected a manual recreate review");
 	};
@@ -268,13 +269,13 @@ fn prepare_recreate_requires_explicit_direction_conflict_and_receipt() {
 	);
 	args[10] = "left";
 	args[12] = "deletion-against-unchanged";
-	let Ok(Command::SyncManaged(SyncManagedCommand::PrepareRecreate {
+	let Ok(Command::SyncManaged(SyncManagedCommand::PrepareRecreate(ManagedSyncRecreateArgs {
 		from: SyncSide::Left,
 		reviewed: SyncConflict::DeletionAgainstUnchanged {
 			absent: SyncSide::Right,
 		},
 		..
-	})) = from_args(&args)
+	}))) = from_args(&args)
 	else {
 		panic!("expected exact left-to-right deletion review");
 	};
@@ -288,6 +289,22 @@ fn prepare_recreate_requires_explicit_direction_conflict_and_receipt() {
 		candidate[index] = invalid;
 		assert!(from_args(&candidate).is_err());
 	}
+	let mut expiring = args.clone();
+	expiring.extend(["--expires-in-seconds", "4294967295"]);
+	let Command::SyncManaged(SyncManagedCommand::PrepareRecreate(expiring_args)) =
+		from_args(&expiring).unwrap()
+	else {
+		panic!("expected an expiring manual recreate review");
+	};
+	assert_eq!(expiring_args.expires_in_seconds, NonZeroU32::new(u32::MAX));
+	for invalid in ["0", "01", "-1", "4294967296", "1.5"] {
+		*expiring.last_mut().unwrap() = invalid;
+		assert!(from_args(&expiring).is_err());
+	}
+	let mut preview = PREVIEW_ARGS.to_vec();
+	preview.extend(["--expires-in-seconds", "1"]);
+	assert!(from_args(&preview).is_err());
+
 	args.extend(["--from", "right"]);
 	assert!(from_args(&args).is_err());
 }
