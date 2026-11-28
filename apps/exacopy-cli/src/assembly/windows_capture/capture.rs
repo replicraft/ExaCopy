@@ -94,7 +94,7 @@ impl<'lease> CaptureContext<'_, 'lease> {
 		let capture = capture_live(source, selected.epoch, writer, &mut ledger, &mut scratch)
 			.await
 			.map_err(|cause| Error::Capture(Box::new(cause)))?;
-		let (_held_stage, stream) = capture.into_parts();
+		let (held_stage, stream) = capture.into_parts();
 		let report = WindowsFreshCaptureReport {
 			selection: selected,
 			stage_directory: roles.stage_directory,
@@ -104,6 +104,11 @@ impl<'lease> CaptureContext<'_, 'lease> {
 		};
 		self.progress.update(|state| state.measured = Some(report));
 		self.effects.check_current().map_err(Error::Grant)?;
-		Ok(report)
+		let prefix = ledger
+			.live
+			.inspect_current(&selection, roles, stream.length)
+			.map_err(|cause| Error::TerminalHistory(Box::new(cause)))?;
+		drop(held_stage);
+		Ok(WindowsFreshCaptureReport { prefix, ..report })
 	}
 }

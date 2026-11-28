@@ -27,6 +27,8 @@ pub enum WindowsCaptureError {
 	Barrier,
 	/// Append, barrier or physical readback did not establish the next boundary.
 	Durable(DurableJournalError),
+	/// Authenticated readback differs from the last confirmed live capture boundary or extent.
+	ReplayBoundary,
 	/// The frame was unavailable or failed envelope checks.
 	Read(FrameReadError),
 	/// The terminal EOF probe failed.
@@ -51,6 +53,7 @@ impl fmt::Display for WindowsCaptureError {
 				formatter.write_str("Windows capture requires full file synchronization")
 			}
 			Self::Durable(source) => write!(formatter, "Windows capture journal: {source}"),
+			Self::ReplayBoundary => formatter.write_str("Windows capture replay boundary mismatch"),
 			Self::Read(source) => write!(formatter, "Windows capture frame: {source}"),
 			Self::Terminal(source) => write!(formatter, "Windows capture EOF probe: {source}"),
 			Self::TrailingData => {
@@ -72,11 +75,11 @@ impl error::Error for WindowsCaptureError {
 	}
 }
 
-/// A capture history ended without clean logical EOF.
-/// Its optional prefix stops at the last authenticated record before the failure.
+/// The selected capture history or terminal boundary could not be established.
+/// Any retained prefix is diagnostic and conveys no recovery authority.
 #[derive(Debug)]
 pub struct WindowsCaptureInspectionError {
-	/// Last authenticated prefix, if the preparation was accepted.
+	/// Last authenticated prefix when available for this refusal.
 	pub prefix: Option<WindowsCapturePrefix>,
 	/// Reason no complete inspection result was returned.
 	pub source: WindowsCaptureError,

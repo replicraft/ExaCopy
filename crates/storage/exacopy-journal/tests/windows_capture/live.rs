@@ -16,6 +16,8 @@ struct Observations {
 	written: RefCell<Vec<u8>>,
 	active_guard: Cell<bool>,
 	syncs: Cell<u32>,
+	replay_bytes: RefCell<Option<Vec<u8>>>,
+	eof_reads: Cell<u32>,
 	refuse_readback: Cell<bool>,
 }
 
@@ -45,7 +47,20 @@ impl Read for Segment<'_> {
 		if self.facts.refuse_readback.get() {
 			return Err(io::ErrorKind::PermissionDenied.into());
 		}
-		self.cursor.read(buffer)
+		let replay_bytes = self.facts.replay_bytes.borrow();
+		let count = if let Some(bytes) = replay_bytes.as_ref() {
+			let mut reader = Cursor::new(bytes.as_slice());
+			reader.set_position(self.cursor.position());
+			let count = reader.read(buffer)?;
+			self.cursor.set_position(reader.position());
+			count
+		} else {
+			self.cursor.read(buffer)?
+		};
+		if count == 0 && !buffer.is_empty() {
+			self.facts.eof_reads.set(self.facts.eof_reads.get() + 1);
+		}
+		Ok(count)
 	}
 }
 
@@ -206,4 +221,93 @@ fn same_writer_advances_only_after_a_guarded_sync_and_exact_readback() {
 		Err(Error::Durable(DurableJournalError::Retired))
 	));
 	assert_eq!(*facts.written.borrow(), retained);
+}
+
+#[test]
+fn terminal_replay_requires_input_eof_and_the_exact_live_boundary() {
+	const EXTENT: u64 = 17;
+	const RANGE_DIGEST: [u8; 32] = [0x5a; 32];
+	let fixture = Fixture::new();
+	let selected = fixture.selection(&SINGLE_TARGET);
+	let prepared = fixture.prepared(&SINGLE_TARGET, EXTENT);
+	let prepared_digest = digest(&prepared);
+	let wire_range = |range_digest| {
+		let body = range_body(prepared_digest, prepared_digest, 1, 0, EXTENT, range_digest);
+		frame(
+			&signed_payload(&body, RANGE_DOMAIN, &fixture.key),
+			RANGE_KIND,
+			2,
+			prepared_digest,
+		)
+	};
+	let tail = wire_range(RANGE_DIGEST);
+	let original = [prepared.as_slice(), &tail].concat();
+	let replacement = [prepared.as_slice(), &wire_range([0x5b; 32])].concat();
+	assert_eq!(original.len(), replacement.len());
+	let alternate = inspect(replacement.as_slice(), &selected, fixture.roles).unwrap();
+	assert_eq!(alternate.observed_extent(), EXTENT);
+	assert_eq!(alternate.covered_bytes(), EXTENT);
+	assert_eq!(alternate.head().sequence(), 2);
+	assert_ne!(alternate.head().digest(), digest(&tail));
+
+	for (replace, decline, expected_extent) in [
+		(false, false, EXTENT),
+		(true, false, EXTENT),
+		(false, false, EXTENT + 1),
+		(false, true, EXTENT),
+	] {
+		let facts = Observations::default();
+		let writer = DurableJournal::from_new_segment(Segment {
+			cursor: Cursor::new(Vec::new()),
+			facts: &facts,
+		})
+		.unwrap();
+		let mut live = append_prepared(
+			writer,
+			&selected,
+			fixture.roles,
+			EXTENT,
+			&fixture.key,
+			|_, _| Ok(facts.enter()),
+		)
+		.unwrap();
+		live.append_range(
+			WindowsCaptureRangeObservation {
+				stage_directory: fixture.roles.stage_directory,
+				stage_payload: fixture.roles.stage_payload,
+				end_offset: EXTENT,
+				digest: RANGE_DIGEST,
+			},
+			&fixture.key,
+			|_, _| Ok(facts.enter()),
+		)
+		.unwrap();
+		let confirmed = live.prefix();
+		assert_eq!(confirmed.head().digest(), digest(&tail));
+		assert_eq!(confirmed.segment_end(), original.len() as u64);
+		let prior_eof_reads = facts.eof_reads.get();
+		if replace {
+			*facts.replay_bytes.borrow_mut() = Some(replacement.clone());
+		}
+		facts.refuse_readback.set(decline);
+
+		let result = live.inspect_current(&selected, fixture.roles, expected_extent);
+		if decline {
+			let refusal = result.unwrap_err();
+			assert!(refusal.prefix.is_none());
+			assert!(matches!(refusal.source, Error::Read(_)));
+		} else {
+			assert!(facts.eof_reads.get() > prior_eof_reads);
+			if replace || expected_extent != EXTENT {
+				let refusal = result.unwrap_err();
+				assert!(refusal.prefix.is_none());
+				assert!(matches!(refusal.source, Error::ReplayBoundary));
+			} else {
+				assert_eq!(result.unwrap(), confirmed);
+			}
+		}
+		assert_eq!(*facts.written.borrow(), original);
+		assert_eq!(facts.syncs.get(), 2);
+		assert!(!facts.active_guard.get());
+	}
 }

@@ -1,3 +1,4 @@
+use std::io::BufReader;
 use std::{fmt, io};
 
 use ed25519_dalek::{SigningKey, VerifyingKey};
@@ -9,8 +10,8 @@ use crate::windows_bootstrap::WindowsBootstrapFileIdentity;
 
 use super::codec::{sign_prepared, sign_range};
 use super::{
-	WindowsCaptureError as Error, WindowsCapturePrefix, WindowsCaptureRoles,
-	WindowsCaptureSelection, replay,
+	WindowsCaptureError as Error, WindowsCaptureInspectionError, WindowsCapturePrefix,
+	WindowsCaptureRoles, WindowsCaptureSelection, replay,
 };
 
 /// The caller's barrier-confirmed range end and digest from the originally held stage.
@@ -89,6 +90,39 @@ impl<S: JournalSegment> WindowsCaptureLive<S> {
 	#[must_use]
 	pub const fn prefix(&self) -> WindowsCapturePrefix {
 		self.prefix
+	}
+
+	/// Consumes this writer and authenticates the same held segment from byte zero.
+	///
+	/// Compares the complete replayed prefix to the last confirmed append cursor
+	/// and its signed source extent to the caller's independent stream observation.
+	/// The caller retains native custody and must confirm physical EOF with the
+	/// original adapter. This grants no further write or recovery authority.
+	///
+	/// # Errors
+	/// Refuses a retired or changed writer, a bad selection or semantic history,
+	/// a failed read or EOF probe, and a different confirmed boundary or extent.
+	pub fn inspect_current(
+		self,
+		selection: &WindowsCaptureSelection<'_>,
+		roles: WindowsCaptureRoles,
+		expected_extent: u64,
+	) -> Result<WindowsCapturePrefix, WindowsCaptureInspectionError> {
+		let input =
+			self.journal
+				.into_readback()
+				.map_err(|cause| WindowsCaptureInspectionError {
+					prefix: None,
+					source: Error::Durable(cause),
+				})?;
+		let replayed = replay::inspect(BufReader::new(input), selection, roles)?;
+		if replayed != self.prefix || replayed.observed_extent() != expected_extent {
+			return Err(WindowsCaptureInspectionError {
+				prefix: None,
+				source: Error::ReplayBoundary,
+			});
+		}
+		Ok(replayed)
 	}
 
 	/// Appends one exact range using the same original writer and a fresh guard.

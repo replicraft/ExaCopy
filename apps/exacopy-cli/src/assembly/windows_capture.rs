@@ -13,6 +13,7 @@ use exacopy_journal::windows_bootstrap::{
 	WindowsBootstrapBytes, WindowsBootstrapFileIdentity, WindowsBootstrapInspectionError,
 	WindowsBootstrapRoles, WindowsBootstrapSelection, inspect, job_directory_name,
 };
+use exacopy_journal::windows_capture::WindowsCaptureInspectionError;
 use exacopy_platform::ProtectedSnapshotError;
 use exacopy_platform::windows::{
 	WindowsAuthenticatedCaptureScope, WindowsBootstrapLayout, WindowsBootstrapRoleObservations,
@@ -141,6 +142,8 @@ pub enum WindowsCaptureError {
 	Native(WindowsCaptureStageError),
 	/// Opening or appending the guarded fresh capture journal failed.
 	Ledger(WindowsCaptureLedgerError),
+	/// The last measured history could not be authenticated on the original held sibling.
+	TerminalHistory(Box<WindowsCaptureInspectionError>),
 	/// The production live capture engine refused a boundary.
 	Capture(Box<WindowsCaptureTransferError>),
 	/// The active invocation reached its deadline. Private artifacts may remain.
@@ -164,6 +167,7 @@ impl fmt::Display for WindowsCaptureError {
 			Self::Source(cause) => cause.fmt(formatter),
 			Self::Native(cause) => cause.fmt(formatter),
 			Self::Ledger(cause) => cause.fmt(formatter),
+			Self::TerminalHistory(cause) => cause.fmt(formatter),
 			Self::Capture(cause) => cause.fmt(formatter),
 			Self::Deadline => formatter.write_str("the capture invocation reached its deadline"),
 		}
@@ -185,6 +189,7 @@ impl std::error::Error for WindowsCaptureError {
 			Self::Source(cause) => Some(cause),
 			Self::Native(cause) => Some(cause),
 			Self::Ledger(cause) => Some(cause),
+			Self::TerminalHistory(cause) => Some(cause.as_ref()),
 			Self::Capture(cause) => Some(cause.as_ref()),
 			Self::Deadline => None,
 		}
@@ -209,7 +214,8 @@ impl std::error::Error for WindowsCaptureError {
 /// Any refused or uncertain effect preserves physical artifacts for inspection.
 /// The error retains reached historical observations and the original cause.
 /// A successful return requires full source and stage verification, confirmed
-/// live journal boundaries, and observed shutdown on the original route.
+/// live journal boundaries, authenticated readback using the original held
+/// sibling, and observed shutdown on the original route.
 pub async fn capture_fresh_windows_sftp<B>(
 	request: WindowsFreshCapture<'_>,
 	broker: B,
@@ -357,7 +363,7 @@ where
 		extent,
 		progress,
 	};
-	let report = timeout_at(
+	let captured = timeout_at(
 		deadline,
 		stage.with_capture(
 			approved.target,
@@ -371,7 +377,18 @@ where
 	)
 	.await
 	.map_err(|_| Error::Deadline)?
-	.map_err(Error::Native)??;
+	.map_err(Error::Native)?;
+	let report = match captured {
+		Ok(report) => report,
+		Err(cause @ Error::TerminalHistory(_)) => {
+			drop(live_source);
+			if routed.close(deadline).await.is_ok() {
+				progress.update(|state| state.route_shutdown_confirmed = true);
+			}
+			return Err(cause);
+		}
+		Err(cause) => return Err(cause),
+	};
 	progress.update(|state| state.native_closeout_confirmed = true);
 	drop(live_source);
 	owner.check_completion(binding).map_err(Error::Retry)?;

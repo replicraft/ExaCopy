@@ -6,7 +6,7 @@ mod suffix;
 mod tests;
 
 use std::fmt;
-use std::io::{BufReader, Read as _, SeekFrom};
+use std::io::{BufReader, Read, SeekFrom};
 
 use exacopy_endpoint::{JournalFileBarrier, JournalSegment};
 
@@ -113,6 +113,23 @@ impl<S: JournalSegment> DurableJournal<S> {
 
 	pub(crate) fn current_boundary(&self) -> Option<(ChainHead, u64)> {
 		self.writer.as_ref().map(|writer| (writer.head(), self.end))
+	}
+
+	// Consume the writer and lend no further mutation capability.
+	pub(crate) fn into_readback(self) -> Result<impl Read, DurableJournalError> {
+		let writer = self.writer.ok_or(DurableJournalError::Retired)?;
+		let mut segment = writer.into_inner();
+		check_segment(&mut segment, self.end)?;
+		let actual = segment
+			.seek(SeekFrom::Start(0))
+			.map_err(DurableJournalError::Inspect)?;
+		if actual != 0 {
+			return Err(DurableJournalError::UnexpectedCursor {
+				expected: 0,
+				actual,
+			});
+		}
+		Ok(segment)
 	}
 
 	pub(crate) fn confirm_current_frame_using(
