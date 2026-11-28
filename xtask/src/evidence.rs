@@ -10,6 +10,7 @@ use crate::finding::Findings;
 use crate::verification::{Gate, Obligation, Project, owned_file};
 use crate::workspace;
 
+mod nextest;
 mod record;
 
 use record::{Outcome, Record};
@@ -79,7 +80,7 @@ fn check_records(
 			);
 			continue;
 		}
-		if gate != Gate::Kani {
+		if matches!(gate, Gate::Lean | Gate::Tlc) {
 			let log = PathBuf::from(format!("{}.log", record.evidence_id));
 			if !matches_digest(directory, &log, record.artifact_digest.as_deref(), findings) {
 				continue;
@@ -227,10 +228,17 @@ fn matches_gate(
 	findings: &mut Findings,
 ) -> bool {
 	match gate {
-		Gate::Rust => entry
-			.rust
-			.as_ref()
-			.is_some_and(|link| oracle_matches(record, &link.oracle) && record.seeds == link.seeds),
+		Gate::Rust => entry.rust.as_ref().is_some_and(|link| {
+			oracle_matches(record, &link.oracle)
+				&& record.seeds == link.seeds
+				&& nextest::matches_log(
+					directory,
+					record,
+					&project.package_name,
+					&link.test,
+					findings,
+				)
+		}),
 		Gate::Lean => entry.lean.as_ref().is_some_and(|link| {
 			record.detail.theorem.as_deref() == Some(&link.theorem)
 				&& oracle_matches(record, &link.oracle)

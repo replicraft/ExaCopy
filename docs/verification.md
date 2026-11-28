@@ -86,6 +86,16 @@ the complete stream must match the record's artifact digest. Empty Kani
 selections preserve their existing command and profile. Credit
 still requires the pinned source, tool, complete raw log and harness results.
 
+Rust evidence requires the pinned nextest 0.9.151 terminal report for one
+pass of the exact selected package and test. The recorder and importer use
+the same frozen 77-case grammar corpus, including the supported slow-test
+form. They reject contradictory statuses, missing or extra attendance,
+duplicate sessions, truncated reports and arbitrary nonempty output. Parsing
+and hashing share one held stream, bounded to 4 KiB per physical line and
+16 MiB per log. Read failures preserve the original process status and raw
+log and block credit. This validates the recorded transcript and its source
+bindings; it does not independently attest the tool's execution.
+
 The [P-071 Linux reservation fixture](architecture/remote-witnessed-closeout.md#p-071-linux-native-reservation)
 is an adapter test selected on a Linux filesystem that supplies the needed
 native primitives. Its result belongs to that recorded fixture profile.

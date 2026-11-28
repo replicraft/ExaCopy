@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 from datetime import datetime, timezone
@@ -8,6 +9,18 @@ import unittest
 from unittest import mock
 
 import record_evidence
+
+
+NEXTEST_VERSION = "cargo-nextest 0.9.151 (6b3f99457 2026-11-02)"
+NEXTEST_PASSED = (
+    "    Finished test profile [unoptimized + debuginfo] target(s) in 0.05s\n"
+    "────────────\n"
+    " Nextest run ID 062784f5-77a9-423a-8198-b2086ed77771 with nextest profile: default\n"
+    "    Starting 1 test across 2 binaries (3 tests skipped)\n"
+    "        PASS [   0.004s] (1/1) example::integration tests::round_trip\n"
+    "────────────\n"
+    "     Summary [   0.005s] 1 test run: 1 passed, 3 skipped\n"
+).encode()
 
 
 class RustGateFeatureTests(unittest.TestCase):
@@ -48,6 +61,134 @@ class RustGateFeatureTests(unittest.TestCase):
             with self.subTest(features=features), self.assertRaisesRegex(ValueError, error):
                 link["features"] = features
                 record_evidence.validate_gate_features(self.package, self.obligation, "rust")
+
+
+class RustGateTranscriptTests(unittest.TestCase):
+    def test_exact_nextest_transcript_corpus(self):
+        path = record_evidence.ROOT / "xtask/verification/nextest-transcript-corpus.json"
+        corpus = json.loads(path.read_text(encoding="utf-8"))
+        self.assertTrue(corpus["cases"])
+        with TemporaryDirectory() as temporary:
+            log = Path(temporary) / "nextest.log"
+            for case in corpus["cases"]:
+                with self.subTest(case=case["id"]):
+                    data = case["transcript"].encode("utf-8")
+                    log.write_bytes(data)
+                    self.assertEqual(
+                        record_evidence.rust_log_result(log, corpus["package"], corpus["test"]),
+                        (hashlib.sha256(data).hexdigest(), case["accepted"]),
+                    )
+
+    def test_refuses_invalid_utf8_and_forged_physical_boundaries(self):
+        with TemporaryDirectory() as temporary:
+            log = Path(temporary) / "nextest.log"
+            for prefix in (b"\xff\n", b"x" * record_evidence.NEXTEST_MAX_LINE_BYTES):
+                with self.subTest(length=len(prefix)):
+                    data = prefix + NEXTEST_PASSED
+                    log.write_bytes(data)
+                    self.assertEqual(
+                        record_evidence.rust_log_result(log, "example", "tests::round_trip"),
+                        (hashlib.sha256(data).hexdigest(), False),
+                    )
+
+    def test_log_bounds_refuse_oversize_with_the_digest_of_the_complete_log(self):
+        with TemporaryDirectory() as temporary:
+            log = Path(temporary) / "nextest.log"
+            log.write_bytes(NEXTEST_PASSED)
+            with mock.patch.object(record_evidence, "NEXTEST_MAX_TRANSCRIPT_BYTES", len(NEXTEST_PASSED) - 1):
+                self.assertEqual(
+                    record_evidence.rust_log_result(log, "example", "tests::round_trip"),
+                    (hashlib.sha256(NEXTEST_PASSED).hexdigest(), False),
+                )
+
+    def test_read_error_after_summary_cannot_establish_eof_or_hand_off_a_digest(self):
+        reader = mock.MagicMock()
+        reader.__enter__.return_value = reader
+        reader.readline.side_effect = [
+            *NEXTEST_PASSED.splitlines(keepends=True), OSError("read failed before EOF"),
+        ]
+        log = Path("nextest.log")
+        with mock.patch.object(Path, "open", return_value=reader) as open_log:
+            with self.assertRaisesRegex(OSError, "read failed before EOF"):
+                record_evidence.rust_log_result(log, "example", "tests::round_trip")
+        open_log.assert_called_once_with("rb")
+        self.assertTrue(all(
+            call == mock.call(record_evidence.NEXTEST_MAX_LINE_BYTES + 1)
+            for call in reader.readline.call_args_list
+        ))
+
+    def test_record_preserves_real_status_and_raw_log(self):
+        for fixture, version, status, read_error, expected, explanation in (
+            (NEXTEST_PASSED, NEXTEST_VERSION, 0, None, "pass", "Recorded from tool execution"),
+            (NEXTEST_PASSED, "\tcargo-nextest\t0.9.151", 0, None, "pass", "Recorded from tool execution"),
+            (b"arbitrary output\n", NEXTEST_VERSION, 0, None, "fail", "exact selected test"),
+            (NEXTEST_PASSED, "cargo-nextest 0.9.1510", 0, None, "blocked", "requires cargo-nextest"),
+            (NEXTEST_PASSED, "cargo-nextest\u00a00.9.151", 0, None, "blocked", "requires cargo-nextest"),
+            (NEXTEST_PASSED, NEXTEST_VERSION, 0, OSError("read failed"), "blocked", "could not be read"),
+            (NEXTEST_PASSED, NEXTEST_VERSION, 100, None, "fail", "status 100"),
+            (NEXTEST_PASSED, NEXTEST_VERSION, 124, None, "fail", "status 124"),
+            (NEXTEST_PASSED, NEXTEST_VERSION, -9, None, "fail", "status -9"),
+            (NEXTEST_PASSED, NEXTEST_VERSION, -9, OSError("hash read failed"), "blocked",
+             "status -9. Its retained log could not be read"),
+        ):
+            with (
+                self.subTest(version=version, status=status, expected=expected),
+                TemporaryDirectory() as temporary,
+            ):
+                root = Path(temporary)
+                (root / "Cargo.lock").write_bytes(b"fixture lockfile\n")
+                (root / "source.rs").write_bytes(b"fixture source\n")
+                obligation = {
+                    "id": "P-123", "source": "source.rs", "assumptions": [],
+                    "rust": {"test": "tests::round_trip", "oracle": "Fixture oracle."},
+                }
+                revision = "1234567890abcdef"
+                process = mock.MagicMock()
+                process.__enter__.return_value = process
+                process.wait.return_value = status
+                if status == 124:
+                    process.wait.side_effect = [
+                        subprocess.TimeoutExpired(["mock-nextest"], record_evidence.RUN_TIMEOUT_SECONDS), -9,
+                    ]
+                    process.pid = 123
+
+                def start(*_args, stdout, **_kwargs):
+                    stdout.write(fixture)
+                    return process
+
+                real_digest = record_evidence.digest
+
+                def digest(path):
+                    if read_error and status != 0 and path.suffix == ".log":
+                        raise read_error
+                    return real_digest(path)
+
+                with (
+                    mock.patch.object(record_evidence, "ROOT", root),
+                    mock.patch.object(record_evidence, "revision", return_value=(revision, False)),
+                    mock.patch.object(record_evidence, "tool_version", return_value=("cargo-nextest", version)),
+                    mock.patch.object(record_evidence.subprocess, "Popen", side_effect=start),
+                    mock.patch.object(record_evidence.os, "killpg", create=True),
+                    mock.patch.object(record_evidence, "digest", side_effect=digest),
+                    mock.patch.object(record_evidence, "rust_log_result",
+                                      wraps=record_evidence.rust_log_result,
+                                      side_effect=read_error if status == 0 else None) as scan,
+                ):
+                    self.assertEqual(record_evidence.record_gate(
+                        root, "example", root, obligation, "rust", revision, "x86_64-unknown-linux-gnu",
+                    ), expected == "pass")
+                    self.assertEqual(scan.call_count, int(status == 0))
+
+                report_file, = root.glob("*.json")
+                retained_log, = root.glob("*.log")
+                report = json.loads(report_file.read_text(encoding="utf-8"))
+                self.assertEqual(report["outcome"], expected)
+                self.assertEqual(report["exit_status"], status)
+                self.assertIn(explanation, report["review"]["justification"])
+                self.assertEqual(report["redacted_command"][-3:], ["--", "--exact", "tests::round_trip"])
+                raw = fixture + b"\nEvidence command timed out.\n" if status == 124 else fixture
+                self.assertEqual(retained_log.read_bytes(), raw)
+                self.assertEqual(report["artifact_digest"], None if read_error else hashlib.sha256(raw).hexdigest())
 
 
 class KaniGateFeatureTests(unittest.TestCase):
@@ -196,9 +337,9 @@ class KaniGateFeatureTests(unittest.TestCase):
                  ["strict", "protocol"], [runner, "kani"] + feature_args),
                 ("lean", {"generated": "generated.lean"}, ["proof-extraction"],
                  ["verification/check.sh", "lean"]),
-                ("rust", {"test": "exact"}, [],
+                ("rust", {"test": "tests::round_trip"}, [],
                  ["cargo", "nextest", "run", "--locked", "-p", "example",
-                  "--no-tests", "fail", "--", "--exact", "exact"]),
+                  "--no-tests", "fail", "--", "--exact", "tests::round_trip"]),
             ):
                 with self.subTest(gate=gate, link=link):
                     def run_gate(observed, _gate, _link, log, _trace):
@@ -207,6 +348,8 @@ class KaniGateFeatureTests(unittest.TestCase):
                             log.write_bytes(
                                 b"EXACOPY_EVS_KANI_PROFILE_V1 --no-default-features --features strict,protocol\n"
                             )
+                        elif gate == "rust":
+                            log.write_bytes(NEXTEST_PASSED)
                         else:
                             log.write_bytes(b"fixture gate log\n")
                         return datetime(2026, 11, 28, tzinfo=timezone.utc), 1, 0, None
@@ -214,7 +357,9 @@ class KaniGateFeatureTests(unittest.TestCase):
                     with (
                         mock.patch.object(record_evidence, "ROOT", root),
                         mock.patch.object(record_evidence, "revision", return_value=(source_revision, False)),
-                        mock.patch.object(record_evidence, "tool_version", return_value=("fixture", "1.0")),
+                        mock.patch.object(record_evidence, "tool_version", return_value=(
+                            ("cargo-nextest", NEXTEST_VERSION) if gate == "rust" else ("fixture", "1.0")
+                        )),
                         mock.patch.object(record_evidence, "run_gate", side_effect=run_gate),
                     ):
                         self.assertTrue(record_evidence.record_gate(

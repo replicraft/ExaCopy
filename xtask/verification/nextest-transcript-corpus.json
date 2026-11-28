@@ -1,0 +1,391 @@
+{
+  "package": "exacopy-journal",
+  "test": "test_exact",
+  "cases": [
+    {
+      "id": "normal-target",
+      "accepted": true,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "cargo-diagnostics-before",
+      "accepted": true,
+      "transcript": "\nwarning: compiler context mentions FAIL and RETRY\n\t|\n  --> test.rs:4:9\n    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "crlf",
+      "accepted": true,
+      "transcript": "    Finished test profile target(s) in 0.06s\r\n────────────\r\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\r\n    Starting 1 test across 29 binaries (337 tests skipped)\r\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\r\n────────────\r\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\r\n"
+    },
+    {
+      "id": "mixed-crlf-lf",
+      "accepted": true,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\r\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "singular-binary",
+      "accepted": true,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 1 binary (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "package-only-no-filtered-tests",
+      "accepted": true,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries\n        PASS [   0.004s] (1/1) exacopy-journal test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed\n"
+    },
+    {
+      "id": "slow-once",
+      "accepted": true,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        SLOW [> 60.000s] (───) exacopy-journal::example test_exact\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed (1 slow), 337 skipped\n"
+    },
+    {
+      "id": "ten-digit-counts",
+      "accepted": true,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 9999999999 binaries (9999999999 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 9999999999 skipped\n"
+    },
+    {
+      "id": "uppercase-uuid",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12FD-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "wrong-profile",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: ci\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "run-indent",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n  Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "starting-indent",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n\tStarting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "pass-indent",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n       PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "summary-indent",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n      Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "separator-indent",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n\t────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "no-selected-test",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 0 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "two-selected-tests",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 2 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "no-binary",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 0 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "invalid-binary-inflection",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 1 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "wide-bin-count",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 10000000000 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "leading-zero-bin-count",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 029 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "wide-skipped-count",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (10000000000 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "mismatched-filtered-count",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 336 skipped\n"
+    },
+    {
+      "id": "zero-present-filtered-count",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (0 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "selected-case-wrong",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact_extra\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "selected-case-absent",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example \n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "wrong-owner-package",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) other::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "wrong-owner-prefix",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal-other::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "empty-target",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal:: test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "target-slash",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::bin/example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "target-colon",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::foo:bar test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "target-non-ascii",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::ñ test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "duration-too-few-decimals",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.04s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "duration-leading-zero",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   00.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "duration-too-many-digits",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   10000000000.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "duration-tab-padding",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [\t0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "wrong-pass-ordinal",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (2/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "wrong-pass-total",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/2) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "summary-zero",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 0 passed, 337 skipped\n"
+    },
+    {
+      "id": "summary-two",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 2 passed, 337 skipped\n"
+    },
+    {
+      "id": "summary-inconsistent-slow",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed (1 slow), 337 skipped\n"
+    },
+    {
+      "id": "summary-failure-present",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped, 1 failed\n"
+    },
+    {
+      "id": "summary-leaky-present",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped, 1 leaky\n"
+    },
+    {
+      "id": "fail-selected",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        FAIL [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "skip-selected",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        SKIP [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "flaky-selected",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        FLAKY [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "slow-double",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        SLOW [> 60.000s] (───) exacopy-journal::example test_exact\n        SLOW [> 60.000s] (───) exacopy-journal::example test_exact\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed (1 slow), 337 skipped\n"
+    },
+    {
+      "id": "slow-wrong-test",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        SLOW [> 60.000s] (───) exacopy-journal::example test_wrong\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed (1 slow), 337 skipped\n"
+    },
+    {
+      "id": "slow-wrong-target",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        SLOW [> 60.000s] (───) exacopy-journal::other test_exact\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed (1 slow), 337 skipped\n"
+    },
+    {
+      "id": "slow-bad-spacing",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        SLOW [>  60.000s] (───) exacopy-journal::example test_exact\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed (1 slow), 337 skipped\n"
+    },
+    {
+      "id": "slow-bad-indent",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n         SLOW [> 60.000s] (───) exacopy-journal::example test_exact\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed (1 slow), 337 skipped\n"
+    },
+    {
+      "id": "slow-unaccounted",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        SLOW [> 60.000s] (───) exacopy-journal::example test_exact\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "contradictory-prelude-second-run-marker",
+      "accepted": false,
+      "transcript": " Nextest run ID earlier log\n    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "contradictory-prelude-start-event",
+      "accepted": false,
+      "transcript": "    Starting 1 test across 29 binaries\n    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "contradictory-prelude-pass-event",
+      "accepted": false,
+      "transcript": "        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "contradictory-prelude-fail-event",
+      "accepted": false,
+      "transcript": "        FAIL [   0.001s] (1/1) exacopy-journal::example test_exact\n    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "contradictory-prelude-retry-event",
+      "accepted": false,
+      "transcript": "\t RETRY: interrupted\n    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "contradictory-prelude-skipped-event",
+      "accepted": false,
+      "transcript": "    SKIPPED\tselected\n    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "contradictory-prelude-error-prefix",
+      "accepted": false,
+      "transcript": "error:unspaced\n    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "contradictory-prelude-error-code",
+      "accepted": false,
+      "transcript": "error[E0373]: failed\n    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "contradictory-prelude-recorder-timeout",
+      "accepted": false,
+      "transcript": "Evidence command timed out.\n    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "contradictory-prelude-recorder-launch",
+      "accepted": false,
+      "transcript": "Could not start evidence command: permission denied\n    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "contradictory-prelude-recorder-inputs",
+      "accepted": false,
+      "transcript": "Could not verify evidence inputs after execution: stale\n    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "contradictory-prelude-non-ascii-leading-whitespace",
+      "accepted": false,
+      "transcript": " FAIL wrong\n    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "second-run",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "blank-postlude",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n\n"
+    },
+    {
+      "id": "retry-postlude",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\nRETRY: deferred\n"
+    },
+    {
+      "id": "recorder-timeout-postlude",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\nEvidence command timed out.\n"
+    },
+    {
+      "id": "unterminated-summary",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped"
+    },
+    {
+      "id": "partial-summary",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed"
+    },
+    {
+      "id": "summary-absent",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n"
+    },
+    {
+      "id": "empty",
+      "accepted": false,
+      "transcript": ""
+    },
+    {
+      "id": "arbitrary-pass",
+      "accepted": false,
+      "transcript": "PASS advances fixture output\n"
+    },
+    {
+      "id": "embedded-carriage-return",
+      "accepted": false,
+      "transcript": "    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test\r_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "ansi-prefix",
+      "accepted": false,
+      "transcript": "\u001b[30m    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "invalid-control-prefix",
+      "accepted": false,
+      "transcript": "\u0000    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    },
+    {
+      "id": "oversized-line",
+      "accepted": false,
+      "transcript": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n    Finished test profile target(s) in 0.06s\n────────────\n Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n    Starting 1 test across 29 binaries (337 tests skipped)\n        PASS [   0.004s] (1/1) exacopy-journal::example test_exact\n────────────\n     Summary [   0.005s] 1 test run: 1 passed, 337 skipped\n"
+    }
+  ]
+}

@@ -160,6 +160,16 @@ pub(super) fn read(path: &Path, findings: &mut Findings) -> Option<Record> {
 }
 
 impl Record {
+	pub(super) fn matches_rust_tool(&self) -> bool {
+		self.tool == "cargo-nextest"
+			&& self
+				.tool_version
+				.split([' ', '\t'])
+				.filter(|word| !word.is_empty())
+				.take(2)
+				.eq(["cargo-nextest", "0.9.151"])
+	}
+
 	pub(super) fn matches_features(&self, features: &[String]) -> bool {
 		self.profile.features == features
 	}
@@ -307,7 +317,7 @@ fn is_digest(value: &str) -> bool {
 			.all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
 }
 
-fn is_uuid(value: &str) -> bool {
+pub(super) fn is_uuid(value: &str) -> bool {
 	const SEGMENTS: [usize; 5] = [8, 4, 4, 4, 12];
 	let parts = value.split('-').collect::<Vec<_>>();
 	parts.len() == SEGMENTS.len()

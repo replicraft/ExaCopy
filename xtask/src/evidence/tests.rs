@@ -23,7 +23,7 @@ fn passing_json() -> Value {
 		"generated_input_digest": null,
 		"lockfile_digest": FIXTURE_DIGEST,
 		"tool": "cargo-nextest",
-		"tool_version": "0.9.0",
+		"tool_version": "cargo-nextest 0.9.151 (6b3f99457 2026-11-02)",
 		"redacted_command": ["cargo", "nextest", "run", "--locked", "-p", "exacopy-model", "--no-tests", "fail", "--", "--exact", "advances"],
 		"profile": {"features": [], "target": "aarch64-apple-darwin", "os": "macOS", "filesystem": null, "hardware": null },
 		"started_at": "2026-11-25T03:04:05.123+01:00",
@@ -137,7 +137,15 @@ fn gate_coverage_rejects_stale_records_missing_runs_and_wrong_commands() {
 	let source = fixture.write("src/transaction.rs", "// policy fixture input\n");
 	let artifact = fixture.write(
 		"evidence/00000000-0000-4000-8000-000000000001.log",
-		"PASS advances fixture output\n",
+		concat!(
+			"    Finished test profile target(s) in 0.10s\n",
+			"────────────\n",
+			" Nextest run ID 3191c34d-12fd-4f7f-8c4d-442b5d7733a4 with nextest profile: default\n",
+			"    Starting 1 test across 5 binaries (9 tests skipped)\n",
+			"        PASS [   0.004s] (1/1) exacopy-model::transaction advances\n",
+			"────────────\n",
+			"     Summary [   0.005s] 1 test run: 1 passed, 9 skipped\n",
+		),
 	);
 	let revision = super::Revision {
 		commit: "826136e783adda1997d1b92eecb2535e522e985a".into(),
@@ -176,6 +184,31 @@ rust = { test = "advances", file = "tests/transaction.rs" }
 		findings.to_string()
 	};
 	assert_eq!(verify(&candidate), "");
+	let mut other_tool = candidate.clone();
+	other_tool["tool_version"] = json!("cargo-nextest 0.9.152");
+	assert!(verify(&other_tool).contains("requires cargo-nextest 0.9.151"));
+	let transcript = std::fs::read_to_string(&artifact).unwrap();
+	let arbitrary = fixture.write(
+		"evidence/00000000-0000-4000-8000-000000000001.log",
+		"PASS advances fixture output\n",
+	);
+	let mut forged = candidate.clone();
+	forged["artifact_digest"] = json!(file_digest(&arbitrary).unwrap());
+	let findings = verify(&forged);
+	assert!(findings.contains("nextest transcript"));
+	assert!(findings.contains("missing passing rust evidence"));
+	fixture.write(
+		"evidence/00000000-0000-4000-8000-000000000001.log",
+		&format!(
+			"warning: changed retained prelude
+{transcript}"
+		),
+	);
+	assert!(verify(&candidate).contains("SHA-256 digest does not match"));
+	fixture.write(
+		"evidence/00000000-0000-4000-8000-000000000001.log",
+		&transcript,
+	);
 	let mut stale = candidate.clone();
 	stale["commit"] = json!("826136e783adda1997d1b92eecb2535e522e985b");
 	let findings = verify(&stale);
