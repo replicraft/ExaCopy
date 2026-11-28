@@ -105,6 +105,44 @@ escape live detection. Copy, recovery, metadata equivalence, named streams,
 and snapshots are outside this profile. Windows qualification remains pending.
 [NTFS fixture and evidence](../../docs/testing.md#windows-held-directory-ntfs-qualification)
 
+## Inspect a Windows job bootstrap
+
+Use a Windows build with the default-off `experimental-windows-bootstrap-inspect`
+feature to inspect one existing, independently selected bootstrap.
+
+```powershell
+exacopy recover inspect-windows-bootstrap --root "$bootstrap_root" `
+  --volume-guid "$volume_guid" --volume-serial "$volume_serial" `
+  --root-file-id "$root_file_id" --owner-profile-id "$owner_profile_id" `
+  --owner-key "$owner_key" --job-id "$job_id" --managed-ntfs --format json
+```
+
+Use the literal absolute drive path and independently provisioned root identity.
+Supply the volume GUID as lowercase hyphenated text without braces, the volume
+serial as canonical unsigned decimal, and the 16 file ID bytes in native order
+as lowercase hexadecimal. Select the owner profile, canonical nonweak Ed25519
+public key, and lowercase hyphenated UUIDv7 job ID independently of the job.
+The profile ID and public key use 32 and 64 lowercase hexadecimal digits.
+
+`--managed-ntfs` attests the protected fixed-NTFS scope and its trusted owner
+and administrator assumptions. Provision the exact roles and protected ancestry
+in advance. Keep names, bytes, streams, ACLs and ownership stable during
+inspection. Exclude untrusted processes with retained mutation rights. Reads
+may advance access times.
+
+JSON uses `exacopy.cli.windows_bootstrap_inspection` version `1.0`. The report
+records the selected job ID, authenticated owner digest and accepted first-frame
+boundary, with sequence and extent as decimal strings. Its `authority` is `none`.
+It covers only authenticated initial history, with no later replay, payload
+verification, publication or recovery effect. Exit `0` requires admitted
+observation and successful report output. Selection refusal uses `2`, custody
+or history refusal uses `9`, and output failure uses `4`.
+
+The ordinary Windows opt-in lane selects parsing and report controls. Their
+execution must be checked against the integrated revision. The
+separate owned native fixture remains blocked by the retained hosted `D:` fixed-NTFS
+admission refusal. Actual held-bootstrap execution requires its own passing evidence.
+
 ## Preview one sync subject on Linux
 
 ```sh

@@ -1,9 +1,11 @@
 # Initial held Windows bootstrap inspection
 
-This default-off application fixture composes the portable journal codec with
-the protected fixed-NTFS record reader. It supports read-side work toward
-R-039–041. Windows CLI copy, journal append, published-stage reconciliation
-under R-044 and durability qualification remain separate work.
+The opt-in `recover inspect-windows-bootstrap` command and this application
+fixture share the composition of the portable journal codec and protected
+fixed-NTFS record reader. They support partial read-side work toward R-039–041
+and independently selected owner trust under R-046. Windows CLI copy, journal
+append, published-stage reconciliation under R-044, and durability qualification
+remain separate work. [Product selection and report](../../README.md#inspect-a-windows-job-bootstrap)
 
 The provisioner creates a private root and two private job layouts, each
 with two empty protected records. It retains the common root identity and
@@ -45,7 +47,13 @@ target `windows_bootstrap`. `run.ps1` accepts a separately selected exact test
 image and digest, uses owned process supervision, and removes the fixture only
 after confirmed drain, exact outcome, control marker and custody checks.
 Failure retains the physical fixture for that run. The historical head
-is retained only after cleanup. Native execution of the new controls is pending. No public command or ordinary feature default is changed.
+is retained only after cleanup. Native execution of these controls is pending.
+
+The `experimental-windows-bootstrap-inspect` feature enables the product command.
+Ordinary Windows CI selects its exact parser, historical report and weak-key
+refusal controls. The default workspace run checks that the command remains
+hidden without its target and feature. These source-defined controls require
+no native bootstrap provisioning. They do not qualify the held native case.
 
 The separate `windows-ntfs-bootstrap.yml` workflow admits one exact canonical
 main-push job and its source, attempt and image. Its provider checks the
@@ -60,3 +68,7 @@ Build retirement, held image selection, process drain and fixture cleanup have
 separate receipts. Ineligible volume or actor evidence fails admission without
 a fallback. A passing initial fixture covers only the cases above. It does not
 qualify Windows copy, restart recovery, publication or power-loss durability.
+
+Retained attempts `46079103337` and `46070223805` refused the `D:\` volume owner
+at fixed-NTFS admission. Attempt `46068832224` refused competing non-actor
+access at that boundary. None reached the selected bootstrap fixture.

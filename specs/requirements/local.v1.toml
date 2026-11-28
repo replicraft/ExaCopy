@@ -1910,3 +1910,40 @@ level = "native"
 state = "defined"
 path = "apps/exacopy-cli/tests/linux_managed_sync_production.rs"
 target = "production_managed_init_then_preview_exact_p063_history"
+
+[[coverage]]
+id = "windows-selected-bootstrap-cli-inspection"
+status = "experimental"
+requirement_ids = ["R-039", "R-040", "R-041", "R-046"]
+acceptance_ids = ["A-039", "A-040", "A-041", "A-046"]
+invariant_ids = ["INV-009", "INV-014", "INV-019", "INV-020"]
+scope = "Partial read-side inspection of one Windows destination-local bootstrap. Independently selected root, job, profile, and public key bind the native holder and authenticated first frame. Historical owner and boundary evidence is reportable only after the same holder confirms native EOF and custody."
+limits = "Parser and report controls are source-defined. The separate held native fixture remains blocked by hosted D: fixed-NTFS admission, before the selected case ran. No later replay, tail repair, ownership takeover, publication, recovery effect, or durability claim."
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/args/parser/recovery/windows_bootstrap/tests.rs"
+target = "windows_bootstrap_parser_requires_exact_independent_selection"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/windows_bootstrap_inspect/tests.rs"
+target = "windows_bootstrap_report_projects_only_historical_evidence"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/windows_bootstrap_inspect/tests.rs"
+target = "windows_bootstrap_weak_key_refuses_with_no_reported_history"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "native"
+state = "defined"
+path = "apps/exacopy-cli/tests/windows_bootstrap.rs"
+target = "admits_only_the_selected_held_bootstrap_history"
