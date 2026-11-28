@@ -38,13 +38,15 @@ lock_before=$(LC_ALL=C shasum -a 256 Cargo.lock)
 CARGO_NET_OFFLINE=true "${cargo[@]}" metadata --locked --format-version 1 \
 	--filter-platform "$target" > /dev/null
 
-harness=kani_checks::range::checked_range_end_matches_wide_arithmetic
-kani_log=$(mktemp "${TMPDIR:-/tmp}/exacopy-kani-log.XXXXXX")
+range=kani_checks::range::checked_range_end_matches_wide_arithmetic
+clock=kani_checks::grant_time::grant_time_matches_wide_nanosecond_specification
+kani_log=$(mktemp "${EXACOPY_VERIFICATION_SCRATCH:-${TMPDIR:-/tmp}}/exacopy-kani-log.XXXXXX")
 trap 'rm -f "$kani_log"' EXIT
 kani_status=0
 # Kani keeps assertion reachability and CBMC's unwinding assertions enabled by default.
-CARGO_NET_OFFLINE=true "${cargo[@]}" kani --package exacopy-model --harness "$harness" \
-	--exact --default-unwind 1 --output-format regular 2>&1 | tee "$kani_log" || kani_status=$?
+CARGO_NET_OFFLINE=true "${cargo[@]}" kani --package exacopy-model --exact \
+	--harness "$range" --harness "$clock" --default-unwind 1 --output-format regular \
+	2>&1 | tee "$kani_log" || kani_status=$?
 
 if [[ "$(LC_ALL=C shasum -a 256 Cargo.lock)" != "$lock_before" ]]; then
 	printf 'Cargo.lock changed during Kani verification.\n' >&2
@@ -53,15 +55,29 @@ fi
 if (( kani_status != 0 )); then
 	exit "$kani_status"
 fi
-if ! grep -Fxq 'Complete - 1 successfully verified harnesses, 0 failures, 1 total.' "$kani_log" ||
-	! grep -Eq '^[[:space:]]*\*\* 6 of 6 cover properties satisfied$' "$kani_log" ||
-	! awk '
-		/- Status: SUCCESS$/ { success_line = NR }
-		/- Description: "range admission and end match wide arithmetic"$/ && success_line == NR - 1 {
-			found = 1
+if ! grep -Fxq 'Complete - 2 successfully verified harnesses, 0 failures, 2 total.' "$kani_log" ||
+	! awk -v range="$range" -v clock="$clock" '
+		/^Checking harness .*\.\.\.$/ {
+			active = $0
+			sub(/^Checking harness /, "", active)
+			sub(/\.\.\.$/, "", active)
+			seen[active]++
+			if (active != range && active != clock) wrong = 1
 		}
-		END { exit !found }
+		/^  - (Verified stub|Stub): / { wrong = 1 }
+		/- Status: SUCCESS$/ { success_line = NR }
+		success_line == NR - 1 {
+			if (active == range && /- Description: "range admission and end match wide arithmetic"$/) range_assert++
+			if (active == clock && /- Description: "grant time matches the independent wide UTC specification"$/) clock_assert++
+			if (active == clock && /- Description: "qualification cannot widen clock admission"$/) subset_assert++
+		}
+		active == range && /^[[:space:]]*\*\* 6 of 6 cover properties satisfied$/ { range_covers++ }
+		active == clock && /^[[:space:]]*\*\* 12 of 12 cover properties satisfied$/ { clock_covers++ }
+		END {
+			exit (wrong || seen[range] != 1 || seen[clock] != 1 || range_assert != 1 ||
+				clock_assert != 1 || subset_assert != 1 || range_covers != 1 || clock_covers != 1)
+		}
 	' "$kani_log"; then
-	printf 'Kani did not verify the range assertion and all six reachability goals.\n' >&2
+	printf '%s\n' 'Expected both model Kani harnesses, three assertions and eighteen reached covers.' >&2
 	exit 1
 fi
