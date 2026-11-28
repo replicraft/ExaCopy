@@ -1835,7 +1835,7 @@ requirement_ids = ["R-013", "R-016", "R-045", "R-056"]
 acceptance_ids = ["A-013", "A-016", "A-045", "A-056"]
 invariant_ids = ["INV-002", "INV-005", "INV-009", "INV-019", "INV-020"]
 scope = "The default-off macOS command authenticates job history with independently selected owner and logical root inputs, checks the actual held root against the signed plan, and reports namespace observations separately from historical receipt evidence. The signed fixture distinguishes a rebound native root while preserving job and incumbent bytes."
-limits = "The trusted producer assigns logical root IDs uniquely and stably; the input is not an independent native-tuple pin. Source-defined native controls await execution. Payload verification, copy or recovery mutation, process-crash and power-loss qualification remain separate."
+limits = "The trusted producer assigns logical root IDs uniquely and stably; the input is not an independent native-tuple pin. Native controls first passed in the macOS 48b32d6 cohort; the corrected integrated source needs its own CI. Payload verification, copy or recovery mutation, process-crash and power-loss qualification remain separate."
 
 [[coverage.evidence]]
 owner = "exacopy-cli"

@@ -32,6 +32,25 @@ The inspection coordinator compares the measured stream
 digest and, when the journal carries a metadata record, both initial and
 final metadata with their exact expected values. [Recovery stage reader](../../crates/platform/exacopy-platform/src/macos/staging/directory/jobs/recovery/inventory/readback.rs) · [Inspection read-back](../../crates/engines/exacopy-transfer/src/macos/inspection/readback.rs)
 
+## Read-only CLI evidence
+
+The default-off `recover inspect-apfs` command uses namespace-only inspection
+with independently selected owner, profile and logical root inputs. The trusted
+producer must assign each logical root ID uniquely and stably. The held native
+root must match the owner-authenticated Plan. The CLI reads journal and receipt
+records and reports current names separately from historical evidence.
+
+At `48b32d6`, the [macOS native job](https://github.com/replicraft/ExaCopy/actions/runs/46086978995/job/140798717939)
+passed all 170 APFS opt-in cases, including the exact parser, report and
+production-dispatch cases. The signed fixture checked the original job and
+refused its rebinding to a different native root while retaining the original
+selectors and artifact bytes. The default macOS suite passed 911 cases.
+
+That cohort separately exposed a Linux managed-sync stdout type mismatch and
+an extra APFS test in the public-stage attendance set. Their corrections need
+their own integrated CI. These tests do not establish payload verification,
+copy or recovery mutation, process-crash recovery, or power-loss qualification.
+
 ## Recovery contract
 
 `ReopenedStage::open_named` owns the exact raw component and its fresh
