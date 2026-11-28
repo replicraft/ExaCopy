@@ -172,14 +172,32 @@ fn matches_command(
 				&& record.matches_features(&link.features)
 		});
 	}
-	let script = project.root.join("verification/check.sh");
+	let custom_runner = if gate == Gate::Kani {
+		entry.kani.as_ref().and_then(|link| link.runner.as_deref())
+	} else {
+		None
+	};
+	let script = if let Some(runner) = custom_runner {
+		let Ok(script) = crate::verification::kani_runner(&project.root, runner) else {
+			return false;
+		};
+		script
+	} else {
+		project.root.join("verification/check.sh")
+	};
 	let Ok(script) = script.strip_prefix(root) else {
 		return false;
 	};
 	let Some((command, arguments)) = record.redacted_command.split_first() else {
 		return false;
 	};
-	if Path::new(command) != script {
+	if Path::new(command) != script
+		|| (custom_runner.is_some()
+			&& (command.contains('\\')
+				|| command
+					.split('/')
+					.any(|part| matches!(part, "" | "." | ".."))))
+	{
 		return false;
 	}
 	if gate == Gate::Kani

@@ -101,13 +101,29 @@ def tool_version(crate_root, gate):
     return "TLC", f"TLC {lock['tlc']['version']} (tla2tools {lock['tlc']['release']})"
 
 
+def kani_runner(crate_root, selection):
+    if (not isinstance(selection, str) or not selection.startswith("verification/")
+            or "\\" in selection or ":" in selection
+            or any(part in ("", ".", "..") for part in selection.split("/"))):
+        raise ValueError("Kani runner must be an owner-relative file under verification/")
+    path = crate_root
+    for part in selection.split("/"):
+        path /= part
+        if path.is_symlink():
+            raise ValueError("Kani runner must not contain a symlink")
+    if not path.is_file():
+        raise ValueError("Kani runner must be an owned regular file")
+    return path
+
+
 def gate_command(package, crate_root, gate, link):
     features = profile_features(gate, link)
     feature_args = ["--no-default-features", "--features", ",".join(features)] if features else []
     if gate == "rust":
         return (["cargo", "nextest", "run", "--locked", "-p", package] + feature_args
                 + ["--no-tests", "fail", "--", "--exact", link["test"]])
-    script = crate_root / "verification/check.sh"
+    script = (kani_runner(crate_root, link["runner"]) if gate == "kani" and "runner" in link
+              else crate_root / "verification/check.sh")
     command = [script.relative_to(ROOT).as_posix(), gate]
     if gate == "kani":
         command += feature_args

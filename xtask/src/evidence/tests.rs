@@ -384,3 +384,62 @@ kani = {{ {declaration}harness = "kani_checks::phase::exact", file = "verificati
 		}
 	}
 }
+
+#[test]
+fn kani_command_requires_the_selected_owner_runner_and_scope() {
+	use crate::verification::{Gate, Project};
+
+	let fixture = Fixture::new();
+	let own = "model/verification/kani/check-clock.sh";
+	let other = "other/verification/kani/check-clock.sh";
+	for script in [own, other, "model/verification/check.sh"] {
+		fixture.write(script, "#!/bin/sh\nexit 0\n");
+	}
+	let entry = toml::from_str(
+		r#"
+id = "P-001"
+source = "src/transaction.rs"
+symbols = ["advance"]
+assumptions = []
+gates = ["kani"]
+kani = { harness = "exact", file = "verification/kani/phase.rs", runner = "verification/kani/check-clock.sh", unwind_bound = 1, oracle = "Exact clock." }
+"#,
+	)
+	.expect("synthetic fixture obligation parses");
+	let project = Project {
+		package_name: "exacopy-model".into(),
+		root: fixture.root().join("model"),
+		obligations: vec![entry],
+	};
+	let mut candidate = passing_json();
+	candidate["kind"] = json!("kani");
+	candidate["detail"]["harness"] = json!("exact");
+	candidate["detail"]["unwind_bound"] = json!("1");
+	for (command, accepted) in [
+		(json!([own, "kani"]), true),
+		(json!([other, "kani"]), false),
+		(json!(["model/verification/check.sh", "kani"]), false),
+		(
+			json!(["model/verification/./kani/check-clock.sh", "kani"]),
+			false,
+		),
+		(json!([own, "lean"]), false),
+		(json!([own, "kani", "--features", "strict"]), false),
+	] {
+		candidate["redacted_command"] = command;
+		let path = fixture.write("record.json", &candidate.to_string());
+		let parsed = record::read(&path, &mut Findings::default()).expect("record parses");
+		assert_eq!(
+			super::matches_command(
+				fixture.root(),
+				&project,
+				&project.obligations[0],
+				&parsed,
+				Gate::Kani,
+			),
+			accepted,
+			"{}",
+			candidate["redacted_command"],
+		);
+	}
+}

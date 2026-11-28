@@ -85,6 +85,7 @@ pub(crate) struct LeanLink {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct KaniLink {
+	pub(crate) runner: Option<PathBuf>,
 	#[serde(default)]
 	pub(crate) features: Vec<String>,
 	pub(crate) harness: String,
@@ -412,6 +413,19 @@ pub(crate) fn numbered_id(text: &str, prefix: &str) -> bool {
 	text.strip_prefix(prefix).is_some_and(|digits| {
 		digits.len() >= MIN_ID_DIGITS && digits.bytes().all(|byte| byte.is_ascii_digit())
 	})
+}
+
+pub(crate) fn kani_runner(root: &Path, relative: &Path) -> std::io::Result<PathBuf> {
+	if !relative.to_str().is_some_and(|path| {
+		path.starts_with("verification/")
+			&& !path.contains(['\\', ':'])
+			&& path.split('/').all(|part| !matches!(part, "" | "." | ".."))
+	}) {
+		return Err(std::io::Error::other(
+			"Kani runner must be an owner-relative file under verification/",
+		));
+	}
+	owned_file(root, relative)
 }
 
 pub(crate) fn owned_file(root: &Path, relative: &Path) -> std::io::Result<PathBuf> {

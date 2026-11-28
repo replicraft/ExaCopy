@@ -175,3 +175,57 @@ fn finds_property_tests_but_rejects_ignored_tests_and_macro_lookalikes() {
 		);
 	}
 }
+
+#[test]
+fn kani_runner_uses_only_owned_paths_and_its_own_unwind_setting() {
+	let fixture = linked_fixture();
+	let script = "verification/kani/check-clock.sh";
+	fixture.write(
+		"verification/kani/check.sh",
+		"#!/bin/sh\nkani --default-unwind 9\n",
+	);
+	fixture.write(script, "#!/bin/sh\nkani --default-unwind 3\n");
+	fixture.write("src/outside.sh", "#!/bin/sh\nkani --default-unwind 3\n");
+	fixture.write(
+		"verification/kani/transaction.rs",
+		"#[kani::proof] fn advance_harness() { assert!(true); }\n",
+	);
+	let check_path = |path: &str| {
+		check(
+			&fixture,
+			&OBLIGATION.replace("kani = {", &format!("kani = {{ runner = {path:?},")),
+		)
+	};
+	let accepted = check_path(script);
+	assert!(accepted.is_empty(), "{accepted}");
+	let legacy = check(&fixture, OBLIGATION).to_string();
+	assert!(legacy.contains("declared unwind bound"), "{legacy}");
+	for path in [
+		"src/outside.sh",
+		"verification/../src/outside.sh",
+		"/verification/kani/check.sh",
+	] {
+		let findings = check_path(path).to_string();
+		assert!(findings.contains("owner-relative"), "{findings}");
+	}
+	for path in ["verification/kani/missing.sh", "verification/kani"] {
+		assert!(!check_path(path).is_empty(), "{path}");
+	}
+	#[cfg(unix)]
+	{
+		let link = "verification/kani/linked.sh";
+		std::os::unix::fs::symlink(fixture.root().join(script), fixture.root().join(link))
+			.expect("can create a fixture symlink");
+		let findings = check_path(link).to_string();
+		assert!(findings.contains("without symlinks"), "{findings}");
+	}
+	fixture.write(
+		script,
+		"#!/bin/sh\nkani --default-unwind 3 --no-unwinding-checks\n",
+	);
+	let weakened = check_path(script).to_string();
+	assert!(
+		weakened.contains("preserve unwinding assertions"),
+		"{weakened}"
+	);
+}

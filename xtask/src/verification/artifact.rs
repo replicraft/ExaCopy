@@ -5,7 +5,7 @@ use syn::parse::{ParseStream, Parser};
 use syn::{Attribute, Item, ItemFn, LitInt, LitStr};
 
 use crate::finding::Findings;
-use crate::verification::{KaniLink, LeanLink, RustLink, TlcLink, artifact_text};
+use crate::verification::{KaniLink, LeanLink, RustLink, TlcLink, artifact_text, kani_runner};
 
 const PROOFS: &str = "verification/Proofs";
 const GENERATED: &str = "verification/Generated";
@@ -134,8 +134,18 @@ pub(super) fn check_kani(root: &Path, link: &KaniLink, findings: &mut Findings) 
 	if link.unwind_bound == 0 {
 		findings.add(&root.join(&link.file), "Kani unwind bound must be positive");
 	}
-	let script = Path::new("verification/kani/check.sh");
-	let default_unwind = std::fs::read_to_string(root.join(script))
+	let script = if let Some(runner) = &link.runner {
+		match kani_runner(root, runner) {
+			Ok(path) => path,
+			Err(error) => {
+				findings.add(&root.join(runner), error);
+				return;
+			}
+		}
+	} else {
+		root.join("verification/kani/check.sh")
+	};
+	let default_unwind = std::fs::read_to_string(&script)
 		.ok()
 		.is_some_and(|contents| {
 			let flags = contents
@@ -144,10 +154,7 @@ pub(super) fn check_kani(root: &Path, link: &KaniLink, findings: &mut Findings) 
 				.flat_map(str::split_whitespace)
 				.collect::<Vec<_>>();
 			if flags.contains(&"--no-unwinding-checks") {
-				findings.add(
-					&root.join(script),
-					"Kani script must preserve unwinding assertions",
-				);
+				findings.add(&script, "Kani script must preserve unwinding assertions");
 			}
 			flags.windows(2).any(|pair| {
 				pair[0] == "--default-unwind" && pair[1].parse::<u32>() == Ok(link.unwind_bound)

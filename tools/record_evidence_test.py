@@ -144,6 +144,9 @@ class KaniGateFeatureTests(unittest.TestCase):
             (root / "Cargo.lock").write_bytes(b"fixture lockfile\n")
             (root / "source.rs").write_bytes(b"fixture source\n")
             (root / "generated.lean").write_bytes(b"fixture extraction\n")
+            runner = "verification/kani/check-clock.sh"
+            (root / runner).parent.mkdir(parents=True)
+            (root / runner).write_bytes(b"#!/bin/sh\nexit 0\n")
             output = root / "output"
             output.mkdir()
             source_revision = "1234567890abcdef"
@@ -154,6 +157,9 @@ class KaniGateFeatureTests(unittest.TestCase):
                 ("kani", {"unwind_bound": 1, "features": []}, [], ["verification/check.sh", "kani"]),
                 ("kani", {"unwind_bound": 1, "features": ["strict", "protocol"]},
                  ["strict", "protocol"], ["verification/check.sh", "kani"] + feature_args),
+                ("kani", {"unwind_bound": 1, "runner": runner}, [], [runner, "kani"]),
+                ("kani", {"unwind_bound": 1, "runner": runner, "features": ["strict", "protocol"]},
+                 ["strict", "protocol"], [runner, "kani"] + feature_args),
                 ("lean", {"generated": "generated.lean"}, ["proof-extraction"],
                  ["verification/check.sh", "lean"]),
                 ("rust", {"test": "exact"}, [],
@@ -181,6 +187,32 @@ class KaniGateFeatureTests(unittest.TestCase):
                     self.assertEqual(report["profile"]["features"], features)
                     self.assertEqual(report["redacted_command"], command)
                     report_file.unlink()
+
+
+class KaniRunnerPathTests(unittest.TestCase):
+    def test_refuses_missing_outside_and_linked_runners_before_dispatch(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            owner = root / "model"
+            verification = owner / "verification"
+            verification.mkdir(parents=True)
+            outside = root / "outside.sh"
+            outside.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            (owner / "outside.sh").write_bytes(outside.read_bytes())
+            paths = [
+                "outside.sh", "verification/../../outside.sh", outside.as_posix(),
+                "verification/missing.sh", "verification", "verification/C:outside.sh",
+                "verification/./missing.sh", "verification//missing.sh",
+            ]
+            if os.name == "posix":
+                (verification / "linked.sh").symlink_to(outside)
+                paths.append("verification/linked.sh")
+            with mock.patch.object(record_evidence, "ROOT", root):
+                for path in paths:
+                    with self.subTest(path=path), self.assertRaises(ValueError):
+                        record_evidence.gate_command("example", owner, "kani", {"runner": path})
+                self.assertEqual(record_evidence.gate_command("example", owner, "kani", {}),
+                                 ["model/verification/check.sh", "kani"])
 
 
 class GateScratchTests(unittest.TestCase):
