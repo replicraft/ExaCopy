@@ -3,9 +3,10 @@ use std::fmt;
 use std::fs::File;
 use std::io;
 
-use rustix::fs::{self, AtFlags, FileType, Mode, OFlags};
+use rustix::fs::{self, AtFlags, FileType, Mode};
 use rustix::process::geteuid;
 
+use super::super::handle::pin_selected_directory;
 use super::super::owner_seed::{KEY_NAME, OWNER_SEED_BYTES};
 use super::super::{DestinationRoot, FileIdentity, ReadError, ReadRoot, StageError};
 
@@ -18,12 +19,7 @@ impl PlanInputDirectory {
 	/// # Errors
 	/// Reports a failed or non-directory open.
 	pub fn open(path: &OsStr) -> io::Result<Self> {
-		let directory = fs::open(
-			path,
-			OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC,
-			Mode::empty(),
-		)?;
-		Ok(Self(File::from(directory)))
+		Ok(Self(File::from(pin_selected_directory(path)?)))
 	}
 
 	/// Clones this held parent into the ordinary read-root capability.

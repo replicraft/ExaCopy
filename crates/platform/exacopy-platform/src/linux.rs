@@ -23,7 +23,7 @@ mod sync_preview;
 #[cfg(feature = "experimental-linux-managed-sync")]
 mod sync_profile_store;
 
-pub use handle::FileIdentity;
+pub use handle::{FileIdentity, pin_selected_directory};
 pub use job::{
 	CheckpointDirectory, JobDirectory, JobDirectoryCreationError, JournalDirectory,
 	NativeHeldJobRecord, ReceiptDirectory, TargetStatus,

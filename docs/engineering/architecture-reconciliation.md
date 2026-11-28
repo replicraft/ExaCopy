@@ -135,6 +135,13 @@ versions and error behavior. Native macOS format and transfer tests and strict
 host/Linux cross checks passed; the new Linux CLI fixtures still require
 native execution.
 
+The initial selected Linux directory pin is now one platform operation shared
+by CLI composition, held Plan inputs and profile-seed reads. It preserves
+path-only and close-on-exec flags, native errors, and ordinary relative-path
+and symlink resolution. Callers retain their subsequent root and policy
+admission. This moves the syscall owner; the returned descriptor is still
+a native capability.
+
 Historical evidence retains its recorded revision and paths. Current
 source links and reproduction entry points follow the corrected layout.
 When reproducing an older pinned revision, use that revision's package

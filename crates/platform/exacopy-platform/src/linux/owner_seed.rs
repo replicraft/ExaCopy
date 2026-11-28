@@ -11,7 +11,7 @@ use rustix::io::Errno;
 use rustix::process::geteuid;
 use rustix::rand::{GetRandomFlags, getrandom};
 
-use super::FileIdentity;
+use super::{FileIdentity, handle::pin_selected_directory};
 
 pub(super) const KEY_NAME: &CStr = c"owner.seed";
 /// The exact byte length of an owner seed in the local profile layout.
@@ -47,11 +47,7 @@ impl HeldOwnerSeed {
 		seed: &mut [u8; OWNER_SEED_BYTES],
 		eof_probe: &mut [u8; 1],
 	) -> Result<Self, OwnerSeedError> {
-		let parent = fs::open(
-			parent,
-			OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC,
-			Mode::empty(),
-		)?;
+		let parent = pin_selected_directory(parent)?;
 		check_parent(&parent)?;
 		let name = OsStr::from_bytes(name.as_bytes());
 		let directory = open_profile_directory(&parent, name)?;

@@ -1,7 +1,24 @@
-use std::os::fd::AsFd;
+use std::ffi::OsStr;
+use std::os::fd::{AsFd, OwnedFd};
 
-use rustix::fs::{self, AtFlags, Dev, Stat, StatxFlags};
+use rustix::fs::{self, AtFlags, Dev, Mode, OFlags, Stat, StatxFlags};
 use rustix::io::{self, Errno};
+
+/// Pins an explicitly selected directory with a path-only, close-on-exec descriptor.
+///
+/// Relative paths and symlinks use ordinary Linux resolution. Callers apply
+/// their read-root, destination or other authorization checks to the pin.
+///
+/// # Errors
+///
+/// Reports the native open error if the path cannot be opened as a directory.
+pub fn pin_selected_directory(path: &OsStr) -> io::Result<OwnedFd> {
+	fs::open(
+		path,
+		OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC,
+		Mode::empty(),
+	)
+}
 
 /// The device and inode observed through a live Linux file descriptor.
 ///

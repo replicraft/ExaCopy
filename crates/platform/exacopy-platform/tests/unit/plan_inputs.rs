@@ -5,6 +5,9 @@ use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _, PermissionsExt as 
 use std::path::Path;
 use std::time::{Duration, UNIX_EPOCH};
 
+use rustix::fs::{OFlags, fcntl_getfl};
+use rustix::io::{FdFlags, fcntl_getfd};
+
 use crate::scratch::Scratch;
 
 use super::{KEY_NAME, OWNER_SEED_BYTES, PlanInputDirectory, PlanSeedError, StageError};
@@ -49,6 +52,27 @@ fn roots_remain_bound_after_the_selected_parent_is_replaced() {
 			"derived root must identify the original directory"
 		);
 	}
+}
+
+#[test]
+fn selected_directory_alias_keeps_a_path_only_close_on_exec_pin() {
+	let scratch = Scratch::new();
+	let directory = scratch.path("selected");
+	let alias = scratch.path("alias");
+	fs::create_dir(&directory).expect("create selected directory");
+	symlink(&directory, &alias).expect("create selected directory alias");
+
+	let actual = fs::metadata(&directory).expect("inspect selected directory");
+	let held = PlanInputDirectory::open(alias.as_os_str()).expect("hold selected directory alias");
+	let flags = fcntl_getfl(&held.0).expect("inspect held directory status flags");
+	assert!(flags.contains(OFlags::PATH | OFlags::DIRECTORY));
+	let flags = fcntl_getfd(&held.0).expect("inspect held directory descriptor flags");
+	assert!(flags.contains(FdFlags::CLOEXEC));
+	let identity = held.read_root().expect("bind selected input").identity();
+	assert_eq!(
+		(identity.device(), identity.inode()),
+		(actual.dev(), actual.ino())
+	);
 }
 
 #[test]
