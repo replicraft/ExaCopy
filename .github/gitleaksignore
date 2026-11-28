@@ -1,3 +1,6 @@
 # Public Canonical Ubuntu archive signing-key fingerprint and SHA-256 pin.
 b744cb4f9b4731729688f597fca2d2ccece29bdc:.github/ci/wireguard_enrollment_archive.py:generic-api-key:24
 b744cb4f9b4731729688f597fca2d2ccece29bdc:.github/ci/wireguard_enrollment_archive.py:generic-api-key:26
+
+# RFC 8032 section 7.1 TEST 1 Ed25519 public verification key.
+dd70c9b5141538516d532848ee407059ba05b971:apps/exacopy-cli/src/args/parser/recovery/windows_bootstrap/tests.rs:generic-api-key:20
