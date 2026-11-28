@@ -2037,3 +2037,27 @@ level = "native"
 state = "defined"
 path = "apps/exacopy-cli/tests/windows_bootstrap.rs"
 target = "admits_only_the_selected_held_bootstrap_history"
+
+[[coverage]]
+id = "windows-fresh-bootstrap-segment"
+status = "experimental"
+requirement_ids = ["R-040"]
+acceptance_ids = ["A-040"]
+invariant_ids = ["INV-013", "INV-019"]
+scope = "Partial Windows journal mechanism: one protected originally empty first segment, independently selected five native identities, exclusive bounded data writes, file barrier and original held frame/EOF confirmation through DurableJournal. The existing bootstrap producer compares unchanged canonical signed V1 bytes before read-only inspection."
+limits = "Source-defined native controls only. Hosted fixed-NTFS ancestry admission remains blocked before the selected case. Open-writer timestamp stability across flush and native sharing behavior remain unqualified. No later journal dialect, recovery writer, Windows transfer command, namespace durability or crash/power-loss qualification."
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "native"
+state = "defined"
+path = "apps/exacopy-cli/tests/windows_bootstrap.rs"
+target = "admits_only_the_selected_held_bootstrap_history"
+detail = "The original producer uses the actual Windows JournalSegment; the copied counterexample retains raw population. The control checks identity, exclusivity, bounds, actual frame confirmation and exact V1 bytes."
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "documentation"
+state = "reported"
+path = "apps/exacopy-cli/verification/windows_bootstrap/README.md"
+target = "fresh first-segment contract and native qualification limits"

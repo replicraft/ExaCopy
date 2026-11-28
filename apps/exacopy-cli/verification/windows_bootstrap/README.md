@@ -3,8 +3,8 @@
 The opt-in `recover inspect-windows-bootstrap` command and this application
 fixture share the composition of the portable journal codec and protected
 fixed-NTFS record reader. They support partial read-side work toward R-039–041
-and independently selected owner trust under R-046. Windows CLI copy, journal
-append, published-stage reconciliation under R-044, and durability qualification
+and independently selected owner trust under R-046. Windows CLI copy, later
+journal appends, published-stage reconciliation under R-044, and durability qualification
 remain separate work. [Product selection and report](../../README.md#inspect-a-windows-job-bootstrap)
 
 The provisioner creates a private root and two private job layouts, each
@@ -12,6 +12,25 @@ with two empty protected records. It retains the common root identity and
 all eight distinct child identities. The fixture confirms and rechecks
 the original held identities when populating each pair, then closes both
 writers before inspection.
+
+For the original job, the producer now closes its provisioning handles and
+opens `WindowsBootstrapFreshSegment` against the independently retained five
+native identities. The adapter requires the original empty segment and admits
+one exclusive data writer beneath the existing protected ancestry. It supplies
+bounded append, file sync and held read-back to `DurableJournal`. The fixture
+confirms the actual first frame and EOF and compares the bytes with the same
+canonical signed V1 artifact before using the existing reader. The copied
+counterexample retains its deliberately untrusted raw-byte population.
+This is a fresh first-segment mechanism toward R-040/A-040 and INV-019.
+It supplies no recovery append aperture or Windows transfer command.
+
+The native control also refuses a different selected identity, a competing
+writer, an out-of-range seek and an oversized write; it refuses fresh admission
+after population. These controls remain unexecuted. The adapter keeps strict
+timestamp comparisons before and after file sync and retires on disagreement.
+Windows guarantees accurate last-write timestamps after write handles close;
+the new open-handle flush path remains unqualified. The adapter supplies no
+directory barrier or power-loss claim. [File times](https://learn.microsoft.com/en-us/windows/win32/sysinfo/file-times)
 
 The reader admits both metadata pins before either data handle. The application
 uses the owner bytes and five role values from that same holder with an
