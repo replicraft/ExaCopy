@@ -1,4 +1,5 @@
 use std::ffi::OsString;
+use std::fmt::Write as _;
 use std::os::windows::ffi::OsStringExt as _;
 
 use super::*;
@@ -94,6 +95,46 @@ fn windows_bootstrap_parser_requires_exact_independent_selection() {
 		assert!(
 			crate::args::parse(candidate.into_iter()).is_err(),
 			"{index}"
+		);
+	}
+	// Public key from RFC 8032 section 7.1, test 2.
+	let foreign_key = [
+		0x3d, 0x40, 0x17, 0xc3, 0xe8, 0x43, 0x89, 0x5a, 0x92, 0xb7, 0x0a, 0xa7, 0x4d, 0x1b, 0x7e,
+		0xbc, 0x9c, 0x98, 0x2c, 0xcf, 0x2e, 0xc4, 0x96, 0x8c, 0xc0, 0xcd, 0x55, 0xf1, 0x2a, 0xf4,
+		0x66, 0x0c,
+	];
+	assert_ne!(command.owner_key, foreign_key);
+	let mut alternate_key = String::with_capacity(foreign_key.len() * 2);
+	for byte in foreign_key {
+		write!(alternate_key, "{byte:02x}").unwrap();
+	}
+
+	// Each alternate can stand alone. A duplicate cannot override or coexist
+	// with either independently selected identity.
+	for (value_index, alternate) in [
+		(3, r"E:\another\private"),
+		(5, "fedcba98-7654-3210-fedc-ba9876543210"),
+		(7, "1"),
+		(9, "fedcba9876543210fedcba9876543210"),
+		(11, "42424242424242424242424242424242"),
+		(13, alternate_key.as_str()),
+		(15, "018d45be-0000-7000-8000-000000000002"),
+	] {
+		let mut alternate_only = arguments();
+		alternate_only[value_index] = alternate.into();
+		let Ok(Command::InspectWindowsBootstrap(alternate_only)) =
+			crate::args::parse(alternate_only.into_iter())
+		else {
+			panic!("alternate selector at {value_index} must be valid on its own");
+		};
+		if value_index == 13 {
+			assert_eq!(alternate_only.owner_key, foreign_key);
+		}
+		let mut duplicate = arguments();
+		duplicate.extend([duplicate[value_index - 1].clone(), alternate.into()]);
+		assert!(
+			crate::args::parse(duplicate.into_iter()).is_err(),
+			"duplicate selector at {value_index}"
 		);
 	}
 	for extra in [["--format", "human"], ["--private-key", "file"]] {
