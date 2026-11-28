@@ -317,31 +317,48 @@ kani = {{ {declaration}harness = "kani_checks::phase::exact", file = "verificati
 		candidate["redacted_command"] = (*command).clone();
 		candidate["profile"]["features"] = features;
 		let log = "00000000-0000-4000-8000-000000000001.log";
+		let write_log = |candidate: &mut Value, contents: &str| {
+			let path = fixture.write(log, contents);
+			candidate["artifact_digest"] = json!(file_digest(&path).expect("read fixture digest"));
+		};
 		if command == &selected_command {
 			let profile = "EXACOPY_EVS_KANI_PROFILE_V1 --no-default-features --features experimental,strict\n";
 			assert_eq!(matches(&candidate), (true, false));
-			fixture.write(
-				log,
+			write_log(
+				&mut candidate,
 				"EXACOPY_EVS_KANI_PROFILE_V1 --no-default-features --features strict\n",
 			);
 			assert_eq!(matches(&candidate), (true, false));
-			fixture.write(log, &profile.repeat(2));
+			write_log(&mut candidate, &profile.repeat(2));
 			assert_eq!(matches(&candidate), (true, false));
 
 			let long_line = "x".repeat((profile.len() + 2) * 16_384);
-			fixture.write(log, &format!("{long_line}{profile}"));
+			write_log(&mut candidate, &format!("{long_line}{profile}"));
 			assert_eq!(matches(&candidate), (true, false));
-			fixture.write(log, &format!("{long_line}{profile}{profile}"));
+			write_log(&mut candidate, &format!("{long_line}{profile}{profile}"));
 			assert_eq!(matches(&candidate), (true, true));
 			let unterminated = profile.trim_end_matches('\n');
-			fixture.write(log, &format!("{unterminated}{long_line}\n"));
+			write_log(&mut candidate, &format!("{unterminated}{long_line}\n"));
 			assert_eq!(matches(&candidate), (true, false));
-			fixture.write(log, &format!("{unterminated}\r\n"));
+			write_log(&mut candidate, &format!("{unterminated}\r\n"));
 			assert_eq!(matches(&candidate), (true, true));
-			fixture.write(log, &format!("{unterminated}\r"));
+			write_log(&mut candidate, &format!("{unterminated}\r"));
 			assert_eq!(matches(&candidate), (true, false));
-			fixture.write(log, unterminated);
+			write_log(&mut candidate, unterminated);
 			assert_eq!(matches(&candidate), (true, true));
+
+			let wrong_log = fixture.write("other.log", "different recorded bytes\n");
+			let mut wrong_digest = candidate.clone();
+			wrong_digest["artifact_digest"] = json!(file_digest(&wrong_log).unwrap());
+			assert_eq!(matches(&wrong_digest), (true, false));
+
+			write_log(&mut candidate, profile);
+			let marker_only_digest = candidate["artifact_digest"].clone();
+			write_log(&mut candidate, &format!("{profile}{long_line}\n"));
+			assert_eq!(matches(&candidate), (true, true));
+			let mut truncated_digest = candidate.clone();
+			truncated_digest["artifact_digest"] = marker_only_digest;
+			assert_eq!(matches(&truncated_digest), (true, false));
 		}
 		assert_eq!(matches(&candidate), (true, true));
 

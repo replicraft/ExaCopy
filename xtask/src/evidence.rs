@@ -78,7 +78,11 @@ fn check_records(
 			continue;
 		}
 		let log = PathBuf::from(format!("{}.log", record.evidence_id));
-		if !matches_digest(directory, &log, record.artifact_digest.as_deref(), findings) {
+		let feature_bound_log = gate == Gate::Kani && !record.matches_features(&[]);
+		// The feature-bound gate checks the digest of the stream it scans for acknowledgement.
+		if !feature_bound_log
+			&& !matches_digest(directory, &log, record.artifact_digest.as_deref(), findings)
+		{
 			continue;
 		}
 		if fs::metadata(directory.join(&log)).is_ok_and(|metadata| metadata.len() == 0) {
@@ -275,7 +279,10 @@ fn matches_kani_profile(directory: &Path, record: &Record, features: &[String]) 
 	);
 	// Allow CRLF and one byte to detect an oversized acknowledgement.
 	let limit = expected.len() + 3;
-	let mut log = BufReader::new(log);
+	let mut log = BufReader::new(HashedLog {
+		source: log,
+		hash: Sha256::new(),
+	});
 	let mut line = Vec::with_capacity(limit);
 	let mut found = false;
 	loop {
@@ -284,7 +291,7 @@ fn matches_kani_profile(directory: &Path, record: &Record, features: &[String]) 
 			return false;
 		};
 		if read == 0 {
-			return found;
+			break;
 		}
 		if line.starts_with(KANI_PROFILE.as_bytes()) {
 			let ack = line
@@ -301,6 +308,21 @@ fn matches_kani_profile(directory: &Path, record: &Record, features: &[String]) 
 		if read == limit && !line.ends_with(b"\n") && log.skip_until(b'\n').is_err() {
 			return false;
 		}
+	}
+	let digest = format!("{:x}", log.into_inner().hash.finalize());
+	found && record.artifact_digest.as_deref() == Some(digest.as_str())
+}
+
+struct HashedLog {
+	source: File,
+	hash: Sha256,
+}
+
+impl Read for HashedLog {
+	fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+		let count = self.source.read(output)?;
+		self.hash.update(&output[..count]);
+		Ok(count)
 	}
 }
 

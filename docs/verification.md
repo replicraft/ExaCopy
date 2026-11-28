@@ -74,7 +74,9 @@ their harness checks. The recorder and validator bind that line, the exact
 command and the profile. Missing, wrong, duplicated or oversized lines refuse
 credit. LF, CRLF and exact unterminated EOF are accepted. Ordinary long log
 lines are drained with bounded storage, and embedded markers are ignored.
-Empty Kani selections preserve their existing command and profile. Credit
+The acknowledgement scan hashes that same log stream through physical EOF;
+the complete stream must match the record's artifact digest. Empty Kani
+selections preserve their existing command and profile. Credit
 still requires the pinned source, tool, complete raw log and harness results.
 
 The [P-071 Linux reservation fixture](architecture/remote-witnessed-closeout.md#p-071-linux-native-reservation)
