@@ -1627,13 +1627,13 @@ invariant_ids = ["INV-003", "INV-013", "INV-018", "INV-019"]
 scope = "The separately approved Linux SDK consumes one local grant and retains original source, job records, metadata-ready stage, model session, journal, published inode and receipt across one guarded no-replace attempt and exact v2 terminal suffix readback. Each subsequent journal or receipt mutation requires fresh same-grant admission."
 limits = "Component tests and strict checks passed on exact 3b9ef5f, with native unenrolled, spent and revoked SDK refusals. No operational enrollment, CLI activation, public-v2 recovery writer, automatic retry, positive native SDK qualification or process-crash/power-loss claim. New policy proof gates and execution of later changes require separate evidence."
 
+[[coverage.evidence]]
+owner = "exacopy-cli"
 level = "obligation"
 state = "defined"
 path = "apps/exacopy-cli/verification/obligations.toml"
 target = "P-082"
 
-[[coverage.evidence]]
-owner = "exacopy-cli"
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "test"
