@@ -1619,6 +1619,49 @@ state = "reported"
 path = "docs/architecture/public-apply-reconciliation.md"
 
 [[coverage]]
+id = "checked-public-apply-clock-decision"
+status = "experimental"
+requirement_ids = ["R-015", "R-155"]
+acceptance_ids = ["A-015", "A-155"]
+invariant_ids = ["INV-003", "INV-018", "INV-019"]
+scope = "The actual Linux grant clock delegates scalar admission to the model's signed UTC decision, preserving regression priority and the intersection of original and qualification windows. Defined checks compare the decision with wide nanosecond arithmetic and distinguish adapter high-water and qualification-installation behavior."
+limits = "Source integration and defined checks only. Native clock sampling, classifier fidelity, paired state updates, retirement, mutex serialization, publication and crash or power-loss qualification remain separate. Kani execution and extracted Lean semantics are not established by registration."
+
+[[coverage.evidence]]
+owner = "exacopy-model"
+level = "obligation"
+state = "defined"
+path = "crates/foundation/exacopy-model/verification/obligations.toml"
+target = "P-083"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/public_stage/grant/clock/tests.rs"
+target = "either_rollback_wins_over_expiry_without_replacing_the_accepted_pair"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/public_stage/grant/clock/tests.rs"
+target = "refused_first_tightening_keeps_its_window_without_advancing_the_sample"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/public_stage/grant/clock/tests.rs"
+target = "empty_and_reversed_qualification_refuse_before_observing_or_installing"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/checked-local-public-apply.md"
+
+[[coverage]]
 id = "checked-local-public-apply-continuation"
 status = "experimental"
 requirement_ids = ["R-015", "R-155"]

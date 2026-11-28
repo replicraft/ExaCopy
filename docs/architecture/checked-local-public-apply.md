@@ -24,6 +24,17 @@ Outside rename settlement, other file and directory barriers receive separate ad
 Individual I/O calls and existing write helpers may block or retry interrupted
 calls, so this supplies no hard wall-time or syscall-count guarantee.
 
+The runtime clock delegates its scalar decision to
+`exacopy_model::grant_time::check_grant_time`. Either clock's regression wins
+over expiry. UTC windows retain nanosecond precision and signed seconds;
+qualification can only narrow the original interval. The app still samples
+both clocks, classifies the native monotonic sample, retains the original
+deadline and updates the paired high-water only after acceptance. Installing
+a valid qualification still precedes observation, including a refused sample.
+P-083 defines Rust and Kani checks for the scalar decision; its proof is
+unexecuted and does not verify those native or stateful premises. Extraction
+and a theorem over the generated function remain open.
+
 The engine retains the original source, exclusive job, owner and private Plan
 read-only pins, verified stage, model session and journal. It checks the source
 name, required metadata, selected target absence, current qualification and
