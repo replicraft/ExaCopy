@@ -45,7 +45,7 @@ def candidate_state():
 
 def extract_candidate(scratch):
     scenario = config["scenario"]["grant-time"]
-    output = scratch / "grant-time"
+    output = scratch.with_name("hax-grant-time")
     require(scenario["output-dir"] == "verification/" + output.as_posix(),
             "Unexpected candidate scratch path")
     commit, tree = candidate_state()
