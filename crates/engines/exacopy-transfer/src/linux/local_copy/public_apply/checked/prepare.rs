@@ -153,7 +153,7 @@ where
 			identity,
 		},
 	};
-	append(
+	let (_, _prepared_frame) = append(
 		&mut journal,
 		FrameKind::JobPrepared,
 		ApplyRecord::Prepared,
@@ -217,7 +217,7 @@ where
 			})?;
 		let payload = record.encode();
 		let measurement = SourceMeasurementId::from_prepared_payload(&payload);
-		append(
+		let (_, _entry_frame) = append(
 			self.journal,
 			FrameKind::EntryPrepared,
 			ApplyRecord::Entry,
@@ -250,7 +250,7 @@ where
 			page: page.reference(),
 			source: measurement,
 		};
-		append(
+		let (_, _checkpoint_frame) = append(
 			self.journal,
 			FrameKind::RangeCheckpoint,
 			ApplyRecord::Range,
@@ -264,11 +264,14 @@ where
 	}
 }
 
+type RecordedSealResult<'seal, R, S, P, C, A> =
+	Result<(SyncedFrame, RecordedSeal<'seal>), CheckedCopyError<R, S, P, C, A>>;
+
 pub(super) fn record_seal<'seal, R, S, P, C, A>(
 	seal: &'seal SealEvidence,
 	journal: &mut DurableJournal<impl JournalSegment>,
 	authority: &impl LocalApplyAdmission,
-) -> Result<(SyncedFrame, RecordedSeal<'seal>), CheckedCopyError<R, S, P, C, A>> {
+) -> RecordedSealResult<'seal, R, S, P, C, A> {
 	let mut sync = |kind, role, payload| {
 		append(journal, kind, role, payload, authority)
 			.map(|(_, frame)| frame)

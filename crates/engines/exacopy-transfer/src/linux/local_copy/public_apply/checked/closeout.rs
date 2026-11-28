@@ -18,6 +18,9 @@ use crate::linux::{
 
 const MAX_SUFFIX_BYTES: usize = 4096;
 
+type ReceiptRead<R, S, P, C, A> =
+	Result<[u8; MAX_PUBLIC_APPLY_RECEIPT_BYTES], CheckedCopyError<R, S, P, C, A>>;
+
 pub(super) struct PublishedAttempt<'recorded, 'name> {
 	pub(super) intent: PublicApplyIntent<'name>,
 	pub(super) intent_frame: SyncedFrame,
@@ -32,10 +35,7 @@ pub(super) struct ReceiptHold<Holder> {
 }
 
 impl<Holder: HeldFreshReceipt> ReceiptHold<Holder> {
-	fn read<R, P, C, A>(
-		&self,
-	) -> Result<[u8; MAX_PUBLIC_APPLY_RECEIPT_BYTES], CheckedCopyError<R, Holder::Error, P, C, A>>
-	{
+	fn read<R, P, C, A>(&self) -> ReceiptRead<R, Holder::Error, P, C, A> {
 		let mut bytes = [0; MAX_PUBLIC_APPLY_RECEIPT_BYTES];
 		self.held
 			.read_exact_receipt(&mut bytes[..self.exact.len()])
