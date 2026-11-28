@@ -2,6 +2,11 @@ use super::{Binding, Marker};
 
 pub(in crate::contracts) const BINDINGS: &[Binding] = &[
 	Binding::new(
+		"exacopy.cli.managed_sync_recreate_export",
+		"apps/exacopy-cli/src/sync_preview/managed_command/export_recreate.rs",
+		Marker::Report,
+	),
+	Binding::new(
 		"workflow-sync-recreate-plan",
 		"crates/formats/exacopy-plan/src/workflow_sync/recreate.rs",
 		Marker::Workflow {

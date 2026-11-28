@@ -11,12 +11,15 @@ use exacopy_plan::workflow_sync::MAX_MEMBER_BYTES;
 use exacopy_platform::linux::{
 	FileIdentity, ManagedSyncError, ManagedSyncPreviewPair, NamedReadView, ReadError,
 	SyncPreviewEntry, SyncPreviewError, SyncPreviewRoots, SyncProfileStore, SyncProfileStoreError,
+	SyncProfileStoreRecord,
 };
 use exacopy_transfer::linux::sync_preview::{
 	FirstSyncPreview, HeldSyncPreview, HistoricalPreviewFailure, LiveSyncSelection, PreviewInput,
 	preview_with_history,
 };
-use exacopy_transfer::sync_genesis::{AuthenticatedSyncGenesis, SyncGenesisError};
+use exacopy_transfer::sync_genesis::{
+	AuthenticatedSyncGenesis, RetainedSyncGenesisMembers, SyncGenesisError,
+};
 use zeroize::Zeroizing;
 
 use crate::profile::profile_id_for_key;
@@ -33,6 +36,11 @@ pub mod genesis;
 mod history;
 mod manual_recreate;
 mod scope;
+mod signed_recreate;
+
+pub(crate) use signed_recreate::{
+	SignedRecreateError, SignedRecreateExport, SignedRecreateRequest, export_recreate_acknowledged,
+};
 
 #[cfg(test)]
 mod tests;
@@ -243,6 +251,7 @@ fn initialize<T>(
 		&key,
 		endpoints,
 		&mut root_bytes,
+		false,
 	)?;
 	store
 		.check_disjoint(&history, &roots)
@@ -332,9 +341,39 @@ where
 {
 	type Failure = ManagedSyncPreviewError;
 
+	let key = verify_owner_identity(&pin.identity)?;
+	let record = store
+		.read(pin.identity.selection_id)
+		.map_err(Failure::Store)?;
+	with_held_history_view(
+		store,
+		pin,
+		&record,
+		&key,
+		false,
+		|baseline, current, key, _| observe(baseline, current, key),
+	)
+}
+
+fn with_held_history_view<T, E>(
+	store: &SyncProfileStore,
+	pin: &ManagedPolicyPin,
+	record: &SyncProfileStoreRecord<'_>,
+	key: &VerifyingKey,
+	retain_history: bool,
+	observe: impl FnOnce(
+		&AuthenticatedSyncGenesis<'_, '_>,
+		&ManagedHistoryPreview<'_, '_, '_>,
+		&VerifyingKey,
+		Option<RetainedSyncGenesisMembers>,
+	) -> Result<T, E>,
+) -> Result<T, E>
+where
+	E: From<ManagedSyncPreviewError>,
+{
+	type Failure = ManagedSyncPreviewError;
+
 	let identity = &pin.identity;
-	let key = verify_owner_identity(identity)?;
-	let record = store.read(identity.selection_id).map_err(Failure::Store)?;
 	let policy = decode(record.bytes(), pin).map_err(Failure::Policy)?;
 	let scope = expected_native(&policy)?;
 	let roots = SyncPreviewRoots::open(scope.parent_path, scope.roots.map(|root| root.name))
@@ -358,13 +397,14 @@ where
 	let mut root_bytes = [0; MAX_MEMBER_BYTES];
 	let actual = lease.recheck_roots().map_err(Failure::Managed)?;
 	let endpoints = fresh_endpoints(&policy, actual)?;
-	let baseline = authenticate(
+	let (baseline, retained) = authenticate(
 		history.read_root(),
 		&policy,
 		identity,
-		&key,
+		key,
 		endpoints,
 		&mut root_bytes,
+		retain_history,
 	)?;
 	let pair = lease.observe().map_err(Failure::Managed)?;
 	let current = ManagedHistoryPreview {
@@ -373,7 +413,7 @@ where
 		identity,
 		recheck_custody: &recheck_custody,
 	};
-	let observed = observe(&baseline, &current, &key)?;
+	let observed = observe(&baseline, &current, key, retained)?;
 	recheck_custody()?;
 	Ok(observed)
 }

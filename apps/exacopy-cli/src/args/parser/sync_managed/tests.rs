@@ -308,3 +308,30 @@ fn prepare_recreate_requires_explicit_direction_conflict_and_receipt() {
 	args.extend(["--from", "right"]);
 	assert!(from_args(&args).is_err());
 }
+
+#[test]
+fn signed_recreate_requires_an_independently_selected_pair_and_expiry() {
+	const PAIR: &str = "019b8db1-d7f0-7112-8001-010203040506";
+	let mut args = PREVIEW_ARGS.to_vec();
+	args[1] = EXPORT_RECREATE;
+	args.extend([
+		"--from",
+		"right",
+		"--reviewed-conflict",
+		"edit-against-deletion",
+	]);
+	assert!(from_args(&args).is_err());
+	args.extend(["--expires-in-seconds", "120"]);
+	assert!(from_args(&args).is_err());
+	args.extend(["--pair-id", PAIR]);
+	let Command::SyncManaged(SyncManagedCommand::ExportRecreate { pair_id, command }) =
+		from_args(&args).unwrap()
+	else {
+		panic!("expected a signed recreate export");
+	};
+	assert_eq!(pair_id, *uuid::Uuid::parse_str(PAIR).unwrap().as_bytes());
+	assert_eq!(command.from, SyncSide::Right);
+	assert_eq!(command.expires_in_seconds, NonZeroU32::new(120));
+	*args.last_mut().unwrap() = "019b8db1-d7f0-4112-8001-010203040506";
+	assert!(from_args(&args).is_err());
+}

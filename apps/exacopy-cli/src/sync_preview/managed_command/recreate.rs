@@ -146,7 +146,7 @@ fn identity(identity: FileIdentity) -> Value {
 	})
 }
 
-fn recreate_reason(error: ManualRecreateError) -> &'static str {
+pub(super) fn recreate_reason(error: ManualRecreateError) -> &'static str {
 	match error {
 		ManualRecreateError::Scope(error) => reason(&error),
 		ManualRecreateError::ReviewChanged => "reviewed_conflict_changed",
@@ -159,10 +159,20 @@ fn recreate_reason(error: ManualRecreateError) -> &'static str {
 fn plan_ids(
 	duration: Option<NonZeroU32>,
 ) -> Result<(ManualRecreatePlanIds, Option<UnixTimestamp>), &'static str> {
+	plan_ids_at(creation_time()?, duration)
+}
+
+pub(super) fn creation_time() -> Result<PlanCreationTime, &'static str> {
 	let elapsed = SystemTime::now()
 		.duration_since(UNIX_EPOCH)
 		.map_err(|_| "clock_unavailable")?;
-	let creation = PlanCreationTime::new(elapsed).ok_or("clock_unavailable")?;
+	PlanCreationTime::new(elapsed).ok_or("clock_unavailable")
+}
+
+pub(super) fn plan_ids_at(
+	creation: PlanCreationTime,
+	duration: Option<NonZeroU32>,
+) -> Result<(ManualRecreatePlanIds, Option<UnixTimestamp>), &'static str> {
 	let observed_at = creation.timestamp();
 	let expires_at = plan_expiry(observed_at, duration)?;
 	let mut entropy = [0; 10];
@@ -193,7 +203,7 @@ fn plan_expiry(
 		.map_err(|_| "child_plan_expiry_overflow")
 }
 
-fn fresh_reference() -> Result<Uuid, &'static str> {
+pub(super) fn fresh_reference() -> Result<Uuid, &'static str> {
 	let mut entropy = [0; 16];
 	kernel_random(&mut entropy).map_err(|_| "entropy_unavailable")?;
 	Ok(plan_reference(entropy))

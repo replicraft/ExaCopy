@@ -90,6 +90,10 @@ pub(crate) enum SyncManagedCommand {
 		selection: [u8; 16],
 	},
 	PrepareRecreate(ManagedSyncRecreateArgs),
+	ExportRecreate {
+		pair_id: [u8; 16],
+		command: ManagedSyncRecreateArgs,
+	},
 }
 
 #[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]

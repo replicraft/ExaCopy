@@ -132,7 +132,8 @@ Init emits one 435-byte line after the original seed, profile, policy and
 live-scope checks and private slot sealing succeed. It signs the exact policy
 commitment and selection revision, selected owner and actual profile
 identity, including a digest of the canonical raw path. The application
-opens the existing seed only during Init. Preview checks the signed line
+opens the existing seed during Init and the separate signed recreate export.
+Preview checks the signed line
 under the independently selected key and selection, compares the held profile
 identity, and rechecks the exact sealed policy and authenticated history.
 It emits a JSON result. A conflict has exit status 3 and an inconclusive

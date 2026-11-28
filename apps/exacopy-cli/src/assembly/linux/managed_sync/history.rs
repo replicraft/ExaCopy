@@ -5,8 +5,9 @@ use ed25519_dalek::VerifyingKey;
 use exacopy_plan::workflow_sync::{EndpointFacts, MAX_MEMBER_BYTES};
 use exacopy_platform::linux::{ReadRoot, SyncHistoryDirectory};
 use exacopy_transfer::sync_genesis::{
-	AuthenticatedSyncGenesis, ExpectedSyncGenesis, SelectedSyncGenesisMember,
-	inspect_selected_sync_genesis,
+	AuthenticatedSyncGenesis, ExpectedSyncGenesis, RetainedSyncGenesisMembers,
+	SelectedSyncGenesisMember, inspect_selected_sync_genesis,
+	inspect_selected_sync_genesis_retained,
 };
 
 use crate::sync_preview::managed_policy::{ManagedPolicy, ManagedPolicyIdentity};
@@ -21,7 +22,14 @@ pub(super) fn authenticate<'root, 'selected>(
 	key: &'selected VerifyingKey,
 	endpoints: [EndpointFacts<'selected>; 2],
 	root_bytes: &'root mut [u8; MAX_MEMBER_BYTES],
-) -> Result<AuthenticatedSyncGenesis<'root, 'selected>, ManagedSyncPreviewError> {
+	retain: bool,
+) -> Result<
+	(
+		AuthenticatedSyncGenesis<'root, 'selected>,
+		Option<RetainedSyncGenesisMembers>,
+	),
+	ManagedSyncPreviewError,
+> {
 	let history = &policy.history;
 	let member_limit =
 		u16::try_from(MAX_MEMBER_BYTES).map_err(|_| ManagedSyncPreviewError::Selection)?;
@@ -51,13 +59,21 @@ pub(super) fn authenticate<'root, 'selected>(
 		endpoints,
 		scan: history.scan,
 	};
-	inspect_selected_sync_genesis(
-		root,
-		root_length,
-		root_bytes,
-		&expected,
-		[member(first)?, member(second)?, member(third)?],
-		|locator| -> io::Result<_> { directory.open_member(locator) },
-	)
+	let members = [member(first)?, member(second)?, member(third)?];
+	let open = |locator| -> io::Result<_> { directory.open_member(locator) };
+	if retain {
+		inspect_selected_sync_genesis_retained(
+			root,
+			root_length,
+			root_bytes,
+			&expected,
+			members,
+			open,
+		)
+		.map(|(baseline, retained)| (baseline, Some(retained)))
+	} else {
+		inspect_selected_sync_genesis(root, root_length, root_bytes, &expected, members, open)
+			.map(|baseline| (baseline, None))
+	}
 	.map_err(ManagedSyncPreviewError::History)
 }

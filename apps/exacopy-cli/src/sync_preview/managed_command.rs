@@ -21,6 +21,7 @@ use super::{managed_report, write_report};
 
 const SCRATCH_BYTES: usize = 64 * 1024;
 
+mod export_recreate;
 mod recreate;
 
 pub(crate) fn run_stdio(
@@ -33,6 +34,9 @@ pub(crate) fn run_stdio(
 		SyncManagedCommand::Init(_) => "exacopy: managed sync Init refused (output_unavailable)",
 		SyncManagedCommand::PrepareRecreate(_) => {
 			"exacopy: managed sync prepare-recreate refused (output_unavailable)"
+		}
+		SyncManagedCommand::ExportRecreate { .. } => {
+			"exacopy: managed sync export-recreate refused (output_unavailable)"
 		}
 		_ => return run(command, stdin, stdout, stderr),
 	};
@@ -64,6 +68,9 @@ fn run(
 		},
 		SyncManagedCommand::PrepareRecreate(command) => {
 			recreate::run(&command, stdin, stdout, stderr)
+		}
+		SyncManagedCommand::ExportRecreate { pair_id, command } => {
+			export_recreate::run(&command, pair_id, stdin, stdout, stderr)
 		}
 		SyncManagedCommand::Preview {
 			profile,

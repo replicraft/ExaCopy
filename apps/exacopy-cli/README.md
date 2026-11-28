@@ -186,6 +186,12 @@ The default-off Linux managed sync profile also supports one independently
 provisioned authenticated subject and an approval-required plan for a reviewed
 deletion conflict. [Managed sync and recreate planning](../../docs/engineering/linux-managed-sync-production.md#prepare-one-reviewed-recreate-plan)
 
+`sync-managed export-recreate` signs a bounded parent proposal and exports its
+exact child and historical members for review. It requires an independently
+selected pair UUIDv7 and expiry. The report records authorship with no execution
+authority; separate approval and action journaling remain required.
+[Signed proposal contract](../../docs/architecture/signed-sync-recreate-export.md)
+
 ## Create and verify a single-file manifest
 
 ```sh

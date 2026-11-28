@@ -19,6 +19,7 @@ use exacopy_transfer::copy_planning::{
 use exacopy_transfer::linux::sync_preview::{
 	FirstSyncPreview, HeldSyncPreview as _, MAX_PREVIEW_FILE_BYTES, preview_with_history,
 };
+use exacopy_transfer::sync_genesis::AuthenticatedSyncGenesis;
 use uuid::Uuid;
 
 use crate::profile::root_id_for_key;
@@ -161,80 +162,116 @@ pub(super) fn prepare_held(
 	scratch: &mut [u8],
 ) -> Result<ManualRecreateCandidate, ManualRecreateError> {
 	with_history_view(store, pin, |baseline, current, key| {
-		let preview = preview_with_history(baseline, current, scratch)
-			.map_err(|error| ManagedSyncPreviewError::Preview(Box::new(error)))?;
-		let (source, target, source_evidence) = held_choice(&preview, from, reviewed)?;
-		let ends = &current.policy.endpoints;
-		check_peer_limit(source_evidence, ends[target].max_bytes)?;
-		let native = current
-			.pair
-			.recheck_history_subjects()
-			.map_err(ManagedSyncPreviewError::Managed)?;
-		let [left, right] = native.roots.map(|root| root.root);
-		let roots = [
-			root_binding(key, ends[0].root, left)?,
-			root_binding(key, ends[1].root, right)?,
-		];
-		let [source_view, target_view] = [
-			current.pair.entries()[source],
-			current.pair.entries()[target],
-		];
-		let (SyncPreviewEntry::Present(view), SyncPreviewEntry::Absent) =
-			(source_view, target_view)
-		else {
-			return Err(ManualRecreateError::ReviewChanged);
-		};
-		let subject = native.subject;
-		let destination = AbsentTarget {
-			view: current,
-			identity: roots[target].observed_identity,
-			subject,
-			side: target,
-		};
-		let source_identity = view.identity();
-		let request = CreateNewRequest {
-			plan_id: ids.plan,
-			entry_id: ids.entry,
-			source_view_id: ids.source_view,
-			measurement_id: ids.measurement,
-			source: PlanSelection {
-				root_id: roots[source].child_alias,
-				component: subject,
+		prepare_current(
+			baseline,
+			current,
+			key,
+			pin.digest,
+			RecreateReview {
+				from,
+				conflict: reviewed,
+				ids,
+				expires_at,
 			},
-			destination: PlanSelection {
-				root_id: roots[target].child_alias,
-				component: subject,
-			},
-			observed_at: ids.observed_at,
-		};
-		let child = plan_create_new_with_expiry(
-			request,
-			expires_at,
-			|name| {
-				if name == subject {
-					Ok(BorrowedSource(view))
-				} else {
-					Err(ReadError::IdentityChanged)
-				}
-			},
-			|identity| identity == source_identity,
-			&destination,
 			scratch,
 		)
-		.map_err(|error| ManualRecreateError::Plan(Box::new(error)))?;
-		check_child(&child, &request, source_identity, source_evidence)?;
-		current.recheck_selection()?;
-		Ok(ManualRecreateCandidate {
-			policy_digest: pin.digest,
-			predecessor_digest: baseline.digest(),
-			roots,
-			subject: subject.as_bytes().to_vec(),
-			from,
-			conflict: reviewed,
-			source_identity,
-			source: source_evidence,
-			child,
-		})
+	})
+}
+
+/// Independently selected review and child planning parameters.
+pub(super) struct RecreateReview {
+	pub(super) from: SyncSide,
+	pub(super) conflict: SyncConflict,
+	pub(super) ids: ManualRecreatePlanIds,
+	pub(super) expires_at: Option<UnixTimestamp>,
+}
+
+pub(super) fn prepare_current(
+	baseline: &AuthenticatedSyncGenesis<'_, '_>,
+	current: &ManagedHistoryPreview<'_, '_, '_>,
+	key: &VerifyingKey,
+	policy_digest: [u8; 32],
+	review: RecreateReview,
+	scratch: &mut [u8],
+) -> Result<ManualRecreateCandidate, ManualRecreateError> {
+	let RecreateReview {
+		from,
+		conflict: reviewed,
+		ids,
+		expires_at,
+	} = review;
+	let preview = preview_with_history(baseline, current, scratch)
+		.map_err(|error| ManagedSyncPreviewError::Preview(Box::new(error)))?;
+	let (source, target, source_evidence) = held_choice(&preview, from, reviewed)?;
+	let ends = &current.policy.endpoints;
+	check_peer_limit(source_evidence, ends[target].max_bytes)?;
+	let native = current
+		.pair
+		.recheck_history_subjects()
+		.map_err(ManagedSyncPreviewError::Managed)?;
+	let [left, right] = native.roots.map(|root| root.root);
+	let roots = [
+		root_binding(key, ends[0].root, left)?,
+		root_binding(key, ends[1].root, right)?,
+	];
+	let [source_view, target_view] = [
+		current.pair.entries()[source],
+		current.pair.entries()[target],
+	];
+	let (SyncPreviewEntry::Present(view), SyncPreviewEntry::Absent) = (source_view, target_view)
+	else {
+		return Err(ManualRecreateError::ReviewChanged);
+	};
+	let subject = native.subject;
+	let destination = AbsentTarget {
+		view: current,
+		identity: roots[target].observed_identity,
+		subject,
+		side: target,
+	};
+	let source_identity = view.identity();
+	let request = CreateNewRequest {
+		plan_id: ids.plan,
+		entry_id: ids.entry,
+		source_view_id: ids.source_view,
+		measurement_id: ids.measurement,
+		source: PlanSelection {
+			root_id: roots[source].child_alias,
+			component: subject,
+		},
+		destination: PlanSelection {
+			root_id: roots[target].child_alias,
+			component: subject,
+		},
+		observed_at: ids.observed_at,
+	};
+	let child = plan_create_new_with_expiry(
+		request,
+		expires_at,
+		|name| {
+			if name == subject {
+				Ok(BorrowedSource(view))
+			} else {
+				Err(ReadError::IdentityChanged)
+			}
+		},
+		|identity| identity == source_identity,
+		&destination,
+		scratch,
+	)
+	.map_err(|error| ManualRecreateError::Plan(Box::new(error)))?;
+	check_child(&child, &request, source_identity, source_evidence)?;
+	current.recheck_selection()?;
+	Ok(ManualRecreateCandidate {
+		policy_digest,
+		predecessor_digest: baseline.digest(),
+		roots,
+		subject: subject.as_bytes().to_vec(),
+		from,
+		conflict: reviewed,
+		source_identity,
+		source: source_evidence,
+		child,
 	})
 }
 

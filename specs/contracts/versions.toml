@@ -19,6 +19,14 @@ owner = "crates/formats/exacopy-plan/src/workflow_sync/recreate.rs"
 notes = "Workflow page kind 0x0101, one review-only create-new row with no delegated grant and a domain-scoped expected Linux v1 receipt selector. Ordinary child Plan and P-063 encodings remain unchanged. This profile cannot authorize parent execution or baseline advancement."
 
 [[contract]]
+id = "exacopy.cli.managed_sync_recreate_export"
+kind = "cli_output"
+status = "implemented"
+version = "1.0"
+owner = "apps/exacopy-cli/src/sync_preview/managed_command/export_recreate.rs"
+notes = "Default-off sync-managed export-recreate report. Eight exact canonical members, separately selected pair UUID and authenticated predecessor pair digest, fixed no-authority flags, and a 64 KiB report bound."
+
+[[contract]]
 id = "exacopy.cli.version"
 kind = "cli_output"
 status = "implemented"

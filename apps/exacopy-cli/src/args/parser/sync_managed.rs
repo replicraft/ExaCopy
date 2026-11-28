@@ -4,6 +4,7 @@ use std::num::{NonZeroU32, NonZeroU64};
 use clap::builder::OsStringValueParser;
 use clap::{Arg, ArgAction, ArgMatches, Command as Cli};
 use exacopy_model::{SyncConflict, SyncSide};
+use uuid::{Uuid, Variant};
 
 use crate::args::{ManagedSyncInitArgs, ManagedSyncRecreateArgs, SyncManagedCommand};
 
@@ -12,6 +13,8 @@ use super::{INIT, PROFILE, path};
 pub(super) const NAME: &str = "sync-managed";
 const PREVIEW: &str = "preview";
 const PREPARE_RECREATE: &str = "prepare-recreate";
+const EXPORT_RECREATE: &str = "export-recreate";
+const PAIR_ID: &str = "pair-id";
 const FROM: &str = "from";
 const EXPIRES_IN_SECONDS: &str = "expires-in-seconds";
 const REVIEWED_CONFLICT: &str = "reviewed-conflict";
@@ -74,33 +77,48 @@ pub(super) fn definition() -> Cli {
 				"Read the independently retained selection receipt from stdin.",
 			)),
 		)
+		.subcommand(recreate_command(
+			PREPARE_RECREATE,
+			"Prepare an unsigned manual recreate Plan for review.",
+			false,
+		))
 		.subcommand(
-			selected_profile(
-				PREPARE_RECREATE,
-				"Prepare an unsigned manual recreate Plan for review.",
+			recreate_command(
+				EXPORT_RECREATE,
+				"Export a signed managed recreate Plan for separate approval.",
+				true,
 			)
-			.arg(stdin(
-				RECEIPT_STDIN,
-				"Read the independently retained selection receipt from stdin.",
-			))
 			.arg(value(
-				FROM,
-				"left|right",
-				"Select the surviving source explicitly.",
-			))
-			.arg(value(
-				REVIEWED_CONFLICT,
-				"CONFLICT",
-				"Select deletion-against-unchanged or edit-against-deletion.",
-			))
-			.arg(
-				value(
-					EXPIRES_IN_SECONDS,
-					"NONZERO_DECIMAL",
-					"Bound the unsigned child Plan lifetime in seconds from its creation.",
-				)
-				.required(false),
-			),
+				PAIR_ID,
+				"UUIDv7",
+				"Independently selected stable pair UUIDv7.",
+			)),
+		)
+}
+
+fn recreate_command(name: &'static str, about: &'static str, expiry_required: bool) -> Cli {
+	selected_profile(name, about)
+		.arg(stdin(
+			RECEIPT_STDIN,
+			"Read the independently retained selection receipt from stdin.",
+		))
+		.arg(value(
+			FROM,
+			"left|right",
+			"Select the surviving source explicitly.",
+		))
+		.arg(value(
+			REVIEWED_CONFLICT,
+			"CONFLICT",
+			"Select deletion-against-unchanged or edit-against-deletion.",
+		))
+		.arg(
+			value(
+				EXPIRES_IN_SECONDS,
+				"NONZERO_DECIMAL",
+				"Bound the Plan lifetime in seconds from its creation.",
+			)
+			.required(expiry_required),
 		)
 }
 
@@ -174,7 +192,7 @@ pub(super) fn command(mut command: ArgMatches) -> Option<SyncManagedCommand> {
 			owner_key,
 			selection,
 		}),
-		PREPARE_RECREATE if args.get_flag(RECEIPT_STDIN) => {
+		PREPARE_RECREATE | EXPORT_RECREATE if args.get_flag(RECEIPT_STDIN) => {
 			let (from, absent) = match bytes(&args, FROM)? {
 				b"left" => (SyncSide::Left, SyncSide::Right),
 				b"right" => (SyncSide::Right, SyncSide::Left),
@@ -189,19 +207,32 @@ pub(super) fn command(mut command: ArgMatches) -> Option<SyncManagedCommand> {
 				Some(raw) => Some(NonZeroU32::new(u32::try_from(decimal(raw)?).ok()?)?),
 				None => None,
 			};
-			Some(SyncManagedCommand::PrepareRecreate(
-				ManagedSyncRecreateArgs {
-					profile,
-					owner_key,
-					selection,
-					from,
-					reviewed,
-					expires_in_seconds,
-				},
-			))
+			let command = ManagedSyncRecreateArgs {
+				profile,
+				owner_key,
+				selection,
+				from,
+				reviewed,
+				expires_in_seconds,
+			};
+			if operation == EXPORT_RECREATE {
+				let pair_id = pair_id(bytes(&args, PAIR_ID)?)?;
+				Some(SyncManagedCommand::ExportRecreate { pair_id, command })
+			} else {
+				Some(SyncManagedCommand::PrepareRecreate(command))
+			}
 		}
 		_ => None,
 	}
+}
+
+fn pair_id(raw: &[u8]) -> Option<[u8; 16]> {
+	let id = Uuid::try_parse_ascii(raw).ok()?;
+	let mut canonical = Uuid::encode_buffer();
+	(id.get_version_num() == 7
+		&& id.get_variant() == Variant::RFC4122
+		&& id.hyphenated().encode_lower(&mut canonical).as_bytes() == raw)
+		.then_some(*id.as_bytes())
 }
 
 fn bytes<'args>(args: &'args ArgMatches, name: &str) -> Option<&'args [u8]> {

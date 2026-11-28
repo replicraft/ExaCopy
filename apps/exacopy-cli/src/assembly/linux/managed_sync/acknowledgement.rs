@@ -121,7 +121,7 @@ pub(crate) fn prepare_recreate_acknowledged(
 	)
 }
 
-fn with_acknowledgement<T, E>(
+pub(super) fn with_acknowledgement<T, E>(
 	profile: &Path,
 	owner_key: [u8; 32],
 	selection: [u8; 16],

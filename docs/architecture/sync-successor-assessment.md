@@ -10,6 +10,12 @@ It returns an advisory generation;
 baseline persistence, pointer activation, native qualification, A-272 restart
 reconciliation and P-028 publication barriers remain open.
 
+The [signed recreate export](signed-sync-recreate-export.md) adds a separate
+owner-authored parent proposal and immutable child/history bundle. It grants
+no execution authority and cannot retrospectively associate an independently
+executed child with a workflow action. The durable action producer and
+successor publisher remain separate acceptance work.
+
 The additional read-start interval guard and its regression passed in the
 `9761682` hosted coverage run. All 98 model tests passed, with 1,015/1,030
 covered lines and 443/468 covered branches under the unchanged model minimums.
