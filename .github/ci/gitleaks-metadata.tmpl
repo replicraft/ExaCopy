@@ -1,0 +1,6 @@
+[
+{{- range $index, $finding := . }}
+{{- if $index }},{{ end }}
+{{- dict "rule" $finding.RuleID "path_id" (sha256sum $finding.File) "line" $finding.StartLine "commit" $finding.Commit | mustToJson }}
+{{- end }}
+]

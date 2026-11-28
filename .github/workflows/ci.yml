@@ -626,9 +626,12 @@ jobs:
       - name: Install Gitleaks
         id: gitleaks
         run: bash .github/ci/capture.sh gitleaks-setup bash .github/ci/install.sh gitleaks
+      - name: Run Gitleaks metadata controls
+        if: ${{ !cancelled() && steps.source.outcome == 'success' }}
+        run: bash .github/ci/capture.sh gitleaks-metadata-controls python3 -B .github/ci/gitleaks_metadata_test.py
       - name: Scan repository history for secrets
         if: ${{ !cancelled() && steps.gitleaks.outcome == 'success' }}
-        run: bash .github/ci/capture.sh gitleaks gitleaks git --redact=100 --no-banner --gitleaks-ignore-path .github/gitleaksignore .
+        run: bash .github/ci/capture.sh gitleaks bash .github/ci/gitleaks-scan.sh
       - name: Install Trivy
         id: trivy
         if: ${{ !cancelled() && steps.source.outcome == 'success' }}
