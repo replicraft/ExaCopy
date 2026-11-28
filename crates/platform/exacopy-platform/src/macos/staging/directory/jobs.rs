@@ -28,7 +28,7 @@ pub use identity::JobName;
 pub use journal::DarwinJournalSegment;
 pub use recovery::{
 	RecoveryError, RecoveryFileObservation, RecoveryInventory, RecoveryJob, RecoveryName,
-	RecoveryRecord, RecoveryStageReader,
+	RecoveryRecord, RecoveryStageReader, with_provisioned_recovery_job,
 };
 
 const JOURNAL: &[u8] = b"journal";

@@ -1,11 +1,16 @@
 use std::fs::{self, File};
 use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
 use std::os::unix::fs::{OpenOptionsExt as _, symlink};
+use std::path::Path;
+
+use crate::macos::ManagedReadError;
+use crate::macos::staging::jobs::with_provisioned_recovery_job;
+use crate::macos::staging::{ManagedStageGrant, StageError};
 
 use super::super::RecoveryError;
 use super::{
 	FIRST_SEGMENT, Fixture, JOB_NAME, JOURNAL, JobArtifact, JobName, OWNER, PLAN, PRIVATE, TARGET,
-	UUID, job_name, job_path, open_staging,
+	UUID, job_name, job_path, name, open_staging,
 };
 
 mod namespace;
@@ -13,6 +18,112 @@ mod readback;
 const OWNER_BYTES: &[u8] = b"opaque owner fixture";
 const PLAN_BYTES: &[u8] = b"opaque canonical plan fixture";
 const JOURNAL_BYTES: &[u8] = b"opaque journal prefix";
+
+#[test]
+fn provisioned_path_inspection_holds_the_existing_job_and_destination_lease() {
+	let fixture = Fixture::new();
+	let destination = fixture.path(PRIVATE).parent().unwrap().to_path_buf();
+	let grant = ManagedStageGrant::trusted_owner_authorizes_provisioned_root;
+	let (root_identity, job_identity, owner_identity) = {
+		let root = fixture.bind();
+		let container = open_staging(&root);
+		let job = container.create_job_directory(job_name()).unwrap();
+		let owner = job.write_owner_record(OWNER_BYTES).unwrap();
+		(root.observe_identity().unwrap(), job.identity(), owner)
+	};
+	fs::write(fixture.path(TARGET), PLAN_BYTES).unwrap();
+	let observed = with_provisioned_recovery_job(
+		&destination,
+		name(PRIVATE.as_bytes()),
+		job_name(),
+		grant(),
+		|job| {
+			assert_eq!(job.identity(), job_identity);
+			assert_eq!(job.observe_destination().unwrap(), root_identity);
+			let nested = with_provisioned_recovery_job(
+				&destination,
+				name(PRIVATE.as_bytes()),
+				job_name(),
+				grant(),
+				|_| (),
+			);
+			assert!(matches!(
+				nested,
+				Err(RecoveryError::Managed(StageError::DirectoryBusy))
+			));
+			let mut owner = job.open_owner().unwrap();
+			assert_eq!(owner.identity(), owner_identity);
+			let mut bytes = Vec::new();
+			owner.read_to_end(&mut bytes).unwrap();
+			owner.revalidate().unwrap();
+			bytes
+		},
+	)
+	.unwrap();
+	assert_eq!(observed, OWNER_BYTES);
+	assert_eq!(
+		fs::read(job_path(&fixture).join(OWNER)).unwrap(),
+		OWNER_BYTES
+	);
+	assert_eq!(fs::read(fixture.path(TARGET)).unwrap(), PLAN_BYTES);
+	assert_eq!(fixture.bind().observe_identity().unwrap(), root_identity);
+}
+
+#[test]
+fn provisioned_path_inspection_refuses_untrusted_lookup_without_creating_entries() {
+	let fixture = Fixture::new();
+	let destination = fixture.path(PRIVATE).parent().unwrap().to_path_buf();
+	let path_link = fixture.path("root-link");
+	symlink(&destination, &path_link).unwrap();
+	let container_link = fixture.path("container-link");
+	symlink(fixture.path(PRIVATE), &container_link).unwrap();
+
+	let inspect = |destination: &Path, container: &[u8]| {
+		with_provisioned_recovery_job(
+			destination,
+			name(container),
+			job_name(),
+			ManagedStageGrant::trusted_owner_authorizes_provisioned_root(),
+			|_| (),
+		)
+	};
+	assert!(inspect(&destination, b"missing-container").is_err());
+	assert!(matches!(
+		inspect(&destination, PRIVATE.as_bytes()),
+		Err(RecoveryError::Missing(JobArtifact::Directory))
+	));
+	assert!(!fixture.path("missing-container").exists());
+	assert!(!job_path(&fixture).exists());
+
+	// Seed an admissible job so following either symlink would reach the callback.
+	{
+		let root = fixture.bind();
+		let container = open_staging(&root);
+		let job = container.create_job_directory(job_name()).unwrap();
+		job.write_owner_record(OWNER_BYTES).unwrap();
+	}
+	assert!(inspect(&destination, PRIVATE.as_bytes()).is_ok());
+	for path in [Path::new("relative"), &fixture.path("private-stage/..")] {
+		assert!(matches!(
+			inspect(path, PRIVATE.as_bytes()),
+			Err(RecoveryError::Managed(StageError::Managed(
+				ManagedReadError::UnsupportedNamespace,
+			)))
+		));
+	}
+	assert!(inspect(&path_link, PRIVATE.as_bytes()).is_err());
+	assert!(inspect(&destination, b"container-link").is_err());
+	assert!(inspect(&destination, PRIVATE.as_bytes()).is_ok());
+	assert_eq!(fs::read_link(&path_link).unwrap(), destination);
+	assert_eq!(
+		fs::read_link(&container_link).unwrap(),
+		fixture.path(PRIVATE)
+	);
+	assert_eq!(
+		fs::read(job_path(&fixture).join(OWNER)).unwrap(),
+		OWNER_BYTES
+	);
+}
 
 #[test]
 fn reopens_only_fixed_artifacts_with_matching_observed_identities() {

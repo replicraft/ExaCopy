@@ -1,6 +1,7 @@
 use std::fmt;
 use std::fs::File;
 use std::os::fd::AsFd as _;
+use std::path::Path;
 
 use exacopy_endpoint::UnixComponent;
 use rustix::fs::{self, AtFlags, FileType, Mode, Stat};
@@ -9,6 +10,9 @@ use rustix::io::Errno;
 use self::record::{FIRST_SEGMENT_LIMIT, RECORD_LIMIT, RecordParent};
 use super::super::super::super::{
 	DIRECTORY_MODE, DIRECTORY_OPEN, PhysicalFsid, acl, with_materialization_disabled,
+};
+use super::super::{
+	ManagedStageGrant, ManagedStageRoot, open_provisioned_directory, provisioned_path_components,
 };
 use super::receipt::{RECEIPT, RECEIPT_PENDING, name_is_occupied};
 use super::record::{FIRST_SEGMENT, OWNER, PLAN};
@@ -27,6 +31,32 @@ pub use inventory::{
 	RecoveryFileObservation, RecoveryInventory, RecoveryName, RecoveryStageReader,
 };
 pub use record::RecoveryRecord;
+
+/// Opens an existing private job under an explicitly provisioned destination and container.
+///
+/// Walks the raw absolute destination path one component at a time without
+/// following symlinks and with dataless materialization disabled. The grant
+/// attests a stable trusted namespace and excludes mount and lookup triggers.
+/// The container is a single existing child of that destination. The callback
+/// borrows the read-only job while the destination, container and job leases
+/// are held. The caller independently selects its record verification authority.
+/// # Errors
+/// Reports invalid paths, unsafe or changed evidence, missing objects, and
+/// conflicting leases before invoking the callback.
+pub fn with_provisioned_recovery_job<T>(
+	destination: &Path,
+	container: UnixComponent<'_>,
+	job: JobName,
+	grant: ManagedStageGrant,
+	observe: impl for<'job> FnOnce(&RecoveryJob<'job>) -> T,
+) -> Result<T, RecoveryError> {
+	let relative = provisioned_path_components(destination)?;
+	let directory = with_materialization_disabled(|| open_provisioned_directory(relative))?;
+	let root = ManagedStageRoot::from_provisioned_directory(directory, grant)?;
+	let container = root.open_stage_directory(container)?;
+	let job = container.open_recovery_job(job)?;
+	Ok(observe(&job))
+}
 
 impl StageDirectory<'_> {
 	/// Independently opens the canonical private name for a known job.
