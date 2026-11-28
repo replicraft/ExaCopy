@@ -8,7 +8,7 @@ pub(super) mod selected_stream;
 
 pub use directory::{DestinationRoot, StageDirectory};
 pub use error::{DirectoryBarriersError, PublishError, StageError};
-pub use file::{ClosedStage, WriteStage};
+pub use file::{CheckedStageError, ClosedStage, NativePublishedStage, WriteStage};
 pub use selected_stream::{
 	SelectedStreamGateRequest, SelectedStreamLocation, SelectedStreamMetadataReady,
 	SelectedStreamNames, SelectedStreamObservation, SelectedStreamPublication,

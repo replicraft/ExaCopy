@@ -1,12 +1,15 @@
 use std::ffi::OsStr;
 use std::os::unix::fs::FileExt as _;
 
+use exacopy_endpoint::linux_apply::{
+	ApplyRole, ApplyStep, GuardedCheckpointPages, LocalApplyAdmission,
+};
 use exacopy_endpoint::write_all_at;
 use rustix::fs::OFlags;
 
 use super::super::handle::FileIdentity;
 use super::super::source::SourceObservation;
-use super::super::stage::{FILE_MODE, check_named_file};
+use super::super::stage::{FILE_MODE, check_named_file, sync_directory_admitted, write_admitted};
 use super::{JobDirectory, RecordDirectory, StageError, create_private_file};
 
 #[cfg(test)]
@@ -32,7 +35,7 @@ impl JobDirectory<'_> {
 
 /// Write-once checkpoint storage bound to a held private job directory.
 #[derive(Debug)]
-pub struct CheckpointDirectory<'job>(RecordDirectory<'job>);
+pub struct CheckpointDirectory<'job>(pub(super) RecordDirectory<'job>);
 
 impl CheckpointDirectory<'_> {
 	/// Exclusively creates one bounded page and synchronizes it and its directory.
@@ -69,6 +72,60 @@ impl CheckpointDirectory<'_> {
 		drop(file);
 		self.0.sync_directory()?;
 		written.recheck(check_page()?).map_err(StageError::ReadBack)
+	}
+}
+
+impl GuardedCheckpointPages for CheckpointDirectory<'_> {
+	fn persist_page_admitted(
+		&self,
+		ordinal: u32,
+		bytes: &[u8],
+		admission: &impl LocalApplyAdmission,
+	) -> Result<(), StageError> {
+		let name = checkpoint_page_name(ordinal)?;
+		let len =
+			u64::try_from(bytes.len()).map_err(|_| StageError::InvalidCheckpointPageLength)?;
+		check_page_length(len)?;
+		let role = ApplyRole::CheckpointPage(ordinal);
+		let (file, initial) = self
+			.0
+			.create_file_admitted(&name, || admission.enter(ApplyStep::Create(role)))?;
+		let name = OsStr::new(&name);
+		let identity = FileIdentity::from_stat(&initial);
+		let check = || {
+			self.0.check_current()?;
+			let stat = check_named_file(
+				&self.0.directory,
+				name,
+				identity,
+				self.0.job.root.mount,
+				FILE_MODE,
+			)?;
+			SourceObservation::capture(&stat).map_err(StageError::ReadBack)
+		};
+		check()?;
+		write_admitted(
+			0,
+			bytes,
+			|| admission.enter(ApplyStep::Write(role, 0, bytes.len())),
+			|position, remaining| file.write_at(remaining, position),
+		)?;
+		let written = check()?;
+		if written.len() != len {
+			return Err(StageError::IdentityChanged);
+		}
+		{
+			let _guard = admission
+				.enter(ApplyStep::Sync(role))
+				.map_err(StageError::Admission)?;
+			file.sync_all().map_err(StageError::BarrierFailed)?;
+		}
+		drop(file);
+		self.0.check_current()?;
+		sync_directory_admitted(&self.0.directory, || {
+			admission.enter(ApplyStep::Sync(ApplyRole::CheckpointDirectory))
+		})?;
+		written.recheck(check()?).map_err(StageError::ReadBack)
 	}
 }
 

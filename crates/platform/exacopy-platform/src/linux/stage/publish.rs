@@ -82,8 +82,16 @@ impl PublicationNames<'_> {
 
 	pub(in crate::linux) fn sync_directories(
 		&self,
-		mut sync: impl FnMut(&File) -> io::Result<()>,
+		sync: impl FnMut(&File) -> io::Result<()>,
 	) -> Result<(), PublishError> {
+		self.sync_directory_pair(sync)
+			.map_err(PublishError::BarriersFailed)
+	}
+
+	pub(in crate::linux) fn sync_directory_pair(
+		&self,
+		mut sync: impl FnMut(&File) -> io::Result<()>,
+	) -> Result<(), DirectoryBarriersError> {
 		let stage_result = sync(self.stage);
 		let destination_result = sync(&self.destination.directory);
 		let error = match (stage_result, destination_result) {
@@ -95,7 +103,7 @@ impl PublicationNames<'_> {
 				destination: destination.into(),
 			},
 		};
-		Err(PublishError::BarriersFailed(error))
+		Err(error)
 	}
 
 	pub(in crate::linux) fn observe_target(

@@ -159,7 +159,7 @@ fn stage_with_visible_extended_attributes_cannot_apply_required_metadata() {
 	assert!(!fixture.path(TARGET).exists());
 }
 
-fn observed_source(fixture: &Scratch, mode: u32) -> SourceObservation {
+pub(super) fn observed_source(fixture: &Scratch, mode: u32) -> SourceObservation {
 	let path = fixture.path(SOURCE);
 	fs::write(&path, PAYLOAD).expect("seed the source fixture");
 	let file = File::open(&path).expect("hold the source fixture");
@@ -199,7 +199,7 @@ fn component(name: &str) -> UnixComponent<'_> {
 	UnixComponent::new(name.as_bytes()).expect("valid fixture component")
 }
 
-fn binding() -> CopyBinding {
+pub(super) fn binding() -> CopyBinding {
 	let job = JobId::try_from_bytes([0, 0, 0, 0, 0, 0, 0x70, 0, 0x80, 0, 0, 0, 0, 0, 0, 1])
 		.expect("synthetic UUIDv7");
 	CopyBinding::new(
@@ -210,7 +210,7 @@ fn binding() -> CopyBinding {
 	)
 }
 
-fn authorization(binding: CopyBinding) -> PublishNoClobber {
+pub(super) fn authorization(binding: CopyBinding) -> PublishNoClobber {
 	let mut session = CopySession::new(binding);
 	for event in [
 		CopyEvent::StagePrepared,

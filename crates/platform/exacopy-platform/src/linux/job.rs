@@ -14,12 +14,14 @@ use super::stage::{
 };
 
 mod admission;
+mod apply;
 pub use admission::JobDirectoryCreationError;
 mod capabilities;
 mod checkpoint;
 mod journal_names;
 mod receipt;
 
+pub use apply::NativeHeldJobRecord;
 pub use checkpoint::CheckpointDirectory;
 pub(super) use checkpoint::{CHECKPOINTS, check_page_length, checkpoint_page_name};
 pub(super) use journal_names::FreshJournalNames;

@@ -1,9 +1,15 @@
 use std::fs::File;
+use std::io;
+
+use exacopy_endpoint::linux_apply::{ApplyRole, ApplyStep};
 
 use rustix::fs::{self, Mode, Stat, Timespec, Timestamps};
 
 use super::super::super::source::{SourceObservation, SourceTimestamp};
 use super::{ClosedStage, StageError, check_content_stamp};
+
+mod checked_publication;
+pub use checked_publication::{CheckedStageError, NativePublishedStage};
 
 #[cfg(test)]
 mod tests;
@@ -11,6 +17,15 @@ mod tests;
 pub(super) const ORDINARY_PERMISSIONS: u32 = 0o777;
 
 impl ClosedStage<'_> {
+	pub(in crate::linux) fn guard_stage_seal<G>(
+		&self,
+		enter: impl FnOnce() -> io::Result<G>,
+	) -> Result<(), StageError> {
+		self.check_current()?;
+		self.location.directory.sync_directory_admitted(enter)?;
+		self.check_current()
+	}
+
 	/// Applies and verifies ordinary permission bits and source access and modification times.
 	///
 	/// Call after completing read-back. The pinned descriptor remains read-only for file data.
@@ -34,9 +49,18 @@ impl ClosedStage<'_> {
 	/// # Errors
 	/// Has the same requirements and failure effects as [`Self::apply_metadata`].
 	pub fn apply_metadata_with_access_time(
+		self,
+		source: SourceObservation,
+		accessed_at: SourceTimestamp,
+	) -> Result<Self, StageError> {
+		self.apply_metadata_admitted_with_access_time(source, accessed_at, |_| Ok(()))
+	}
+
+	pub(in crate::linux) fn apply_metadata_admitted_with_access_time<G>(
 		mut self,
 		source: SourceObservation,
 		accessed_at: SourceTimestamp,
+		enter: impl Fn(ApplyStep) -> io::Result<G>,
 	) -> Result<Self, StageError> {
 		self.check_current()?;
 		if source.mode() & !ORDINARY_PERMISSIONS != 0 {
@@ -55,12 +79,21 @@ impl ClosedStage<'_> {
 			last_access: as_timespec(accessed_at)?,
 			last_modification: as_timespec(source.modified_at())?,
 		};
-		fs::fchmod(&self.file, mode)?;
-		fs::futimens(&self.file, &times)?;
+		{
+			let _guard = enter(ApplyStep::SetStagePermissions).map_err(StageError::Admission)?;
+			fs::fchmod(&self.file, mode)?;
+		}
+		{
+			let _guard = enter(ApplyStep::SetStageTimes).map_err(StageError::Admission)?;
+			fs::futimens(&self.file, &times)?;
+		}
 		let before = self.location.check_named_file(mode)?;
 		check_metadata(&before, source, accessed_at)?;
 
-		fs::fsync(&self.file).map_err(|source| StageError::BarrierFailed(source.into()))?;
+		{
+			let _guard = enter(ApplyStep::Sync(ApplyRole::Stage)).map_err(StageError::Admission)?;
+			fs::fsync(&self.file).map_err(|source| StageError::BarrierFailed(source.into()))?;
+		}
 		let after = self.location.check_named_file(mode)?;
 		check_content_stamp(&before, &after)?;
 		check_metadata(&after, source, accessed_at)?;

@@ -3,6 +3,7 @@
 
 pub mod connection_retry;
 mod journal_segment;
+pub mod linux_apply;
 pub mod linux_copy;
 pub mod linux_job;
 pub mod linux_publication;

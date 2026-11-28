@@ -1,6 +1,7 @@
 //! Linux handle-relative source, staging, and exclusive publication primitives.
 
 mod copy_capabilities;
+mod guarded_staging;
 mod handle;
 mod job;
 mod journal_segment;
@@ -25,7 +26,7 @@ mod sync_profile_store;
 pub use handle::FileIdentity;
 pub use job::{
 	CheckpointDirectory, JobDirectory, JobDirectoryCreationError, JournalDirectory,
-	ReceiptDirectory, TargetStatus,
+	NativeHeldJobRecord, ReceiptDirectory, TargetStatus,
 };
 pub use journal_segment::LinuxJournalSegment;
 pub use named_read::NamedReadView;
@@ -69,10 +70,11 @@ pub use source::{
 	ExtendedAttributes, ReadError, ReadRoot, SourceFile, SourceObservation, SourceTimestamp,
 };
 pub use stage::{
-	ClosedStage, DestinationRoot, DirectoryBarriersError, PublishError, SelectedStreamGateRequest,
-	SelectedStreamLocation, SelectedStreamMetadataReady, SelectedStreamNames,
-	SelectedStreamObservation, SelectedStreamPublication, SelectedStreamPublicationAuthority,
-	SelectedStreamPublishError, StageDirectory, StageError, WriteStage,
+	CheckedStageError, ClosedStage, DestinationRoot, DirectoryBarriersError, NativePublishedStage,
+	PublishError, SelectedStreamGateRequest, SelectedStreamLocation, SelectedStreamMetadataReady,
+	SelectedStreamNames, SelectedStreamObservation, SelectedStreamPublication,
+	SelectedStreamPublicationAuthority, SelectedStreamPublishError, StageDirectory, StageError,
+	WriteStage,
 };
 
 pub use mount_observation::MountObservations;

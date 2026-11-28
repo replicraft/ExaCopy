@@ -1,12 +1,39 @@
 use std::io;
 use std::os::unix::fs::FileExt as _;
 
-use exacopy_endpoint::{IoError, write_all_at};
+use exacopy_endpoint::{IoError, MAX_FILE_LENGTH, write_all_at};
 use rustix::fs;
 
-use super::{StageError, WriteBarrier, WriteStage};
+use super::{FILE_MODE, StageError, WriteBarrier, WriteStage};
 
 impl WriteStage<'_> {
+	pub(in crate::linux) fn guarded_write<G>(
+		&mut self,
+		offset: u64,
+		bytes: &[u8],
+		enter: impl FnMut() -> io::Result<G>,
+	) -> Result<(), StageError> {
+		self.location.check_named_file(FILE_MODE)?;
+		self.write_all_at_admitted(offset, bytes, enter)
+	}
+
+	pub(in crate::linux) fn guarded_extent<G>(
+		&mut self,
+		length: u64,
+		enter: impl FnOnce() -> io::Result<G>,
+	) -> Result<(), StageError> {
+		self.barrier.require_usable()?;
+		if length > MAX_FILE_LENGTH {
+			return Err(StageError::InvalidLength);
+		}
+		self.location.check_named_file(FILE_MODE)?;
+		let guard = enter().map_err(StageError::Admission)?;
+		self.barrier = WriteBarrier::Pending;
+		let result = fs::ftruncate(&self.file, length);
+		drop(guard);
+		Ok(result?)
+	}
+
 	/// Writes the requested range, entering the caller's authority immediately before
 	/// each positional write, including partial-transfer and interrupted retries.
 	///

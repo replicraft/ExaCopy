@@ -20,8 +20,8 @@ use super::{StageDirectory, StageError};
 mod metadata;
 mod prefix;
 mod selected_stream;
-
 pub(in crate::linux) use metadata::check_no_visible_attributes;
+pub use metadata::{CheckedStageError, NativePublishedStage};
 
 #[cfg(test)]
 mod tests;

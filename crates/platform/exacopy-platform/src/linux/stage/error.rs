@@ -193,7 +193,7 @@ impl Error for PublishError {
 	}
 }
 
-/// Failed synchronization of at least one directory after a successful rename.
+/// Failed synchronization of at least one original directory after a submitted rename.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum DirectoryBarriersError {

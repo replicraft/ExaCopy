@@ -260,6 +260,10 @@ impl<'root> StageDirectory<'root> {
 		WriteStage::create_admitted(self, name, target, binding, enter)
 	}
 
+	pub(super) fn is_fresh_job_stage(&self) -> bool {
+		matches!(self.parent, StageParent::CopyJob(_))
+	}
+
 	pub(super) fn check_current(&self) -> Result<(), StageError> {
 		let parent = match self.parent {
 			StageParent::Root => {

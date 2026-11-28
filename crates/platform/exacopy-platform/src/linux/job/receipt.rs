@@ -4,18 +4,19 @@ use std::fs::File;
 use std::io::Write as _;
 use std::os::unix::fs::FileExt as _;
 
+use exacopy_endpoint::linux_apply::{ApplyRole, ApplyStep, LocalApplyAdmission};
 use exacopy_endpoint::linux_publication::{
 	FreshReceiptError, FreshReceiptWorkspace, HeldFreshReceipt,
 };
 use exacopy_endpoint::read_exact_at;
-use rustix::fs;
+use rustix::fs::{self, Stat};
 
 use super::super::handle::{FileIdentity, mount_id};
 use super::super::source::{
 	ReadError, SourceObservation, check_logical_eof, reopen_regular_without_atime,
 };
-use super::super::stage::{FILE_MODE, check_named_file};
-use super::{JobDirectory, RECEIPT, ReceiptDirectory, StageError};
+use super::super::stage::{FILE_MODE, check_named_file, sync_directory_admitted, write_admitted};
+use super::{JobDirectory, RECEIPT, RECEIPTS, ReceiptDirectory, StageError};
 
 #[cfg(test)]
 mod tests;
@@ -62,29 +63,7 @@ impl FreshReceiptWorkspace for JobDirectory<'_> {
 			.map_err(Error::Namespace)?;
 		writer.write_all(bytes).map_err(Error::Io)?;
 		writer.sync_all().map_err(Error::Io)?;
-		let (file, stat) = reopen_regular_without_atime(&writer)
-			.map_err(StageError::ReadBack)
-			.map_err(Error::Namespace)?;
-		let observation = SourceObservation::capture(&stat)
-			.map_err(StageError::ReadBack)
-			.map_err(Error::Namespace)?;
-		let mount = self.root.mount;
-		if observation.identity() != FileIdentity::from_stat(&created)
-			|| mount_id(&file)
-				.map_err(StageError::from)
-				.map_err(Error::Namespace)?
-				!= mount
-		{
-			return Err(Error::Namespace(StageError::IdentityChanged));
-		}
-		// Retire the sole writer. File drop does not report a close result.
-		drop(writer);
-		let sealed = NativeHeldReceipt {
-			directory,
-			file,
-			observation,
-		};
-		sealed.recheck().map_err(Error::Namespace)?;
+		let sealed = pin_receipt(directory, writer, &created).map_err(Error::Namespace)?;
 		sealed
 			.directory
 			.sync_directory()
@@ -92,6 +71,97 @@ impl FreshReceiptWorkspace for JobDirectory<'_> {
 		self.sync_directory().map_err(Error::Namespace)?;
 		Ok(sealed)
 	}
+}
+
+pub(super) fn seal_admitted<'job>(
+	job: &'job JobDirectory<'_>,
+	bytes: &[u8],
+	admission: &impl LocalApplyAdmission,
+) -> Result<NativeHeldReceipt<'job>, FreshReceiptError<StageError>> {
+	use ApplyRole::{Job, Receipt, ReceiptDirectory as Parent};
+	use FreshReceiptError as Error;
+
+	if bytes.is_empty() || bytes.len() > MAX_RECEIPT_BYTES {
+		return Err(Error::Namespace(StageError::InvalidLength));
+	}
+	let directory = job
+		.create_record_directory_admitted(RECEIPTS, || admission.enter(ApplyStep::Create(Parent)))
+		.map(ReceiptDirectory)
+		.map_err(Error::Namespace)?;
+	let (writer, created) = directory
+		.0
+		.create_file_admitted(RECEIPT, || admission.enter(ApplyStep::Create(Receipt)))
+		.map_err(Error::Namespace)?;
+	write_admitted(
+		0,
+		bytes,
+		|| admission.enter(ApplyStep::Write(Receipt, 0, bytes.len())),
+		|position, remaining| writer.write_at(remaining, position),
+	)
+	.map_err(Error::Namespace)?;
+	directory.0.check_current().map_err(Error::Namespace)?;
+	let written = check_named_file(
+		&directory.0.directory,
+		OsStr::new(RECEIPT),
+		FileIdentity::from_stat(&created),
+		job.root.mount,
+		FILE_MODE,
+	)
+	.map_err(Error::Namespace)?;
+	let written = SourceObservation::capture(&written)
+		.map_err(StageError::ReadBack)
+		.map_err(Error::Namespace)?;
+	if u64::try_from(bytes.len()) != Ok(written.len()) {
+		return Err(Error::Namespace(StageError::InvalidLength));
+	}
+	{
+		let _guard = admission
+			.enter(ApplyStep::Sync(Receipt))
+			.map_err(StageError::Admission)
+			.map_err(Error::Namespace)?;
+		writer.sync_all().map_err(Error::Io)?;
+	}
+	let sealed = pin_receipt(directory, writer, &created).map_err(Error::Namespace)?;
+	written
+		.recheck(sealed.observation)
+		.map_err(StageError::ReadBack)
+		.map_err(Error::Namespace)?;
+	sealed
+		.directory
+		.0
+		.check_current()
+		.map_err(Error::Namespace)?;
+	sync_directory_admitted(&sealed.directory.0.directory, || {
+		admission.enter(ApplyStep::Sync(Parent))
+	})
+	.map_err(Error::Namespace)?;
+	job.sync_directory_admitted(|| admission.enter(ApplyStep::Sync(Job)))
+		.map_err(Error::Namespace)?;
+	sealed.recheck().map_err(Error::Namespace)?;
+	Ok(sealed)
+}
+
+fn pin_receipt<'job>(
+	directory: ReceiptDirectory<'job>,
+	writer: File,
+	created: &Stat,
+) -> Result<NativeHeldReceipt<'job>, StageError> {
+	let (file, stat) = reopen_regular_without_atime(&writer).map_err(StageError::ReadBack)?;
+	let observation = SourceObservation::capture(&stat).map_err(StageError::ReadBack)?;
+	if observation.identity() != FileIdentity::from_stat(created)
+		|| mount_id(&file)? != directory.0.job.root.mount
+	{
+		return Err(StageError::IdentityChanged);
+	}
+	// Retire the sole writer. File drop does not report a close result.
+	drop(writer);
+	let sealed = NativeHeldReceipt {
+		directory,
+		file,
+		observation,
+	};
+	sealed.recheck()?;
+	Ok(sealed)
 }
 
 impl HeldFreshReceipt for NativeHeldReceipt<'_> {
