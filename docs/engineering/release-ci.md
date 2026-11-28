@@ -2,6 +2,11 @@
 
 Dispatch **CLI release** on an existing canonical `vMAJOR.MINOR.PATCH` tag
 whose commit carries this workflow and the matching Cargo CLI version.
+Signed publication currently refuses any tag with an existing GitHub release
+or draft. The `v0.1.0` tag already identifies the unsigned
+[testing prerelease](../releases/v0.1.0.md). Promoting or replacing it
+requires a separate release-lifecycle change.
+
 GitHub's dispatch API accepts a tag as the ref. The default `publish=false`
 uses an ephemeral fixture certificate for each of the three archive targets.
 The workflow tests the generated candidate archives and keeps the unsigned

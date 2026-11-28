@@ -30,9 +30,10 @@ Accept an HTTP 302 location only for the exact same repository's
 `/replicraft/ExaCopy/releases/tag/vMAJOR.MINOR.PATCH` path. Absolute redirects
 must use `https://github.com`. The latest route selects the published stable
 release once. The version components use the offline profile's canonical
-decimal grammar and 999999 ceiling. The first tag under this grammar is
-`v0.1.0` for workspace version `0.1.0`. The tag, checked-out release source and
-signed inner descriptor must agree on the version. The release provenance
+decimal grammar and 999999 ceiling. The tag, checked-out release source and
+signed inner descriptor must agree on the version. See the
+[release workflow prerequisites](../engineering/release-ci.md) for tag
+availability. The release provenance
 binds the exact source commit and artifact digest. [GitHub release links](https://docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases)
 
 Build the asset URLs from the validated tag and fixed asset basenames under
