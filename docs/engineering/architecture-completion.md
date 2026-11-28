@@ -41,8 +41,10 @@ integrate serially, with failure evidence kept by revision.
 [APFS](../../specs/dependencies/apfs-source.toml) is an independent companion.
 The reviewed baseline used `fdcc3ea`; `5e936f0` advanced the selected pin to
 `0266afa`; the sealed-handle metadata follow-up selected `fc71ded` and removed
-the duplicate consumer descriptor. The current pin selects public `a494df4`,
-whose owned observation-only reader supplies restart read-back. Publication
+the duplicate consumer descriptor. The reviewed `a494df4` pin introduced
+the owned observation-only reader for restart read-back. The selected pin is
+now `8c13b1d`; the [companion follow-ups](apfs-companion-followups.md) identify
+the two remaining mounted-operation lifecycle gaps. Publication
 uses coherent companion observations and exposes the checked final-guard
 seam. Outer recovery inventories use owned event anchors, and immutable
 owner/plan records use the checked artifact lifecycle. Receipts and
@@ -158,7 +160,8 @@ over reported facts. [Model projection](../../crates/engines/exacopy-transfer/sr
 - **APFS companion.** The source and live staging/publication adapters use
   the companion mechanisms, including the strict stage ACL predicate and
   explicit partial-read diagnostics. Restart inspection uses the pinned
-  `a494df4` companion's `ReopenedStage::open_named`. The reader owns its
+  companion's `ReopenedStage::open_named`, introduced at `a494df4` and
+  retained in the selected `8c13b1d` pin. The reader owns its
   exact component and event anchor, and borrows the held directory and
   matching lease. ExaCopy checks protected ancestry, both names, recorded
   identity and strict metadata, including initial post-open and final
