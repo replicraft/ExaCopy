@@ -114,7 +114,7 @@ where
 			let admitted = check_current(request, selection, observe(), request.profile.created)?;
 			Ok((admitted, observe))
 		},
-		|(admitted, mut observe), source, owner, recorded| {
+		|(admitted, mut observe), source, owner, recorded, _held| {
 			check_source(source).map_err(|error| Error::Stage(CopyError::SourcePolicy(error)))?;
 			check_absent(
 				roots.destination,

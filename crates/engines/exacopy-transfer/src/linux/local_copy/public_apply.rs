@@ -2,16 +2,20 @@ use exacopy_endpoint::linux_copy::{
 	CopyDestinationView, CopySource, CopySourceRoot, CopyWorkspace,
 };
 use exacopy_endpoint::linux_job::{JobBootstrapRoot, JobWorkspace};
+use exacopy_endpoint::linux_staging::{StageWriter, StagingDirectory};
 use exacopy_endpoint::{JournalSegment, ReadView as _};
 use exacopy_journal::{
-	ApplyRequestedDurability, LinuxFileIdentity, OwnerDigest, OwnerTimestamp, PublicApplyBinding,
+	ApplyRequestedDurability, DurableJournal, LinuxFileIdentity, OwnerDigest, OwnerTimestamp,
+	PublicApplyBinding,
 };
 use exacopy_model::{CopyBinding, EntryId, JobId, RunEpoch, StageId};
 use exacopy_plan::{PlanDurability, PlanIdentityPlatform, PlanSourceIdentity};
 
 use crate::copy_planning::linux_baseline_metadata_policy_digest;
 use crate::linux::job::prepare_public_stage;
-use crate::linux_staging::{ObservedStreams, StageRequest, check_source, stage_verified};
+use crate::linux_staging::{
+	ObservedStreams, StageRequest, VerifiedStage, check_source, stage_verified,
+};
 use crate::public_plan::AdmittedCopyPlan;
 
 use super::checkpoints::StageRecords;
@@ -84,9 +88,23 @@ where
 		scratch,
 		checkpoint,
 		|| Ok(()),
-		|(), _, owner_digest, _| Ok(PublicApplyStage { owner_digest }),
+		|(), _, owner_digest, _, _held| Ok(PublicApplyStage { owner_digest }),
 	)
 }
+
+type StageDirectory<'job, J> = <J as CopyWorkspace>::Stage<'job>;
+type ClosedReader<'stage, D> = <<D as StagingDirectory>::Writer<'stage> as StageWriter>::Reader;
+type SealedStage<'stage, 'job, J> = VerifiedStage<ClosedReader<'stage, StageDirectory<'job, J>>>;
+
+// The callback can consume the verified stage at most once. A callback that leaves the slot
+// alone keeps the reader and its model session in this coordinator's original drop scope.
+type HeldStage<'finish, 'stage, 'job, J> = (
+	&'job J,
+	&'stage StageDirectory<'job, J>,
+	&'finish mut Option<SealedStage<'stage, 'job, J>>,
+	CopyBinding,
+	&'finish mut DurableJournal<<J as JobWorkspace>::Segment>,
+);
 
 fn stage_with_seal<'root, S, D, J, A, T, E>(
 	roots: PlanningRoots<'root, S, D>,
@@ -94,7 +112,13 @@ fn stage_with_seal<'root, S, D, J, A, T, E>(
 	scratch: &mut [u8],
 	checkpoint: fn(CopyCheckpoint),
 	before_bootstrap: impl FnOnce() -> Result<A, E>,
-	finish: impl FnOnce(A, &S::Source, OwnerDigest, RecordedSeal<'_>) -> Result<T, E>,
+	finish: impl FnOnce(
+		A,
+		&S::Source,
+		OwnerDigest,
+		RecordedSeal<'_>,
+		HeldStage<'_, '_, '_, J>,
+	) -> Result<T, E>,
 ) -> Result<T, E>
 where
 	S: CopySourceRoot<Source: CopySource<Identity = J::Identity, Metadata = J::Metadata>>,
@@ -142,9 +166,10 @@ where
 	JobWorkspace::sync_directory(&job).map_err(CopyError::CreateCheckpoints)?;
 
 	let mut records = StageRecords::new(&evidence, &pages, &mut journal, checkpoint);
+	let stage_directory = &directory;
 	let stage = stage_verified(
 		&file,
-		&directory,
+		stage_directory,
 		StageRequest {
 			stage_name: attempt.stage_name,
 			target: destination.component,
@@ -170,7 +195,20 @@ where
 		.record_with_heads(&mut journal)
 		.map_err(CopyError::from)?;
 	checkpoint(CopyCheckpoint::StageSealed);
-	finish(admission, &file, owner_digest, recorded)
+	let mut stage = Some(stage);
+	finish(
+		admission,
+		&file,
+		owner_digest,
+		recorded,
+		(
+			&job,
+			stage_directory,
+			&mut stage,
+			copy_binding,
+			&mut journal,
+		),
+	)
 }
 
 fn matches_admitted_binding(

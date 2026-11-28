@@ -2,15 +2,20 @@ use std::fs::{self, OpenOptions};
 use std::io::Write as _;
 use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 
+use exacopy_journal::frame::{ChainHead, FrameKind, FrameReader};
 use exacopy_journal::{
+	ApplyCrashProfile, ApplyProcessCrashEnvironment, ApplyQualification, ApplyQualificationDigest,
 	ApprovedPublicPlanDigest, ApprovedStreamDigest, JournalEntryId, JournalEpoch, JournalJobId,
+	LinuxFileIdentity, OwnerToken, PublicApplyIntent,
 };
+use exacopy_platform::linux::StageError;
 use exacopy_transfer::linux::{
-	CopyError, InspectionError, JournalTail, PublicApplyStageRequest, PublicStageHistory,
-	PublicStageInspection, PublicStageObservation, RecoveryIssue,
+	CopyError, CopyProfile, InspectionError, JournalTail, PublicApplyIntentObservation,
+	PublicApplyIntentSelection, PublicApplyStageRequest, PublicStageHistory, PublicStageInspection,
+	PublicStageObservation, RecoveryIssue, stage_public_apply_and_propose_intent,
 };
 
-use super::super::{inspect_recovery, plan_new_file};
+use super::super::{CopyRoots, inspect_recovery, plan_new_file};
 use super::{inspect, stage};
 
 mod fixture;
@@ -60,6 +65,7 @@ fn approved_stage_reopens_with_exact_owner_and_preserves_uncertain_evidence() {
 		Err(CopyError::StalePlan)
 	));
 	assert!(!fixture.job(original).try_exists().unwrap());
+	assert_proposal_uses_held_stage(&fixture, roots, &request, &mut scratch);
 	let staged = stage(roots, PublicApplyStageRequest { ..request }, &mut scratch).unwrap();
 	let original_stage = fixture.stage(original);
 	let journal = fixture.journal(original);
@@ -194,6 +200,111 @@ fn approved_stage_reopens_with_exact_owner_and_preserves_uncertain_evidence() {
 	drop(destination);
 	drop(source_root);
 	fixture.finish();
+}
+
+fn assert_proposal_uses_held_stage(
+	fixture: &Fixture,
+	roots: CopyRoots<'_>,
+	request: &PublicApplyStageRequest<'_, '_, '_>,
+	scratch: &mut [u8],
+) {
+	let attempt = attempt("proposed-stage", 4);
+	let private_plan = plan_new_file(roots, attempt, component(SOURCE), component(TARGET)).unwrap();
+	let binding = Fixture::binding(request.approved, attempt);
+	let request = PublicApplyStageRequest {
+		private_plan: &private_plan,
+		binding,
+		profile: CopyProfile {
+			owner_token: OwnerToken::from_bytes([10; 16]).unwrap(),
+			..request.profile
+		},
+		..*request
+	};
+	// The proposal compares these fixture claims. This test does not qualify publication.
+	let qualification = ApplyQualification {
+		record: ApplyQualificationDigest::from_bytes([0x44; 32]),
+		profile: ApplyCrashProfile::Arm64UbuntuExt4FixtureV1,
+		environment: ApplyProcessCrashEnvironment {
+			boot_id: [0x55; 16],
+			mount_namespace: 1,
+			unique_mount: 2,
+			device: private_plan.source().root_identity.device(),
+		},
+	};
+	let observation = PublicApplyIntentObservation {
+		now: request.profile.created,
+		profile: qualification.profile,
+		environment: qualification.environment,
+	};
+	let mut observations = 0;
+	let mut held_stage = None;
+	let intent = stage_public_apply_and_propose_intent(
+		roots,
+		request,
+		PublicApplyIntentSelection {
+			approved_plan: binding.public_plan,
+			qualification,
+		},
+		scratch,
+		|_| {},
+		|| {
+			match observations {
+				0 => assert!(!fixture.job(attempt).try_exists().unwrap()),
+				1 => {
+					let job = roots
+						.destination
+						.open_recovery_job(attempt.job_name)
+						.unwrap();
+					assert!(matches!(job.try_read_lease(), Err(StageError::JobBusy)));
+					let stage = fs::metadata(fixture.stage(attempt)).unwrap();
+					held_stage = Some(LinuxFileIdentity::new(stage.dev(), stage.ino()));
+				}
+				_ => panic!("unexpected extra proposal observation"),
+			}
+			observations += 1;
+			Some(observation)
+		},
+	)
+	.unwrap();
+	assert_eq!(observations, 2);
+	assert_eq!(held_stage, Some(intent.private().target.stage));
+
+	let bytes = fs::read(fixture.journal(attempt)).unwrap();
+	let mut frames = FrameReader::new(bytes.as_slice(), ChainHead::start());
+	let mut accepted = Vec::new();
+	while let Some(frame) = frames.next_frame().unwrap() {
+		accepted.push((frame.kind(), frame.head()));
+	}
+	let [
+		..,
+		(FrameKind::StageSealed, _),
+		(FrameKind::VerificationRecorded, verification),
+		(FrameKind::MetadataRecorded, metadata),
+	] = accepted.as_slice()
+	else {
+		panic!("expected a clean verified stage prefix ending at metadata");
+	};
+	assert!(
+		!accepted
+			.iter()
+			.any(|(kind, _)| *kind == FrameKind::PublishIntent)
+	);
+	assert_eq!(intent.evidence().verification, *verification);
+	assert_eq!(intent.evidence().metadata, *metadata);
+	assert_eq!(PublicApplyIntent::decode(&intent.encode()).unwrap(), intent);
+	let stage = fixture.stage(attempt);
+	let physical = fs::metadata(&stage).unwrap();
+	assert_eq!(
+		intent.private().target.stage,
+		LinuxFileIdentity::new(physical.dev(), physical.ino())
+	);
+	assert_eq!(fs::read(stage).unwrap(), fixture::APPROVED);
+	assert!(!fixture.target().try_exists().unwrap());
+	let job = roots
+		.destination
+		.open_recovery_job(attempt.job_name)
+		.unwrap();
+	assert!(job.try_read_lease().is_ok());
 }
 
 fn synthetic_job(marker: u8) -> (JournalJobId, JournalEntryId, JournalEpoch) {
