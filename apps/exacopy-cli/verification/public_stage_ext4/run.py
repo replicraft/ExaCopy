@@ -55,6 +55,7 @@ def inputs():
         PACKAGE / "Cargo.toml", PACKAGE / "src/lib.rs", PACKAGE / "src/assembly.rs",
         PACKAGE / "src/assembly/linux.rs", PACKAGE / "src/assembly/linux/public_stage.rs",
         PACKAGE / SOURCE, PACKAGE / Path(SOURCE).with_suffix("") / "fixture.rs",
+        PACKAGE / Path(SOURCE).with_suffix("") / "late_journal.rs",
     )
     return {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in files}
 

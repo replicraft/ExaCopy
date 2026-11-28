@@ -19,6 +19,7 @@ use super::super::{CopyRoots, inspect_recovery, plan_new_file};
 use super::{inspect, stage};
 
 mod fixture;
+mod late_journal;
 
 use fixture::{Fixture, SOURCE, TARGET, attempt, component};
 
@@ -66,6 +67,7 @@ fn approved_stage_reopens_with_exact_owner_and_preserves_uncertain_evidence() {
 	));
 	assert!(!fixture.job(original).try_exists().unwrap());
 	assert_proposal_uses_held_stage(&fixture, roots, &request, &mut scratch);
+	late_journal::assert_late_readback_refusal(&fixture, roots, &request, &mut scratch);
 	let staged = stage(roots, PublicApplyStageRequest { ..request }, &mut scratch).unwrap();
 	let original_stage = fixture.stage(original);
 	let journal = fixture.journal(original);
@@ -220,17 +222,7 @@ fn assert_proposal_uses_held_stage(
 		},
 		..*request
 	};
-	// The proposal compares these fixture claims. This test does not qualify publication.
-	let qualification = ApplyQualification {
-		record: ApplyQualificationDigest::from_bytes([0x44; 32]),
-		profile: ApplyCrashProfile::Arm64UbuntuExt4FixtureV1,
-		environment: ApplyProcessCrashEnvironment {
-			boot_id: [0x55; 16],
-			mount_namespace: 1,
-			unique_mount: 2,
-			device: private_plan.source().root_identity.device(),
-		},
-	};
+	let qualification = fixture_qualification(private_plan.source().root_identity.device());
 	let observation = PublicApplyIntentObservation {
 		now: request.profile.created,
 		profile: qualification.profile,
@@ -305,6 +297,20 @@ fn assert_proposal_uses_held_stage(
 		.open_recovery_job(attempt.job_name)
 		.unwrap();
 	assert!(job.try_read_lease().is_ok());
+}
+
+fn fixture_qualification(device: u64) -> ApplyQualification {
+	// The proposal compares these fixture claims. This test does not qualify publication.
+	ApplyQualification {
+		record: ApplyQualificationDigest::from_bytes([0x44; 32]),
+		profile: ApplyCrashProfile::Arm64UbuntuExt4FixtureV1,
+		environment: ApplyProcessCrashEnvironment {
+			boot_id: [0x55; 16],
+			mount_namespace: 1,
+			unique_mount: 2,
+			device,
+		},
+	}
 }
 
 fn synthetic_job(marker: u8) -> (JournalJobId, JournalEntryId, JournalEpoch) {
