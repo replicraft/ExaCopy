@@ -2,6 +2,7 @@ use std::fs;
 use std::io::Write as _;
 use std::os::unix::fs::{MetadataExt as _, symlink};
 
+use exacopy_endpoint::linux_publication::ReceiptRecord as _;
 use exacopy_endpoint::{JournalSegment, UnixComponent};
 use exacopy_model::{
 	CopyBinding, CopyEffect, CopyEvent, CopySession, EntryId, JobId, PublishNoClobber, RunEpoch,

@@ -157,6 +157,13 @@ affected native macOS tests and strict host checks passed, and Linux
 consumers passed strict cross-compilation. This extraction does not supply
 new native Linux execution or power-loss evidence.
 
+Fresh and recovered Linux receipt factories also return the platform's
+opaque `NativeReceiptRecord`. Application recovery and remote finalization
+no longer wrap native files or implement their file barriers. The record
+supplies writing, flushing and a file barrier; the engine retains receipt
+content and ordering policy. This narrows the unreleased Rust API without
+changing receipt bytes or adding a lease-lifetime guarantee.
+
 ## SFTP adapter boundary
 
 The endpoint crate owns the live remote-source capability and its source

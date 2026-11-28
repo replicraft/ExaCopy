@@ -2,6 +2,7 @@ use std::fs;
 use std::io::{Seek as _, SeekFrom, Write as _};
 use std::os::unix::fs::symlink;
 
+use exacopy_endpoint::linux_publication::ReceiptRecord as _;
 use exacopy_endpoint::{JournalSegment, UnixComponent};
 use rustix::fs::{OFlags, fcntl_getfl};
 
@@ -203,6 +204,7 @@ fn receipts_are_exclusive_and_existing_bytes_have_only_read_access() {
 	assert!(receipts.open_receipt().unwrap().is_none());
 	let mut new = receipts.create_receipt().unwrap();
 	new.write_all(b"existing receipt").unwrap();
+	new.sync_all().unwrap();
 	drop(new);
 
 	let reopened = writer.open_receipt_directory().unwrap();

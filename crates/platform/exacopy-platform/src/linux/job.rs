@@ -8,6 +8,7 @@ use rustix::io::Errno;
 
 use super::handle::FileIdentity;
 use super::journal_segment::LinuxJournalSegment;
+use super::publication_capabilities::NativeReceiptRecord;
 use super::stage::{
 	DestinationRoot, StageDirectory, StageError, check_private_child, component,
 	create_private_file, sync_directory,
@@ -231,8 +232,8 @@ impl ReceiptDirectory<'_> {
 	///
 	/// Rejects a changed directory binding, a name collision or a syscall failure.
 	/// The record writer owns file barriers and reconciliation.
-	pub fn create_receipt_record(&self) -> Result<File, StageError> {
-		self.0.create_file(RECEIPT)
+	pub fn create_receipt_record(&self) -> Result<NativeReceiptRecord, StageError> {
+		self.0.create_file(RECEIPT).map(NativeReceiptRecord::new)
 	}
 
 	/// Requests a barrier on the checked receipt directory.

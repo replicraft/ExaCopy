@@ -1,10 +1,11 @@
 use exacopy_endpoint::linux_publication::{ReceiptDirectory, ReceiptWorkspace};
 use exacopy_journal::LinuxFileIdentity;
 use exacopy_journal::remote_download::finalization::MAX_REMOTE_RECEIPT_BYTES;
-use exacopy_platform::linux::{RecoveryJob, RecoveryReceiptDirectory, RecoveryWriteLease};
+use exacopy_platform::linux::{
+	NativeReceiptRecord, RecoveryJob, RecoveryReceiptDirectory, RecoveryWriteLease,
+};
 use exacopy_transfer::remote_finalization::RemoteReceiptWorkspace;
 
-use super::super::recovery::NewReceipt;
 use super::{Error, record_identity};
 
 pub(in crate::assembly::linux) struct HeldReceiptWorkspace<'job>(
@@ -41,10 +42,10 @@ pub(in crate::assembly::linux) struct HeldReceipts<'job>(RecoveryReceiptDirector
 
 impl ReceiptDirectory for HeldReceipts<'_> {
 	type Error = Error;
-	type Record = NewReceipt;
+	type Record = NativeReceiptRecord;
 
 	fn create_receipt_record(&self) -> Result<Self::Record, Self::Error> {
-		Ok(NewReceipt(self.0.create_receipt()?))
+		Ok(self.0.create_receipt()?)
 	}
 
 	fn sync_directory(&self) -> Result<(), Self::Error> {

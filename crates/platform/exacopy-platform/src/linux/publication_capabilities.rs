@@ -44,7 +44,7 @@ impl ReceiptDirectoryCapability for ReceiptDirectory<'_> {
 	type Record = NativeReceiptRecord;
 
 	fn create_receipt_record(&self) -> Result<Self::Record, Self::Error> {
-		ReceiptDirectory::create_receipt_record(self).map(NativeReceiptRecord)
+		ReceiptDirectory::create_receipt_record(self)
 	}
 
 	fn sync_directory(&self) -> Result<(), Self::Error> {
@@ -52,8 +52,22 @@ impl ReceiptDirectoryCapability for ReceiptDirectory<'_> {
 	}
 }
 
-/// Exclusive file handle to one new native receipt record.
+/// Write and file-barrier capability for one exclusively created private receipt.
 pub struct NativeReceiptRecord(File);
+
+impl std::fmt::Debug for NativeReceiptRecord {
+	fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		formatter
+			.debug_struct("NativeReceiptRecord")
+			.finish_non_exhaustive()
+	}
+}
+
+impl NativeReceiptRecord {
+	pub(super) fn new(file: File) -> Self {
+		Self(file)
+	}
+}
 
 impl Write for NativeReceiptRecord {
 	fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {

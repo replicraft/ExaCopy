@@ -42,6 +42,7 @@ pub use process_crash::{
 	ProcessCrashProfileId, RemoteDestinationEligibility, RemoteDestinationEligibilityError,
 	observe_process_crash_environment, observe_remote_destination,
 };
+pub use publication_capabilities::NativeReceiptRecord;
 pub use recovery::{
 	ActiveWitnessReservation, ContinuationReservationError, FreshRecoveryStage,
 	PendingProtectedWitness, PendingWitnessReservation, ProtectedWitnessEffect,

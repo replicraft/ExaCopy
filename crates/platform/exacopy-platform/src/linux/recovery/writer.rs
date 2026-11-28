@@ -9,6 +9,7 @@ use rustix::fs::{self, FlockOperation, OFlags};
 use rustix::io::Errno;
 
 use super::super::journal_segment::LinuxJournalSegment;
+use super::super::publication_capabilities::NativeReceiptRecord;
 use super::super::source::reopen_regular_for_append;
 use super::super::stage::{
 	component, create_private_directory, create_private_file, sync_directory,
@@ -374,7 +375,7 @@ impl RecoveryReceiptDirectory<'_> {
 	/// # Errors
 	/// Rejects unsafe or rebound directories, collisions, and failed syscalls.
 	/// A newly created record can remain after a later error.
-	pub fn create_receipt(&self) -> Result<File, StageError> {
+	pub fn create_receipt(&self) -> Result<NativeReceiptRecord, StageError> {
 		self.recheck()?;
 		let name = OsStr::new(RECEIPT);
 		let mount = self.job.root.mount;
@@ -388,7 +389,7 @@ impl RecoveryReceiptDirectory<'_> {
 			return Err(StageError::IdentityChanged);
 		}
 		self.recheck()?;
-		Ok(file)
+		Ok(NativeReceiptRecord::new(file))
 	}
 
 	/// Requests a barrier on the exact inspected receipt inode.

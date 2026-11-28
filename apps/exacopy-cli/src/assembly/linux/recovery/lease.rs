@@ -1,16 +1,12 @@
-use std::fs::File;
-use std::io::{self, Write};
-
 use exacopy_endpoint::UnixComponent;
-use exacopy_endpoint::linux_publication::{
-	ExclusivePublication, PublicationFailure, ReceiptRecord,
-};
+use exacopy_endpoint::linux_publication::{ExclusivePublication, PublicationFailure};
 use exacopy_journal::{LinuxFileIdentity, ObservedTimestamp};
 use exacopy_model::{CopyBinding, PublishNoClobber};
 use exacopy_platform::linux::{
-	ClosedStage, DestinationRoot, FileIdentity, LinuxJournalSegment, PublishError, ReadError,
-	RecoveryFile, RecoveryJob, RecoveryReceiptDirectory, RecoveryStageDirectory,
-	RecoveryWriteLease, RetainedStage, SourceObservation, SourceTimestamp, StageError, WriteStage,
+	ClosedStage, DestinationRoot, FileIdentity, LinuxJournalSegment, NativeReceiptRecord,
+	PublishError, ReadError, RecoveryFile, RecoveryJob, RecoveryReceiptDirectory,
+	RecoveryStageDirectory, RecoveryWriteLease, RetainedStage, SourceObservation, SourceTimestamp,
+	StageError, WriteStage,
 };
 use exacopy_transfer::linux::{
 	CopyCheckpoint, FinishReceiptDirectory, InspectionError, LeaseInventory, ReceiptLease,
@@ -191,35 +187,17 @@ pub(super) struct HeldReceipts<'lease>(RecoveryReceiptDirectory<'lease>);
 impl FinishReceiptDirectory for HeldReceipts<'_> {
 	type Error = StageError;
 	type ExistingReceipt = RecoveryFile;
-	type Record = NewReceipt;
+	type Record = NativeReceiptRecord;
 
 	fn sync_receipt(&self, receipt: &Self::ExistingReceipt) -> Result<(), Self::Error> {
 		self.0.sync_receipt(receipt)
 	}
 
 	fn create_receipt(&self) -> Result<Self::Record, Self::Error> {
-		self.0.create_receipt().map(NewReceipt)
+		self.0.create_receipt()
 	}
 
 	fn sync_directory(&self) -> Result<(), Self::Error> {
 		self.0.sync_directory()
-	}
-}
-
-pub(in crate::assembly::linux) struct NewReceipt(pub(in crate::assembly::linux) File);
-
-impl Write for NewReceipt {
-	fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-		self.0.write(bytes)
-	}
-
-	fn flush(&mut self) -> io::Result<()> {
-		self.0.flush()
-	}
-}
-
-impl ReceiptRecord for NewReceipt {
-	fn sync_all(&self) -> io::Result<()> {
-		self.0.sync_all()
 	}
 }
