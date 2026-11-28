@@ -7,6 +7,7 @@ mod darwin_prepared;
 mod durable;
 pub mod frame;
 mod intent;
+pub mod managed_action_prepared;
 pub mod managed_activation_claim;
 mod owner;
 mod prepared;

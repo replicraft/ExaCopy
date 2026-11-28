@@ -17,7 +17,7 @@ const VERSION: u16 = 1;
 const DOMAIN: &[u8] = b"ExaCopy/journal-record/v1\0";
 const VERSION_OFFSET: usize = 8;
 const KIND_OFFSET: usize = 10;
-const LENGTH_OFFSET: usize = 12;
+pub(crate) const LENGTH_OFFSET: usize = 12;
 const SEQUENCE_OFFSET: usize = 16;
 const PREVIOUS_DIGEST_OFFSET: usize = 24;
 const HEADER_BYTES: usize = 56;
@@ -143,6 +143,7 @@ enum ReadStatus {
 /// The caller determines which segment is last and preserves original bytes for reconciliation.
 pub struct FrameReader<R> {
 	reader: R,
+	managed_origin: bool,
 	head: ChainHead,
 	offset: u64,
 	status: ReadStatus,
@@ -160,14 +161,22 @@ impl<R> fmt::Debug for FrameReader<R> {
 }
 
 impl<R: Read> FrameReader<R> {
-	/// Opens a scan at the start of a segment using a previously validated anchor.
+	/// Opens an ordinary scan using a previously validated anchor. Managed origins are refused.
 	#[must_use]
 	pub const fn new(reader: R, head: ChainHead) -> Self {
 		Self {
 			reader,
+			managed_origin: false,
 			head,
 			offset: 0,
 			status: ReadStatus::Open,
+		}
+	}
+
+	pub(crate) fn for_managed_origin(reader: R) -> Self {
+		Self {
+			managed_origin: true,
+			..Self::new(reader, ChainHead::start())
 		}
 	}
 
@@ -233,7 +242,7 @@ impl<R: Read> FrameReader<R> {
 			return Err(self.torn(read));
 		}
 		let code = u16::from_le_bytes(bytes_at(&header, KIND_OFFSET));
-		let kind = FrameKind::from_code(code)
+		let kind = FrameKind::from_code(code, self.managed_origin)
 			.ok_or_else(|| self.corrupt(FrameProblem::UnsupportedKind(code)))?;
 		if read < SEQUENCE_OFFSET {
 			return Err(self.torn(read));

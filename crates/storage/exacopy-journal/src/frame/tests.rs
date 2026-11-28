@@ -35,5 +35,5 @@ fn allocated_windows_capture_kinds_round_trip_at_43_and_44() {
 		let mut reader = FrameReader::new(bytes.as_slice(), ChainHead::start());
 		assert_eq!(reader.next_frame().unwrap().unwrap().kind(), kind);
 	}
-	assert_eq!(FrameKind::from_code(45), None);
+	assert_eq!(FrameKind::from_code(45, false), None);
 }

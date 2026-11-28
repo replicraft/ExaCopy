@@ -351,3 +351,16 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "tests/managed_activation_claim.rs", test = "managed_activation_claim_matches_frozen_record_and_domain_digest", oracle = "Require the fixed 496-byte production encoding to equal an independent literal specimen with nontrivial field patterns and CRC32C; match the full independent selection and require the separately computed all-byte BLAKE3 derive-key commitment. This supplies no native spend or baseline evidence." }
+
+[[obligation]]
+id = "P-087"
+requirement_ids = ["R-272"]
+source = "src/managed_action_prepared.rs"
+symbols = ["encode_managed_action_prepared", "match_managed_action_prepared"]
+assumptions = [
+    "The caller selects the allocation facts and expected sequence-one head and extent independently of the candidate bytes.",
+    "CRC32C and BLAKE3 supply the common envelope's corruption check and byte commitment. Native custody, physical EOF, enrollment authenticity and acknowledged barriers require independent observations.",
+    "The ordinary reader refuses kind 45. The private origin matcher opts in for this purpose only. The exact selector covers one canonical specimen. Ordinary-reader refusal, malformed fields and boundary substitution have separate journal tests.",
+]
+gates = ["rust"]
+rust = { file = "tests/managed_action_prepared.rs", test = "managed_action_prepared_matches_independent_body_frame_and_boundary", oracle = "Require byte equality with the independent 340-byte body and 432-byte common V1 frame. Match the exact sequence-one head digest and byte extent from the literal boundary input using the private origin matcher. A matched byte boundary carries no authority or durability." }

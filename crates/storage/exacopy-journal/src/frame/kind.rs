@@ -90,6 +90,8 @@ pub enum FrameKind {
 	WindowsCapturePrepared = 43,
 	/// Authenticated contiguous checkpoint in that Windows capture.
 	WindowsCaptureRange = 44,
+	/// Origin of one independently provisioned managed action slot.
+	ManagedActionPrepared = 45,
 }
 
 impl FrameKind {
@@ -99,7 +101,7 @@ impl FrameKind {
 		self as u16
 	}
 
-	pub(super) fn from_code(code: u16) -> Option<Self> {
+	pub(super) fn from_code(code: u16, managed_origin: bool) -> Option<Self> {
 		Some(match code {
 			code if code == Self::JobPrepared.code() => Self::JobPrepared,
 			code if code == Self::EntryPrepared.code() => Self::EntryPrepared,
@@ -147,6 +149,9 @@ impl FrameKind {
 			code if code == Self::RemoteReceiptReady.code() => Self::RemoteReceiptReady,
 			code if code == Self::WindowsCapturePrepared.code() => Self::WindowsCapturePrepared,
 			code if code == Self::WindowsCaptureRange.code() => Self::WindowsCaptureRange,
+			code if managed_origin && code == Self::ManagedActionPrepared.code() => {
+				Self::ManagedActionPrepared
+			}
 			_ => return None,
 		})
 	}
