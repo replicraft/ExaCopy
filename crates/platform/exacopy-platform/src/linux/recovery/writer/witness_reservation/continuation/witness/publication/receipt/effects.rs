@@ -129,19 +129,26 @@ pub(super) fn recheck_named(
 ) -> Result<File, WitnessReservationObservationError> {
 	active.check_active_journal()?;
 	let job = active.reservation.held.lease.job();
-	let file = active.reservation.receipt.file();
-	let current = exact_receipt(file, receipt.stamp, receipt.bytes, 1, job.root.mount)?;
+	confirm_named_receipt(
+		&job.directory.file,
+		job.root.mount,
+		active.reservation.receipt.file(),
+		receipt,
+	)
+}
+
+pub(super) fn confirm_named_receipt(
+	job: &File,
+	mount: u64,
+	file: &File,
+	receipt: NamedReceipt<'_>,
+) -> Result<File, WitnessReservationObservationError> {
+	let current = exact_receipt(file, receipt.stamp, receipt.bytes, 1, mount)?;
 	receipt
 		.stamp
 		.recheck(current)
 		.map_err(StageError::ReadBack)?;
-	let alias = pin_receipt_name(
-		&job.directory.file,
-		job.root.mount,
-		receipt.stamp,
-		receipt.names,
-		receipt.is_final,
-	)?;
+	let alias = pin_receipt_name(job, mount, receipt.stamp, receipt.names, receipt.is_final)?;
 	receipt
 		.stamp
 		.recheck(super::native::capture(file)?)

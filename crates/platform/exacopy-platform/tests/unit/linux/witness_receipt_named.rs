@@ -7,6 +7,7 @@ use std::time::{Duration, SystemTime};
 use rustix::fs::{self, OFlags, XattrFlags};
 use rustix::io::Errno;
 
+use super::super::effects::{NamedReceipt, confirm_named_receipt};
 use super::super::native::{
 	capture, confirm_transition, exact_receipt, pin_receipt_name, rename_pending, reopen_sealed,
 	require_absent,
@@ -14,7 +15,7 @@ use super::super::native::{
 use super::NAMES;
 use crate::linux::recovery::mount_id;
 use crate::linux::source::reopen_regular_without_atime;
-use crate::linux::{ReadError, StageError};
+use crate::linux::{ReadError, StageError, WitnessReservationObservationError};
 use crate::scratch::Scratch;
 
 const RECEIPT_BYTES: &[u8] = b"expected receipt";
@@ -287,6 +288,85 @@ fn promotion_preserves_a_same_byte_final_incumbent_and_the_pending_receipt() {
 	incumbent_stamp
 		.recheck(capture(&incumbent).expect("reobserve incumbent descriptor"))
 		.expect("refusal leaves final incumbent unchanged");
+}
+
+#[test]
+fn receipt_effect_checks_held_bytes_before_rejecting_a_same_byte_name_rebind() {
+	let scratch = Scratch::new();
+	let job = scratch.open();
+	let mount = mount_id(&job).unwrap();
+	let pending = scratch.path(std::str::from_utf8(&NAMES.pending).unwrap());
+	let final_name = scratch.path(std::str::from_utf8(&NAMES.final_name).unwrap());
+	let displaced = scratch.path("displaced-original");
+	let held = create_fixture(&pending, RECEIPT_BYTES);
+	let admitted = NamedReceipt {
+		names: &NAMES,
+		bytes: RECEIPT_BYTES,
+		stamp: capture(&held).unwrap(),
+		is_final: false,
+	};
+	let alias = confirm_named_receipt(&job, mount, &held, admitted)
+		.expect("admit the original held bytes and exact pending name");
+	let original = held.metadata().unwrap();
+	let admitted_alias = alias.metadata().unwrap();
+	assert_eq!(
+		(admitted_alias.dev(), admitted_alias.ino()),
+		(original.dev(), original.ino())
+	);
+
+	std::fs::rename(&pending, &displaced).unwrap();
+	let incumbent = create_fixture(&pending, RECEIPT_BYTES);
+	let incumbent_id = incumbent.metadata().unwrap();
+	assert_ne!(
+		(incumbent_id.dev(), incumbent_id.ino()),
+		(original.dev(), original.ino())
+	);
+	// Rename can change ctime. Reobserve the original descriptor so the native
+	// alias check must distinguish the identical bytes on the replacement inode.
+	let rebound = NamedReceipt {
+		stamp: capture(&held).unwrap(),
+		..admitted
+	};
+	assert_eq!(rebound.stamp.identity(), admitted.stamp.identity());
+	assert_eq!(RECEIPT_BYTES.len(), OTHER_BYTES.len());
+	assert!(matches!(
+		confirm_named_receipt(
+			&job,
+			mount,
+			&held,
+			NamedReceipt {
+				bytes: OTHER_BYTES,
+				..rebound
+			},
+		),
+		Err(WitnessReservationObservationError::Native(
+			StageError::IdentityChanged
+		))
+	));
+	assert!(matches!(
+		confirm_named_receipt(&job, mount, &held, rebound),
+		Err(WitnessReservationObservationError::Native(
+			StageError::ReadBack(ReadError::IdentityChanged)
+		))
+	));
+
+	for (path, descriptor) in [(&displaced, &held), (&pending, &incumbent)] {
+		let named = std::fs::symlink_metadata(path).unwrap();
+		let seen = descriptor.metadata().unwrap();
+		assert!(named.is_file());
+		assert_eq!((named.dev(), named.ino()), (seen.dev(), seen.ino()));
+		let mut observed = [0; RECEIPT_BYTES.len()];
+		descriptor.read_exact_at(&mut observed, 0).unwrap();
+		assert_eq!(&observed, RECEIPT_BYTES);
+		assert_eq!(
+			descriptor.read_at(&mut [0], observed.len() as u64).unwrap(),
+			0
+		);
+	}
+	assert_eq!(
+		final_name.symlink_metadata().unwrap_err().kind(),
+		std::io::ErrorKind::NotFound
+	);
 }
 
 fn create_fixture(path: &Path, bytes: &[u8]) -> File {
