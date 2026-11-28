@@ -114,8 +114,8 @@ pub(super) fn chain_with_receipt<'state>(
 	};
 	let mut journal = DurableJournal::from_new_segment(segment).unwrap();
 	// A prefix larger than ordinary buffering makes boundary placement visible.
-	journal
-		.append(FrameKind::JobPrepared, &vec![0x44; 12_000])
+	let _prepared = journal
+		.append(FrameKind::JobPrepared, &[0x44; 12_000])
 		.unwrap();
 	let start = journal.append(FrameKind::StageSealed, b"seal").unwrap();
 	let offset = usize::try_from(journal.end).unwrap();
@@ -126,7 +126,7 @@ pub(super) fn chain_with_receipt<'state>(
 		FrameKind::PublishObserved,
 		FrameKind::DurabilityRecorded,
 	] {
-		journal
+		let _frame = journal
 			.append(kind, &[u8::try_from(kind.code()).unwrap()])
 			.unwrap();
 	}

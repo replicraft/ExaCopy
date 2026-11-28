@@ -75,7 +75,8 @@ fn invalid_inputs_do_not_inspect_read_or_retire_the_writer() {
 	assert_eq!(state.reads.get(), 0);
 	assert_eq!(output, [0xa5; 4097]);
 	state.refuse_inspect.set(false);
-	journal.append(FrameKind::JobCheckpoint, b"usable").unwrap();
+	let appended = journal.append(FrameKind::JobCheckpoint, b"usable").unwrap();
+	assert_eq!(appended.head().sequence(), expected.head().sequence() + 1);
 }
 
 #[test]
