@@ -65,14 +65,19 @@ Source controls cover every authored nonempty complete cut, torn boundaries and 
 wrong qualification and trailing bytes, metadata-only pre-intent observations,
 same-byte parent rebinding and the exact `O_NOATIME` aperture. The existing
 owned ext4 selector also calls the SDK on an archived pre-intent job. These
-controls await execution at the integrated revision. At `a7637e8`, the owned
+controls have revision-bound evidence. At `a7637e8`, Linux ran the four transfer
+reconciliation controls, two native controls and the amended terminal receipt
+validator test. [Exact Linux run](https://github.com/replicraft/ExaCopy/actions/runs/46121851338)
+retains that component result. The owned
 ext4 selector passed the archived pre-intent check, wrong-Plan refusal and
-source/stage preservation checks. [Exact fixture run](https://github.com/replicraft/ExaCopy/actions/runs/46121851399)
-retains that bounded result. The selector now also plants a fixture-only
+source/stage preservation checks. The selector also plants a fixture-only
 canonical terminal archive and checks the actual receipt and exact head through
 the SDK. Its private stage remains present, target absent and continuity
-unqualified, so the expected assessment still requires reconciliation. This
-terminal fixture is source-defined and awaits execution; its frames do not
-represent an exercised publication.
+unqualified, so the assessment still requires reconciliation. That terminal
+fixture passed at `dd5a644`, with source, stage, journal and receipt preservation
+and verified cleanup. [Exact fixture run](https://github.com/replicraft/ExaCopy/actions/runs/46123615963)
+retains this bounded result. Its frames do not represent an exercised
+publication. The later target-symlink rebind control still needs execution at
+its own revision.
 Positive operational publication/reconciliation and process-crash or power-loss
 qualification remain separate gates.
