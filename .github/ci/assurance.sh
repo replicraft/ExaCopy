@@ -45,16 +45,48 @@ case "$1" in
 				witness_blocked=1
 			fi
 		fi
-		"$@" cargo +1.100.0 llvm-cov nextest --locked -p exacopy-core -p exacopy-endpoint -p exacopy-platform \
-			--json --show-missing-lines --output-path "$ordinary_report" --no-tests fail
+		owner_packages=(-p exacopy-core -p exacopy-endpoint -p exacopy-platform)
 		if (( witness_prepared )); then
+			owner_report="$evidence/endpoint-coverage-owner-only.json"
 			witness_evidence="$evidence/endpoint-ordinary-witness"
-			if ! { (umask 077; set -o noclobber; printf '0\n' > "$witness_evidence/ordinary-producer.exit") &&
+			owner_junit=target/nextest/ci-endpoint-coverage-owner/junit.xml
+			junit=target/nextest/ci-endpoint-coverage/junit.xml
+			[[ ! -e "$owner_junit" && ! -L "$owner_junit" ]]
+			cargo +1.100.0 llvm-cov nextest --locked "${owner_packages[@]}" \
+				--profile ci-endpoint-coverage-owner \
+				--json --show-missing-lines --output-path "$owner_report" --no-tests fail
+			# Compile the known default owner test targets and one CLI integration target.
+			# JUnit parity independently detects omission from the owner-only campaign.
+			coverage_tests=(
+				--lib --test component --test identity
+				--test connection_retry --test contracts --test io_diagnostics
+				--test linux_remote_qualification --test ssh_sftp
+				--test linux_job_capabilities --test linux_plan_bundle --test linux_scope
+				--test linux_source --test linux_stage --test linux_sync_history_ext4
+				--test linux_sync_history_members --test protected_snapshot_diagnostics
+				--test source_observation --test job_bootstrap
+			)
+			# Keep old coverage objects and counters out of the expanded default graph.
+			if ! { (umask 077; set -o noclobber
+					cat "$owner_junit" > "$witness_evidence/owner-nextest.xml") &&
+				[[ ! -e "$junit" && ! -L "$junit" ]] &&
+				cargo +1.100.0 llvm-cov clean &&
+				"$@" cargo +1.100.0 llvm-cov nextest --locked "${owner_packages[@]}" \
+					-p exacopy-cli --exclude-from-report exacopy-cli --profile ci-endpoint-coverage \
+					"${coverage_tests[@]}" \
+					-E 'package(=exacopy-core) | package(=exacopy-endpoint) | package(=exacopy-platform) | binary_id(=exacopy-cli::job_bootstrap)' \
+					--json --show-missing-lines --output-path "$ordinary_report" --no-tests fail &&
+				(umask 077; set -o noclobber
+					cat "$junit" > "$witness_evidence/ordinary-nextest.xml" &&
+					printf '0\n' > "$witness_evidence/ordinary-producer.exit") &&
 				python3 -B -Werror "$witness" combine &&
 				ln -T -- "$witness_evidence/combined-llvm.json" "$report"; }; then
-				report="$ordinary_report"
+				report="$owner_report"
 				witness_blocked=1
 			fi
+		else
+			"$@" cargo +1.100.0 llvm-cov nextest --locked "${owner_packages[@]}" \
+				--json --show-missing-lines --output-path "$ordinary_report" --no-tests fail
 		fi
 		if (( witness_blocked )); then
 			printf 'Ordinary witness coverage blocked. Evaluating ordinary coverage.\n' >&2

@@ -12,6 +12,7 @@ import signal
 import stat
 import subprocess
 
+import ordinary_coverage_bootstrap as bootstrap
 import ordinary_coverage_cohorts as cohorts
 import ordinary_coverage_image as image_selection
 import run
@@ -21,6 +22,7 @@ profiles_api = run.coverage_profile
 require = ext4.require
 WORKFLOW = "replicraft/ExaCopy/.github/workflows/coverage.yml@refs/heads/main"
 ORDINARY = "endpoint-coverage-ordinary.json"
+OWNER_ONLY = "endpoint-coverage-owner-only.json"
 COMBINED = "endpoint-coverage.json"
 
 
@@ -58,7 +60,7 @@ def private_parent(path):
 
 def prepare(context, evidence):
     private_parent(evidence.parent)
-    require(all(not os.path.lexists(evidence.parent / name) for name in (ORDINARY, COMBINED)),
+    require(all(not os.path.lexists(evidence.parent / name) for name in (ORDINARY, OWNER_ONLY, COMBINED)),
             "ordinary witness coverage requires a fresh campaign")
     capture = evidence.parent / "endpoint-llvm-export"
     private_parent(capture)
@@ -250,6 +252,20 @@ def combine(temp, context, evidence, report):
         ordinary_fd, ordinary_report, check_report = bind_file(
             stack, evidence.parent / ORDINARY, profiles_api.EXPORT_LIMIT)
         ordinary_rows = file_rows(os.pread(ordinary_fd, profiles_api.EXPORT_LIMIT, 0))
+        owner_fd, owner_report, check_owner = bind_file(
+            stack, evidence.parent / OWNER_ONLY, profiles_api.EXPORT_LIMIT)
+        owner_only = bootstrap.owner_rows(file_rows(os.pread(owner_fd, profiles_api.EXPORT_LIMIT, 0)))
+        require(owner_only, "owner-only LLVM file inventory is empty")
+        same_denominator(owner_only, bootstrap.owner_rows(ordinary_rows))
+        junit_fd, junit, check_junit = bind_file(
+            stack, evidence / "ordinary-nextest.xml", image_selection.CAPTURE_LIMIT)
+        owner_junit_fd, owner_junit, check_owner_junit = bind_file(
+            stack, evidence / "owner-nextest.xml", image_selection.CAPTURE_LIMIT)
+        expanded_junit = os.pread(junit_fd, image_selection.CAPTURE_LIMIT, 0)
+        bootstrap.bootstrap_attendance(expanded_junit)
+        require(bootstrap.owner_attendance(bootstrap.junit_suites(expanded_junit)) == bootstrap.owner_attendance(
+                    bootstrap.junit_suites(os.pread(owner_junit_fd, image_selection.CAPTURE_LIMIT, 0))),
+                "expanded instrumented Nextest changed owner attendance")
         raw = read_pair()
         recorded = profiles_api.parse_export(raw)
         report.update(source=before["source"], prebuild_tools=before["tools"],
@@ -258,6 +274,10 @@ def combine(temp, context, evidence, report):
         expected_snapshot = {key: before[key] for key in ("context", "source")}
         exporter = Path(before["tools"]["llvm-cov"]["path"])
         selected_object = image_selection.verify_capture(collector, raw, exporter, target)
+        report["job_bootstrap"] = {"object": bootstrap.bootstrap_object(recorded["objects"], target),
+                                   "owner_only_report": owner_report, "owner_only_junit": owner_junit,
+                                   "junit": junit,
+                                   "selectors": sorted(bootstrap.BOOTSTRAP_CASES)}
         inputs = {
             name: bind_file(stack, Path(before["tools"][key]["path"]), collector.FILE_LIMIT,
                             expected=before["tools"][key])
@@ -355,6 +375,9 @@ def combine(temp, context, evidence, report):
         check_before()
         check_producer()
         check_report()
+        check_owner()
+        check_junit()
+        check_owner_junit()
         cohorts.check_unprivileged_image(selected_fd)
         require(read_pair() == raw and snapshot(context, evidence, "ordinary-final") == expected_snapshot
                 and not ext4.supervision.CANCELLATION_REQUESTED, "ordinary campaign changed before export admission")

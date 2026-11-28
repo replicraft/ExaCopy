@@ -10,6 +10,12 @@ path = "junit.xml"
 store-success-output = false
 store-failure-output = true
 
+[profile.ci-endpoint-coverage-owner]
+inherits = "ci"
+
+[profile.ci-endpoint-coverage]
+inherits = "ci"
+
 [profile.ci-experimental-ssh]
 inherits = "ci"
 

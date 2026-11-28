@@ -14,7 +14,12 @@ import run
 
 COLLECTOR = run.ROOT / ".github/ci/endpoint_llvm_export_capture.py"
 SOURCE_INPUTS = (".github/ci/assurance.sh", ".github/ci/endpoint_llvm_export_capture.py",
-                 ".github/workflows/coverage.yml", ".config/nextest.toml")
+                 ".github/workflows/coverage.yml", ".config/nextest.toml",
+                 "apps/exacopy-cli/Cargo.toml", "apps/exacopy-cli/tests/job_bootstrap.rs",
+                 "apps/exacopy-cli/tests/job_bootstrap/copy.rs",
+                 "apps/exacopy-cli/tests/job_bootstrap/receipt_readback.rs",
+                 "apps/exacopy-cli/tests/job_bootstrap/terminal_journal.rs",
+                 "apps/exacopy-cli/tests/job_bootstrap/journal_names.rs")
 CAPTURES = tuple(f"endpoint-llvm-export-capture-{index}.json" for index in (1, 2))
 CAPTURE_LIMIT = 1024 * 1024
 PLATFORM_UNIT = re.compile(r"debug/build/exacopy-platform/([0-9a-f]{16})/out/exacopy_platform-\1")
@@ -27,7 +32,7 @@ def source_snapshot(revision, evidence, phase):
     run.ext4.require(re.fullmatch(r"[0-9a-f]{40}", tree), "invalid ordinary coverage source tree")
     inputs = run.inputs(coverage=True)
     controls = run.HERE / "test_ordinary_coverage.py"
-    source_files = (Path(__file__), controls)
+    source_files = (Path(__file__), controls, run.HERE / "ordinary_coverage_bootstrap.py")
     relative_sources = (str(path.relative_to(run.ROOT)) for path in source_files)
     for name in dict.fromkeys((*SOURCE_INPUTS, *cohorts.SOURCE_INPUTS, *relative_sources)):
         inputs[name] = hashlib.sha256((run.ROOT / name).read_bytes()).hexdigest()

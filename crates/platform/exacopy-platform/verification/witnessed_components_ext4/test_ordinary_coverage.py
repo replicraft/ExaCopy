@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 import ordinary_coverage as ordinary
+import ordinary_coverage_bootstrap as bootstrap
 
 
 class OrdinaryCoverageControls(unittest.TestCase):
@@ -23,6 +24,56 @@ class OrdinaryCoverageControls(unittest.TestCase):
         for altered in invalid:
             with self.subTest(altered=altered), self.assertRaisesRegex(ValueError, "denominator"):
                 ordinary.same_denominator(before, altered)
+
+    def test_owner_rows_match_the_three_policy_paths(self):
+        owner = {
+            "/checkout/crates/foundation/exacopy-core/src/component.rs": (34, 34),
+            "/checkout/crates/interfaces/exacopy-endpoint/src/lib.rs": (5, 4),
+            "/checkout/crates/platform/exacopy-platform/src/linux/job.rs": (40, 32),
+        }
+        rows = {**owner, "/checkout/apps/exacopy-cli/src/copy.rs": (13, 13),
+                "/checkout/crates/foundation/exacopy-core/src/lib.rs": (99, 0),
+                "/checkout/crates/engines/exacopy-transfer/src/linux/local_copy.rs": (17, 7)}
+        self.assertEqual(bootstrap.owner_rows(rows), owner)
+
+    def test_expanded_owner_attendance_preserves_the_exact_cases(self):
+        def read_case_inventories(platform_case):
+            rows = "".join(
+                f'<testsuite name="{suite}" failures="0" errors="0" skipped="0">'
+                f'<testcase name="{case}" classname="{suite}"/></testsuite>'
+                for suite, case in (
+                    ("exacopy-core", "core"), ("exacopy-endpoint::contracts", "contract"),
+                    ("exacopy-platform::linux_stage", platform_case),
+                ))
+            return bootstrap.owner_attendance(
+                bootstrap.junit_suites(f"<testsuites>{rows}</testsuites>"))
+
+        self.assertNotEqual(read_case_inventories("original"), read_case_inventories("substitute"))
+
+    def test_instrumented_bootstrap_attendance_rejects_partial_or_other_binary(self):
+        def junit(cases, *, binary=bootstrap.BOOTSTRAP_SUITE, contents=""):
+            rows = "".join(f'<testcase name="{name}" classname="{binary}">{contents}</testcase>'
+                           for name in cases)
+            return (f'<testsuites><testsuite name="{binary}" tests="{len(cases)}" failures="0" '
+                    f'errors="0" skipped="0">{rows}</testsuite></testsuites>').encode()
+
+        cases = sorted(bootstrap.BOOTSTRAP_CASES)
+        bootstrap.bootstrap_attendance(junit(cases))
+        for xml in (junit(cases[:-1]), junit(cases[:-1] + cases[:1]),
+                    junit(cases, binary="exacopy-cli::another"),
+                    junit(cases, contents="<skipped/>")):
+            with self.assertRaisesRegex(ValueError, "instrumented Nextest"):
+                bootstrap.bootstrap_attendance(xml)
+
+    def test_bootstrap_export_requires_the_exact_linked_integration_binary(self):
+        target = Path("/checkout/target/llvm-cov-target")
+        suffix = "debug/build/exacopy-cli/0123456789abcdef/out/job_bootstrap-0123456789abcdef"
+        expected = {"path": str(target / suffix)}
+        lookalike = {"path": str(target / suffix.replace("/out/job_bootstrap", "/out/job_bootstrap_fake"))}
+        self.assertEqual(bootstrap.bootstrap_object([lookalike, expected], target), expected)
+        for objects in ([lookalike], [expected, expected]):
+            with self.assertRaisesRegex(ValueError, "job_bootstrap ELF"):
+                bootstrap.bootstrap_object(objects, target)
 
     def test_admission_refuses_wrong_workflow_job_run_or_attempt(self):
         revision = "b" * 40
