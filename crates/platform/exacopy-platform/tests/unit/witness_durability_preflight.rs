@@ -30,6 +30,14 @@ fn durability_preflight_consumes_attempt_and_requires_positive_exact_accepted_he
 		digest: [9; 32],
 		..expected
 	};
+	let later_sequence = Head {
+		sequence: 9,
+		..expected
+	};
+	let later_end = Head {
+		end: 1201,
+		..expected
+	};
 
 	let published = Published(stamp);
 	let conflict = Conflict(stamp);
@@ -43,6 +51,20 @@ fn durability_preflight_consumes_attempt_and_requires_positive_exact_accepted_he
 		("uncertain", &uncertain, Some(expected), expected, false),
 		("kind 8 pending", &published, None, expected, true),
 		("changed kind 8", &published, Some(altered), expected, true),
+		(
+			"same digest with changed kind-8 sequence",
+			&published,
+			Some(later_sequence),
+			expected,
+			true,
+		),
+		(
+			"same digest with changed active end",
+			&published,
+			Some(expected),
+			later_end,
+			true,
+		),
 		(
 			"changed active head",
 			&published,

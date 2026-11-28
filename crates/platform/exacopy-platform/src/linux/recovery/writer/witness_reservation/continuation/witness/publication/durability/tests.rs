@@ -47,6 +47,38 @@ fn exact_durability_width_and_same_segment_head_are_required() {
 }
 
 #[test]
+fn durability_requires_nonempty_identity_and_a_later_reserved_slot() {
+	let previous = Head {
+		digest: [8; 32],
+		sequence: 8,
+		end: 1200,
+	};
+	let room = WitnessReservationPlan::new(previous, 2200, NonZeroU64::new(2).unwrap()).unwrap();
+	let final_slot = WitnessReservationPlan::new(previous, 2200, NonZeroU64::MIN).unwrap();
+	// A 92-byte envelope requires a nonempty payload. Leave one later sequence
+	// position for subsequent closeout even when the byte reservation has room.
+	let mut proposed = WitnessDurabilityAppend {
+		previous,
+		successor: Head {
+			digest: [9; 32],
+			sequence: 9,
+			end: 1293,
+		},
+		encoded: vec![0; 93],
+	};
+	assert!(matches_bounds(room, &proposed));
+	assert!(!matches_bounds(final_slot, &proposed));
+
+	proposed.successor.digest = [0; 32];
+	assert!(!matches_bounds(room, &proposed));
+
+	proposed.successor.digest = [9; 32];
+	proposed.successor.end = 1292;
+	proposed.encoded.truncate(92);
+	assert!(!matches_bounds(room, &proposed));
+}
+
+#[test]
 fn classifies_probe_refusal_separately_from_a_submitted_barrier_error() {
 	use super::{StageError, WitnessDurabilityEffect, WitnessDurabilityError, barrier_failure};
 
