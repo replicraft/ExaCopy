@@ -16,7 +16,7 @@ use exacopy_journal::{
 };
 use exacopy_model::{CopyBinding, CopyEffect, CopyEvent};
 
-use super::super::{check_absent, planning::journal_identity};
+use super::super::{check_absent, planning::journal_identity, records::EntryEvidence};
 use super::proposal::{check_current, check_selection, propose};
 use super::{
 	PublicApplyIntentObservation, PublicApplyIntentSelection, PublicApplyStageRequest, admit_stage,
@@ -118,6 +118,9 @@ type Cause<'root, S, D, J, A> = CheckedCopyError<
 >;
 type Failure<'root, S, D, J, A> =
 	CheckedApplyError<Cause<'root, S, D, J, A>, <J as GuardedCopyJob>::CheckedPublishError>;
+type ApplyResult<'root, 'name, S, D, J, A> =
+	Result<CheckedApply<'name>, Failure<'root, S, D, J, A>>;
+type PreparedResult<'root, S, D, J, A, Run> = Result<Run, Failure<'root, S, D, J, A>>;
 
 /// Executes one approved checked Linux create-new operation under held capabilities.
 /// This engine consumes runtime authority and evidence supplied by a trusted application.
@@ -132,7 +135,77 @@ pub fn apply_checked_public_plan<'root, 'name, S, D, J, A>(
 	selection: PublicApplyIntentSelection,
 	authority: &A,
 	scratch: &mut [u8],
-) -> Result<CheckedApply<'name>, Failure<'root, S, D, J, A>>
+) -> ApplyResult<'root, 'name, S, D, J, A>
+where
+	S: ExactSourceRoot<Source: CopySource<Identity = J::Identity, Metadata = J::Metadata>>,
+	D: CopyDestinationView
+		+ GuardedJobRoot<'root, Job = J, Error = <D as CopyDestinationView>::Error>,
+	J: GuardedCopyJob + JobWorkspace<Error = <D as CopyDestinationView>::Error>,
+	J::Segment: JournalSegment,
+	A: CheckedApplyAuthority,
+{
+	let execute =
+		prepare_checked_public_plan::<S, D, J, A>(roots, request, selection, authority, scratch)?;
+	execute()
+}
+
+struct AdmittedApply<'name, Source> {
+	source: Source,
+	entry: EntryEvidence<'name>,
+	binding: CopyBinding,
+	admitted: OwnerTimestamp,
+}
+
+// Retains the original admitted source and exact scratch. The ordinary caller
+// executes this immediately. Bootstrap still performs its own readiness checks.
+fn prepare_checked_public_plan<'root, 'name, S, D, J, A>(
+	roots: PlanningRoots<'root, S, D>,
+	request: PublicApplyStageRequest<'_, '_, 'name>,
+	selection: PublicApplyIntentSelection,
+	authority: &A,
+	scratch: &mut [u8],
+) -> PreparedResult<'root, S, D, J, A, impl FnOnce() -> ApplyResult<'root, 'name, S, D, J, A>>
+where
+	S: ExactSourceRoot<Source: CopySource<Identity = J::Identity, Metadata = J::Metadata>>,
+	D: CopyDestinationView
+		+ GuardedJobRoot<'root, Job = J, Error = <D as CopyDestinationView>::Error>,
+	J: GuardedCopyJob + JobWorkspace<Error = <D as CopyDestinationView>::Error>,
+	J::Segment: JournalSegment,
+	A: CheckedApplyAuthority,
+{
+	use CheckedApplyError::PreIntent;
+
+	check_selection(&request, selection)
+		.map_err(|error| PreIntent(CheckedCopyError::proposal(error)))?;
+	let (source, entry, binding) = admit_stage::<S, D, J>(&roots, &request, scratch.len())
+		.map_err(|error| PreIntent(error.into()))?;
+	let admitted = observe_current(&request, selection, authority, request.profile.created)
+		.map_err(PreIntent)?;
+	Ok(move || {
+		execute_checked_public_plan::<S, D, J, A>(
+			roots,
+			request,
+			selection,
+			authority,
+			scratch,
+			AdmittedApply {
+				source,
+				entry,
+				binding,
+				admitted,
+			},
+		)
+	})
+}
+
+fn execute_checked_public_plan<'root, 'name, S, D, J, A>(
+	roots: PlanningRoots<'root, S, D>,
+	request: PublicApplyStageRequest<'_, '_, 'name>,
+	selection: PublicApplyIntentSelection,
+	authority: &A,
+	scratch: &mut [u8],
+	preflight: AdmittedApply<'name, S::Source>,
+) -> ApplyResult<'root, 'name, S, D, J, A>
 where
 	S: ExactSourceRoot<Source: CopySource<Identity = J::Identity, Metadata = J::Metadata>>,
 	D: CopyDestinationView
@@ -143,12 +216,12 @@ where
 {
 	use CheckedApplyError::{IntentUnconfirmed, PreIntent, Published, PublishedCustody, Rename};
 
-	check_selection(&request, selection)
-		.map_err(|error| PreIntent(CheckedCopyError::proposal(error)))?;
-	let (source, entry, binding) = admit_stage::<S, D, J>(&roots, &request, scratch.len())
-		.map_err(|error| PreIntent(error.into()))?;
-	let admitted = observe_current(&request, selection, authority, request.profile.created)
-		.map_err(PreIntent)?;
+	let AdmittedApply {
+		source,
+		entry,
+		binding,
+		admitted,
+	} = preflight;
 
 	let (job, pins, mut journal) =
 		prepare::bootstrap::<D, J, S::Error, A>(roots.destination, &request, authority)
