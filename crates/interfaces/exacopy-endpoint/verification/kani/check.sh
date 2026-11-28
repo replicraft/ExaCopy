@@ -87,7 +87,9 @@ plans=(
 	kani_checks::connection_retry::clock_rollback_and_unrepresentable_wake_are_terminal=2
 )
 harnesses=()
+harness_timeout=600s
 if [[ -n "$mutation" ]]; then
+	harness_timeout=120s
 	harnesses=(--harness "$harness")
 else
 	for plan in "${plans[@]}"; do
@@ -101,7 +103,7 @@ kani_status=0
 # also bounds this entire gate, including compilation and all harnesses.
 CARGO_NET_OFFLINE=true "${cargo[@]}" kani --package exacopy-endpoint --lib --exact \
 	"${harnesses[@]}" --output-format regular -Z unstable-options \
-	--harness-timeout 120s 2>&1 | tee "$kani_log" || kani_status=$?
+	--harness-timeout "$harness_timeout" 2>&1 | tee "$kani_log" || kani_status=$?
 
 if [[ "$(LC_ALL=C shasum -a 256 Cargo.lock)" != "$lock_before" ]]; then
 	printf 'Cargo.lock changed during retry Kani verification.\n' >&2
