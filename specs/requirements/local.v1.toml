@@ -1574,7 +1574,7 @@ target = "approved_stage_reopens_with_exact_owner_and_preserves_uncertain_eviden
 [[coverage.evidence]]
 owner = "exacopy-cli"
 level = "documentation"
-state = "defined"
+state = "reported"
 path = "docs/architecture/local-public-apply-qualification.md"
 
 [[coverage]]
