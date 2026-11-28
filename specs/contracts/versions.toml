@@ -2,6 +2,23 @@ inventory_version = 1
 policy = "docs/architecture/contract-versioning.md"
 
 [[contract]]
+id = "workflow-sync-recreate-plan"
+kind = "workflow_record"
+status = "implemented_private"
+version = "1.0"
+required_features = 69
+owner = "crates/formats/exacopy-plan/src/workflow_sync/recreate.rs"
+notes = "Bounded signed kind-5 review proposal for one selected manual create-new action. An independent UUIDv7 pair selection is explicitly associated with the authenticated P-063 predecessor. Authorship is not approval, delegation, current-head evidence, or execution authority."
+
+[[contract]]
+id = "workflow-sync-recreate-actions"
+kind = "document_page"
+status = "implemented"
+version = "1.0"
+owner = "crates/formats/exacopy-plan/src/workflow_sync/recreate.rs"
+notes = "Workflow page kind 0x0101, one review-only create-new row with no delegated grant and a domain-scoped expected Linux v1 receipt selector. Ordinary child Plan and P-063 encodings remain unchanged. This profile cannot authorize parent execution or baseline advancement."
+
+[[contract]]
 id = "exacopy.cli.version"
 kind = "cli_output"
 status = "implemented"

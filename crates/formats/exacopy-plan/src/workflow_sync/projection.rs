@@ -182,7 +182,7 @@ pub(super) fn write_location<W: Write>(
 	write_object(out, location.root)
 }
 
-fn write_object<W: Write>(
+pub(super) fn write_object<W: Write>(
 	out: &mut Encoder<W>,
 	value: NativeObject,
 ) -> Result<(), Error<W::Error>> {

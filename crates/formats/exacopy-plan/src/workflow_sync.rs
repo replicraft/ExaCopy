@@ -6,6 +6,7 @@ use exacopy_core::UnixComponent;
 
 mod decoder;
 mod projection;
+pub mod recreate;
 mod wire;
 mod writer;
 
@@ -64,12 +65,12 @@ impl WorkflowEnvelope<'_> {
 	/// Builds the exact record signing input. The caller verifies the selected key.
 	#[must_use]
 	pub fn signing_input(self, kind: WorkflowKind) -> Vec<u8> {
-		signing_input(kind, self.body)
+		signing_input(kind as u16, self.body)
 	}
 }
 
-fn signing_input(kind: WorkflowKind, body: &[u8]) -> Vec<u8> {
-	[RECORD_DOMAIN, &(kind as u16).to_le_bytes(), body].concat()
+fn signing_input(kind: u16, body: &[u8]) -> Vec<u8> {
+	[RECORD_DOMAIN, &kind.to_le_bytes(), body].concat()
 }
 
 /// Canonical signed Unix seconds and a nonnegative nanosecond fraction.

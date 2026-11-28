@@ -22,6 +22,9 @@ enum Marker {
 	Report,
 	Manifest,
 	DocumentPage,
+	NamedDocumentPage {
+		version: &'static str,
+	},
 	PlanBody,
 	PlanJson,
 	Workflow {
@@ -57,7 +60,9 @@ impl Binding {
 		let (kind, status) = match self.marker {
 			Marker::Report => (Kind::CliOutput, Status::Implemented),
 			Marker::Manifest => (Kind::Manifest, Status::Implemented),
-			Marker::DocumentPage => (Kind::DocumentPage, Status::Implemented),
+			Marker::DocumentPage | Marker::NamedDocumentPage { .. } => {
+				(Kind::DocumentPage, Status::Implemented)
+			}
 			Marker::Workflow { .. } => (Kind::WorkflowRecord, Status::ImplementedPrivate),
 			Marker::PlanBody | Marker::PlanJson => (Kind::Plan, Status::Implemented),
 			_ => (Kind::TransferJournal, Status::ImplementedPrivate),
@@ -118,6 +123,9 @@ impl Marker {
 				None,
 			),
 			Self::PlanJson => (schema_version(constant(file, "VERSION")?)?, None, None),
+			Self::NamedDocumentPage { version } => {
+				return Self::array(version, 2).read(file, id);
+			}
 			Self::DocumentPage | Self::PlanBody => {
 				let Expr::Array(values) = constant(file, "VERSION")? else {
 					return Err("expected a VERSION array".into());

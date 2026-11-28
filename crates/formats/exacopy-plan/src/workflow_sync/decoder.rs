@@ -4,6 +4,7 @@ use exacopy_core::UnixComponent;
 use minicbor::Decoder;
 
 use super::WorkflowError as Error;
+use crate::UnixTimestamp;
 
 pub(super) struct Canonical<'bytes>(Decoder<'bytes>);
 
@@ -74,6 +75,13 @@ impl<'bytes> Canonical<'bytes> {
 		Ok(self.0.null()?)
 	}
 
+	pub(super) fn expect_true(&mut self) -> Result<(), Error> {
+		if !self.0.bool()? {
+			return Err(Error::Shape);
+		}
+		Ok(())
+	}
+
 	pub(super) fn bytes(&mut self) -> Result<&'bytes [u8], Error> {
 		let start = self.0.position();
 		let bytes = self.0.bytes()?;
@@ -93,7 +101,7 @@ impl<'bytes> Canonical<'bytes> {
 		Ok(bytes)
 	}
 
-	pub(super) fn time(&mut self) -> Result<(), Error> {
+	pub(super) fn time(&mut self) -> Result<UnixTimestamp, Error> {
 		self.array(2)?;
 		let start = self.0.position();
 		let seconds = self.0.i64()?;
@@ -103,10 +111,8 @@ impl<'bytes> Canonical<'bytes> {
 			seconds.unsigned_abs()
 		};
 		self.width(start, argument, 0)?;
-		if self.number()? >= 1_000_000_000 {
-			return Err(Error::Shape);
-		}
-		Ok(())
+		let nanoseconds = u32::try_from(self.number()?).map_err(|_| Error::Shape)?;
+		UnixTimestamp::new(seconds, nanoseconds).map_err(|_| Error::Shape)
 	}
 
 	pub(super) fn text(&mut self, expected: &str) -> Result<(), Error> {

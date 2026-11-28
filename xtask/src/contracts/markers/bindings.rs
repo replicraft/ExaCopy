@@ -2,6 +2,20 @@ use super::{Binding, Marker};
 
 pub(in crate::contracts) const BINDINGS: &[Binding] = &[
 	Binding::new(
+		"workflow-sync-recreate-plan",
+		"crates/formats/exacopy-plan/src/workflow_sync/recreate.rs",
+		Marker::Workflow {
+			features: "REQUIRED_FEATURES",
+		},
+	),
+	Binding::new(
+		"workflow-sync-recreate-actions",
+		"crates/formats/exacopy-plan/src/workflow_sync/recreate.rs",
+		Marker::NamedDocumentPage {
+			version: "ACTION_PAGE_VERSION",
+		},
+	),
+	Binding::new(
 		"exacopy.cli.remote_download",
 		"apps/exacopy-cli/src/remote_report.rs",
 		Marker::Report,

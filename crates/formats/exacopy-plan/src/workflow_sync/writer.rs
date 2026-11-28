@@ -18,12 +18,12 @@ use super::{
 #[cfg(test)]
 mod tests;
 
-type Writer<'bytes> = Encoder<Cursor<&'bytes mut [u8]>>;
-type WriteError = EncodeError<EndOfSlice>;
+pub(super) type Writer<'bytes> = Encoder<Cursor<&'bytes mut [u8]>>;
+pub(super) type WriteError = EncodeError<EndOfSlice>;
 
 // Map + four keys + domain code + two fixed byte strings + at most three body-length bytes.
 const ENVELOPE_OVERHEAD: usize = 1 + 4 + 2 + (2 + 32) + (2 + 64) + 3;
-const MAX_BODY_BYTES: usize = MAX_MEMBER_BYTES - ENVELOPE_OVERHEAD;
+pub(super) const MAX_BODY_BYTES: usize = MAX_MEMBER_BYTES - ENVELOPE_OVERHEAD;
 
 /// Canonical endpoint or root body with its fixed record kind.
 #[derive(Debug)]
@@ -42,7 +42,7 @@ impl EncodedWorkflowBody {
 	/// Domain-separated bytes authenticated by the selected owner.
 	#[must_use]
 	pub fn signing_input(&self) -> Vec<u8> {
-		signing_input(self.kind, &self.bytes)
+		signing_input(self.kind as u16, &self.bytes)
 	}
 
 	/// Frames a detached signature and computes the reference to this body.
@@ -55,23 +55,11 @@ impl EncodedWorkflowBody {
 		public_key: [u8; 32],
 		signature: [u8; 64],
 	) -> Result<EncodedWorkflowRecord, WorkflowError> {
-		let mut scratch = [0; MAX_MEMBER_BYTES];
-		let bytes = bounded(&mut scratch, |out| {
-			out.map(4)?
-				.u8(0)?
-				.bytes(&self.bytes)?
-				.u8(1)?
-				.bytes(&public_key)?
-				.u8(2)?
-				.bytes(&signature)?
-				.u8(3)?
-				.u64(SIGNATURE_DOMAIN_CODE)?;
-			Ok(())
-		})?;
+		let bytes = envelope(&self.bytes, public_key, signature)?;
 		let byte_len = u16::try_from(bytes.len()).map_err(|_| WorkflowError::Size)?;
 		let digest = *blake3::hash(&self.signing_input()).as_bytes();
 		Ok(EncodedWorkflowRecord {
-			bytes: bytes.to_vec(),
+			bytes,
 			reference: WorkflowRef {
 				kind: self.kind,
 				digest,
@@ -79,6 +67,27 @@ impl EncodedWorkflowBody {
 			},
 		})
 	}
+}
+
+pub(super) fn envelope(
+	body: &[u8],
+	public_key: [u8; 32],
+	signature: [u8; 64],
+) -> Result<Vec<u8>, WorkflowError> {
+	let mut scratch = [0; MAX_MEMBER_BYTES];
+	let bytes = bounded(&mut scratch, |out| {
+		out.map(4)?
+			.u8(0)?
+			.bytes(body)?
+			.u8(1)?
+			.bytes(&public_key)?
+			.u8(2)?
+			.bytes(&signature)?
+			.u8(3)?
+			.u64(SIGNATURE_DOMAIN_CODE)?;
+		Ok(())
+	})?;
+	Ok(bytes.to_vec())
 }
 
 /// Canonical signed-envelope representation and its complete extent.
@@ -129,7 +138,8 @@ pub fn encode_endpoint_body(
 	record_body(WorkflowKind::Endpoint, |out| {
 		header(
 			out,
-			WorkflowKind::Endpoint,
+			VERSION,
+			WorkflowKind::Endpoint as u16,
 			ENDPOINT_REQUIRED_FEATURES,
 			body.id,
 			body.profile,
@@ -189,7 +199,8 @@ pub fn encode_root_body(
 	record_body(WorkflowKind::Root, |out| {
 		header(
 			out,
-			WorkflowKind::Root,
+			VERSION,
+			WorkflowKind::Root as u16,
 			ROOT_REQUIRED_FEATURES,
 			body.id,
 			body.profile,
@@ -243,7 +254,7 @@ fn record_body(
 	})
 }
 
-fn bounded(
+pub(super) fn bounded(
 	buffer: &mut [u8],
 	write: impl FnOnce(&mut Writer<'_>) -> Result<(), WriteError>,
 ) -> Result<&[u8], WorkflowError> {
@@ -253,14 +264,17 @@ fn bounded(
 	buffer.get(..bytes).ok_or(WorkflowError::Size)
 }
 
-fn validate_header(id: [u8; 16], profile: [u8; 16]) -> Result<(), WorkflowError> {
+pub(super) fn validate_header(id: [u8; 16], profile: [u8; 16]) -> Result<(), WorkflowError> {
 	if !super::wire::is_record_id(id) || profile == [0; 16] {
 		return Err(WorkflowError::Shape);
 	}
 	Ok(())
 }
 
-fn validate_reference(reference: WorkflowRef, kind: WorkflowKind) -> Result<(), WorkflowError> {
+pub(super) fn validate_reference(
+	reference: WorkflowRef,
+	kind: WorkflowKind,
+) -> Result<(), WorkflowError> {
 	if reference.kind != kind {
 		return Err(WorkflowError::Shape);
 	}
@@ -270,9 +284,10 @@ fn validate_reference(reference: WorkflowRef, kind: WorkflowKind) -> Result<(), 
 	Ok(())
 }
 
-fn header(
+pub(super) fn header(
 	out: &mut Writer<'_>,
-	kind: WorkflowKind,
+	version: [u64; 2],
+	kind: u16,
 	features: u64,
 	id: [u8; 16],
 	profile: [u8; 16],
@@ -281,13 +296,13 @@ fn header(
 		.u8(0)?
 		.map(3)?
 		.u8(0)?
-		.u64(VERSION[0])?
+		.u64(version[0])?
 		.u8(1)?
-		.u64(VERSION[1])?
+		.u64(version[1])?
 		.u8(2)?
 		.u64(features)?
 		.u8(1)?
-		.u16(kind as u16)?
+		.u16(kind)?
 		.u8(2)?
 		.bytes(&id)?
 		.u8(3)?
@@ -305,20 +320,34 @@ fn trailer(out: &mut Writer<'_>, timestamp: WorkflowTimestamp) -> Result<(), Wri
 	Ok(())
 }
 
-fn reference(out: &mut Writer<'_>, reference: WorkflowRef) -> Result<(), WriteError> {
+pub(super) fn reference(out: &mut Writer<'_>, reference: WorkflowRef) -> Result<(), WriteError> {
+	reference_fields(
+		out,
+		reference.digest,
+		reference.kind as u16,
+		reference.byte_len,
+	)
+}
+
+pub(super) fn reference_fields(
+	out: &mut Writer<'_>,
+	digest: [u8; 32],
+	kind: u16,
+	byte_len: u16,
+) -> Result<(), WriteError> {
 	out.map(4)?
 		.u8(0)?
-		.bytes(&reference.digest)?
+		.bytes(&digest)?
 		.u8(1)?
-		.u16(reference.kind as u16)?
+		.u16(kind)?
 		.u8(2)?
-		.u16(reference.byte_len)?
+		.u16(byte_len)?
 		.u8(3)?
 		.u8(1)?;
 	Ok(())
 }
 
-fn component(out: &mut Writer<'_>, value: UnixComponent<'_>) -> Result<(), WriteError> {
+pub(super) fn component(out: &mut Writer<'_>, value: UnixComponent<'_>) -> Result<(), WriteError> {
 	out.map(2)?.u8(0)?.u8(1)?.u8(1)?.bytes(value.as_bytes())?;
 	Ok(())
 }
