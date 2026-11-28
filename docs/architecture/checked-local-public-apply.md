@@ -38,11 +38,11 @@ record passed for one scalar decision on normalized inputs and its separately
 verified UTC comparator. [Grant clock evidence](../../crates/foundation/exacopy-model/verification/GRANT_TIME.md)
 records the exact assertions, covers and scope. Native sampling and whole-grant
 state updates remain separate. The same revision's advisory extraction supplied
-the actual generated grant-time modules. Reviewed copies now accompany an
-authored theorem over the extracted decision, with mandatory fresh regeneration
-and exact module comparison. Hosted kernel validation of that theorem remains
-pending; candidate generation earns no proof credit. The advisory step retains
-its separate source and provenance artifact outside EVS records.
+the actual generated grant-time modules. At `72cc9bb`, the mandatory Lean gate
+freshly regenerated the modules and kernel-checked the theorem for one extracted
+scalar decision under normalized UTC inputs and correctly classified monotonic
+observations. It covers exact half-open window admission and refusal precedence.
+The advisory capture remains separate provenance evidence outside the EVS records.
 
 At `aac327a`, P-082's two Kani harnesses passed all three assertions and nineteen
 covers under the exact `experimental-linux-public-apply` feature profile.

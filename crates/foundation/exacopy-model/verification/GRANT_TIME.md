@@ -66,8 +66,7 @@ The P-083 Lean gate now freshly extracts those exact modules and checks
 ordering, half-open window intersection and refusal precedence. The original
 range regeneration and theorem remain mandatory. A drift refusal retains a
 bounded raw byte diff in the EVS log before its scratch directory is removed.
-The new theorem and combined regeneration still require hosted kernel validation;
-the advisory capture itself earns no proof credit.
+The advisory capture itself earns no proof credit.
 
 At `b595397`, fresh regeneration matched all three grant-time module payloads
 and Lake built the generated modules and existing range theorem. The grant-time
@@ -81,7 +80,30 @@ The P-083 raw member is `exacopy-evs/395f1bd3-6533-4722-8cef-f832ea6b08de.log`,
 with SHA-256 `a9d8177dcbd0d022f1f0ed62778d785ce3a909d79c97436e078b3afef44ad56c`.
 The correction uses the same coercion in the timestamp formula. Its mathematical
 value, normalized domain, theorem statement and axiom allowlist are unchanged;
-hosted kernel verification of the correction remains pending.
+the correction was then submitted to hosted kernel verification.
+
+The corrected theorem passed at `72cc9bb5d9054f48f160feb113cd39047b155fa9`.
+Both P-083 and P-004 passed the shared gate on `x86_64-unknown-linux-gnu`
+with Lean `4.31.0` at `68218e876d2a38b1985b8590fff244a83c321783`. Each run
+freshly regenerated and compared all six Range and GrantTime modules and
+kernel-checked both theorem files. Both theorem reports list exactly
+`propext`, `Classical.choice` and `Quot.sound`. Source correspondence assumes
+the pinned Charon and Aeneas translation and Hax scalar models.
+
+P-083's extracted scalar decision matches the independent signed integer
+nanosecond rule for normalized UTC operands, the original and optional
+qualification half-open windows, and regression-before-expiry precedence.
+The theorem calls the generated decision in `Generated/GrantTime/Funs.lean`,
+SHA-256 `ab048e0ace18a4ee575773dd39e477fef50de1313264b44075646d37d32f4d2b`.
+The checked `Proofs/GrantTime.lean` has SHA-256
+`bd90bd0c26ae147729f4ea3646e4b4abd1a5f1cbdcf972a87816a29661d8aaed`.
+The raw P-083 member is `exacopy-evs/2caddfff-3b32-4f30-b378-9abe5fd8265d.log`,
+with SHA-256 `2dad614c2be6c571b627a0c997a62228c715be4682470b767bbf65fd47ff289b`.
+The raw P-004 member is `exacopy-evs/9901a88b-b94b-47c4-b94a-36dd5d1d6a0c.log`,
+with SHA-256 `3243a1fbc98b5b423bde27902b5670810eada8791cbf7a44f6df663e24a8191f`.
+[Exact hosted snapshot](https://github.com/replicraft/ExaCopy/actions/runs/46135567347/artifacts/15260026137)
+contains both logs and their EVS records and has SHA-256
+`7af9848fa99673a98723d7178f484954d0895434f89dbc598ee08dfcd487f2fd`.
 
 Clock sampling and monotonic classification, paired high-water updates,
 retirement, mutex serialization, effects and native qualification remain
