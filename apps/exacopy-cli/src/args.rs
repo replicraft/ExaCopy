@@ -27,6 +27,11 @@ pub(crate) enum Command {
 	},
 	Verify(VerifyCommand),
 	Recover(RecoveryCommand),
+	#[cfg(all(
+		target_os = "windows",
+		feature = "experimental-windows-bootstrap-inspect"
+	))]
+	InspectWindowsBootstrap(InspectWindowsBootstrapCommand),
 	#[cfg(all(target_os = "macos", feature = "experimental-apfs-copy"))]
 	InspectApfs(InspectApfsCommand),
 	#[cfg(all(target_os = "linux", feature = "experimental-verified-prefix-resume"))]
@@ -164,4 +169,16 @@ pub(crate) struct InspectApfsCommand {
 	pub(crate) owner_key: [u8; 32],
 	pub(crate) destination_root: exacopy_journal::RootCapabilityId,
 	pub(crate) format: Format,
+}
+
+#[cfg(all(
+	target_os = "windows",
+	feature = "experimental-windows-bootstrap-inspect"
+))]
+pub(crate) struct InspectWindowsBootstrapCommand {
+	pub(crate) root: PathBuf,
+	pub(crate) root_identity: exacopy_journal::windows_bootstrap::WindowsBootstrapFileIdentity,
+	pub(crate) profile: exacopy_journal::OwnerProfileId,
+	pub(crate) owner_key: [u8; 32],
+	pub(crate) job: exacopy_journal::JournalJobId,
 }

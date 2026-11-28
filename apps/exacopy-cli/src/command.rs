@@ -101,6 +101,13 @@ pub(crate) fn run_with_output(
 		Command::InspectApfs(command) => {
 			ExitCode::from(crate::apfs_inspect::run(&command, &mut stdout, &mut stderr))
 		}
+		#[cfg(all(
+			target_os = "windows",
+			feature = "experimental-windows-bootstrap-inspect"
+		))]
+		Command::InspectWindowsBootstrap(command) => ExitCode::from(
+			crate::windows_bootstrap_inspect::run(&command, &mut stdout, &mut stderr),
+		),
 		Command::Recover(recovery) => {
 			let outcome = execute_recovery(&recovery);
 			match outcome.write(recovery.format, &mut stdout, &mut stderr) {

@@ -119,6 +119,24 @@ class FeatureMatrixTests(unittest.TestCase):
             self.assertIn(feature, opt_in.split(","))
             self.assertNotIn(feature, ",".join(profile_flags(POLICY, profiles["development-all"], LINUX)))
 
+    def test_windows_bootstrap_inspection_is_isolated_and_default_off(self):
+        profiles = POLICY["profiles"]
+        feature = "exacopy-cli/experimental-windows-bootstrap-inspect"
+        selected = profiles["experimental-windows-bootstrap-inspect"]
+        self.assertEqual(
+            profile_flags(POLICY, selected, WINDOWS),
+            ["--no-default-features", "--features", ",".join((
+                feature, "exacopy-platform/experimental-windows-copy", "exacopy-platform/experimental-windows-read",
+            ))],
+        )
+        self.assertEqual(selected["targets"], [WINDOWS])
+        for target in POLICY["targets"]:
+            with self.subTest(target=target):
+                for profile in ("default", "minimal", "all-stable"):
+                    self.assertNotIn(feature, ",".join(profile_flags(POLICY, profiles[profile], target)))
+                if target != WINDOWS:
+                    self.assertEqual(profile_flags(POLICY, selected, target), ["--no-default-features"])
+
     def test_protocol_profile_isolated_and_default_off_on_every_target(self):
         profiles = POLICY["profiles"]
         feature = "exacopy-wireguard/experimental-protocol"

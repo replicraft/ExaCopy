@@ -96,6 +96,18 @@
       "targets": ["x86_64-pc-windows-msvc"],
       "purpose": "Compile the optional private NTFS staging capability and Windows qualification fixtures."
     },
+    "experimental-windows-bootstrap-inspect": {
+      "defaults": false,
+      "check_cli": false,
+      "feature_statuses": [],
+      "exact_features": [
+        "exacopy-cli/experimental-windows-bootstrap-inspect",
+        "exacopy-platform/experimental-windows-copy",
+        "exacopy-platform/experimental-windows-read"
+      ],
+      "targets": ["x86_64-pc-windows-msvc"],
+      "purpose": "Compile the opt-in Windows CLI inspection of one independently selected authenticated bootstrap."
+    },
     "experimental-wireguard-protocol": {
       "defaults": false,
       "check_cli": false,
@@ -309,6 +321,22 @@
           "windows-sys"
         ],
         "purpose": "Build the opt-in local NTFS read-only CLI comparison."
+      },
+      "experimental-windows-bootstrap-inspect": {
+        "status": "experimental",
+        "targets": ["x86_64-pc-windows-msvc"],
+        "enables": [
+          "dep:ed25519-dalek",
+          "dep:exacopy-journal",
+          "dep:exacopy-platform",
+          "exacopy-platform/experimental-windows-read",
+          "exacopy-platform/experimental-windows-copy"
+        ],
+        "resolution_probe": [
+          "ed25519-dalek", "exacopy-journal", "exacopy-platform",
+          "exacopy-endpoint", "exacopy-model", "windows-sys"
+        ],
+        "purpose": "Expose read-only first-frame bootstrap inspection through the Windows CLI."
       },
       "windows-bootstrap-fixture": {
         "status": "experimental",
@@ -549,7 +577,7 @@
     "ed25519-dalek": {
       "default_features": false,
       "features": ["zeroize"],
-      "optional_targets": {"exacopy-cli": ["cfg(target_os = \"macos\")"]},
+      "optional_targets": {"exacopy-cli": ["cfg(target_os = \"macos\")", "cfg(target_os = \"windows\")"]},
       "purpose": "Sign and verify transaction records and verify historical workflow closure."
     },
     "getrandom": {
@@ -686,6 +714,7 @@
       "cli": {
         "status": "explicit-refusal",
         "diff": "experimental NTFS with experimental-windows-diff and --local-ntfs",
+        "bootstrap_inspection": "read-only first-frame observation with experimental-windows-bootstrap-inspect",
         "copy_and_recovery": "unsupported"
       },
       "cli_graph_groups": ["command_line", "reporting"],

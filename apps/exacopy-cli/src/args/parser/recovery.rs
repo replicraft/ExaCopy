@@ -14,11 +14,13 @@ use crate::args::{Command, RecoveryAction, RecoveryCommand, SourceRecoveryAction
 
 #[cfg(all(target_os = "macos", feature = "experimental-apfs-copy"))]
 mod apfs;
-#[cfg(all(
-	test,
-	not(all(target_os = "macos", feature = "experimental-apfs-copy"))
-))]
+#[cfg(test)]
 mod tests;
+#[cfg(all(
+	target_os = "windows",
+	feature = "experimental-windows-bootstrap-inspect"
+))]
+mod windows_bootstrap;
 
 const INSPECT: &str = "inspect";
 const FINISH: &str = "finish";
@@ -49,6 +51,13 @@ pub(super) fn definition() -> Cli {
 	let cli = cli
 		.about("Inspect a retained managed APFS job.")
 		.subcommand(apfs::definition());
+	#[cfg(all(
+		target_os = "windows",
+		feature = "experimental-windows-bootstrap-inspect"
+	))]
+	let cli = cli
+		.about("Inspect a selected fixed-NTFS bootstrap job.")
+		.subcommand(windows_bootstrap::definition());
 	cli
 }
 
@@ -76,6 +85,11 @@ pub(super) fn command(mut command: ArgMatches) -> Option<Command> {
 	let action = match name.as_str() {
 		#[cfg(all(target_os = "macos", feature = "experimental-apfs-copy"))]
 		apfs::NAME => return apfs::command(&mut args),
+		#[cfg(all(
+			target_os = "windows",
+			feature = "experimental-windows-bootstrap-inspect"
+		))]
+		windows_bootstrap::NAME => return windows_bootstrap::command(&mut args),
 		#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
 		remote::REMOTE_RESUME => return remote::resume(&mut args),
 		#[cfg(all(target_os = "linux", feature = "experimental-verified-prefix-resume"))]

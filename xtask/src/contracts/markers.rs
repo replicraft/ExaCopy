@@ -68,6 +68,11 @@ pub(super) const BINDINGS: &[Binding] = &[
 		Marker::Report,
 	),
 	Binding::new(
+		"exacopy.cli.windows_bootstrap_inspection",
+		"apps/exacopy-cli/src/windows_bootstrap_inspect.rs",
+		Marker::Report,
+	),
+	Binding::new(
 		"workflow-local-sync-endpoint",
 		"crates/formats/exacopy-plan/src/workflow_sync/wire.rs",
 		Marker::Workflow {

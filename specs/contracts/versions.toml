@@ -433,3 +433,11 @@ status = "implemented"
 version = "1.0"
 owner = "apps/exacopy-cli/src/sync_preview/managed_command/recreate.rs"
 notes = "Default-off managed Linux synchronization planning report for a reviewed deletion conflict and measured survivor. Includes an unsigned approval-required child Plan and grants no effect, current-head, or baseline advancement authority."
+
+[[contract]]
+id = "exacopy.cli.windows_bootstrap_inspection"
+kind = "cli_output"
+status = "implemented"
+version = "1.0"
+owner = "apps/exacopy-cli/src/windows_bootstrap_inspect.rs"
+notes = "Default-off read-only inspection of one independently selected Windows job bootstrap. Reports authenticated owner and first-frame evidence with no later replay, publication, or recovery authority."
