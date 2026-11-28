@@ -1528,6 +1528,56 @@ target = "exact_cuts_and_profile_limit_preserve_accepted_boundary"
 
 
 [[coverage]]
+id = "local-public-apply-qualification-consumer"
+status = "experimental"
+requirement_ids = ["R-015", "R-155"]
+acceptance_ids = ["A-015", "A-155"]
+invariant_ids = ["INV-003", "INV-013", "INV-018", "INV-019"]
+scope = "The default-off Linux SDK verifies a separately enrolled fixed local attestation, matches the actual running executable and held native roots, and rechecks current environment and original expiry before bootstrap and after staging through the existing historical intent proposer."
+limits = "Source integration only. No operational enrollment, live publication grant, native positive qualification, recovery activation or new journal dialect. Compile and native controls require evidence at the integrated revision."
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/public_stage/qualification/tests.rs"
+target = "authenticates_the_frozen_local_record_and_distinct_native_roles"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/public_stage/qualification/tests.rs"
+target = "refuses_foreign_purpose_even_with_the_selected_exact_record_digest"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/public_stage/qualification/tests.rs"
+target = "refuses_wrong_selection_signer_and_nonexact_extents"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/public_stage/qualification/tests.rs"
+target = "time_selection_requires_the_original_plan_and_record_windows"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/public_stage/tests.rs"
+target = "approved_stage_reopens_with_exact_owner_and_preserves_uncertain_evidence"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "documentation"
+state = "defined"
+path = "docs/architecture/local-public-apply-qualification.md"
+
+[[coverage]]
 id = "public-apply-intent-receipt"
 status = "implemented"
 requirement_ids = ["R-015", "R-155"]

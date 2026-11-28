@@ -34,6 +34,15 @@ target absence, caller's current observation and original expiry interval.
 It then rereads the original journal descriptor through the exact synced
 metadata frame and physical EOF before constructing the proposal.
 
+The application SDK's default-off `stage_qualified_public_apply` adds an
+independently selected protected attestation before this proposer. Its
+[local qualification contract](local-public-apply-qualification.md) binds
+the exact action, owner, measured running image, held roots, native
+environment and finite validity interval. It checks current observations
+at both prebootstrap and sealed-stage boundaries. This SDK has no default
+enrollment or CLI route. Its returned proposal retains the same historical
+meaning. Live authorization and checked publication remain open.
+
 This readback checks the complete envelope chain under the existing 64 MiB
 segment bound, with one extra byte for EOF detection. It restores and checks
 the append cursor without writing or issuing another barrier. A stale
