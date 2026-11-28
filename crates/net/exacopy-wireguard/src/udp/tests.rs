@@ -253,15 +253,31 @@ fn rejects_unconnected_wrong_peer_foreign_sender_and_oversized_datagram() {
 			actor.receive_one(SHORT_WAIT, &mut output).await,
 			Ok(UdpProgress::NoDatagram)
 		));
-		remote.send(&[0; MAX_DATAGRAM_BYTES + 1]).await.unwrap();
-		for _ in 0..3 {
-			match actor.receive_one(MAX_RECEIVE_WAIT, &mut output).await {
-				Ok(UdpProgress::NoDatagram) => {}
-				Err(UdpError::DatagramLimit) => return,
-				_ => panic!("oversized outer datagram received an invalid disposition"),
+		let untouched = [0xa7; MAX_DATAGRAM_BYTES];
+		output = untouched;
+		let oversized = [0; MAX_DATAGRAM_BYTES + 2];
+		for size in [MAX_DATAGRAM_BYTES + 1, oversized.len()] {
+			assert_eq!(remote.send(&oversized[..size]).await.unwrap(), size);
+			let mut refused = false;
+			for _ in 0..3 {
+				match actor.receive_one(MAX_RECEIVE_WAIT, &mut output).await {
+					Ok(UdpProgress::NoDatagram) => {}
+					Err(UdpError::DatagramLimit) => {
+						refused = true;
+						break;
+					}
+					_ => panic!("oversized outer datagram received an invalid disposition"),
+				}
 			}
+			assert!(refused, "expected a size refusal for {size} bytes");
+			assert_eq!(output, untouched);
 		}
-		panic!("expected an oversized loopback datagram");
+
+		let reciprocal = protocol(actor_address, false, generation);
+		let mut remote =
+			UdpPeer::from_connected(MockRoute::new(generation), remote, reciprocal).unwrap();
+		handshake(&mut actor, &mut remote).await;
+		exchange(&mut actor, &mut remote, &fixture_ip(LOCAL, REMOTE)).await;
 	});
 }
 

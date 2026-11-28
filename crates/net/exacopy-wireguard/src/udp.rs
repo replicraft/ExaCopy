@@ -29,6 +29,11 @@ pub use error::{SocketPhase, UdpError};
 /// Upper bound for one readiness wait before returning control to the caller.
 pub const MAX_RECEIVE_WAIT: Duration = Duration::from_secs(1);
 
+// Winsock reports a datagram larger than the receive buffer as WSAEMSGSIZE.
+// Mio's connected recv exposes this exact native error through Tokio.
+#[cfg(target_os = "windows")]
+const WSAEMSGSIZE: i32 = 10040;
+
 /// Supplies trusted route observations under the same authority that revokes them.
 ///
 /// Serialize replacement and revocation with each synchronous callback. A
@@ -179,6 +184,8 @@ impl<R: RouteOwner> UdpPeer<R> {
 			match active.socket.try_recv(&mut packet) {
 				Ok(size) => Ok(Some(size)),
 				Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(None),
+				#[cfg(target_os = "windows")]
+				Err(error) if error.raw_os_error() == Some(WSAEMSGSIZE) => Err(UdpError::DatagramLimit),
 				Err(error) => Err(UdpError::Socket(SocketPhase::Receive, error)),
 			}
 		});
