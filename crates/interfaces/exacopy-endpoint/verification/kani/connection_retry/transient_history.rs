@@ -6,71 +6,9 @@ use crate::kani_checks::jitter_oracle::{NANOS_PER_MILLISECOND, UPPER_MS, expecte
 use super::{OWNER, TICK, start, wait_after};
 
 const LOSS_COUNT: usize = UPPER_MS.len();
-const BOUNDARY_CEILINGS_MS: [u64; LOSS_COUNT + 1] = [
-	1_000, 2_000, 4_000, 8_000, 16_000, 32_000, 60_000, 60_000, 60_000,
-];
-const PREFIX_LIMITS: [Duration; LOSS_COUNT + 1] = [
-	Duration::ZERO,
-	Duration::from_secs(1),
-	Duration::from_secs(3),
-	Duration::from_secs(7),
-	Duration::from_secs(15),
-	Duration::from_secs(31),
-	Duration::from_secs(63),
-	Duration::from_secs(123),
-	Duration::from_secs(183),
-];
 const EXPECTED_NEXT_GENERATION: u64 = 9;
 
-fn at_history_boundary(supervisor: &RetrySupervisor, now: Duration, row: usize) -> bool {
-	if row > LOSS_COUNT || now > PREFIX_LIMITS[row] {
-		return false;
-	}
-	let generation = u64::try_from(row).expect("eight losses fit in u64");
-	let (waiting, last_observation) = if row == 0 {
-		(None, Duration::ZERO)
-	} else {
-		let Some(early_poll) = now.checked_sub(TICK) else {
-			return false;
-		};
-		(Some(now), early_poll)
-	};
-	supervisor.matches_history_boundary(
-		OWNER,
-		generation,
-		BOUNDARY_CEILINGS_MS[row],
-		waiting,
-		last_observation,
-	)
-}
-
-pub(super) fn check_inductive_history() {
-	let samples: [u32; LOSS_COUNT] = kani::any();
-	let mut supervisor = RetrySupervisor::new(OWNER, Duration::MAX);
-	let mut now = Duration::ZERO;
-	let mut row = 0;
-	#[kani::loop_invariant(at_history_boundary(&supervisor, now, row))]
-	#[kani::loop_decreases(LOSS_COUNT - row)]
-	while row < LOSS_COUNT {
-		// Return the actual state and assign the whole loop-carried value so
-		// inferred modifies can see the write outside the called methods.
-		let (next_supervisor, wake_at) = check_row(supervisor, now, row, samples[row]);
-		supervisor = next_supervisor;
-		now = wake_at;
-		row += 1;
-	}
-	kani::assert(
-		row == LOSS_COUNT,
-		"all eight loss rows precede the last start",
-	);
-	let generation = finish(&mut supervisor, now);
-	kani::cover!(
-		generation == EXPECTED_NEXT_GENERATION,
-		"redial after the cap"
-	);
-}
-
-pub(super) fn check_concrete_history() {
+pub(super) fn check_full_history() {
 	let mut supervisor = RetrySupervisor::new(OWNER, Duration::MAX);
 	let mut now = Duration::ZERO;
 	for row in 0..LOSS_COUNT {

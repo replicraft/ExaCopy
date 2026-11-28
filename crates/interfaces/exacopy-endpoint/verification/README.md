@@ -2,7 +2,7 @@
 
 P-020 includes the bounded endpoint scheduler checks in this crate. The seven scheduler harnesses invoke the production `RetrySupervisor` with an injected monotonic clock, fixed grant expiry and typed attempt observations. They exercise no credentials, transport, or filesystem operations. Durable job identity and effect recovery belong to the managing application and journal. This packet supplies no extracted Lean or full P-020 evidence.
 
-Run `verification/check.sh kani` from the endpoint crate or invoke its workspace-relative path. The dispatcher uses the shared pinned Kani, compiler and CBMC lock. It runs nine exact harness names and requires all eighteen cover goals with unwinding checks enabled. The crate manifest links the principal history harness. The same gate requires a separate concrete cap witness, the five scheduler companions, the arithmetic equivalence lemma, and the real jitter contract proof. The clean Kani invocation gives each selected harness up to 600 seconds. The standard evidence recorder keeps a 900-second limit for the entire clean gate, including setup, and treats a timeout as failure. The four mutation controls run separately with a 120-second limit each.
+Run `verification/check.sh kani` from the endpoint crate or invoke its workspace-relative path. The dispatcher uses the shared pinned Kani, compiler and CBMC lock. It runs ten exact harness names and requires all twenty-two cover goals with unwinding checks enabled. The crate manifest links the principal history harness. The same gate requires a separate concrete cap witness, the five scheduler companions, the arithmetic equivalence lemma, the real jitter contract proof, and the real timing contract proof. The clean Kani invocation gives each selected harness up to 600 seconds. The standard evidence recorder keeps a 900-second limit for the entire clean gate, including setup, and treats a timeout as failure. The four mutation controls run separately with a 120-second limit each.
 
 ## Retained gate results
 
@@ -29,11 +29,11 @@ The `3b9ef5f` snapshot SHA-256 is `7c1f7275e54c5730a6aca9c18800947f0b570107c04fd
 
 The transient history and arithmetic lemma select MiniSAT 2.2.1 from the existing pinned CBMC package. The five companion harnesses retain Kani’s default solver. Clean evidence must show the MiniSAT banner for both selected harnesses, and the inclusive-jitter mutation must show it for the transient history alongside the expected assertion failure. The solver selection leaves the proof inputs, assertions, covers, unwinding checks, and time limits intact. The retained `cd52dae` run confirms MiniSAT attendance for both harnesses. The two timeouts leave their verification unresolved. [Kani’s pinned solver selection](https://raw.githubusercontent.com/model-checking/kani/0d2328a93f0e0ff66132d6bfa1a7d884877cf862/kani-driver/src/call_cbmc.rs#L383) and [CBMC’s pinned release build](https://github.com/diffblue/cbmc/blob/cbmc-6.11.0/COMPILING.md#compiling-with-alternative-sat-solvers)
 
-The history checks still use eight fresh full-width samples and the actual cumulative schedule through nine starts. Each exact delay now uses a `u64` product in the independent literal-window oracle. Its largest numerator is `(2^32 - 1) × 30,001 < 2^47`. A separate harness checks the same history helper against the original `u128` quotient for every literal window under an arbitrary `u32` sample, with one interior-sample cover after all comparisons. The composed history still calls the real supervisor. Its sole verified replacement is the pure jitter function. The separate real-function harness checks the exact returned duration for every full-width sample at all seven distinct literal ceilings. The composed history checks the ceiling precondition at the actual calls. Clean evidence requires both the concrete contract proof and the original wide-oracle equivalence together with the original history and its companions.
+The history checks still use eight fresh full-width samples and the actual cumulative schedule through nine starts. Each exact delay now uses a `u64` product in the independent literal-window oracle. Its largest numerator is `(2^32 - 1) × 30,001 < 2^47`. A separate harness checks the same history helper against the original `u128` quotient for every literal window under an arbitrary `u32` sample, with one interior-sample cover after all comparisons. The earlier composition still called the real supervisor and substituted the pure jitter function. The separate real-function harness checks the exact returned duration for every full-width sample at all seven distinct literal ceilings. The timing composition checks the exact policy ceiling precondition at the actual calls. Clean evidence still requires the concrete jitter contract proof and the original wide-oracle equivalence together with the history and its companions.
 
-The inclusive-jitter mutation gate runs the same row checks in a concrete, unannotated full history. The selected mutated production function runs directly. Ordinary harness calls also use their original functions. Kani’s `--no-assert-contracts` disables automatic contract wrappers on those ordinary calls, while the explicit contract proof and verified replacement remain active in their owning harnesses. The log gate rejects other substitutions and requires the exact verified-jitter banner for the composed history. The contract, composed history and concrete mutation remain unverified.
+The inclusive-jitter mutation gate runs the same row checks in a concrete, unannotated full history. The selected mutated production function runs directly. Ordinary harness calls also use their original functions. Kani’s `--no-assert-contracts` disables automatic contract wrappers on those ordinary calls, while the explicit contract proof and verified replacement remain active in their owning harnesses. The log gate rejects other substitutions and requires the exact verified-timing banner for the current composed history. The contract, composed history and concrete mutation remain unverified.
 
-The current encoding compares the contract return and four history timing predicates through exact `Duration::as_nanos()` values. For valid normalized durations this is injective and preserves order. It removes expected `Duration::from_millis` normalization and repeated addition from the oracle while retaining all real supervisor operations, eight independent full-width samples, nine starts, exact early polling, cumulative feedback and the cap cover. Nanosecond sums fit `u128` without narrowing. The independent wide/narrow arithmetic lemma and real-callee proof are unchanged. The first hosted run of this encoding timed out as recorded above. The complete gate remains unverified under the same time limits.
+The prior nanosecond encoding compares the contract return and four history timing predicates through exact `Duration::as_nanos()` values. For valid normalized durations this is injective and preserves order. It removes expected `Duration::from_millis` normalization and repeated addition from the oracle while retaining all real supervisor operations, eight independent full-width samples, nine starts, exact early polling, cumulative feedback and the cap cover. Nanosecond sums fit `u128` without narrowing. The independent wide/narrow arithmetic lemma and real-callee proof are unchanged. The first hosted run of this encoding timed out as recorded above. The complete gate remains unverified under the same time limits.
 
 The previous selected-row encoding draws an independent selector for one of its eight rows. It retains the selected row’s observed timing and sample, then checks its exact proportional mapping after the ninth start. The selector cannot alter any supervisor input or control flow. Kani must satisfy the exact mapping for every combination of the eight unrestricted samples and all eight row choices. The same run still checks every row’s generation, overlap refusal, timing bounds, endpoint cases, and early poll. A missing selected observation, unexpected supervisor result, or assertion failure rejects the proof. The concrete inclusive-jitter mutation continues checking the mapping inline at every row. Its first hosted run timed out as recorded above.
 
@@ -54,7 +54,7 @@ For each patch, use `git apply --unidiff-zero crates/interfaces/exacopy-endpoint
 
 Mutation controls require their own retained assertion failures.
 
-The inductive history checks the same per-row predicates at every loop step. An
+The initial inductive history checked the same per-row predicates at every loop step. An
 immutable array represents all eight independent full-width samples. Each step
 executes the real supervisor methods in order and supplies the observed wake to
 the next step. The invariant checks the actual owner, fixed grant expiry,
@@ -71,8 +71,7 @@ owning gate also requires a separate unannotated and unstubbed run from the real
 constructor through the exact capped wakes at 61,500 and 91,500 ms and the ninth
 start. The inclusive-jitter mutation still executes all eight concrete steps with
 arbitrary full-width samples and every exact assertion inline. Budgets and solver
-choices for the existing harnesses are unchanged. The inductive history and its
-instrumentation are pending hosted verification.
+choices for the existing harnesses are unchanged. The first hosted result follows.
 
 At `af75d35`, the first inductive run compiled and reached CBMC but reported
 11 omitted call arguments filled with nondeterministic values. The transient
@@ -89,3 +88,18 @@ and mutation runs. That refusal does not repair the transformation or establish
 the intended history. A countdown-only change remains unapplied because it
 would not address the omitted-argument diagnostics in the invariant and real
 step helpers. Proof scope, solvers and budgets remain unchanged.
+
+The current history uses an ordinary unannotated loop. It still starts the
+actual supervisor nine times, reports the same eight transient losses using
+fresh independent full-width `u32` samples, and keeps every predicate inline.
+It passes the real returned wake to the next iteration. Its sole verified
+substitution is the private production `retry_timing` function consumed by
+`RetrySupervisor::failure`. The real timing proof executes its real jitter
+callee and compares the outcome with a wide nanosecond oracle across both
+full normalized duration inputs and the complete jitter domain. Overflow must
+refuse before lease clipping. A representable result must carry the exact wake
+and next capped ceiling. Four covers distinguish overflow, clipping, exact
+maximum time, and the capped high sample. All existing arithmetic, real jitter,
+concrete cap, and mutation checks remain required. The tool-argument diagnostic
+refusal also remains in force. The source has no current hosted timing-contract
+result, and the existing time limits and solver selections remain in effect.

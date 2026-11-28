@@ -60,3 +60,30 @@ fn pending_checks_are_exact_and_do_not_extend_the_grant() {
 		Err(RetryError::Blocked(RetryBlock::GrantExpired)),
 	);
 }
+
+#[test]
+fn retry_wake_overflow_stops_before_lease_clipping() {
+	use super::{
+		ConnectionFailure, FailureDecision, FailureSubject, RetryDecision, TransientFailure,
+	};
+
+	let expiry = Duration::MAX;
+	let now = expiry - Duration::from_nanos(1);
+	let mut supervisor = RetrySupervisor::new(RetryOwner::new(NonZeroU128::MIN), expiry);
+	let RetryDecision::Start(attempt) = supervisor.poll(now).unwrap() else {
+		panic!("the lease is still live before the first loss");
+	};
+	let reason = RetryBlock::ClockRangeExhausted;
+	assert_eq!(
+		supervisor.failure(
+			now,
+			FailureSubject::Attempt(attempt),
+			ConnectionFailure::Transient {
+				cause: TransientFailure::NonMutatingTimeout,
+				jitter_sample: 0,
+			},
+		),
+		Ok(FailureDecision::Blocked(reason))
+	);
+	assert_eq!(supervisor.poll(expiry), Err(RetryError::Blocked(reason)));
+}

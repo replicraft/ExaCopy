@@ -12,22 +12,22 @@ case "$mutation" in
 	lease-clipping)
 		harness='kani_checks::connection_retry::lease_and_revocation_bound_waiting_and_redial'
 		assertion='the lease clips the jittered wake exactly at expiry'
-		expected_source='b95efddc558ea4649d29581671a0d8b90a070b01b881c77293b1202348a6b829'
+		expected_source='47a9c0d01b9d2f06f54afcc1fc149cb7b2e1570061ba74824d389379fac9fd11'
 		;;
 	source-fence)
 		harness='kani_checks::connection_retry::reconnect_requires_current_route_ssh_and_source_and_fences_retired_work'
 		assertion='every independent observation must refer to the current attempt'
-		expected_source='370d814ae18bd39f0d97f2232ad2cc25461bb1efc014863128a167927a44e498'
+		expected_source='831ec0e55eecbcd0576ae798394d9e3a7c7d6872fb9df1012008a67b1e97cfe3'
 		;;
 	health-activity)
 		harness='kani_checks::connection_retry::penalty_resets_only_after_current_verified_activity_and_health'
 		assertion='reset requires both qualifying activity and the full healthy duration'
-		expected_source='1a5bbd67426bb1c1e3ab0f0787d267d881e88f8c99f3c4e0a65b2b0bc5960f98'
+		expected_source='1f1ee051139094d22c8d0231728faeb2d903a49a597969d04b8a23d7ebfa32bd'
 		;;
 	inclusive-jitter)
 		harness='kani_checks::connection_retry::concrete_transient_backoff_is_bounded_and_claims_only_the_due_generation'
 		assertion='every sample maps proportionally into the inclusive equal-jitter window'
-		expected_source='49b00a884ca92ed2731819bd789fa42dc84c6fed0c2be314a2fda38a10976ec6'
+		expected_source='4e14d9dcbe7e7f20ba60bbb7445448d8cc33d564e9c0540890b2639444c08818'
 		;;
 	*) printf 'Unknown retry mutation: %s\n' "$mutation" >&2; exit 2 ;;
 esac
@@ -77,7 +77,7 @@ lock_before=$(LC_ALL=C shasum -a 256 Cargo.lock)
 CARGO_NET_OFFLINE=true "${cargo[@]}" metadata --locked --format-version 1 \
 	--filter-platform "$target" > /dev/null
 
-# Require the exact nine selected harnesses and all 18 cover goals.
+# Require the exact ten selected harnesses and all 22 cover goals.
 plans=(
 	kani_checks::connection_retry::permanent_and_uncertain_failures_never_redial=2
 	kani_checks::connection_retry::transient_backoff_is_bounded_and_claims_only_the_due_generation=1
@@ -88,15 +88,14 @@ plans=(
 	kani_checks::connection_retry::clock_rollback_and_unrepresentable_wake_are_terminal=2
 	kani_checks::jitter_oracle::narrow_jitter_oracle_matches_widened_formula=1
 	kani_checks::jitter_oracle::real_equal_jitter_matches_the_exact_delay=1
+	kani_checks::timing_oracle::real_retry_timing_matches_wide_wake_and_cap=4
 )
 harnesses=()
-loop_contracts=()
 harness_timeout=600s
 if [[ -n "$mutation" ]]; then
 	harness_timeout=120s
 	harnesses=(--harness "$harness")
 else
-	loop_contracts=(-Z loop-contracts)
 	for plan in "${plans[@]}"; do
 		harnesses+=(--harness "${plan%=*}")
 	done
@@ -108,7 +107,7 @@ trap 'rm -f "$kani_log"' EXIT
 set +e
 CARGO_NET_OFFLINE=true "${cargo[@]}" kani --package exacopy-endpoint --lib --exact \
 	"${harnesses[@]}" --output-format regular -Z unstable-options \
-	-Z function-contracts -Z stubbing --no-assert-contracts "${loop_contracts[@]}" \
+	-Z function-contracts -Z stubbing --no-assert-contracts \
 	--harness-timeout "$harness_timeout" 2>&1 | tee "$kani_log"
 pipeline_status=("${PIPESTATUS[@]}")
 set -e
@@ -167,7 +166,7 @@ check_contract_stubs() {
 		}
 		/^  - (Verified stub|Stub): / {
 			if (active == composed && composed != "" &&
-			    $0 == "  - Verified stub: exacopy_endpoint::connection_retry::equal_jitter")
+			    $0 == "  - Verified stub: exacopy_endpoint::connection_retry::retry_timing")
 				verified++
 			else
 				wrong = 1
@@ -241,7 +240,7 @@ if ! grep -Fxq "Complete - ${#plans[@]} successfully verified harnesses, 0 failu
 			exit wrong
 		}
 	' "$kani_log"; then
-	printf 'Retry Kani verification requires all nine selected harnesses and eighteen covered goals.\n' >&2
+	printf 'Retry Kani verification requires all ten selected harnesses and twenty-two covered goals.\n' >&2
 	exit 1
 fi
 check_minisat_solver \
@@ -250,59 +249,16 @@ check_minisat_solver \
 check_contract_stubs \
 	kani_checks::connection_retry::transient_backoff_is_bounded_and_claims_only_the_due_generation
 
-# The aggregate success alone cannot establish that Kani used the annotated
-# loop or checked its actual writes. Require the generated properties, with
-# write locations bound to the three loop-carried assignments in this source.
-history_file=verification/kani/connection_retry/transient_history.rs
-read -r supervisor_line now_line row_line < <(awk '
-	/^[[:space:]]*supervisor = next_supervisor;$/ { supervisor = NR; supervisor_count++ }
-	/^[[:space:]]*now = wake_at;$/ { now = NR; now_count++ }
-	/^[[:space:]]*row \+= 1;$/ { row = NR; row_count++ }
-	END {
-		if (supervisor_count != 1 || now_count != 1 || row_count != 1 ||
-		    supervisor >= now || now >= row) exit 1
-		print supervisor, now, row
-	}
-' "$kani_dir/../../$history_file")
-if ! awk -v history=kani_checks::connection_retry::transient_backoff_is_bounded_and_claims_only_the_due_generation \
-	-v source="$history_file" -v supervisor="$supervisor_line" -v now="$now_line" -v row="$row_line" '
-	function at_location(line, path, start) {
-		path = source ":" line
-		start = index($0, path)
-		return start && substr($0, start + length(path)) ~ /^(:| in function |$)/
-	}
+# Require the named real-body timing assertion, not the contract annotation alone.
+if ! awk '
 	/^Checking harness .*\.\.\.$/ {
-		active = ($0 == "Checking harness " history "...")
+		active = ($0 == "Checking harness kani_checks::timing_oracle::real_retry_timing_matches_wide_wake_and_cap...")
 	}
-	active && /^Check [0-9]+:/ { property = $0 }
 	active && /- Status: SUCCESS$/ { success = NR }
-	active && success == NR - 1 && /- Description: "/ {
-		description = $0
-		sub(/^[[:space:]]*- Description: "/, "", description)
-		sub(/"$/, "", description)
-		if (property ~ /\.assigns\.[0-9]+$/ && description ~ /^Check that .* is assignable$/)
-			write = NR
-		if (description !~ / for loop .*check_inductive_history[^ ]*\.[0-9]+$/) next
-		loop = description
-		sub(/^.* for loop /, "", loop)
-		if (property ~ /\.loop_invariant_base\.[0-9]+$/ &&
-		    description ~ /^Check invariant before entry for loop /) entry[loop]++
-		if (property ~ /\.loop_invariant_step\.[0-9]+$/ &&
-		    description ~ /^Check invariant after step for loop /) step[loop]++
-		if (property ~ /\.loop_decreases\.[0-9]+$/ &&
-		    description ~ /^Check variant decreases after step for loop /) rank[loop]++
-	}
-	active && write == NR - 1 && /- Location: / {
-		if (at_location(supervisor)) supervisor_checked++
-		if (at_location(now)) now_checked++
-		if (at_location(row)) row_checked++
-	}
-	END {
-		for (loop in entry)
-			if (step[loop] && rank[loop]) complete++
-		exit !(complete == 1 && supervisor_checked && now_checked && row_checked)
-	}
+	active && success == NR - 1 &&
+	    /- Description: "real retry timing preserves overflow before lease clipping and the exact cap"$/ { found++ }
+	END { exit !(found == 1) }
 ' "$kani_log"; then
-	printf '%s\n' 'Expected checked retry loop invariant, scalar rank and all three carried writes.' >&2
+	printf '%s\n' 'Expected the exact named assertion in the real retry-timing contract proof.' >&2
 	exit 1
 fi

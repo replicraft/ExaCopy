@@ -280,12 +280,15 @@ impl RetrySupervisor {
 			} => {
 				current?;
 				self.observe_time(now)?;
-				let delay = equal_jitter(self.next_backoff_ms, jitter_sample);
-				let Some(due_at) = now.checked_add(delay) else {
+				let Some((wake_at, next_backoff_ms)) = retry_timing(
+					now,
+					self.grant_expires_at,
+					self.next_backoff_ms,
+					jitter_sample,
+				) else {
 					return Ok(self.stop_after_failure(RetryBlock::ClockRangeExhausted));
 				};
-				let wake_at = due_at.min(self.grant_expires_at);
-				self.next_backoff_ms = self.next_backoff_ms.saturating_mul(2).min(MAX_BACKOFF_MS);
+				self.next_backoff_ms = next_backoff_ms;
 				self.phase = Phase::Waiting(wake_at);
 				Ok(FailureDecision::WaitUntil { wake_at, cause })
 			}
@@ -366,28 +369,32 @@ pub(crate) fn equal_jitter(ceiling_ms: u64, sample: u32) -> Duration {
 	Duration::from_millis(half + random_ms)
 }
 
-#[cfg(kani)]
-impl RetrySupervisor {
-	pub(crate) fn matches_history_boundary(
-		&self,
-		owner: RetryOwner,
-		generation: u64,
-		ceiling_ms: u64,
-		waiting: Option<Duration>,
-		last_observation: Duration,
-	) -> bool {
-		let phase_matches = match (self.phase, waiting) {
-			(Phase::Ready, None) => true,
-			(Phase::Waiting(actual), Some(expected)) => actual == expected,
-			_ => false,
-		};
-		self.owner == owner
-			&& self.grant_expires_at == Duration::MAX
-			&& self.generation == generation
-			&& self.next_backoff_ms == ceiling_ms
-			&& self.last_observation == last_observation
-			&& phase_matches
-	}
+// Compute the complete timing decision before changing the live phase or penalty.
+// An unrepresentable due time stops retry even if lease clipping would fit.
+#[cfg_attr(
+	kani,
+	kani::requires(matches!(
+		ceiling_ms,
+		1_000 | 2_000 | 4_000 | 8_000 | 16_000 | 32_000 | 60_000
+	))
+)]
+#[cfg_attr(
+	kani,
+	kani::ensures(|timing| {
+		crate::kani_checks::timing_matches_wide_bounds(now, grant_expires_at, ceiling_ms, sample, *timing)
+	})
+)]
+pub(crate) fn retry_timing(
+	now: Duration,
+	grant_expires_at: Duration,
+	ceiling_ms: u64,
+	sample: u32,
+) -> Option<(Duration, u64)> {
+	let delay = equal_jitter(ceiling_ms, sample);
+	let due_at = now.checked_add(delay)?;
+	let wake_at = due_at.min(grant_expires_at);
+	let next_backoff_ms = ceiling_ms.saturating_mul(2).min(MAX_BACKOFF_MS);
+	Some((wake_at, next_backoff_ms))
 }
 
 impl ConnectionAttempt {
