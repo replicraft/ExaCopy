@@ -39,13 +39,52 @@ By passing `--managed-macos`, the non-root owner attests that each input parent 
 
 Provision each parent with mode `0700` and an explicit empty extended ACL. Each selected file must be an owner-private, single-link regular file with mode `0600`. Processes outside the cooperating namespace must hold no access handles to the selected files, including handles obtained before provisioning. Every participating same-user process must hold an exclusive Darwin `flock` on the parent directory before changing it, its selected names or files, including through other handles or aliases. The adapter holds a shared advisory lock on each parent during comparison.
 
-On macOS, omitting the flag returns `E_UNSUPPORTED_PLATFORM`. Using it outside macOS returns the same code. Successful comparisons use the standard report and exit codes and describe live observations. The CLI exposes managed APFS comparison. Managed APFS copy and recovery remain under library qualification.
+On macOS, omitting the flag returns `E_UNSUPPORTED_PLATFORM`. Using it outside macOS returns the same code. Successful comparisons use the standard report and exit codes and describe live observations. Managed APFS copy and recovery mutations remain under library qualification.
 
 The native CLI tests compile a small fixture provisioner with the Apple C compiler and use fresh owner-private directories in `/private/tmp` on local APFS.
 
 ```sh
 cargo nextest run --locked -p exacopy-cli --test macos_diff
 ```
+
+### Managed APFS recovery inspection on macOS
+
+On macOS, opt in at build time with `experimental-apfs-copy`. The command
+observes one existing managed APFS job created by the matching SDK producer.
+
+```sh
+exacopy recover inspect-apfs "$JOB" --stage-container "$CONTAINER" --managed-apfs \
+  --owner-profile-id "$PROFILE_ID" --owner-key "$OWNER_KEY" \
+  --destination-root-id "$ROOT_ID" --format json
+```
+
+Use the canonical `.exacopy-` lowercase hyphenated UUIDv7 basename for `JOB`
+and the exact absolute path of the existing private container for `CONTAINER`.
+Preserve the provisioned path's raw spelling. The trusted producer configuration
+independently supplies both 32-digit lowercase hexadecimal IDs and the
+64-digit lowercase hexadecimal canonical, nonweak Ed25519 public key. Assign
+each logical destination root ID uniquely and stably to its exact provisioned
+root. The inspected job supplies none of those selections. The signed plan
+binds the observed native root. The command takes no separate physical pin.
+
+`--managed-apfs` attests the already provisioned, owner-private, materialized
+local APFS directory and child. Use a volume with ownership enforcement and
+stable protected ancestry outside File Provider. Path lookup must avoid
+symlinks, automounts, and remote or provider lookups. All cooperating mutations,
+including through aliases, must take the matching exclusive locks. Keep
+uncontrolled actors and handles outside this scope.
+
+The command checks authenticated history, the accepted journal boundary and
+tail, receipt association, and currently observed namespace metadata. It
+reads journal and receipt records, which can advance access times. It never
+reads source, stage, or target payload bytes and grants no mutation authority.
+
+Human output is the default. JSON uses `exacopy.cli.apfs_recovery_inspection`
+version `1.0`. Exit `0` means a clean, determinate observation, which can include
+incomplete or conflict history. Exit `9` requires reconciliation after an
+uncertain or torn observation, incomplete publication, or an uncommitted or
+missing expected receipt. It also covers custody, binding, or history refusal.
+Syntax and selection refusals use exit `2`, and output failure uses `4`.
 
 ## Experimental local NTFS comparison on Windows
 
