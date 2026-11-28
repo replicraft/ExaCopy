@@ -76,8 +76,8 @@ Windows retains the [tested fixed-NTFS comparison
 scope](../../docs/testing.md#windows-held-directory-ntfs-qualification).
 The workspace native evidence applies to its recorded revisions, hosts
 and selectors. A frozen registry candidate needs its own installed
-command checks. Experimental APFS copy, Windows staging and copy, and
-fixture features remain outside the projection.
+command checks. Experimental APFS copy, Windows staging and copy, the
+Windows SFTP capture SDK, and fixture features remain outside the projection.
 
 A registry candidate requires the canonical approved `apfs-mounted`
 archive from its publisher. An exact APFS source fixture is suitable for

@@ -106,18 +106,25 @@ def dependency(name, member, inherited, packages, version, forks):
     return resolved
 
 
-def dependency_sections(manifest, inherited, packages, version, features, forks):
+def dependency_sections(manifest, inherited, packages, version, features, forks, omitted_target_dependencies):
     optional = {value[4:] for selection in features.values() for value in selection if value.startswith("dep:")}
-    sections = [("dependencies", manifest.get("dependencies", {}))]
+    targets = manifest.get("target", {})
+    for target, names in omitted_target_dependencies.items():
+        dependencies = targets.get(target, {}).get("dependencies", {})
+        for name in names:
+            if dependencies.get(name, {}).get("optional") is not True:
+                raise ValueError(f"registry projection requires an optional dependency to omit {target}/{name}")
+    sections = [(None, "dependencies", manifest.get("dependencies", {}))]
     sections.extend(
-        (f"target.{json.dumps(target)}.dependencies", target_section.get("dependencies", {}))
-        for target, target_section in sorted(manifest.get("target", {}).items())
+        (target, f"target.{json.dumps(target)}.dependencies", section.get("dependencies", {}))
+        for target, section in sorted(targets.items())
     )
-    for header, dependencies in sections:
+    for target, header, dependencies in sections:
+        omitted = omitted_target_dependencies.get(target, ())
         selected = {
             name: dependency(name, declaration, inherited, packages, version, forks)
             for name, declaration in sorted(dependencies.items())
-            if declaration.get("optional") is not True or name in optional
+            if name not in omitted and (declaration.get("optional") is not True or name in optional)
         }
         if selected:
             yield header, selected
@@ -152,7 +159,10 @@ def standalone_manifest(manifest, workspace, profile, package, packages, forks):
     selected = {name: manifest["features"][name] for name in package.get("features", ())}
     if selected:
         sections.append(table("features", selected))
-    dependencies = list(dependency_sections(manifest, workspace["dependencies"], packages, metadata["version"], selected, forks))
+    dependencies = list(dependency_sections(
+        manifest, workspace["dependencies"], packages, metadata["version"], selected, forks,
+        package.get("omitted_target_dependencies", {}),
+    ))
     sections.extend(table(header, fields) for header, fields in dependencies)
     lints = copy.deepcopy(workspace["lints"])
     if omitted_features := sorted(manifest.get("features", {}).keys() - selected.keys()):

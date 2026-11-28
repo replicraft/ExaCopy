@@ -10,6 +10,7 @@ import tempfile
 import unittest
 
 import registry_projection as projection
+import registry_transport_projection as transport
 
 
 class RegistryProjectionTests(unittest.TestCase):
@@ -57,6 +58,7 @@ class RegistryProjectionTests(unittest.TestCase):
         self.assertEqual(manifest["profile"]["release"], {"overflow-checks": True})
         self.assertNotIn("features", manifest)
         self.assertNotIn("patch", manifest)
+        self.assertNotIn('cfg(target_os = "windows")', manifest["target"])
         self.assertIn("experimental-ssh-capture", manifest["lints"]["rust"]["unexpected_cfgs"]["check-cfg"][1])
         linux = manifest["target"]['cfg(target_os = "linux")']["dependencies"]
         self.assertNotIn("exacopy-wireguard", linux)
@@ -65,6 +67,39 @@ class RegistryProjectionTests(unittest.TestCase):
         macos = macos['cfg(target_os = "macos")']["dependencies"]
         self.assertEqual(macos["apfs-mounted"], {"version": "=0.1.0", "default-features": False})
         self.assertEqual(macos["rustix"]["features"], ["fs", "process", "try_close"])
+
+    def test_transport_cli_omits_windows_sdk_edges_only(self):
+        selected = projection.toml(transport.POLICY.read_bytes())
+        policy = transport.transport_policy(self.policy, selected)
+        workspace = projection.toml(self.source["Cargo.toml"])
+        packages = {package["source_name"]: package for package in policy["packages"]}
+        forks = {fork["source_name"]: fork for fork in selected["forks"]}
+        cli = packages["exacopy-cli"]
+        source = projection.checked_manifest(
+            self.source["apps/exacopy-cli/Cargo.toml"], cli["manifest_sha256"], "apps/exacopy-cli/Cargo.toml",
+        )
+        args = (workspace["workspace"], workspace["profile"]["release"], cli, packages, forks)
+        staged, _ = projection.standalone_manifest(source, *args)
+        manifest = projection.toml(staged)
+        self.assertNotIn("experimental-windows-sftp-capture", manifest["features"])
+        windows = 'cfg(target_os = "windows")'
+        self.assertEqual(set(manifest["target"][windows]["dependencies"]), {
+            "exacopy-diff", "exacopy-endpoint", "exacopy-platform",
+        })
+        posix = 'cfg(any(target_os = "linux", target_os = "macos"))'
+        self.assertTrue({"exacopy-sftp", "exacopy-ssh"} <= manifest["target"][posix]["dependencies"].keys())
+        linux = 'cfg(target_os = "linux")'
+        self.assertTrue({"exacopy-transfer", "tokio"} <= manifest["target"][linux]["dependencies"].keys())
+
+        dependencies = source["target"][windows]["dependencies"]
+        for replacement in ({"workspace": True}, None):
+            with self.subTest(replacement=replacement):
+                if replacement is None:
+                    del dependencies["tokio"]
+                else:
+                    dependencies["tokio"] = replacement
+                with self.assertRaisesRegex(ValueError, "requires an optional dependency to omit .*?/tokio"):
+                    projection.standalone_manifest(source, *args)
 
     def test_refuses_changed_features_and_dependency_sources(self):
         updated = self.source.copy()

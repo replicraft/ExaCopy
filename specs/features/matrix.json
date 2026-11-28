@@ -96,6 +96,22 @@
       "targets": ["x86_64-pc-windows-msvc"],
       "purpose": "Compile the optional private NTFS staging capability and Windows qualification fixtures."
     },
+    "experimental-windows-sftp-capture": {
+      "defaults": false,
+      "check_cli": false,
+      "feature_statuses": [],
+      "exact_features": [
+        "exacopy-cli/experimental-windows-sftp-capture",
+        "exacopy-platform/experimental-windows-read",
+        "exacopy-platform/experimental-windows-copy",
+        "exacopy-sftp/experimental-sftp",
+        "exacopy-ssh/experimental-ssh"
+      ],
+      "targets": [
+        "x86_64-pc-windows-msvc"
+      ],
+      "purpose": "Compile the default-off fresh Windows SFTP capture SDK with original held NTFS custody and authenticated separate progress; no CLI or restart activation."
+    },
     "experimental-windows-bootstrap-inspect": {
       "defaults": false,
       "check_cli": false,
@@ -322,6 +338,36 @@
         ],
         "purpose": "Build the opt-in local NTFS read-only CLI comparison."
       },
+      "experimental-windows-sftp-capture": {
+        "status": "experimental",
+        "targets": [
+          "x86_64-pc-windows-msvc"
+        ],
+        "enables": [
+          "dep:blake3",
+          "dep:ed25519-dalek",
+          "dep:exacopy-endpoint",
+          "dep:exacopy-journal",
+          "dep:exacopy-platform",
+          "dep:exacopy-sftp",
+          "dep:exacopy-ssh",
+          "dep:exacopy-transfer",
+          "dep:tokio",
+          "exacopy-platform/experimental-windows-read",
+          "exacopy-platform/experimental-windows-copy",
+          "exacopy-sftp/experimental-sftp",
+          "exacopy-ssh/experimental-ssh"
+        ],
+        "resolution_probe": [
+          "exacopy-sftp",
+          "exacopy-ssh",
+          "exacopy-transfer",
+          "russh",
+          "tokio",
+          "windows-sys"
+        ],
+        "purpose": "Compose one fresh pinned direct SFTP capture into a held NTFS stage and signed sibling journal without enabling CLI publication or restart."
+      },
       "experimental-windows-bootstrap-inspect": {
         "status": "experimental",
         "targets": ["x86_64-pc-windows-msvc"],
@@ -530,7 +576,8 @@
         ],
         "exacopy-wireguard": ["rt", "time"],
         "exacopy-cli": {
-          "cfg(target_os = \"linux\")": ["macros", "net", "rt-multi-thread", "signal", "sync", "time"]
+          "cfg(target_os = \"linux\")": ["macros", "net", "rt-multi-thread", "signal", "sync", "time"],
+          "cfg(target_os = \"windows\")": ["io-util", "net", "sync", "time"]
         }
       }
     },
@@ -562,6 +609,7 @@
     "blake3": {
       "default_features": false,
       "features": [],
+      "optional_targets": {"exacopy-cli": ["cfg(target_os = \"windows\")"]},
       "purpose": "Source stream and independent stage read-back digests, and content bindings."
     },
     "clap": {

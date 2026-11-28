@@ -28,6 +28,11 @@ def transport_policy(default, selected):
     cli = policy["packages"].pop()
     if cli["name"] != "exacopy":
         raise ValueError("unexpected default registry package order")
+    # The Linux capture feature selects these names. Its registry projection
+    # must not acquire the Windows declarations for the separate SDK feature.
+    cli["omitted_target_dependencies"] = {
+        'cfg(target_os = "windows")': ["exacopy-sftp", "exacopy-ssh", "exacopy-transfer", "tokio"],
+    }
     policy["packages"].extend([*selected["packages"], cli])
     existing = {package["name"] for package in default["packages"]}
     feature_selections = selected.get("existing_features")

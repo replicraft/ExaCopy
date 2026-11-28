@@ -23,3 +23,6 @@ pub mod remote_ssh;
 	)
 ))]
 pub mod windows;
+
+#[cfg(all(target_os = "windows", feature = "experimental-windows-sftp-capture"))]
+pub mod windows_capture;
