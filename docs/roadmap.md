@@ -19,15 +19,23 @@ omitted-argument diagnostics, and P-083's guard rejected the same diagnostics.
 The first P-085 run at `11427d5` parsed but stopped with TLC exit 75 because
 `Crash` left `uncertain` unspecified in one branch. The shared owner check
 also failed seven earlier TLC records; no P-085 mutants ran. `e22e647`
-groups the intended assignment. Corrected model execution remains pending.
+groups the intended assignment. Its hosted replay passed: 322 distinct states,
+an empty queue, all 23 action checks and all five exact negative controls.
+The full corrected formal cohort recorded 65 passes and only the two existing
+Kani failures, with 97 Miri checks passing. This is a bounded ordering proof
+under the declared issuer and observation assumptions, not native execution.
 [Failed model cohort](https://github.com/replicraft/ExaCopy/actions/runs/46155164324)
+[Corrected model cohort](https://github.com/replicraft/ExaCopy/actions/runs/46157652331)
 
-Platform coverage at `5bf8537` is 8,494/10,051 lines (84.5090%), below the
-unchanged 85% requirement. The native continuation and checkpoint components
-passed after the two positional-read corrections in `27ffc53`.
+Platform coverage at `55932ea` is 8,679/10,051 lines (86.3496%), passing the
+unchanged 85% requirement. Every platform per-file denominator is unchanged.
+The joined native checkpoint and witness-prepublication components passed
+their existing whole-ext4 selector, with verified fixture cleanup. The
+earlier `b6f379b` component compilation failure is retained; `27ffc53`
+corrected the two positional reads before any native component result.
 The default platform inventory does not measure the opt-in managed-sync
 profile store; its native fixture results are separate evidence.
-[Exact coverage result](https://github.com/replicraft/ExaCopy/actions/runs/46158242439)
+[Exact coverage result](https://github.com/replicraft/ExaCopy/actions/runs/46159858369)
 
 Cargo Vet reports 159 unaudited dependency versions after BoringTun's unused
 device tables left the selected tunnel-only graph. The full `d286feb` Vet
