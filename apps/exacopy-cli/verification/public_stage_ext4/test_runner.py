@@ -20,6 +20,8 @@ class RunnerTests(unittest.TestCase):
         self.assertIn("apps/exacopy-cli/" + run.SOURCE, files)
         fault = "apps/exacopy-cli/src/assembly/linux/public_stage/tests/late_journal.rs"
         self.assertEqual(files[fault], hashlib.sha256((run.ROOT / fault).read_bytes()).hexdigest())
+        component = "apps/exacopy-cli/verification/public_stage_ext4/checked_component.rs"
+        self.assertEqual(files[component], hashlib.sha256((run.ROOT / component).read_bytes()).hexdigest())
         helper = run.components.COVERAGE_HELPER
         path = helper.relative_to(run.ROOT).as_posix()
         digest = hashlib.sha256(helper.read_bytes()).hexdigest()

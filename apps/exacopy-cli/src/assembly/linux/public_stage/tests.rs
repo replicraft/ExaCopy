@@ -19,6 +19,8 @@ use super::super::{CopyRoots, inspect_recovery, plan_new_file};
 use super::{inspect, stage};
 
 mod checked_apply;
+#[path = "../../../../verification/public_stage_ext4/checked_component.rs"]
+mod checked_component;
 mod fixture;
 mod late_journal;
 
@@ -205,6 +207,8 @@ fn approved_stage_reopens_with_exact_owner_and_preserves_uncertain_evidence() {
 	drop(destination);
 	drop(source_root);
 	fixture.finish();
+	checked_component::exercise();
+	println!("EXACOPY_PUBLIC_STAGE_EXT4_RESULT preserved_and_cleaned");
 }
 
 fn assert_missing_qualification_refuses(

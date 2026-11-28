@@ -108,7 +108,12 @@ original-record rebinding; refused native mutations; metadata preservation;
 both barriers after observation failure or an ambiguous reply; and literal
 suffix, EOF and cursor failures. The existing owned ext4 fixture also calls
 the real SDK with absent enrollment, spent approval and revoked approval.
-Synthetic component authority is distinct from operational qualification.
+Its checked-transfer component controls use the real native adapters and
+fixture-only synthetic authority. They check the returned receipt and matching
+kind-18 EOF on success, and retention of the exact target, receipt and
+kind-9 journal when the receipt-commit gate refuses. Both controls are
+source-defined pending their own hosted run. They do not establish positive
+SDK enrollment, process-crash or power-loss qualification.
 
 At `3b9ef5f`, hosted native tests and strict lint passed on Linux, macOS and
 Windows. Linux executed eight grant, nine journal and six native component

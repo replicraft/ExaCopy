@@ -41,9 +41,13 @@ cleanup. It prints the retained evidence directory. A missing native
 prerequisite yields exit 77. The runner prepares the evidence before
 any native test effects.
 
-The scope is private staging and read-only restart inspection. It covers
-R-007, R-013, R-015 and R-017 and INV-001–004/009/019 at those boundaries.
-The torn suffix is induced in a fixture-owned journal. Public apply command
-dispatch, publication, process-crash and power-loss qualification require
-separate acceptance. [Public apply bridge](../../../../docs/architecture/public-plan-bridge.md) ·
+The scope includes private staging, read-only restart inspection, and checked
+transfer components under fixture-only authority. The two component cases
+publish only into absent names in owned fixtures. They check completed receipt
+commit and refused receipt commit, including exact retained artifact bytes.
+This covers R-007, R-013, R-015 and R-017 and INV-001–004/009/019 at those
+boundaries. The torn suffix is induced in a fixture-owned journal. Public apply
+command dispatch, independently enrolled SDK execution, process-crash and
+power-loss qualification require separate acceptance.
+[Public apply bridge](../../../../docs/architecture/public-plan-bridge.md) ·
 [Public-stage inspection](../../../../docs/architecture/public-stage-inspection.md)

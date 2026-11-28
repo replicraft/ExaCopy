@@ -24,6 +24,7 @@ ext4 = components.ext4
 TARGET, TOOLCHAIN = ext4.TARGET, ext4.TOOLCHAIN
 ID = "linux-public-stage-ext4"
 PROFILE = "linux-unprivileged-whole-ext4-public-stage-v1"
+SCOPE = "private-stage-and-checked-transfer-components-with-synthetic-authority"
 WORKFLOW = f".github/workflows/{ID}-qualification.yml"
 SOURCE = "src/assembly/linux/public_stage/tests.rs"
 CASE = "assembly::linux::public_stage::tests::approved_stage_reopens_with_exact_owner_and_preserves_uncertain_evidence"
@@ -58,6 +59,7 @@ def inputs():
         PACKAGE / Path(SOURCE).with_suffix("") / "late_journal.rs",
         PACKAGE / Path(SOURCE).with_suffix("") / "checked_apply.rs",
         PACKAGE / Path(SOURCE).with_suffix("") / "checked_apply" / "terminal.rs",
+        HERE / "checked_component.rs",
     )
     return {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in files}
 
@@ -211,7 +213,7 @@ def main():
         ext4.require("\n" not in str(evidence) and "\r" not in str(evidence), "invalid evidence path")
         with open(output, "a", encoding="utf-8") as stream:
             stream.write(f"evidence_path={evidence}\n")
-    report = {"revision": args.revision, "profile": PROFILE, "scope": "private-stage-only",
+    report = {"revision": args.revision, "profile": PROFILE, "scope": SCOPE,
               "outcome": "failed", "cleanup": "not_created"}
     code = 1
     for signum in (signal.SIGINT, signal.SIGTERM):

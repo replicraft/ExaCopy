@@ -235,7 +235,6 @@ impl Fixture {
 		fs::remove_dir_all(&self.root).unwrap();
 		assert!(!self.root.try_exists().unwrap());
 		self.root.clear();
-		println!("EXACOPY_PUBLIC_STAGE_EXT4_RESULT preserved_and_cleaned");
 	}
 }
 
