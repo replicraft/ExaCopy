@@ -413,8 +413,21 @@ jobs:
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
         run: bash .github/ci/capture.sh lean-setup bash .github/ci/install.sh lean
       - name: Check extraction and Lean proof
+        id: lean-proof
         if: ${{ !cancelled() && steps.lean.outcome == 'success' }}
         run: bash .github/ci/capture.sh lean python3 tools/record_evidence.py "$EVS_RECORDS" --gate lean
+      - name: Retain early Lean evidence
+        if: ${{ !cancelled() && (steps.lean-proof.outcome == 'success' || steps.lean-proof.outcome == 'failure') }}
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lean-snapshot-linux-x86_64-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-evs/
+            ${{ runner.temp }}/exacopy-evidence/lean.log
+            ${{ runner.temp }}/exacopy-evidence/lean.txt
+          if-no-files-found: error
+          retention-days: 90
       - name: Install Kani
         id: kani
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
@@ -474,7 +487,7 @@ jobs:
       # Retain the mandatory formal artifact before this advisory extraction bootstrap.
       - name: Extract grant-time Lean source candidate
         id: grant-time-candidate
-        if: ${{ !cancelled() && steps.lean.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.lean-proof.outcome == 'success' }}
         continue-on-error: true
         timeout-minutes: 10
         run: |
