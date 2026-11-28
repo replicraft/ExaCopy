@@ -354,7 +354,9 @@ impl RetrySupervisor {
 )]
 #[cfg_attr(
 	kani,
-	kani::ensures(|delay| *delay == crate::kani_checks::expected_delay(ceiling_ms, sample))
+	kani::ensures(|delay| {
+		delay.as_nanos() == crate::kani_checks::expected_delay_nanos(ceiling_ms, sample)
+	})
 )]
 pub(crate) fn equal_jitter(ceiling_ms: u64, sample: u32) -> Duration {
 	let half = ceiling_ms / 2;

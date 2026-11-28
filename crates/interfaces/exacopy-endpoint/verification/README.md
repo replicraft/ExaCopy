@@ -25,6 +25,8 @@ The history checks still use eight fresh full-width samples and the actual cumul
 
 The inclusive-jitter mutation gate runs the same history body through its concrete entry point. The selected mutated production function runs directly. Ordinary harness calls also use their original functions. Kani’s `--no-assert-contracts` disables automatic contract wrappers on those ordinary calls, while the explicit contract proof and verified replacement remain active in their owning harnesses. The log gate rejects other substitutions and requires the exact verified-jitter banner for the composed history. The contract, composed history and concrete mutation remain unverified.
 
+The current encoding compares the contract return and four history timing predicates through exact `Duration::as_nanos()` values. For valid normalized durations this is injective and preserves order. It removes expected `Duration::from_millis` normalization and repeated addition from the oracle while retaining all real supervisor operations, eight independent full-width samples, nine starts, exact early polling, cumulative feedback and the cap cover. Nanosecond sums fit `u128` without narrowing. The independent wide/narrow arithmetic lemma and real-callee proof are unchanged. This equivalent encoding has source review only. Its tractability and the complete gate remain unverified under the same time limits.
+
 The health case samples elapsed whole seconds from zero to sixty and the instant one nanosecond before the threshold. The lease case independently evaluates the same jitter sample using an ample lease, checks the exact minimum, and requires a strict `unclipped > expiry` cover. The stale-admission case uses stale attempts from both the same and another owner.
 
 ## Mutation controls

@@ -7,16 +7,18 @@ use crate::connection_retry::equal_jitter;
 // Literal ceiling policy through the first two capped retries.
 pub(super) const UPPER_MS: [u64; 8] = [1_000, 2_000, 4_000, 8_000, 16_000, 32_000, 60_000, 60_000];
 
+pub(super) const NANOS_PER_MILLISECOND: u128 = 1_000_000;
+
 pub(super) fn scaled_jitter_ms(sample: u32, inclusive_width: u64) -> u64 {
 	const SAMPLE_SPACE: u64 = 1 << u32::BITS;
 	// Every history window is at most 30,001 ms, so the product is below 2^47.
 	u64::from(sample) * inclusive_width / SAMPLE_SPACE
 }
 
-pub(crate) fn expected_delay(ceiling_ms: u64, sample: u32) -> Duration {
+pub(crate) fn expected_delay_nanos(ceiling_ms: u64, sample: u32) -> u128 {
 	let minimum_ms = ceiling_ms / 2;
 	let inclusive_width = ceiling_ms - minimum_ms + 1;
-	Duration::from_millis(minimum_ms + scaled_jitter_ms(sample, inclusive_width))
+	u128::from(minimum_ms + scaled_jitter_ms(sample, inclusive_width)) * NANOS_PER_MILLISECOND
 }
 
 #[kani::proof_for_contract(crate::connection_retry::equal_jitter)]
