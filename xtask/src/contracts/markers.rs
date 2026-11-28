@@ -149,6 +149,16 @@ pub(super) const BINDINGS: &[Binding] = &[
 		},
 	),
 	Binding::new(
+		"windows-fixed-ntfs-bootstrap",
+		"crates/storage/exacopy-journal/src/windows_bootstrap/codec.rs",
+		Marker::pair("VERSION_MAJOR", "VERSION_MINOR", "ROLE_BINDING_REQUIRED"),
+	),
+	Binding::new(
+		"windows-fresh-capture-journal",
+		"crates/storage/exacopy-journal/src/windows_capture/codec.rs",
+		Marker::array("VERSION", 2),
+	),
+	Binding::new(
 		"linux-owner",
 		"crates/storage/exacopy-journal/src/owner/codec.rs",
 		Marker::pair("FORMAT_MAJOR", "FORMAT_MINOR", "REQUIRED_FEATURES"),

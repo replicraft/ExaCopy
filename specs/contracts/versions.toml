@@ -456,7 +456,7 @@ id = "windows-fresh-capture-journal"
 kind = "transfer_journal"
 status = "implemented_private"
 version = "1.0"
-owner = "crates/storage/exacopy-journal/src/windows_capture.rs"
+owner = "crates/storage/exacopy-journal/src/windows_capture/codec.rs"
 notes = "Independent capture-v1.exajnl segment with signed kinds 43 and 44, prepared payload through 778 bytes, 180-byte range payload, and 1,114,982-byte segment limit. Binds exact original Windows V1 owner and frame, independently selected invocation, native roles, source and target. The original V1 bytes and EOF contract remain fixed. Historical prefixes confer no resume, publication, source retirement or durability authority."
 
 [[contract]]
@@ -464,5 +464,6 @@ id = "windows-fixed-ntfs-bootstrap"
 kind = "transfer_journal"
 status = "implemented_private"
 version = "1.0"
-owner = "crates/storage/exacopy-journal/src/windows_bootstrap/record.rs"
+required_features = 1
+owner = "crates/storage/exacopy-journal/src/windows_bootstrap/codec.rs"
 notes = "Canonical signed 342-byte Windows owner and one exact 310-byte first-segment frame. Binds the selected job, profile, key and five same-volume distinct native roles using full volume GUID, serial and 128-bit IDs. The portable reader requires exact logical EOF; the original native holder confirms physical EOF. Capture uses a separately selected sibling and does not extend this dialect or restore authority from it."
