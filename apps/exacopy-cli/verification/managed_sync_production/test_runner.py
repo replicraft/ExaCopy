@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / "crates/platform/exacopy-platform/verification/sync_history_ext4"))
 import run
 
+import managed_recreate_wire_controls as wire
+
 
 def identity(major, minor, inode):
     return f"{os.makedev(major, minor)}:{inode}"
@@ -82,6 +84,119 @@ class Controls(unittest.TestCase):
         with patch.object(Path, "resolve", return_value=path.with_name("alias")):
             with self.assertRaises(ValueError):
                 run.managed_cli_artifact(json.dumps(event), target)
+
+    def test_prepared_manifest_and_both_artifacts_require_the_closed_feature_pair(self):
+        profile = run.MANAGED_PREPARED
+        old = run.MANAGED
+        exact = ["experimental-linux-managed-sync", "experimental-linux-public-apply"]
+        self.assertEqual(profile.features(), exact)
+        self.assertEqual(old.features(), exact[:1])
+        self.assertEqual(run.manifest_digest(profile), run.manifest_digest(old))
+        raw = profile.definition.read_bytes()
+        declaration = b'prepared_component_feature = "experimental-linux-public-apply"\n'
+        self.assertIn(declaration, raw)
+        for value in (b"", declaration.replace(b"public-apply", b"managed-sync")):
+            with patch.object(Path, "read_bytes", return_value=raw.replace(declaration, value)):
+                with self.assertRaisesRegex(ValueError, "fixture manifest drift"):
+                    run.manifest_digest(profile)
+
+        root = Path("/private/target")
+        cli = root / run.TARGET / "debug/exacopy"
+        harness = root / run.TARGET / "debug/deps/harness"
+        event = {
+            "reason": "compiler-artifact", "features": exact, "fresh": False,
+            "manifest_path": str(run.CLI_PACKAGE / "Cargo.toml"),
+            "package_id": f"path+{run.CLI_PACKAGE.as_uri()}#0.1.0",
+        }
+        harness_event = event | {
+            "executable": str(harness), "profile": {"test": True},
+            "target": {"name": profile.test, "kind": ["test"],
+                       "src_path": str(run.CLI_PACKAGE / "tests" / f"{profile.test}.rs")},
+        }
+        cli_event = event | {
+            "executable": str(cli), "profile": {"test": False},
+            "target": {"name": "exacopy", "kind": ["bin"], "crate_types": ["bin"], "edition": "2024",
+                       "src_path": str(run.CLI_PACKAGE / "src/main.rs")},
+        }
+
+        def output(harness_features, cli_features):
+            return "\n".join(json.dumps(row) for row in (
+                harness_event | {"features": harness_features},
+                cli_event | {"features": cli_features},
+            ))
+
+        with patch.object(Path, "resolve", autospec=True, side_effect=lambda self, **_: self):
+            self.assertEqual(run.artifact(output(exact, exact), root, profile), harness)
+            self.assertEqual(run.managed_cli_artifact(output(exact, exact), root, profile), cli)
+            appended = json.dumps(harness_event | {"features": exact[:1]})
+            with self.assertRaisesRegex(ValueError, "additional prepared harness artifact"):
+                run.artifact(output(exact, exact) + "\n" + appended, root, profile)
+            for wrong in (exact[:1], exact[1:], exact[::-1], exact + exact[:1], exact + ["unrelated"]):
+                with self.subTest(features=wrong):
+                    with self.assertRaises(ValueError):
+                        run.artifact(output(wrong, exact), root, profile)
+                    with self.assertRaises(ValueError):
+                        run.managed_cli_artifact(output(exact, wrong), root, profile)
+            with self.assertRaises(ValueError):
+                run.artifact(output(exact, exact), root, old)
+            with self.assertRaises(ValueError):
+                run.managed_cli_artifact(output(exact, exact), root, old)
+
+    def test_wire_library_artifact_is_exact_and_unique(self):
+        root = Path("/private/target")
+        path = root / run.TARGET / "debug/deps/exacopy_cli-1234567890123456"
+        event = {
+            "reason": "compiler-artifact", "executable": str(path), "filenames": [str(path)],
+            "package_id": f"path+{run.CLI_PACKAGE.as_uri()}#0.1.0",
+            "manifest_path": str(run.CLI_PACKAGE / "Cargo.toml"),
+            "profile": {"test": True}, "features": run.MANAGED_PREPARED.features(), "fresh": False,
+            "target": {"name": "exacopy_cli", "kind": ["lib"], "crate_types": ["lib"], "edition": "2024",
+                       "src_path": str(run.CLI_PACKAGE / "src/lib.rs")},
+        }
+        output = json.dumps(event)
+        rlib = json.dumps(event | {"executable": None, "profile": {"test": False}})
+        with patch.object(Path, "resolve", autospec=True, side_effect=lambda self, **_: self):
+            self.assertEqual(wire.artifact(run, rlib + "\n" + output, root), path)
+            for malformed in ("{", "[]", json.dumps(event | {"target": []})):
+                with self.subTest(malformed=malformed), self.assertRaises(ValueError):
+                    wire.artifact(run, malformed, root)
+            for change in (
+                {"features": run.MANAGED.features()},
+                {"features": run.MANAGED_PREPARED.features()[::-1]},
+                {"features": run.MANAGED_PREPARED.features() + ["extra"]},
+                {"profile": {"test": False}},
+                {"target": event["target"] | {"src_path": str(run.CLI_PACKAGE / "src/main.rs")}},
+                {"manifest_path": str(run.PACKAGE / "Cargo.toml")},
+                {"filenames": [str(path.with_name("wrong"))]},
+                {"fresh": True},
+            ):
+                with self.subTest(change=change), self.assertRaises(ValueError):
+                    wire.artifact(run, json.dumps(event | change), root)
+            for unexpected in ("", rlib, output + "\n" + output):
+                with self.assertRaises(ValueError):
+                    wire.artifact(run, unexpected, root)
+
+    def test_wire_listing_and_per_case_attendance_fail_closed(self):
+        rows = [f"{case}: test" for case in wire.CASES]
+        listing = "\n".join(rows) + "\n"
+        self.assertEqual(wire.check_listing(run, listing), list(wire.CASES))
+        self.assertEqual(wire.check_listing(run, "", ignored=True), [])
+        for wrong in ("", "\n".join(rows[:4]), listing + rows[0], listing + "unrelated: test"):
+            with self.subTest(wrong=wrong), self.assertRaises(ValueError):
+                wire.check_listing(run, wrong)
+        with self.assertRaises(ValueError):
+            wire.check_listing(run, rows[0], ignored=True)
+        for case in wire.CASES:
+            output = (f"\nrunning 1 test\ntest {case} ... ok\n\n"
+                      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; "
+                      "8 filtered out; finished in 0.00s\n")
+            wire.check_case(run, output, case)
+            for wrong in ("", output + output, output + "FAILED\n",
+                          output.replace("running 1 test", "running 0 tests"),
+                          output.replace("0 ignored", "1 ignored"),
+                          output.replace(f"test {case}", "test unexpected")):
+                with self.subTest(case=case, wrong=wrong), self.assertRaises(ValueError):
+                    wire.check_case(run, wrong, case)
 
     def test_held_cli_checks_exact_name_elf_hash_and_read_bound(self):
         fd = 11
@@ -167,7 +282,8 @@ class Controls(unittest.TestCase):
                 args = (Path("/evidence"), binary, {}, {}, report, run.MANAGED, {}, cli)
                 if final_cli == observed_cli:
                     run.execute(*args)
-                    result.assert_called_once_with("transcript", 0, {}, {}, self.cli_sha256)
+                    result.assert_called_once_with("transcript", 0, {}, {}, self.cli_sha256,
+                                                   prepared_component=False)
                     self.assertEqual(report["cli_executable"]["sha256"], self.cli_sha256)
                 else:
                     with self.assertRaisesRegex(ValueError, "changed after execution"):
@@ -187,6 +303,24 @@ class Controls(unittest.TestCase):
         self.assertEqual((result["outcome"], result["feature"], result["controls"]),
                          ("passed", run.MANAGED.required_feature, 8))
         self.assertEqual((result["cli_controls"], result["cli_sha256"]), (17, self.cli_sha256))
+        marker = run.PREPARED_MARKER + "passed"
+        prepared = success.replace(run.MANAGED_MARKER, marker + "\n" + run.MANAGED_MARKER)
+        selected = {"prepared_component": True}
+        self.assertEqual(
+            run.checked_managed_result(prepared, 0, facts, anchors, self.cli_sha256, **selected),
+            result,
+        )
+        for transcript in (
+            success,
+            prepared.replace(marker, marker + "\n" + marker),
+            prepared.replace(marker, run.PREPARED_MARKER + "blocked"),
+            success + marker + "\n",
+            marker + "\n" + success,
+        ):
+            with self.assertRaisesRegex(ValueError, "missing exact completed prepared action component"):
+                run.checked_managed_result(transcript, 0, facts, anchors, self.cli_sha256, **selected)
+        with self.assertRaisesRegex(ValueError, "unexpected prepared action component marker"):
+            run.checked_managed_result(prepared, 0, facts, anchors, self.cli_sha256)
         for old, new in (
             ("000000000001", "000000000002"), ("mnt_ns=0:4:10", "mnt_ns=0:4:9"),
             ("user_ns=0:4:11", "user_ns=0:4:9"), ("mount=25", "mount=24"),
@@ -213,6 +347,14 @@ class Controls(unittest.TestCase):
             blocked = self.output(f"blocked reason={reason}", blocked=True)
             result = run.checked_managed_result(blocked, 101, facts, anchors, self.cli_sha256)
             self.assertEqual((result["outcome"], result["reason"]), ("blocked", reason))
+            self.assertEqual(
+                run.checked_managed_result(blocked, 101, facts, anchors, self.cli_sha256,
+                                           prepared_component=True),
+                result,
+            )
+            with self.assertRaisesRegex(ValueError, "unexpected prepared action component marker"):
+                run.checked_managed_result(blocked + run.PREPARED_MARKER + "passed\n", 101,
+                                           facts, anchors, self.cli_sha256, prepared_component=True)
             for output, code in ((blocked, 0), (blocked, 77),
                                  (blocked.replace(reason, "other"), 101),
                                  (blocked.replace("1 failed", "0 failed"), 101)):

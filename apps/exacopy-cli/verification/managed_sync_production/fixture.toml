@@ -7,6 +7,7 @@ runner = "verification/managed_sync_production/run.py"
 controls = "verification/managed_sync_production/test_runner.py"
 workflow = ".github/workflows/linux-managed-sync-production-qualification.yml"
 result = "result.json"
+prepared_component_feature = "experimental-linux-public-apply"
 
 [[case]]
 kind = "rust-integration"

@@ -20,9 +20,9 @@ on:
       - 'apps/exacopy-cli/src/args/parser/**'
       - 'apps/exacopy-cli/src/assembly.rs'
       - 'apps/exacopy-cli/src/assembly/linux.rs'
-      - 'apps/exacopy-cli/src/assembly/linux/managed_sync.rs'
-      - 'apps/exacopy-cli/src/assembly/linux/managed_sync/**'
+      - 'apps/exacopy-cli/src/assembly/linux/**'
       - 'apps/exacopy-cli/src/profile.rs'
+      - 'apps/exacopy-cli/src/plan.rs'
       - 'apps/exacopy-cli/src/linux_path.rs'
       - 'apps/exacopy-cli/src/unix_path.rs'
       - 'apps/exacopy-cli/src/sync_preview.rs'
@@ -30,6 +30,7 @@ on:
       - 'apps/exacopy-cli/tests/linux_managed_sync_production.rs'
       - 'apps/exacopy-cli/tests/managed_sync_production/**'
       - 'apps/exacopy-cli/verification/managed_sync_production/**'
+      - 'apps/exacopy-cli/verification/managed_approval_wire/vectors.hex'
       - 'crates/platform/exacopy-platform/Cargo.toml'
       - 'crates/platform/exacopy-platform/src/lib.rs'
       - 'crates/platform/exacopy-platform/src/linux.rs'
@@ -59,6 +60,9 @@ on:
       - 'crates/engines/exacopy-transfer/src/sync_genesis/**'
       - 'crates/formats/exacopy-plan/src/lib.rs'
       - 'crates/formats/exacopy-plan/src/portable.rs'
+      - 'crates/formats/exacopy-plan/src/plan.rs'
+      - 'crates/formats/exacopy-plan/src/plan_entries.rs'
+      - 'crates/formats/exacopy-plan/src/plan_entries/**'
       - 'crates/formats/exacopy-plan/Cargo.toml'
       - 'crates/formats/exacopy-plan/src/workflow_sync.rs'
       - 'crates/formats/exacopy-plan/src/workflow_sync/**'
@@ -78,7 +82,15 @@ on:
       - 'crates/interfaces/exacopy-endpoint/src/linux_staging.rs'
       - 'crates/interfaces/exacopy-endpoint/src/positioned.rs'
       - 'crates/interfaces/exacopy-endpoint/src/read_view.rs'
-      - 'crates/storage/exacopy-content/src/stream.rs'
+      - 'crates/storage/exacopy-content/**'
+      - 'crates/storage/exacopy-journal/**'
+      - 'crates/interfaces/exacopy-endpoint/src/linux_apply.rs'
+      - 'crates/engines/exacopy-transfer/src/linux/local_copy.rs'
+      - 'crates/engines/exacopy-transfer/src/linux/local_copy/**'
+      - 'crates/platform/exacopy-platform/src/linux/recovery.rs'
+      - 'crates/platform/exacopy-platform/src/linux/recovery/**'
+      - 'crates/platform/exacopy-platform/src/linux/stage.rs'
+      - 'crates/platform/exacopy-platform/src/linux/stage/**'
       - 'specs/dependencies/**'
       - 'specs/verification/owners.toml'
       - 'tools/apfs_source.py'
@@ -177,5 +189,84 @@ jobs:
             ${{ runner.temp }}/exacopy-evidence/managed-sync-production-lock.txt
             ${{ runner.temp }}/exacopy-evidence/managed-sync-production-native.log
             ${{ runner.temp }}/exacopy-evidence/managed-sync-production-native.txt
+          if-no-files-found: ignore
+          retention-days: 90
+
+  prepare_component:
+    needs: qualify
+    if: github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Confirm exact canonical hosted input
+        id: admission
+        run: |
+          test "$GITHUB_SERVER_URL" = https://github.com
+          test "${GITHUB_REPOSITORY,,}" = replicraft/exacopy
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_EVENT_NAME" = push
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = Linux
+          test "$RUNNER_ARCH" = X64
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = x86_64
+          test "$(id -u)" -ne 0
+          test "$EXPECTED_RUST_HOST" = x86_64-unknown-linux-gnu
+          test "${GITHUB_WORKFLOW_REF,,}" = replicraft/exacopy/.github/workflows/linux-managed-sync-production-qualification.yml@refs/heads/main
+          verification=apps/exacopy-cli/verification/managed_sync_production
+          for file in crates/platform/exacopy-platform/verification/sync_history_ext4/run.py \
+            "$verification/fixture.toml" "$verification/run.py" "$verification/test_runner.py" \
+            "$verification/approval.rs" "$verification/approval_slot.rs" \
+            "$verification/managed_recreate_wire_controls.py" \
+            apps/exacopy-cli/verification/managed_approval_wire/vectors.hex; do
+            test -f "$file" && test ! -L "$file" || exit 1
+          done
+          head=$(git rev-parse HEAD)
+          status=$(git status --porcelain)
+          test "$head" = "$GITHUB_SHA"
+          test -z "$status"
+          (umask 077; mkdir -- "$RUNNER_TEMP/exacopy-evidence")
+      - name: Prepare pinned build inputs
+        timeout-minutes: 9
+        run: |
+          bash .github/ci/capture.sh managed-sync-production-apfs python3 -B tools/apfs_source.py --fetch
+          bash .github/ci/capture.sh managed-sync-production-transport python3 -B tools/transport_source.py --fetch
+          bash .github/ci/capture.sh managed-sync-production-rust bash .github/ci/install.sh rust
+          bash .github/ci/capture.sh managed-sync-production-lock cargo +1.100.0 fetch --locked \
+            --target "$EXPECTED_RUST_HOST"
+      - name: Check managed recreate preparation on native ext4
+        id: prepared
+        timeout-minutes: 22
+        run: |
+          bash .github/ci/capture.sh managed-sync-prepared-component python3 -B -Werror \
+            apps/exacopy-cli/verification/managed_sync_production/run.py --revision "$GITHUB_SHA" --prepared-component
+      - name: Retain prepared component evidence
+        if: always() && steps.prepared.outputs.evidence_path != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-managed-sync-prepared-component-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.prepared.outputs.evidence_path }}
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain prepared component capture logs
+        if: always() && steps.admission.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-managed-sync-prepared-component-capture-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-evidence/managed-sync-production-apfs.log
+            ${{ runner.temp }}/exacopy-evidence/managed-sync-production-apfs.txt
+            ${{ runner.temp }}/exacopy-evidence/managed-sync-production-transport.log
+            ${{ runner.temp }}/exacopy-evidence/managed-sync-production-transport.txt
+            ${{ runner.temp }}/exacopy-evidence/managed-sync-production-rust.log
+            ${{ runner.temp }}/exacopy-evidence/managed-sync-production-rust.txt
+            ${{ runner.temp }}/exacopy-evidence/managed-sync-production-lock.log
+            ${{ runner.temp }}/exacopy-evidence/managed-sync-production-lock.txt
+            ${{ runner.temp }}/exacopy-evidence/managed-sync-prepared-component.log
+            ${{ runner.temp }}/exacopy-evidence/managed-sync-prepared-component.txt
           if-no-files-found: ignore
           retention-days: 90

@@ -117,6 +117,7 @@ struct Fixture {
 	controls: PathBuf,
 	workflow: PathBuf,
 	result: PathBuf,
+	prepared_component_feature: Option<String>,
 	#[serde(rename = "case")]
 	cases: Vec<Case>,
 }
@@ -222,6 +223,10 @@ fn check_manifest(
 		);
 	}
 
+	if !managed_sync::check(package, manifest, &path, &fixture, findings) {
+		return;
+	}
+
 	if windows_publication::applies(manifest, fixture.profile) {
 		windows_publication::check(
 			metadata.workspace_root.as_std_path(),
@@ -234,8 +239,7 @@ fn check_manifest(
 		return;
 	}
 
-	if !managed_sync::check(package, manifest, &path, &fixture, findings)
-		|| !genesis::check(package, manifest, &path, &fixture, findings)
+	if !genesis::check(package, manifest, &path, &fixture, findings)
 		|| !closed_ext4::check(package, manifest, &path, &fixture, findings)
 		|| !public_stage::check(package, manifest, &path, &fixture, findings)
 	{

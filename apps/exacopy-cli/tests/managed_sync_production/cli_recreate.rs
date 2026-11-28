@@ -12,6 +12,10 @@ use rustix::fs::{FlockOperation, flock};
 
 use super::*;
 
+#[cfg(feature = "experimental-linux-public-apply")]
+#[path = "../../verification/managed_sync_production/approval.rs"]
+mod activation;
+
 const RETAINED: &[u8] = b"retained-cli-recreate-subject";
 
 pub(super) fn exercise(
@@ -309,8 +313,8 @@ fn exercise_signed_export(
 	assert_export_envelope(&report, "exported");
 	assert_eq!(report["pair_id"], PAIR);
 	let bundle = &report["bundle"];
-	let envelope = decode(&bundle["parent_envelope_cbor_hex"])?;
-	let envelope = decode_envelope(&envelope)?;
+	let envelope_bytes = decode(&bundle["parent_envelope_cbor_hex"])?;
+	let envelope = decode_envelope(&envelope_bytes)?;
 	let signing = parent_signing_input(envelope.body)?;
 	assert_eq!(envelope.public_key, approval.owner.to_bytes());
 	approval
@@ -371,6 +375,32 @@ fn exercise_signed_export(
 		decode_envelope(&inputs.artifacts[0].bytes)?.body,
 	)?;
 	assert_eq!(report["predecessor_pair_digest"], hex(&root.pair));
+	#[cfg(feature = "experimental-linux-public-apply")]
+	activation::exercise(
+		exacopy_cli::assembly::linux::managed_sync::activation::ApprovalProfile {
+			path: &sandbox.path.join("cli-profile"),
+			owner_key: approval.owner.to_bytes(),
+			selection: approval.selection,
+			acknowledgement,
+		},
+		(sandbox, profile, inputs.live),
+		inputs.owner_profile,
+		[
+			&envelope_bytes,
+			&page,
+			&child_body,
+			&child_page,
+			&inputs.artifacts[0].bytes,
+			&inputs.artifacts[1].bytes,
+			&inputs.artifacts[2].bytes,
+			&inputs.artifacts[3].bytes,
+		],
+		&parent,
+		&action,
+		(&child, entry),
+	)?;
+	#[cfg(feature = "experimental-linux-public-apply")]
+	println!("\nmanaged_recreate_prepared_component=passed");
 	Ok(())
 }
 

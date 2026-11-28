@@ -12,6 +12,7 @@ const SOURCE: &str = "tests/linux_managed_sync_production.rs";
 const SELECTOR: &str = "production_managed_init_then_preview_exact_p063_history";
 
 pub(super) const FEATURE: &str = "experimental-linux-managed-sync";
+const PREPARED_FEATURE: &str = "experimental-linux-public-apply";
 
 pub(super) fn check(
 	package: &Package,
@@ -25,14 +26,27 @@ pub(super) fn check(
 		manifest,
 		fixture.profile,
 		&fixture.cases,
-	);
+	) && matches_prepared_component(
+		fixture.profile,
+		fixture.prepared_component_feature.as_deref(),
+	) && fixture
+		.prepared_component_feature
+		.as_ref()
+		.is_none_or(|feature| package.features.contains_key(feature));
 	if !valid {
 		findings.add(
 			path,
-			"managed-sync production fixture requires its exact application owner, manifest and one feature-bound case",
+			"managed-sync production fixture requires its exact application owner, manifest, one feature-bound case and exact prepared component feature",
 		);
 	}
 	valid
+}
+
+fn matches_prepared_component(profile: Profile, feature: Option<&str>) -> bool {
+	match profile {
+		Profile::UnprivilegedWholeExt4ManagedSyncProduction => feature == Some(PREPARED_FEATURE),
+		_ => feature.is_none(),
+	}
 }
 
 fn matches_fixture(owner: &str, manifest: &Path, profile: Profile, cases: &[Case]) -> bool {

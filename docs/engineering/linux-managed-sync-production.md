@@ -256,6 +256,21 @@ descriptor. It checks preserved subject identities, bytes and directory
 inventories. The new controls require their own hosted execution. Normal Linux
 CI separately selects four non-ignored managed-recreate library tests.
 
+After the original job uploads its evidence, a separate hosted job runs the
+same selector in a fresh owned fixture with the closed feature pair `experimental-linux-managed-sync,experimental-linux-public-apply`.
+The runner checks both Cargo artifact feature vectors and requires the prepared
+component marker before the normal fixture cleanup marker. The separate
+`managed-recreate-read-only-prepared-component` result covers the held native
+prepared record and read-only approval checks with synthetic commitments.
+A pass carries no live grant, independently current selector, or attestation
+qualification.
+
+The prepared job builds the exact CLI library test in the same Cargo
+invocation. From its held executable it lists exactly five approval wire
+cases, confirms none are ignored, and runs each selector once. The separate
+wire-controls record retains both feature names, the exact listing, each
+observed passing case, and source and executable SHA-256 hashes.
+
 The ownership checker binds the manifest to the exact package, Cargo target,
 source, feature and selector. The runner binds the exact executable and test
 inventory to independent boot, mount, namespace and held anchor evidence.

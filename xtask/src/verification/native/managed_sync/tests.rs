@@ -1,9 +1,30 @@
 use std::path::Path;
 
-use super::{FEATURE, MANIFEST, OWNER, SELECTOR, SOURCE, TARGET, matches_fixture};
+use super::{
+	FEATURE, MANIFEST, OWNER, PREPARED_FEATURE, SELECTOR, SOURCE, TARGET, matches_fixture,
+	matches_prepared_component,
+};
 use crate::verification::native::{Case, CaseKind, Profile};
 
 const PRODUCTION: Profile = Profile::UnprivilegedWholeExt4ManagedSyncProduction;
+
+#[test]
+fn prepared_component_bound_only_to_managed_production_and_public_apply() {
+	assert!(matches_prepared_component(
+		PRODUCTION,
+		Some(PREPARED_FEATURE)
+	));
+	assert!(!matches_prepared_component(PRODUCTION, None));
+	assert!(!matches_prepared_component(PRODUCTION, Some(FEATURE)));
+	for other in [
+		Profile::UnprivilegedWholeExt4ManagedSyncGenesisProduction,
+		Profile::UnprivilegedWholeExt4SyncStatmount,
+		Profile::WindowsFixedNtfsPublication,
+	] {
+		assert!(matches_prepared_component(other, None));
+		assert!(!matches_prepared_component(other, Some(PREPARED_FEATURE)));
+	}
+}
 
 fn exact_case() -> Case {
 	toml::from_str(&format!(

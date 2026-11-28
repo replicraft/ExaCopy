@@ -399,6 +399,7 @@ mod tests {
 			controls: CONTROLS.into(),
 			workflow: WORKFLOW.into(),
 			result: "result.json".into(),
+			prepared_component_feature: None,
 			cases: CASES
 				.into_iter()
 				.map(|leaf| Case {
