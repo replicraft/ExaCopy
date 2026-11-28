@@ -12,22 +12,22 @@ case "$mutation" in
 	lease-clipping)
 		harness='kani_checks::connection_retry::lease_and_revocation_bound_waiting_and_redial'
 		assertion='the lease clips the jittered wake exactly at expiry'
-		expected_source='c45bf829c5f5d85c150d03bcb153ca14c39e5080ca6648369e7068ab59c24bea'
+		expected_source='7194a02c9338a1c1d695679a1c291ae2a17e3cecdbe34f49b66b8d6f08ac0ea4'
 		;;
 	source-fence)
 		harness='kani_checks::connection_retry::reconnect_requires_current_route_ssh_and_source_and_fences_retired_work'
 		assertion='every independent observation must refer to the current attempt'
-		expected_source='f2a6173975a8b48abe8d08cc48819a545613fd8683aa2bc3a3795e1aa10c98bc'
+		expected_source='a1db9865dcaf910490fe8121847a619b0ba5e2a235c51c1e9623c6c4698c5335'
 		;;
 	health-activity)
 		harness='kani_checks::connection_retry::penalty_resets_only_after_current_verified_activity_and_health'
 		assertion='reset requires both qualifying activity and the full healthy duration'
-		expected_source='a003d5eded1906a919b58b34c834c4496d17665a971d04b1641346f5a7d2607c'
+		expected_source='9e3b5c4926a5622d14c5e4339a1f13e386177d58cdddfe37767d28dc24dfeeb1'
 		;;
 	inclusive-jitter)
-		harness='kani_checks::connection_retry::transient_backoff_is_bounded_and_claims_only_the_due_generation'
+		harness='kani_checks::connection_retry::concrete_transient_backoff_is_bounded_and_claims_only_the_due_generation'
 		assertion='every sample maps proportionally into the inclusive equal-jitter window'
-		expected_source='004eed83a91f4ab0c7c124ad7669a43a8f7790107ffe8bd8f09a4db37cebd845'
+		expected_source='1cd4b6a32bf8d6a7bd9056db42330d7e791899f6f5a77b3351d9d9042d34784b'
 		;;
 	*) printf 'Unknown retry mutation: %s\n' "$mutation" >&2; exit 2 ;;
 esac
@@ -77,7 +77,7 @@ lock_before=$(LC_ALL=C shasum -a 256 Cargo.lock)
 CARGO_NET_OFFLINE=true "${cargo[@]}" metadata --locked --format-version 1 \
 	--filter-platform "$target" > /dev/null
 
-# Require the exact seven selected harnesses and all 16 cover goals.
+# Require the exact eight selected harnesses and all 17 cover goals.
 plans=(
 	kani_checks::connection_retry::permanent_and_uncertain_failures_never_redial=2
 	kani_checks::connection_retry::transient_backoff_is_bounded_and_claims_only_the_due_generation=1
@@ -86,6 +86,7 @@ plans=(
 	kani_checks::connection_retry::penalty_resets_only_after_current_verified_activity_and_health=3
 	kani_checks::connection_retry::clock_rollback_and_unrepresentable_wake_are_terminal=2
 	kani_checks::jitter_oracle::narrow_jitter_oracle_matches_widened_formula=1
+	kani_checks::jitter_oracle::real_equal_jitter_matches_the_exact_delay=1
 )
 harnesses=()
 harness_timeout=600s
@@ -104,6 +105,7 @@ trap 'rm -f "$kani_log"' EXIT
 set +e
 CARGO_NET_OFFLINE=true "${cargo[@]}" kani --package exacopy-endpoint --lib --exact \
 	"${harnesses[@]}" --output-format regular -Z unstable-options \
+	-Z function-contracts -Z stubbing --no-assert-contracts \
 	--harness-timeout "$harness_timeout" 2>&1 | tee "$kani_log"
 pipeline_status=("${PIPESTATUS[@]}")
 set -e
@@ -144,6 +146,27 @@ check_minisat_solver() {
 	fi
 }
 
+check_contract_stubs() {
+	if ! awk -v composed="$1" '
+		/^Checking harness .*\.\.\.$/ {
+			active = $0
+			sub(/^Checking harness /, "", active)
+			sub(/\.\.\.$/, "", active)
+		}
+		/^  - (Verified stub|Stub): / {
+			if (active == composed && composed != "" &&
+			    $0 == "  - Verified stub: exacopy_endpoint::connection_retry::equal_jitter")
+				verified++
+			else
+				wrong = 1
+		}
+		END { exit (wrong || verified + 0 != (composed != "")) }
+	' "$kani_log"; then
+		printf 'Retry Kani reported unexpected contract substitution for this gate.\n' >&2
+		return 1
+	fi
+}
+
 if [[ -n "$mutation" ]]; then
 	if (( kani_status != 1 )); then
 		printf 'Retry mutation %s requires Kani exit 1, observed %s.\n' "$mutation" "$kani_status" >&2
@@ -169,6 +192,7 @@ if [[ -n "$mutation" ]]; then
 		printf 'Expected Kani to fail the named retry assertion for %s.\n' "$mutation" >&2
 		exit 1
 	fi
+	check_contract_stubs ''
 	if [[ "$mutation" == inclusive-jitter ]]; then
 		check_minisat_solver "$harness"
 	fi
@@ -205,9 +229,11 @@ if ! grep -Fxq "Complete - ${#plans[@]} successfully verified harnesses, 0 failu
 			exit wrong
 		}
 	' "$kani_log"; then
-	printf 'Retry Kani verification requires all seven selected harnesses and sixteen covered goals.\n' >&2
+	printf 'Retry Kani verification requires all eight selected harnesses and seventeen covered goals.\n' >&2
 	exit 1
 fi
 check_minisat_solver \
 	kani_checks::connection_retry::transient_backoff_is_bounded_and_claims_only_the_due_generation \
 	kani_checks::jitter_oracle::narrow_jitter_oracle_matches_widened_formula
+check_contract_stubs \
+	kani_checks::connection_retry::transient_backoff_is_bounded_and_claims_only_the_due_generation

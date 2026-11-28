@@ -345,7 +345,18 @@ impl RetrySupervisor {
 	}
 }
 
-fn equal_jitter(ceiling_ms: u64, sample: u32) -> Duration {
+#[cfg_attr(
+	kani,
+	kani::requires(matches!(
+		ceiling_ms,
+		1_000 | 2_000 | 4_000 | 8_000 | 16_000 | 32_000 | 60_000
+	))
+)]
+#[cfg_attr(
+	kani,
+	kani::ensures(|delay| *delay == crate::kani_checks::expected_delay(ceiling_ms, sample))
+)]
+pub(crate) fn equal_jitter(ceiling_ms: u64, sample: u32) -> Duration {
 	let half = ceiling_ms / 2;
 	// The fixed policy caps `half` at 30,000 ms. Scaling a `u32` by the
 	// inclusive window width fits in `u64`, including at both endpoints.

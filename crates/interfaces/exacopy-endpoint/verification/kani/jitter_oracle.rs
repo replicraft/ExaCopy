@@ -1,4 +1,8 @@
-//! Arithmetic correspondence for the transient history's independent oracle.
+//! Exact jitter from the real scheduler and correspondence to the widened oracle.
+
+use std::time::Duration;
+
+use crate::connection_retry::equal_jitter;
 
 // Literal ceiling policy through the first two capped retries.
 pub(super) const UPPER_MS: [u64; 8] = [1_000, 2_000, 4_000, 8_000, 16_000, 32_000, 60_000, 60_000];
@@ -7,6 +11,25 @@ pub(super) fn scaled_jitter_ms(sample: u32, inclusive_width: u64) -> u64 {
 	const SAMPLE_SPACE: u64 = 1 << u32::BITS;
 	// Every history window is at most 30,001 ms, so the product is below 2^47.
 	u64::from(sample) * inclusive_width / SAMPLE_SPACE
+}
+
+pub(crate) fn expected_delay(ceiling_ms: u64, sample: u32) -> Duration {
+	let minimum_ms = ceiling_ms / 2;
+	let inclusive_width = ceiling_ms - minimum_ms + 1;
+	Duration::from_millis(minimum_ms + scaled_jitter_ms(sample, inclusive_width))
+}
+
+#[kani::proof_for_contract(crate::connection_retry::equal_jitter)]
+#[kani::unwind(12)]
+fn real_equal_jitter_matches_the_exact_delay() {
+	let index = usize::from(kani::any::<u8>() & 7);
+	let ceiling_ms = UPPER_MS[index];
+	let sample = kani::any::<u32>();
+	let delay = equal_jitter(ceiling_ms, sample);
+	kani::cover!(
+		ceiling_ms == 60_000 && sample == 1_u32 << 31 && delay == Duration::from_millis(45_000),
+		"real contract returns the exact capped delay for an interior sample"
+	);
 }
 
 #[kani::proof]
