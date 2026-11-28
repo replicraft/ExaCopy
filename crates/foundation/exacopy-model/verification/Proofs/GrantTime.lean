@@ -11,7 +11,7 @@ abbrev UtcTimestamp := I64 × U32
 
 /-- The mathematical timestamp before any clock window comparison. -/
 def utcNanos (time : UtcTimestamp) : Int :=
-  time.1.val * 1000000000 + Int.ofNat time.2.val
+  time.1.val * 1000000000 + (time.2.val : Int)
 
 /-- A timestamp's subsecond component is less than one second. -/
 def normalizedUtc (time : UtcTimestamp) : Prop :=

@@ -69,6 +69,20 @@ bounded raw byte diff in the EVS log before its scratch directory is removed.
 The new theorem and combined regeneration still require hosted kernel validation;
 the advisory capture itself earns no proof credit.
 
+At `b595397`, fresh regeneration matched all three grant-time module payloads
+and Lake built the generated modules and existing range theorem. The grant-time
+ordering lemma failed: `omega` treated `Int.ofNat` and the normalization
+hypotheses' Nat-to-Int coercions as different terms. The axiom guard then
+correctly rejected the incomplete theorem's `sorryAx` dependency. Both Lean
+records failed because their shared build includes this theorem.
+[Exact failed snapshot](https://github.com/replicraft/ExaCopy/actions/runs/46134360046/artifacts/15258808647)
+has SHA-256 `a977720717c70bed14af44965246ebc48bdf951d251474c7ced602a97765f0e2`.
+The P-083 raw member is `exacopy-evs/395f1bd3-6533-4722-8cef-f832ea6b08de.log`,
+with SHA-256 `a9d8177dcbd0d022f1f0ed62778d785ce3a909d79c97436e078b3afef44ad56c`.
+The correction uses the same coercion in the timestamp formula. Its mathematical
+value, normalized domain, theorem statement and axiom allowlist are unchanged;
+hosted kernel verification of the correction remains pending.
+
 Clock sampling and monotonic classification, paired high-water updates,
 retirement, mutex serialization, effects and native qualification remain
 separate.
