@@ -3,8 +3,8 @@
 The endpoint coverage workflow can retain advisory pre-execution receipts for
 the ordinary LLVM export. Its six Python controls run first. Failed controls
 disable capture and fail the job, while the existing ordinary coverage command
-still runs. The original test selection, source inventory, LLVM argument order
-and per-crate 85% line minimum are unchanged. At `49b5633`, all six hosted
+still runs. Advisory capture forwards the selected source filter and LLVM argument order.
+The per-crate 85% line minimum remains in force. At `49b5633`, all six hosted
 controls passed. The two pre-execution receipts were byte-identical and
 recorded 31 distinct ordered objects, the pinned tool and indexed profile.
 They survived the unchanged platform threshold failure at 6,520/8,910 lines.
@@ -29,14 +29,22 @@ success, select or authorize a test executable, or admit additional profiles.
 Correlate them with the ordinary command's retained exit status and report.
 Separate witnessed coverage summaries remain separate.
 
-Canonical main pushes from the Coverage workflow request three separately
-admitted foreground groups in the same ordinary campaign: seven witnessed
-recovery components, six selected-stream publication cases, and four protected
-snapshot cases. Source, workflow, job and run identity are checked before the
-ordinary build. The ordinary command must finish successfully before the native
-contribution can proceed. The runner holds the original indexed profile, LLVM
-tools, ordered objects and selected test executable, and retains the ordinary
-report independently.
+Canonical main pushes from the Coverage workflow retain a same-revision,
+owner-only report and test attendance. After cleaning the coverage build and
+counters, one expanded default build runs those same owner cases plus the 11
+Linux CLI job_bootstrap cases. The gate requires complete, successful JUnit
+attendance, the exact instrumented job_bootstrap object, and the same owner
+file inventory and per-file line denominators. CLI source does not count
+toward the three owner thresholds. The owner-only report remains available
+if the expanded measurement is blocked.
+
+The same campaign requests three separately admitted foreground groups:
+seven witnessed recovery components, six selected-stream publication cases,
+and four protected snapshot cases. Source, workflow, job and run identity
+are checked before the ordinary build. The expanded ordinary command must
+finish successfully before the native contribution can proceed. The runner
+holds its indexed profile, LLVM tools, ordered objects and platform test
+executable, and retains both ordinary reports independently.
 
 Only the 17 measured run profiles join the original index, after exact
 attendance and verified cleanup of each group's private fixture. All 34 listing
@@ -47,8 +55,8 @@ the ordinary filename filter,
 file inventory and every file's line denominator, with no decrease in covered
 lines. The existing per-crate 85% gate then evaluates the combined report.
 
-If native admission or measurement fails, the gate evaluates the ordinary
-report and the requested witness lane still fails. Failed capture or witness
+If expanded admission or native measurement fails, the gate evaluates the
+owner-only report and the requested witness lane still fails. Failed capture or witness
 controls preserve the ordinary run and fail their own CI steps.
 
 At `e95398a`, all four image controls, three campaign controls and seven
