@@ -32,6 +32,24 @@ Windows guarantees accurate last-write timestamps after write handles close;
 the new open-handle flush path remains unqualified. The adapter supplies no
 directory barrier or power-loss claim. [File times](https://learn.microsoft.com/en-us/windows/win32/sysinfo/file-times)
 
+The original fixture also exercises `WindowsCaptureStageScope` before writing
+the first frame. This separate acquisition checks the original five roles and
+the actual job handle's child-creation rights. It samples target absence with
+a case-insensitive, metadata-only lookup and exclusively creates a private
+stage directory and leaf with a protected current-user ACL at creation.
+Every write and prefix barrier remains bound to that custody. The callback
+can close and read back the private stage; it has no target writer or
+publication operation. The fixture preserves an aliased incumbent, checks
+the original stage identities and bytes, refuses a repeated stage name,
+and removes only its checked disposable entries before bootstrap inspection.
+
+Two separately selected ordinary Windows controls check descriptor geometry
+and acceptance by the existing private ACL parser, including wrong owner and
+trustee refusals. Their individual JUnit reports are retained. These tests
+need no provisioned NTFS fixture and do not qualify native creation. The held
+scope still needs native execution on an admitted root. It supplies no SSH
+capture, durable checkpoint, namespace barrier or recovery authority.
+
 The reader admits both metadata pins before either data handle. The application
 uses the owner bytes and five role values from that same holder with an
 independently selected profile, job, root and RFC 8032 test key. It reports a
