@@ -24,6 +24,10 @@ REMOTE_EXPECTED = (
 )
 
 WITNESSED_EXPECTED = (
+    (
+        "assembly::linux::remote_journal::tests::capture::witnessed::"
+        "held_native_donor_compares_a_live_positive_tail_and_refuses_a_changed_prefix"
+    ),
     "assembly::linux::remote_journal::startup::witnessed::tests::witnessed_donor_extent_keeps_one_window_and_room_for_a_positive_tail",
     "assembly::linux::remote_witness_authority::tests::explicit_strategy_without_explicit_retention_is_never_consent",
     "assembly::linux::remote_witness_authority::tests::approval_is_bound_to_the_original_grant_instance_and_revokes_permanently",

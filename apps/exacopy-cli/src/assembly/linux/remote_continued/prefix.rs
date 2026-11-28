@@ -5,7 +5,9 @@ use exacopy_journal::LinuxFileIdentity;
 use exacopy_platform::linux::{RetainedPrefixRead, StageError};
 use exacopy_transfer::remote_resume::prefix::{RetainedPrefixIdentity, RetainedPrefixView};
 
-pub(super) struct WitnessPrefix<'lease>(pub(super) RetainedPrefixRead<'lease>);
+pub(in crate::assembly::linux) struct WitnessPrefix<'lease>(
+	pub(in crate::assembly::linux) RetainedPrefixRead<'lease>,
+);
 
 impl<'lease> WitnessPrefix<'lease> {
 	pub(super) const fn native(&self) -> &RetainedPrefixRead<'lease> {

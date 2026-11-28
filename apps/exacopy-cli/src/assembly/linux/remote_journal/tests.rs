@@ -224,6 +224,15 @@ impl Fixture {
 	}
 
 	fn with_route(route: RemoteDownloadRoute) -> Self {
+		let authority =
+			SshAuthority::new("transfer.example", NonZeroU16::new(22).unwrap(), "reader").unwrap();
+		let source =
+			RemoteDownloadSource::new(authority, [0x51; 32], route, b"inbox/file").unwrap();
+		Self::with_source(source, LENGTH)
+	}
+
+	fn with_source(source: RemoteDownloadSource, maximum: u64) -> Self {
+		let route = source.route();
 		let directory = TempRoot::new();
 		let profile_path = directory.0.join("profile");
 		profile::init(&profile_path).unwrap();
@@ -232,10 +241,6 @@ impl Fixture {
 		DirBuilder::new().mode(0o700).create(&destination).unwrap();
 		let root = open_destination(&destination).unwrap();
 		let job = JournalJobId::from_bytes(JOB).unwrap();
-		let authority =
-			SshAuthority::new("transfer.example", NonZeroU16::new(22).unwrap(), "reader").unwrap();
-		let source =
-			RemoteDownloadSource::new(authority, [0x51; 32], route, b"inbox/file").unwrap();
 		let destination = RemoteDownloadDestination::new(
 			profile.root_id(root.identity()).unwrap(),
 			record_identity(root.identity()),
@@ -245,7 +250,7 @@ impl Fixture {
 			JournalEntryId::from_bytes([0x22; 16]),
 			source,
 			destination,
-			StreamLength::new(LENGTH).unwrap(),
+			StreamLength::new(maximum).unwrap(),
 			admit_sftp_metadata(RemoteMetadataSelection::SftpDataOnlyV1)
 				.unwrap()
 				.digest(),

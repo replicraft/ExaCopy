@@ -15,6 +15,9 @@ use super::{Fixture, LENGTH, NONCE, STAGE, component, observation};
 
 const BYTES: &[u8; LENGTH as usize] = b"remote stream";
 
+#[cfg(feature = "experimental-verified-prefix-resume")]
+mod witnessed;
+
 #[test]
 fn private_capture_syncs_its_exact_checkpoint_and_preserves_public_absence() {
 	let fixture = Fixture::new();

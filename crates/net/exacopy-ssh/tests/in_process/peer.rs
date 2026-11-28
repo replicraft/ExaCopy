@@ -134,6 +134,7 @@ pub(super) struct Generated {
 	pub(super) observed_length: u64,
 	pub(super) actual_length: u64,
 	pub(super) max_reply: u32,
+	pub(super) byte_xor: u8,
 	pub(super) changed_handle: bool,
 	pub(super) changed_name: bool,
 	pub(super) change_during_window: Option<ChangedObservation>,
@@ -148,6 +149,7 @@ impl Generated {
 			observed_length: length,
 			actual_length: length,
 			max_reply: 4093,
+			byte_xor: 0,
 			changed_handle: false,
 			changed_name: false,
 			change_during_window: None,
@@ -322,7 +324,7 @@ impl sftp_server::Handler for Files {
 				return Err(sftp::StatusCode::Eof);
 			}
 			let data = (offset..offset + count)
-				.map(|index| (index % 251) as u8)
+				.map(|index| (index % 251) as u8 ^ generated.byte_xor)
 				.collect();
 			return Ok(sftp::Data { id, data });
 		}

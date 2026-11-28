@@ -10,6 +10,13 @@ use exacopy_transfer::remote_capture::{
 #[cfg(test)]
 mod tests;
 
+#[cfg(all(
+	test,
+	target_os = "linux",
+	feature = "experimental-verified-prefix-resume"
+))]
+pub(super) use tests::{admitted_at, generated_source};
+
 /// Captures an admitted SFTP source into an already owned private stage.
 ///
 /// The application owns connection admission and the execution context for

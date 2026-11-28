@@ -44,6 +44,10 @@ fn path() -> [UnixComponent<'static>; 1] {
 }
 
 fn admitted() -> (RetrySupervisor, ConnectionBinding) {
+	admitted_at(SourceEpoch::new(LIVE_ID))
+}
+
+pub(in crate::assembly) fn admitted_at(epoch: SourceEpoch) -> (RetrySupervisor, ConnectionBinding) {
 	let mut supervisor =
 		RetrySupervisor::new(RetryOwner::new(NonZeroU128::MIN), Duration::from_secs(30));
 	let RetryDecision::Start(attempt) = supervisor.poll(Duration::ZERO).unwrap() else {
@@ -57,7 +61,7 @@ fn admitted() -> (RetrySupervisor, ConnectionBinding) {
 				route_checked_for: attempt,
 				ssh_authenticated_for: attempt,
 				source_checked_for: attempt,
-				source_epoch: SourceEpoch::new(LIVE_ID),
+				source_epoch: epoch,
 			},
 		)
 		.unwrap();
@@ -78,6 +82,33 @@ async fn open(file: Generated) -> (ReadOnlySftp, Arc<Calls>) {
 	.await
 	.unwrap();
 	(session, calls)
+}
+
+#[cfg(all(target_os = "linux", feature = "experimental-verified-prefix-resume"))]
+pub(in crate::assembly) async fn generated_source(
+	length: u64,
+	name: &'static [u8],
+	byte_xor: u8,
+) -> (ReadOnlySftp, [u8; 32], impl Fn() -> [usize; 4]) {
+	let mut file = Generated::new(length);
+	file.selected_name = name;
+	file.max_reply = 2;
+	file.byte_xor = byte_xor;
+	let (session, calls) = open(file).await;
+	let key = peer::fixture_key()
+		.public_key()
+		.fingerprint(russh::keys::HashAlg::Sha256)
+		.sha256()
+		.unwrap();
+	(session, key, move || {
+		[
+			&calls.open,
+			&calls.close,
+			&calls.eof_before_close,
+			&calls.read,
+		]
+		.map(|count| count.load(Ordering::Relaxed))
+	})
 }
 
 #[tokio::test]
