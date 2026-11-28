@@ -299,9 +299,15 @@ mod tests {
 		);
 		assert_eq!(result.exit_code(), 9);
 		let mut stdout = Vec::new();
-		result
-			.write(crate::args::Format::Json, &mut stdout, &mut Vec::new())
-			.unwrap();
+		assert_eq!(
+			result.write(
+				crate::args::Format::Json,
+				crate::args::JobPathDisplay::Redacted,
+				&mut stdout,
+				&mut Vec::new(),
+			),
+			9,
+		);
 		let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
 		assert_eq!(report["publication"], "publication_uncertain");
 	}
@@ -356,9 +362,15 @@ mod tests {
 				true,
 			);
 			let mut stdout = Vec::new();
-			result
-				.write(crate::args::Format::Json, &mut stdout, &mut Vec::new())
-				.unwrap();
+			assert_eq!(
+				result.write(
+					crate::args::Format::Json,
+					crate::args::JobPathDisplay::Redacted,
+					&mut stdout,
+					&mut Vec::new(),
+				),
+				result.exit_code(),
+			);
 			let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
 			assert_eq!(report["error"]["code"], expected);
 			assert_eq!(report["publication"], "not_published");
@@ -445,9 +457,15 @@ fn bootstrap_reports_only_real_or_uncertain_job_custody() {
 		};
 		let outcome = finish(Err(RemoteDownloadFailure::Job(error)), job, false, false);
 		let mut stdout = Vec::new();
-		outcome
-			.write(crate::args::Format::Json, &mut stdout, &mut Vec::new())
-			.unwrap();
+		assert_eq!(
+			outcome.write(
+				crate::args::Format::Json,
+				crate::args::JobPathDisplay::Redacted,
+				&mut stdout,
+				&mut Vec::new(),
+			),
+			outcome.exit_code(),
+		);
 		let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
 		assert_eq!(report["publication"], "not_published");
 		assert_eq!(report["error"]["code"], code);
