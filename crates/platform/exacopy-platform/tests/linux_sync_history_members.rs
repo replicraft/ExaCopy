@@ -4,7 +4,7 @@
 
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
-use std::os::unix::fs::{DirBuilderExt as _, symlink};
+use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _, symlink};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -75,6 +75,49 @@ fn explicit_member_names_borrow_stable_bounded_read_only_views() {
 		"EOF must recheck the held name"
 	);
 	assert_eq!(fs::read(sibling).unwrap(), b"other");
+}
+
+#[test]
+fn history_record_refuses_both_names_of_a_hard_link_without_changing_either() {
+	let fixture = Fixture::new();
+	let original = fixture.0.join("selected");
+	let alias = fixture.0.join("linked");
+	let mut writer = File::create_new(&original).unwrap();
+	writer.write_all(b"valid").unwrap();
+	drop(writer);
+	fs::hard_link(&original, &alias).unwrap();
+
+	let root = ReadRoot::from_directory(File::open(&fixture.0).unwrap()).unwrap();
+	let directory = SyncHistoryDirectory::new(&root, 5);
+	let before = fs::metadata(&original).unwrap();
+	assert_eq!(before.len(), 5);
+	assert_eq!(before.nlink(), 2);
+
+	for (raw, path) in [(b"selected".as_slice(), &original), (b"linked", &alias)] {
+		let view = root.open_regular(name(raw)).unwrap();
+		let mut raw_bytes = [0; 5];
+		view.read_exact_at(0, &mut raw_bytes).unwrap();
+		assert_eq!(&raw_bytes, b"valid");
+		assert_eq!(
+			directory.open_member(name(raw)).unwrap_err().kind(),
+			io::ErrorKind::InvalidData,
+		);
+		let after = fs::symlink_metadata(path).unwrap();
+		assert!(after.is_file());
+		assert_eq!((after.dev(), after.ino()), (before.dev(), before.ino()));
+		assert_eq!(after.nlink(), 2);
+		assert_eq!(fs::read(path).unwrap(), b"valid");
+	}
+
+	fs::remove_file(alias).unwrap();
+	let mut reader = directory.open_member(name(b"selected")).unwrap();
+	let mut bytes = [0; 5];
+	reader.read_exact(&mut bytes).unwrap();
+	assert_eq!(&bytes, b"valid");
+	assert_eq!(reader.read(&mut [0]).unwrap(), 0);
+	let after = fs::metadata(original).unwrap();
+	assert_eq!((after.dev(), after.ino()), (before.dev(), before.ino()));
+	assert_eq!(after.nlink(), 1);
 }
 
 #[test]
