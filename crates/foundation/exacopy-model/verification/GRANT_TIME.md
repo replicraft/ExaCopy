@@ -71,6 +71,14 @@ or grant-time log before accepting a successful tool exit. This Kani tool
 finding leaves the independently extracted and kernel-checked Lean evidence
 below intact.
 
+At `7ba5567`, the common runner rejected the same four diagnostics despite
+Kani's apparent two-harness success. The command exited 1 and the recorder
+retained a failed P-083 record. The [early Kani snapshot](https://github.com/replicraft/ExaCopy/actions/runs/46143750803/artifacts/15263177925)
+has SHA-256 `f3343162d380fae677f03b3cdb153c51f863d9d2682720f93bb9429023461a6c`.
+Its raw member `exacopy-evs/b0f661b7-e26f-4ecd-898e-3eddaa81be7f.log`
+has SHA-256 `1223346bff434c96bcd5050e686d26d65767023f6c4f39b4a84371e0f51fac2f`.
+This verifies the refusal behavior; it supplies no new Kani proof credit.
+
 The `fdf4ae1` advisory extraction completed with exit zero. Its
 [generated-source artifact](https://github.com/replicraft/ExaCopy/actions/runs/46130028396/artifacts/15258920042)
 has SHA-256 `6d59cadd778aa53c3940427c6682331091ad44cbfcaa1af29bca346fdda4816f`.
