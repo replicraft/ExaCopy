@@ -17,6 +17,9 @@ use super::history::Artifact;
 use super::rig::{Sandbox, assert_live, assert_missing, open_child, read};
 use super::{SEED, TestResult, post_creation};
 
+#[path = "cli_recreate.rs"]
+mod recreate;
+
 const SELECTED: [u8; 16] = [0xb1; 16];
 const UNDELIVERED: [u8; 16] = [0xb2; 16];
 pub(super) const REVISION: u64 = 13;
@@ -213,6 +216,8 @@ pub(super) fn exercise(sandbox: &mut Sandbox, selected: Inputs<'_>) -> TestResul
 			"max_file_bytes": 64 * 1024 * 1024, "baseline_advanced": false,
 		}),
 	)?;
+
+	recreate::exercise(sandbox, &cli, &approval, &ack.stdout, &selected)?;
 
 	let root = &selected.policy.history.root.name;
 	let retained = b"retained-cli-history";

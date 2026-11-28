@@ -235,3 +235,59 @@ fn profile_identity_requires_only_a_canonical_raw_profile() {
 		assert!(!help.contains(forbidden));
 	}
 }
+
+#[test]
+fn prepare_recreate_requires_explicit_direction_conflict_and_receipt() {
+	let mut args = PREVIEW_ARGS.to_vec();
+	args[1] = PREPARE_RECREATE;
+	args.extend([
+		"--from",
+		"right",
+		"--reviewed-conflict",
+		"edit-against-deletion",
+	]);
+	let Command::SyncManaged(SyncManagedCommand::PrepareRecreate {
+		profile,
+		owner_key,
+		selection,
+		from,
+		reviewed,
+	}) = from_args(&args).unwrap()
+	else {
+		panic!("expected a manual recreate review");
+	};
+	assert_eq!(profile.to_str(), Some("/selected/profile"));
+	assert_eq!(owner_key, [0xab; 32]);
+	assert_eq!(selection, [1; 16]);
+	assert_eq!(from, SyncSide::Right);
+	assert_eq!(
+		reviewed,
+		SyncConflict::EditAgainstDeletion {
+			edited: SyncSide::Right
+		}
+	);
+	args[10] = "left";
+	args[12] = "deletion-against-unchanged";
+	let Ok(Command::SyncManaged(SyncManagedCommand::PrepareRecreate {
+		from: SyncSide::Left,
+		reviewed: SyncConflict::DeletionAgainstUnchanged {
+			absent: SyncSide::Right,
+		},
+		..
+	})) = from_args(&args)
+	else {
+		panic!("expected exact left-to-right deletion review");
+	};
+
+	let mut no_receipt = args.clone();
+	no_receipt.remove(8);
+	assert!(from_args(&no_receipt).is_err());
+	assert!(from_args(&args[..11]).is_err());
+	for (index, invalid) in [(10, "either"), (12, "automatic"), (8, "--request-stdin")] {
+		let mut candidate = args.clone();
+		candidate[index] = invalid;
+		assert!(from_args(&candidate).is_err());
+	}
+	args.extend(["--from", "right"]);
+	assert!(from_args(&args).is_err());
+}

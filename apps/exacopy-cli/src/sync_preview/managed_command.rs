@@ -21,22 +21,25 @@ use super::{managed_report, write_report};
 
 const SCRATCH_BYTES: usize = 64 * 1024;
 
+mod recreate;
+
 pub(crate) fn run_stdio(
 	command: SyncManagedCommand,
 	stdin: &mut impl Read,
 	stdout: &mut io::StdoutLock<'_>,
 	stderr: &mut impl Write,
 ) -> u8 {
-	if !matches!(command, SyncManagedCommand::Init(_)) {
-		return run(command, stdin, stdout, stderr);
-	}
-	// Stdout treats EBADF as a successful write. Deliver signed Init
-	// evidence through an owned duplicate of the caller's actual stream.
+	let unavailable = match &command {
+		SyncManagedCommand::Init(_) => "exacopy: managed sync Init refused (output_unavailable)",
+		SyncManagedCommand::PrepareRecreate { .. } => {
+			"exacopy: managed sync prepare-recreate refused (output_unavailable)"
+		}
+		_ => return run(command, stdin, stdout, stderr),
+	};
+	// Stdout can treat EBADF as a successful write. Deliver Init and Plan review
+	// evidence through an owned duplicate of the caller's actual descriptor.
 	let Ok(descriptor) = stdout.as_fd().try_clone_to_owned() else {
-		let _ = writeln!(
-			stderr,
-			"exacopy: managed sync Init refused (output_unavailable)"
-		);
+		let _ = writeln!(stderr, "{unavailable}");
 		return INCONCLUSIVE;
 	};
 	run(command, stdin, &mut File::from(descriptor), stderr)
@@ -59,6 +62,21 @@ fn run(
 				INCONCLUSIVE
 			}
 		},
+		SyncManagedCommand::PrepareRecreate {
+			profile,
+			owner_key,
+			selection,
+			from,
+			reviewed,
+		} => recreate::run(
+			&profile,
+			owner_key,
+			selection,
+			(from, reviewed),
+			stdin,
+			stdout,
+			stderr,
+		),
 		SyncManagedCommand::Preview {
 			profile,
 			owner_key,

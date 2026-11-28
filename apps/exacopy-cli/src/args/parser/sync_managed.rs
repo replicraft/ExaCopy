@@ -3,6 +3,7 @@ use std::num::NonZeroU64;
 
 use clap::builder::OsStringValueParser;
 use clap::{Arg, ArgAction, ArgMatches, Command as Cli};
+use exacopy_model::{SyncConflict, SyncSide};
 
 use crate::args::{ManagedSyncInitArgs, SyncManagedCommand};
 
@@ -10,6 +11,9 @@ use super::{INIT, PROFILE, path};
 
 pub(super) const NAME: &str = "sync-managed";
 const PREVIEW: &str = "preview";
+const PREPARE_RECREATE: &str = "prepare-recreate";
+const FROM: &str = "from";
+const REVIEWED_CONFLICT: &str = "reviewed-conflict";
 const PROFILE_IDENTITY: &str = "profile-identity";
 const PROFILE_DEVICE: &str = "profile-device";
 const PROFILE_INODE: &str = "profile-inode";
@@ -22,7 +26,7 @@ const RECEIPT_STDIN: &str = "receipt-stdin";
 
 pub(super) fn definition() -> Cli {
 	Cli::new(NAME)
-		.about("Inspect a managed Linux profile, or initialize or preview one selected subject.")
+		.about("Inspect, initialize, preview, or prepare a review Plan for one managed subject.")
 		.disable_help_subcommand(true)
 		.subcommand_required(true)
 		.subcommand(profile_command(
@@ -67,6 +71,26 @@ pub(super) fn definition() -> Cli {
 			.arg(stdin(
 				RECEIPT_STDIN,
 				"Read the independently retained selection receipt from stdin.",
+			)),
+		)
+		.subcommand(
+			selected_profile(
+				PREPARE_RECREATE,
+				"Prepare an unsigned manual recreate Plan for review.",
+			)
+			.arg(stdin(
+				RECEIPT_STDIN,
+				"Read the independently retained selection receipt from stdin.",
+			))
+			.arg(value(
+				FROM,
+				"left|right",
+				"Select the surviving source explicitly.",
+			))
+			.arg(value(
+				REVIEWED_CONFLICT,
+				"CONFLICT",
+				"Select deletion-against-unchanged or edit-against-deletion.",
 			)),
 		)
 }
@@ -141,6 +165,25 @@ pub(super) fn command(mut command: ArgMatches) -> Option<SyncManagedCommand> {
 			owner_key,
 			selection,
 		}),
+		PREPARE_RECREATE if args.get_flag(RECEIPT_STDIN) => {
+			let (from, absent) = match bytes(&args, FROM)? {
+				b"left" => (SyncSide::Left, SyncSide::Right),
+				b"right" => (SyncSide::Right, SyncSide::Left),
+				_ => return None,
+			};
+			let reviewed = match bytes(&args, REVIEWED_CONFLICT)? {
+				b"deletion-against-unchanged" => SyncConflict::DeletionAgainstUnchanged { absent },
+				b"edit-against-deletion" => SyncConflict::EditAgainstDeletion { edited: from },
+				_ => return None,
+			};
+			Some(SyncManagedCommand::PrepareRecreate {
+				profile,
+				owner_key,
+				selection,
+				from,
+				reviewed,
+			})
+		}
 		_ => None,
 	}
 }

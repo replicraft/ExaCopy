@@ -84,6 +84,13 @@ pub(crate) enum SyncManagedCommand {
 		owner_key: [u8; 32],
 		selection: [u8; 16],
 	},
+	PrepareRecreate {
+		profile: PathBuf,
+		owner_key: [u8; 32],
+		selection: [u8; 16],
+		from: exacopy_model::SyncSide,
+		reviewed: exacopy_model::SyncConflict,
+	},
 }
 
 #[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
