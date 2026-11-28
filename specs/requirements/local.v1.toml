@@ -260,6 +260,14 @@ target = "stage_close_requires_a_full_flush_after_the_last_write_or_resize"
 owner = "exacopy-platform"
 level = "native"
 state = "defined"
+path = "crates/platform/exacopy-platform/src/linux/stage/file/tests.rs"
+target = "a_successful_sync_is_refused_when_the_original_stage_changes_before_confirmation"
+detail = "An owned fixture appends through a separate original-inode handle after a successful native file barrier. The control requires IdentityChanged and invalidation of the earlier flush, while preserving both stage and incumbent. Execution remains unverified."
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "native"
+state = "defined"
 path = "crates/platform/exacopy-platform/tests/linux_scope.rs"
 target = "changing_a_closed_stage_in_place_at_the_same_length_blocks_publication"
 

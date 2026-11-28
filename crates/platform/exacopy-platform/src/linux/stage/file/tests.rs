@@ -1,4 +1,6 @@
 use std::fs;
+use std::io::Write as _;
+use std::os::unix::fs::MetadataExt as _;
 
 use exacopy_endpoint::UnixComponent;
 use exacopy_model::{CopyBinding, EntryId, JobId, RunEpoch, StageId};
@@ -163,4 +165,66 @@ fn guarded_prefix_refuses_before_sync_and_never_uses_authority_for_invalid_exten
 		b"prefix"
 	);
 	assert!(!fixture.path("target").exists());
+}
+
+#[test]
+fn a_successful_sync_is_refused_when_the_original_stage_changes_before_confirmation() {
+	const ORIGINAL: &[u8] = b"private payload";
+	const CHANGED: &[u8] = b"private payload!";
+	const INCUMBENT: &[u8] = b"preserved destination";
+	let fixture = Scratch::new();
+	let root = DestinationRoot::from_directory(fixture.open()).unwrap();
+	let directory = root.create_stage_directory(component("staged")).unwrap();
+	let job =
+		JobId::try_from_bytes([0, 0, 0, 0, 0, 0, 0x70, 0, 0x80, 0, 0, 0, 0, 0, 0, 1]).unwrap();
+	let binding = CopyBinding::new(
+		job,
+		EntryId::new(1),
+		RunEpoch::new(1),
+		StageId::from_bytes([0x44; 16]),
+	);
+	let mut stage = directory
+		.create_file(component("part"), component("target"), binding)
+		.unwrap();
+	stage.write_all_at(0, ORIGINAL).unwrap();
+	stage.flush().unwrap();
+
+	let stage_path = fixture.path("staged").join("part");
+	let incumbent_path = fixture.path("target");
+	fs::File::create_new(&incumbent_path)
+		.unwrap()
+		.write_all(INCUMBENT)
+		.unwrap();
+	let incumbent = fs::symlink_metadata(&incumbent_path).unwrap();
+	let original_stage = stage.identity();
+	let mut other = fs::OpenOptions::new()
+		.append(true)
+		.open(&stage_path)
+		.unwrap();
+	let metadata = other.metadata().unwrap();
+	assert_eq!(metadata.dev(), original_stage.device());
+	assert_eq!(metadata.ino(), original_stage.inode());
+
+	let refused = stage.flush_with(|file| {
+		rustix::fs::fsync(file)?;
+		// A fixture-owned cooperation violation after the real file barrier.
+		other.write_all(b"!").unwrap();
+		drop(other);
+		Ok(())
+	});
+	assert!(matches!(refused, Err(StageError::IdentityChanged)));
+	assert!(matches!(stage.close_writes(), Err(StageError::Unflushed)));
+
+	let retained = fs::symlink_metadata(&stage_path).unwrap();
+	assert_eq!(
+		(retained.dev(), retained.ino()),
+		(metadata.dev(), metadata.ino())
+	);
+	assert_eq!(fs::read(stage_path).unwrap(), CHANGED);
+	let target = fs::symlink_metadata(&incumbent_path).unwrap();
+	assert_eq!(
+		(target.dev(), target.ino()),
+		(incumbent.dev(), incumbent.ino())
+	);
+	assert_eq!(fs::read(incumbent_path).unwrap(), INCUMBENT);
 }
