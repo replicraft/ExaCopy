@@ -120,16 +120,21 @@ a fallback. A passing initial fixture covers only the cases above. It does not
 qualify Windows copy, restart recovery, publication or power-loss durability.
 
 The same workflow adds a separate `run_hosted.ps1 -SftpCapture` step after
-the original bootstrap case. It builds only the exact `windows_sftp_capture`
-target with `experimental-windows-sftp-capture`, selects its held compiler
+the original bootstrap case. It selects the exact `windows_sftp_capture`
+integration target with `experimental-windows-sftp-capture`, checks its held compiler
 artifact and runs the real SDK against a controlled loopback SSH/SFTP peer.
 Its separately owned tree contains one empty capture sibling, one occupied
 sibling and an incumbent. The original bootstrap roster remains unchanged.
 The controller rejoins the returned stage and payload identities before
-disposing of the exact captured roster and retaining its signed boundary.
-Failure or uncertain custody retains the inner fixture; a disposed hosted
+disposing of the exact captured roster and retaining its confirmed frame-head receipt.
+A failed or uncertain launched case retains the inner fixture; a disposed hosted
 worker is not persistent failure storage. This step grants no publication or
 restart authority and remains unexecuted behind the same volume admission.
+
+GitHub [announced a Windows data-drive change](https://github.com/actions/runner-images/issues/15315)
+from NTFS to ReFS beginning November 30, 2026. ReFS does not satisfy this
+adapter's fixed-NTFS profile. A different provider needs its own admission;
+changing the runner label does not establish eligible volume ancestry.
 
 Retained attempts `46079103337` and `46070223805` refused the `D:\` volume owner
 at fixed-NTFS admission. Attempt `46068832224` refused competing non-actor
