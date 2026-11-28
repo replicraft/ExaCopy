@@ -89,11 +89,18 @@ impl<'root> ProcessCrashEligibility<'root> {
 	/// # Errors
 	/// Reports unavailable or changed native evidence.
 	pub fn recheck(&self) -> Result<(), ProcessCrashProfileError> {
+		self.recheck_observed().map(|_| ())
+	}
+
+	/// Returns the newly observed native facts after checking the original enrollment.
+	/// # Errors
+	/// Reports unavailable or changed native evidence for the same held roots.
+	pub fn recheck_observed(&self) -> Result<ProcessCrashEnvironment, ProcessCrashProfileError> {
 		let current = observe_process_crash_environment(self.source, self.destination)?;
 		if current != self.expected {
 			return Err(ProcessCrashProfileError::EnvironmentChanged);
 		}
-		Ok(())
+		Ok(current)
 	}
 }
 

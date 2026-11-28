@@ -3,6 +3,30 @@ use super::Marker;
 const NAMED: Marker = Marker::array("RESOLVED_DIRECT_VERSION", 3);
 
 #[test]
+fn magic_suffix_reads_the_selected_top_level_version() {
+	let marker = Marker::MagicSuffix {
+		magic: "MAGIC",
+		width: 2,
+	};
+	let file = syn::parse_file("const MAGIC: &[u8; 8] = b\"EXLPQA01\";")
+		.expect("parse qualification magic");
+	let actual = marker.read(&file, "fixture").expect("read magic version");
+	assert_eq!(actual.version, "1");
+	assert_eq!(actual.magic.as_deref(), Some("EXLPQA01"));
+	assert_eq!(actual.features, None);
+	for source in [
+		"const MAGIC: &[u8; 8] = b\"EXLPQA0x\";",
+		"const MAGIC: &[u8; 1] = b\"1\";",
+		"const MAGIC: &[u8; 8] = OTHER;",
+		"mod decoy { const MAGIC: &[u8; 8] = b\"EXLPQA01\"; }",
+		"const MAGIC: &[u8; 8] = b\"EXLPQA01\"; const MAGIC: &[u8; 8] = b\"EXLPQA02\";",
+	] {
+		let file = syn::parse_file(source).expect("parse invalid marker fixture");
+		assert!(marker.read(&file, "fixture").is_err(), "{source}");
+	}
+}
+
+#[test]
 fn exact_array_name_selects_its_own_top_level_profile() {
 	let file = syn::parse_file(
 		"const VERSION: [u64; 3] = [1, 0, 1];

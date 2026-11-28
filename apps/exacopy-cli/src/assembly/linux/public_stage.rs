@@ -11,6 +11,14 @@ use super::RecoveryInspectError;
 #[cfg(test)]
 use super::{CopyRoots, LocalCopyError};
 
+#[cfg(any(test, feature = "experimental-linux-public-apply"))]
+mod qualification;
+#[cfg(feature = "experimental-linux-public-apply")]
+pub use qualification::{
+	LocalApplyQualificationEnrollment, QualifiedPublicApplyProposalError,
+	stage_qualified_public_apply,
+};
+
 #[cfg(test)]
 mod tests;
 

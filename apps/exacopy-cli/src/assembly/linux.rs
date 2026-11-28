@@ -17,6 +17,11 @@ pub mod managed_sync;
 mod public_plan;
 #[cfg(any(test, feature = "experimental-linux-public-apply"))]
 pub(crate) mod public_stage;
+#[cfg(feature = "experimental-linux-public-apply")]
+pub use public_stage::{
+	LocalApplyQualificationEnrollment, QualifiedPublicApplyProposalError,
+	stage_qualified_public_apply,
+};
 mod recovery;
 #[cfg(all(
 	feature = "experimental-ssh-capture",
@@ -41,6 +46,12 @@ mod remote_stage;
 	any(test, feature = "experimental-verified-prefix-resume")
 ))]
 mod remote_witness_authority;
+#[cfg(any(
+	test,
+	feature = "experimental-linux-public-apply",
+	feature = "experimental-ssh-capture"
+))]
+mod running_build;
 
 #[cfg(feature = "experimental-verified-prefix-resume")]
 pub(crate) use remote_continued::{

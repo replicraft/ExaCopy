@@ -229,6 +229,15 @@ owner = "crates/storage/exacopy-journal/src/remote_download/retirement/wire.rs"
 notes = "Private kind 39 retires a sealed pre-intent capture while preserving the old stage. The 1024-byte reader checks exact authenticated scope, current predecessor and retained stage identities. Read-only history conveys no native or grant authority."
 
 [[contract]]
+id = "linux-local-public-apply-qualification"
+kind = "transfer_journal"
+status = "implemented_private"
+version = "1"
+magic = "EXLPQA01"
+owner = "apps/exacopy-cli/src/assembly/linux/public_stage/qualification/record.rs"
+notes = "Detached 424-byte local SDK attestation with separate signature and complete-record digest domains. Independently selected enrollment binds exact build, action, owner, held roots, native environment and finite validity. The default-off consumer stages and proposes a historical intent only. No journal version or publication authority is introduced."
+
+[[contract]]
 id = "linux-remote-destination-qualification"
 kind = "transfer_journal"
 status = "implemented_private"

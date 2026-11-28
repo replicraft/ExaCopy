@@ -30,6 +30,10 @@ enum Marker {
 		version: &'static str,
 		magic: Option<&'static str>,
 	},
+	MagicSuffix {
+		magic: &'static str,
+		width: usize,
+	},
 	Pair {
 		major: &'static str,
 		minor: &'static str,
@@ -228,6 +232,14 @@ pub(super) const BINDINGS: &[Binding] = &[
 		Marker::array("VERSION", 3),
 	),
 	Binding::new(
+		"linux-local-public-apply-qualification",
+		"apps/exacopy-cli/src/assembly/linux/public_stage/qualification/record.rs",
+		Marker::MagicSuffix {
+			magic: "MAGIC",
+			width: 2,
+		},
+	),
+	Binding::new(
 		"linux-remote-destination-qualification",
 		"crates/storage/exacopy-journal/src/remote_download/qualification/wire.rs",
 		Marker::Scalar {
@@ -392,6 +404,21 @@ impl Marker {
 				None,
 				magic.map(|name| bytes(constant(file, name)?)).transpose()?,
 			),
+			Self::MagicSuffix { magic, width } => {
+				let magic = bytes(constant(file, magic)?)?;
+				let suffix = magic
+					.as_bytes()
+					.get(magic.len().saturating_sub(width)..)
+					.filter(|suffix| {
+						width > 0 && suffix.len() == width && suffix.iter().all(u8::is_ascii_digit)
+					})
+					.ok_or("expected a decimal version suffix in the magic")?;
+				let version = std::str::from_utf8(suffix)
+					.map_err(|error| error.to_string())?
+					.parse::<u64>()
+					.map_err(|error| error.to_string())?;
+				(version.to_string(), None, Some(magic))
+			}
 			Self::Pair {
 				major,
 				minor,

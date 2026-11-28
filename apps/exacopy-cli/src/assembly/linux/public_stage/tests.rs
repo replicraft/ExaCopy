@@ -66,6 +66,7 @@ fn approved_stage_reopens_with_exact_owner_and_preserves_uncertain_evidence() {
 		Err(CopyError::StalePlan)
 	));
 	assert!(!fixture.job(original).try_exists().unwrap());
+	assert_missing_qualification_refuses(&fixture, roots, &request, &mut scratch);
 	assert_proposal_uses_held_stage(&fixture, roots, &request, &mut scratch);
 	late_journal::assert_late_readback_refusal(&fixture, roots, &request, &mut scratch);
 	let staged = stage(roots, PublicApplyStageRequest { ..request }, &mut scratch).unwrap();
@@ -202,6 +203,51 @@ fn approved_stage_reopens_with_exact_owner_and_preserves_uncertain_evidence() {
 	drop(destination);
 	drop(source_root);
 	fixture.finish();
+}
+
+fn assert_missing_qualification_refuses(
+	fixture: &Fixture,
+	roots: CopyRoots<'_>,
+	request: &PublicApplyStageRequest<'_, '_, '_>,
+	scratch: &mut [u8],
+) {
+	use super::qualification::{
+		LocalApplyQualificationEnrollment, QualifiedPublicApplyProposalError,
+		stage_qualified_public_apply,
+	};
+
+	let path = fixture
+		.source()
+		.with_file_name("absent-local-qualification");
+	let attestor = ed25519_dalek::SigningKey::from_bytes(&[0x56; 32]).verifying_key();
+	let enrollment = LocalApplyQualificationEnrollment {
+		record_path: &path,
+		record_digest: ApplyQualificationDigest::from_bytes([0x64; 32]),
+		attestor_id: [0x58; 16],
+		attestor_key: &attestor,
+	};
+	let source = fs::symlink_metadata(fixture.source()).unwrap();
+	assert!(!path.try_exists().unwrap());
+	assert!(matches!(
+		stage_qualified_public_apply(
+			roots,
+			&enrollment,
+			PublicApplyStageRequest { ..*request },
+			scratch,
+		),
+		Err(QualifiedPublicApplyProposalError::Snapshot(_))
+	));
+	assert!(!path.try_exists().unwrap());
+	assert!(
+		!fixture
+			.job(request.private_plan.attempt())
+			.try_exists()
+			.unwrap()
+	);
+	assert!(!fixture.target().try_exists().unwrap());
+	let after = fs::symlink_metadata(fixture.source()).unwrap();
+	assert_eq!((source.dev(), source.ino()), (after.dev(), after.ino()));
+	assert_eq!(fs::read(fixture.source()).unwrap(), fixture::APPROVED);
 }
 
 fn assert_proposal_uses_held_stage(
