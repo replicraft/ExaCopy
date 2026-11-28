@@ -1625,7 +1625,7 @@ requirement_ids = ["R-015", "R-155"]
 acceptance_ids = ["A-015", "A-155"]
 invariant_ids = ["INV-003", "INV-018", "INV-019"]
 scope = "The actual Linux grant clock delegates scalar admission to the model's signed UTC decision, preserving regression priority and the intersection of original and qualification windows. Defined checks compare the decision with wide nanosecond arithmetic and distinguish adapter high-water and qualification-installation behavior."
-limits = "The Rust model oracle and three adapter unit controls passed on exact 8404b71. Native clock sampling, classifier fidelity, paired state updates, retirement, mutex serialization, publication and crash or power-loss qualification remain separate. Kani execution and extracted Lean semantics are not established by registration."
+limits = "The Rust model oracle and three adapter unit controls passed on exact 8404b71. Native clock sampling, classifier fidelity, paired state updates, retirement, mutex serialization, publication and crash or power-loss qualification remain separate. The initial Kani encoding timed out; its isolated composition redesign and extracted Lean semantics remain unverified."
 
 [[coverage.evidence]]
 owner = "exacopy-model"
@@ -2323,7 +2323,7 @@ requirement_ids = ["R-040"]
 acceptance_ids = ["A-040"]
 invariant_ids = ["INV-013", "INV-019"]
 scope = "Partial Windows journal mechanism: one protected originally empty first segment, independently selected five native identities, exclusive bounded data writes, file barrier and original held frame/EOF confirmation through DurableJournal. The existing bootstrap producer compares unchanged canonical signed V1 bytes before read-only inspection."
-limits = "Source-defined native controls only. Hosted fixed-NTFS ancestry admission remains blocked before the selected case. Open-writer timestamp stability across flush and native sharing behavior remain unqualified. No later journal dialect, recovery writer, Windows transfer command, namespace durability or crash/power-loss qualification."
+limits = "Source-defined native controls only. Hosted fixed-NTFS ancestry admission remains blocked before the selected case. Open-writer timestamp stability across flush and native sharing behavior remain unqualified. These original V1 controls do not qualify the separate fresh capture sibling or SDK, a recovery writer, Windows transfer command, namespace durability or crash/power-loss behavior."
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
@@ -2347,7 +2347,7 @@ requirement_ids = ["R-003", "R-014", "R-018", "R-019"]
 acceptance_ids = ["A-003", "A-014", "A-018", "A-019"]
 invariant_ids = ["INV-002", "INV-004", "INV-013", "INV-019"]
 scope = "Partial Windows private-stage mechanism under independently selected original bootstrap custody. A consuming handoff confirms exact owner and first-frame bytes, EOF and file barrier on the original handles before issuing stage access. Checks actual create-child grants and target absence, exclusively creates a protected current-user directory and leaf, and retains custody across private writes, prefix barriers and closure/read-back."
-limits = "Source-defined controls only. Native fixture still blocked by hosted D: ancestry admission; native creation and open-handle timestamp behavior remain unqualified. Ordinary descriptor tests validate byte geometry and the existing ACL parser only. No SSH composition, journal checkpoint dialect, namespace durability, publication or recovery effect."
+limits = "Source-defined controls only. Native fixture still blocked by hosted D: ancestry admission; native creation and open-handle timestamp behavior remain unqualified. Ordinary descriptor tests validate byte geometry and the existing ACL parser only. The separately selected fresh SFTP SDK and checkpoint dialect have their own source controls and qualification gates. These original controls establish no namespace durability, publication or recovery effect."
 
 [[coverage.evidence]]
 owner = "exacopy-platform"
@@ -2370,3 +2370,103 @@ state = "defined"
 path = "apps/exacopy-cli/tests/windows_bootstrap.rs"
 target = "admits_only_the_selected_held_bootstrap_history"
 detail = "The existing owned fixture requires canonical first-frame append and held readback before protected stage creation, refuses a wrong owner and an empty callback, checks continued segment exclusivity, and preserves an aliased target and occupied stage. No independently named native attendance is claimed."
+
+
+[[coverage]]
+id = "windows-fresh-sftp-capture"
+status = "experimental"
+requirement_ids = ["R-015", "R-039", "R-040", "R-041", "R-140", "R-155"]
+acceptance_ids = ["A-015", "A-039", "A-040", "A-041", "A-140", "A-155"]
+invariant_ids = ["INV-001", "INV-002", "INV-013", "INV-019"]
+scope = "One default-off fresh Windows SDK capture composes actual pinned SFTP, a one-use independently selected scope and full connection binding, original held NTFS roles, protected private stage and independently signed bounded capture sibling. Canonical approval commitments, literal framing and historical prefix checks are defined."
+limits = "Source integration and source-defined controls only. No CLI, publication, restart, cleanup or power-loss authority. The approval link covers the SDK's independently selected canonical capture scope, not a general public Plan implementation. Physical custody, real source observations, live grant policy and Windows operating profile remain separate. Full SDK native fixture and independent restart qualification remain open."
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "obligation"
+state = "defined"
+path = "crates/storage/exacopy-journal/verification/obligations.toml"
+target = "P-084"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/windows_capture.rs"
+target = "exact_range_cap_and_zero_extent_require_terminal_eof"
+
+[[coverage.evidence]]
+owner = "exacopy-journal"
+level = "test"
+state = "defined"
+path = "crates/storage/exacopy-journal/tests/windows_capture/live.rs"
+target = "same_writer_advances_only_after_a_guarded_sync_and_exact_readback"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/windows_capture/selection/tests.rs"
+target = "selected_scope_preserves_dns_basis_account_bytes_route_and_raw_path"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/windows_capture/selection/tests.rs"
+target = "full_supervisor_width_changes_commitment_and_same_numbers_cannot_enter"
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "test"
+state = "defined"
+path = "crates/platform/exacopy-platform/src/windows/read/protected/bootstrap/capture_stage/authenticated/journal/tests.rs"
+target = "exact_capture_limit_admits_one_final_byte_and_refuses_overflow"
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "test"
+state = "defined"
+path = "crates/platform/exacopy-platform/src/windows/read/protected/bootstrap/capture_stage/authenticated/journal/tests.rs"
+target = "dropping_a_partly_written_append_disallows_reuse_or_terminal_success"
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "test"
+state = "defined"
+path = "crates/platform/exacopy-platform/src/windows/read/protected/bootstrap/capture_stage/authenticated/journal/tests.rs"
+target = "next_append_starts_at_the_full_synchronized_predecessor"
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "native"
+state = "defined"
+path = "crates/platform/exacopy-platform/src/windows/read/protected/bootstrap/capture_stage/authenticated/tests.rs"
+target = "capture_sibling_refuses_substituted_busy_and_nonempty_native_records"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/windows-fresh-sftp-capture.md"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/windows_capture/progress/tests.rs"
+target = "refused_append_reports_possible_changes_without_a_confirmed_boundary"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/windows_capture/progress/tests.rs"
+target = "dropped_capture_future_preserves_the_previously_confirmed_boundary"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "native"
+state = "defined"
+path = "apps/exacopy-cli/tests/windows_sftp_capture.rs"
+target = "captures_real_sftp_only_into_the_selected_original_ntfs_job"
