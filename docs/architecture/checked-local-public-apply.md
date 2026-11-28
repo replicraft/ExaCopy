@@ -95,6 +95,14 @@ The existing v2 receipt validator checks those literal bytes and the observed
 artifact. Final receipt, published file, job records and journal rechecks
 precede the original model's receipt event and the returned historical head.
 
+The ordinary engine now projects its success through a private scoped callback
+after that final model event, while the original job, receipt, journal and
+published target remain held. The callback borrows the checked receipt and
+terminal token and produces the same detached public result. It exposes no
+native handle, writer or managed authority. Its source extraction preserves
+the existing checks and their order; positive native attendance of this path
+still requires separate evidence.
+
 Source controls cover grant poisoning, expiry, rollback, scope and reuse;
 original-record rebinding; refused native mutations; metadata preservation;
 both barriers after observation failure or an ambiguous reply; and literal
