@@ -49,6 +49,16 @@ continuation appends an intent, grants publication authority or performs a
 rename. Publication still needs fresh, serialized authorization and native
 checks, followed by independent intent, receipt and namespace confirmation.
 
+The owned ext4 fixture includes a late readback fault control. During its
+final observation it changes one early magic byte in its own private
+journal while leaving the terminal metadata bytes intact. The actual
+proposer must return the exact seal-readback corruption refusal, preserve
+the faulted journal and original source and stage bytes and identities,
+and leave the public target absent. This deliberate fixture fault tests
+refusal after the cooperation premise is violated. It does not qualify
+outside actors, publication or crash durability. Its execution requires
+the exact integrated revision's native fixture evidence.
+
 The exact Linux-target transfer tests and implementation passed strict
 cross Clippy. A separately labeled macOS portable capability fixture ran
 85 transfer tests. Five guard-removal controls failed their expected
