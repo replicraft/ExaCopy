@@ -7,7 +7,7 @@ use rustix::fs::{self, AtFlags, FileType, Mode};
 use rustix::process::geteuid;
 
 use super::super::handle::pin_selected_directory;
-use super::super::owner_seed::{KEY_NAME, OWNER_SEED_BYTES};
+use super::super::owner_seed::{HeldOwnerSeed, KEY_NAME, OWNER_SEED_BYTES};
 use super::super::{DestinationRoot, FileIdentity, ReadError, ReadRoot, StageError};
 
 /// One held source, destination or profile parent used by a Plan export.
@@ -40,6 +40,24 @@ impl PlanInputDirectory {
 		DestinationRoot::from_directory(directory)
 	}
 
+	/// Checks the selected seed name against the still-held profile seed.
+	///
+	/// Keeps both inputs bound for the final metadata recheck.
+	///
+	/// # Errors
+	/// Reports a failed name observation or a seed outside the required contract.
+	pub fn bind_owner_seed<'scope>(
+		&'scope self,
+		seed: &'scope HeldOwnerSeed,
+	) -> Result<PlanOwnerSeedObservation<'scope>, PlanSeedError> {
+		let initial = self.observe_seed(|identity| identity == seed.identity())?;
+		Ok(PlanOwnerSeedObservation {
+			profile: self,
+			seed,
+			initial,
+		})
+	}
+
 	/// Checks the selected profile seed's name and captures its change stamp.
 	///
 	/// The caller supplies the existing expected identity policy.
@@ -66,6 +84,30 @@ impl PlanInputDirectory {
 			mtime: (named.st_mtime.into(), named.st_mtime_nsec.into()),
 			ctime: (named.st_ctime.into(), named.st_ctime_nsec.into()),
 		})
+	}
+}
+
+/// A seed name observation tied to the original profile directory and seed handle.
+pub struct PlanOwnerSeedObservation<'scope> {
+	profile: &'scope PlanInputDirectory,
+	seed: &'scope HeldOwnerSeed,
+	initial: PlanSeedStamp,
+}
+
+impl PlanOwnerSeedObservation<'_> {
+	/// Rechecks the selected seed name and its original change stamp.
+	///
+	/// # Errors
+	/// Reports a failed name observation, a different file, or changed metadata.
+	pub fn recheck(&self) -> Result<(), PlanSeedError> {
+		let current = self
+			.profile
+			.observe_seed(|identity| identity == self.seed.identity())?;
+		if current == self.initial {
+			Ok(())
+		} else {
+			Err(PlanSeedError::Unsafe)
+		}
 	}
 }
 

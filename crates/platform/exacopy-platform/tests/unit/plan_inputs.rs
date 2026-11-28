@@ -2,15 +2,18 @@ use std::error::Error as _;
 use std::fs::{self, DirBuilder, File, FileTimes, Permissions};
 use std::io;
 use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _, PermissionsExt as _, symlink};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, UNIX_EPOCH};
 
+use exacopy_endpoint::UnixComponent;
 use rustix::fs::{OFlags, fcntl_getfl};
 use rustix::io::{FdFlags, fcntl_getfd};
 
 use crate::scratch::Scratch;
 
-use super::{KEY_NAME, OWNER_SEED_BYTES, PlanInputDirectory, PlanSeedError, StageError};
+use super::{
+	HeldOwnerSeed, KEY_NAME, OWNER_SEED_BYTES, PlanInputDirectory, PlanSeedError, StageError,
+};
 
 const PRIVATE_DIRECTORY_MODE: u32 = 0o700;
 const PRIVATE_FILE_MODE: u32 = 0o600;
@@ -230,6 +233,80 @@ fn seed_observation_distinguishes_a_missing_name_from_a_link() {
 		matches!(held.observe_seed(|_| true), Err(PlanSeedError::Unsafe)),
 		"the seed name itself must be a regular file"
 	);
+}
+
+#[test]
+fn bound_owner_seed_rejects_a_stamp_change_on_the_original_inode() {
+	let scratch = Scratch::new();
+	let (directory, held, seed, original) = bound_seed_fixture(&scratch);
+	let binding = directory.bind_owner_seed(&held).unwrap();
+	binding.recheck().unwrap();
+
+	original
+		.set_times(FileTimes::new().set_modified(UNIX_EPOCH + Duration::from_secs(3600)))
+		.unwrap();
+	let current = fs::symlink_metadata(seed).unwrap();
+	assert_eq!(
+		(current.dev(), current.ino()),
+		(held.identity().device(), held.identity().inode())
+	);
+	assert_eq!((current.mtime(), current.mtime_nsec()), (3600, 0));
+	assert!(matches!(binding.recheck(), Err(PlanSeedError::Unsafe)));
+}
+
+#[test]
+fn bound_owner_seed_refuses_a_byte_identical_replacement_name() {
+	let scratch = Scratch::new();
+	let (directory, held, seed, original) = bound_seed_fixture(&scratch);
+	let binding = directory.bind_owner_seed(&held).unwrap();
+	binding.recheck().unwrap();
+
+	let moved = seed.with_file_name("original-seed");
+	fs::rename(&seed, &moved).unwrap();
+	assert!(matches!(
+		binding.recheck(),
+		Err(PlanSeedError::Io(error)) if error.kind() == io::ErrorKind::NotFound
+	));
+	let _replacement = seed_fixture(&seed);
+	let current = fs::symlink_metadata(&seed).unwrap();
+	let retained = original.metadata().unwrap();
+	assert_eq!(
+		(retained.dev(), retained.ino()),
+		(held.identity().device(), held.identity().inode())
+	);
+	assert_ne!(
+		(current.dev(), current.ino()),
+		(retained.dev(), retained.ino())
+	);
+	assert_eq!(fs::read(seed).unwrap(), fs::read(moved).unwrap());
+	assert!(matches!(binding.recheck(), Err(PlanSeedError::Unsafe)));
+	assert!(matches!(
+		directory.bind_owner_seed(&held),
+		Err(PlanSeedError::Unsafe)
+	));
+}
+
+fn bound_seed_fixture(scratch: &Scratch) -> (PlanInputDirectory, HeldOwnerSeed, PathBuf, File) {
+	const PROFILE: &str = "profile";
+	let profile = scratch.path(PROFILE);
+	DirBuilder::new()
+		.mode(PRIVATE_DIRECTORY_MODE)
+		.create(&profile)
+		.unwrap();
+	let seed = profile.join(KEY_NAME.to_str().unwrap());
+	let original = seed_fixture(&seed);
+	let directory = PlanInputDirectory::open(profile.as_os_str()).unwrap();
+	let selected = UnixComponent::new(PROFILE.as_bytes()).unwrap();
+	let mut bytes = [0; OWNER_SEED_BYTES];
+	let held = HeldOwnerSeed::open(
+		scratch.path(".").as_os_str(),
+		selected,
+		&mut bytes,
+		&mut [0],
+	)
+	.unwrap();
+	assert_eq!(bytes, [0; OWNER_SEED_BYTES]);
+	(directory, held, seed, original)
 }
 
 fn seed_fixture(path: &Path) -> File {

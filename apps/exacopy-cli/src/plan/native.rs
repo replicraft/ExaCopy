@@ -47,8 +47,8 @@ fn export_with_entropy(
 	let is_seed = |identity: FileIdentity| {
 		profile.is_seed(LinuxFileIdentity::new(identity.device(), identity.inode()))
 	};
-	let profile_stamp = profile_dir
-		.observe_seed(is_seed)
+	let profile_seed = profile_dir
+		.bind_owner_seed(profile.held_seed())
 		.map_err(Failure::seed_observation)?;
 	let (output_parent, output_name) =
 		split(&command.output).map_err(|error| Failure::with(Kind::Invalid, error))?;
@@ -100,12 +100,7 @@ fn export_with_entropy(
 	let rendered = RenderedPlanEnvelope::from_body(&body)
 		.map_err(|error| Failure::with(Kind::Encoding, error))?;
 
-	let current = profile_dir
-		.observe_seed(is_seed)
-		.map_err(Failure::seed_observation)?;
-	if profile_stamp != current {
-		return Err(Failure::plain(Kind::Profile));
-	}
+	profile_seed.recheck().map_err(Failure::seed_observation)?;
 	let artifacts = rendered
 		.prepare(result.canonical_page())
 		.map_err(|_| Failure::plain(Kind::Encoding))?;

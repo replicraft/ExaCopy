@@ -16,7 +16,7 @@ mod inputs;
 mod records;
 
 pub use error::PlanBundleError;
-pub use inputs::{PlanInputDirectory, PlanSeedError, PlanSeedStamp};
+pub use inputs::{PlanInputDirectory, PlanOwnerSeedObservation, PlanSeedError, PlanSeedStamp};
 
 use ancestry::{Directory, ancestry, require_disjoint};
 use records::{Record, check_named, create, read_existing};

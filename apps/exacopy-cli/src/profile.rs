@@ -51,6 +51,10 @@ impl LocalProfile {
 		root_id_for_key(&self.verification_key(), identity)
 	}
 
+	pub(crate) const fn held_seed(&self) -> &HeldOwnerSeed {
+		&self.seed
+	}
+
 	pub(crate) fn is_seed(&self, identity: LinuxFileIdentity) -> bool {
 		let held = self.seed.identity();
 		LinuxFileIdentity::new(held.device(), held.inode()) == identity

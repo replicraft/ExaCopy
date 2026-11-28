@@ -35,7 +35,7 @@ pub use owner_seed::{
 };
 pub use plan_bundle::{
 	LinuxPlanBundle, PlanBundleError, PlanBundlePages, PlanBundleRecord, PlanInputDirectory,
-	PlanSeedError, PlanSeedStamp,
+	PlanOwnerSeedObservation, PlanSeedError, PlanSeedStamp,
 };
 pub use process_crash::{
 	ProcessCrashEligibility, ProcessCrashEnvironment, ProcessCrashProfileError,
