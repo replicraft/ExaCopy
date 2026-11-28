@@ -6,22 +6,36 @@ uninstallation. Independent work can proceed in parallel where the safety
 dependencies allow it. GUI remains last, after these CLI operations.
 Backup, repositories, and deduplication are deferred.
 
-The latest integrated native cohort at `d42cad5` passed 1,427 Linux, 946
+The latest inspected native cohort at `5bf8537` passed 1,431 Linux, 946
 macOS, and 808 Windows default tests, all three strict Clippy jobs, and the
-declared feature matrices. The offline installer lanes also passed on all
-three operating systems. These results do not qualify public retained-range
+declared feature matrices. These results do not qualify public retained-range
 reuse, restart recovery, or power-loss durability.
-[Exact native cohort](https://github.com/replicraft/ExaCopy/actions/runs/46149411985)
+[Exact native cohort](https://github.com/replicraft/ExaCopy/actions/runs/46158242551)
 
-The same revision passed 64 formal evidence records and 97 Miri checks.
+The inspected pre-P-085 cohort at `7e97fd2` passed 64 formal evidence records
+and 97 Miri checks. Independent Lean, TLC and Rust obligation checks passed.
 P-020 and P-083 Kani composition gates failed: P-020 timed out after
 omitted-argument diagnostics, and P-083's guard rejected the same diagnostics.
-Independent Lean, TLC and Rust obligation checks passed. Platform coverage
-is 8,131/10,051 lines (80.8974%), below the unchanged 85% requirement.
+The first P-085 run at `11427d5` parsed but stopped with TLC exit 75 because
+`Crash` left `uncertain` unspecified in one branch. The shared owner check
+also failed seven earlier TLC records; no P-085 mutants ran. `e22e647`
+groups the intended assignment. Corrected model execution remains pending.
+[Failed model cohort](https://github.com/replicraft/ExaCopy/actions/runs/46155164324)
+
+Platform coverage at `5bf8537` is 8,494/10,051 lines (84.5090%), below the
+unchanged 85% requirement. The native continuation and checkpoint components
+passed after the two positional-read corrections in `27ffc53`.
 The default platform inventory does not measure the opt-in managed-sync
-profile store; its native fixture results are separate evidence. Cargo Vet
-still reports 162 unaudited dependency versions.
-[Exact coverage result](https://github.com/replicraft/ExaCopy/actions/runs/46149411974)
+profile store; its native fixture results are separate evidence.
+[Exact coverage result](https://github.com/replicraft/ExaCopy/actions/runs/46158242439)
+
+Cargo Vet reports 159 unaudited dependency versions after BoringTun's unused
+device tables left the selected tunnel-only graph. The full `d286feb` Vet
+graph has 278 nodes and contains none of the three removed versions. Surviving
+audit gaps and criteria are unchanged, and the mandatory audit remains
+failing. The earlier graph-capture command exited 2; the corrected command
+and its full graph passed independently of that audit failure.
+[Exact dependency evidence](https://github.com/replicraft/ExaCopy/actions/runs/46158938911)
 
 Managed sync now exports a bounded signed create-new proposal with the exact
 authenticated predecessor and child Plan. At `64ca8ce`, the real ext4 fixture
