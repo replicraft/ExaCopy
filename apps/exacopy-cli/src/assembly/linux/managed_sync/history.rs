@@ -165,6 +165,7 @@ pub(super) fn with_bound_history<'view, 'selection, T, E>(
 	>,
 ) -> Result<T, E>
 where
+	'selection: 'view,
 	E: From<ManagedSyncPreviewError>,
 {
 	let HistoryCustody {

@@ -335,3 +335,10 @@ cases ran, and the dependent combined-feature preparation job was skipped.
 The runner confirmed removal of its owned work directory. The correction
 converts the original native error explicitly; it establishes no runtime
 result until a subsequent integrated run executes.
+
+The [subsequent build at `dd5d14f`](https://github.com/replicraft/ExaCopy/actions/runs/46178418295)
+passed that query and stopped with E0623 in the shared history helper: the
+selected policy lifetime lacked its required outlives bound on the borrowed
+pair view. It again ran no native cases, skipped the dependent preparation
+job, and confirmed scratch removal. The correction states that lifetime
+relationship explicitly without extending any borrow or native lease.
