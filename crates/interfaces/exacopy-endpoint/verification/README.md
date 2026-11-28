@@ -131,5 +131,24 @@ postcondition over both complete normalized duration inputs. The clean history
 compares native duration values through all eight losses and nine starts.
 The concrete cap and mutation histories retain the original nanosecond
 assertions and execute the real timing function without substitution. Solvers,
-budgets, ten harnesses and twenty-two covers are unchanged. The new encoding's
-proof and performance results remain pending hosted execution.
+budgets, ten harnesses and twenty-two covers are unchanged.
+
+At `0bb9d7b`, the duration-parts history reached six MiniSAT banners but still
+timed out. Six companion harnesses passed with fifteen of twenty-two covers.
+The row-selected arithmetic lemma began one solver invocation before the
+900-second recorder deadline; neither real-function contract harness started.
+The record exited 124 and reported no omitted-argument diagnostic or named
+assertion counterexample. This supplies no passing contract-composition evidence.
+[Exact snapshot](https://github.com/replicraft/ExaCopy/actions/runs/46136735881/artifacts/15261216414)
+has SHA-256 `c93520e70648e9d17c782dced3bd2bbe1ea283d257b34723083ddc279ebb8560`.
+Its raw member is `exacopy-evs/41b2b6a4-c477-4c6d-9542-e55897ddaf3d.log`,
+with SHA-256 `f8096460737997ea20873661707f52493297bc50ddc59485c2c905618db8b659`.
+
+The clean dispatcher now runs four exact groups: the real timing contract,
+the real jitter contract, arithmetic equivalence, then the composed scheduler
+and its six companions. Each group must have its exact, unique harnesses,
+complete cover counts and a zero-failure completion summary. A prerequisite
+failure remains a gate failure even if a later group succeeds. All ten
+harnesses and twenty-two covers remain mandatory under the same outer budget.
+Mutation commands retain their separate single-harness invocation. The new
+execution order requires hosted verification.

@@ -77,61 +77,67 @@ lock_before=$(LC_ALL=C shasum -a 256 Cargo.lock)
 CARGO_NET_OFFLINE=true "${cargo[@]}" metadata --locked --format-version 1 \
 	--filter-platform "$target" > /dev/null
 
-# Require the exact ten selected harnesses and all 22 cover goals.
-plans=(
+timing_plan=kani_checks::timing_oracle::real_retry_timing_matches_wide_wake_and_cap=4
+jitter_plan=kani_checks::jitter_oracle::real_equal_jitter_matches_the_exact_delay=1
+math_plan=kani_checks::jitter_oracle::narrow_jitter_oracle_matches_widened_formula=1
+composed_harness=kani_checks::connection_retry::transient_backoff_is_bounded_and_claims_only_the_due_generation
+scheduler_plans=(
 	kani_checks::connection_retry::permanent_and_uncertain_failures_never_redial=2
-	kani_checks::connection_retry::transient_backoff_is_bounded_and_claims_only_the_due_generation=1
+	"$composed_harness=1"
 	kani_checks::connection_retry::concrete_capped_waits_reach_the_ninth_generation=1
 	kani_checks::connection_retry::lease_and_revocation_bound_waiting_and_redial=3
 	kani_checks::connection_retry::reconnect_requires_current_route_ssh_and_source_and_fences_retired_work=4
 	kani_checks::connection_retry::penalty_resets_only_after_current_verified_activity_and_health=3
 	kani_checks::connection_retry::clock_rollback_and_unrepresentable_wake_are_terminal=2
-	kani_checks::jitter_oracle::narrow_jitter_oracle_matches_widened_formula=1
-	kani_checks::jitter_oracle::real_equal_jitter_matches_the_exact_delay=1
-	kani_checks::timing_oracle::real_retry_timing_matches_wide_wake_and_cap=4
 )
-harnesses=()
-harness_timeout=600s
-if [[ -n "$mutation" ]]; then
-	harness_timeout=120s
-	harnesses=(--harness "$harness")
-else
-	for plan in "${plans[@]}"; do
-		harnesses+=(--harness "${plan%=*}")
-	done
-fi
-kani_log=$(mktemp "${EXACOPY_VERIFICATION_SCRATCH:-${TMPDIR:-/tmp}}/exacopy-endpoint-kani.XXXXXX")
-trap 'rm -f "$kani_log"' EXIT
-# Leave reachability and unwinding checks enabled. The outer evidence recorder
-# also bounds this entire gate, including compilation and all harnesses.
-set +e
-CARGO_NET_OFFLINE=true "${cargo[@]}" kani --package exacopy-endpoint --lib --exact \
-	"${harnesses[@]}" --output-format regular -Z unstable-options \
-	-Z function-contracts -Z stubbing --no-assert-contracts \
-	--harness-timeout "$harness_timeout" 2>&1 | tee "$kani_log"
-pipeline_status=("${PIPESTATUS[@]}")
-set -e
-kani_status=${pipeline_status[0]}
-log_status=${pipeline_status[1]}
-if (( log_status != 0 )); then
-	printf 'Could not retain the retry Kani log (tee exit %s, Kani exit %s).\n' \
-		"$log_status" "$kani_status" >&2
-	exit "$log_status"
+if ! printf '%s\n' "$timing_plan" "$jitter_plan" "$math_plan" "${scheduler_plans[@]}" | awk -F= '
+	NF != 2 || $1 == "" || $2 !~ /^[1-9][0-9]*$/ || seen[$1]++ { wrong = 1 }
+	{ covers += $2 }
+	END { exit (wrong || NR != 10 || covers != 22) }
+'; then
+	printf '%s\n' 'Retry Kani requires ten distinct selected harnesses and twenty-two cover goals.' >&2
+	exit 1
 fi
 
-if [[ "$(LC_ALL=C shasum -a 256 Cargo.lock)" != "$lock_before" ]]; then
-	printf 'Cargo.lock changed during retry Kani verification.\n' >&2
-	exit 1
-fi
-# CBMC fills an omitted call parameter with a nondeterministic value. Such a
-# transformed call cannot satisfy an exact proof or mutation oracle.
-if grep -Fq 'not enough arguments, inserting non-deterministic value' "$kani_log"; then
-	printf '%s\n' 'Retry Kani emitted a nondeterministic call-argument substitution.' >&2
-	if (( kani_status != 0 )); then
-		exit "$kani_status"
+kani_log=$(mktemp "${EXACOPY_VERIFICATION_SCRATCH:-${TMPDIR:-/tmp}}/exacopy-endpoint-kani.XXXXXX")
+trap 'rm -f "$kani_log"' EXIT
+run_kani() {
+	local timeout=$1
+	local -a pipeline_status
+	shift
+	# Leave reachability and unwinding checks enabled. The outer evidence recorder
+	# also bounds this entire gate, including compilation and all harnesses.
+	if CARGO_NET_OFFLINE=true "${cargo[@]}" kani --package exacopy-endpoint --lib --exact \
+		"$@" --output-format regular -Z unstable-options \
+		-Z function-contracts -Z stubbing --no-assert-contracts \
+		--harness-timeout "$timeout" 2>&1 | tee "$kani_log"; then
+		pipeline_status=("${PIPESTATUS[@]}")
+	else
+		pipeline_status=("${PIPESTATUS[@]}")
 	fi
-	exit 1
-fi
+	kani_status=${pipeline_status[0]}
+	log_status=${pipeline_status[1]}
+	if (( log_status != 0 )); then
+		printf 'Could not retain the retry Kani log (tee exit %s, Kani exit %s).\n' \
+			"$log_status" "$kani_status" >&2
+		exit "$log_status"
+	fi
+
+	if [[ "$(LC_ALL=C shasum -a 256 Cargo.lock)" != "$lock_before" ]]; then
+		printf 'Cargo.lock changed during retry Kani verification.\n' >&2
+		exit 1
+	fi
+	# CBMC fills an omitted call parameter with a nondeterministic value. Such a
+	# transformed call cannot satisfy an exact proof or mutation oracle.
+	if grep -Fq 'not enough arguments, inserting non-deterministic value' "$kani_log"; then
+		printf '%s\n' 'Retry Kani emitted a nondeterministic call-argument substitution.' >&2
+		if (( kani_status != 0 )); then
+			exit "$kani_status"
+		fi
+		exit 1
+	fi
+}
+
 check_minisat_solver() {
 	if ! awk -v selected="$*" '
 		BEGIN {
@@ -179,6 +185,7 @@ check_contract_stubs() {
 }
 
 if [[ -n "$mutation" ]]; then
+	run_kani 120s --harness "$harness"
 	if (( kani_status != 1 )); then
 		printf 'Retry mutation %s requires Kani exit 1, observed %s.\n' "$mutation" "$kani_status" >&2
 		exit 1
@@ -210,17 +217,18 @@ if [[ -n "$mutation" ]]; then
 	printf 'Retry mutation %s failed its expected assertion.\n' "$mutation"
 	exit 0
 fi
-if (( kani_status != 0 )); then
-	exit "$kani_status"
-fi
-if ! grep -Fxq "Complete - ${#plans[@]} successfully verified harnesses, 0 failures, ${#plans[@]} total." "$kani_log" ||
-	! awk -v plans="${plans[*]}" '
+check_clean_attendance() {
+	if ! awk -v plans="$*" '
 		BEGIN {
 			count = split(plans, entries, " ")
 			for (entry = 1; entry <= count; entry++) {
 				split(entries[entry], pair, "=")
 				expected[pair[1]] = pair[2]
 			}
+		}
+		/^Complete - / {
+			summaries++
+			if ($0 != ("Complete - " count " successfully verified harnesses, 0 failures, " count " total.")) wrong = 1
 		}
 		/^Checking harness .*\.\.\.$/ {
 			active = $0
@@ -237,28 +245,71 @@ if ! grep -Fxq "Complete - ${#plans[@]} successfully verified harnesses, 0 failu
 			for (name in expected) {
 				if (seen[name] != 1 || cover_lines[name] != 1) wrong = 1
 			}
-			exit wrong
+			exit (wrong || summaries != 1)
 		}
 	' "$kani_log"; then
-	printf 'Retry Kani verification requires all ten selected harnesses and twenty-two covered goals.\n' >&2
-	exit 1
-fi
-check_minisat_solver \
-	kani_checks::connection_retry::transient_backoff_is_bounded_and_claims_only_the_due_generation \
-	kani_checks::jitter_oracle::narrow_jitter_oracle_matches_widened_formula
-check_contract_stubs \
-	kani_checks::connection_retry::transient_backoff_is_bounded_and_claims_only_the_due_generation
+		printf 'Retry Kani group requires its exact harnesses and full cover attendance.\n' >&2
+		return 1
+	fi
+}
 
-# Require the named real-body timing assertion, not the contract annotation alone.
-if ! awk '
-	/^Checking harness .*\.\.\.$/ {
-		active = ($0 == "Checking harness kani_checks::timing_oracle::real_retry_timing_matches_wide_wake_and_cap...")
+check_real_timing_assertion() {
+	# Require the named real-body timing assertion, not the contract annotation alone.
+	if ! awk '
+		/^Checking harness .*\.\.\.$/ {
+			active = ($0 == "Checking harness kani_checks::timing_oracle::real_retry_timing_matches_wide_wake_and_cap...")
+		}
+		active && /- Status: SUCCESS$/ { success = NR }
+		active && success == NR - 1 &&
+		    /- Description: "real retry timing preserves overflow before lease clipping and the exact cap"$/ { found++ }
+		END { exit !(found == 1) }
+	' "$kani_log"; then
+		printf '%s\n' 'Expected the exact named assertion in the real retry-timing contract proof.' >&2
+		return 1
+	fi
+}
+
+run_clean_group() {
+	local composed=$1
+	local minisat=$2
+	local plan
+	local -a selectors=()
+	shift 2
+	for plan in "$@"; do
+		selectors+=(--harness "${plan%=*}")
+	done
+
+	printf 'Retry Kani clean group: %s\n' "$*"
+	run_kani 600s "${selectors[@]}"
+	if (( kani_status != 0 )); then
+		return "$kani_status"
+	fi
+	check_clean_attendance "$@" || return
+	check_contract_stubs "$composed" || return
+	if [[ -n "$minisat" ]]; then
+		check_minisat_solver "$minisat" || return
+	fi
+	if [[ "$1" == "$timing_plan" ]]; then
+		check_real_timing_assertion || return
+	fi
+}
+
+# The driver selects harnesses by exact name but does not honor argument order.
+# Check each prerequisite first and retain failures while the shared EVS budget lasts.
+run_required_group() {
+	local result
+	run_clean_group "$@" || {
+		result=$?
+		printf 'Required retry Kani group failed with exit %s.\n' "$result" >&2
+		if (( status == 0 )); then
+			status=$result
+		fi
 	}
-	active && /- Status: SUCCESS$/ { success = NR }
-	active && success == NR - 1 &&
-	    /- Description: "real retry timing preserves overflow before lease clipping and the exact cap"$/ { found++ }
-	END { exit !(found == 1) }
-' "$kani_log"; then
-	printf '%s\n' 'Expected the exact named assertion in the real retry-timing contract proof.' >&2
-	exit 1
-fi
+}
+
+status=0
+run_required_group '' '' "$timing_plan"
+run_required_group '' '' "$jitter_plan"
+run_required_group '' "${math_plan%=*}" "$math_plan"
+run_required_group "$composed_harness" "$composed_harness" "${scheduler_plans[@]}"
+exit "$status"
