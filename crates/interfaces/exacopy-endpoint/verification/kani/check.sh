@@ -110,6 +110,31 @@ if [[ "$(LC_ALL=C shasum -a 256 Cargo.lock)" != "$lock_before" ]]; then
 	printf 'Cargo.lock changed during retry Kani verification.\n' >&2
 	exit 1
 fi
+check_minisat_solver() {
+	if ! awk -v selected="$*" '
+		BEGIN {
+			count = split(selected, names, " ")
+			for (i = 1; i <= count; i++) required[names[i]] = 1
+		}
+		/^Checking harness .*\.\.\.$/ {
+			active = $0
+			sub(/^Checking harness /, "", active)
+			sub(/\.\.\.$/, "", active)
+		}
+		/^Solving with / && (active in required) {
+			if ($0 ~ /^Solving with MiniSAT 2[.]2[.]1 (with|without) simplifier$/) seen[active]++
+			else wrong = 1
+		}
+		END {
+			for (name in required) if (!seen[name]) wrong = 1
+			exit wrong
+		}
+	' "$kani_log"; then
+		printf 'Retry Kani requires the bundled MiniSAT 2.2.1 backend for %s.\n' "$*" >&2
+		return 1
+	fi
+}
+
 if [[ -n "$mutation" ]]; then
 	if (( kani_status == 0 )) ||
 		! grep -Fxq 'Complete - 0 successfully verified harnesses, 1 failures, 1 total.' "$kani_log" ||
@@ -131,6 +156,9 @@ if [[ -n "$mutation" ]]; then
 		' "$kani_log"; then
 		printf 'Expected Kani to fail the named retry assertion for %s.\n' "$mutation" >&2
 		exit 1
+	fi
+	if [[ "$mutation" == inclusive-jitter ]]; then
+		check_minisat_solver "$harness"
 	fi
 	printf 'Retry mutation %s failed its expected assertion.\n' "$mutation"
 	exit 0
@@ -168,3 +196,6 @@ if ! grep -Fxq "Complete - ${#plans[@]} successfully verified harnesses, 0 failu
 	printf 'Retry Kani verification requires all seven selected harnesses and sixteen covered goals.\n' >&2
 	exit 1
 fi
+check_minisat_solver \
+	kani_checks::connection_retry::transient_backoff_is_bounded_and_claims_only_the_due_generation \
+	kani_checks::jitter_oracle::narrow_jitter_oracle_matches_widened_formula

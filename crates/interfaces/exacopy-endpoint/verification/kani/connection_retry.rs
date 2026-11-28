@@ -62,6 +62,7 @@ fn permanent_and_uncertain_failures_never_redial() {
 }
 
 #[kani::proof]
+#[kani::solver(minisat)]
 #[kani::unwind(12)]
 fn transient_backoff_is_bounded_and_claims_only_the_due_generation() {
 	const EXPECTED_NEXT_GENERATION: u64 = 9;

@@ -10,6 +10,7 @@ pub(super) fn scaled_jitter_ms(sample: u32, inclusive_width: u64) -> u64 {
 }
 
 #[kani::proof]
+#[kani::solver(minisat)]
 #[kani::unwind(12)]
 fn narrow_jitter_oracle_matches_widened_formula() {
 	const WIDE_SAMPLE_SPACE: u128 = 1 << u32::BITS;
