@@ -27,10 +27,31 @@ including signed extremes and rollover. The decision uses the intersection
 of both half-open intervals and retains regression-before-expiry precedence.
 Qualification must never widen acceptance.
 
-The P-004 default runner separately selects the unchanged range harness and
-six covers, refusing any stub. P-083 still requires its own passing record.
-Both invocations preserve the pinned tools, enabled unwind checks and the
-900-second per-record deadline. The redesigned proof remains unverified.
+At `fdf4ae1b09f545a9277e55ec36eae4f4bc4d81da`, both isolated Kani records
+passed on `x86_64-unknown-linux-gnu`. The logs report Kani `0.68.0`, CBMC
+`6.11.0` and Rust `1.100.0-nightly` at `8925ea358`. Both runners retain
+unwind checks and the 900-second per-record deadline.
+
+P-083 verified both harnesses in 6.429 seconds. The decision passed both
+assertions and 12 of 12 covers with `exacopy_model::grant_time::before` as
+its sole verified stub. The real comparator passed its assertion and 4 of 4
+covers without a stub. The record binds `src/grant_time.rs` at SHA-256
+`16105dbadd18ba2ebb3c6dc09ee597ed026ce444aa8f1aed1ad424e4a0ba4f2d`.
+Its raw member is `exacopy-evs/7f2daaa9-7457-4c15-ba89-ac74a45a7bd3.log`,
+with SHA-256 `8161378a43290fbfa2048dfbddfd48e4dd5e6eafc8594b2634870056e0ff089b`.
+
+P-004's default `verification/check.sh kani` runner again verified the
+unchanged range harness, with 6 of 6 covers and no stub, in 1.317 seconds.
+Its source is `src/range.rs` at SHA-256
+`6b80bd5a2126bb9b1cbb0456b9903c5bfd6b3bc6b6b525f878cdff8517fee7f6`.
+Its raw member is `exacopy-evs/a745f201-212a-48af-a7ce-4ee913577dd4.log`,
+with SHA-256 `44054c2d509621777e38a6933ca38fbabd62e4ed55f6e02a1fe93edba98cd996`.
+
+Both records bind `Cargo.lock` at SHA-256
+`02f508558e1b473658917de6362b914e4d74141c0af38b8d5f05b7973db6cfbe`.
+[Exact hosted snapshot](https://github.com/replicraft/ExaCopy/actions/runs/46130028396/artifacts/15258028844)
+contains both logs and their same-named JSON records and has SHA-256
+`960280c184dd1f046d3c1c41191b5a326f8934bc20898125255addbacf5e07c5`.
 
 Clock sampling and monotonic classification, paired high-water updates,
 retirement, mutex serialization, effects and native qualification remain

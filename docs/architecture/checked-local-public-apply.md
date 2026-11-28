@@ -33,9 +33,11 @@ deadline and updates the paired high-water only after acceptance. Installing
 a valid qualification still precedes observation, including a refused sample.
 At `8404b71`, hosted Linux executed P-083's Rust model oracle and all three
 clock adapter controls. [Exact native run](https://github.com/replicraft/ExaCopy/actions/runs/46122888565)
-retains that finite test evidence. Kani evidence for the scalar decision,
-extraction and a theorem over the generated function remain open. None of
-those checks establishes native sampling or the whole grant's state updates.
+retains that finite test evidence. At `fdf4ae1`, the isolated P-083 Kani
+record passed for one scalar decision on normalized inputs and its separately
+verified UTC comparator. [Grant clock evidence](../../crates/foundation/exacopy-model/verification/GRANT_TIME.md)
+records the exact assertions, covers and scope. Native sampling and whole-grant
+state updates remain separate. An extracted Lean theorem remains open.
 An advisory automatic CI step captures the actual grant-time extraction's raw
 source and provenance after the mandatory formal artifact upload. Candidate
 output stays outside the Lean import tree and EVS records. It must be reviewed
