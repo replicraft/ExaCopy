@@ -58,11 +58,21 @@ and does not accept another receipt family.
 
 ## Acceptance boundary
 
-The source includes frozen wire vectors, strict substitution and JSON controls,
-and signed-export and missing-seed controls in the existing whole-ext4 CLI
-fixture. Execution must be verified against the integrated revision. The two
+At `64ca8ce`, the whole-ext4 CLI fixture passed the actual signed-export and
+missing-seed invocations. It independently verified the owner signature, all
+eight retained members, both native identity encodings, and preservation of
+the source and incumbent bytes. Its legacy attendance marker reports 17 CLI
+controls; including nested controls, the fixture starts 23 CLI processes.
+Process drainage and fixture deletion were verified.
+[Exact native export run](https://github.com/replicraft/ExaCopy/actions/runs/46148802537)
+
+At `d42cad5`, the four frozen wire tests passed on Linux, macOS and Windows.
+Linux also passed the strict closure checks, the empty-survivor regression
+and all eight managed CLI unit cases. That test-only follow-up leaves the
+export implementation and native fixture unchanged from `64ca8ce`. The two
 separate platform lease tests remain ignored unless explicitly selected on
 their required native fixture.
+[Exact integrated CI](https://github.com/replicraft/ExaCopy/actions/runs/46149411985)
 
 Separate parent approval, durable kind-27/28 associations, current-baseline
 selection, successor persistence, restart reconciliation and P-028 publication

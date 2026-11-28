@@ -6,25 +6,32 @@ uninstallation. Independent work can proceed in parallel where the safety
 dependencies allow it. GUI remains last, after these CLI operations.
 Backup, repositories, and deduplication are deferred.
 
-The latest integrated native cohort at `2f8d567` passed 1,407 Linux, 938
-macOS, and 800 Windows default tests, with all three strict Clippy jobs
-passing. Linux also passed 173 SSH/WireGuard cases and 192 verified-prefix
-resume component cases. These component results do not qualify public retained
-range reuse, restart recovery, or power-loss durability.
-[Exact native cohort](https://github.com/replicraft/ExaCopy/actions/runs/46140123678)
+The latest integrated native cohort at `d42cad5` passed 1,427 Linux, 946
+macOS, and 808 Windows default tests, all three strict Clippy jobs, and the
+declared feature matrices. The offline installer lanes also passed on all
+three operating systems. These results do not qualify public retained-range
+reuse, restart recovery, or power-loss durability.
+[Exact native cohort](https://github.com/replicraft/ExaCopy/actions/runs/46149411985)
 
-The same revision passed fresh extraction and kernel checks for the range and
-grant-time Lean theorems. P-020 retry contract composition remains unverified;
-its prerequisite-first run must finish before claiming that gate. Platform
-coverage is 8,006/10,030 lines (79.8205%), below the unchanged 85% requirement.
-Model coverage passes at 1,041/1,056 lines and 457/482 branches.
-[Exact coverage result](https://github.com/replicraft/ExaCopy/actions/runs/46140123596)
+The same revision passed 64 formal evidence records and 97 Miri checks.
+P-020 and P-083 Kani composition gates failed: P-020 timed out after
+omitted-argument diagnostics, and P-083's guard rejected the same diagnostics.
+Independent Lean, TLC and Rust obligation checks passed. Platform coverage
+is 8,131/10,051 lines (80.8974%), below the unchanged 85% requirement.
+The default platform inventory does not measure the opt-in managed-sync
+profile store; its native fixture results are separate evidence. Cargo Vet
+still reports 162 unaudited dependency versions.
+[Exact coverage result](https://github.com/replicraft/ExaCopy/actions/runs/46149411974)
 
-Managed sync now accepts an optional reviewed create-new Plan expiry, bound
-into its canonical bytes before hashing. The exact `2f8d567` production ext4
-fixture passed, including the CLI expiry binding control. Approval remains a
-separate step; successor persistence and baseline activation remain open.
-[Exact managed-sync result](https://github.com/replicraft/ExaCopy/actions/runs/46140123730)
+Managed sync now exports a bounded signed create-new proposal with the exact
+authenticated predecessor and child Plan. At `64ca8ce`, the real ext4 fixture
+passed signed export and missing-seed refusal, independent bundle verification,
+and preservation and cleanup controls. The test-only `d42cad5` follow-up adds
+an empty-survivor regression. The export grants no execution authority;
+parent approval, durable action associations, successor persistence and
+baseline activation remain open.
+[Signed proposal contract](architecture/signed-sync-recreate-export.md) ·
+[Exact managed-sync result](https://github.com/replicraft/ExaCopy/actions/runs/46148802537)
 
 Local work remains source-only at the maintainer's request. Automatic CI
 provides the runtime results above. The sections below retain earlier outcomes
