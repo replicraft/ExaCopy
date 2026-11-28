@@ -5,30 +5,35 @@ use std::sync::MutexGuard;
 
 use exacopy_endpoint::{JournalFileBarrier, JournalSegment};
 
+use super::{handle::FileIdentity, job::FreshJournalNames};
+
 #[cfg(test)]
 #[path = "../../tests/unit/journal_segment.rs"]
 mod tests;
 
 /// A checked Linux journal file held for its exclusive writer.
 /// The synchronization contract is Linux `File::sync_all` on the held object.
+/// For a newly created segment, extent observations also check its original names.
 pub struct LinuxJournalSegment<'lease> {
 	file: File,
-	_lease: SegmentLease<'lease>,
+	lease: SegmentLease<'lease>,
 }
 
 enum SegmentLease<'lease> {
-	// flock follows the duplicated open file description until it closes.
-	Fresh { _job_lock: File },
-	Recovered { _writer: MutexGuard<'lease, ()> },
+	Fresh {
+		names: FreshJournalNames,
+		identity: FileIdentity,
+	},
+	Recovered {
+		_writer: MutexGuard<'lease, ()>,
+	},
 }
 
 impl LinuxJournalSegment<'static> {
-	pub(super) fn fresh(file: File, job_lock: File) -> Self {
+	pub(super) fn fresh(file: File, names: FreshJournalNames, identity: FileIdentity) -> Self {
 		Self {
 			file,
-			_lease: SegmentLease::Fresh {
-				_job_lock: job_lock,
-			},
+			lease: SegmentLease::Fresh { names, identity },
 		}
 	}
 }
@@ -37,7 +42,7 @@ impl<'lease> LinuxJournalSegment<'lease> {
 	pub(super) fn recovered(file: File, writer: MutexGuard<'lease, ()>) -> Self {
 		Self {
 			file,
-			_lease: SegmentLease::Recovered { _writer: writer },
+			lease: SegmentLease::Recovered { _writer: writer },
 		}
 	}
 
@@ -81,6 +86,12 @@ impl JournalSegment for LinuxJournalSegment<'_> {
 	const BARRIER: JournalFileBarrier = JournalFileBarrier::SyncAll;
 
 	fn regular_length(&self) -> io::Result<Option<u64>> {
+		if let SegmentLease::Fresh { names, identity } = &self.lease {
+			return names
+				.recheck_segment(&self.file, *identity)
+				.map(Some)
+				.map_err(io::Error::other);
+		}
 		let metadata = self.file.metadata()?;
 		Ok(metadata.is_file().then_some(metadata.len()))
 	}

@@ -326,3 +326,6 @@ fn a_token_reusing_the_job_or_profile_identity_is_rejected_before_creation() {
 
 #[path = "job_bootstrap/copy.rs"]
 mod copy;
+
+#[path = "job_bootstrap/journal_names.rs"]
+mod journal_names;

@@ -1,17 +1,19 @@
 use std::{ffi::OsStr, fmt, fs::File, io, os::unix::fs::FileExt as _};
 
 use exacopy_endpoint::UnixComponent;
-use rustix::fs::{FlockOperation, OFlags};
+use rustix::fs::{FlockOperation, OFlags, Stat};
 use rustix::io::Errno;
 
+use super::super::handle::FileIdentity;
 use super::super::stage::{
 	DirectoryCreateFailure, component, create_private_directory_admitted,
 	create_private_directory_observed, create_private_file_admitted, sync_directory_admitted,
 	write_admitted,
 };
 use super::{
-	DestinationRoot, FIRST_SEGMENT, JOURNAL, JobDirectory, JournalDirectory, LinuxJournalSegment,
-	OWNER, RecordDirectory, STAGE, StageDirectory, StageError, TargetStatus, try_lock_job,
+	DestinationRoot, FIRST_SEGMENT, FreshJournalNames, JOURNAL, JobDirectory, JournalDirectory,
+	LinuxJournalSegment, OWNER, RecordDirectory, STAGE, StageDirectory, StageError, TargetStatus,
+	try_lock_job,
 };
 
 /// Why a requested private job directory could not be handed to the caller.
@@ -215,15 +217,13 @@ impl JournalDirectory<'_> {
 		&self,
 		enter: impl FnOnce() -> io::Result<G>,
 	) -> Result<LinuxJournalSegment<'static>, StageError> {
-		let lock = self
-			.0
-			.job
-			.directory
-			.try_clone()
-			.map_err(StageError::System)?;
-		self.0
-			.create_file_admitted(FIRST_SEGMENT, enter)
-			.map(|file| LinuxJournalSegment::fresh(file, lock))
+		let names = FreshJournalNames::hold(&self.0)?;
+		let (file, stat) = self.0.create_file_admitted(FIRST_SEGMENT, enter)?;
+		Ok(LinuxJournalSegment::fresh(
+			file,
+			names,
+			FileIdentity::from_stat(&stat),
+		))
 	}
 
 	/// Checks the held journal and enters authority immediately before fsync.
@@ -244,16 +244,15 @@ impl RecordDirectory<'_> {
 		&self,
 		name: &str,
 		enter: impl FnOnce() -> io::Result<G>,
-	) -> Result<File, StageError> {
+	) -> Result<(File, Stat), StageError> {
 		self.check_current()?;
-		let (file, _) = create_private_file_admitted(
+		create_private_file_admitted(
 			&self.directory,
 			self.job.root.mount,
 			OsStr::new(name),
 			OFlags::RDWR,
 			enter,
-		)?;
-		Ok(file)
+		)
 	}
 }
 

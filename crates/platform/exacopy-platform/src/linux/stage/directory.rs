@@ -110,6 +110,14 @@ impl DestinationRoot {
 		StageDirectory::create(self, None, component(name))
 	}
 
+	pub(in crate::linux) fn try_clone_held(&self) -> Result<Self, StageError> {
+		Ok(Self {
+			directory: self.directory.try_clone().map_err(StageError::System)?,
+			mount: self.mount,
+			identity: self.identity,
+		})
+	}
+
 	pub(in crate::linux) fn check_current(&self) -> Result<(), StageError> {
 		check_managed_parent(&self.directory)
 	}

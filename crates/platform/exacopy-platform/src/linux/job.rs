@@ -17,9 +17,11 @@ mod admission;
 pub use admission::JobDirectoryCreationError;
 mod capabilities;
 mod checkpoint;
+mod journal_names;
 
 pub use checkpoint::CheckpointDirectory;
 pub(super) use checkpoint::{CHECKPOINTS, check_page_length, checkpoint_page_name};
+pub(super) use journal_names::FreshJournalNames;
 
 #[cfg(test)]
 mod tests;
@@ -255,6 +257,7 @@ impl RecordDirectory<'_> {
 
 	fn create_file(&self, name: &str) -> Result<File, StageError> {
 		self.create_file_admitted(name, || Ok(()))
+			.map(|(file, _)| file)
 	}
 
 	fn check_current(&self) -> Result<(), StageError> {
