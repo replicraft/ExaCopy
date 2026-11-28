@@ -1,3 +1,5 @@
+//! Independent wire and refusal controls for private managed activation claims.
+
 use exacopy_journal::frame::ChainHead;
 use exacopy_journal::managed_activation_claim::{
 	MANAGED_ACTIVATION_CLAIM_BYTES, ManagedActivationClaim, ManagedActivationClaimError as Error,
