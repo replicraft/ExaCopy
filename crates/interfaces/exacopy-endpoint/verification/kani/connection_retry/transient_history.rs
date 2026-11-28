@@ -5,10 +5,33 @@ use crate::kani_checks::jitter_oracle::{NANOS_PER_MILLISECOND, UPPER_MS, expecte
 
 use super::{OWNER, TICK, start, wait_after};
 
-pub(super) fn check() {
+#[derive(Clone, Copy)]
+pub(super) enum MappingCheck {
+	EveryRow,
+	SelectedRow(usize),
+}
+
+struct WakeObservation {
+	now_nanos: u128,
+	wake_nanos: u128,
+	ceiling_ms: u64,
+	sample: u32,
+}
+
+impl WakeObservation {
+	fn check_mapping(self) {
+		kani::assert(
+			self.wake_nanos == self.now_nanos + expected_delay_nanos(self.ceiling_ms, self.sample),
+			"every sample maps proportionally into the inclusive equal-jitter window",
+		);
+	}
+}
+
+pub(super) fn check(mapping: MappingCheck) {
 	const EXPECTED_NEXT_GENERATION: u64 = 9;
 	let mut supervisor = RetrySupervisor::new(OWNER, Duration::MAX);
 	let mut now = Duration::ZERO;
+	let mut selected = None;
 	for (index, ceiling_ms) in UPPER_MS.into_iter().enumerate() {
 		let attempt = start(&mut supervisor, now);
 		let generation = u64::try_from(index + 1).expect("eight attempts fit in u64");
@@ -31,10 +54,17 @@ pub(super) fn check() {
 		let wake_nanos = wake_at.as_nanos();
 		let minimum_wake = now_nanos + u128::from(ceiling_ms / 2) * NANOS_PER_MILLISECOND;
 		let maximum_wake = now_nanos + u128::from(ceiling_ms) * NANOS_PER_MILLISECOND;
-		kani::assert(
-			wake_nanos == now_nanos + expected_delay_nanos(ceiling_ms, sample),
-			"every sample maps proportionally into the inclusive equal-jitter window",
-		);
+		let observation = WakeObservation {
+			now_nanos,
+			wake_nanos,
+			ceiling_ms,
+			sample,
+		};
+		match mapping {
+			MappingCheck::EveryRow => observation.check_mapping(),
+			MappingCheck::SelectedRow(row) if row == index => selected = Some(observation),
+			MappingCheck::SelectedRow(_) => {}
+		}
 		kani::assert(
 			(minimum_wake..=maximum_wake).contains(&wake_nanos),
 			"arbitrary jitter stays within this backoff window",
@@ -59,6 +89,11 @@ pub(super) fn check() {
 		generation == EXPECTED_NEXT_GENERATION,
 		"the second capped wait still admits the next generation",
 	);
+	if matches!(mapping, MappingCheck::SelectedRow(_)) {
+		selected
+			.expect("the selected row was observed in the complete history")
+			.check_mapping();
+	}
 	kani::cover!(
 		generation == EXPECTED_NEXT_GENERATION,
 		"redial after the cap"

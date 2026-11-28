@@ -66,14 +66,15 @@ fn permanent_and_uncertain_failures_never_redial() {
 #[kani::unwind(12)]
 #[kani::stub_verified(crate::connection_retry::equal_jitter)]
 fn transient_backoff_is_bounded_and_claims_only_the_due_generation() {
-	transient_history::check();
+	let index = usize::from(kani::any::<u8>() & 7);
+	transient_history::check(transient_history::MappingCheck::SelectedRow(index));
 }
 
 #[kani::proof]
 #[kani::solver(minisat)]
 #[kani::unwind(12)]
 fn concrete_transient_backoff_is_bounded_and_claims_only_the_due_generation() {
-	transient_history::check();
+	transient_history::check(transient_history::MappingCheck::EveryRow);
 }
 
 #[kani::proof]
