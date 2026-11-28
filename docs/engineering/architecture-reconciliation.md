@@ -142,6 +142,22 @@ and symlink resolution. Callers retain their subsequent root and policy
 admission. This moves the syscall owner; the returned descriptor is still
 a native capability.
 
+The APFS composition now delegates [job admission](../../crates/engines/exacopy-transfer/src/macos/job/bootstrap/admission.rs)
+and [signed preparation](../../crates/engines/exacopy-transfer/src/macos/job/bootstrap/engine.rs)
+to capability-based coordinators. The [entry coordinator](../../crates/engines/exacopy-transfer/src/macos/job/entry/engine.rs)
+revalidates the source before claiming its only stage creation attempt.
+The [publication attempt](../../crates/engines/exacopy-transfer/src/macos/job/entry/publish/attempt.rs)
+consumes the writer once. The [publication coordinator](../../crates/engines/exacopy-transfer/src/macos/job/entry/publish/engine.rs)
+orders verification, durable intent, exclusive publication and receipt commitment.
+The CLI supplies held native capabilities and projects their errors. Native
+APFS qualification retains its separate scope.
+
+Managed Linux genesis recovery now delegates device-number encoding to
+the [platform identity type](../../crates/platform/exacopy-platform/src/linux/sync_profile_store/genesis_output/intent.rs).
+The CLI still authenticates and selects the expected history facts, and
+the platform still compares the expected device and inode to the held
+mount and user namespace observations.
+
 Historical evidence retains its recorded revision and paths. Current
 source links and reproduction entry points follow the corrected layout.
 When reproducing an older pinned revision, use that revision's package

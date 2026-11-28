@@ -94,10 +94,7 @@ fn check_basis<'selection>(
 }
 
 fn native_identity(object: NativeObject) -> SyncGenesisNativeIdentity {
-	SyncGenesisNativeIdentity {
-		device: rustix::fs::makedev(object.major, object.minor),
-		inode: object.inode,
-	}
+	SyncGenesisNativeIdentity::from_device_numbers(object.major, object.minor, object.inode)
 }
 
 fn verify_history(

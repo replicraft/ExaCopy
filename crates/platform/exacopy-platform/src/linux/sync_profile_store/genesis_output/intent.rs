@@ -20,6 +20,15 @@ pub struct SyncGenesisNativeIdentity {
 }
 
 impl SyncGenesisNativeIdentity {
+	/// Encodes independently selected Linux device numbers for an exact inode pin.
+	#[must_use]
+	pub fn from_device_numbers(major: u32, minor: u32, inode: NonZeroU64) -> Self {
+		Self {
+			device: rustix::fs::makedev(major, minor),
+			inode,
+		}
+	}
+
 	pub(super) fn matches(self, actual: FileIdentity) -> bool {
 		self.device == actual.device() && self.inode.get() == actual.inode()
 	}
