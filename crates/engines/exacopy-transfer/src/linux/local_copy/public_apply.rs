@@ -223,11 +223,20 @@ where
 	)
 }
 
+type AdmittedStage<'name, S, D, J> = Result<
+	(
+		<S as CopySourceRoot>::Source,
+		EntryEvidence<'name>,
+		CopyBinding,
+	),
+	StageFailure<<S as CopySourceRoot>::Error, D, J>,
+>;
+
 fn admit_stage<'root, 'name, S, D, J>(
 	roots: &PlanningRoots<'root, S, D>,
 	request: &PublicApplyStageRequest<'_, '_, 'name>,
 	scratch_len: usize,
-) -> Result<(S::Source, EntryEvidence<'name>, CopyBinding), StageFailure<S::Error, D, J>>
+) -> AdmittedStage<'name, S, D, J>
 where
 	S: CopySourceRoot<Source: CopySource<Identity = J::Identity, Metadata = J::Metadata>>,
 	D: CopyDestinationView
