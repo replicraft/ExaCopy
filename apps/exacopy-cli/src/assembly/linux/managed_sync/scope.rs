@@ -95,7 +95,7 @@ pub(super) fn native_object(held: FileIdentity) -> Result<NativeObject, ManagedS
 	})
 }
 
-const fn expected_object(value: NativeObject) -> ManagedSyncExpectedObject {
+pub(super) const fn expected_object(value: NativeObject) -> ManagedSyncExpectedObject {
 	ManagedSyncExpectedObject {
 		major: value.major,
 		minor: value.minor,

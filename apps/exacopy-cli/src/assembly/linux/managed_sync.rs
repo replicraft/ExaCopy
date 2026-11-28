@@ -11,15 +11,12 @@ use exacopy_plan::workflow_sync::MAX_MEMBER_BYTES;
 use exacopy_platform::linux::{
 	FileIdentity, ManagedSyncError, ManagedSyncPreviewPair, NamedReadView, ReadError,
 	SyncPreviewEntry, SyncPreviewError, SyncPreviewRoots, SyncProfileStore, SyncProfileStoreError,
-	SyncProfileStoreRecord,
 };
 use exacopy_transfer::linux::sync_preview::{
 	FirstSyncPreview, HeldSyncPreview, HistoricalPreviewFailure, LiveSyncSelection, PreviewInput,
 	preview_with_history,
 };
-use exacopy_transfer::sync_genesis::{
-	AuthenticatedSyncGenesis, RetainedSyncGenesisMembers, SyncGenesisError,
-};
+use exacopy_transfer::sync_genesis::{AuthenticatedSyncGenesis, SyncGenesisError};
 use zeroize::Zeroizing;
 
 use crate::profile::profile_id_for_key;
@@ -32,6 +29,8 @@ use crate::sync_preview::managed_policy::{
 };
 
 mod acknowledgement;
+#[cfg(feature = "experimental-linux-public-apply")]
+pub mod activation;
 pub mod genesis;
 mod history;
 mod manual_recreate;
@@ -55,7 +54,7 @@ pub use manual_recreate::{
 	prepare_manual_recreate,
 };
 
-use history::authenticate;
+use history::{authenticate, with_held_history_view};
 use scope::{expected_native, fresh_endpoints, native_object, raw_path};
 
 /// One explicit operator request to provision a single acknowledged managed sync selection.
@@ -134,6 +133,9 @@ pub enum ManagedSyncPreviewError {
 	Native(SyncPreviewError),
 	/// Real selected and leased managed native scope refused.
 	Managed(ManagedSyncError),
+	/// The original exclusive preparation or read-only action slot refused.
+	#[cfg(feature = "experimental-linux-public-apply")]
+	PreparedCustody(exacopy_platform::linux::PreparedManagedActionError),
 	/// The selected historical artifact could not be opened.
 	ReadHistory(std::io::Error),
 	/// Exact selected signed history was refused.
@@ -157,6 +159,8 @@ impl fmt::Display for ManagedSyncPreviewError {
 			Self::Native(_) | Self::Managed(_) => {
 				formatter.write_str("managed synchronization native scope refused")
 			}
+			#[cfg(feature = "experimental-linux-public-apply")]
+			Self::PreparedCustody(_) => formatter.write_str("managed preparation custody refused"),
 			Self::ReadHistory(_) | Self::History(_) => {
 				formatter.write_str("selected synchronization history refused")
 			}
@@ -169,6 +173,8 @@ impl std::error::Error for ManagedSyncPreviewError {
 	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
 		match self {
 			Self::CreationUnconfirmed(cause) => Some(cause.as_ref()),
+			#[cfg(feature = "experimental-linux-public-apply")]
+			Self::PreparedCustody(cause) => Some(cause),
 			_ => None,
 		}
 	}
@@ -348,67 +354,6 @@ where
 	with_held_history_view(pin, &record, &key, false, |baseline, current, key, _| {
 		observe(baseline, current, key)
 	})
-}
-
-fn with_held_history_view<T, E>(
-	pin: &ManagedPolicyPin,
-	record: &SyncProfileStoreRecord<'_>,
-	key: &VerifyingKey,
-	retain_history: bool,
-	observe: impl FnOnce(
-		&AuthenticatedSyncGenesis<'_, '_>,
-		&ManagedHistoryPreview<'_, '_, '_>,
-		&VerifyingKey,
-		Option<RetainedSyncGenesisMembers>,
-	) -> Result<T, E>,
-) -> Result<T, E>
-where
-	E: From<ManagedSyncPreviewError>,
-{
-	type Failure = ManagedSyncPreviewError;
-
-	let identity = &pin.identity;
-	let policy = decode(record.bytes(), pin).map_err(Failure::Policy)?;
-	let scope = expected_native(&policy)?;
-	let roots = SyncPreviewRoots::open(scope.parent_path, scope.roots.map(|root| root.name))
-		.map_err(Failure::Native)?;
-	let lease = roots
-		.acquire_managed_history_lease(scope)
-		.map_err(Failure::Managed)?;
-	let history = record
-		.open_history(raw_path(&policy.history.path))
-		.map_err(Failure::Store)?;
-	if native_object(history.read_root().identity())? != policy.history.directory {
-		return Err(Failure::Selection.into());
-	}
-	let recheck_custody = || {
-		record
-			.recheck_history_scope(&history, &roots)
-			.map_err(Failure::Store)
-	};
-	recheck_custody()?;
-	let mut root_bytes = [0; MAX_MEMBER_BYTES];
-	let actual = lease.recheck_roots().map_err(Failure::Managed)?;
-	let endpoints = fresh_endpoints(&policy, actual)?;
-	let (baseline, retained) = authenticate(
-		history.read_root(),
-		&policy,
-		identity,
-		key,
-		endpoints,
-		&mut root_bytes,
-		retain_history,
-	)?;
-	let pair = lease.observe().map_err(Failure::Managed)?;
-	let current = ManagedHistoryPreview {
-		pair: &pair,
-		policy: &policy,
-		identity,
-		recheck_custody: &recheck_custody,
-	};
-	let observed = observe(&baseline, &current, key, retained)?;
-	recheck_custody()?;
-	Ok(observed)
 }
 
 fn verify_owner_identity(

@@ -218,6 +218,8 @@ fn reason(error: &ManagedSyncPreviewError) -> &'static str {
 		}
 		Error::Store(_) => "profile_custody_refused",
 		Error::Native(_) | Error::Managed(_) => "native_scope_refused",
+		#[cfg(feature = "experimental-linux-public-apply")]
+		Error::PreparedCustody(_) => "native_scope_refused",
 		Error::ReadHistory(error) if error.kind() == io::ErrorKind::NotFound => {
 			"selected_history_missing"
 		}
