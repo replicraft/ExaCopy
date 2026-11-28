@@ -31,13 +31,24 @@ qualification can only narrow the original interval. The app still samples
 both clocks, classifies the native monotonic sample, retains the original
 deadline and updates the paired high-water only after acceptance. Installing
 a valid qualification still precedes observation, including a refused sample.
-P-083 defines Rust and Kani checks for the scalar decision; its proof is
-unexecuted and does not verify those native or stateful premises. Extraction
-and a theorem over the generated function remain open.
+At `8404b71`, hosted Linux executed P-083's Rust model oracle and all three
+clock adapter controls. [Exact native run](https://github.com/replicraft/ExaCopy/actions/runs/46122888565)
+retains that finite test evidence. Kani evidence for the scalar decision,
+extraction and a theorem over the generated function remain open. None of
+those checks establishes native sampling or the whole grant's state updates.
 An advisory automatic CI step captures the actual grant-time extraction's raw
 source and provenance after the mandatory formal artifact upload. Candidate
 output stays outside the Lean import tree and EVS records. It must be reviewed
 before any generated source or extracted theorem is adopted.
+
+At `aac327a`, P-082's two Kani harnesses passed all three assertions and nineteen
+covers under the exact `experimental-linux-public-apply` feature profile.
+[Exact proof snapshot](https://github.com/replicraft/ExaCopy/actions/runs/46122033025/artifacts/15255094191)
+has SHA-256 `4e5131491668649b2e47447fe858c39179d8cc05082d2435765e847856080ff5`.
+This checks the actual bounded-window predicate and one phase-admission step,
+including retained payloads. It does not establish reachability of every
+constructed state, clock policy, issuance, mutex behavior, native effects or
+receipt-before-commit ordering. The original engine still owns that ordering.
 
 The engine retains the original source, exclusive job, owner and private Plan
 read-only pins, verified stage, model session and journal. It checks the source
