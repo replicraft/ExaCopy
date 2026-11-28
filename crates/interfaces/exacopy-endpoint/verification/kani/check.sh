@@ -124,6 +124,15 @@ if [[ "$(LC_ALL=C shasum -a 256 Cargo.lock)" != "$lock_before" ]]; then
 	printf 'Cargo.lock changed during retry Kani verification.\n' >&2
 	exit 1
 fi
+# CBMC fills an omitted call parameter with a nondeterministic value. Such a
+# transformed call cannot satisfy an exact proof or mutation oracle.
+if grep -Fq 'not enough arguments, inserting non-deterministic value' "$kani_log"; then
+	printf '%s\n' 'Retry Kani emitted a nondeterministic call-argument substitution.' >&2
+	if (( kani_status != 0 )); then
+		exit "$kani_status"
+	fi
+	exit 1
+fi
 check_minisat_solver() {
 	if ! awk -v selected="$*" '
 		BEGIN {

@@ -73,3 +73,19 @@ start. The inclusive-jitter mutation still executes all eight concrete steps wit
 arbitrary full-width samples and every exact assertion inline. Budgets and solver
 choices for the existing harnesses are unchanged. The inductive history and its
 instrumentation are pending hosted verification.
+
+At `af75d35`, the first inductive run compiled and reached CBMC but reported
+11 omitted call arguments filled with nondeterministic values. The transient
+history produced no completed invariant, rank or write checks before timeout.
+Six companions, including the concrete cap witness, passed with 15 of 18 covers.
+The narrow/wide lemma started, the outer recorder interrupted it, and the real
+jitter contract harness did not start. No assertion counterexample was observed.
+[Exact snapshot](https://github.com/replicraft/ExaCopy/actions/runs/46124250197/artifacts/15257094093)
+has SHA-256 `d928070e4f9e2f5cb1b8e530719954624d0d7f94c71224cdf47e92046ff4389c`.
+Its raw member `exacopy-evs/34c99af6-15b4-486d-8144-00681259dc34.log` has
+SHA-256 `a8b22fbd5b4ddc24d94b4b68731affcb70853377ffaa1e35c858fbfe12eb76a6`.
+The gate refuses the observed argument-substitution diagnostic in both clean
+and mutation runs. That refusal does not repair the transformation or establish
+the intended history. A countdown-only change remains unapplied because it
+would not address the omitted-argument diagnostics in the invariant and real
+step helpers. Proof scope, solvers and budgets remain unchanged.
