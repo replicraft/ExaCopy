@@ -14,7 +14,7 @@ features = ["proof-extraction"]
 charon-args = ["--sysroot", "default", "--start-from", "crate::range::checked_range_end"]
 aeneas-args = ["-subdir", "Generated", "-namespace", "ExaCopy"]
 
-[scenario.grant_time]
+[scenario.grant-time]
 backend = "lean"
 output-dir = "verification/.lake/hax/grant-time"
 project-files = false

@@ -44,7 +44,7 @@ def candidate_state():
 
 
 def extract_candidate(scratch):
-    scenario = config["scenario"]["grant_time"]
+    scenario = config["scenario"]["grant-time"]
     output = scratch / "grant-time"
     require(scenario["output-dir"] == "verification/" + output.as_posix(),
             "Unexpected candidate scratch path")
@@ -60,7 +60,7 @@ def extract_candidate(scratch):
     ]
     repo = Path("../../../..")
     source = {name: digest(repo / name) for name in inputs}
-    command = [frontend, "hax", "extract", "--locked", "-v", "grant_time"]
+    command = [frontend, "hax", "extract", "--locked", "-v", "grant-time"]
     print(f"Extract grant_time source {commit} tree {tree}", flush=True)
     output.mkdir()  # Refuse a preexisting path and clean up only the directory we create.
     try:
@@ -112,7 +112,7 @@ def extract_candidate(scratch):
             "kind": "generated-source-candidate",
             "commit": commit,
             "git_tree": tree,
-            "scenario": "grant_time",
+            "scenario": "grant-time",
             "scenario_config": scenario,
             "verified_tool_binaries": {
                 tool: {key: value for key, value in pins.items() if key != "archive_sha256"}
