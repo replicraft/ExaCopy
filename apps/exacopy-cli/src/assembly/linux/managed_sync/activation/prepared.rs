@@ -1,5 +1,6 @@
 //! Selected no-effect action preparation under the original native holders.
 
+use ed25519_dalek::VerifyingKey;
 use exacopy_journal::managed_action_prepared::{
 	MANAGED_ACTION_PREPARED_FRAME_BYTES, ManagedActionPrepared, match_managed_action_prepared,
 };
@@ -10,12 +11,13 @@ use exacopy_journal::{ApprovedPublicPlanDigest, PublicPlanEntryId};
 use exacopy_plan::UnixTimestamp;
 use exacopy_platform::linux::PreparedActionSlotSelection;
 use exacopy_transfer::linux::sync_preview::HeldSyncPreview as _;
+use exacopy_transfer::sync_genesis::{AuthenticatedSyncGenesis, RetainedSyncGenesisMembers};
 
 use super::super::super::CopyRoots;
 use super::super::acknowledgement::with_acknowledgement;
 use super::super::history::{HistoryCustody, with_bound_history};
 use super::super::scope::{expected_native, expected_object, raw_path};
-use super::super::{ManagedSyncPreviewError, verify_owner_identity};
+use super::super::{ManagedHistoryPreview, ManagedSyncPreviewError, verify_owner_identity};
 use super::{
 	ApprovalArtifacts, ApprovalError, ApprovalInput, ApprovalOperation, ApprovalSelection,
 	BoundApproval, check_time_after, decode, wire,
@@ -138,41 +140,46 @@ pub fn with_scoped_prepared_recreate<R>(
 						|| view.recheck_roots().map_err(Error::Prepared),
 						|| view.observe().map_err(Error::Prepared),
 						false,
-						&mut Some(|baseline, current, key, _| {
-							let verified = BoundApproval {
-								selection,
-								input: input.approval,
-								operation: ApprovalOperation::Verify {
-									grant: input.grant,
-									parent: input.parent,
-									activation: input.activation,
-									activation_digest: input.activation_digest,
-								},
-								roots,
-								scratch,
-								now: &now,
-							}
-							.verify(pin, baseline, current, key)?;
-							let checked_at =
-								check_time_after(enrollment, &now, verified.accepted_at)?;
-							current.recheck_selection()?;
-							let mut again = [0; MANAGED_ACTION_PREPARED_FRAME_BYTES];
-							view.read_prepared(&mut again)?;
-							if again != exact {
-								return Err(Error::Selection);
-							}
-							let result = observe(PreparedRecreate {
-								approval: &verified.artifacts,
-								origin,
-							})?;
-							check_time_after(enrollment, &now, checked_at)?;
-							current.recheck_selection()?;
-							view.read_prepared(&mut again)?;
-							if again != exact {
-								return Err(Error::Selection);
-							}
-							Ok(result)
-						}),
+						&mut Some(
+							|baseline: &AuthenticatedSyncGenesis<'_, '_>,
+							 current: &ManagedHistoryPreview<'_, '_, '_>,
+							 key: &VerifyingKey,
+							 _: Option<RetainedSyncGenesisMembers>| {
+								let verified = BoundApproval {
+									selection,
+									input: input.approval,
+									operation: ApprovalOperation::Verify {
+										grant: input.grant,
+										parent: input.parent,
+										activation: input.activation,
+										activation_digest: input.activation_digest,
+									},
+									roots,
+									scratch,
+									now: &now,
+								}
+								.verify(pin, baseline, current, key)?;
+								let checked_at =
+									check_time_after(enrollment, &now, verified.accepted_at)?;
+								current.recheck_selection()?;
+								let mut again = [0; MANAGED_ACTION_PREPARED_FRAME_BYTES];
+								view.read_prepared(&mut again)?;
+								if again != exact {
+									return Err(Error::Selection);
+								}
+								let result = observe(PreparedRecreate {
+									approval: &verified.artifacts,
+									origin,
+								})?;
+								check_time_after(enrollment, &now, checked_at)?;
+								current.recheck_selection()?;
+								view.read_prepared(&mut again)?;
+								if again != exact {
+									return Err(Error::Selection);
+								}
+								Ok(result)
+							},
+						),
 					)
 				},
 			)

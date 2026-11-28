@@ -342,3 +342,11 @@ selected policy lifetime lacked its required outlives bound on the borrowed
 pair view. It again ran no native cases, skipped the dependent preparation
 job, and confirmed scratch removal. The correction states that lifetime
 relationship explicitly without extending any borrow or native lease.
+
+At [`9ad17c3`](https://github.com/replicraft/ExaCopy/actions/runs/46178707395),
+the original singleton fixture passed. Its separate combined-feature job
+then stopped during compilation: the prepared observer closure needed
+explicit parameter types to satisfy the history helper's higher-ranked
+callback. It ran neither the approval wire controls nor the native
+prepared controls, and cleanup passed. The correction annotates the
+existing closure parameters; combined-feature qualification remains pending.
