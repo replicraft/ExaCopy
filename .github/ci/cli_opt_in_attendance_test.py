@@ -67,7 +67,14 @@ APFS_DEFAULT_EXPECTED = "args::parser::recovery::tests::inspect_apfs_is_hidden_w
 TRANSFER_CASE = "macos::tests::fixture_transfer_test"
 RECREATE_EXPECTED = (
     "args::parser::sync_managed::tests::prepare_recreate_requires_explicit_direction_conflict_and_receipt",
+    "args::parser::sync_managed::tests::signed_recreate_requires_an_independently_selected_pair_and_expiry",
     "sync_preview::managed_command::recreate::tests::prepare_recreate_refuses_oversize_receipt_without_candidate",
+    "sync_preview::managed_command::recreate::tests::plan_expiry_preserves_fraction_and_refuses_seconds_overflow",
+    (
+        "sync_preview::managed_command::export_recreate::tests::"
+        "signed_export_report_round_trips_the_exact_members_without_authority"
+    ),
+    "sync_preview::managed_command::export_recreate::tests::refused_export_has_no_association_or_bundle",
     (
         "assembly::linux::managed_sync::manual_recreate::tests::"
         "manual_recreate_selects_only_the_current_survivor_and_exact_conflict"
@@ -203,6 +210,9 @@ class CliOptInAttendanceTests(unittest.TestCase):
                 self.write_report([*present, missing.replace("::tests::", "::other_tests::")])
                 with self.assertRaisesRegex(ValueError, f"required testcases missing: {missing}$"):
                     check_attendance(self.report, "managed-sync-recreate")
+        self.write_report([*RECREATE_EXPECTED, OTHER_CASE])
+        with self.assertRaisesRegex(ValueError, f"unexpected managed-sync-recreate testcases: {OTHER_CASE}$"):
+            check_attendance(self.report, "managed-sync-recreate")
         root = self.write_report(RECREATE_EXPECTED)
         ElementTree.SubElement(root[0][0], "skipped")
         self.write_xml(root)

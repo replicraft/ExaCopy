@@ -348,7 +348,7 @@ pub(super) fn mount_id(directory: &File, flag: StatxFlags) -> TestResult<NonZero
 pub(super) fn print_success(anchor: &super::Anchor, live: [NativeObject; 3], cli_sha256: &str) {
 	let location = anchor.location;
 	println!(
-		"\nmanaged_sync_production=passed boot={} mnt_ns={} user_ns={} mount={} unique_mount={} anchor={} anchor_left={} anchor_right={} live={} live_left={} live_right={} controls=8 cli_controls=15 cli_sha256={cli_sha256} cleanup=verified",
+		"\nmanaged_sync_production=passed boot={} mnt_ns={} user_ns={} mount={} unique_mount={} anchor={} anchor_left={} anchor_right={} live={} live_left={} live_right={} controls=8 cli_controls=17 cli_sha256={cli_sha256} cleanup=verified",
 		uuid::Uuid::from_bytes(location.boot),
 		print_object(location.mount_namespace),
 		print_object(location.user_namespace),

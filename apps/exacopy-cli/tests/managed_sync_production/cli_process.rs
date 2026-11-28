@@ -20,6 +20,7 @@ use super::TestResult;
 const MAX_IMAGE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_STDIN_BYTES: usize = 24 * 1024;
 const MAX_OUTPUT_BYTES: usize = 4096;
+const MAX_SIGNED_EXPORT_STDOUT_BYTES: usize = 64 * 1024;
 const DEADLINE: Duration = Duration::from_secs(15);
 const REAP_DEADLINE: Duration = Duration::from_secs(2);
 const WAIT_TICK: Duration = Duration::from_millis(10);
@@ -166,6 +167,24 @@ impl Cli {
 		input: &[u8],
 		read_only_output: Option<File>,
 	) -> TestResult<Output> {
+		self.invoke_with_stdout_limit(args, input, read_only_output, MAX_OUTPUT_BYTES)
+	}
+
+	pub(super) fn invoke_signed_export(
+		&self,
+		args: &[OsString],
+		input: &[u8],
+	) -> TestResult<Output> {
+		self.invoke_with_stdout_limit(args, input, None, MAX_SIGNED_EXPORT_STDOUT_BYTES)
+	}
+
+	fn invoke_with_stdout_limit(
+		&self,
+		args: &[OsString],
+		input: &[u8],
+		read_only_output: Option<File>,
+		stdout_limit: usize,
+	) -> TestResult<Output> {
 		self.recheck()?;
 		let capture = read_only_output.is_none();
 		let stdout = read_only_output.map_or_else(Stdio::piped, Stdio::from);
@@ -180,7 +199,7 @@ impl Cli {
 			.stdout(stdout)
 			.stderr(Stdio::piped());
 		let mut child = launch.spawn()?;
-		let output = observe(&mut child, capture)?;
+		let output = observe(&mut child, capture, stdout_limit)?;
 		self.recheck()?;
 		Ok(output)
 	}
@@ -241,7 +260,7 @@ fn input_file(input: &[u8]) -> TestResult<File> {
 	Ok(file)
 }
 
-fn observe(child: &mut Child, capture: bool) -> TestResult<Output> {
+fn observe(child: &mut Child, capture: bool, stdout_limit: usize) -> TestResult<Output> {
 	let pid = i32::try_from(child.id())
 		.ok()
 		.and_then(Pid::from_raw)
@@ -262,8 +281,8 @@ fn observe(child: &mut Child, capture: bool) -> TestResult<Output> {
 		}
 		let start = Instant::now();
 		loop {
-			drain(stdout_pipe.as_mut(), &mut stdout)?;
-			drain(stderr_pipe.as_mut(), &mut stderr)?;
+			drain(stdout_pipe.as_mut(), &mut stdout, stdout_limit)?;
+			drain(stderr_pipe.as_mut(), &mut stderr, MAX_OUTPUT_BYTES)?;
 			match waitid(
 				WaitId::Pid(pid),
 				WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT,
@@ -308,7 +327,9 @@ fn observe(child: &mut Child, capture: bool) -> TestResult<Output> {
 	let status =
 		status.map_err(|error| UnconfirmedProcess(format!("CLI child reap failed ({error})")))?;
 	observation?;
-	if !drain(stdout_pipe.as_mut(), &mut stdout)? || !drain(stderr_pipe.as_mut(), &mut stderr)? {
+	if !drain(stdout_pipe.as_mut(), &mut stdout, stdout_limit)?
+		|| !drain(stderr_pipe.as_mut(), &mut stderr, MAX_OUTPUT_BYTES)?
+	{
 		return Err(
 			UnconfirmedProcess("CLI output remained open after child cleanup".into()).into(),
 		);
@@ -341,7 +362,7 @@ fn nonblocking(pipe: impl AsFd) -> io::Result<()> {
 	Ok(())
 }
 
-fn drain(mut pipe: Option<impl io::Read>, output: &mut Vec<u8>) -> io::Result<bool> {
+fn drain(mut pipe: Option<impl io::Read>, output: &mut Vec<u8>, limit: usize) -> io::Result<bool> {
 	let Some(pipe) = pipe.as_mut() else {
 		return Ok(true);
 	};
@@ -349,7 +370,7 @@ fn drain(mut pipe: Option<impl io::Read>, output: &mut Vec<u8>) -> io::Result<bo
 	loop {
 		match pipe.read(&mut bytes) {
 			Ok(0) => return Ok(true),
-			Ok(length) if output.len() + length <= MAX_OUTPUT_BYTES => {
+			Ok(length) if output.len() + length <= limit => {
 				output.extend_from_slice(&bytes[..length])
 			}
 			Ok(_) => {

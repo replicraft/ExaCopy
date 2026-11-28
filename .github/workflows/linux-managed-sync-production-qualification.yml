@@ -54,6 +54,7 @@ on:
       - 'crates/engines/exacopy-transfer/src/linux/sync_preview.rs'
       - 'crates/engines/exacopy-transfer/src/linux/sync_preview/**'
       - 'crates/engines/exacopy-transfer/src/manifest.rs'
+      - 'crates/engines/exacopy-transfer/src/public_plan.rs'
       - 'crates/engines/exacopy-transfer/src/sync_genesis.rs'
       - 'crates/engines/exacopy-transfer/src/sync_genesis/**'
       - 'crates/formats/exacopy-plan/src/lib.rs'

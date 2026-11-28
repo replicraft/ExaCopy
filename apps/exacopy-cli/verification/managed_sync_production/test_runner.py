@@ -181,12 +181,12 @@ class Controls(unittest.TestCase):
             "passed boot=00000000-0000-0000-0000-000000000001 mnt_ns=0:4:10 user_ns=0:4:11 "
             "mount=25 unique_mount=5021 anchor=8:1:5 anchor_left=8:1:6 anchor_right=8:1:7 "
             "live=8:1:8 live_left=8:1:9 live_right=8:1:10 controls=8 "
-            f"cli_controls=15 cli_sha256={self.cli_sha256} cleanup=verified",
+            f"cli_controls=17 cli_sha256={self.cli_sha256} cleanup=verified",
         )
         result = run.checked_managed_result(success, 0, facts, anchors, self.cli_sha256)
         self.assertEqual((result["outcome"], result["feature"], result["controls"]),
                          ("passed", run.MANAGED.required_feature, 8))
-        self.assertEqual((result["cli_controls"], result["cli_sha256"]), (15, self.cli_sha256))
+        self.assertEqual((result["cli_controls"], result["cli_sha256"]), (17, self.cli_sha256))
         for old, new in (
             ("000000000001", "000000000002"), ("mnt_ns=0:4:10", "mnt_ns=0:4:9"),
             ("user_ns=0:4:11", "user_ns=0:4:9"), ("mount=25", "mount=24"),
@@ -194,7 +194,7 @@ class Controls(unittest.TestCase):
             ("anchor_left=8:1:6", "anchor_left=8:1:7"), ("anchor_right=8:1:7", "anchor_right=8:1:6"),
             ("live=8:1:8", "live=8:2:8"), ("live_left=8:1:9", "live_left=8:1:6"),
             ("live_right=8:1:10", "live_right=8:1:18446744073709551616"),
-            ("cli_controls=15", "cli_controls=14"),
+            ("cli_controls=17", "cli_controls=16"),
             (f"cli_sha256={self.cli_sha256}", f"cli_sha256={'0' * 64}"),
             ("controls=8", "controls=7"), (" controls=8", ""), (" live_left=8:1:9", ""),
             ("cleanup=verified", "cleanup=unconfirmed"),

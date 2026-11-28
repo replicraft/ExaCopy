@@ -1,6 +1,12 @@
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt as _;
 
+use ed25519_dalek::Signature;
+use exacopy_plan::workflow_sync::decode_envelope;
+use exacopy_plan::workflow_sync::recreate::{
+	RecreateReason, RecreateSide, action_reference, decode_action, decode_parent,
+	parent_signing_input,
+};
 use exacopy_plan::{PlanBody, PlanEntriesPage, PlanOperation, UnixTimestamp};
 use rustix::fs::{FlockOperation, flock};
 
@@ -14,6 +20,7 @@ pub(super) fn exercise(
 	approval: &Approval,
 	acknowledgement: &[u8],
 	inputs: &Inputs<'_>,
+	profile: &File,
 ) -> TestResult {
 	let mut args = approval.preview();
 	args[1] = "prepare-recreate".into();
@@ -73,6 +80,7 @@ pub(super) fn exercise(
 			b"exacopy: managed sync prepare-recreate output_inconclusive\n"
 		);
 
+		exercise_signed_export(sandbox, cli, approval, acknowledgement, inputs, profile)?;
 		assert_missing(left, super::super::SUBJECT);
 		assert_eq!(file_identity(left, RETAINED)?, left_id);
 		assert_eq!(read(left, RETAINED)?, b"abc");
@@ -252,4 +260,133 @@ fn decode(value: &Value) -> TestResult<Vec<u8>> {
 	}
 	assert_eq!(super::hex(&out), hex);
 	Ok(out)
+}
+
+fn exercise_signed_export(
+	sandbox: &mut Sandbox,
+	cli: &Cli,
+	approval: &Approval,
+	acknowledgement: &[u8],
+	inputs: &Inputs<'_>,
+	profile: &File,
+) -> TestResult {
+	const PAIR: &str = "019b8db1-d7f0-7112-8001-010203040506";
+	let mut args = approval.preview();
+	args[1] = "export-recreate".into();
+	args.extend([
+		"--from".into(),
+		"right".into(),
+		"--reviewed-conflict".into(),
+		"edit-against-deletion".into(),
+		"--expires-in-seconds".into(),
+		"120".into(),
+		"--pair-id".into(),
+		PAIR.into(),
+	]);
+
+	// Earlier preview controls retained the original seed under a different name.
+	// The signed route must pass live planning and refuse missing signing custody.
+	let refusal = cli.invoke(&args, acknowledgement, None)?;
+	assert_eq!(refusal.status.code(), Some(2));
+	assert!(refusal.stderr.is_empty());
+	let report: Value = serde_json::from_slice(&refusal.stdout)?;
+	assert_export_envelope(&report, "refused");
+	assert_eq!(report["reason"], "signing_custody_refused");
+	assert!(report.get("bundle").is_none());
+	assert!(report.get("pair_id").is_none());
+
+	sandbox.rename(profile, b"retained-cli-seed", b"owner.seed")?;
+	let output = cli.invoke_signed_export(&args, acknowledgement);
+	if matches!(&output, Err(error) if error.is::<super::super::cli_process::UnconfirmedProcess>())
+	{
+		return output.map(|_| ());
+	}
+	sandbox.rename(profile, b"owner.seed", b"retained-cli-seed")?;
+	let output = output?;
+	assert_eq!(output.status.code(), Some(0), "stderr {:?}", output.stderr);
+	assert!(output.stderr.is_empty());
+	let report: Value = serde_json::from_slice(&output.stdout)?;
+	assert_export_envelope(&report, "exported");
+	assert_eq!(report["pair_id"], PAIR);
+	let bundle = &report["bundle"];
+	let envelope = decode(&bundle["parent_envelope_cbor_hex"])?;
+	let envelope = decode_envelope(&envelope)?;
+	let signing = parent_signing_input(envelope.body)?;
+	assert_eq!(envelope.public_key, approval.owner.to_bytes());
+	approval
+		.owner
+		.verify_strict(&signing, &Signature::from_bytes(&envelope.signature))?;
+	assert_eq!(
+		report["parent_plan_digest"],
+		hex(blake3::hash(&signing).as_bytes())
+	);
+	let parent = decode_parent(envelope.body)?;
+	assert_eq!(parent.pair_id, *uuid::Uuid::parse_str(PAIR)?.as_bytes());
+	assert_eq!(parent.predecessor, inputs.artifacts[0].reference);
+	assert_eq!(
+		parent.endpoints,
+		[inputs.artifacts[1].reference, inputs.artifacts[2].reference]
+	);
+	assert_ne!(parent.coverage[0], parent.coverage[1]);
+
+	let page = decode(&bundle["action_page_cbor_hex"])?;
+	assert_eq!(parent.action_page, action_reference(&page)?);
+	let action = decode_action(&page)?;
+	assert_eq!(action.name.as_bytes(), super::super::SUBJECT);
+	assert_eq!(action.side, RecreateSide::Right);
+	assert_eq!(action.reason, RecreateReason::EditAgainstDeletion);
+	assert_eq!(action.stream_length, 3);
+	assert_eq!(action.stream_digest, *blake3::hash(b"xyz").as_bytes());
+	let child_body = decode(&bundle["child_plan_body_cbor_hex"])?;
+	let child_page = decode(&bundle["child_plan_page_cbor_hex"])?;
+	let child = PlanBody::from_canonical_cbor(action.child_digest, &child_body)?;
+	assert!(child.fields().approval_required);
+	assert_eq!(child.fields().created_at, parent.created_at);
+	assert_eq!(child.fields().expires_at, Some(parent.expires_at));
+	assert_eq!(child.fields().entry_pages.as_slice(), &[action.child_page]);
+	let entry = PlanEntriesPage::from_canonical_cbor(action.child_page, &child_page)?.entry();
+	assert_eq!(entry.source.basename, action.name.as_bytes());
+	assert_eq!(entry.destination.basename, action.name.as_bytes());
+	let (device, inode) = file_identity(inputs.live[1], super::super::SUBJECT)?;
+	let child_source = entry
+		.source_identity
+		.ok_or("missing child source identity")?;
+	assert_eq!(action.source.major, rustix::fs::major(device));
+	assert_eq!(action.source.minor, rustix::fs::minor(device));
+	assert_eq!(action.source.inode.get(), inode);
+	assert_eq!(child_source.volume_id, device.to_le_bytes());
+	assert_eq!(child_source.object_id, inode.to_le_bytes());
+	for (name, artifact) in [
+		"predecessor_root_envelope_cbor_hex",
+		"left_endpoint_envelope_cbor_hex",
+		"right_endpoint_envelope_cbor_hex",
+		"predecessor_leaf_cbor_hex",
+	]
+	.into_iter()
+	.zip(inputs.artifacts)
+	{
+		assert_eq!(decode(&bundle[name])?, artifact.bytes);
+	}
+	let root = exacopy_plan::workflow_sync::decode_root(
+		decode_envelope(&inputs.artifacts[0].bytes)?.body,
+	)?;
+	assert_eq!(report["predecessor_pair_digest"], hex(&root.pair));
+	Ok(())
+}
+
+fn assert_export_envelope(report: &Value, result: &str) {
+	assert_eq!(report["schema"], "exacopy.cli.managed_sync_recreate_export");
+	assert_eq!(report["schema_version"], "1.0");
+	assert_eq!(report["result"], result);
+	assert_eq!(report["authority"], "none");
+	assert_eq!(report["approval_required"], true);
+	for field in [
+		"approval_present",
+		"delegated_grant_present",
+		"action_intent_present",
+		"copy_started",
+		"baseline_advanced",
+	] {
+		assert_eq!(report[field], false);
+	}
 }

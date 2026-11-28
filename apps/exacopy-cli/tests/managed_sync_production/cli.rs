@@ -217,7 +217,7 @@ pub(super) fn exercise(sandbox: &mut Sandbox, selected: Inputs<'_>) -> TestResul
 		}),
 	)?;
 
-	recreate::exercise(sandbox, &cli, &approval, &ack.stdout, &selected)?;
+	recreate::exercise(sandbox, &cli, &approval, &ack.stdout, &selected, &profile)?;
 
 	let root = &selected.policy.history.root.name;
 	let retained = b"retained-cli-history";

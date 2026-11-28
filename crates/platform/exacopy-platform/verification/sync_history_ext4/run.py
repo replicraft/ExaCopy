@@ -596,7 +596,7 @@ def checked_managed_result(output, code, facts, anchors, cli_sha256):
     require(re.fullmatch(r"[0-9a-f]{64}", cli_sha256), "invalid selected managed CLI digest")
     suffix = re.fullmatch(
         rf"live={identity} live_left={identity} live_right={identity} "
-        rf"controls=8 cli_controls=15 cli_sha256={cli_sha256} cleanup=verified",
+        rf"controls=8 cli_controls=17 cli_sha256={cli_sha256} cleanup=verified",
         markers[0].removeprefix(prefix),
     )
     require(markers[0].startswith(prefix) and suffix is not None and code == 0
@@ -609,7 +609,7 @@ def checked_managed_result(output, code, facts, anchors, cli_sha256):
             "reported managed live directories must be distinct on the independent anchor device")
     return {"schema_version": 1, "outcome": "passed", "feature": MANAGED.required_feature, **fields,
             **dict(zip(("live", "live_left", "live_right"), live)), "controls": 8,
-            "cli_controls": 15, "cli_sha256": cli_sha256, "cleanup": "verified"}
+            "cli_controls": 17, "cli_sha256": cli_sha256, "cleanup": "verified"}
 
 
 def checked_genesis_result(output, code, facts, anchors, fixture_parent, pid, oracle, parse_frame, *, report=None):

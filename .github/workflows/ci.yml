@@ -199,7 +199,7 @@ jobs:
           bash .github/ci/capture.sh experimental-linux-managed-sync-cli cargo +1.100.0 nextest run --locked \
             -p exacopy-cli --lib --no-default-features --features experimental-linux-managed-sync \
             --profile ci-experimental-linux-managed-sync --no-tests fail \
-            -E 'test(/^(args::parser::sync_managed::tests::prepare_recreate_|sync_preview::managed_command::recreate::tests::|assembly::linux::managed_sync::manual_recreate::tests::)/)'
+            -E 'test(/^(args::parser::sync_managed::tests::(prepare_recreate_|signed_recreate_)|sync_preview::managed_command::(recreate|export_recreate)::tests::|assembly::linux::managed_sync::manual_recreate::tests::)/)'
           bash .github/ci/capture.sh experimental-linux-managed-sync-cli-attendance \
             python3 -B .github/ci/cli_opt_in_attendance.py managed-sync-recreate "$report"
       - name: Run P-071 Linux reservation fixture

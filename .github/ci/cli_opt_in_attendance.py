@@ -75,7 +75,14 @@ APFS_CASES = {
 APFS_DEFAULT_CASE = "args::parser::recovery::tests::inspect_apfs_is_hidden_without_the_exact_target_and_feature"
 MANAGED_SYNC_RECREATE_CASES = {
     "args::parser::sync_managed::tests::prepare_recreate_requires_explicit_direction_conflict_and_receipt",
+    "args::parser::sync_managed::tests::signed_recreate_requires_an_independently_selected_pair_and_expiry",
     "sync_preview::managed_command::recreate::tests::prepare_recreate_refuses_oversize_receipt_without_candidate",
+    "sync_preview::managed_command::recreate::tests::plan_expiry_preserves_fraction_and_refuses_seconds_overflow",
+    (
+        "sync_preview::managed_command::export_recreate::tests::"
+        "signed_export_report_round_trips_the_exact_members_without_authority"
+    ),
+    "sync_preview::managed_command::export_recreate::tests::refused_export_has_no_association_or_bundle",
     (
         "assembly::linux::managed_sync::manual_recreate::tests::"
         "manual_recreate_selects_only_the_current_survivor_and_exact_conflict"
@@ -187,8 +194,8 @@ def check_attendance(report, lane):
     missing = required - attended
     if missing:
         raise ValueError(f"required testcases missing: {', '.join(sorted(missing))}")
-    if lane == "public-stage" and (unexpected := attended - required):
-        raise ValueError(f"unexpected public-stage testcases: {', '.join(sorted(unexpected))}")
+    if lane in ("public-stage", "managed-sync-recreate") and (unexpected := attended - required):
+        raise ValueError(f"unexpected {lane} testcases: {', '.join(sorted(unexpected))}")
     return sorted(required)
 
 
