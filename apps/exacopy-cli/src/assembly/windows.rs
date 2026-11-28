@@ -118,6 +118,6 @@ fn component(name: &[u16]) -> Result<WindowsComponent<'_>, WindowsBootstrapRefus
 fn identity(
 	held: WindowsStageIdentity,
 ) -> Result<WindowsBootstrapFileIdentity, WindowsBootstrapRefusal> {
-	WindowsBootstrapFileIdentity::new(*held.volume_guid(), held.volume_serial(), *held.file_id())
+	WindowsBootstrapFileIdentity::new(held.volume_guid(), held.volume_serial(), held.file_id())
 		.map_err(|_| WindowsBootstrapRefusal::InvalidLayout)
 }
