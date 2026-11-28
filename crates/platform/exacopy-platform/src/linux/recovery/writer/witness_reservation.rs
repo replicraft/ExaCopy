@@ -41,6 +41,10 @@ use types::Effect;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+#[path = "../../../../tests/unit/linux/recovery/writer/witness_reservation_ordinary.rs"]
+mod ordinary_tests;
+
 impl RecoveryWriteLease<'_> {
 	/// Reserves anonymous receipt and first-segment capacity under one held lease.
 	///
