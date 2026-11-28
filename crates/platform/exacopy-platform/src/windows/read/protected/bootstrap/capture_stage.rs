@@ -26,6 +26,15 @@ use super::{
 	WindowsComponent, acl, named_identity, refused, security,
 };
 
+mod authenticated;
+
+pub use authenticated::{
+	MAX_WINDOWS_CAPTURE_SEGMENT_BYTES, WindowsAuthenticatedCaptureScope, WindowsCaptureAdmission,
+	WindowsCaptureEffect, WindowsCaptureJournalAdmission, WindowsCaptureJournalGuard,
+	WindowsCaptureJournalSegment, WindowsGuardedCaptureReadBack, WindowsGuardedCaptureStage,
+	WindowsGuardedCaptureView, WindowsPreparedCaptureScope,
+};
+
 const STAGE_DIRECTORY: [u16; 5] = [115, 116, 97, 103, 101];
 const PAYLOAD_NAME: [u16; 7] = [112, 97, 121, 108, 111, 97, 100];
 const MUTATION_SHARE: u32 = FILE_SHARE_READ | FILE_SHARE_WRITE;
@@ -44,6 +53,10 @@ pub enum WindowsCaptureStageError {
 	StageDirectoryOccupied,
 	/// Directory creation was submitted without a fully confirmed result.
 	DirectoryCreateUnconfirmed(Error),
+	/// Current app authority refused the selected effect before submission.
+	Admission(io::Error),
+	/// The scoped capture journal lost custody or has an unconfirmed effect.
+	CaptureJournal(io::Error),
 	/// Private stage creation, writing, barrier or close was refused.
 	Stage(WindowsStageError),
 }
@@ -63,6 +76,8 @@ impl fmt::Display for WindowsCaptureStageError {
 					"private directory creation needs reconciliation ({cause})"
 				)
 			}
+			Self::Admission(cause) => write!(formatter, "capture effect refused ({cause})"),
+			Self::CaptureJournal(cause) => write!(formatter, "capture journal failed ({cause})"),
 			Self::Stage(cause) => fmt::Display::fmt(cause, formatter),
 		}
 	}
@@ -72,7 +87,9 @@ impl std::error::Error for WindowsCaptureStageError {
 	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
 		match self {
 			Self::Custody(cause) | Self::DirectoryCreateUnconfirmed(cause) => Some(cause),
-			Self::Bootstrap(cause) => Some(cause),
+			Self::Bootstrap(cause) | Self::Admission(cause) | Self::CaptureJournal(cause) => {
+				Some(cause)
+			}
 			Self::Stage(cause) => Some(cause),
 			Self::TargetOccupied | Self::StageDirectoryOccupied => None,
 		}
@@ -92,7 +109,7 @@ impl fmt::Debug for WindowsCaptureStageScope<'_> {
 	}
 }
 
-impl WindowsCaptureStageScope<'_> {
+impl<'name> WindowsCaptureStageScope<'name> {
 	/// Creates the fixed protected stage directory and its one fresh leaf.
 	///
 	/// This requires the original live bootstrap custody and independently
@@ -116,33 +133,10 @@ impl WindowsCaptureStageScope<'_> {
 			WindowsCaptureStageWriter<'stage>,
 		) -> Result<T, WindowsCaptureStageError>,
 	) -> Result<T, WindowsCaptureStageError> {
-		use WindowsCaptureStageError as Failure;
-
-		if length > MAX_FILE_LENGTH {
-			return Err(Failure::Stage(WindowsStageError::InvalidExtent));
-		}
-		self.bootstrap.check().map_err(Failure::Bootstrap)?;
-		check_target(&self.bootstrap, target)?;
-		let stage_name = WindowsComponent::new(&STAGE_DIRECTORY)
-			.map_err(|_| Failure::Custody(Error::InvalidPath))?;
-		let descriptor = CreationDescriptor::private_for_sid(&self.bootstrap.records.subject.sid)
-			.ok_or(Failure::Custody(Error::Unprotected))?;
-		let directory = self.open_capture_stage_directory(stage_name, target, &descriptor)?;
-		let custody = CaptureCustody {
-			bootstrap: &self.bootstrap,
-			stage_name,
-			target,
-			directory,
-		};
-		custody.check()?;
-		let stage =
-			WindowsStageDirectory::from_authorized_handle(custody.directory.handle.as_handle())
-				.map_err(Failure::Stage)?;
-		let payload = WindowsComponent::new(&PAYLOAD_NAME)
-			.map_err(|_| Failure::Custody(Error::InvalidPath))?;
-		let writer = stage
-			.create_protected(payload, length, &descriptor)
-			.map_err(Failure::Stage)?;
+		let descriptor = self.prepare_capture(target, length)?;
+		let custody = self.capture_custody(target, &descriptor, || Ok(()))?;
+		let stage = custody.stage_directory()?;
+		let writer = custody.create_payload(&stage, length, &descriptor, || Ok(()))?;
 		let leaf = custody.capture_leaf(writer.identity())?;
 		let output = use_stage(WindowsCaptureStageWriter {
 			custody: &custody,
@@ -153,11 +147,45 @@ impl WindowsCaptureStageScope<'_> {
 		Ok(output)
 	}
 
-	fn open_capture_stage_directory(
+	fn prepare_capture(
+		&self,
+		target: WindowsComponent<'_>,
+		length: u64,
+	) -> Result<CreationDescriptor, WindowsCaptureStageError> {
+		use WindowsCaptureStageError as Failure;
+		if length > MAX_FILE_LENGTH {
+			return Err(Failure::Stage(WindowsStageError::InvalidExtent));
+		}
+		self.bootstrap.check().map_err(Failure::Bootstrap)?;
+		check_target(&self.bootstrap, target)?;
+		CreationDescriptor::private_for_sid(&self.bootstrap.records.subject.sid)
+			.ok_or(WindowsCaptureStageError::Custody(Error::Unprotected))
+	}
+
+	fn capture_custody<'stage, G>(
+		&'stage self,
+		target: WindowsComponent<'stage>,
+		descriptor: &CreationDescriptor,
+		enter: impl FnOnce() -> Result<G, WindowsCaptureStageError>,
+	) -> Result<CaptureCustody<'stage, 'name>, WindowsCaptureStageError> {
+		use WindowsCaptureStageError as Failure;
+		let stage_name = WindowsComponent::new(&STAGE_DIRECTORY)
+			.map_err(|_| Failure::Custody(Error::InvalidPath))?;
+		let directory = self.open_capture_stage_directory(stage_name, target, descriptor, enter)?;
+		Ok(CaptureCustody {
+			bootstrap: &self.bootstrap,
+			stage_name,
+			target,
+			directory,
+		})
+	}
+
+	fn open_capture_stage_directory<G>(
 		&self,
 		name: WindowsComponent<'_>,
 		target: WindowsComponent<'_>,
 		descriptor: &CreationDescriptor,
+		enter: impl FnOnce() -> Result<G, WindowsCaptureStageError>,
 	) -> Result<Directory, WindowsCaptureStageError> {
 		use WindowsCaptureStageError as Failure;
 		let records = &self.bootstrap.records;
@@ -166,6 +194,7 @@ impl WindowsCaptureStageScope<'_> {
 		check_target(&self.bootstrap, target)?;
 		require_case_insensitive(owner_job.handle.as_handle())
 			.map_err(|_| Failure::Custody(Error::Unprotected))?;
+		let guard = enter()?;
 		let handle = match descriptor.create(
 			owner_job.handle.as_handle(),
 			name,
@@ -193,6 +222,7 @@ impl WindowsCaptureStageScope<'_> {
 			)
 		})()
 		.map_err(Failure::DirectoryCreateUnconfirmed)?;
+		drop(guard);
 		Ok(Directory { handle, binding })
 	}
 }
@@ -246,6 +276,29 @@ struct CaptureCustody<'stage, 'name> {
 }
 
 impl CaptureCustody<'_, '_> {
+	fn stage_directory(&self) -> Result<WindowsStageDirectory<'_>, WindowsCaptureStageError> {
+		self.check()?;
+		WindowsStageDirectory::from_authorized_handle(self.directory.handle.as_handle())
+			.map_err(WindowsCaptureStageError::Stage)
+	}
+
+	fn create_payload<'stage, G>(
+		&self,
+		stage: &'stage WindowsStageDirectory<'_>,
+		length: u64,
+		descriptor: &CreationDescriptor,
+		enter: impl FnOnce() -> Result<G, WindowsCaptureStageError>,
+	) -> Result<WindowsStageWriter<'stage>, WindowsCaptureStageError> {
+		let payload = WindowsComponent::new(&PAYLOAD_NAME)
+			.map_err(|_| WindowsCaptureStageError::Custody(Error::InvalidPath))?;
+		let guard = enter()?;
+		let writer = stage
+			.create_protected(payload, length, descriptor)
+			.map_err(WindowsCaptureStageError::Stage)?;
+		drop(guard);
+		Ok(writer)
+	}
+
 	fn check(&self) -> Result<(), WindowsCaptureStageError> {
 		use WindowsCaptureStageError as Failure;
 		self.bootstrap.check().map_err(Failure::Bootstrap)?;

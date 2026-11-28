@@ -437,4 +437,4 @@ fn range_end(offset: u64, count: usize, length: u64) -> Result<u64, WindowsStage
 }
 
 #[cfg(test)]
-mod tests;
+pub(in crate::windows) mod tests;

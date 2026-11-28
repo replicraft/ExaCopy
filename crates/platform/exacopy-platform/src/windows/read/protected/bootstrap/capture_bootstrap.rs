@@ -10,7 +10,7 @@ use super::{
 
 /// Original provisioned NTFS roles held before the bootstrap frame is appended.
 pub struct WindowsCaptureBootstrapScope<'name> {
-	bootstrap: WindowsBootstrapFreshSegment<'name>,
+	pub(super) bootstrap: WindowsBootstrapFreshSegment<'name>,
 }
 
 impl<'name> WindowsCaptureBootstrapScope<'name> {

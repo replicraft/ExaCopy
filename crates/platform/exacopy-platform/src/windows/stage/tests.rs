@@ -12,10 +12,10 @@ use windows_sys::Win32::Storage::FileSystem::{
 
 use super::*;
 
-pub(super) struct Fixture(pub(super) PathBuf);
+pub(in crate::windows) struct Fixture(pub(in crate::windows) PathBuf);
 
 impl Fixture {
-	pub(super) fn new() -> Self {
+	pub(in crate::windows) fn new() -> Self {
 		let root = std::env::var_os("EXACOPY_WINDOWS_NTFS_ROOT")
 			.expect("provision a disposable owner-controlled local NTFS fixture root");
 		static NEXT: AtomicU32 = AtomicU32::new(0);

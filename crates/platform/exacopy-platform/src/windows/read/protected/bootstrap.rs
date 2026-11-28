@@ -21,7 +21,11 @@ use record::{MetadataPin, Record};
 
 pub use capture_bootstrap::{WindowsCaptureBootstrapScope, WindowsCaptureBootstrapSegment};
 pub use capture_stage::{
-	WindowsCaptureStageError, WindowsCaptureStageScope, WindowsCaptureStageWriter,
+	MAX_WINDOWS_CAPTURE_SEGMENT_BYTES, WindowsAuthenticatedCaptureScope, WindowsCaptureAdmission,
+	WindowsCaptureEffect, WindowsCaptureJournalAdmission, WindowsCaptureJournalGuard,
+	WindowsCaptureJournalSegment, WindowsCaptureStageError, WindowsCaptureStageScope,
+	WindowsCaptureStageWriter, WindowsGuardedCaptureReadBack, WindowsGuardedCaptureStage,
+	WindowsGuardedCaptureView, WindowsPreparedCaptureScope,
 };
 pub use writer::WindowsBootstrapFreshSegment;
 
