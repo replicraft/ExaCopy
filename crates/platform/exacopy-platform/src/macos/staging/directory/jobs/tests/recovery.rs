@@ -1,6 +1,6 @@
 use std::fs::{self, File};
 use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
-use std::os::unix::fs::{OpenOptionsExt as _, symlink};
+use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _, symlink};
 use std::path::Path;
 
 use crate::macos::ManagedReadError;
@@ -309,6 +309,87 @@ fn rejects_record_bounds_before_reading() {
 		fs::metadata(&journal_path).unwrap().len(),
 		64 * 1024 * 1024 + 1
 	);
+}
+
+#[test]
+fn journal_eof_probe_refuses_a_rebound_parent_and_preserves_both_segments() {
+	const INCUMBENT: &[u8] = b"independent public incumbent";
+	let fixture = Fixture::new();
+	let root = fixture.bind();
+	let container = open_staging(&root);
+	let mut other_uuid = UUID;
+	other_uuid[15] ^= 1;
+	let other_name = JobName::from_uuid_bytes(other_uuid).unwrap();
+	for name in [job_name(), other_name] {
+		let job = container.create_job_directory(name).unwrap();
+		let mut segment = job
+			.create_journal_directory()
+			.unwrap()
+			.create_first_segment()
+			.unwrap();
+		segment.write_all(JOURNAL_BYTES).unwrap();
+	}
+	let job_path = job_path(&fixture);
+	let journal = job_path.join(JOURNAL);
+	let other = fixture
+		.path(PRIVATE)
+		.join(other_name.to_string())
+		.join(JOURNAL);
+	let saved = job_path.join("original-journal");
+	let target = fixture.path(TARGET);
+	fs::write(&target, INCUMBENT).unwrap();
+	let target_before = fs::symlink_metadata(&target).unwrap();
+	let before = [&journal, &other].map(|directory| {
+		let stat = fs::symlink_metadata(directory).unwrap();
+		assert!(stat.is_dir());
+		let segment = super::assert_record(&directory.join(FIRST_SEGMENT), JOURNAL_BYTES);
+		((stat.dev(), stat.ino()), (segment.dev(), segment.ino()))
+	});
+	assert_ne!(before[0].0, before[1].0);
+	assert_ne!(before[0].1, before[1].1);
+
+	let job = container.open_recovery_job(job_name()).unwrap();
+	let mut segment = job.open_first_segment().unwrap();
+	let identity = segment.identity();
+	let mut bytes = [0; JOURNAL_BYTES.len()];
+	segment.read_exact(&mut bytes).unwrap();
+	assert_eq!(bytes, JOURNAL_BYTES);
+	let mut terminal = [0xa7];
+	assert_eq!(segment.read(&mut terminal).unwrap(), 0);
+	assert_eq!(terminal, [0xa7]);
+
+	// Simulate a noncooperating namespace change within the owned fixture.
+	fs::rename(&journal, &saved).unwrap();
+	fs::rename(&other, &journal).unwrap();
+	let error = segment.read(&mut terminal).unwrap_err();
+	assert!(matches!(
+		error
+			.get_ref()
+			.and_then(|cause| cause.downcast_ref::<RecoveryError>()),
+		Some(RecoveryError::InvalidObject(JobArtifact::Journal))
+	));
+	assert_eq!(terminal, [0xa7]);
+	drop(segment);
+
+	let mut replacement = job.open_first_segment().unwrap();
+	assert_ne!(replacement.identity(), identity);
+	replacement.read_exact(&mut bytes).unwrap();
+	assert_eq!(bytes, JOURNAL_BYTES);
+	assert_eq!(replacement.read(&mut terminal).unwrap(), 0);
+	for (directory, (prior_dir, prior_segment)) in [saved, journal].into_iter().zip(before) {
+		let stat = fs::symlink_metadata(&directory).unwrap();
+		assert!(stat.is_dir());
+		assert_eq!((stat.dev(), stat.ino()), prior_dir);
+		let record = super::assert_record(&directory.join(FIRST_SEGMENT), JOURNAL_BYTES);
+		assert_eq!((record.dev(), record.ino()), prior_segment);
+	}
+	let target_after = fs::symlink_metadata(&target).unwrap();
+	assert!(target_after.is_file());
+	assert_eq!(
+		(target_after.dev(), target_after.ino()),
+		(target_before.dev(), target_before.ino())
+	);
+	assert_eq!(fs::read(target).unwrap(), INCUMBENT);
 }
 
 #[test]
