@@ -101,5 +101,23 @@ refuse before lease clipping. A representable result must carry the exact wake
 and next capped ceiling. Four covers distinguish overflow, clipping, exact
 maximum time, and the capped high sample. All existing arithmetic, real jitter,
 concrete cap, and mutation checks remain required. The tool-argument diagnostic
-refusal also remains in force. The source has no current hosted timing-contract
-result, and the existing time limits and solver selections remain in effect.
+refusal also remains in force. The existing time limits and solver selections
+remain in effect.
+
+At `969549a` and `98c291b`, the consumed-timing encoding ran without the earlier
+omitted-argument diagnostic and reported exactly one verified `retry_timing`
+substitution. Six companion harnesses passed with fifteen of twenty-two covers,
+including the real concrete capped trajectory. The arbitrary history reached
+four MiniSAT banners before its CBMC timeout. The narrow/wide lemma reached
+two banners before the outer recorder timed out with exit 124. Neither real
+function contract harness began. No named assertion counterexample was observed;
+these results leave the complete proof and contract composition unverified.
+
+The [969549a snapshot](https://github.com/replicraft/ExaCopy/actions/runs/46133037585/artifacts/15259567666)
+has SHA-256 `421b1fa45e1251250449ccd614e91232a5cca81573e41a36a9a133f8a65db32e`.
+Its raw member is `exacopy-evs/4c6f9a28-176c-4278-b1bc-25dea7ad12c2.log`,
+with SHA-256 `b59efcb7a50018f8ac5fbe35a1796363ddc2ee1a9e9a22e4024d11352be48bb8`.
+The independent [98c291b snapshot](https://github.com/replicraft/ExaCopy/actions/runs/46133269159/artifacts/15259222436)
+has SHA-256 `8717b360c77a7d2b67c368de150f43827da941b76821609e622013fa991a2c01`.
+Its raw member is `exacopy-evs/141fd60f-26b9-462a-8f47-b0e13da1f37b.log`,
+with SHA-256 `00ee723d79dc4142ec154b66371969e8b81dda4dc292ac4c7d3faacacba6087a`.
