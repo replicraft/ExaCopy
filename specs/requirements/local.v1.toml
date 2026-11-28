@@ -345,6 +345,22 @@ target = "copy_refuses_a_corrupt_prefix_after_receipt_commitment_and_preserves_p
 detail = "An owned Linux fixture damages an early journal envelope in place after observing the exact receipt commitment. The test checks the typed readback refusal and preservation of the bad journal, receipt, source and public target. Hosted attendance remains to be verified."
 
 [[coverage.evidence]]
+owner = "exacopy-platform"
+level = "native"
+state = "defined"
+path = "crates/platform/exacopy-platform/src/linux/job/receipt/tests.rs"
+target = "fresh_receipt_reads_the_named_inode_through_eof_without_write_access"
+detail = "The native owner control checks the original read-only descriptor, kernel write refusal, job lease exclusion, cursor-independent bytes and EOF. Execution and coverage remain unverified."
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "native"
+state = "defined"
+path = "crates/platform/exacopy-platform/src/linux/job/receipt/tests.rs"
+target = "receipt_read_refuses_a_rebound_parent_with_identical_artifact_bytes"
+detail = "The native owner control requires a typed identity refusal before output changes and checks both retained same-byte receipt artifacts. Execution and coverage remain unverified."
+
+[[coverage.evidence]]
 owner = "exacopy-cli"
 level = "native"
 state = "defined"
