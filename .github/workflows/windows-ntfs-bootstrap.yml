@@ -21,6 +21,12 @@ on:
       - 'apps/exacopy-cli/**'
       - 'crates/foundation/**'
       - 'crates/interfaces/exacopy-endpoint/**'
+      - 'crates/adapters/exacopy-sftp/**'
+      - 'crates/engines/exacopy-transfer/**'
+      - 'crates/net/exacopy-ssh/**'
+      - 'crates/formats/exacopy-manifest/**'
+      - 'crates/formats/exacopy-plan/**'
+      - 'crates/storage/exacopy-content/**'
       - 'crates/storage/exacopy-journal/**'
       - 'crates/platform/exacopy-platform/**'
 
@@ -33,7 +39,7 @@ jobs:
     if: github.repository == 'replicraft/ExaCopy' && github.ref == 'refs/heads/main' && github.event_name == 'push'
     name: Windows bootstrap history (fixed NTFS)
     runs-on: windows-2025
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -61,6 +67,12 @@ jobs:
         env:
           EXACOPY_BOOTSTRAP_ACTIONS_READ_TOKEN: ${{ github.token }}
         run: ./apps/exacopy-cli/verification/windows_bootstrap/run_hosted.ps1
+      - name: Qualify the exact fresh SFTP capture as the standard actor
+        id: sftp_capture
+        shell: pwsh
+        env:
+          EXACOPY_BOOTSTRAP_ACTIONS_READ_TOKEN: ${{ github.token }}
+        run: ./apps/exacopy-cli/verification/windows_bootstrap/run_hosted.ps1 -SftpCapture
       - name: Retain exact source and volume eligibility receipts
         if: always() && steps.admission.outputs.evidence_path != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -75,5 +87,13 @@ jobs:
         with:
           name: windows-ntfs-bootstrap-native-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ steps.native.outputs.evidence_path }}
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain exact owned fresh SFTP capture evidence
+        if: always() && steps.sftp_capture.outputs.evidence_path != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-ntfs-sftp-capture-native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.sftp_capture.outputs.evidence_path }}
           if-no-files-found: error
           retention-days: 90

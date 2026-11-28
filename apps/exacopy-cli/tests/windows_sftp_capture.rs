@@ -332,4 +332,34 @@ async fn captures_real_sftp_only_into_the_selected_original_ntfs_job() {
 	// Fixed v1 range body: version, prepared and previous digests, ordinal, offset, length, digest.
 	assert_eq!(&range.payload()[84..116], digest.as_bytes());
 	assert!(frames.next_frame().unwrap().is_none());
+
+	// The controller rejoins these physical identities before disposing of the owned tree.
+	println!(
+		r#"{{"capture_head":"{}","sequence":{},"ranges":{},"stage_directory":"{}","stage_payload":"{}"}}"#,
+		hex(&prefix.head().digest()),
+		prefix.head().sequence(),
+		prefix.ranges(),
+		controller_identity(stage_directory),
+		controller_identity(stage_payload)
+	);
+}
+
+fn hex(bytes: &[u8]) -> String {
+	use std::fmt::Write as _;
+
+	let mut encoded = String::with_capacity(bytes.len() * 2);
+	for byte in bytes {
+		write!(encoded, "{byte:02x}").unwrap();
+	}
+	encoded
+}
+
+fn controller_identity(identity: WindowsStageIdentity) -> String {
+	let mut high_low = identity.file_id();
+	high_low.reverse();
+	format!(
+		"{:016X}:{}",
+		identity.volume_serial(),
+		hex(&high_low).to_ascii_uppercase()
+	)
 }

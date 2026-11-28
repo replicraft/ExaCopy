@@ -335,13 +335,36 @@ namespace ExaCopyQualification
         public static BuildPreparationReceipt PrepareBootstrapBuild(string program, string workDirectory,
             string[] environment, string stdout, string stderr, int timeoutMilliseconds)
         {
+            return PrepareCliFixtureBuild(program, workDirectory, environment, stdout, stderr,
+                timeoutMilliseconds, sftpCapture: false);
+        }
+
+        public static BuildPreparationReceipt PrepareSftpCaptureBuild(string program, string workDirectory,
+            string[] environment, string stdout, string stderr, int timeoutMilliseconds)
+        {
+            return PrepareCliFixtureBuild(program, workDirectory, environment, stdout, stderr,
+                timeoutMilliseconds, sftpCapture: true);
+        }
+
+        private static BuildPreparationReceipt PrepareCliFixtureBuild(string program, string workDirectory,
+            string[] environment, string stdout, string stderr, int timeoutMilliseconds, bool sftpCapture)
+        {
             RequirePinnedCargoProgram(program, environment);
             var arguments = new[]
             {
                 "test", "--locked", "--offline", "--jobs", "2", "--target", "x86_64-pc-windows-msvc",
-                "-p", "exacopy-cli", "--test", "windows_bootstrap", "--no-default-features",
-                "--features", "windows-bootstrap-fixture", "--no-run", "--message-format=json"
+                "-p", "exacopy-cli", "--test", sftpCapture ? "windows_sftp_capture" : "windows_bootstrap", "--no-default-features",
+                "--features", sftpCapture ? "experimental-windows-sftp-capture" : "windows-bootstrap-fixture", "--no-run", "--message-format=json"
             };
+            if (sftpCapture)
+            {
+                // Omit test-profile debug information within the existing admitted image bound.
+                var captureArguments = new string[arguments.Length + 2];
+                captureArguments[0] = "--config";
+                captureArguments[1] = "profile.test.debug=0";
+                Array.Copy(arguments, 0, captureArguments, 2, arguments.Length);
+                arguments = captureArguments;
+            }
             var preparation = new BuildPreparationReceipt(timeoutMilliseconds);
             try
             {

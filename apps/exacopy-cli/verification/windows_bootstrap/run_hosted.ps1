@@ -1,9 +1,10 @@
 # One canonical hosted provider. The app fixture keeps its original interface.
 [CmdletBinding()]
-param([switch] $AdmissionOnly)
+param([switch] $AdmissionOnly, [switch] $SftpCapture)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if ($AdmissionOnly -and $SftpCapture) { throw 'Admission-only applies to the common volume and actor profile.' }
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../..'))
 $publication = Join-Path $repo 'crates/platform/exacopy-platform/verification/windows_ntfs_publication'
 . (Join-Path $publication 'selection.ps1')
@@ -105,6 +106,7 @@ $drained = $true
 $childAttempted = $false
 $outerAdmitted = $false
 $state = $identity
+if ($SftpCapture) { $state.fixture_target = 'windows_sftp_capture' }
 $state.status = 'failed'
 $state.phase = 'data-volume-admission'
 $state.cleanup = 'not-acquired'
@@ -174,8 +176,13 @@ try {
     $stdout = Join-Path $evidence 'cargo.stdout'
     $stderr = Join-Path $evidence 'cargo.stderr'
     $drained = $false
-    $prepared = [ExaCopyQualification.PublicationProcess]::PrepareBootstrapBuild($cargoPath, $repo,
-        $environment, $stdout, $stderr, 480000)
+    $prepared = if ($SftpCapture) {
+        [ExaCopyQualification.PublicationProcess]::PrepareSftpCaptureBuild($cargoPath, $repo,
+            $environment, $stdout, $stderr, 480000)
+    } else {
+        [ExaCopyQualification.PublicationProcess]::PrepareBootstrapBuild($cargoPath, $repo,
+            $environment, $stdout, $stderr, 480000)
+    }
     $process = $prepared.Process
     $drained = ($null -ne $process -and $process.RootSignaled -and $process.Drained -and
         $null -ne $process.ActiveProcesses -and $process.ActiveProcesses -eq 0)
@@ -191,7 +198,7 @@ try {
     Confirm-BootstrapToolName $compiler
     $messages = Read-BootstrapRetiredCapture $stdout $process.StdoutBytes $prepared.StdoutSinkIdentity $prepared.StdoutSinkSha256
     [void](Read-BootstrapRetiredCapture $stderr $process.StderrBytes $prepared.StderrSinkIdentity $prepared.StderrSinkSha256)
-    $binaryPath = Select-BootstrapExecutable $messages $repo $build
+    $binaryPath = Select-BootstrapExecutable $messages $repo $build -SftpCapture:$SftpCapture
     $state.preparation_invocation_id = $prepared.InvocationId
     $state.phase = 'held-fixture'
     $binary = Get-BootstrapExactTool $binaryPath $data.Ancestors.Held[0].Identity
@@ -218,10 +225,11 @@ try {
     $state.runner_source = $runnerImage.Record
     $drained = $false
     $childAttempted = $true
+    $arguments = @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $runner, '-Image', $binaryPath,
+        '-ImageSha256', $binary.Record.sha256, '-ScratchParent', $work)
+    if ($SftpCapture) { $arguments += '-SftpCapture' }
     $case = [ExaCopyQualification.PublicationProcess]::RunBootstrapActor($shellPath,
-        @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $runner, '-Image', $binaryPath,
-          '-ImageSha256', $binary.Record.sha256, '-ScratchParent', $work), $repo,
-        ($base + @("TMP=$build", "TEMP=$build")), $caseOut, $caseErr, 90000)
+        $arguments, $repo, ($base + @("TMP=$build", "TEMP=$build")), $caseOut, $caseErr, 90000)
     $drained = ($null -ne $case -and $case.RootSignaled -and $case.Drained -and
         $null -ne $case.ActiveProcesses -and $case.ActiveProcesses -eq 0)
     $case | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $evidence 'fixture-runner.process.json')
@@ -238,8 +246,9 @@ try {
     Confirm-ExaCopyOwnerAcl $caseEvidence $owner -Root
     $casePin = [ExaCopyQualification.DirectoryCustody]::HoldAncestor($caseEvidence)
     try {
+        $outcomeName = if ($SftpCapture) { 'capture-boundary.json' } else { 'historical-head.json' }
         $caseNames = @('stage-acl-before.json', 'stage-acl-after.json', 'process.json', 'fixture.stdout',
-            'fixture.stderr', 'selection.json', 'historical-head.json', 'cleanup.txt')
+            'fixture.stderr', 'selection.json', $outcomeName, 'cleanup.txt')
         Assert-ExaCopyExactEntries $caseEvidence $caseNames
         foreach ($name in $caseNames) {
             $inputPath = Join-Path $caseEvidence $name

@@ -119,6 +119,18 @@ separate receipts. Ineligible volume or actor evidence fails admission without
 a fallback. A passing initial fixture covers only the cases above. It does not
 qualify Windows copy, restart recovery, publication or power-loss durability.
 
+The same workflow adds a separate `run_hosted.ps1 -SftpCapture` step after
+the original bootstrap case. It builds only the exact `windows_sftp_capture`
+target with `experimental-windows-sftp-capture`, selects its held compiler
+artifact and runs the real SDK against a controlled loopback SSH/SFTP peer.
+Its separately owned tree contains one empty capture sibling, one occupied
+sibling and an incumbent. The original bootstrap roster remains unchanged.
+The controller rejoins the returned stage and payload identities before
+disposing of the exact captured roster and retaining its signed boundary.
+Failure or uncertain custody retains the inner fixture; a disposed hosted
+worker is not persistent failure storage. This step grants no publication or
+restart authority and remains unexecuted behind the same volume admission.
+
 Retained attempts `46079103337` and `46070223805` refused the `D:\` volume owner
 at fixed-NTFS admission. Attempt `46068832224` refused competing non-actor
 access at that boundary. None reached the selected bootstrap fixture.

@@ -62,7 +62,7 @@ function Assert-BootstrapRunIdentity {
 }
 
 function Select-BootstrapExecutable {
-    param([byte[]] $Bytes, [string] $Repository, [string] $Build)
+    param([byte[]] $Bytes, [string] $Repository, [string] $Build, [switch] $SftpCapture)
 
     $limit = [ExaCopyQualification.PublicationProcess]::StreamLimitBytes
     if ($Bytes.Length -eq 0 -or $Bytes.Length -gt $limit -or $Bytes[-1] -ne 10) { throw 'Invalid bounded Cargo capture.' }
@@ -70,7 +70,9 @@ function Select-BootstrapExecutable {
     $lines = $encoding.GetString($Bytes).Split([char]10)
     if ($lines.Length -gt 4097) { throw 'Too many bounded Cargo messages.' }
     $manifest = Join-Path $Repository 'apps\exacopy-cli\Cargo.toml'
-    $source = Join-Path $Repository 'apps\exacopy-cli\tests\windows_bootstrap.rs'
+    $target = if ($SftpCapture) { 'windows_sftp_capture' } else { 'windows_bootstrap' }
+    $feature = if ($SftpCapture) { 'experimental-windows-sftp-capture' } else { 'windows-bootstrap-fixture' }
+    $source = Join-Path $Repository "apps\exacopy-cli\tests\$target.rs"
     $events = @(for ($index = 0; $index -lt $lines.Length - 1; $index++) {
         $line = $lines[$index].TrimEnd([char]13)
         if ($line.Length -eq 0 -or $encoding.GetByteCount($line) -gt 256KB) {
@@ -88,7 +90,7 @@ function Select-BootstrapExecutable {
         throw 'Cargo did not retain one terminal successful build message.'
     }
     $matches = @($events | Where-Object {
-        $_.reason -ceq 'compiler-artifact' -and $_.Contains('target') -and $_.target.name -ceq 'windows_bootstrap'
+        $_.reason -ceq 'compiler-artifact' -and $_.Contains('target') -and $_.target.name -ceq $target
     })
     if ($matches.Count -ne 1) { throw 'Cargo did not report exactly one bootstrap test target.' }
     $event = $matches[0]
@@ -97,17 +99,17 @@ function Select-BootstrapExecutable {
         $event.target.kind.Count -ne 1 -or $event.target.kind[0] -cne 'test' -or
         $event.target.crate_types.Count -ne 1 -or $event.target.crate_types[0] -cne 'bin' -or
         $event.target['required-features'].Count -ne 1 -or
-        $event.target['required-features'][0] -cne 'windows-bootstrap-fixture' -or
+        $event.target['required-features'][0] -cne $feature -or
         $event.profile.test -isnot [bool] -or !$event.profile.test -or
         $event.fresh -isnot [bool] -or $event.fresh -or
-        $event.features.Count -ne 1 -or $event.features[0] -cne 'windows-bootstrap-fixture' -or
+        $event.features.Count -ne 1 -or $event.features[0] -cne $feature -or
         $event.executable -isnot [string] -or [string]::IsNullOrEmpty($event.executable)) {
         throw 'Cargo reported the wrong manifest, source, features or build profile.'
     }
     $path = Resolve-ReadDiffExecutablePath $event.executable $Build
     $prefix = [regex]::Escape((Join-Path $Build 'x86_64-pc-windows-msvc\debug'))
-    $ordinary = '\\deps\\windows_bootstrap-[0-9a-f]{16}\.exe'
-    $separated = '\\build\\exacopy-cli\\(?<hash>[0-9a-f]{16})\\out\\windows_bootstrap-\k<hash>\.exe'
+    $ordinary = '\\deps\\' + $target + '-[0-9a-f]{16}\.exe'
+    $separated = '\\build\\exacopy-cli\\(?<hash>[0-9a-f]{16})\\out\\' + $target + '-\k<hash>\.exe'
     if ($path -cnotmatch ('\A' + $prefix + '(?:' + $ordinary + '|' + $separated + ')\z') -or
         @($event.filenames | Where-Object { (Convert-ReadDiffExecutableSeparators $_) -ceq $path }).Count -ne 1) {
         throw 'The exact Cargo bootstrap image escaped the selected target layout.'

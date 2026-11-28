@@ -3,7 +3,8 @@
 param(
     [Parameter(Mandatory)][string] $Image,
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-fA-F]{64}$')][string] $ImageSha256,
-    [Parameter(Mandatory)][string] $ScratchParent
+    [Parameter(Mandatory)][string] $ScratchParent,
+    [switch] $SftpCapture
 )
 
 Set-StrictMode -Version Latest
@@ -30,8 +31,8 @@ function Get-BootstrapIdentity {
     return "$VolumeGuid/$($serial.ToLowerInvariant())/$([Convert]::ToHexString($native).ToLowerInvariant())"
 }
 
-function New-BootstrapEmptyRecord {
-    param([string] $Path, [Security.Principal.SecurityIdentifier] $Owner)
+function New-BootstrapRecord {
+    param([string] $Path, [Security.Principal.SecurityIdentifier] $Owner, [byte[]] $Contents = @())
 
     $acl = [Security.AccessControl.FileSecurity]::new()
     $acl.SetOwner($Owner)
@@ -43,13 +44,28 @@ function New-BootstrapEmptyRecord {
     try {
         $created = [ExaCopyQualification.ReadDiffCustody]::Observe($stream.SafeFileHandle, $false)
         if ($created.Links -ne 1 -or $stream.Length -ne 0) { throw 'Unexpected new fixture record state.' }
+        if ($Contents.Length -ne 0) {
+            $stream.Write($Contents, 0, $Contents.Length)
+            $stream.Flush($true)
+            if ($stream.Length -ne $Contents.Length) { throw 'A provisioned record has the wrong extent.' }
+        }
         return $created.FileId
     } finally {
         $stream.Dispose()
     }
 }
 
-function Confirm-BootstrapFixture {
+function Add-BootstrapRole {
+    param($Roles, [string] $Path, [bool] $Directory, $Created)
+
+    $pin = [ExaCopyQualification.ReadDiffCustody]::HoldNode($Path, $Directory, $false)
+    $role = [pscustomobject]@{ Path = $Path; Directory = $Directory; Pin = $pin; Id = $null }
+    $Roles.Add($role)
+    $role.Id = [ExaCopyQualification.ReadDiffCustody]::Observe($pin, $Directory).FileId
+    if ($null -ne $Created) { Assert-StageSameIdentity $Created $role.Id }
+}
+
+function Confirm-BootstrapRoles {
     param($Roles, $Ancestors, [string] $RootId)
 
     Confirm-StageAncestorCustody $Ancestors
@@ -68,6 +84,12 @@ function Confirm-BootstrapFixture {
             $named.Dispose()
         }
     }
+}
+
+function Confirm-BootstrapFixture {
+    param($Roles, $Ancestors, [string] $RootId)
+
+    Confirm-BootstrapRoles $Roles $Ancestors $RootId
     if ($Roles.Count -ne 9) { throw 'Expected the original and copied job roles.' }
     Assert-ExaCopyExactEntries $Roles[0].Path @(
         [IO.Path]::GetFileName($Roles[1].Path), [IO.Path]::GetFileName($Roles[5].Path))
@@ -75,6 +97,26 @@ function Confirm-BootstrapFixture {
     Assert-ExaCopyExactEntries $Roles[3].Path @('00000000000000000001.exajnl')
     Assert-ExaCopyExactEntries $Roles[5].Path @('owner.cbor', 'journal')
     Assert-ExaCopyExactEntries $Roles[7].Path @('00000000000000000001.exajnl')
+}
+
+function Confirm-SftpCaptureFixture {
+    param($Roles, $Ancestors, [string] $RootId, [switch] $Captured)
+
+    Confirm-BootstrapRoles $Roles $Ancestors $RootId
+    $expectedCount = if ($Captured) { 14 } else { 12 }
+    if ($Roles.Count -ne $expectedCount -or @($Roles.Id | Sort-Object -Unique).Count -ne $expectedCount) {
+        throw 'Expected distinct original capture role identities.'
+    }
+    Assert-ExaCopyExactEntries $Roles[0].Path @(
+        [IO.Path]::GetFileName($Roles[1].Path), [IO.Path]::GetFileName($Roles[5].Path), 'existing-target')
+    $positiveEntries = @('owner.cbor', 'journal')
+    if ($Captured) { $positiveEntries += 'stage' }
+    Assert-ExaCopyExactEntries $Roles[1].Path $positiveEntries
+    Assert-ExaCopyExactEntries $Roles[5].Path @('owner.cbor', 'journal')
+    foreach ($journalRole in @($Roles[3], $Roles[7])) {
+        Assert-ExaCopyExactEntries $journalRole.Path @('00000000000000000001.exajnl', 'capture-v1.exajnl')
+    }
+    if ($Captured) { Assert-ExaCopyExactEntries $Roles[12].Path @('payload') }
 }
 
 $Image = Resolve-ExaCopyWindowsPath $Image
@@ -131,16 +173,16 @@ try {
     New-StagePrivateFixture $journal $owner
     $ownerPath = Join-Path $job 'owner.cbor'
     $segmentPath = Join-Path $journal '00000000000000000001.exajnl'
-    $ownerId = New-BootstrapEmptyRecord $ownerPath $owner
-    $segmentId = New-BootstrapEmptyRecord $segmentPath $owner
+    $ownerId = New-BootstrapRecord $ownerPath $owner
+    $segmentId = New-BootstrapRecord $segmentPath $owner
     $copyJob = Join-Path $fixture '.exacopy-018d45be-0000-7000-8000-000000000002'
     $copyJournal = Join-Path $copyJob 'journal'
     New-StagePrivateFixture $copyJob $owner
     New-StagePrivateFixture $copyJournal $owner
     $copyOwnerPath = Join-Path $copyJob 'owner.cbor'
     $copySegmentPath = Join-Path $copyJournal '00000000000000000001.exajnl'
-    $copyOwnerId = New-BootstrapEmptyRecord $copyOwnerPath $owner
-    $copySegmentId = New-BootstrapEmptyRecord $copySegmentPath $owner
+    $copyOwnerId = New-BootstrapRecord $copyOwnerPath $owner
+    $copySegmentId = New-BootstrapRecord $copySegmentPath $owner
     # Keep the same root and distinctly held role sets for both exact jobs.
     foreach ($entry in @(
         @{ Path = $fixture; Directory = $true; Created = $rootId }
@@ -153,32 +195,52 @@ try {
         @{ Path = $copyJournal; Directory = $true; Created = $null }
         @{ Path = $copySegmentPath; Directory = $false; Created = $copySegmentId }
     )) {
-        $pin = [ExaCopyQualification.ReadDiffCustody]::HoldNode($entry.Path, $entry.Directory, $false)
-        $role = [pscustomobject]@{ Path = $entry.Path; Directory = $entry.Directory; Pin = $pin; Id = $null }
-        $roles.Add($role)
-        $role.Id = [ExaCopyQualification.ReadDiffCustody]::Observe($pin, $role.Directory).FileId
-        if ($null -ne $entry.Created) { Assert-StageSameIdentity $entry.Created $role.Id }
+        Add-BootstrapRole $roles $entry.Path $entry.Directory $entry.Created
     }
-    Confirm-BootstrapFixture $roles $scratchAncestors $rootId
+    if ($SftpCapture) {
+        $sibling = Join-Path $journal 'capture-v1.exajnl'
+        $occupied = Join-Path $copyJournal 'capture-v1.exajnl'
+        $incumbent = Join-Path $fixture 'existing-target'
+        Add-BootstrapRole $roles $sibling $false (New-BootstrapRecord $sibling $owner)
+        Add-BootstrapRole $roles $occupied $false (New-BootstrapRecord $occupied $owner (
+            [Text.Encoding]::ASCII.GetBytes('retained occupied sibling')))
+        Add-BootstrapRole $roles $incumbent $false (New-BootstrapRecord $incumbent $owner (
+            [Text.Encoding]::ASCII.GetBytes('retained existing target')))
+        Confirm-SftpCaptureFixture $roles $scratchAncestors $rootId
+    } else {
+        Confirm-BootstrapFixture $roles $scratchAncestors $rootId
+    }
     $fixtureComplete = $true
     Write-StageAclEvidence $fixture $owner 'before' $evidence
 
-    $roleIds = ($roles | Select-Object -First 5 | ForEach-Object { Get-BootstrapIdentity $guid $_.Id }) -join ';'
-    $copyRoles = @($roles[0]) + @($roles | Select-Object -Skip 5)
-    $copyRoleIds = ($copyRoles | ForEach-Object { Get-BootstrapIdentity $guid $_.Id }) -join ';'
-    [ordered]@{ image_sha256 = $observedHash.ToLowerInvariant(); fixture = $fixture
-        role_ids = $roleIds; copied_role_ids = $copyRoleIds } |
-        ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence 'selection.json')
+    $commonEnvironment = @("SystemRoot=$env:SystemRoot", "SystemDrive=$env:SystemDrive")
+    $selection = [ordered]@{ image_sha256 = $observedHash.ToLowerInvariant(); fixture = $fixture }
+    if ($SftpCapture) {
+        $selector = 'captures_real_sftp_only_into_the_selected_original_ntfs_job'
+        $emptyIds = ($roles[0,1,2,3,4,9] | ForEach-Object { Get-BootstrapIdentity $guid $_.Id }) -join ';'
+        $occupiedIds = ($roles[0,5,6,7,8,10] | ForEach-Object { Get-BootstrapIdentity $guid $_.Id }) -join ';'
+        $selection.empty_role_ids = $emptyIds
+        $selection.occupied_role_ids = $occupiedIds
+        $environment = $commonEnvironment + @("EXACOPY_WINDOWS_SFTP_CAPTURE_ROOT=$fixture",
+            "EXACOPY_WINDOWS_SFTP_CAPTURE_EMPTY_ROLES=$emptyIds",
+            "EXACOPY_WINDOWS_SFTP_CAPTURE_OCCUPIED_ROLES=$occupiedIds")
+    } else {
+        $selector = 'admits_only_the_selected_held_bootstrap_history'
+        $roleIds = ($roles | Select-Object -First 5 | ForEach-Object { Get-BootstrapIdentity $guid $_.Id }) -join ';'
+        $copyRoles = @($roles[0]) + @($roles | Select-Object -Skip 5)
+        $copyRoleIds = ($copyRoles | ForEach-Object { Get-BootstrapIdentity $guid $_.Id }) -join ';'
+        $selection.role_ids = $roleIds
+        $selection.copied_role_ids = $copyRoleIds
+        $environment = $commonEnvironment + @("EXACOPY_WINDOWS_BOOTSTRAP_ROOT=$fixture",
+            "EXACOPY_WINDOWS_BOOTSTRAP_ROLE_IDS=$roleIds", "EXACOPY_WINDOWS_BOOTSTRAP_COPY_ROLE_IDS=$copyRoleIds")
+    }
+    $selection | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence 'selection.json')
     $stdout = Join-Path $evidence 'fixture.stdout'
     $stderr = Join-Path $evidence 'fixture.stderr'
-    $selector = 'admits_only_the_selected_held_bootstrap_history'
     $launchAttempted = $true
     $receipt = [ExaCopyQualification.PublicationProcess]::Run($Image,
         @('--ignored', '--exact', $selector, '--show-output', '--test-threads=1'), $fixture,
-        @("SystemRoot=$env:SystemRoot", "SystemDrive=$env:SystemDrive",
-          "EXACOPY_WINDOWS_BOOTSTRAP_ROOT=$fixture", "EXACOPY_WINDOWS_BOOTSTRAP_ROLE_IDS=$roleIds",
-          "EXACOPY_WINDOWS_BOOTSTRAP_COPY_ROLE_IDS=$copyRoleIds"),
-        $stdout, $stderr, 30000)
+        $environment, $stdout, $stderr, 30000)
     $receipt | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $evidence 'process.json')
     if (!$receipt.Started -or !$receipt.Assigned -or !$receipt.JobListConfigured -or !$receipt.Resumed -or
         !$receipt.RootSignaled -or !$receipt.Drained -or $receipt.ActiveProcesses -ne 0 -or
@@ -188,22 +250,45 @@ try {
     }
     $output = Get-Content -Raw -LiteralPath $stdout
     Assert-ReadDiffExactResult $selector $receipt.ExitCode $output
-    $heads = [regex]::Matches($output, '(?m)^\{"extent":310,"historical_head":"[0-9a-f]{64}","sequence":1\}\r?$')
-    if ($heads.Count -ne 1) { throw 'Expected one historical bootstrap boundary.' }
-    $negativeControls = [regex]::Matches($output, '(?m)^\{"copied_job":"refused","hardlink":"refused","named_stream":"refused","suffix":"refused"\}\r?$')
-    if ($negativeControls.Count -ne 1) { throw 'Expected one complete bootstrap negative-control result.' }
+    if ($SftpCapture) {
+        $nativeId = '[0-9A-F]{16}:[0-9A-F]{32}'
+        $markers = [regex]::Matches($output, ('(?m)^\{"capture_head":"[0-9a-f]{64}","sequence":2,' +
+            '"ranges":1,"stage_directory":"(?<directory>' + $nativeId + ')","stage_payload":"(?<payload>' +
+            $nativeId + ')"\}\r?$'))
+        if ($markers.Count -ne 1) { throw 'Expected one completed live capture boundary and stage identity pair.' }
+        $stage = Join-Path $job 'stage'
+        Add-BootstrapRole $roles $stage $true $markers[0].Groups['directory'].Value
+        Add-BootstrapRole $roles (Join-Path $stage 'payload') $false $markers[0].Groups['payload'].Value
+        Confirm-SftpCaptureFixture $roles $scratchAncestors $rootId -Captured
+        $outcomeName = 'capture-boundary.json'
+        $outcome = $markers[0].Value
+    } else {
+        $heads = [regex]::Matches($output, '(?m)^\{"extent":310,"historical_head":"[0-9a-f]{64}","sequence":1\}\r?$')
+        if ($heads.Count -ne 1) { throw 'Expected one historical bootstrap boundary.' }
+        $negativeControls = [regex]::Matches($output, '(?m)^\{"copied_job":"refused","hardlink":"refused","named_stream":"refused","suffix":"refused"\}\r?$')
+        if ($negativeControls.Count -ne 1) { throw 'Expected one complete bootstrap negative-control result.' }
+        $outcomeName = 'historical-head.json'
+        $outcome = $heads[0].Value
+    }
     Confirm-StageAncestorCustody $imageAncestors
     $fixturePassed = $true
 } catch {
     if ($evidence -and (Get-ExaCopyNodeExists $evidence)) {
         Set-Content -LiteralPath (Join-Path $evidence 'runner-error.txt') -Value $_.ToString()
+        if ($SftpCapture -and $null -ne $receipt -and $receipt.Drained -and $receipt.ActiveProcesses -eq 0) {
+            Write-Host ('Retired capture fixture process: ' + ($receipt | ConvertTo-Json -Compress -Depth 10))
+        }
     }
     throw
 } finally {
     try {
         if ($fixtureComplete -and (!$launchAttempted -or
             ($fixturePassed -and $null -ne $receipt -and $receipt.Drained -and $receipt.ActiveProcesses -eq 0))) {
-            Confirm-BootstrapFixture $roles $scratchAncestors $rootId
+            if ($SftpCapture) {
+                Confirm-SftpCaptureFixture $roles $scratchAncestors $rootId -Captured:$fixturePassed
+            } else {
+                Confirm-BootstrapFixture $roles $scratchAncestors $rootId
+            }
             # The tree and exact original identities were rechecked after drain.
             # Release redundant observations before using handle-bound disposal.
             foreach ($role in $roles) { $role.Pin.Dispose() }
@@ -213,7 +298,7 @@ try {
             if (Get-ExaCopyNodeExists $fixture) { throw 'The original fixture name remained after disposal.' }
             Set-Content -LiteralPath (Join-Path $evidence 'cleanup.txt') -Value 'original fixture removed'
             if ($fixturePassed) {
-                Set-Content -LiteralPath (Join-Path $evidence 'historical-head.json') -Value $heads[0].Value
+                Set-Content -LiteralPath (Join-Path $evidence $outcomeName) -Value $outcome
             }
         } elseif ($fixture) {
             Set-Content -LiteralPath (Join-Path $evidence 'cleanup.txt') -Value 'fixture retained after incomplete qualification or custody'

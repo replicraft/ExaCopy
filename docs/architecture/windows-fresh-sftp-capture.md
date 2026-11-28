@@ -83,11 +83,16 @@ payload allocation and distinguish physical EOF from bounded exhaustion.
 P-084 defines the independent signed-wire oracle. Source controls also cover
 all range slots, torn successors, guard/refused readback behavior, full-width
 supervisor substitution and native sibling identity, busy and nonempty cases.
-These controls have not yet executed at the integrated revision. A separate
-ignored integration target drives the actual SDK with a controlled real
-SSH/SFTP peer and independently provisioned NTFS roles. It requires its own
-trusted fixture inputs and qualified runner; the existing owned bootstrap
-roster is unchanged. Positive execution and Windows SSH/WireGuard CLI
-composition remain open. Same-boot and
+At [`7e49566`](https://github.com/replicraft/ExaCopy/actions/runs/46131219110),
+all three portable journal cases passed on Linux, macOS and
+Windows, and Windows attended all seven selected SDK and journal geometry
+unit cases. Later signed-range refusal controls remain pending execution.
+A separate ignored integration target drives the actual SDK with a controlled
+real SSH/SFTP peer and independently provisioned NTFS roles. The
+[native controller](../../apps/exacopy-cli/verification/windows_bootstrap/README.md)
+now selects it separately after the original bootstrap case; its strict
+volume and actor admission and original roster remain unchanged. Positive
+native execution and Windows SSH/WireGuard CLI composition remain open.
+Same-boot and
 mount continuity across independent restart, process-crash recovery and
 power-loss durability remain unqualified.
