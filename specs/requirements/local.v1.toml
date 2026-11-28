@@ -1518,6 +1518,43 @@ path = "crates/engines/exacopy-transfer/src/linux/receipt/public_apply/tests.rs"
 target = "independently_encoded_v2_artifact_fixes_the_exact_receipt_domain"
 
 [[coverage]]
+id = "public-apply-terminal-suffix-consistency"
+status = "experimental"
+requirement_ids = ["R-015", "R-155"]
+acceptance_ids = ["A-015", "A-155"]
+invariant_ids = ["INV-003", "INV-013", "INV-018", "INV-019"]
+scope = "Read-only consistency of canonical v2 receipt bytes and consecutive kinds 5, 6, 7, 8, 9 and 18 after an independently accepted seal. Checks selected association, stream and metadata facts, qualification and expiry claims, role identities, exact links, wrapper-domain digest and terminal EOF under byte and shared interruption limits."
+limits = "Selected suffix and artifact consistency only. Owner and prefix authentication, trusted selection provenance, native artifact completeness and inode custody, live action authority, publication and crash or power-loss qualification remain separate. Existing legacy and stage-only refusal paths and P-042's original scope are unchanged."
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "test"
+state = "defined"
+path = "crates/engines/exacopy-transfer/src/linux/receipt/public_apply/commit/tests.rs"
+target = "independent_v2_commit_checks_the_complete_terminal_suffix"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "test"
+state = "defined"
+path = "crates/engines/exacopy-transfer/src/linux/receipt/public_apply/commit/tests.rs"
+target = "refuses_a_consistent_source_identity_alias_of_the_destination_directory"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "test"
+state = "defined"
+path = "crates/engines/exacopy-transfer/src/linux/receipt/public_apply/commit/tests.rs"
+target = "perpetual_eof_interruptions_use_the_remaining_shared_budget"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/public-apply-staging.md"
+target = "v2 receipt suffix consistency and external native obligations"
+
+[[coverage]]
 id = "held-public-apply-journal-confirmation"
 status = "experimental"
 requirement_ids = ["R-015", "R-155"]

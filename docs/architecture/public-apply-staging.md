@@ -79,6 +79,29 @@ and retire the writer while retaining both objects. A second control replaces
 the segment during the actual read, so only the post-read check can detect
 the changed name. These controls require their own integrated test evidence.
 
+`PublicApplyReceipt::validate_commit` checks a canonical v2 receipt and the
+exact journal suffix after an independently accepted kind-4 seal. It requires
+consecutive kinds 5, 6, 7, 8, 9 and 18, complete predecessor links, matching
+selected owner and public association, stream and metadata facts, qualification
+claims, original expiry, and distinct source, published file and directory
+roles. Kind 18 must commit the domain digest of the supplied decoded receipt.
+The legacy and stage-only readers retain their existing refusal behavior.
+
+The suffix has a 4 KiB limit plus one EOF probe byte. All framed reads and the
+terminal probe share a 16-interruption allowance; exhaustion preserves the
+cause in a terminal I/O error. The generic frame parser may allocate up to
+1 MiB for a malformed declared payload. Each underlying read must return.
+Callers authenticate the owner and accepted prefix, select the expected facts
+independently, and establish native receipt identity, complete artifact EOF,
+journal custody and current authority. This method checks byte consistency
+and grants no publication or recovery permission.
+
+Eight frozen journal/receipt pairs include a valid chain and independently
+relinked near misses. Controls cover an impossible source/destination-directory
+alias, independent selection, original expiry, terminal bytes, truncation,
+corruption and interruption exhaustion in both framing and EOF. These are
+registered source controls whose execution requires integrated test evidence.
+
 The exact Linux-target transfer tests and implementation passed strict
 cross Clippy. A separately labeled macOS portable capability fixture ran
 85 transfer tests. Five guard-removal controls failed their expected
