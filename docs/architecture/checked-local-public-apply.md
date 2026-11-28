@@ -34,6 +34,10 @@ a valid qualification still precedes observation, including a refused sample.
 P-083 defines Rust and Kani checks for the scalar decision; its proof is
 unexecuted and does not verify those native or stateful premises. Extraction
 and a theorem over the generated function remain open.
+An advisory automatic CI step captures the actual grant-time extraction's raw
+source and provenance after the mandatory formal artifact upload. Candidate
+output stays outside the Lean import tree and EVS records. It must be reviewed
+before any generated source or extracted theorem is adopted.
 
 The engine retains the original source, exclusive job, owner and private Plan
 read-only pins, verified stage, model session and journal. It checks the source

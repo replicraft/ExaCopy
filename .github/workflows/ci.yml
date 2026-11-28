@@ -471,6 +471,27 @@ jobs:
             ${{ runner.temp }}/exacopy-evs/
           if-no-files-found: error
           retention-days: 90
+      # Retain the mandatory formal artifact before this advisory extraction bootstrap.
+      - name: Extract grant-time Lean source candidate
+        id: grant-time-candidate
+        if: ${{ !cancelled() && steps.lean.outcome == 'success' }}
+        continue-on-error: true
+        timeout-minutes: 10
+        run: |
+          bash .github/ci/capture.sh grant-time-extraction-candidate \
+            sh crates/foundation/exacopy-model/verification/lean-check.sh grant-time-candidate
+      - name: Retain grant-time extraction candidate
+        if: ${{ !cancelled() && (steps.grant-time-candidate.outcome == 'success' || steps.grant-time-candidate.outcome == 'failure') }}
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: grant-time-extraction-candidate-linux-x86_64-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-evidence/grant-time-extraction-candidate.log
+            ${{ runner.temp }}/exacopy-evidence/grant-time-extraction-candidate.txt
+            ${{ runner.temp }}/exacopy-evidence/grant-time-generated/
+          if-no-files-found: error
+          retention-days: 90
 
   dependencies:
     name: Dependency policy

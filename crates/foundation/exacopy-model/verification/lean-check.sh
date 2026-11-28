@@ -4,14 +4,18 @@ set -eu
 verification_dir=$(cd "$(dirname "$0")" && pwd -P)
 cd "$verification_dir"
 
-python3 - <<'PY'
+python3 - "$@" <<'PY'
+from contextlib import ExitStack
 import hashlib
 import json
 import os
 from pathlib import Path
 import platform
 import shutil
+import signal
+import stat
 import subprocess
+import sys
 import tomllib
 
 
@@ -31,6 +35,117 @@ def verify_file(path, expected):
     print(f"SHA-256 {actual}  {path}", flush=True)
 
 
+def candidate_state():
+    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    require(commit == os.environ.get("GITHUB_SHA"), "Candidate checkout differs from the CI source")
+    require(not subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=normal"]),
+            "Candidate requires a clean checkout")
+    return commit, subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
+
+
+def extract_candidate(scratch):
+    scenario = config["scenario"]["grant_time"]
+    output = scratch / "grant-time"
+    require(scenario["output-dir"] == "verification/" + output.as_posix(),
+            "Unexpected candidate scratch path")
+    commit, tree = candidate_state()
+    inputs = [
+        "crates/foundation/exacopy-model/src/grant_time.rs",
+        "apps/exacopy-cli/src/assembly/linux/public_stage/grant/clock.rs",
+        "Cargo.lock",
+        "crates/foundation/exacopy-model/hax.toml",
+        "crates/foundation/exacopy-model/verification/toolchain.lock.json",
+        "crates/foundation/exacopy-model/verification/lake-manifest.json",
+        "crates/foundation/exacopy-model/verification/lean-toolchain",
+    ]
+    repo = Path("../../../..")
+    source = {name: digest(repo / name) for name in inputs}
+    command = [frontend, "hax", "extract", "--locked", "-v", "grant_time"]
+    print(f"Extract grant_time source {commit} tree {tree}", flush=True)
+    output.mkdir()  # Refuse a preexisting path and clean up only the directory we create.
+    try:
+        candidate_env = env | {
+            "CARGO_TARGET_DIR": str((output / "target").resolve()),
+            "RUSTC_WRAPPER": "",
+            "RUSTC_WORKSPACE_WRAPPER": "",
+            "CARGO_INCREMENTAL": "0",
+        }
+        with subprocess.Popen(command, cwd="..", env=candidate_env, start_new_session=True) as process:
+            try:
+                require(process.wait(timeout=360) == 0, "Candidate extraction failed")
+            except (subprocess.TimeoutExpired, KeyboardInterrupt, SystemExit):
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait()
+                raise
+        required = {"Types.lean", "Funs.lean"}
+        allowed = required | {"FunsExternal_Template.lean"}
+        files = {}
+        limit = 512 * 1024
+        with ExitStack() as opened:
+            directory_fd = None
+            for directory in (output, "Generated", "GrantTime"):
+                directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                       dir_fd=directory_fd)
+                opened.callback(os.close, directory_fd)
+            with os.scandir(directory_fd) as entries:
+                for entry in entries:
+                    name = entry.name
+                    require(name in allowed and name not in files, f"Unexpected candidate output: {name}")
+                    descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                                         dir_fd=directory_fd)
+                    with os.fdopen(descriptor, "rb") as file:
+                        info = os.fstat(file.fileno())
+                        require(stat.S_ISREG(info.st_mode) and 0 < info.st_size <= limit,
+                                f"Expected bounded plain candidate file: {name}")
+                        data = file.read(limit + 1)
+                    require(len(data) == info.st_size, f"Candidate file length changed: {name}")
+                    files[name] = data
+        require(required <= files.keys(), f"Missing candidate files: {sorted(required - files.keys())}")
+        require(sum(map(len, files.values())) <= 1024 * 1024, "Candidate artifact exceeds 1 MiB")
+        require(candidate_state() == (commit, tree)
+                and all(digest(repo / name) == value for name, value in source.items()),
+                "Candidate source changed during extraction")
+        receipt = {
+            "kind": "generated-source-candidate",
+            "commit": commit,
+            "git_tree": tree,
+            "scenario": "grant_time",
+            "scenario_config": scenario,
+            "verified_tool_binaries": {
+                tool: {key: value for key, value in pins.items() if key != "archive_sha256"}
+                for tool, pins in binaries.items()
+            },
+            "extraction_rust_revision": rust["revision"],
+            "lean_revision": lock["lean"]["revision"],
+            "input_sha256": source,
+            "files": {name: {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+                      for name, data in files.items()},
+        }
+        evidence = Path(os.environ["RUNNER_TEMP"]) / "exacopy-evidence" / "grant-time-generated"
+        require(evidence.is_absolute(), "Candidate evidence requires an absolute runner temp path")
+        evidence.mkdir()
+        try:
+            for name, data in files.items():
+                (evidence / name).write_bytes(data)
+            (evidence / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+        except BaseException:
+            shutil.rmtree(evidence)
+            raise
+    finally:
+        shutil.rmtree(output)
+
+
+def interrupt_candidate(_signal, _frame):
+    raise KeyboardInterrupt
+
+
+candidate = sys.argv[1:] == ["grant-time-candidate"]
+require(candidate or len(sys.argv) == 1, "usage: lean-check.sh [grant-time-candidate]")
+if candidate:
+    signal.signal(signal.SIGTERM, interrupt_candidate)
 lock = json.loads(Path("toolchain.lock.json").read_text())
 platform_id = {("Darwin", "arm64"): "macos-aarch64", ("Linux", "x86_64"): "linux-x86_64"}.get(
     (platform.system(), platform.machine())
@@ -97,12 +212,17 @@ require(f"commit {lock['lean']['revision']}," in lean, "Unexpected Lean kernel c
 print(lean, end="", flush=True)
 
 scratch = Path(".lake/hax")
+if candidate:
+    require(scratch.resolve() == scratch.absolute(), "Candidate scratch path contains a symlink")
 scratch.mkdir(parents=True, exist_ok=True)
 try:
     (scratch / "active").mkdir()
 except FileExistsError:
     raise SystemExit(f"Another extraction owns {scratch / 'active'}") from None
 try:
+    if candidate:
+        extract_candidate(scratch)
+        raise SystemExit(0)
     generated = scratch / "Generated"
     if generated.exists():
         shutil.rmtree(generated)
@@ -117,6 +237,8 @@ try:
 finally:
     (scratch / "active").rmdir()
 PY
+
+[ "$#" -eq 0 ] || exit 0
 
 lake exe cache get
 lake build
