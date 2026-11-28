@@ -1,0 +1,6 @@
+diff --git a/crates/interfaces/exacopy-endpoint/src/connection_retry.rs b/crates/interfaces/exacopy-endpoint/src/connection_retry.rs
+--- a/crates/interfaces/exacopy-endpoint/src/connection_retry.rs
++++ b/crates/interfaces/exacopy-endpoint/src/connection_retry.rs
+@@ -255 +255 @@
+-			if health.succeeded && now.saturating_sub(health.since) >= HEALTHY_RESET_AFTER {
++			if now.saturating_sub(health.since) >= HEALTHY_RESET_AFTER {

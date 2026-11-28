@@ -1,0 +1,6 @@
+diff --git a/crates/interfaces/exacopy-endpoint/src/connection_retry.rs b/crates/interfaces/exacopy-endpoint/src/connection_retry.rs
+--- a/crates/interfaces/exacopy-endpoint/src/connection_retry.rs
++++ b/crates/interfaces/exacopy-endpoint/src/connection_retry.rs
+@@ -287 +287 @@
+-				let wake_at = due_at.min(self.grant_expires_at);
++				let wake_at = due_at;

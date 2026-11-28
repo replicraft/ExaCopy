@@ -17,6 +17,10 @@ pub mod ssh_sftp;
 mod staging;
 pub mod wireguard;
 
+#[cfg(kani)]
+#[path = "../verification/kani/mod.rs"]
+mod kani_checks;
+
 pub use exacopy_core::{MAX_UNIX_COMPONENT_BYTES, NameError, UnixComponent};
 pub use journal_segment::{JournalFileBarrier, JournalSegment};
 pub use positioned::{

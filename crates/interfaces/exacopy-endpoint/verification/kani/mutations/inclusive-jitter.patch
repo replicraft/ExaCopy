@@ -1,0 +1,6 @@
+diff --git a/crates/interfaces/exacopy-endpoint/src/connection_retry.rs b/crates/interfaces/exacopy-endpoint/src/connection_retry.rs
+--- a/crates/interfaces/exacopy-endpoint/src/connection_retry.rs
++++ b/crates/interfaces/exacopy-endpoint/src/connection_retry.rs
+@@ -352 +352 @@
+-	let random_ms = (u64::from(sample) * (half + 1)) >> u32::BITS;
++	let random_ms = (u64::from(sample) * half) >> u32::BITS;

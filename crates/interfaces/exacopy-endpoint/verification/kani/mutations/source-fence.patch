@@ -1,0 +1,5 @@
+diff --git a/crates/interfaces/exacopy-endpoint/src/connection_retry.rs b/crates/interfaces/exacopy-endpoint/src/connection_retry.rs
+--- a/crates/interfaces/exacopy-endpoint/src/connection_retry.rs
++++ b/crates/interfaces/exacopy-endpoint/src/connection_retry.rs
+@@ -205 +204,0 @@
+-			|| evidence.source_checked_for != attempt
