@@ -451,8 +451,21 @@ jobs:
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
         run: bash .github/ci/capture.sh kani-setup bash .github/ci/install.sh kani
       - name: Run Kani harness
+        id: kani-proof
         if: ${{ !cancelled() && steps.kani.outcome == 'success' }}
         run: bash .github/ci/capture.sh kani python3 tools/record_evidence.py "$EVS_RECORDS" --gate kani
+      - name: Retain early Kani evidence
+        if: ${{ !cancelled() && (steps.kani-proof.outcome == 'success' || steps.kani-proof.outcome == 'failure') }}
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: kani-snapshot-linux-x86_64-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/exacopy-evs/
+            ${{ runner.temp }}/exacopy-evidence/kani.log
+            ${{ runner.temp }}/exacopy-evidence/kani.txt
+          if-no-files-found: error
+          retention-days: 90
       - name: Install Java and TLC
         id: tlc
         if: ${{ !cancelled() && steps.rust.outcome != 'skipped' }}
