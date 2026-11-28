@@ -1,9 +1,13 @@
-use std::fs::{self, OpenOptions};
+use std::cell::{Cell, RefCell};
+use std::fs::{self, FileTimes, OpenOptions};
+use std::io;
 use std::io::{Seek as _, SeekFrom, Write as _};
-use std::os::unix::fs::{FileExt as _, MetadataExt as _};
+use std::os::unix::fs::{FileExt as _, MetadataExt as _, OpenOptionsExt as _};
 use std::path::Path;
+use std::time::Duration;
 
 use exacopy_endpoint::UnixComponent;
+use exacopy_endpoint::linux_apply::{ApplyRole, ApplyStep, GuardedCopyJob, LocalApplyAdmission};
 use exacopy_endpoint::linux_publication::{
 	FreshReceiptError, FreshReceiptWorkspace, HeldFreshReceipt,
 };
@@ -160,6 +164,204 @@ fn receipt_read_refuses_a_rebound_parent_with_identical_artifact_bytes() {
 	assert_eq!(identity(&selected.join(RECEIPT)), replacement_receipt);
 	assert_eq!(fs::read(retained.join(RECEIPT)).unwrap(), RECEIPT_BYTES);
 	assert_eq!(fs::read(selected.join(RECEIPT)).unwrap(), RECEIPT_BYTES);
+}
+
+#[test]
+fn guarded_receipt_accepts_the_exact_extent_in_file_then_parent_order() {
+	use ApplyRole::{Job, Receipt, ReceiptDirectory};
+	use ApplyStep::{Create, Sync, Write};
+
+	let fixture = Scratch::new();
+	let root = DestinationRoot::from_directory(fixture.open()).unwrap();
+	let job = root.create_job_directory(job_name()).unwrap();
+	let directory = fixture.path(JOB).join(RECEIPTS);
+	let gate = ReceiptGate::new(|_| {});
+	for bytes in [&[][..], &[0; RECEIPT_CAP + 1][..]] {
+		assert!(matches!(
+			job.seal_fresh_receipt_admitted(bytes, &gate),
+			Err(FreshReceiptError::Namespace(StageError::InvalidLength))
+		));
+		assert!(gate.steps.borrow().is_empty());
+		assert!(!directory.try_exists().unwrap());
+	}
+
+	let mut expected = [0x65; RECEIPT_CAP];
+	expected[0] = 0x08;
+	expected[RECEIPT_CAP - 1] = 0xf3;
+	let held = job.seal_fresh_receipt_admitted(&expected, &gate).unwrap();
+	let steps = gate.steps.borrow();
+	let [
+		Create(ReceiptDirectory),
+		Create(Receipt),
+		writes @ ..,
+		Sync(Receipt),
+		Sync(ReceiptDirectory),
+		Sync(Job),
+	] = steps.as_slice()
+	else {
+		panic!("unexpected receipt effect order: {steps:?}");
+	};
+	// Each retry reenters admission for the same approved window.
+	assert!(!writes.is_empty());
+	assert!(
+		writes
+			.iter()
+			.all(|step| *step == Write(Receipt, 0, RECEIPT_CAP))
+	);
+
+	let path = directory.join(RECEIPT);
+	let stat = held.file.metadata().unwrap();
+	assert_eq!((stat.dev(), stat.ino()), identity(&path));
+	let mut observed = [SENTINEL; RECEIPT_CAP];
+	held.read_exact_receipt(&mut observed).unwrap();
+	assert_eq!(observed, expected);
+	assert_eq!(
+		held.file
+			.read_at(&mut [0], u64::try_from(RECEIPT_CAP).unwrap())
+			.unwrap(),
+		0
+	);
+	assert_eq!(fs::read(path).unwrap(), expected);
+}
+
+#[test]
+fn guarded_receipt_refuses_same_bytes_rebound_at_file_barrier() {
+	use ApplyRole::{Receipt, ReceiptDirectory};
+	use ApplyStep::{Create, Sync, Write};
+
+	let fixture = Scratch::new();
+	let root = DestinationRoot::from_directory(fixture.open()).unwrap();
+	let job = root.create_job_directory(job_name()).unwrap();
+	let directory = fixture.path(JOB).join(RECEIPTS);
+	let selected = directory.join(RECEIPT);
+	let retained = directory.join("original-receipt");
+
+	let source = fixture.path("source");
+	let incumbent = fixture.path("incumbent");
+	write_new(&source, b"source outside receipt workspace");
+	write_new(&incumbent, b"incumbent outside receipt workspace");
+	let before = [identity(&source), identity(&incumbent)];
+	let original = Cell::new(None);
+	let gate = ReceiptGate::new(|step| {
+		if step == Sync(Receipt) {
+			// Deliberately rebind only our own receipt in the fixture.
+			original.set(Some(identity(&selected)));
+			fs::rename(&selected, &retained).unwrap();
+			write_new(&selected, RECEIPT_BYTES);
+		}
+	});
+	assert!(matches!(
+		job.seal_fresh_receipt_admitted(RECEIPT_BYTES, &gate),
+		Err(FreshReceiptError::Namespace(StageError::IdentityChanged))
+	));
+	let steps = gate.steps.borrow();
+	let [
+		Create(ReceiptDirectory),
+		Create(Receipt),
+		writes @ ..,
+		Sync(Receipt),
+	] = steps.as_slice()
+	else {
+		panic!("unexpected receipt effect order: {steps:?}");
+	};
+	assert!(!writes.is_empty());
+	assert!(
+		writes
+			.iter()
+			.all(|step| *step == Write(Receipt, 0, RECEIPT_BYTES.len()))
+	);
+
+	assert_eq!(Some(identity(&retained)), original.get());
+	assert_ne!(Some(identity(&selected)), original.get());
+	assert_eq!(fs::read(&retained).unwrap(), RECEIPT_BYTES);
+	assert_eq!(fs::read(&selected).unwrap(), RECEIPT_BYTES);
+	assert_eq!([identity(&source), identity(&incumbent)], before);
+	assert_eq!(
+		fs::read(source).unwrap(),
+		b"source outside receipt workspace"
+	);
+	assert_eq!(
+		fs::read(incumbent).unwrap(),
+		b"incumbent outside receipt workspace"
+	);
+}
+
+#[test]
+fn guarded_receipt_refuses_changed_original_with_unchanged_extent_at_file_barrier() {
+	use ApplyRole::{Job, Receipt, ReceiptDirectory};
+	use ApplyStep::Sync;
+
+	let fixture = Scratch::new();
+	let root = DestinationRoot::from_directory(fixture.open()).unwrap();
+	let job = root.create_job_directory(job_name()).unwrap();
+	let path = fixture.path(JOB).join(RECEIPTS).join(RECEIPT);
+	let expected = b"complete original record";
+	let changed = b"modified original record";
+	assert_eq!(expected.len(), changed.len());
+	let original = Cell::new(None);
+	let gate = ReceiptGate::new(|step| {
+		if step == Sync(Receipt) {
+			original.set(Some(identity(&path)));
+			let mut writer = OpenOptions::new().write(true).open(&path).unwrap();
+			let before = writer.metadata().unwrap().modified().unwrap();
+			writer.write_all(changed).unwrap();
+			let modified = before.checked_add(Duration::from_secs(1)).unwrap();
+			writer
+				.set_times(FileTimes::new().set_modified(modified))
+				.unwrap();
+			assert_ne!(writer.metadata().unwrap().modified().unwrap(), before);
+		}
+	});
+	assert!(matches!(
+		job.seal_fresh_receipt_admitted(expected, &gate),
+		Err(FreshReceiptError::Namespace(StageError::ReadBack(
+			ReadError::SourceChanged
+		)))
+	));
+	let steps = gate.steps.borrow();
+	assert_eq!(steps.last(), Some(&Sync(Receipt)));
+	assert!(!steps.contains(&Sync(ReceiptDirectory)));
+	assert!(!steps.contains(&Sync(Job)));
+	assert_eq!(Some(identity(&path)), original.get());
+	assert_eq!(fs::read(path).unwrap(), changed);
+}
+
+fn write_new(path: &Path, bytes: &[u8]) {
+	OpenOptions::new()
+		.create_new(true)
+		.write(true)
+		.mode(0o600)
+		.open(path)
+		.unwrap()
+		.write_all(bytes)
+		.unwrap();
+}
+
+struct ReceiptGate<F> {
+	steps: RefCell<Vec<ApplyStep>>,
+	on_enter: F,
+}
+
+impl<F: Fn(ApplyStep)> ReceiptGate<F> {
+	fn new(on_enter: F) -> Self {
+		Self {
+			steps: RefCell::default(),
+			on_enter,
+		}
+	}
+}
+
+impl<F: Fn(ApplyStep)> LocalApplyAdmission for ReceiptGate<F> {
+	type Guard<'gate>
+		= ()
+	where
+		Self: 'gate;
+
+	fn enter(&self, step: ApplyStep) -> io::Result<()> {
+		self.steps.borrow_mut().push(step);
+		(self.on_enter)(step);
+		Ok(())
+	}
 }
 
 fn identity(path: &Path) -> (u64, u64) {
