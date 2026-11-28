@@ -1523,8 +1523,8 @@ status = "experimental"
 requirement_ids = ["R-015", "R-155"]
 acceptance_ids = ["A-015", "A-155"]
 invariant_ids = ["INV-003", "INV-013", "INV-018", "INV-019"]
-scope = "The existing public-apply proposer confirms its original synced metadata frame by bounded envelope-chain reread through exact physical EOF on the original held journal before constructing historical intent evidence."
-limits = "Readback only. Native alias custody, arbitrary-file owner authentication and semantic replay, action authorization, publication, receipt commitment and process-crash or power-loss qualification remain separate. Tests are registered controls, not a durability claim."
+scope = "The existing public-apply proposer confirms its original synced metadata frame by bounded envelope-chain reread through exact physical EOF on the original held journal before constructing historical intent evidence. Fresh Linux segments retain original parent descriptors and check their job, journal and segment names at extent boundaries."
+limits = "Readback and cooperative namespace observations only. Arbitrary-file owner authentication and semantic replay, serialized action authority, publication, receipt commitment and process-crash or power-loss qualification remain separate. Recovered writers and direct descriptor barriers retain their existing behavior. Tests are registered controls, not a durability claim."
 
 [[coverage.evidence]]
 owner = "exacopy-journal"
@@ -1539,6 +1539,20 @@ level = "test"
 state = "defined"
 path = "crates/storage/exacopy-journal/src/durable/tests/memory.rs"
 target = "current_confirmation_checks_the_extra_eof_byte_and_retires_on_failed_restore"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/tests/job_bootstrap/journal_names.rs"
+target = "fresh_writer_refuses_each_same_byte_native_alias_rebound"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/tests/job_bootstrap/journal_names.rs"
+target = "fresh_writer_checks_live_names_again_after_reading_the_exact_prefix"
 
 [[coverage.evidence]]
 owner = "exacopy-cli"

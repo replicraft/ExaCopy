@@ -43,7 +43,20 @@ the writer and retains its bytes. The proposal returns a typed seal-readback
 refusal rather than producing evidence from an uncertain journal.
 
 The check establishes envelope consistency on the original descriptor.
-Owner authentication, semantic replay, live journal-name custody and native
+Fresh Linux segments additionally retain the original destination and journal
+directory descriptors alongside the existing locked job descriptor, selected
+raw job name, creation identities and mount. Their extent checks verify the
+original job, journal and segment names and compare the named segment with
+the original file. Parent checks bracket those observations. Existing durable
+append and both sides of readback use these extent checks. A same-byte
+replacement at any of those names causes refusal rather than adoption.
+
+This adds two directory descriptors per fresh writer and bounded native
+lookups to ordinary, public-apply and initial remote journals. It retains
+one segment cursor. Recovered writers and direct descriptor barriers retain
+their existing behavior. These are observations under cooperative custody,
+not exclusion of actors with retained mutation rights or a namespace snapshot.
+Owner authentication, semantic replay, live effect authority and native
 durability remain separate obligations. Neither the proposal nor the private
 continuation appends an intent, grants publication authority or performs a
 rename. Publication still needs fresh, serialized authorization and native
@@ -58,6 +71,13 @@ and leave the public target absent. This deliberate fixture fault tests
 refusal after the cooperation premise is violated. It does not qualify
 outside actors, publication or crash durability. Its execution requires
 the exact integrated revision's native fixture evidence.
+
+The ordinary Linux bootstrap tests exercise the real fresh writer after its
+bootstrap scopes close. They replace each selected name with a separate
+inode holding identical bytes and require append and confirmation to refuse
+and retire the writer while retaining both objects. A second control replaces
+the segment during the actual read, so only the post-read check can detect
+the changed name. These controls require their own integrated test evidence.
 
 The exact Linux-target transfer tests and implementation passed strict
 cross Clippy. A separately labeled macOS portable capability fixture ran
