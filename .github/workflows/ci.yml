@@ -382,8 +382,12 @@ jobs:
           bash .github/ci/capture.sh remote-campaign-controls python3 -B -m unittest discover \
             -s apps/exacopy-cli/verification/remote -p 'test_*.py'
       - name: Check locked production dependency inventory
+        id: dependency_inventory
         if: ${{ !cancelled() && steps.apfs.outcome == 'success' }}
         run: bash .github/ci/capture.sh dependency-inventory python3 -B tools/dependency_review/check.py
+      - name: Retain observed dependency inventory after check failure
+        if: ${{ !cancelled() && steps.dependency_inventory.outcome == 'failure' }}
+        run: bash .github/ci/capture.sh dependency-inventory-observed python3 -B tools/dependency_review/check.py --emit-graph
       - name: Check independent reference and performance evidence
         if: ${{ !cancelled() }}
         run: bash .github/ci/capture.sh reference-evidence python3 -B tools/reference/check.py
