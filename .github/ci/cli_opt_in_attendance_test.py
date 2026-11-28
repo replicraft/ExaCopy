@@ -61,6 +61,18 @@ APFS_EXPECTED = (
 )
 APFS_DEFAULT_EXPECTED = "args::parser::recovery::tests::inspect_apfs_is_hidden_without_the_exact_target_and_feature"
 TRANSFER_CASE = "macos::tests::fixture_transfer_test"
+RECREATE_EXPECTED = (
+    "args::parser::sync_managed::tests::prepare_recreate_requires_explicit_direction_conflict_and_receipt",
+    "sync_preview::managed_command::recreate::tests::prepare_recreate_refuses_oversize_receipt_without_candidate",
+    (
+        "assembly::linux::managed_sync::manual_recreate::tests::"
+        "manual_recreate_selects_only_the_current_survivor_and_exact_conflict"
+    ),
+    (
+        "assembly::linux::managed_sync::manual_recreate::tests::"
+        "manual_recreate_refuses_nonabsence_and_the_absent_peers_read_ceiling"
+    ),
+)
 
 
 class CliOptInAttendanceTests(unittest.TestCase):
@@ -149,6 +161,21 @@ class CliOptInAttendanceTests(unittest.TestCase):
         self.write_report((OTHER_CASE,), (("exacopy-cli::command", (APFS_DEFAULT_EXPECTED,)),))
         with self.assertRaisesRegex(ValueError, f"required testcases missing: {APFS_DEFAULT_EXPECTED}$"):
             check_attendance(self.report, "apfs-default")
+
+    def test_managed_sync_recreate_requires_each_completed_owning_case(self):
+        self.write_report(RECREATE_EXPECTED)
+        self.assertEqual(check_attendance(self.report, "managed-sync-recreate"), sorted(RECREATE_EXPECTED))
+        for missing in RECREATE_EXPECTED:
+            with self.subTest(missing=missing):
+                present = [name for name in RECREATE_EXPECTED if name != missing]
+                self.write_report([*present, missing.replace("::tests::", "::other_tests::")])
+                with self.assertRaisesRegex(ValueError, f"required testcases missing: {missing}$"):
+                    check_attendance(self.report, "managed-sync-recreate")
+        root = self.write_report(RECREATE_EXPECTED)
+        ElementTree.SubElement(root[0][0], "skipped")
+        self.write_xml(root)
+        with self.assertRaisesRegex(ValueError, "lacks a successful execution record"):
+            check_attendance(self.report, "managed-sync-recreate")
 
     def test_incomplete_session_record_cannot_satisfy_remote_attendance(self):
         root = self.write_report(REMOTE_EXPECTED)

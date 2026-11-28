@@ -68,12 +68,25 @@ APFS_CASES = {
     "assembly::macos::job::tests::cli_inspection::apfs_inspect_dispatch_binds_the_independent_selection_and_preserves_the_job",
 }
 APFS_DEFAULT_CASE = "args::parser::recovery::tests::inspect_apfs_is_hidden_without_the_exact_target_and_feature"
+MANAGED_SYNC_RECREATE_CASES = {
+    "args::parser::sync_managed::tests::prepare_recreate_requires_explicit_direction_conflict_and_receipt",
+    "sync_preview::managed_command::recreate::tests::prepare_recreate_refuses_oversize_receipt_without_candidate",
+    (
+        "assembly::linux::managed_sync::manual_recreate::tests::"
+        "manual_recreate_selects_only_the_current_survivor_and_exact_conflict"
+    ),
+    (
+        "assembly::linux::managed_sync::manual_recreate::tests::"
+        "manual_recreate_refuses_nonabsence_and_the_absent_peers_read_ceiling"
+    ),
+}
 REQUIRED_CASES = {
     "remote": {REMOTE_CASE, REMOTE_PREFLIGHT_CASE} | SSH_SESSION_CASES,
     "public-stage": PUBLIC_STAGE_CASES,
     "witnessed-resume": WITNESSED_RESUME_CASES,
     "apfs-copy": APFS_CASES,
     "apfs-default": {APFS_DEFAULT_CASE},
+    "managed-sync-recreate": MANAGED_SYNC_RECREATE_CASES,
 }
 
 

@@ -63,6 +63,11 @@ pub(super) const BINDINGS: &[Binding] = &[
 		Marker::Report,
 	),
 	Binding::new(
+		"exacopy.cli.managed_sync_recreate_plan",
+		"apps/exacopy-cli/src/sync_preview/managed_command/recreate.rs",
+		Marker::Report,
+	),
+	Binding::new(
 		"workflow-local-sync-endpoint",
 		"crates/formats/exacopy-plan/src/workflow_sync/wire.rs",
 		Marker::Workflow {

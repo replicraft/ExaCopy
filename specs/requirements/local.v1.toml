@@ -1843,3 +1843,26 @@ level = "native"
 state = "defined"
 path = "apps/exacopy-cli/src/assembly/macos/job/tests/cli_inspection.rs"
 target = "apfs_inspect_dispatch_binds_the_independent_selection_and_preserves_the_job"
+
+[[coverage]]
+id = "managed-sync-manual-recreate-planning"
+status = "experimental"
+requirement_ids = ["R-269", "R-270"]
+acceptance_ids = ["A-269", "A-270"]
+invariant_ids = ["INV-002", "INV-019", "INV-025", "INV-026"]
+scope = "Partial Linux planning for one authenticated CommonPresent baseline subject. An explicitly reviewed deletion conflict, selected direction, and live observation of the actual verified survivor and absent peer select an unsigned, approval-required child Plan."
+limits = "The report grants no action authority. Parent action, approval ledger, copy, replacement, quarantine, current-head interpretation, and baseline advancement are outside this slice. Unit and owned native fixture evidence is source-defined and requires separate execution."
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/managed_sync/manual_recreate/tests.rs"
+target = "manual_recreate_selects_only_the_current_survivor_and_exact_conflict"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "native"
+state = "defined"
+path = "apps/exacopy-cli/tests/linux_managed_sync_production.rs"
+target = "production_managed_init_then_preview_exact_p063_history"
