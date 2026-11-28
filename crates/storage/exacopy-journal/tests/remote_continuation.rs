@@ -235,6 +235,31 @@ fn independently_signed_malformed_and_foreign_payloads_refuse() {
 }
 
 #[test]
+fn invalid_continuation_body_refuses_before_an_invalid_signature() {
+	let fixture = Fixture::read();
+	let expected = fixture.expectation();
+	let trust = fixture.trust();
+	for (hex_payload, error) in [
+		(
+			include_str!("remote_continuation/noncanonical_body.hex"),
+			Error::NonCanonical,
+		),
+		(
+			include_str!("remote_continuation/future_features.hex"),
+			Error::UnsupportedVersion,
+		),
+	] {
+		let mut payload = hex(hex_payload);
+		*payload.last_mut().unwrap() ^= 1; // The final envelope field is the signature.
+		let (frame, end) = fixture.frame(FrameKind::RemoteCaptureContinued, &payload);
+		assert_eq!(
+			trust.from_continuation_frame(&frame, end, &expected),
+			Err(error)
+		);
+	}
+}
+
+#[test]
 fn all_cuts_and_excess_payload_refuse() {
 	let fixture = Fixture::read();
 	let expected = fixture.expectation();

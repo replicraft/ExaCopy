@@ -250,6 +250,26 @@ fn independently_signed_substitutions_never_become_bootstrap_authority() {
 }
 
 #[test]
+fn noncanonical_bootstrap_refuses_even_with_an_invalid_signature() {
+	let owner = owner();
+	let key = signer().verifying_key();
+	let trust = RemoteBootstrapTrust::new(&owner, profile(), &key).unwrap();
+	let mut transcript = Transcript::new();
+	let job = transcript.job(&owner);
+	let mut payload = vector("noncanonical-body");
+	*payload.last_mut().unwrap() ^= 1; // The final envelope field is the signature.
+	let alleged = transcript.append_raw(FrameKind::StageDirectoryPrepared, &payload);
+	assert_eq!(
+		trust.from_frame(&transcript.frame(alleged), &job),
+		Err(Error::NonCanonical)
+	);
+	let history = transcript.replay(&trust);
+	assert_eq!(history.boundary().head, job.head());
+	assert_mismatch(&history, Mismatch::Payload(Error::NonCanonical));
+	assert_eq!(history.stage_directory_prepared(), None);
+}
+
+#[test]
 fn signing_and_decode_require_independent_owner_key_and_actual_first_record() {
 	let owner = owner();
 	let signer = signer();

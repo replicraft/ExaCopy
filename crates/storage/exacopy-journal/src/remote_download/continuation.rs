@@ -217,13 +217,13 @@ impl RemoteBootstrapTrust<'_> {
 			return Err(Error::FrameBinding);
 		}
 		let (body, signature) = wire::decode_envelope(frame.payload())?;
+		let claims = wire::decode_body(body)?;
 		self.key()
 			.verify_strict(
 				&wire::signature_input(body)?,
 				&Signature::from_bytes(&signature),
 			)
 			.map_err(|_| OwnerError::InvalidSignature)?;
-		let claims = wire::decode_body(body)?;
 		if claims.previous != previous {
 			return Err(Error::Binding);
 		}

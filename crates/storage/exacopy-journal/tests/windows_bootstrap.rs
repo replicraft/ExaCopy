@@ -318,6 +318,38 @@ fn valid_signature_does_not_admit_noncanonical_or_unsupported_owner_claims() {
 }
 
 #[test]
+fn invalid_owner_body_refuses_before_signature_verification() {
+	let signer = signing_key();
+	let public = signer.verifying_key();
+	let claims = owner(SERIAL);
+	let selected = selection(&public, claims);
+	let mut reordered = owner_body(SERIAL, &public);
+	let profile_key_offset = BODY_PROFILE_START - 2;
+	let profile_field_bytes = 2 + claims.profile.as_bytes().len();
+	let token_key_offset = BODY_TOKEN_START - 2;
+	// Exchange equal-length fields while preserving the map values and fixed length.
+	reordered[profile_key_offset..token_key_offset].rotate_left(profile_field_bytes);
+	let mut unsupported = owner_body(SERIAL, &public);
+	unsupported[8] = 2; // Unsupported required feature mask.
+
+	let segment: &[u8] = &[];
+	for (body, expected) in [
+		(reordered, OwnerError::InvalidCbor),
+		(unsupported, OwnerError::UnsupportedVersion),
+	] {
+		for domain in [DOMAIN, b"ExaCopy/owner/v1\0"] {
+			let bytes = signed(&body, &signer, domain, 5);
+			let error = inspect(&bytes, segment, &selected, claims.roles).unwrap_err();
+			assert!(matches!(
+				&error,
+				Error::Owner(OwnerFailure::Owner(actual)) if *actual == expected
+			));
+			assert_eq!(error.diagnostic_prefix(), None);
+		}
+	}
+}
+
+#[test]
 fn prepared_payload_and_entire_first_frame_must_match() {
 	let signer = signing_key();
 	let public = signer.verifying_key();

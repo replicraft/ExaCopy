@@ -137,7 +137,19 @@ fn witnessed_selection_rejects_alternate_role_scope_shape_and_every_missing_case
 }
 
 #[test]
-fn witnessed_bounds_and_trust_are_checked_before_claim_decode() {
+fn noncanonical_witness_qualification_refuses_before_an_invalid_signature() {
+	let keys = FixtureKeys::new();
+	let trust = witnessed(&keys, Route::DirectPinnedTcpV1);
+	let mut record = witnessed_vector("overlong-mask");
+	*record.last_mut().unwrap() ^= 1; // The final envelope field is the signature.
+	assert_eq!(
+		verify_witness(&record, &trust).unwrap_err(),
+		Error::Evidence(Evidence::NonCanonical)
+	);
+}
+
+#[test]
+fn witnessed_qualification_enforces_bounds_and_independent_trust() {
 	let keys = FixtureKeys::new();
 	let mut trust = witnessed(&keys, Route::DirectPinnedTcpV1);
 	trust.owner_key = &keys.attestor;
@@ -170,7 +182,7 @@ fn witnessed_bounds_and_trust_are_checked_before_claim_decode() {
 			trust.attestor_key = attestor;
 			trust.owner_key = owner;
 			assert_eq!(
-				verify_witness(b"invalid", &trust).unwrap_err(),
+				verify_witness(&witnessed_vector("direct"), &trust).unwrap_err(),
 				Error::Evidence(Evidence::Trust),
 			);
 		}

@@ -154,6 +154,8 @@ pub fn verify_remote_destination_qualification(
 	if record.len() > MAX_REMOTE_QUALIFICATION_BYTES {
 		return Err(Error::Length);
 	}
+	let envelope = wire::read_envelope(record)?;
+	let claims = wire::read_claims(envelope.body)?;
 	if trust.attestor == [0; 16]
 		|| trust.attestor_key == trust.owner_key
 		|| trust.attestor_key.is_weak()
@@ -164,7 +166,6 @@ pub fn verify_remote_destination_qualification(
 	if !trust.scope.is_valid() {
 		return Err(Error::Scope);
 	}
-	let envelope = wire::read_envelope(record)?;
 	if envelope.key != trust.attestor_key.to_bytes() {
 		return Err(Error::Attestor);
 	}
@@ -175,7 +176,6 @@ pub fn verify_remote_destination_qualification(
 			&Signature::from_bytes(&envelope.signature),
 		)
 		.map_err(|_| Error::Signature)?;
-	let claims = wire::read_claims(envelope.body)?;
 	if claims.attestor != trust.attestor {
 		return Err(Error::Attestor);
 	}

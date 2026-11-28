@@ -249,6 +249,19 @@ fn independently_signed_native_fact_substitutions_do_not_project() {
 }
 
 #[test]
+fn noncanonical_qualification_claims_refuse_even_with_an_invalid_signature() {
+	let keys = Keys::fixture();
+	let selected = keys.select(Route::DirectPinnedTcpV1);
+	let observed = facts();
+	let mut record = vector("noncanonical-claims");
+	*record.last_mut().unwrap() ^= 1; // The final envelope field is the signature.
+	assert_eq!(
+		verify_remote_destination_qualification(&record, &selected, &observed),
+		Err(Error::NonCanonical)
+	);
+}
+
+#[test]
 fn canonical_bounded_record_refuses_every_prefix_and_unexpected_field() {
 	let keys = Keys::fixture();
 	let selected = keys.select(Route::DirectPinnedTcpV1);

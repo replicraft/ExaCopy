@@ -154,10 +154,10 @@ impl<'owner> RemoteBootstrapTrust<'owner> {
 			return Err(Error::FrameBinding);
 		}
 		let (body, signature) = decode_envelope(frame.payload())?;
+		let claims = decode_body(body)?;
 		self.key
 			.verify_strict(&signature_input(body)?, &Signature::from_bytes(&signature))
 			.map_err(|_| OwnerError::InvalidSignature)?;
-		let claims = decode_body(body)?;
 		if claims.predecessor != job {
 			return Err(Error::FrameBinding);
 		}

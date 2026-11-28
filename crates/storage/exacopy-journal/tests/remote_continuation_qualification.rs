@@ -190,7 +190,19 @@ fn rejects_untrusted_or_noncanonical_wire_and_every_missing_case() {
 }
 
 #[test]
-fn bounds_and_expected_trust_refuse_before_decoding_claims() {
+fn noncanonical_continuation_qualification_refuses_before_an_invalid_signature() {
+	let keys = FixtureKeys::new();
+	let selected = keys.select(Route::DirectPinnedTcpV1);
+	let mut record = vector("noncanonical-body");
+	*record.last_mut().unwrap() ^= 1; // The final envelope field is the signature.
+	assert_eq!(
+		verify_v2(&record, &selected).unwrap_err(),
+		Error::Evidence(Evidence::NonCanonical)
+	);
+}
+
+#[test]
+fn bounds_and_trust_require_a_valid_independent_selection() {
 	let keys = FixtureKeys::new();
 	let mut selected = keys.select(Route::DirectPinnedTcpV1);
 	selected.owner_key = &keys.attestor;
@@ -216,7 +228,7 @@ fn bounds_and_expected_trust_refuse_before_decoding_claims() {
 	let mut selected = keys.select(Route::DirectPinnedTcpV1);
 	selected.attestor_key = &weak;
 	assert_eq!(
-		verify_v2(b"invalid", &selected).unwrap_err(),
+		verify_v2(&vector("direct"), &selected).unwrap_err(),
 		Error::Evidence(Evidence::Trust)
 	);
 
@@ -325,7 +337,7 @@ fn verified_history_cannot_substitute_for_current_build_or_native_facts() {
 }
 
 #[test]
-fn noncanonical_strong_key_encodings_refuse_both_trust_roles_before_decode() {
+fn noncanonical_strong_key_encodings_refuse_both_trust_roles() {
 	// The Edwards y-coordinate 3 and y = p + 3 decompress to the same
 	// non-small-order point but have different input encodings.
 	let mut canonical = [0; 32];
@@ -349,7 +361,7 @@ fn noncanonical_strong_key_encodings_refuse_both_trust_roles_before_decode() {
 		selected.attestor_key = attestor;
 		selected.owner_key = owner;
 		assert_eq!(
-			verify_v2(b"invalid", &selected).unwrap_err(),
+			verify_v2(&vector("direct"), &selected).unwrap_err(),
 			Error::Evidence(Evidence::Trust),
 		);
 	}

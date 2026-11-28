@@ -115,9 +115,10 @@ pub(super) fn authenticate_owner(
 	if bytes.len() != OWNER_BYTES {
 		return Err(OwnerError::Length.into());
 	}
-	require_canonical_strong(selection.key)?;
 	let envelope =
 		envelope_codec::decode_envelope_bounded::<OWNER_BODY_BYTES, OWNER_BYTES>(bytes, DOMAIN)?;
+	let (owner, body_key) = codec::decode_owner(envelope.body)?;
+	require_canonical_strong(selection.key)?;
 	let public_key = selection.key.to_bytes();
 	if envelope.public_key != public_key {
 		return Err(OwnerError::UntrustedKey.into());
@@ -127,7 +128,9 @@ pub(super) fn authenticate_owner(
 		.key
 		.verify_strict(&DOMAIN.signature_input(envelope.body), &signature)
 		.map_err(|_| OwnerError::InvalidSignature)?;
-	let owner = codec::decode_owner(envelope.body, &public_key)?;
+	if body_key != public_key {
+		return Err(OwnerError::UntrustedKey.into());
+	}
 	if owner.profile != selection.profile {
 		return Err(OwnerError::UntrustedProfile.into());
 	}

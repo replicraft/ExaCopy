@@ -39,8 +39,7 @@ pub(super) fn encode_owner(
 
 pub(super) fn decode_owner(
 	bytes: &[u8],
-	public_key: &[u8; 32],
-) -> Result<WindowsBootstrapOwner, WindowsBootstrapOwnerError> {
+) -> Result<(WindowsBootstrapOwner, [u8; 32]), WindowsBootstrapOwnerError> {
 	if bytes.len() != OWNER_BODY_BYTES {
 		return Err(OwnerError::Length.into());
 	}
@@ -55,9 +54,7 @@ pub(super) fn decode_owner(
 	key(&mut decoder, 3)?;
 	let token = OwnerToken::from_bytes(fixed_bytes(&mut decoder)?)?;
 	key(&mut decoder, 4)?;
-	if fixed_bytes::<32>(&mut decoder)? != *public_key {
-		return Err(OwnerError::UntrustedKey.into());
-	}
+	let public_key = fixed_bytes(&mut decoder)?;
 	key(&mut decoder, 5)?;
 	if decoder.u64().map_err(OwnerError::from)? != FIXED_LAYOUT {
 		return Err(WindowsBootstrapOwnerError::Layout);
@@ -72,10 +69,10 @@ pub(super) fn decode_owner(
 		roles,
 	};
 	owner.validate()?;
-	if encoded_bytes(&encode_owner(&owner, public_key)?) != bytes {
+	if encoded_bytes(&encode_owner(&owner, &public_key)?) != bytes {
 		return Err(OwnerError::NonCanonical.into());
 	}
-	Ok(owner)
+	Ok((owner, public_key))
 }
 
 pub(super) fn encode_prepared(

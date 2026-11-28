@@ -245,11 +245,7 @@ fn verify_profile(
 	if record.len() > MAX_REMOTE_QUALIFICATION_BYTES {
 		return Err(Evidence::Length.into());
 	}
-	if trust.attestor == [0; 16]
-		|| !is_canonical_strong(trust.attestor_key)
-		|| !is_canonical_strong(trust.owner_key)
-		|| trust.attestor_key == trust.owner_key
-	{
+	if trust.attestor == [0; 16] || trust.attestor_key == trust.owner_key {
 		return Err(Evidence::Trust.into());
 	}
 	if !trust.scope.common.is_valid() {
@@ -263,6 +259,10 @@ fn verify_profile(
 		return Err(Error::Coverage);
 	}
 	let envelope = wire::read_envelope(record)?;
+	let claims = wire::read_claims(envelope.body, profile)?;
+	if !is_canonical_strong(trust.attestor_key) || !is_canonical_strong(trust.owner_key) {
+		return Err(Evidence::Trust.into());
+	}
 	if envelope.key != trust.attestor_key.to_bytes() {
 		return Err(Evidence::Attestor.into());
 	}
@@ -271,7 +271,6 @@ fn verify_profile(
 		trust.attestor_key.verify_strict(input, &signature)
 	})?
 	.map_err(|_| Evidence::Signature)?;
-	let claims = wire::read_claims(envelope.body, profile)?;
 	if claims.attestor != trust.attestor {
 		return Err(Evidence::Attestor.into());
 	}
