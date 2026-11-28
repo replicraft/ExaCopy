@@ -2,7 +2,8 @@ use std::cell::Cell;
 use std::fs;
 use std::io::{ErrorKind, Read as _, Write as _};
 use std::num::NonZeroU64;
-use std::os::unix::fs::PermissionsExt as _;
+use std::os::fd::AsRawFd as _;
+use std::os::unix::fs::{FileExt as _, PermissionsExt as _};
 
 use exacopy_endpoint::linux_remote_qualification::RemoteDestinationQualification;
 use exacopy_endpoint::{ReadView as _, UnixComponent};
@@ -44,7 +45,7 @@ fn original_reserved_descriptor_writes_and_rereads_only_the_exact_successor() {
 	let lease = root.try_recovery_write_lease(name, id).unwrap();
 	let expected = lease.job().open_first_segment().unwrap();
 	let mut held = lease.hold_first_segment_for_append(&expected).unwrap();
-	let descriptor = std::os::fd::AsRawFd::as_raw_fd(&held.file);
+	let descriptor = held.file.as_raw_fd();
 	native::allocate(&held.file, expected.len(), 8_192).unwrap();
 	let expected = lease.job().open_first_segment().unwrap();
 	held.recheck(&lease, &expected).unwrap();
@@ -52,7 +53,7 @@ fn original_reserved_descriptor_writes_and_rereads_only_the_exact_successor() {
 
 	append_held(&mut held, successor, ()).unwrap();
 	let end = expected.len() + successor.len() as u64;
-	assert_eq!(std::os::fd::AsRawFd::as_raw_fd(&held.file), descriptor);
+	assert_eq!(held.file.as_raw_fd(), descriptor);
 	assert!(
 		observe_successor(&held, &lease, &expected, expected.len(), end - 1, successor).is_err()
 	);
@@ -73,10 +74,33 @@ fn original_reserved_descriptor_writes_and_rereads_only_the_exact_successor() {
 	assert_eq!(&bytes[old.len()..], successor);
 	assert_eq!(readback.read(&mut [0]).unwrap(), 0);
 
-	refused_live_continuation_retains_the_original_prefix_and_journal();
+	check_live_continuation(Admission::Expire);
+	check_live_continuation(Admission::Allow);
 }
 
-fn refused_live_continuation_retains_the_original_prefix_and_journal() {
+enum Admission {
+	Expire,
+	Allow,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GatePhase {
+	PendingReplay,
+	PriorReplayed,
+	Held,
+	Released,
+	SuccessorReplayed,
+}
+
+struct ContinuationGuard<'phase>(&'phase Cell<GatePhase>);
+
+impl Drop for ContinuationGuard<'_> {
+	fn drop(&mut self) {
+		assert_eq!(self.0.replace(GatePhase::Released), GatePhase::Held);
+	}
+}
+
+fn check_live_continuation(admission: Admission) {
 	#[derive(Debug, Eq, PartialEq)]
 	enum Refusal {
 		Expired,
@@ -85,6 +109,7 @@ fn refused_live_continuation_retains_the_original_prefix_and_journal() {
 	const JOB: &str = "continuation-gate";
 	const PART: &str = "retained-part";
 	const TARGET: &str = "public-target";
+	const SOURCE: &str = "fixture-source";
 	const PREVIOUS: &[u8] = b"prior accepted transcript";
 	const PREFIX: &[u8] = b"retained file bytes";
 	const CANDIDATE: &[u8] = b"proposed bounded frame";
@@ -93,6 +118,9 @@ fn refused_live_continuation_retains_the_original_prefix_and_journal() {
 	let root = DestinationRoot::from_directory(scratch.open()).unwrap();
 	let name = |name: &'static str| UnixComponent::new(name.as_bytes()).unwrap();
 	let stage_path = scratch.path(JOB).join(STAGE).join(PART);
+	let source_path = scratch.path(SOURCE);
+	fs::write(&source_path, PREFIX).unwrap();
+	let source = fs::File::open(&source_path).unwrap();
 	{
 		let job = root.create_job_directory(name(JOB)).unwrap();
 		job.create_stage_directory().unwrap();
@@ -103,8 +131,8 @@ fn refused_live_continuation_retains_the_original_prefix_and_journal() {
 		segment.write_all(PREVIOUS).unwrap();
 	}
 
-	// Match the real held ext4 facts. The digest, source replay and authority
-	// callbacks are fixture inputs at the platform boundary.
+	// Match the real held ext4 facts. The qualification digest, journal heads,
+	// encoded frame and authority callbacks are synthetic fixture inputs.
 	let qualification =
 		RemoteDestinationQualification::new(observe_remote_destination(&root).unwrap(), [0x35; 32])
 			.unwrap();
@@ -123,6 +151,12 @@ fn refused_live_continuation_retains_the_original_prefix_and_journal() {
 	let stage = lease.read_retained_prefix(&inventory, selection).unwrap();
 	let staged_extent = stage.length();
 	assert_eq!(staged_extent, PREFIX.len() as u64);
+	let mut observed_prefix = [0; PREFIX.len()];
+	let mut observed_source = [0; PREFIX.len()];
+	stage.read_exact_at(0, &mut observed_prefix).unwrap();
+	source.read_exact_at(0, &mut observed_source).unwrap();
+	assert_eq!(observed_prefix, observed_source);
+	assert_eq!(&observed_prefix, PREFIX);
 	let before = Head {
 		sequence: 4,
 		digest: [0x42; 32],
@@ -168,7 +202,8 @@ fn refused_live_continuation_retains_the_original_prefix_and_journal() {
 		})
 		.unwrap();
 
-	let replay_completed = Cell::new(false);
+	let reserved_descriptor = pending.journal.file.as_raw_fd();
+	let phase = Cell::new(GatePhase::PendingReplay);
 	let result = pending.append_continuation(
 		&prefix,
 		after,
@@ -177,12 +212,16 @@ fn refused_live_continuation_retains_the_original_prefix_and_journal() {
 			let mut observed = Vec::new();
 			candidate.read_to_end(&mut observed).unwrap();
 			assert_eq!(observed, PREVIOUS);
-			assert!(!replay_completed.replace(true));
+			assert_eq!(
+				phase.replace(GatePhase::PriorReplayed),
+				GatePhase::PendingReplay
+			);
 			Ok(())
 		},
 		|request| {
-			assert!(
-				replay_completed.get(),
+			assert_eq!(
+				phase.get(),
+				GatePhase::PriorReplayed,
 				"the gate requires successful prior byte replay"
 			);
 			assert_eq!(request.previous, before);
@@ -195,21 +234,80 @@ fn refused_live_continuation_retains_the_original_prefix_and_journal() {
 			assert_eq!(request.segment, expected.identity());
 			assert_eq!(request.journal_directory, journal_directory);
 			assert_eq!(request.receipt, receipt);
-			Err::<(), _>(Refusal::Expired)
+			match &admission {
+				Admission::Expire => Err(Refusal::Expired),
+				Admission::Allow => {
+					phase.set(GatePhase::Held);
+					Ok(ContinuationGuard(&phase))
+				}
+			}
 		},
-		|_| panic!("refused native append must not invoke successor verification"),
+		|mut candidate| {
+			assert_eq!(
+				phase.get(),
+				GatePhase::Released,
+				"successor replay requires the admitted append to release its guard"
+			);
+			let mut prior_bytes = [0; PREVIOUS.len()];
+			let mut next_bytes = [0; CANDIDATE.len()];
+			candidate.read_exact(&mut prior_bytes).unwrap();
+			candidate.read_exact(&mut next_bytes).unwrap();
+			assert_eq!(&prior_bytes, PREVIOUS);
+			assert_eq!(&next_bytes, CANDIDATE);
+			assert_eq!(candidate.read(&mut [0]).unwrap(), 0);
+			phase.set(GatePhase::SuccessorReplayed);
+			Ok(())
+		},
 	);
-	assert!(matches!(
-		result,
-		Err(ContinuationReservationError::Admission(Refusal::Expired))
-	));
+
 	let retained = job.open_first_segment().unwrap();
+	let segment_path = scratch.path(JOB).join(JOURNAL).join(FIRST_SEGMENT);
 	assert_eq!(retained.identity(), expected.identity());
-	assert_eq!(retained.len(), before.end);
-	assert_eq!(
-		fs::read(scratch.path(JOB).join(JOURNAL).join(FIRST_SEGMENT)).unwrap(),
-		PREVIOUS
-	);
+	match admission {
+		Admission::Expire => {
+			assert!(matches!(
+				result,
+				Err(ContinuationReservationError::Admission(Refusal::Expired))
+			));
+			assert_eq!(phase.get(), GatePhase::PriorReplayed);
+			assert_eq!(retained.len(), before.end);
+			assert_eq!(fs::read(segment_path).unwrap(), PREVIOUS);
+			assert!(matches!(
+				lease.open_first_segment_for_append(&retained),
+				Err(StageError::JobBusy)
+			));
+		}
+		Admission::Allow => {
+			let active = result.unwrap();
+			assert_eq!(phase.get(), GatePhase::SuccessorReplayed);
+			assert_eq!(active.head(), after);
+			assert_eq!(active.plan(), plan);
+			assert_eq!(active.receipt_capacity(), native::RECEIPT_CAPACITY);
+			assert_eq!(
+				active.reservation.journal.file.as_raw_fd(),
+				reserved_descriptor
+			);
+			assert_eq!(active.reservation.receipt.observation.identity(), receipt);
+			assert!(lease.journal_access.try_lock().is_err());
+			assert_eq!(retained.len(), after.end);
+			assert_eq!(
+				fs::read(segment_path).unwrap(),
+				[PREVIOUS, CANDIDATE].concat()
+			);
+			assert!(matches!(
+				lease.open_first_segment_for_append(&retained),
+				Err(StageError::JobBusy)
+			));
+			active.check_before_suffix(&prefix).unwrap();
+		}
+	}
+	stage.recheck_observation().unwrap();
+	stage.read_exact_at(0, &mut observed_prefix).unwrap();
+	source.read_exact_at(0, &mut observed_source).unwrap();
+	assert_eq!(&observed_prefix, PREFIX);
+	assert_eq!(&observed_source, PREFIX);
+	assert_eq!(source.metadata().unwrap().len(), staged_extent);
+	assert_eq!(fs::read(source_path).unwrap(), PREFIX);
 	assert_eq!(fs::read(stage_path).unwrap(), PREFIX);
 	assert_eq!(
 		fs::symlink_metadata(scratch.path(TARGET))
@@ -217,8 +315,4 @@ fn refused_live_continuation_retains_the_original_prefix_and_journal() {
 			.kind(),
 		ErrorKind::NotFound
 	);
-	assert!(matches!(
-		lease.open_first_segment_for_append(&retained),
-		Err(StageError::JobBusy)
-	));
 }
