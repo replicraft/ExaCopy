@@ -26,6 +26,8 @@ mod bounds;
 mod checkpoint_controls;
 #[path = "../../../../../../tests/unit/linux/witness_continuation/held_segment.rs"]
 mod held_segment;
+#[path = "witness/component_tests.rs"]
+mod witness_controls;
 
 #[test]
 #[ignore = "requires a task-owned ext4 fixture with O_TMPFILE and KEEP_SIZE"]

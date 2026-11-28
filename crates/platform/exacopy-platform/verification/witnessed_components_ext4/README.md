@@ -30,6 +30,15 @@ The [frozen inputs](fixtures/README.md) are owned copies of storage vectors;
 their logical scope differs from the native fixture. Both qualification and
 ordinary coverage record the helper and vector hashes.
 
+The accepted checkpoint lane then closes the same tail writer into its
+witness candidate. It retains that candidate and the original active
+reservation through witness intent, hardlink and both barriers, and the
+four prepublication phases. A separate instance rejects successor replay
+after a real append and retains both witness aliases while refusing another
+append. Source and incumbent checks run after this joined path. The
+component supplies synthetic prepublication bytes and authority callbacks;
+it performs no public rename or authenticated application transaction.
+
 These are local adapter controls for R-008, R-253, R-255 and
 INV-002/003/004/006/009/013/018/019. The effect callbacks are component-test
 inputs. The fixture does not create an OP2 grant, consent, eligibility record,

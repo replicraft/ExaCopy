@@ -7,19 +7,22 @@ use std::path::Path;
 
 use exacopy_endpoint::linux_remote_qualification::RemoteDestinationQualification;
 use exacopy_endpoint::{ReadView as _, UnixComponent};
-use exacopy_model::retained_prefix::{
-	BudgetReservation, Checkpoint, Continuation, Guard, Head, History, Live, Pass, PrefixProof,
-	Prior,
-};
+use exacopy_model::retained_prefix::{BudgetReservation, Checkpoint, Head, Live};
 
 use crate::linux::job::{FIRST_SEGMENT, JOURNAL, STAGE};
 use crate::linux::{
 	ContinuationReservationError, DestinationRoot, RemoteDestinationEligibility,
-	RetainedPrefixSelection, StageError, SuffixEffect, WitnessReservationAuthority,
-	WitnessReservationEffect, WitnessReservationObservationError, WitnessReservationPlan,
-	observe_remote_destination,
+	ReservedContinuationRequest, RetainedPrefixSelection, StageError, SuffixEffect,
+	WitnessCredentialLane, WitnessReservationAuthority, WitnessReservationEffect,
+	WitnessReservationObservationError, WitnessReservationPlan, observe_remote_destination,
 };
 use crate::scratch::Scratch;
+
+#[path = "model_tests.rs"]
+mod model;
+
+use super::witness_controls::{self, Outcome, WitnessFixture};
+use model::continued_model;
 
 const JOB: &str = "checkpoint-component-job";
 const PART: &str = "retained-part";
@@ -44,6 +47,7 @@ const CHECKPOINT_FRAME: &str = include_str!(concat!(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Case {
 	Accepted,
+	WitnessRefused,
 	OutOfBounds,
 	AdmissionRefused,
 	RereadRefused,
@@ -76,6 +80,7 @@ pub(super) fn exercise() {
 	let frames = Frames::new();
 	for case in [
 		Case::Accepted,
+		Case::WitnessRefused,
 		Case::OutOfBounds,
 		Case::AdmissionRefused,
 		Case::RereadRefused,
@@ -321,7 +326,7 @@ fn exercise_checkpoint(frames: &Frames, case: Case) {
 		},
 	);
 	match case {
-		Case::Accepted => {
+		Case::Accepted | Case::WitnessRefused => {
 			outcome.unwrap();
 			assert_eq!(active.head(), frames.successor);
 			active.check_active().unwrap();
@@ -340,13 +345,13 @@ fn exercise_checkpoint(frames: &Frames, case: Case) {
 	}
 	let all = [Step::Prior, Step::Enter, Step::Release, Step::Reread];
 	let expected_steps = match case {
-		Case::Accepted | Case::RereadRefused => &all[..],
+		Case::Accepted | Case::WitnessRefused | Case::RereadRefused => &all[..],
 		Case::AdmissionRefused => &all[..2],
 		Case::OutOfBounds => &all[..0],
 	};
 	assert_eq!(trace.borrow().as_slice(), expected_steps);
 
-	if case == Case::Accepted {
+	let witness_stage = if matches!(case, Case::Accepted | Case::WitnessRefused) {
 		model
 			.checkpoint(
 				Live {
@@ -372,12 +377,15 @@ fn exercise_checkpoint(frames: &Frames, case: Case) {
 				Ok::<_, Refusal>(())
 			})
 			.unwrap();
-		let readback = writer.finish().unwrap();
+		let readback = writer
+			.finish_for_witness(WitnessCredentialLane::observe().unwrap())
+			.unwrap();
 		let mut actual = [0; FULL.len()];
 		readback.read_exact_at(0, &mut actual).unwrap();
 		assert_eq!(&actual, FULL);
 		assert_eq!(readback.length(), SOURCE_END);
 		readback.recheck_observation().unwrap();
+		Some(readback)
 	} else {
 		assert_eq!(active.head(), frames.continued);
 		assert!(matches!(
@@ -396,15 +404,51 @@ fn exercise_checkpoint(frames: &Frames, case: Case) {
 			))
 		));
 		assert!(matches!(writer.finish(), Err(StageError::Unflushed)));
-	}
+		None
+	};
 
 	let observed = job.open_first_segment().unwrap();
 	assert_eq!(observed.identity(), expected.identity());
 	let mut literal = vec![frames.journal.as_slice()];
-	if matches!(case, Case::Accepted | Case::RereadRefused) {
+	if matches!(
+		case,
+		Case::Accepted | Case::WitnessRefused | Case::RereadRefused
+	) {
 		literal.push(&frames.checkpoint);
 	}
 	exact(File::open(&journal_path).unwrap(), &literal);
+	if let Some(candidate) = witness_stage {
+		let binding = ReservedContinuationRequest {
+			authority,
+			plan,
+			previous: frames.successor,
+			successor: frames.successor,
+			destination: root.identity(),
+			job: job_id,
+			stage: selection,
+			journal_directory,
+			segment: expected.identity(),
+			receipt,
+		};
+		let outcome = if case == Case::Accepted {
+			Outcome::Accepted
+		} else {
+			Outcome::SuccessorRefused
+		};
+		witness_controls::exercise(
+			active,
+			candidate,
+			WitnessFixture {
+				binding,
+				journal_prefix: &literal,
+				expected_bytes: FULL,
+				stage_path: &stage_path,
+				journal_path: &journal_path,
+				target_path: &scratch.path(TARGET),
+			},
+			outcome,
+		);
+	}
 	for (path, id, content) in [
 		(&stage_path, stage_id, FULL.as_slice()),
 		(&source_path, source_id, FULL.as_slice()),
@@ -420,55 +464,6 @@ fn exercise_checkpoint(frames: &Frames, case: Case) {
 			.kind(),
 		io::ErrorKind::NotFound
 	);
-}
-
-fn continued_model(frames: &Frames) -> (Continuation, Pass, Live) {
-	let guard = Guard {
-		authority: [1; 32],
-		stage: [2; 32],
-		lease: [3; 32],
-	};
-	let pass = Pass {
-		run: nonzero(2),
-		source: nonzero(9),
-	};
-	let prior = Prior {
-		guard,
-		head: frames.prior,
-		preparation: boundary(4, 1339, &frames.journal[..1339]),
-		pass: Pass {
-			run: nonzero(1),
-			source: nonzero(7),
-		},
-		checkpoint_end: 2,
-		authorized_end: ADOPTED_END,
-		history: History::CleanCapture,
-		writer_quiesced: true,
-	};
-	let proof = PrefixProof {
-		local_end: ADOPTED_END,
-		compared_end: ADOPTED_END,
-		rehashed_end: 2,
-		digest: hex("f3dd21f0f2a842321e46fd8656d154b5eb1edda694a962399b683b9fb21a58df")
-			.try_into()
-			.unwrap(),
-	};
-	let mut state = Continuation::begin(prior, pass, proof, SOURCE_END).unwrap();
-	let live = Live {
-		guard,
-		head: frames.prior,
-		source: pass.source,
-		local_end: ADOPTED_END,
-	};
-	state.prefix_barrier(live, state.basis()).unwrap();
-	let live = Live {
-		head: frames.continued,
-		..live
-	};
-	state
-		.continued(live, state.basis(), frames.continued)
-		.unwrap();
-	(state, pass, live)
 }
 
 fn nonzero(value: u64) -> NonZeroU64 {

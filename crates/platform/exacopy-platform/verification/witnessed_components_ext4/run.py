@@ -46,6 +46,8 @@ CASES = (
 )
 CHECKPOINT_INPUTS = (
     PACKAGE / "src/linux/recovery/writer/witness_reservation/continuation/checkpoints/tests.rs",
+    PACKAGE / "src/linux/recovery/writer/witness_reservation/continuation/checkpoints/model_tests.rs",
+    PACKAGE / "src/linux/recovery/writer/witness_reservation/continuation/witness/component_tests.rs",
     HERE / "fixtures/checkpoint-journal.hex",
     HERE / "fixtures/checkpoint-successor.hex",
     HERE / "fixtures/README.md",

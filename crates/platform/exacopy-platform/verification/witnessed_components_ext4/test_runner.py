@@ -20,6 +20,8 @@ class WitnessedComponents(unittest.TestCase):
 
         expected = (
             "src/linux/recovery/writer/witness_reservation/continuation/checkpoints/tests.rs",
+            "src/linux/recovery/writer/witness_reservation/continuation/checkpoints/model_tests.rs",
+            "src/linux/recovery/writer/witness_reservation/continuation/witness/component_tests.rs",
             "verification/witnessed_components_ext4/fixtures/checkpoint-journal.hex",
             "verification/witnessed_components_ext4/fixtures/checkpoint-successor.hex",
             "verification/witnessed_components_ext4/fixtures/README.md",
