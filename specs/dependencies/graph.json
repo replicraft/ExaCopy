@@ -289,7 +289,7 @@
           "crypto-common@0.2.2": {"parents": ["digest@0.11.3"], "features": []},
           "curve25519-dalek@5.0.0": {"parents": ["ed25519-dalek@3.0.0"], "features": ["digest", "zeroize"]},
           "digest@0.11.3": {"parents": ["curve25519-dalek@5.0.0", "sha2@0.11.1"], "features": ["block-api", "default"]},
-          "ed25519-dalek@3.0.0": {"parents": ["exacopy-journal@0.1.0", "exacopy-transfer@0.1.0"], "features": ["zeroize"]},
+          "ed25519-dalek@3.0.0": {"parents": ["exacopy-cli@0.1.0", "exacopy-journal@0.1.0", "exacopy-transfer@0.1.0"], "features": ["zeroize"]},
           "ed25519@3.0.0": {"parents": ["ed25519-dalek@3.0.0"], "features": []},
           "errno@0.3.15": {"parents": ["rustix@1.1.6"], "features": ["std"]},
           "find-msvc-tools@0.1.15": {"parents": ["cc@1.11.2"], "features": []},

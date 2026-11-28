@@ -12,8 +12,14 @@ mod version;
 
 /// Dispatches CLI arguments and renders the resulting exit status.
 pub fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
-	let mut stdout = io::stdout().lock();
-	let mut stderr = io::stderr().lock();
+	run_with_output(args, io::stdout().lock(), io::stderr().lock())
+}
+
+pub(crate) fn run_with_output(
+	args: impl Iterator<Item = OsString>,
+	mut stdout: impl Write,
+	mut stderr: impl Write,
+) -> ExitCode {
 	let command = match args::parse(args) {
 		Ok(command) => command,
 		Err(error) => {
@@ -88,6 +94,10 @@ pub fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
 			&mut stdout,
 			&mut stderr,
 		)),
+		#[cfg(all(target_os = "macos", feature = "experimental-apfs-copy"))]
+		Command::InspectApfs(command) => {
+			ExitCode::from(crate::apfs_inspect::run(&command, &mut stdout, &mut stderr))
+		}
 		Command::Recover(recovery) => {
 			let outcome = execute_recovery(&recovery);
 			match outcome.write(recovery.format, &mut stdout, &mut stderr) {

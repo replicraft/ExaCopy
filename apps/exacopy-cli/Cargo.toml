@@ -25,7 +25,7 @@ experimental-ssh-wireguard = [
 	"exacopy-wireguard?/experimental-tcp",
 ]
 experimental-verified-prefix-resume = ["experimental-ssh-capture"]
-experimental-apfs-copy = ["dep:exacopy-content", "dep:exacopy-journal", "dep:exacopy-model", "dep:exacopy-transfer", "exacopy-transfer/experimental-apfs-copy"]
+experimental-apfs-copy = ["dep:ed25519-dalek", "dep:exacopy-content", "dep:exacopy-journal", "dep:exacopy-model", "dep:exacopy-transfer", "exacopy-transfer/experimental-apfs-copy"]
 experimental-windows-diff = ["dep:exacopy-diff", "dep:exacopy-endpoint", "dep:exacopy-platform", "exacopy-platform/experimental-windows-read"]
 
 windows-bootstrap-fixture = [
@@ -95,6 +95,7 @@ ed25519-dalek.workspace = true
 workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
+ed25519-dalek = { workspace = true, optional = true }
 exacopy-content = { workspace = true, optional = true }
 exacopy-journal = { workspace = true, optional = true }
 exacopy-model = { workspace = true, optional = true }

@@ -6,10 +6,7 @@ use clap::builder::{OsStringValueParser, PossibleValuesParser};
 use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::{Arg, ArgAction, ArgMatches, Command as Cli};
 
-use super::{
-	Command, CopyCommand, DiffCommand, DiffProfile, Format, PlanCommand, RecoveryAction,
-	RecoveryCommand, SourceRecoveryAction, VerifyCommand,
-};
+use super::{Command, CopyCommand, DiffCommand, DiffProfile, Format, PlanCommand, VerifyCommand};
 
 const DIFF: &str = "diff";
 const COPY: &str = "copy";
@@ -21,9 +18,6 @@ const VERIFY: &str = "verify";
 const RECOVER: &str = "recover";
 const PROFILE: &str = "profile";
 const INIT: &str = "init";
-const INSPECT: &str = "inspect";
-const FINISH: &str = "finish";
-const RETRY: &str = "retry";
 const RESUME: &str = "resume";
 const FORMAT: &str = "format";
 const SOURCE_ROOT: &str = "source-root";
@@ -32,6 +26,7 @@ const MANAGED_MACOS: &str = "managed-macos";
 const LOCAL_NTFS: &str = "local-ntfs";
 #[cfg(all(target_os = "linux", feature = "experimental-linux-public-apply"))]
 mod public_stage;
+mod recovery;
 #[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
 mod remote;
 #[cfg(all(target_os = "linux", feature = "experimental-verified-prefix-resume"))]
@@ -191,7 +186,7 @@ fn definition() -> Cli {
 				))
 				.arg(output_format()),
 		)
-		.subcommand(recovery_commands())
+		.subcommand(recovery::definition())
 		.subcommand(
 			Cli::new(PROFILE)
 				.about("Manage private Linux signing profiles.")
@@ -207,30 +202,6 @@ fn definition() -> Cli {
 	let cli = cli.subcommand(remote::get_subcommand());
 	#[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
 	let cli = cli.subcommand(sync_managed::definition());
-	cli
-}
-
-fn recovery_commands() -> Cli {
-	let cli = Cli::new(RECOVER)
-		.about("Inspect or recover a retained Linux copy.")
-		.disable_help_subcommand(true)
-		.subcommand_required(true)
-		.subcommand(recovery(INSPECT, "Inspect the current retained copy."))
-		.subcommand(recovery(
-			FINISH,
-			"Finish a copy whose target was already published.",
-		))
-		.subcommand(source_recovery(
-			RETRY,
-			"Retry publication of a verified stage.",
-		))
-		.subcommand(source_recovery(RESUME, "Resume an interrupted copy."));
-	#[cfg(all(target_os = "linux", feature = "experimental-linux-public-apply"))]
-	let cli = cli.subcommand(public_stage::definition());
-	#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
-	let cli = cli.subcommand(remote::resume_subcommand());
-	#[cfg(all(target_os = "linux", feature = "experimental-verified-prefix-resume"))]
-	let cli = cli.subcommand(remote_inspect_witness::definition());
 	cli
 }
 
@@ -259,25 +230,6 @@ fn output_format() -> Arg {
 		.long(FORMAT)
 		.value_parser(PossibleValuesParser::new(["human", "json"]))
 		.help("Select human-readable text (the default) or JSON.")
-}
-
-fn recovery(name: &'static str, help: &'static str) -> Cli {
-	Cli::new(name)
-		.about(help)
-		.after_help(OPERAND_ORDER)
-		.arg(operand("JOB", 1))
-		.arg(directory_option(
-			PROFILE,
-			"Select the original signing profile.",
-		))
-		.arg(output_format())
-}
-
-fn source_recovery(name: &'static str, help: &'static str) -> Cli {
-	recovery(name, help).arg(directory_option(
-		SOURCE_ROOT,
-		"Authorize the original source parent directory.",
-	))
 }
 
 fn command_scope<'cli>(cli: &'cli Cli, args: &[OsString]) -> (&'cli Cli, usize) {
@@ -349,6 +301,10 @@ fn frame_operands(
 }
 
 fn is_path_option(_command: &str, arg: &OsStr) -> bool {
+	#[cfg(all(target_os = "macos", feature = "experimental-apfs-copy"))]
+	if recovery::is_apfs_path_option(_command, arg) {
+		return true;
+	}
 	#[cfg(all(target_os = "linux", feature = "experimental-verified-prefix-resume"))]
 	if _command == remote_inspect_witness::NAME {
 		return remote_inspect_witness::is_path_option(arg);
@@ -443,7 +399,7 @@ fn typed_command(mut args: ArgMatches) -> Option<Command> {
 		})),
 		#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
 		remote::GET => remote::get(&mut command),
-		RECOVER => recovery_command(command),
+		RECOVER => recovery::command(command),
 		PROFILE => {
 			let (action, mut args) = command.remove_subcommand()?;
 			if action != INIT {
@@ -453,35 +409,6 @@ fn typed_command(mut args: ArgMatches) -> Option<Command> {
 		}
 		_ => None,
 	}
-}
-
-fn recovery_command(mut command: ArgMatches) -> Option<Command> {
-	let (name, mut args) = command.remove_subcommand()?;
-	let action = match name.as_str() {
-		#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
-		remote::REMOTE_RESUME => return remote::resume(&mut args),
-		#[cfg(all(target_os = "linux", feature = "experimental-verified-prefix-resume"))]
-		remote_inspect_witness::NAME => return remote_inspect_witness::command(&mut args),
-		#[cfg(all(target_os = "linux", feature = "experimental-linux-public-apply"))]
-		public_stage::NAME => return public_stage::command(&mut args),
-		INSPECT => RecoveryAction::Inspect,
-		FINISH => RecoveryAction::Finish,
-		RETRY | RESUME => RecoveryAction::FromSource {
-			action: if name == RETRY {
-				SourceRecoveryAction::Retry
-			} else {
-				SourceRecoveryAction::Resume
-			},
-			source_root: path(&mut args, SOURCE_ROOT)?,
-		},
-		_ => return None,
-	};
-	Some(Command::Recover(RecoveryCommand {
-		action,
-		job: path(&mut args, "JOB")?,
-		profile: path(&mut args, PROFILE)?,
-		format: selected_format(&args),
-	}))
 }
 
 fn path(args: &mut ArgMatches, name: &str) -> Option<PathBuf> {

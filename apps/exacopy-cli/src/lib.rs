@@ -3,6 +3,8 @@
 
 pub mod assembly;
 
+#[cfg(all(target_os = "macos", feature = "experimental-apfs-copy"))]
+mod apfs_inspect;
 mod args;
 mod command;
 #[cfg(target_os = "linux")]

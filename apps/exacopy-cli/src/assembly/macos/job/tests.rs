@@ -23,6 +23,7 @@ use crate::assembly::macos::plan::{
 	DestinationPlanBinding, PlanAttempt, SourceMetadata, SourcePlanBinding,
 };
 
+mod cli_inspection;
 mod inspection;
 mod publication;
 

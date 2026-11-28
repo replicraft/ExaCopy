@@ -334,6 +334,7 @@
           "aarch64-apple-darwin"
         ],
         "enables": [
+          "dep:ed25519-dalek",
           "dep:exacopy-content",
           "dep:exacopy-journal",
           "dep:exacopy-model",
@@ -341,6 +342,7 @@
           "exacopy-transfer/experimental-apfs-copy"
         ],
         "resolution_probe": [
+          "ed25519-dalek",
           "exacopy-content",
           "exacopy-journal",
           "exacopy-transfer"
@@ -547,6 +549,7 @@
     "ed25519-dalek": {
       "default_features": false,
       "features": ["zeroize"],
+      "optional_targets": {"exacopy-cli": ["cfg(target_os = \"macos\")"]},
       "purpose": "Sign and verify transaction records and verify historical workflow closure."
     },
     "getrandom": {

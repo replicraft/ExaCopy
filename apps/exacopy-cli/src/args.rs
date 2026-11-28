@@ -27,6 +27,8 @@ pub(crate) enum Command {
 	},
 	Verify(VerifyCommand),
 	Recover(RecoveryCommand),
+	#[cfg(all(target_os = "macos", feature = "experimental-apfs-copy"))]
+	InspectApfs(InspectApfsCommand),
 	#[cfg(all(target_os = "linux", feature = "experimental-verified-prefix-resume"))]
 	RemoteInspectWitness(RemoteInspectWitnessCommand),
 	#[cfg(all(target_os = "linux", feature = "experimental-linux-public-apply"))]
@@ -145,4 +147,14 @@ pub(crate) enum SourceRecoveryAction {
 pub(crate) enum Format {
 	Human,
 	Json,
+}
+
+#[cfg(all(target_os = "macos", feature = "experimental-apfs-copy"))]
+pub(crate) struct InspectApfsCommand {
+	pub(crate) stage_container: PathBuf,
+	pub(crate) job: exacopy_platform::macos::staging::jobs::JobName,
+	pub(crate) owner_profile: exacopy_journal::OwnerProfileId,
+	pub(crate) owner_key: [u8; 32],
+	pub(crate) destination_root: exacopy_journal::RootCapabilityId,
+	pub(crate) format: Format,
 }
