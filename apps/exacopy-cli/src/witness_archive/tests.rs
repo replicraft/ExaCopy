@@ -193,6 +193,7 @@ fn incoherent_or_noncanonical_report_is_refused() {
 		),
 		("/receipt/job_directory", json!("/some-other-job")),
 		("/receipt/job_directory_bytes_hex", json!("2F6A6F62FF")),
+		("/receipt/job_directory_bytes_hex", json!("2f6a6f62fff")),
 		("/receipt/length", json!("025")),
 		("/receipt/length", json!("0")),
 		("/receipt/receipt_digest", json!("11".repeat(32))),

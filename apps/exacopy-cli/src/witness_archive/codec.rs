@@ -241,7 +241,11 @@ fn decode_path_hex(text: &str) -> Result<Vec<u8>, ArchiveError> {
 	{
 		return Err(ArchiveError::Format);
 	}
-	let path = text.as_bytes().chunks_exact(2).map(|pair| {
+	let (pairs, remainder) = text.as_bytes().as_chunks::<2>();
+	if !remainder.is_empty() {
+		return Err(ArchiveError::Format);
+	}
+	let path = pairs.iter().map(|pair| {
 		let pair = std::str::from_utf8(pair).map_err(|_| ArchiveError::Format)?;
 		u8::from_str_radix(pair, 16).map_err(|_| ArchiveError::Format)
 	});
