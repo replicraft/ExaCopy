@@ -67,6 +67,15 @@ if [[ "$(LC_ALL=C shasum -a 256 Cargo.lock)" != "$lock_before" ]]; then
 	printf 'Cargo.lock changed during Kani verification.\n' >&2
 	exit 1
 fi
+# CBMC substitutes nondeterminism for an omitted call argument. A proof
+# with that diagnostic cannot establish the intended transformed calls.
+if grep -Fq 'not enough arguments, inserting non-deterministic value' "$kani_log"; then
+	printf '%s\n' 'Model Kani emitted a nondeterministic call-argument substitution.' >&2
+	if (( kani_status != 0 )); then
+		exit "$kani_status"
+	fi
+	exit 1
+fi
 if (( kani_status != 0 )); then
 	exit "$kani_status"
 fi

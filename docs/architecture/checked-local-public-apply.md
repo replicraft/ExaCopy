@@ -34,9 +34,11 @@ a valid qualification still precedes observation, including a refused sample.
 At `8404b71`, hosted Linux executed P-083's Rust model oracle and all three
 clock adapter controls. [Exact native run](https://github.com/replicraft/ExaCopy/actions/runs/46122888565)
 retains that finite test evidence. At `fdf4ae1`, the isolated P-083 Kani
-record passed for one scalar decision on normalized inputs and its separately
-verified UTC comparator. [Grant clock evidence](../../crates/foundation/exacopy-model/verification/GRANT_TIME.md)
-records the exact assertions, covers and scope. Native sampling and whole-grant
+record reported success for the scalar decision and comparator, but CBMC
+reported four nondeterministic replacements of omitted call arguments in the
+real comparator. That Kani evidence does not qualify the composition.
+[Grant clock evidence](../../crates/foundation/exacopy-model/verification/GRANT_TIME.md)
+retains the original report and exact diagnostics. Native sampling and whole-grant
 state updates remain separate. The same revision's advisory extraction supplied
 the actual generated grant-time modules. At `72cc9bb`, the mandatory Lean gate
 freshly regenerated the modules and kernel-checked the theorem for one extracted

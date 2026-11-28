@@ -152,3 +152,22 @@ failure remains a gate failure even if a later group succeeds. All ten
 harnesses and twenty-two covers remain mandatory under the same outer budget.
 Mutation commands retain their separate single-harness invocation. The new
 execution order requires hosted verification.
+
+At `2f8d567`, the first prerequisite-first run started only the real timing
+contract. CBMC reported four omitted-call-argument diagnostics. Twice it
+substituted nondeterminism in Kani's `enter_contract_clause` call to
+`usize::saturating_add`, and twice in `exit_contract_clause` calling
+`usize::saturating_sub`. The harness reached CaDiCaL 3.0.0, then hit the
+600-second CBMC timeout with no completed cover or named assertion result.
+The existing argument-substitution guard ended the gate with exit 1 after
+603.327 seconds. The real jitter, arithmetic and scheduler groups did not
+start. The record provides no successful harness or cover for this revision
+and no arithmetic counterexample.
+
+The [exact snapshot](https://github.com/replicraft/ExaCopy/actions/runs/46140123678/artifacts/15261804678)
+has SHA-256 `83b3f84b887bfffdb4db412fe5c59027d48e08ffba92da4226fc9251084436b2`.
+Its raw member is `exacopy-evs/e403339b-cbf4-4179-8d8b-14cdb71a55b0.log`,
+with SHA-256 `1225655afc456bec994038699553a39b19f664eaf1912a05a53fa33f477187fb`.
+The same Kani clause diagnostic appears in the separately checked grant
+comparator, which uses no retry `Duration` arithmetic. The endpoint
+argument-substitution guard remains mandatory for clean and mutation evidence.

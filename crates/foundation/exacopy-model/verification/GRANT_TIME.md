@@ -27,15 +27,21 @@ including signed extremes and rollover. The decision uses the intersection
 of both half-open intervals and retains regression-before-expiry precedence.
 Qualification must never widen acceptance.
 
-At `fdf4ae1b09f545a9277e55ec36eae4f4bc4d81da`, both isolated Kani records
-passed on `x86_64-unknown-linux-gnu`. The logs report Kani `0.68.0`, CBMC
-`6.11.0` and Rust `1.100.0-nightly` at `8925ea358`. Both runners retain
-unwind checks and the 900-second per-record deadline.
+At `fdf4ae1b09f545a9277e55ec36eae4f4bc4d81da`, the recorder marked both
+isolated Kani records passed on `x86_64-unknown-linux-gnu`. The logs report
+Kani `0.68.0`, CBMC `6.11.0` and Rust `1.100.0-nightly` at `8925ea358`.
+Both runners retain unwind checks and the 900-second per-record deadline.
 
-P-083 verified both harnesses in 6.429 seconds. The decision passed both
-assertions and 12 of 12 covers with `exacopy_model::grant_time::before` as
-its sole verified stub. The real comparator passed its assertion and 4 of 4
-covers without a stub. The record binds `src/grant_time.rs` at SHA-256
+P-083 exited zero in 6.429 seconds. The log reported both decision assertions
+and 12 of 12 covers with `exacopy_model::grant_time::before` as its sole
+verified stub. It reported the real comparator assertion and 4 of 4 covers
+without a stub. The same real comparator log contains four omitted-argument
+diagnostics. CBMC twice reported a nondeterministic replacement in
+`enter_contract_clause` when calling `usize::saturating_add` and twice in
+`exit_contract_clause` when calling `usize::saturating_sub`. The original
+EVS pass remains recorded. Its Kani proof qualification is withdrawn because
+the transformed calls do not establish the intended contract semantics.
+The record binds `src/grant_time.rs` at SHA-256
 `16105dbadd18ba2ebb3c6dc09ee597ed026ce444aa8f1aed1ad424e4a0ba4f2d`.
 Its raw member is `exacopy-evs/7f2daaa9-7457-4c15-ba89-ac74a45a7bd3.log`,
 with SHA-256 `8161378a43290fbfa2048dfbddfd48e4dd5e6eafc8594b2634870056e0ff089b`.
@@ -52,8 +58,20 @@ Both records bind `Cargo.lock` at SHA-256
 [Exact hosted snapshot](https://github.com/replicraft/ExaCopy/actions/runs/46130028396/artifacts/15258028844)
 contains both logs and their same-named JSON records and has SHA-256
 `960280c184dd1f046d3c1c41191b5a326f8934bc20898125255addbacf5e07c5`.
+The P-004 range log contains no omitted-argument diagnostic.
 
-The same revision's advisory extraction completed with exit zero. Its
+At `2f8d567`, P-083 again exited zero with the same four warnings in the
+real comparator and an EVS pass. The raw member
+`exacopy-evs/2b7a5b16-129a-48b9-bd11-951d946d1a9a.log` has SHA-256
+`6974fc1a233c116a913a2202bba5a028e78a9db1d1ba8b48d3ea2c4ac86cce9c`.
+The [exact snapshot](https://github.com/replicraft/ExaCopy/actions/runs/46140123678/artifacts/15261804678)
+has SHA-256 `83b3f84b887bfffdb4db412fe5c59027d48e08ffba92da4226fc9251084436b2`.
+The common model Kani runner now rejects the diagnostic in either the range
+or grant-time log before accepting a successful tool exit. This Kani tool
+finding leaves the independently extracted and kernel-checked Lean evidence
+below intact.
+
+The `fdf4ae1` advisory extraction completed with exit zero. Its
 [generated-source artifact](https://github.com/replicraft/ExaCopy/actions/runs/46130028396/artifacts/15258920042)
 has SHA-256 `6d59cadd778aa53c3940427c6682331091ad44cbfcaa1af29bca346fdda4816f`.
 The receipt binds the actual Rust source, app caller, lockfile and pinned
