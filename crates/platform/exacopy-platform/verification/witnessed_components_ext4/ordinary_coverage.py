@@ -262,7 +262,7 @@ def combine(temp, context, evidence, report):
         owner_junit_fd, owner_junit, check_owner_junit = bind_file(
             stack, evidence / "owner-nextest.xml", image_selection.CAPTURE_LIMIT)
         expanded_junit = os.pread(junit_fd, image_selection.CAPTURE_LIMIT, 0)
-        bootstrap.bootstrap_attendance(expanded_junit)
+        bootstrap.cli_attendance(expanded_junit)
         require(bootstrap.owner_attendance(bootstrap.junit_suites(expanded_junit)) == bootstrap.owner_attendance(
                     bootstrap.junit_suites(os.pread(owner_junit_fd, image_selection.CAPTURE_LIMIT, 0))),
                 "expanded instrumented Nextest changed owner attendance")
@@ -278,6 +278,9 @@ def combine(temp, context, evidence, report):
                                    "owner_only_report": owner_report, "owner_only_junit": owner_junit,
                                    "junit": junit,
                                    "selectors": sorted(bootstrap.BOOTSTRAP_CASES)}
+        test, child, launch = bootstrap.copy_objects(recorded["objects"], target)
+        report["linux_copy"] = {"object": test, "child": child, "launch": launch,
+                                "junit": junit, "selectors": sorted(bootstrap.COPY_CASES)}
         inputs = {
             name: bind_file(stack, Path(before["tools"][key]["path"]), collector.FILE_LIMIT,
                             expected=before["tools"][key])
@@ -293,6 +296,26 @@ def combine(temp, context, evidence, report):
             bind_file(stack, Path(item["path"]), collector.FILE_LIMIT, expected=item)
             for item in recorded["objects"]
         ]
+        child_fd, = (entry[0] for entry in inputs["objects"] if entry[1] == launch)
+        original = inputs["ordinary"][0]
+        # A JUnit pass alone cannot show that profiles from the launched app
+        # were indexed. Check its unique entrypoint from the pre-merge data.
+        # This proof-only export never contributes rows to the gate.
+        label = "ordinary-linux-copy-child"
+        child_export = held_tool(
+            evidence, label, inputs["cov"],
+            [*recorded["argv"][:2], f"-instr-profile={profiles_api.fd_path(original)}",
+             "-object", profiles_api.fd_path(child_fd)],
+            (original, child_fd), output_limit=profiles_api.EXPORT_LIMIT,
+        ).encode("utf-8")
+        _, child_proof, check_child_proof = bind_file(
+            stack, evidence / f"{label}.stdout", profiles_api.EXPORT_LIMIT,
+            expected={"size": len(child_export), "sha256": hashlib.sha256(child_export).hexdigest()},
+        )
+        report["linux_copy"]["indexed_child_execution"] = bootstrap.child_main_coverage(
+            file_rows(child_export), run.ROOT)
+        report["linux_copy"]["child_export"] = child_proof
+
         selected_fd, = (entry[0] for entry in inputs["objects"] if entry[1]["path"] == selected_object["path"])
         selected_path = Path(selected_object["path"])
         held_image = ext4.held_managed_image(selected_path, selected_fd)
@@ -352,7 +375,6 @@ def combine(temp, context, evidence, report):
             return held_tool(evidence, label, inputs["cov"], args, (profile, *object_fds),
                              output_limit=profiles_api.EXPORT_LIMIT)
 
-        original = inputs["ordinary"][0]
         require(file_rows(export("ordinary-reexport", original)) == ordinary_rows,
                 "ordinary report does not match the captured indexed profile and objects")
         merged = evidence / "merged.profdata"
@@ -372,6 +394,7 @@ def combine(temp, context, evidence, report):
         for bound in (inputs["cov"], inputs["profdata"], inputs["ordinary"], *inputs["objects"], *raw_inputs):
             bound[2]()
         check_merged()
+        check_child_proof()
         check_before()
         check_producer()
         check_report()

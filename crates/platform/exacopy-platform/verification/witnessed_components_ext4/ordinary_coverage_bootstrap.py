@@ -1,4 +1,4 @@
-"""Validate the additional ordinary Linux CLI coverage input."""
+"""Validate the selected ordinary Linux CLI coverage inputs."""
 
 from pathlib import Path
 import re
@@ -9,6 +9,11 @@ from run import ext4
 require = ext4.require
 
 BOOTSTRAP_SUITE = "exacopy-cli::job_bootstrap"
+COPY_SUITE = "exacopy-cli::linux_copy"
+CLI_MAIN = "apps/exacopy-cli/src/main.rs"
+COPY_OBJECT = re.compile(r"debug/build/exacopy-cli/([0-9a-f]{16})/out/linux_copy-\1")
+CHILD_OBJECT = re.compile(r"debug/build/exacopy-cli/[0-9a-f]{16}/out/exacopy")
+CHILD_LAUNCH = re.compile(r"debug/exacopy")
 BOOTSTRAP_OBJECT = re.compile(r"debug/build/exacopy-cli/([0-9a-f]{16})/out/job_bootstrap-\1")
 BOOTSTRAP_CASES = {
     "a_private_looking_incumbent_job_is_never_adopted",
@@ -24,6 +29,27 @@ BOOTSTRAP_CASES = {
     "verifies_the_persisted_signed_owner_and_first_preparation_frame",
 }
 
+
+COPY_CASES = {
+    "arguments::escaped_raw_paths_and_trailing_options_keep_their_original_meaning",
+    "arguments::incomplete_or_duplicate_copy_grants_create_no_job_and_preserve_existing_objects",
+    "arguments::incomplete_source_grants_preserve_an_existing_recovery_journal",
+    "concurrent_processes_cannot_replace_the_winner",
+    "failed_report_output_keeps_the_committed_copy_and_names_the_job",
+    "publishes_raw_name_and_retains_authenticated_job_and_matching_receipt",
+    "recovery::a_different_profile_cannot_authenticate_a_retained_job",
+    "recovery::finishes_a_published_copy_without_replacing_the_target",
+    "recovery::reports_current_receipt_and_detects_a_same_length_changed_target",
+    "refuses_incumbents_symlinks_and_source_aliases_without_starting_a_job",
+    "rejects_malformed_and_unsafe_profiles_and_preserves_the_key",
+    "resume::resumes_a_checkpointed_copy_and_repeats_with_the_same_receipt",
+    "retry::rejects_wrong_source_grants_and_changed_source_bytes_without_leaking_paths",
+    "retry::reports_conflict_and_preserves_both_inodes",
+    "retry::reports_reconciliation_for_a_torn_journal_without_publication",
+    "retry::resume_leaves_an_active_intent_for_explicit_retry",
+    "retry::retries_a_retained_inode_and_repeats_without_changing_the_receipt",
+}
+CLI_SUITES = {BOOTSTRAP_SUITE: BOOTSTRAP_CASES, COPY_SUITE: COPY_CASES}
 
 
 def owner_rows(rows):
@@ -58,23 +84,50 @@ def owner_attendance(suites):
     return seen
 
 
-def bootstrap_attendance(raw):
+def cli_attendance(raw):
     suites = [suite for suite in junit_suites(raw)
               if suite.get("name", "").startswith("exacopy-cli")]
-    require(len(suites) == 1 and suites[0].get("name") == BOOTSTRAP_SUITE,
-            "instrumented Nextest CLI test binary differs")
-    suite = suites[0]
-    cases = suite.findall("testcase")
-    require(suite.get("tests") == str(len(BOOTSTRAP_CASES))
-            and all(suite.get(field) == "0" for field in ("failures", "errors", "skipped"))
-            and len(cases) == len(BOOTSTRAP_CASES)
-            and {case.get("name") for case in cases} == BOOTSTRAP_CASES
-            and all(case.get("classname") == BOOTSTRAP_SUITE and not list(case) for case in cases),
-            "instrumented Nextest job_bootstrap attendance differs")
+    require(len(suites) == len(CLI_SUITES)
+            and {suite.get("name") for suite in suites} == CLI_SUITES.keys(),
+            "instrumented Nextest CLI test binaries differ")
+    for suite in suites:
+        name = suite.attrib["name"]
+        expected = CLI_SUITES[name]
+        cases = suite.findall("testcase")
+        require(suite.get("tests") == str(len(expected))
+                and all(suite.get(field) == "0" for field in ("failures", "errors", "skipped"))
+                and len(cases) == len(expected)
+                and {case.get("name") for case in cases} == expected
+                and all(case.get("classname") == name and not list(case) for case in cases),
+                f"instrumented Nextest attendance differs for {name}")
+
+
+def exact_object(objects, target, pattern, name):
+    matches = []
+    for entry in objects:
+        path = Path(entry["path"])
+        require(path.is_relative_to(target), "ordinary LLVM object escaped campaign target")
+        if pattern.fullmatch(path.relative_to(target).as_posix()):
+            matches.append(entry)
+    require(len(matches) == 1, f"expected one instrumented {name} ELF")
+    return matches[0]
 
 
 def bootstrap_object(objects, target):
-    matches = [entry for entry in objects
-               if BOOTSTRAP_OBJECT.fullmatch(Path(entry["path"]).relative_to(target).as_posix())]
-    require(len(matches) == 1, "expected one instrumented job_bootstrap ELF")
-    return matches[0]
+    return exact_object(objects, target, BOOTSTRAP_OBJECT, "job_bootstrap")
+
+
+def copy_objects(objects, target):
+    test = exact_object(objects, target, COPY_OBJECT, "linux_copy")
+    child = exact_object(objects, target, CHILD_OBJECT, "exacopy child")
+    launch = exact_object(objects, target, CHILD_LAUNCH, "exacopy launch")
+    require((child["size"], child["sha256"]) == (launch["size"], launch["sha256"]),
+            "ordinary exacopy launch differs from its linked child ELF")
+    return test, child, launch
+
+
+def child_main_coverage(rows, root):
+    name = str(root / CLI_MAIN)
+    counted, covered = rows.get(name, (0, 0))
+    require(0 < covered <= counted, "ordinary indexed data lacks executed exacopy child main")
+    return {"source": CLI_MAIN, "count": counted, "covered": covered}

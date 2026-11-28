@@ -55,7 +55,7 @@ case "$1" in
 			cargo +1.100.0 llvm-cov nextest --locked "${owner_packages[@]}" \
 				--profile ci-endpoint-coverage-owner \
 				--json --show-missing-lines --output-path "$owner_report" --no-tests fail
-			# Compile the known default owner test targets and one CLI integration target.
+			# Compile the known default owner test and two CLI integration targets.
 			# JUnit parity independently detects omission from the owner-only campaign.
 			coverage_tests=(
 				--lib --test component --test identity
@@ -64,7 +64,7 @@ case "$1" in
 				--test linux_job_capabilities --test linux_plan_bundle --test linux_scope
 				--test linux_source --test linux_stage --test linux_sync_history_ext4
 				--test linux_sync_history_members --test protected_snapshot_diagnostics
-				--test source_observation --test job_bootstrap
+				--test source_observation --test job_bootstrap --test linux_copy
 			)
 			# Keep old coverage objects and counters out of the expanded default graph.
 			if ! { (umask 077; set -o noclobber
@@ -74,7 +74,7 @@ case "$1" in
 				"$@" cargo +1.100.0 llvm-cov nextest --locked "${owner_packages[@]}" \
 					-p exacopy-cli --exclude-from-report exacopy-cli --profile ci-endpoint-coverage \
 					"${coverage_tests[@]}" \
-					-E 'package(=exacopy-core) | package(=exacopy-endpoint) | package(=exacopy-platform) | binary_id(=exacopy-cli::job_bootstrap)' \
+					-E 'package(=exacopy-core) | package(=exacopy-endpoint) | package(=exacopy-platform) | binary_id(=exacopy-cli::job_bootstrap) | binary_id(=exacopy-cli::linux_copy)' \
 					--json --show-missing-lines --output-path "$ordinary_report" --no-tests fail &&
 				(umask 077; set -o noclobber
 					cat "$junit" > "$witness_evidence/ordinary-nextest.xml" &&

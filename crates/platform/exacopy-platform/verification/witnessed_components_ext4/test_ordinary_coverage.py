@@ -50,20 +50,32 @@ class OrdinaryCoverageControls(unittest.TestCase):
 
         self.assertNotEqual(read_case_inventories("original"), read_case_inventories("substitute"))
 
-    def test_instrumented_bootstrap_attendance_rejects_partial_or_other_binary(self):
-        def junit(cases, *, binary=bootstrap.BOOTSTRAP_SUITE, contents=""):
+    def test_instrumented_cli_attendance_requires_both_exact_distinct_suites(self):
+        def suite(binary, cases, contents=""):
             rows = "".join(f'<testcase name="{name}" classname="{binary}">{contents}</testcase>'
                            for name in cases)
-            return (f'<testsuites><testsuite name="{binary}" tests="{len(cases)}" failures="0" '
-                    f'errors="0" skipped="0">{rows}</testsuite></testsuites>').encode()
+            return (f'<testsuite name="{binary}" tests="{len(cases)}" failures="0" '
+                    f'errors="0" skipped="0">{rows}</testsuite>')
 
-        cases = sorted(bootstrap.BOOTSTRAP_CASES)
-        bootstrap.bootstrap_attendance(junit(cases))
-        for xml in (junit(cases[:-1]), junit(cases[:-1] + cases[:1]),
-                    junit(cases, binary="exacopy-cli::another"),
-                    junit(cases, contents="<skipped/>")):
+        def junit(*suites):
+            return f"<testsuites>{''.join(suites)}</testsuites>".encode()
+
+        bootstrap_suite = suite(bootstrap.BOOTSTRAP_SUITE, sorted(bootstrap.BOOTSTRAP_CASES))
+        names = sorted(bootstrap.COPY_CASES)
+        copy_suite = suite(bootstrap.COPY_SUITE, names)
+        bootstrap.cli_attendance(junit(bootstrap_suite, copy_suite))
+        for suites in (
+            (bootstrap_suite,), (copy_suite,), (copy_suite, copy_suite),
+            (bootstrap_suite, copy_suite, suite("exacopy-cli::another", ["extra"])),
+            (bootstrap_suite, suite(bootstrap.COPY_SUITE, names[:-1])),
+            (bootstrap_suite, suite(bootstrap.COPY_SUITE, names[:-1] + names[:1])),
+            (bootstrap_suite, suite(bootstrap.COPY_SUITE, [*names, "extra"])),
+            (bootstrap_suite, suite(bootstrap.COPY_SUITE, names, contents="<skipped/>")),
+            (bootstrap_suite, copy_suite.replace(f'classname="{bootstrap.COPY_SUITE}"',
+                                                 'classname="other"', 1)),
+        ):
             with self.assertRaisesRegex(ValueError, "instrumented Nextest"):
-                bootstrap.bootstrap_attendance(xml)
+                bootstrap.cli_attendance(junit(*suites))
 
     def test_bootstrap_export_requires_the_exact_linked_integration_binary(self):
         target = Path("/checkout/target/llvm-cov-target")
@@ -74,6 +86,33 @@ class OrdinaryCoverageControls(unittest.TestCase):
         for objects in ([lookalike], [expected, expected]):
             with self.assertRaisesRegex(ValueError, "job_bootstrap ELF"):
                 bootstrap.bootstrap_object(objects, target)
+
+    def test_linux_copy_requires_test_elf_and_exact_matching_child_aliases(self):
+        target = Path("/checkout/target/llvm-cov-target")
+        suffix = "debug/build/exacopy-cli/0123456789abcdef/out/"
+        test = {"path": str(target / (suffix + "linux_copy-0123456789abcdef"))}
+        child = {"path": str(target / (suffix + "exacopy")), "size": 91, "sha256": "a" * 64}
+        launch = {**child, "path": str(target / "debug/exacopy")}
+        self.assertEqual(bootstrap.copy_objects([test, child, launch], target), (test, child, launch))
+        for objects in (
+            [child, launch], [test, launch], [test, child],
+            [test, child, launch, launch],
+            [{**test, "path": str(target / (suffix + "linux_copy-1123456789abcdef"))}, child, launch],
+            [test, child, {**launch, "sha256": "b" * 64}],
+            [test, child, {**launch, "size": 92}],
+            [test, child, {**launch, "path": "/other/debug/exacopy"}],
+        ):
+            with self.subTest(objects=objects), self.assertRaises(ValueError):
+                bootstrap.copy_objects(objects, target)
+
+    def test_child_main_requires_execution_in_the_selected_source(self):
+        root = Path("/checkout")
+        path = str(root / bootstrap.CLI_MAIN)
+        self.assertEqual(bootstrap.child_main_coverage({path: (3, 2)}, root),
+                         {"source": bootstrap.CLI_MAIN, "count": 3, "covered": 2})
+        for rows in ({}, {path: (3, 0)}, {f"/other/{bootstrap.CLI_MAIN}": (3, 2)}):
+            with self.subTest(rows=rows), self.assertRaisesRegex(ValueError, "indexed data"):
+                bootstrap.child_main_coverage(rows, root)
 
     def test_admission_refuses_wrong_workflow_job_run_or_attempt(self):
         revision = "b" * 40

@@ -19,7 +19,13 @@ SOURCE_INPUTS = (".github/ci/assurance.sh", ".github/ci/endpoint_llvm_export_cap
                  "apps/exacopy-cli/tests/job_bootstrap/copy.rs",
                  "apps/exacopy-cli/tests/job_bootstrap/receipt_readback.rs",
                  "apps/exacopy-cli/tests/job_bootstrap/terminal_journal.rs",
-                 "apps/exacopy-cli/tests/job_bootstrap/journal_names.rs")
+                 "apps/exacopy-cli/tests/job_bootstrap/journal_names.rs",
+                 "apps/exacopy-cli/src/main.rs",
+                 "apps/exacopy-cli/tests/linux_copy.rs",
+                 "apps/exacopy-cli/tests/linux_copy/arguments.rs",
+                 "apps/exacopy-cli/tests/linux_copy/recovery.rs",
+                 "apps/exacopy-cli/tests/linux_copy/resume.rs",
+                 "apps/exacopy-cli/tests/linux_copy/retry.rs")
 CAPTURES = tuple(f"endpoint-llvm-export-capture-{index}.json" for index in (1, 2))
 CAPTURE_LIMIT = 1024 * 1024
 PLATFORM_UNIT = re.compile(r"debug/build/exacopy-platform/([0-9a-f]{16})/out/exacopy_platform-\1")
