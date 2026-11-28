@@ -20,7 +20,7 @@ use exacopy_transfer::sync_genesis::recreate::{
 };
 use uuid::Uuid;
 
-use super::{ExpectedSyncGenesis, first, object};
+use super::{ExpectedSyncGenesis, Fixture, VECTORS, first, object};
 
 const FROM: SyncSide = SyncSide::Left;
 const CONFLICT: SyncConflict = SyncConflict::DeletionAgainstUnchanged {
@@ -123,7 +123,22 @@ fn sign(parent: &RecreateParent, signer: &SigningKey) -> Vec<u8> {
 
 #[test]
 fn signed_recreate_requires_the_exact_independent_selection_and_bundle() {
-	let fixture = first();
+	verify_selected_survivor(&first(), b"abc");
+}
+
+#[test]
+fn signed_recreate_keeps_an_empty_survivor_distinct_from_absence() {
+	let fixture = Fixture::new(
+		VECTORS
+			.lines()
+			.find(|line| line.starts_with("empty\t"))
+			.expect("independent authenticated empty-file history"),
+	);
+	assert_eq!(fixture.length, 0);
+	verify_selected_survivor(&fixture, b"");
+}
+
+fn verify_selected_survivor(fixture: &Fixture<'_>, contents: &[u8]) {
 	let signer = SigningKey::from_bytes(&[0x51; 32]);
 	let owner = signer.verifying_key();
 	let expected = fixture.expected(&owner);
@@ -141,8 +156,8 @@ fn signed_recreate_requires_the_exact_independent_selection_and_bundle() {
 			inode: 80,
 		},
 		stream: RegularFileEvidence {
-			byte_len: 3,
-			content_digest: *blake3::hash(b"abc").as_bytes(),
+			byte_len: u64::try_from(contents.len()).unwrap(),
+			content_digest: *blake3::hash(contents).as_bytes(),
 			required_metadata_digest: exacopy_manifest::sync_baseline::LinuxOwnerMode {
 				mode: 0o754,
 				uid: u32::MAX,
@@ -229,6 +244,17 @@ fn signed_recreate_requires_the_exact_independent_selection_and_bundle() {
 		super::digest(fixture.projection.pair)
 	);
 	assert_ne!(verified.parent_digest(), expected.root_digest);
+
+	// The empty case stops after establishing the exact signed recreate from
+	// a present file. The nonempty fixture exercises the remaining refusals.
+	if contents.is_empty() {
+		let record = exacopy_plan::workflow_sync::recreate::decode_action(&action_bytes).unwrap();
+		assert_eq!(record.stream_length, 0);
+		assert_eq!(record.stream_digest, *blake3::hash(b"").as_bytes());
+		assert_eq!(record.side, RecreateSide::Left);
+		assert_eq!(record.reason, RecreateReason::DeletionAgainstUnchanged);
+		return;
+	}
 
 	selected.now = time(120);
 	assert!(matches!(
