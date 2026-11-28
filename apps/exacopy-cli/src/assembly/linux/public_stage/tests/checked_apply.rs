@@ -29,6 +29,8 @@ use super::super::qualification::{
 use super::fixture::{APPROVED, Fixture, SOURCE, TARGET, attempt, component};
 use super::{CopyRoots, plan_new_file};
 
+mod terminal;
+
 pub(super) fn assert_unenrolled_grant_refused(
 	fixture: &Fixture,
 	roots: CopyRoots<'_>,
@@ -216,4 +218,13 @@ fn assert_archived_preintent(
 	assert_eq!(fs::read(fixture.stage(attempt)).unwrap(), APPROVED);
 	assert_eq!(fs::read(fixture.source()).unwrap(), APPROVED);
 	assert!(!fixture.target().try_exists().unwrap());
+	terminal::assert_archived_terminal(
+		fixture,
+		roots,
+		selected(),
+		private_plan,
+		staged.owner_digest,
+		profile.created,
+		scratch,
+	);
 }

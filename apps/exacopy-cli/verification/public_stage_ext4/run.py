@@ -57,6 +57,7 @@ def inputs():
         PACKAGE / SOURCE, PACKAGE / Path(SOURCE).with_suffix("") / "fixture.rs",
         PACKAGE / Path(SOURCE).with_suffix("") / "late_journal.rs",
         PACKAGE / Path(SOURCE).with_suffix("") / "checked_apply.rs",
+        PACKAGE / Path(SOURCE).with_suffix("") / "checked_apply" / "terminal.rs",
     )
     return {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in files}
 

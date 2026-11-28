@@ -65,6 +65,14 @@ Source controls cover every authored nonempty complete cut, torn boundaries and 
 wrong qualification and trailing bytes, metadata-only pre-intent observations,
 same-byte parent rebinding and the exact `O_NOATIME` aperture. The existing
 owned ext4 selector also calls the SDK on an archived pre-intent job. These
-controls and the source integration await execution at the integrated revision.
+controls await execution at the integrated revision. At `a7637e8`, the owned
+ext4 selector passed the archived pre-intent check, wrong-Plan refusal and
+source/stage preservation checks. [Exact fixture run](https://github.com/replicraft/ExaCopy/actions/runs/46121851399)
+retains that bounded result. The selector now also plants a fixture-only
+canonical terminal archive and checks the actual receipt and exact head through
+the SDK. Its private stage remains present, target absent and continuity
+unqualified, so the expected assessment still requires reconciliation. This
+terminal fixture is source-defined and awaits execution; its frames do not
+represent an exercised publication.
 Positive operational publication/reconciliation and process-crash or power-loss
 qualification remain separate gates.
