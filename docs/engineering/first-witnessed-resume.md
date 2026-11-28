@@ -153,8 +153,9 @@ confirmed publication without its committed receipt cannot become CLI success.
 Parser and report regressions check selection and output compatibility. The
 dedicated hosted lane includes those cases and existing signed-kind-40 controls.
 The lane also checks inspection argument selection, archive decoding, terminal
-selection and report projection. The new inspection controls are inventoried
-and source reviewed; their integrated hosted execution is pending. These
-controls do not establish native custody, live
+selection and report projection. At `27ee18b`, the Linux hosted lane passed
+191 tests, including all 20 required cases. Its strict lint gate required a
+fixed-array chunk API correction; the corrected source needs its own CI.
+These controls do not establish native custody, live
 remote-source comparison, process-crash or power-loss qualification.
 Those require their own evidence before promotion.
