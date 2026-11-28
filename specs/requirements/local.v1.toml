@@ -2076,7 +2076,7 @@ status = "experimental"
 requirement_ids = ["R-003", "R-014", "R-018", "R-019"]
 acceptance_ids = ["A-003", "A-014", "A-018", "A-019"]
 invariant_ids = ["INV-002", "INV-004", "INV-013", "INV-019"]
-scope = "Partial Windows private-stage mechanism under independently selected original bootstrap custody. Checks actual create-child grants and target absence, exclusively creates a protected current-user directory and leaf, and retains custody across private writes, prefix barriers and closure/read-back."
+scope = "Partial Windows private-stage mechanism under independently selected original bootstrap custody. A consuming handoff confirms exact owner and first-frame bytes, EOF and file barrier on the original handles before issuing stage access. Checks actual create-child grants and target absence, exclusively creates a protected current-user directory and leaf, and retains custody across private writes, prefix barriers and closure/read-back."
 limits = "Source-defined controls only. Native fixture still blocked by hosted D: ancestry admission; native creation and open-handle timestamp behavior remain unqualified. Ordinary descriptor tests validate byte geometry and the existing ACL parser only. No SSH composition, journal checkpoint dialect, namespace durability, publication or recovery effect."
 
 [[coverage.evidence]]
@@ -2099,4 +2099,4 @@ level = "native"
 state = "defined"
 path = "apps/exacopy-cli/tests/windows_bootstrap.rs"
 target = "admits_only_the_selected_held_bootstrap_history"
-detail = "The existing owned fixture exercises protected stage creation before the original first-frame append; it preserves an aliased target and retains the stage on collision. No independently named native attendance is claimed."
+detail = "The existing owned fixture requires canonical first-frame append and held readback before protected stage creation, refuses a wrong owner and an empty callback, checks continued segment exclusivity, and preserves an aliased target and occupied stage. No independently named native attendance is claimed."

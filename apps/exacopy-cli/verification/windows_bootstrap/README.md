@@ -32,9 +32,16 @@ Windows guarantees accurate last-write timestamps after write handles close;
 the new open-handle flush path remains unqualified. The adapter supplies no
 directory barrier or power-loss claim. [File times](https://learn.microsoft.com/en-us/windows/win32/sysinfo/file-times)
 
-The original fixture also exercises `WindowsCaptureStageScope` before writing
-the first frame. This separate acquisition checks the original five roles and
-the actual job handle's child-creation rights. It samples target absence with
+The original fixture acquires `WindowsCaptureBootstrapScope` with the original
+five roles and the actual job handle's child-creation rights. Its consuming
+handoff checks independently supplied owner bytes, exposes a callback-scoped
+writer for the real `DurableJournal` append, and confirms exact first-frame
+bytes and physical EOF around a file barrier. Owner bytes are checked again
+before the same held roles become `WindowsCaptureStageScope`. The fixture
+refuses a mismatched owner and a successful callback that wrote nothing.
+It checks segment exclusivity before and after stage work.
+
+The stage scope samples target absence with
 a case-insensitive, metadata-only lookup and exclusively creates a private
 stage directory and leaf with a protected current-user ACL at creation.
 Every write and prefix barrier remains bound to that custody. The callback
@@ -42,6 +49,12 @@ can close and read back the private stage; it has no target writer or
 publication operation. The fixture preserves an aliased incumbent, checks
 the original stage identities and bytes, refuses a repeated stage name,
 and removes only its checked disposable entries before bootstrap inspection.
+
+This tightens the experimental Rust API: the direct stage-scope constructor
+is replaced by the consuming bootstrap handoff. The standalone fresh writer
+and read-only inspector retain their existing entry points and V1 bytes.
+Native byte checks do not authenticate the record; the application supplies
+that policy. Namespace persistence and checkpoint records remain separate.
 
 Two separately selected ordinary Windows controls check descriptor geometry
 and acceptance by the existing private ACL parser, including wrong owner and
