@@ -103,7 +103,10 @@ async fn held_native_donor_compares_a_live_positive_tail_and_refuses_a_changed_p
 	let selected_names = [&stage, &owner, &journal];
 	let before = selected_names.map(|path| snapshot(path));
 	let expected: Vec<u8> = (0..u8::try_from(EXPANDED).unwrap()).collect();
-	assert_eq!(before[0].1, expected[..usize::try_from(LENGTH).unwrap()]);
+	assert_eq!(
+		before[0].bytes,
+		expected[..usize::try_from(LENGTH).unwrap()]
+	);
 	for (generation, byte_xor) in [(2, 0), (3, 1)] {
 		compare(
 			&fixture,
@@ -230,18 +233,28 @@ async fn compare(fixture: &Fixture, current_epoch: SourceEpoch, byte_xor: u8, ex
 	drop(held.open_segment().unwrap());
 }
 
-fn snapshot(path: &Path) -> ((u64, u64, u64, i64, i64, i64, i64), Vec<u8>) {
+#[derive(Debug, Eq, PartialEq)]
+struct Snapshot {
+	device: u64,
+	inode: u64,
+	link_count: u64,
+	modified_seconds: i64,
+	modified_nanoseconds: i64,
+	changed_seconds: i64,
+	changed_nanoseconds: i64,
+	bytes: Vec<u8>,
+}
+
+fn snapshot(path: &Path) -> Snapshot {
 	let stat = fs::metadata(path).unwrap();
-	(
-		(
-			stat.dev(),
-			stat.ino(),
-			stat.nlink(),
-			stat.mtime(),
-			stat.mtime_nsec(),
-			stat.ctime(),
-			stat.ctime_nsec(),
-		),
-		fs::read(path).unwrap(),
-	)
+	Snapshot {
+		device: stat.dev(),
+		inode: stat.ino(),
+		link_count: stat.nlink(),
+		modified_seconds: stat.mtime(),
+		modified_nanoseconds: stat.mtime_nsec(),
+		changed_seconds: stat.ctime(),
+		changed_nanoseconds: stat.ctime_nsec(),
+		bytes: fs::read(path).unwrap(),
+	}
 }
