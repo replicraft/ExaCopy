@@ -22,6 +22,7 @@ DEFAULT_KANI_PIN = Path("crates/foundation/exacopy-model/verification/kani/toolc
 GATES = ("rust", "lean", "kani", "tlc")
 RUN_TIMEOUT_SECONDS = 900
 TOOL_QUERY_TIMEOUT_SECONDS = 30
+KANI_PROFILE = b"EXACOPY_EVS_KANI_PROFILE_V1 "
 TLC_COUNTS = re.compile(r"^\d+ states generated, (\d+) distinct states found, 0 states left on queue\.$", re.M)
 
 
@@ -61,21 +62,28 @@ def workspace_obligations(gate_filter):
         for obligation in obligations:
             for gate in obligation["gates"]:
                 if gate_filter is None or gate == gate_filter:
-                    if gate == "rust":
-                        rust_features(package, obligation)
+                    if gate in ("rust", "kani"):
+                        validate_gate_features(package, obligation, gate)
                     yield package["name"], crate_root, obligation, gate
 
 
-def rust_features(package, obligation):
-    features = obligation["rust"].get("features", [])
+def profile_features(gate, link):
+    if gate in ("rust", "kani"):
+        return link.get("features", [])
+    return ["proof-extraction"] if gate == "lean" else []
+
+
+def validate_gate_features(package, obligation, gate):
+    features = profile_features(gate, obligation[gate])
     label = f'{package["name"]} {obligation["id"]}'
+    scope = {"rust": "Rust", "kani": "Kani"}[gate]
     if not isinstance(features, list) or any(not isinstance(name, str) for name in features):
-        raise ValueError(f"{label}: Rust gate features must be a list of names")
+        raise ValueError(f"{label}: {scope} gate features must be a list of names")
     if len(features) != len(set(features)):
-        raise ValueError(f"{label}: duplicate Rust gate features")
+        raise ValueError(f"{label}: duplicate {scope} gate features")
     for name in features:
         if name not in package["features"]:
-            raise ValueError(f"{label}: undeclared Rust gate feature {name!r}")
+            raise ValueError(f"{label}: undeclared {scope} gate feature {name!r}")
     return features
 
 
@@ -94,13 +102,37 @@ def tool_version(crate_root, gate):
 
 
 def gate_command(package, crate_root, gate, link):
+    features = profile_features(gate, link)
+    feature_args = ["--no-default-features", "--features", ",".join(features)] if features else []
     if gate == "rust":
-        command = ["cargo", "nextest", "run", "--locked", "-p", package]
-        if features := link.get("features", []):
-            command += ["--no-default-features", "--features", ",".join(features)]
-        return command + ["--no-tests", "fail", "--", "--exact", link["test"]]
+        return (["cargo", "nextest", "run", "--locked", "-p", package] + feature_args
+                + ["--no-tests", "fail", "--", "--exact", link["test"]])
     script = crate_root / "verification/check.sh"
-    return [script.relative_to(ROOT).as_posix(), gate]
+    command = [script.relative_to(ROOT).as_posix(), gate]
+    if gate == "kani":
+        command += feature_args
+    return command
+
+
+def matches_kani_profile(log, features):
+    expected = KANI_PROFILE + ("--no-default-features --features " + ",".join(features)).encode()
+    # Allow CRLF and one byte to detect an oversized acknowledgement.
+    limit = len(expected) + 3
+    found = False
+    try:
+        with log.open("rb") as data:
+            while line := data.readline(limit):
+                if line.startswith(KANI_PROFILE):
+                    acknowledgement = line[:-1].removesuffix(b"\r") if line.endswith(b"\n") else line
+                    if found or acknowledgement != expected:
+                        return False
+                    found = True
+                # Drain this physical line so a chunk boundary cannot start an acknowledgement.
+                while len(line) == limit and not line.endswith(b"\n"):
+                    line = data.readline(limit)
+    except OSError:
+        return False
+    return found
 
 
 def run_gate(command, gate, link, log, trace):
@@ -139,6 +171,11 @@ def run_gate(command, gate, link, log, trace):
             except OSError as error:
                 output.write(f"\nCould not start evidence command: {error}\n".encode())
                 result = 127
+            if gate == "kani" and result == 0 and (features := profile_features(gate, link)):
+                output.flush()
+                if not matches_kani_profile(log, features):
+                    output.write(b"\nKani dispatcher did not confirm the exact requested feature profile.\n")
+                    result = 1
             if gate == "tlc":
                 positive = Path(scratch) / (Path(link["config"]).stem + ".log")
                 negative = Path(scratch) / (Path(link["negative_control"]).stem + ".log")
@@ -221,9 +258,7 @@ def record_gate(output_dir, package, crate_root, obligation, gate, source_revisi
         "tool_version": version,
         "redacted_command": command,
         "profile": {
-            "features": link.get("features", []) if gate == "rust" else (
-                ["proof-extraction"] if gate == "lean" else []
-            ),
+            "features": profile_features(gate, link),
             "target": target,
             "os": f"{platform.system()} {platform.release()}",
             "filesystem": None,

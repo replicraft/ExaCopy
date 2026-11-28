@@ -1,5 +1,7 @@
 use std::fs;
 
+mod kani_features;
+
 use cargo_metadata::MetadataCommand;
 
 use super::{INVENTORY, OWNER_INDEX};

@@ -253,3 +253,117 @@ rust = { test = "advances", file = "tests/transaction.rs", features = ["experime
 	wrong_command["redacted_command"][8] = json!("experimental");
 	assert!(!matches(&wrong_command));
 }
+
+#[test]
+fn binds_kani_features_in_both_executed_command_and_evidence_profile() {
+	use crate::verification::{Gate, Project};
+
+	let fixture = Fixture::new();
+	let mut candidate = passing_json();
+	candidate["kind"] = json!("kani");
+	candidate["detail"]["harness"] = json!("kani_checks::phase::exact");
+	candidate["detail"]["unwind_bound"] = json!("1");
+	candidate["oracle"] = json!("Exact phase.");
+	let legacy_command = json!(["verification/check.sh", "kani"]);
+	let selected_command = json!([
+		"verification/check.sh",
+		"kani",
+		"--no-default-features",
+		"--features",
+		"experimental,strict"
+	]);
+	for (declaration, command, features) in [
+		("", &legacy_command, json!([])),
+		("features = [], ", &legacy_command, json!([])),
+		(
+			r#"features = ["experimental", "strict"], "#,
+			&selected_command,
+			json!(["experimental", "strict"]),
+		),
+	] {
+		let entry = toml::from_str(&format!(
+			r#"
+id = "P-001"
+source = "src/transaction.rs"
+symbols = ["advance"]
+assumptions = []
+gates = ["kani"]
+kani = {{ {declaration}harness = "kani_checks::phase::exact", file = "verification/kani/phase.rs", unwind_bound = 1, oracle = "Exact phase." }}
+"#,
+		))
+		.expect("synthetic fixture obligation parses");
+		let project = Project {
+			package_name: "exacopy-model".into(),
+			root: fixture.root().to_path_buf(),
+			obligations: vec![entry],
+		};
+		let entry = &project.obligations[0];
+		let matches = |value: &Value| {
+			let path = fixture.write("record.json", &value.to_string());
+			let parsed = record::read(&path, &mut Findings::default()).expect("record parses");
+			(
+				super::matches_command(fixture.root(), &project, entry, &parsed, Gate::Kani),
+				super::matches_gate(
+					fixture.root(),
+					&project,
+					entry,
+					&parsed,
+					Gate::Kani,
+					&mut Findings::default(),
+				),
+			)
+		};
+
+		candidate["redacted_command"] = (*command).clone();
+		candidate["profile"]["features"] = features;
+		let log = "00000000-0000-4000-8000-000000000001.log";
+		if command == &selected_command {
+			let profile = "EXACOPY_EVS_KANI_PROFILE_V1 --no-default-features --features experimental,strict\n";
+			assert_eq!(matches(&candidate), (true, false));
+			fixture.write(
+				log,
+				"EXACOPY_EVS_KANI_PROFILE_V1 --no-default-features --features strict\n",
+			);
+			assert_eq!(matches(&candidate), (true, false));
+			fixture.write(log, &profile.repeat(2));
+			assert_eq!(matches(&candidate), (true, false));
+
+			let long_line = "x".repeat((profile.len() + 2) * 16_384);
+			fixture.write(log, &format!("{long_line}{profile}"));
+			assert_eq!(matches(&candidate), (true, false));
+			fixture.write(log, &format!("{long_line}{profile}{profile}"));
+			assert_eq!(matches(&candidate), (true, true));
+			let unterminated = profile.trim_end_matches('\n');
+			fixture.write(log, &format!("{unterminated}{long_line}\n"));
+			assert_eq!(matches(&candidate), (true, false));
+			fixture.write(log, &format!("{unterminated}\r\n"));
+			assert_eq!(matches(&candidate), (true, true));
+			fixture.write(log, &format!("{unterminated}\r"));
+			assert_eq!(matches(&candidate), (true, false));
+			fixture.write(log, unterminated);
+			assert_eq!(matches(&candidate), (true, true));
+		}
+		assert_eq!(matches(&candidate), (true, true));
+
+		let valid = candidate.clone();
+		for wrong in [
+			json!(["experimental"]),
+			json!(["strict", "experimental"]),
+			json!(["experimental", "strict", "strict"]),
+		] {
+			candidate["profile"]["features"] = wrong;
+			assert_eq!(matches(&candidate), (true, false));
+		}
+		candidate = valid;
+		if command == &legacy_command {
+			candidate["redacted_command"] = selected_command.clone();
+			assert_eq!(matches(&candidate), (false, true));
+		} else {
+			candidate["redacted_command"] = legacy_command.clone();
+			assert_eq!(matches(&candidate), (false, true));
+			candidate["redacted_command"] = selected_command.clone();
+			candidate["profile"]["features"] = json!([]);
+			assert_eq!(matches(&candidate), (true, false));
+		}
+	}
+}

@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 use std::fs::{self, File};
-use std::io;
+use std::io::{self, BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -15,6 +15,7 @@ mod record;
 use record::{Outcome, Record};
 
 const LOCKFILE: &str = "Cargo.lock";
+const KANI_PROFILE: &str = "EXACOPY_EVS_KANI_PROFILE_V1 ";
 
 #[derive(Debug)]
 struct Revision {
@@ -171,7 +172,28 @@ fn matches_command(
 	let Ok(script) = script.strip_prefix(root) else {
 		return false;
 	};
-	matches!(record.redacted_command.as_slice(), [command, argument] if Path::new(command) == script && argument == &gate.to_string())
+	let Some((command, arguments)) = record.redacted_command.split_first() else {
+		return false;
+	};
+	if Path::new(command) != script {
+		return false;
+	}
+	if gate == Gate::Kani
+		&& let Some(link) = &entry.kani
+		&& !link.features.is_empty()
+	{
+		let features = link.features.join(",");
+		return arguments.iter().map(String::as_str).eq([
+			"kani",
+			"--no-default-features",
+			"--features",
+			&features,
+		]);
+	}
+	arguments
+		.iter()
+		.map(String::as_str)
+		.eq([gate.to_string().as_str()])
 }
 
 fn matches_gate(
@@ -201,6 +223,8 @@ fn matches_gate(
 		}),
 		Gate::Kani => entry.kani.as_ref().is_some_and(|link| {
 			record.detail.harness.as_deref() == Some(&link.harness)
+				&& record.matches_features(&link.features)
+				&& matches_kani_profile(directory, record, &link.features)
 				&& oracle_matches(record, &link.oracle)
 				&& record.model_bounds == link.model_bounds
 				&& record
@@ -234,6 +258,49 @@ fn matches_gate(
 					findings,
 				)
 		}),
+	}
+}
+
+fn matches_kani_profile(directory: &Path, record: &Record, features: &[String]) -> bool {
+	if features.is_empty() {
+		return true;
+	}
+	let relative = PathBuf::from(format!("{}.log", record.evidence_id));
+	let Ok(log) = owned_file(directory, &relative).and_then(File::open) else {
+		return false;
+	};
+	let expected = format!(
+		"{KANI_PROFILE}--no-default-features --features {}",
+		features.join(",")
+	);
+	// Allow CRLF and one byte to detect an oversized acknowledgement.
+	let limit = expected.len() + 3;
+	let mut log = BufReader::new(log);
+	let mut line = Vec::with_capacity(limit);
+	let mut found = false;
+	loop {
+		line.clear();
+		let Ok(read) = (&mut log).take(limit as u64).read_until(b'\n', &mut line) else {
+			return false;
+		};
+		if read == 0 {
+			return found;
+		}
+		if line.starts_with(KANI_PROFILE.as_bytes()) {
+			let ack = line
+				.strip_suffix(b"\n")
+				.map_or(line.as_slice(), |terminated| {
+					terminated.strip_suffix(b"\r").unwrap_or(terminated)
+				});
+			if found || ack != expected.as_bytes() {
+				return false;
+			}
+			found = true;
+		}
+		// Discard the rest of this physical line without buffering it.
+		if read == limit && !line.ends_with(b"\n") && log.skip_until(b'\n').is_err() {
+			return false;
+		}
 	}
 }
 

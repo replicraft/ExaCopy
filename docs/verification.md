@@ -65,6 +65,18 @@ Keep proofs, extraction, models, harnesses and obligation ownership in
 and validates scoped results. Preserve the original log and minimized
 counterexample when a check fails.
 
+Rust and Kani links may select package-declared Cargo features in the owning
+ledger. A nonempty Kani selection passes the exact feature list with
+`--no-default-features` to its dispatcher and records the same ordered list
+in the evidence profile. Successful selected dispatchers emit exactly one
+`EXACOPY_EVS_KANI_PROFILE_V1 --no-default-features --features LIST` line after
+their harness checks. The recorder and validator bind that line, the exact
+command and the profile. Missing, wrong, duplicated or oversized lines refuse
+credit. LF, CRLF and exact unterminated EOF are accepted. Ordinary long log
+lines are drained with bounded storage, and embedded markers are ignored.
+Empty Kani selections preserve their existing command and profile. Credit
+still requires the pinned source, tool, complete raw log and harness results.
+
 The [P-071 Linux reservation fixture](architecture/remote-witnessed-closeout.md#p-071-linux-native-reservation)
 is an adapter test selected on a Linux filesystem that supplies the needed
 native primitives. Its result belongs to that recorded fixture profile.

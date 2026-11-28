@@ -85,6 +85,8 @@ pub(crate) struct LeanLink {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct KaniLink {
+	#[serde(default)]
+	pub(crate) features: Vec<String>,
 	pub(crate) harness: String,
 	pub(crate) file: PathBuf,
 	pub(crate) unwind_bound: u32,
@@ -190,26 +192,7 @@ pub(crate) fn check(
 					format_args!("duplicate obligation ID {}", entry.id),
 				);
 			}
-			if let Some(link) = &entry.rust {
-				let features = link.features.iter().collect::<BTreeSet<_>>();
-				if features.len() != link.features.len() {
-					findings.add(
-						&ledger,
-						format_args!("{} has duplicate Rust gate features", entry.id),
-					);
-				}
-				for feature in features {
-					if !package.features.contains_key(feature) {
-						findings.add(
-							&ledger,
-							format_args!(
-								"{} names an undeclared Rust gate feature {feature:?} of {}",
-								entry.id, package.name
-							),
-						);
-					}
-				}
-			}
+			check_features(package, &ledger, entry, findings);
 			check_obligation(root, &ledger, entry, findings);
 		}
 		projects.push(Project {
@@ -248,6 +231,46 @@ pub(crate) fn check(
 		}
 	}
 	projects
+}
+
+fn check_features(
+	package: &cargo_metadata::Package,
+	ledger: &Path,
+	entry: &Obligation,
+	findings: &mut Findings,
+) {
+	for (gate, selected) in [
+		(
+			"Rust",
+			entry.rust.as_ref().map(|link| link.features.as_slice()),
+		),
+		(
+			"Kani",
+			entry.kani.as_ref().map(|link| link.features.as_slice()),
+		),
+	] {
+		let Some(selected) = selected else {
+			continue;
+		};
+		let features = selected.iter().collect::<BTreeSet<_>>();
+		if features.len() != selected.len() {
+			findings.add(
+				ledger,
+				format_args!("{} has duplicate {gate} gate features", entry.id),
+			);
+		}
+		for feature in features {
+			if !package.features.contains_key(feature) {
+				findings.add(
+					ledger,
+					format_args!(
+						"{} names an undeclared {gate} gate feature {feature:?} of {}",
+						entry.id, package.name
+					),
+				);
+			}
+		}
+	}
 }
 
 fn is_formal_asset(path: &Path) -> bool {
