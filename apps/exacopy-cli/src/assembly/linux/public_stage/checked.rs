@@ -103,6 +103,18 @@ pub fn apply_qualified_public_plan<'root, 'name>(
 	grant: &LocalApplyGrant<'_, 'root>,
 	scratch: &mut [u8],
 ) -> Result<CheckedApply<'name>, AppliedPublicPlanError> {
+	let apply = prepare_qualified_public_plan(roots, request, grant)?;
+	apply(scratch)
+}
+
+fn prepare_qualified_public_plan<'root, 'name>(
+	roots: CopyRoots<'root>,
+	request: PublicApplyStageRequest<'_, '_, 'name>,
+	grant: &LocalApplyGrant<'_, 'root>,
+) -> Result<
+	impl FnOnce(&mut [u8]) -> Result<CheckedApply<'name>, AppliedPublicPlanError>,
+	AppliedPublicPlanError,
+> {
 	use AppliedPublicPlanError::{Admission, Execution};
 	use LiveQualificationError::{Grant, Qualification};
 
@@ -121,8 +133,10 @@ pub fn apply_qualified_public_plan<'root, 'name>(
 		.map_err(|cause| Admission(Qualification(cause)))?;
 	let selection = running.selection;
 	let authority = Authority { grant, running };
-	apply_checked_public_plan(roots, request, selection, &authority, scratch)
-		.map_err(|cause| Execution(Box::new(cause)))
+	Ok(move |scratch: &mut [u8]| {
+		apply_checked_public_plan(roots, request, selection, &authority, scratch)
+			.map_err(|cause| Execution(Box::new(cause)))
+	})
 }
 
 struct Authority<'call, 'policy, 'root> {
