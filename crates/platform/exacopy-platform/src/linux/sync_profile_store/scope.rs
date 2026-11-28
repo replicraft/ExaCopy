@@ -168,6 +168,51 @@ impl SyncProfileStore {
 		Ok(())
 	}
 
+	#[cfg(feature = "experimental-linux-managed-sync")]
+	pub(super) fn check_action_slot_scope(
+		&self,
+		history: &SyncProfileHistory,
+		roots: &SyncPreviewRoots<'_>,
+		slot: &File,
+	) -> Result<(), SyncProfileStoreError> {
+		let observe = || {
+			self.recheck()?;
+			history.recheck()?;
+			roots.recheck_scope().map_err(io::Error::other)?;
+			let mounts = MountObservations::capture()?;
+			let system_root = self.chain.first().ok_or(SyncProfileStoreError::Changed)?;
+			let walk = |root| ancestry(root, &mounts, system_root.stamp.identity);
+			let [parent, left, right] = roots.held_directories();
+			let chains = [
+				walk(self.profile().file.as_fd())?,
+				walk(slot.as_fd())?,
+				walk(history.root.directory().as_fd())?,
+				walk(parent)?,
+				walk(left)?,
+				walk(right)?,
+			];
+			roots.recheck_scope().map_err(io::Error::other)?;
+			history.recheck()?;
+			self.recheck()?;
+			Ok::<_, SyncProfileStoreError>(chains)
+		};
+		let first = observe()?;
+		let [profile, slot, historical, parent, left, right] = first.each_ref().map(Vec::as_slice);
+		if slot.get(1..) != Some(profile)
+			|| left.get(1..) != Some(parent)
+			|| right.get(1..) != Some(parent)
+		{
+			return Err(SyncProfileStoreError::OverlappingRoles);
+		}
+		require_disjoint([profile, historical, parent])?;
+		require_disjoint([slot, historical, parent])?;
+		require_disjoint([left, right])?;
+		if observe()? != first {
+			return Err(SyncProfileStoreError::Changed);
+		}
+		Ok(())
+	}
+
 	fn role_ancestries(
 		&self,
 		history: &SyncProfileHistory,

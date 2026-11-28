@@ -15,6 +15,8 @@ use super::owner_seed::OWNER_SEED_BYTES;
 use super::{FileIdentity, MountObservations};
 use crate::protected_snapshot::checked_components;
 
+#[cfg(feature = "experimental-linux-managed-sync")]
+mod action_slot;
 mod export;
 mod genesis_output;
 mod pin;
@@ -22,6 +24,11 @@ mod scope;
 #[cfg(test)]
 mod tests;
 
+#[cfg(feature = "experimental-linux-managed-sync")]
+pub use action_slot::{
+	PreparedActionRoleBytes, PreparedActionRoleFacts, PreparedActionSlotSelection,
+	PreparedManagedActionError, PreparedManagedActionView,
+};
 pub use export::{HeldSyncExportProfile, HeldSyncExportSeed};
 pub use genesis_output::{
 	SyncGenesisEffect, SyncGenesisEffectRequest, SyncGenesisIntent, SyncGenesisMember,

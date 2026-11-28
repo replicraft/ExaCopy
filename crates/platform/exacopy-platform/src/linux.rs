@@ -92,6 +92,12 @@ pub use sync_profile_store::{
 	SyncProfileStoreError, SyncProfileStoreRecord,
 };
 
+#[cfg(feature = "experimental-linux-managed-sync")]
+pub use sync_profile_store::{
+	PreparedActionRoleBytes, PreparedActionRoleFacts, PreparedActionSlotSelection,
+	PreparedManagedActionError, PreparedManagedActionView,
+};
+
 pub use sync_preview::{
 	SyncHistoryDirectory, SyncHistoryLocation, SyncHistoryReader, SyncPreviewEntry,
 	SyncPreviewError, SyncPreviewPair, SyncPreviewRoots, SyncPreviewSelection,

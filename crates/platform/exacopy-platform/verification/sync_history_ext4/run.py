@@ -2,7 +2,7 @@
 
 import argparse
 from contextlib import ExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import ctypes
 import errno
 import hashlib
@@ -56,6 +56,12 @@ class FixtureProfile:
     workflow: str
     required_feature: str | None = None
     package_root: Path = PACKAGE
+    prepared_component: bool = False
+
+    def features(self):
+        if self.prepared_component:
+            return [self.required_feature, PREPARED_FEATURE]
+        return [self.required_feature] if self.required_feature is not None else []
 
 
 HISTORY = FixtureProfile(
@@ -76,6 +82,10 @@ MANAGED = FixtureProfile(
     ".github/workflows/linux-managed-sync-production-qualification.yml",
     "experimental-linux-managed-sync", CLI_PACKAGE,
 )
+MANAGED_PREPARED = replace(MANAGED, prepared_component=True)
+PREPARED_FEATURE = "experimental-linux-public-apply"
+PREPARED_SCOPE = "managed-recreate-read-only-prepared-component"
+PREPARED_MARKER = "managed_recreate_prepared_component="
 GENESIS = FixtureProfile(
     "linux-managed-sync-genesis-production", "linux-unprivileged-whole-ext4-managed-sync-genesis-production-v1",
     CLI_PACKAGE / "verification/managed_sync_genesis_production/fixture.toml", "linux_managed_sync_genesis_production",
@@ -291,7 +301,11 @@ def unique_mount(fd):
 
 
 def has_managed_substrate(profile):
-    return profile is MANAGED or profile is GENESIS
+    return is_managed_application(profile) or profile is GENESIS
+
+
+def is_managed_application(profile):
+    return profile is MANAGED or profile is MANAGED_PREPARED
 
 
 def observe(parent, parent_fd, evidence, phase, profile=HISTORY):
@@ -400,22 +414,22 @@ def check_revision(revision, evidence, phase):
 
 def artifact(output, target_root, profile=HISTORY):
     paths = []
-    genesis_candidates = 0
+    selected_candidates = 0
     if profile is GENESIS:
         version = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
         genesis_package = f"path+{CLI_PACKAGE.as_uri()}#{version}"
     for row in output.splitlines():
         event = json.loads(row)
         target = event.get("target", {})
-        if (profile is GENESIS and event.get("reason") == "compiler-artifact"
+        if ((profile is GENESIS or profile.prepared_component) and event.get("reason") == "compiler-artifact"
                 and target.get("name") == profile.test):
-            genesis_candidates += 1
+            selected_candidates += 1
         if (event.get("reason") == "compiler-artifact" and target.get("name") == profile.test
                 and target.get("kind") == ["test"] and event.get("profile", {}).get("test") is True
                 and event.get("manifest_path") == str(profile.package_root / "Cargo.toml")
                 and target.get("src_path") == str(profile.package_root / "tests" / f"{profile.test}.rs")
                 and (profile.required_feature is None
-                     or event.get("features") == [profile.required_feature])
+                     or event.get("features") == profile.features())
                 and event.get("executable")):
             if profile is GENESIS:
                 require(event.get("package_id") == genesis_package and event.get("fresh") is False
@@ -423,12 +437,14 @@ def artifact(output, target_root, profile=HISTORY):
                         "genesis integration artifact lacks exact private build provenance")
             paths.append(Path(event["executable"]))
     require(len(paths) == 1, "expected exactly one matching native Cargo integration test artifact")
+    if profile.prepared_component:
+        require(selected_candidates == 1, "unexpected additional prepared harness artifact")
     path = paths[0]
     require(path.is_absolute() and path.resolve(strict=True) == path and path.is_relative_to(target_root),
             "native binary escaped private target custody")
     if profile is GENESIS:
         debug = target_root / TARGET / "debug"
-        require(genesis_candidates == 1 and path.is_relative_to(debug),
+        require(selected_candidates == 1 and path.is_relative_to(debug),
                 "genesis integration image lacks unique native debug target custody")
         parts = path.relative_to(debug).parts
         image = re.fullmatch(rf"{profile.test}-[0-9a-f]{{16}}", path.name)
@@ -439,7 +455,7 @@ def artifact(output, target_root, profile=HISTORY):
     return path
 
 
-def managed_cli_artifact(output, target_root):
+def managed_cli_artifact(output, target_root, profile=MANAGED):
     candidates = []
     for row in output.splitlines():
         event = json.loads(row)
@@ -458,7 +474,7 @@ def managed_cli_artifact(output, target_root):
             and target.get("kind") == ["bin"] and target.get("crate_types") == ["bin"]
             and target.get("edition") == "2024"
             and event.get("profile", {}).get("test") is False
-            and event.get("features") == [MANAGED.required_feature]
+            and event.get("features") == profile.features()
             and event.get("fresh") is False and event.get("executable") == str(path)
             and path.is_absolute() and path.resolve(strict=True) == path,
             "managed Cargo CLI artifact differs from the exact private bin target")
@@ -569,10 +585,19 @@ def native_object(identity):
     return f"{os.major(device)}:{os.minor(device)}:{inode}"
 
 
-def checked_managed_result(output, code, facts, anchors, cli_sha256):
+def checked_managed_result(output, code, facts, anchors, cli_sha256, *, prepared_component=False):
     lines = output.splitlines()
     markers = [line.removeprefix(MANAGED_MARKER) for line in lines if line.startswith(MANAGED_MARKER)]
     require(len(markers) == 1, "required one managed production result marker")
+    prepared = [index for index, line in enumerate(lines) if line.startswith(PREPARED_MARKER)]
+    if prepared_component and not markers[0].startswith("blocked reason="):
+        case_line = next((index for index, line in enumerate(lines)
+                          if line.strip() == f"test {MANAGED.case} ..."), len(lines))
+        require(len(prepared) == 1 and lines[prepared[0]] == PREPARED_MARKER + "passed"
+                and case_line < prepared[0] < lines.index(MANAGED_MARKER + markers[0]),
+                "missing exact completed prepared action component")
+    else:
+        require(not prepared, "unexpected prepared action component marker")
     require(lines.count("running 1 test") == 1
             and sum(line.strip() == f"test {MANAGED.case} ..." for line in lines) == 1,
             "managed production fixture did not report its exact executed case")
@@ -688,7 +713,7 @@ def execute(evidence, binary, env, facts, report, profile=HISTORY, sides=None, c
         args = [binary, "--ignored", "--exact", "--nocapture", "--test-threads=1",
                 "--color", "never", profile.case]
         options = {"env": env, "executable": pinned, "held": (held.fileno(),), "timeout": 45}
-        if profile is MANAGED:
+        if is_managed_application(profile):
             require(cli is not None, "managed fixture requires the exact CLI companion")
             require(held_managed_image(binary, held.fileno()) == before_managed,
                     "held managed harness changed before execution")
@@ -707,7 +732,10 @@ def execute(evidence, binary, env, facts, report, profile=HISTORY, sides=None, c
                             and held_managed_image(binary, held.fileno()) == before_managed,
                             "held managed executable changed after execution")
                 report["cli_executable"] = cli_facts
-                report["case"] = checked_managed_result(output, code, facts, sides, cli_facts["sha256"])
+                report["case"] = checked_managed_result(
+                    output, code, facts, sides, cli_facts["sha256"],
+                    prepared_component=profile.prepared_component,
+                )
         elif profile is GENESIS:
             require(cli is None and genesis is not None, "genesis requires its exact oracle without a CLI companion")
             fixture_parent, oracle, parse_frame, cleanup_error = genesis
@@ -765,6 +793,8 @@ def manifest_digest(profile=HISTORY):
     }
     if profile.required_feature is not None:
         expected["case"][0]["required_feature"] = profile.required_feature
+    if is_managed_application(profile):
+        expected["prepared_component_feature"] = PREPARED_FEATURE
     require(actual == expected and type(actual["schema_version"]) is int
             and actual["case"][0]["ignored"] is True, "exact native fixture manifest drift")
     return hashlib.sha256(raw).hexdigest()
@@ -825,7 +855,9 @@ def qualify_admitted(revision, temp, evidence, report, profile, genesis):
     report["lockfile_sha256"] = hashlib.sha256(lock.read_bytes()).hexdigest()
     require(not supervision.CANCELLATION_REQUESTED, "cancelled before work allocation")
     work_prefix = {
-        MANAGED: "exacopy-managed-sync-work-", GENESIS: "exacopy-managed-sync-genesis-work-",
+        MANAGED: "exacopy-managed-sync-work-",
+        MANAGED_PREPARED: "exacopy-managed-sync-prepared-work-",
+        GENESIS: "exacopy-managed-sync-genesis-work-",
     }.get(profile, "exacopy-sync-ext4-work-")
     work = Path(tempfile.mkdtemp(prefix=work_prefix, dir=temp))
     work_identity = inode(work)
@@ -870,8 +902,17 @@ def qualify_admitted(revision, temp, evidence, report, profile, genesis):
                     "--no-run", "--message-format=json"]
             if managed:
                 args.append("--no-default-features")
-            if profile.required_feature is not None:
-                args.extend(("--features", profile.required_feature))
+            if features := profile.features():
+                args.extend(("--features", ",".join(features)))
+            if profile.prepared_component:
+                import managed_recreate_wire_controls as wire_controls
+
+                args.append("--lib")
+                report["wire_controls"] = {
+                    "outcome": "failed", "package": profile.package_root.name,
+                    "target": TARGET, "features": profile.features(),
+                    "inputs_sha256": wire_controls.inputs(sys.modules[__name__]), "cases": {},
+                }
             if profile is GENESIS:
                 import genesis_format_controls
 
@@ -881,12 +922,18 @@ def qualify_admitted(revision, temp, evidence, report, profile, genesis):
                 "PATH": "/usr/bin:/bin", "LC_ALL": "C", "TMPDIR": str(work),
                 profile.parent_variable: str(parent),
             }
-            cli = managed_cli_artifact(output, target_root) if profile is MANAGED else None
+            cli = managed_cli_artifact(output, target_root, profile) if is_managed_application(profile) else None
+            harness = artifact(output, target_root, profile)
+            if profile.prepared_component:
+                selected_wire = wire_controls.artifact(sys.modules[__name__], output, target_root)
+                require(selected_wire not in (harness, cli), "managed approval library artifact aliases a companion path")
+                report["build_features"] = profile.features()
+                wire_controls.run(sys.modules[__name__], evidence, selected_wire, work, report["wire_controls"])
             selected_genesis = None
             if profile is GENESIS:
                 child_env["EXACOPY_MANAGED_SYNC_GENESIS_CAPTURE"] = "1"
                 selected_genesis = (parent, *genesis)
-            execute(evidence, artifact(output, target_root, profile), child_env, before, report,
+            execute(evidence, harness, child_env, before, report,
                     profile, before_sides, cli, genesis=selected_genesis)
             try:
                 after = observe(parent, parent_fd, evidence, "fixture-after", profile)
@@ -903,6 +950,9 @@ def qualify_admitted(revision, temp, evidence, report, profile, genesis):
             require(manifest_digest(profile) == report["fixture_manifest_sha256"], "fixture manifest changed")
             require(hashlib.sha256(lock.read_bytes()).hexdigest() == report["lockfile_sha256"],
                     "lockfile changed")
+            if profile.prepared_component:
+                require(wire_controls.inputs(sys.modules[__name__]) == report["wire_controls"]["inputs_sha256"],
+                        "managed approval wire inputs changed after component case")
             if profile is GENESIS:
                 require(genesis_format_controls.inputs(sys.modules[__name__]) == report["format_controls"]["inputs_sha256"],
                         "intent codec inputs changed after the production case")
@@ -960,11 +1010,16 @@ def cleanup_siblings(parent, held, parent_identity):
 def main(profile=HISTORY, *, genesis_oracle=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--revision", required=True)
+    if profile is MANAGED:
+        parser.add_argument("--prepared-component", action="store_true")
     args = parser.parse_args()
+    if profile is MANAGED and args.prepared_component:
+        profile = MANAGED_PREPARED
     raw = Path(os.environ["RUNNER_TEMP"])
     require(raw.is_absolute() and raw.resolve(strict=True) == raw, "invalid exact RUNNER_TEMP")
     prefixes = {
         MANAGED: "exacopy-managed-sync-production-evidence-",
+        MANAGED_PREPARED: "exacopy-managed-sync-prepared-component-evidence-",
         GENESIS: "exacopy-managed-sync-genesis-production-evidence-",
         STATMOUNT: "exacopy-sync-ext4-statmount-evidence-",
         HISTORY: "exacopy-sync-ext4-evidence-",
@@ -977,6 +1032,9 @@ def main(profile=HISTORY, *, genesis_oracle=None):
         with open(output_path, "a", encoding="utf-8") as output:
             output.write(f"evidence_path={evidence}\n")
     report = {"revision": args.revision, "profile": profile.profile, "outcome": "failed", "cleanup": "not_created"}
+    if profile.prepared_component:
+        report.update(mode="prepared-component", scope=PREPARED_SCOPE, live_grant_qualified=False,
+                      current_selector_qualified=False, attestation_qualified=False)
     code = 1
     for signum in (signal.SIGINT, signal.SIGTERM):
         signal.signal(signum, supervision.interrupted)

@@ -38,6 +38,8 @@ pub use history_scope::SyncHistoryLocation;
 #[cfg(feature = "experimental-linux-managed-sync")]
 pub(in crate::linux) use history_scope::unique_mount_id;
 #[cfg(feature = "experimental-linux-managed-sync")]
+pub(in crate::linux) use managed::ManagedSyncPreparationLease;
+#[cfg(feature = "experimental-linux-managed-sync")]
 pub use managed::{
 	ManagedSyncError, ManagedSyncExpectedObject, ManagedSyncExpectedRoot, ManagedSyncNativeScope,
 	ManagedSyncPreviewPair, ManagedSyncReadLease, ManagedSyncSubjectRecheck,

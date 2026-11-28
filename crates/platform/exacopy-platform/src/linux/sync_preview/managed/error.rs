@@ -17,7 +17,7 @@ pub enum ManagedSyncError {
 	PrivateDirectoryRequired,
 	/// A selected file reports an ambiguous ownership mapping.
 	AmbiguousSubjectOwnership,
-	/// A participating writer holds an incompatible common-parent lease.
+	/// A participant holds an incompatible common-parent lease.
 	Busy,
 	/// An existing held scope or subject observation failed.
 	Preview(SyncPreviewError),
@@ -37,7 +37,9 @@ impl fmt::Display for ManagedSyncError {
 			Self::AmbiguousSubjectOwnership => {
 				formatter.write_str("managed sync subject reports ambiguous ownership")
 			}
-			Self::Busy => formatter.write_str("managed sync common parent is locked by a writer"),
+			Self::Busy => {
+				formatter.write_str("managed sync common parent has an incompatible lease")
+			}
 			Self::Preview(error) => error.fmt(formatter),
 			Self::System(error) => error.fmt(formatter),
 		}

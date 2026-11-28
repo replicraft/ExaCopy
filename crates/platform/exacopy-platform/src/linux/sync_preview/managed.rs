@@ -20,8 +20,10 @@ use crate::linux::source::{SourceObservation, SourceTimestamp};
 
 mod credentials;
 mod error;
+mod execution;
 
 pub use error::ManagedSyncError;
+pub(in crate::linux) use execution::ManagedSyncPreparationLease;
 
 const PRIVATE_MODE: Mode = Mode::RUSR.union(Mode::WUSR).union(Mode::XUSR);
 
@@ -37,7 +39,7 @@ pub struct ManagedSyncExpectedObject {
 }
 
 impl ManagedSyncExpectedObject {
-	fn matches(self, current: FileIdentity) -> bool {
+	pub(in crate::linux) fn matches(self, current: FileIdentity) -> bool {
 		self.major == fs::major(current.device())
 			&& self.minor == fs::minor(current.device())
 			&& self.inode.get() == current.inode()
@@ -105,6 +107,10 @@ impl ManagedSyncNativeScope<'_> {
 /// through retained handles. Administrators must preserve the selected scope.
 #[must_use]
 pub struct ManagedSyncReadLease<'held, 'selection> {
+	custody: ManagedRootCustody<'held, 'selection>,
+}
+
+struct ManagedRootCustody<'held, 'selection> {
 	roots: &'held SyncPreviewRoots<'selection>,
 	scope: ManagedSyncNativeScope<'selection>,
 	locked_parent: OwnedFd,
@@ -137,37 +143,28 @@ impl<'selection> SyncPreviewRoots<'selection> {
 		scope: ManagedSyncNativeScope<'selection>,
 	) -> Result<ManagedSyncReadLease<'_, 'selection>, ManagedSyncError> {
 		let admitted = self.observe_managed_scope(scope)?;
-		let locked_parent = fs::openat2(
+		let locked_parent = self.open_lock_parent()?;
+		check_lock_parent(&locked_parent, admitted.directories[0], scope)?;
+		lock_parent(&locked_parent, FlockOperation::NonBlockingLockShared)?;
+		let custody = ManagedRootCustody::new(self, scope, locked_parent, admitted);
+		custody.recheck_roots()?;
+		Ok(ManagedSyncReadLease { custody })
+	}
+
+	fn open_lock_parent(&self) -> Result<OwnedFd, ManagedSyncError> {
+		Ok(fs::openat2(
 			&self.parent,
 			c".",
 			OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
 			Mode::empty(),
 			CHILD_RESOLUTION,
-		)?;
-		check_lock_parent(&locked_parent, admitted.directories[0], scope)?;
-		fs::flock(&locked_parent, FlockOperation::NonBlockingLockShared).map_err(|error| {
-			if error == Errno::WOULDBLOCK {
-				ManagedSyncError::Busy
-			} else {
-				error.into()
-			}
-		})?;
-		let lease = ManagedSyncReadLease {
-			roots: self,
-			scope,
-			locked_parent,
-			directories: admitted.directories,
-			ownership: admitted.ownership,
-			thread_bound: PhantomData,
-		};
-		lease.recheck_roots()?;
-		Ok(lease)
+		)?)
 	}
 
-	fn observe_managed_scope(
+	fn check_selected_scope(
 		&self,
 		scope: ManagedSyncNativeScope<'selection>,
-	) -> Result<ManagedObservation<'selection>, ManagedSyncError> {
+	) -> Result<(), ManagedSyncError> {
 		if self.parent_path.as_os_str() != scope.parent_path.as_os_str()
 			|| self.mount != scope.ordinary_mount.get()
 			|| !scope.parent.matches(self.parent_identity)
@@ -180,6 +177,14 @@ impl<'selection> SyncPreviewRoots<'selection> {
 		{
 			return Err(ManagedSyncError::ScopeMismatch);
 		}
+		Ok(())
+	}
+
+	fn observe_managed_scope(
+		&self,
+		scope: ManagedSyncNativeScope<'selection>,
+	) -> Result<ManagedObservation<'selection>, ManagedSyncError> {
+		self.check_selected_scope(scope)?;
 		self.namespaces.recheck_current()?;
 		let proc = ProcMounts::open()?;
 		let ownership = credentials::check(&proc, scope.uid, scope.gid)?;
@@ -212,20 +217,48 @@ impl<'selection> ManagedSyncReadLease<'_, 'selection> {
 	/// # Errors
 	/// Refuses changed scope, failed lookup, credential drift and unavailable facts.
 	pub fn observe(&self) -> Result<ManagedSyncPreviewPair<'_, 'selection>, ManagedSyncError> {
-		self.recheck_roots()?;
-		let pair = self.roots.observe(self.scope.subject)?;
-		self.check_subject_owners(&pair)?;
-		self.recheck_roots()?;
-		Ok(ManagedSyncPreviewPair { lease: self, pair })
+		self.custody.observe()
 	}
 
 	/// Rechecks the retained lease, actor, directories and exact root bindings.
 	///
 	/// This operation does not open the selected subject.
-	///
 	/// # Errors
 	/// Refuses changed scope, credentials, mount attributes or directory ownership.
 	pub fn recheck_roots(&self) -> Result<[SyncHistoryLocation<'selection>; 2], ManagedSyncError> {
+		self.custody.recheck_roots()
+	}
+}
+
+impl<'held, 'selection> ManagedRootCustody<'held, 'selection> {
+	fn new(
+		roots: &'held SyncPreviewRoots<'selection>,
+		scope: ManagedSyncNativeScope<'selection>,
+		locked_parent: OwnedFd,
+		admitted: ManagedObservation<'selection>,
+	) -> Self {
+		Self {
+			roots,
+			scope,
+			locked_parent,
+			directories: admitted.directories,
+			ownership: admitted.ownership,
+			thread_bound: PhantomData,
+		}
+	}
+
+	fn observe(&self) -> Result<ManagedSyncPreviewPair<'_, 'selection>, ManagedSyncError> {
+		self.recheck_roots()?;
+		let pair = self.roots.observe(self.scope.subject)?;
+		self.check_subject_owners(&pair)?;
+		self.recheck_roots()?;
+		Ok(ManagedSyncPreviewPair {
+			custody: self,
+			pair,
+		})
+	}
+
+	fn recheck_roots(&self) -> Result<[SyncHistoryLocation<'selection>; 2], ManagedSyncError> {
 		check_lock_parent(&self.locked_parent, self.directories[0], self.scope)?;
 		let current = self.roots.observe_managed_scope(self.scope)?;
 		if current.ownership != self.ownership {
@@ -257,10 +290,10 @@ struct ManagedObservation<'selection> {
 	ownership: credentials::OwnershipSentinels,
 }
 
-/// The original ordered subject observations under one managed read lease.
+/// The original ordered subject observations under a held managed lease.
 #[must_use]
 pub struct ManagedSyncPreviewPair<'view, 'selection> {
-	lease: &'view ManagedSyncReadLease<'view, 'selection>,
+	custody: &'view ManagedRootCustody<'view, 'selection>,
 	pair: SyncPreviewPair<'view, 'selection>,
 }
 
@@ -277,7 +310,7 @@ pub struct ManagedSyncSubjectRecheck<'selection> {
 
 impl<'view, 'selection> ManagedSyncPreviewPair<'view, 'selection> {
 	pub(in crate::linux) fn held_roots(&self) -> &SyncPreviewRoots<'selection> {
-		self.lease.roots
+		self.custody.roots
 	}
 
 	/// Returns the same borrowed observations for independent measurement.
@@ -310,12 +343,12 @@ impl<'view, 'selection> ManagedSyncPreviewPair<'view, 'selection> {
 	pub fn recheck_history_subjects(
 		&self,
 	) -> Result<ManagedSyncSubjectRecheck<'selection>, ManagedSyncError> {
-		self.lease.recheck_roots()?;
+		self.custody.recheck_roots()?;
 		let subjects = self.pair.recheck_subjects()?;
-		self.lease.check_subject_owners(&self.pair)?;
-		let roots = self.lease.recheck_roots()?;
+		self.custody.check_subject_owners(&self.pair)?;
+		let roots = self.custody.recheck_roots()?;
 		Ok(ManagedSyncSubjectRecheck {
-			subject: self.lease.scope.subject,
+			subject: self.custody.scope.subject,
 			roots,
 			subjects,
 		})
@@ -373,4 +406,14 @@ fn check_lock_parent(
 		return Err(SyncPreviewError::Changed.into());
 	}
 	Ok(())
+}
+
+fn lock_parent(fd: &OwnedFd, operation: FlockOperation) -> Result<(), ManagedSyncError> {
+	fs::flock(fd, operation).map_err(|error| {
+		if error == Errno::WOULDBLOCK {
+			ManagedSyncError::Busy
+		} else {
+			error.into()
+		}
+	})
 }
