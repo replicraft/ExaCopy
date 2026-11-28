@@ -71,9 +71,14 @@ suffix, EOF and cursor failures. The existing owned ext4 fixture also calls
 the real SDK with absent enrollment, spent approval and revoked approval.
 Synthetic component authority is distinct from operational qualification.
 
-This integration has source review, exact patch replay, pinned formatting and
-static inventory checks only. Compilation, tests, proofs of new policy and
-positive end-to-end native qualification remain open. Activation requires
-independently reviewed exact-build evidence and a separately selected read-only
-public-v2 reconciliation caller. The stage-only inspector still refuses intent
+At `3b9ef5f`, hosted native tests and strict lint passed on Linux, macOS and
+Windows. Linux executed eight grant, nine journal and six native component
+controls. The owned ext4 fixture executed the unenrolled, spent and revoked
+SDK refusals with verified cleanup. [Exact native run](https://github.com/replicraft/ExaCopy/actions/runs/46118308336)
+and [owned ext4 run](https://github.com/replicraft/ExaCopy/actions/runs/46118308431)
+retain that bounded evidence. Proofs of new policy and positive end-to-end
+native qualification remain open. Activation requires
+independently reviewed exact-build evidence and runtime verification of the
+separately selected [read-only reconciliation caller](public-apply-reconciliation.md).
+That caller now has a source implementation. The stage-only inspector still refuses intent
 suffixes. No process-crash or power-loss success claim follows from this source.

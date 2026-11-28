@@ -878,6 +878,26 @@ state = "reported"
 path = "docs/foundation.md"
 detail = "Initial foundation recorded 57 of 69 third-party versions requiring additional cargo-vet evidence. Consult the current supply-chain records for later changes."
 
+[[coverage.evidence]]
+owner = "xtask"
+level = "policy"
+state = "defined"
+path = "xtask/src/evidence/tests.rs"
+target = "binds_kani_features_in_both_executed_command_and_evidence_profile"
+
+[[coverage.evidence]]
+owner = "xtask"
+level = "policy"
+state = "defined"
+path = "xtask/src/verification/ownership/tests/kani_features.rs"
+target = "kani_gate_features_must_be_declared_by_the_owning_package"
+
+[[coverage.evidence]]
+owner = "workspace"
+level = "documentation"
+state = "reported"
+path = "docs/verification.md"
+
 [[coverage]]
 id = "local-reference-and-performance"
 status = "implemented"
@@ -1528,13 +1548,84 @@ target = "exact_cuts_and_profile_limit_preserve_accepted_boundary"
 
 
 [[coverage]]
+id = "checked-public-apply-reconciliation"
+status = "experimental"
+requirement_ids = ["R-015", "R-041", "R-044", "R-155"]
+acceptance_ids = ["A-015", "A-041", "A-044", "A-155"]
+invariant_ids = ["INV-009", "INV-013", "INV-018", "INV-019"]
+scope = "The separately selected Linux SDK inspects one finite-expiry checked public-v2 apply under the original shared lease. It checks the independently approved Plan, authenticated owner, bounded complete and torn history, and held receipt against the exact physical kind-18 boundary. It reports current names separately and admits candidate stream reads only after accepted kind 7, matched native continuity, and same-inode read-only no-atime custody."
+limits = "Source-defined checks and documented behavior. No live grant, recovery writer, repair, retry, CLI route, operational enrollment, or process-crash or power-loss claim. The R-041 and R-044 links cover read-only tail and identity observations. Bytewise repair and post-rename crash acceptance remain open. Positive composed terminal SDK execution and qualification remain unverified."
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "test"
+state = "defined"
+path = "crates/engines/exacopy-transfer/src/linux/recovery/public_apply/tests/reconcile.rs"
+target = "public_reconciliation_accepts_each_exact_prefix_and_preserves_torn_boundary"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "test"
+state = "defined"
+path = "crates/engines/exacopy-transfer/src/linux/recovery/public_apply/tests/reconcile.rs"
+target = "public_reconciliation_refuses_unselected_qualification_and_literal_terminal_trailing_bytes"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "test"
+state = "defined"
+path = "crates/engines/exacopy-transfer/src/linux/recovery/public_apply/tests/reconcile.rs"
+target = "oversized_torn_history_stops_reading_at_the_public_suffix_bound"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "test"
+state = "defined"
+path = "crates/engines/exacopy-transfer/src/linux/recovery/public_apply/tests/reconcile.rs"
+target = "external_environment_selection_cannot_admit_readable_preintent_names"
+
+[[coverage.evidence]]
+owner = "exacopy-transfer"
+level = "test"
+state = "defined"
+path = "crates/engines/exacopy-transfer/src/linux/receipt/public_apply/commit/tests.rs"
+target = "independent_v2_commit_checks_the_complete_terminal_suffix"
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "test"
+state = "defined"
+path = "crates/platform/exacopy-platform/src/linux/recovery/public_apply/tests.rs"
+target = "records_refuse_same_byte_rebound_parent_under_original_shared_lease"
+
+[[coverage.evidence]]
+owner = "exacopy-platform"
+level = "test"
+state = "defined"
+path = "crates/platform/exacopy-platform/src/linux/recovery/public_apply/names/tests.rs"
+target = "only_exact_required_candidate_opens_read_only_noatime_stream"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "test"
+state = "defined"
+path = "apps/exacopy-cli/src/assembly/linux/public_stage/tests.rs"
+target = "approved_stage_reopens_with_exact_owner_and_preserves_uncertain_evidence"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "documentation"
+state = "reported"
+path = "docs/architecture/public-apply-reconciliation.md"
+
+[[coverage]]
 id = "checked-local-public-apply-continuation"
 status = "experimental"
 requirement_ids = ["R-015", "R-155"]
 acceptance_ids = ["A-015", "A-155"]
 invariant_ids = ["INV-003", "INV-013", "INV-018", "INV-019"]
 scope = "The separately approved Linux SDK consumes one local grant and retains original source, job records, metadata-ready stage, model session, journal, published inode and receipt across one guarded no-replace attempt and exact v2 terminal suffix readback. Each subsequent journal or receipt mutation requires fresh same-grant admission."
-limits = "Source integration only. No operational enrollment, CLI activation, public-v2 recovery writer, automatic retry, positive native SDK qualification or process-crash/power-loss claim. Compilation, execution and new policy proof gates remain open."
+limits = "Component tests and strict checks passed on exact 3b9ef5f, with native unenrolled, spent and revoked SDK refusals. No operational enrollment, CLI activation, public-v2 recovery writer, automatic retry, positive native SDK qualification or process-crash/power-loss claim. New policy proof gates and execution of later changes require separate evidence."
 
 [[coverage.evidence]]
 owner = "exacopy-cli"

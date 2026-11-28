@@ -8,8 +8,9 @@ supports authenticated read-only inspection. Its bounded native fixture has
 executed. The engine also prepares the existing v2 publication intent from
 the active staging attempt. A separate [checked SDK continuation](checked-local-public-apply.md)
 has a source implementation for guarded intent, publication and receipt
-closeout. Runtime verification, operational enrollment, public-v2 recovery
-and public apply dispatch remain open.
+closeout. A separate [read-only reconciliation SDK](public-apply-reconciliation.md)
+also has a source implementation. Runtime verification, operational enrollment,
+mutating public-v2 recovery and public apply dispatch remain open.
 [Staging and native evidence](public-apply-staging.md) ·
 [Read-only inspection](public-stage-inspection.md)
 
