@@ -53,7 +53,22 @@ Both records bind `Cargo.lock` at SHA-256
 contains both logs and their same-named JSON records and has SHA-256
 `960280c184dd1f046d3c1c41191b5a326f8934bc20898125255addbacf5e07c5`.
 
+The same revision's advisory extraction completed with exit zero. Its
+[generated-source artifact](https://github.com/replicraft/ExaCopy/actions/runs/46130028396/artifacts/15258920042)
+has SHA-256 `6d59cadd778aa53c3940427c6682331091ad44cbfcaa1af29bca346fdda4816f`.
+The receipt binds the actual Rust source, app caller, lockfile and pinned
+extraction inputs. The three reviewed module payloads are retained verbatim
+under `Generated/GrantTime`, with only the external template's filename changed.
+That template contains no external declarations.
+
+The P-083 Lean gate now freshly extracts those exact modules and checks
+`ExaCopy.Proofs.check_grant_time_spec` against signed integer nanosecond
+ordering, half-open window intersection and refusal precedence. The original
+range regeneration and theorem remain mandatory. A drift refusal retains a
+bounded raw byte diff in the EVS log before its scratch directory is removed.
+The new theorem and combined regeneration still require hosted kernel validation;
+the advisory capture itself earns no proof credit.
+
 Clock sampling and monotonic classification, paired high-water updates,
 retirement, mutex serialization, effects and native qualification remain
-separate. Lean registration requires actual generated source and a theorem
-that invokes that extracted function; candidate generation earns no proof credit.
+separate.

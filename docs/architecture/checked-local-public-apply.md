@@ -37,11 +37,12 @@ retains that finite test evidence. At `fdf4ae1`, the isolated P-083 Kani
 record passed for one scalar decision on normalized inputs and its separately
 verified UTC comparator. [Grant clock evidence](../../crates/foundation/exacopy-model/verification/GRANT_TIME.md)
 records the exact assertions, covers and scope. Native sampling and whole-grant
-state updates remain separate. An extracted Lean theorem remains open.
-An advisory automatic CI step captures the actual grant-time extraction's raw
-source and provenance after the mandatory formal artifact upload. Candidate
-output stays outside the Lean import tree and EVS records. It must be reviewed
-before any generated source or extracted theorem is adopted.
+state updates remain separate. The same revision's advisory extraction supplied
+the actual generated grant-time modules. Reviewed copies now accompany an
+authored theorem over the extracted decision, with mandatory fresh regeneration
+and exact module comparison. Hosted kernel validation of that theorem remains
+pending; candidate generation earns no proof credit. The advisory step retains
+its separate source and provenance artifact outside EVS records.
 
 At `aac327a`, P-082's two Kani harnesses passed all three assertions and nineteen
 covers under the exact `experimental-linux-public-apply` feature profile.

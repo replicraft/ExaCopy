@@ -1,5 +1,6 @@
 * text=auto eol=lf
 crates/foundation/exacopy-model/verification/Generated/FunsExternal.lean whitespace=-blank-at-eof
+crates/foundation/exacopy-model/verification/Generated/GrantTime/FunsExternal.lean whitespace=-blank-at-eof
 # Reviewed patch inputs require byte-exact line endings and unified-diff context spaces.
 specs/dependencies/transport-source/*.patch -text whitespace=-blank-at-eol
 specs/dependencies/transport-source/*-LICENSE.* -text

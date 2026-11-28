@@ -129,8 +129,9 @@ assumptions = [
     "The caller supplies a correctly classified monotonic sample and normalized UTC timestamps with subsecond nanoseconds below one billion.",
     "This checks one scalar decision. Clock sampling and classification, the original monotonic anchor, paired state updates, retirement, and serialization against revocation and effects are separate obligations.",
 ]
-gates = ["rust", "kani"]
+gates = ["rust", "lean", "kani"]
 rust = { test = "grant_time::tests::grant_time_matches_wide_nanosecond_interval", file = "src/grant_time/tests.rs", oracle = "Compare the production result to a signed wide nanosecond interval oracle across representative signed extremes, equalities, rollover, and empty or reversed bounds." }
+lean = { theorem = "ExaCopy.Proofs.check_grant_time_spec", proof = "verification/Proofs/GrantTime.lean", generated = "verification/Generated/GrantTime/Funs.lean", axioms_tcb = ["propext", "Classical.choice", "Quot.sound", "Lean 4.31.0 kernel", "Pinned Charon, Aeneas and hax scalar models."], oracle = "Regenerate the actual grant-time decision and its comparator, require exact generated module bytes, and kernel-check equivalence to signed integer nanosecond ordering, half-open window intersection and regression-before-expiry precedence for normalized timestamps." }
 [obligation.kani]
 harness = "kani_checks::grant_time::grant_time_matches_wide_nanosecond_specification"
 file = "verification/kani/grant_time.rs"
