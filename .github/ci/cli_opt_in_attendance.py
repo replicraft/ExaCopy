@@ -7,6 +7,7 @@ from xml.etree import ElementTree
 MAX_REPORT_BYTES = 1024 * 1024
 CLI_SUITE = "exacopy-cli"
 PLATFORM_SUITE = "exacopy-platform"
+SFTP_SUITE = "exacopy-sftp"
 TRANSFER_SUITE = "exacopy-transfer"
 REMOTE_CASE = (
     "assembly::linux::remote_continued::tests::"
@@ -134,7 +135,29 @@ WINDOWS_SFTP_CAPTURE_CASES = {
         ),
     },
 }
+SFTP_SOURCE_CASES = {
+    "source::only_an_authorized_held_data_read_exposes_the_distinct_timeout",
+    "source::refused_read_keeps_wire_failure_as_detail_under_the_binding_error",
+    "source::tests::invalid_positive_interval_refuses_before_data_and_retires_scope",
+    "source::tests::key_auth::async_protected_key_broker_requires_current_grant_before_actual_offer",
+    "source::tests::key_auth::rejected_key_ends_the_attempt_without_password_or_subsystem_fallback",
+    "source::tests::key_auth::same_host_rekey_keeps_the_authenticated_session",
+    "source::tests::key_auth::supplied_key_authenticates_once_with_a_verified_authority",
+    "source::tests::key_auth::untrusted_host_or_mismatched_authority_does_not_receive_a_key_offer",
+    "source::tests::pending::a_matching_binding_still_needs_current_activation_authority",
+    "source::tests::pending::callback_refusal_preserves_durable_error_and_discards_stale_success",
+    "source::tests::pending::empty_absolute_root_is_not_a_relative_dot_request",
+    "source::tests::pending::expired_or_retired_attempt_does_not_open_a_remote_handle",
+    "source::tests::pending::oversized_paths_are_refused_before_any_source_request",
+    "source::tests::pending::pending_metadata_activates_exactly_the_same_held_handle",
+    "source::tests::pending::revoked_or_expired_after_pending_open_refuses_before_callback",
+    "source::tests::pending::typed_absolute_source_preserves_leading_slash_on_the_same_handle",
+    "source::tests::pending::typed_source_sends_exact_posix_names_for_both_path_roots",
+    "source::tests::pending::wrong_attempt_or_epoch_cannot_activate_pending_source",
+    "source::tests::scoped_source_checks_live_observation_and_reads_high_offset_short_replies",
+}
 REQUIRED_CASES = {
+    "sftp-source": SFTP_SOURCE_CASES,
     "remote": {REMOTE_CASE, REMOTE_PREFLIGHT_CASE} | SSH_SESSION_CASES,
     "public-stage": PUBLIC_STAGE_CASES,
     "witnessed-resume": WITNESSED_RESUME_CASES,
@@ -173,8 +196,9 @@ def check_attendance(report, lane):
         if lane == "apfs-copy" and name.partition("::")[0] not in (CLI_SUITE, TRANSFER_SUITE):
             raise ValueError(f"unexpected APFS JUnit suite: {name}")
         suites[name] = suite
-    if CLI_SUITE not in suites:
-        raise ValueError(f"expected the {CLI_SUITE} unit-test suite")
+    unit_suite = SFTP_SUITE if lane == "sftp-source" else CLI_SUITE
+    if unit_suite not in suites:
+        raise ValueError(f"expected the {unit_suite} unit-test suite")
     if lane == "apfs-copy" and len(suites.get(TRANSFER_SUITE, ())) == 0:
         raise ValueError(f"expected the {TRANSFER_SUITE} unit-test suite with completed cases")
 
@@ -190,11 +214,11 @@ def check_attendance(report, lane):
                 raise ValueError(f"unexpected {suite} testcases: {', '.join(sorted(unexpected))}")
         return sorted(required)
 
-    attended = cases[CLI_SUITE]
+    attended = cases[unit_suite]
     missing = required - attended
     if missing:
         raise ValueError(f"required testcases missing: {', '.join(sorted(missing))}")
-    if lane in ("public-stage", "managed-sync-recreate") and (unexpected := attended - required):
+    if lane in ("public-stage", "managed-sync-recreate", "sftp-source") and (unexpected := attended - required):
         raise ValueError(f"unexpected {lane} testcases: {', '.join(sorted(unexpected))}")
     return sorted(required)
 
@@ -232,7 +256,7 @@ def main():
     except (OSError, ValueError, LookupError, ElementTree.ParseError) as error:
         parser.exit(1, f"CLI {args.lane} attendance failed: {error}\n")
     for name in attended:
-        suite = CLI_SUITE
+        suite = SFTP_SUITE if args.lane == "sftp-source" else CLI_SUITE
         if args.lane == "windows-sftp-capture" and name in WINDOWS_SFTP_CAPTURE_CASES[PLATFORM_SUITE]:
             suite = PLATFORM_SUITE
         print(f"Passed {suite}::{name}")

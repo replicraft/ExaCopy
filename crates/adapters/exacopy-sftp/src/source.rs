@@ -7,7 +7,10 @@ use exacopy_ssh::{FileObservation, MAX_READ_CHUNK_BYTES, ReadOnlySftp, RemotePos
 
 use crate::error::SftpSourceError;
 
-#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+#[cfg(all(
+	test,
+	any(target_os = "linux", target_os = "macos", target_os = "windows")
+))]
 mod tests;
 
 mod pending;

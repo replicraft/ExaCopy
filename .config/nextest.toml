@@ -26,6 +26,8 @@ global-timeout = "5m"
 
 [profile.ci-experimental-sftp]
 inherits = "ci"
+slow-timeout = { period = "30s", terminate-after = 2 }
+global-timeout = "5m"
 
 [profile.ci-experimental-ssh-capture]
 inherits = "ci"

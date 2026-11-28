@@ -19,5 +19,11 @@ russh-sftp = { workspace = true, features = ["raw-string"] }
 tokio = { workspace = true, features = ["io-util", "macros", "rt", "sync", "time"] }
 zeroize.workspace = true
 
+[target.'cfg(target_os = "windows")'.dev-dependencies]
+russh = { workspace = true, features = ["ring"] }
+russh-sftp = { workspace = true, features = ["raw-string"] }
+tokio = { workspace = true, features = ["io-util", "macros", "rt", "sync", "time"] }
+zeroize.workspace = true
+
 [lints]
 workspace = true

@@ -374,11 +374,8 @@ fn allowed_transport_sibling(root: &Path, consumer: &str, dependency: &Dependenc
 			"russh",
 			"exacopy-cli" | "exacopy-sftp",
 			DependencyKind::Development,
-			Some(UNIX_FIXTURES),
-		)
-		| ("russh", "exacopy-cli", DependencyKind::Development, Some(WINDOWS_FIXTURE)) => {
-			("=0.65.4", &["ring"], false)
-		}
+			Some(UNIX_FIXTURES | WINDOWS_FIXTURE),
+		) => ("=0.65.4", &["ring"], false),
 		_ => return false,
 	};
 	if dependency.req.to_string() != version

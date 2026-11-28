@@ -121,14 +121,20 @@ jobs:
             --profile ci-experimental-wireguard --no-tests fail
           test -s target/nextest/ci-experimental-wireguard/junit.xml
       - name: Run opt-in SFTP source adapter tests
-        if: ${{ !cancelled() && steps.nextest.outcome == 'success' && (runner.os == 'Linux' || runner.os == 'macOS') }}
+        if: ${{ !cancelled() && steps.nextest.outcome == 'success' }}
         env:
           CARGO_TARGET_DIR: target/experimental-sftp
         run: |
+          report=target/nextest/ci-experimental-sftp/junit.xml
+          rm -f -- "$report"
           bash .github/ci/capture.sh experimental-sftp cargo +1.100.0 nextest run --locked \
             -p exacopy-sftp --features experimental-sftp --profile ci-experimental-sftp --no-tests fail \
             -E 'test(/^source::/)'
-          test -s target/nextest/ci-experimental-sftp/junit.xml
+          attendance_python=python3
+          if [[ "$RUNNER_OS" == Windows ]]; then attendance_python=python; fi
+          bash .github/ci/capture.sh experimental-sftp-attendance \
+            "$attendance_python" -B .github/ci/cli_opt_in_attendance.py sftp-source \
+            "$report"
       - name: Run opt-in held SFTP CLI capture tests
         if: ${{ !cancelled() && steps.nextest.outcome == 'success' && (runner.os == 'Linux' || runner.os == 'macOS') }}
         env:

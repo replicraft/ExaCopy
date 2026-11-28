@@ -114,15 +114,38 @@ WINDOWS_SFTP_PLATFORM_EXPECTED = (
 )
 
 
+SFTP_SOURCE_EXPECTED = (
+    "source::tests::scoped_source_checks_live_observation_and_reads_high_offset_short_replies",
+    "source::tests::pending::wrong_attempt_or_epoch_cannot_activate_pending_source",
+    "source::tests::pending::typed_source_sends_exact_posix_names_for_both_path_roots",
+    "source::tests::pending::typed_absolute_source_preserves_leading_slash_on_the_same_handle",
+    "source::tests::pending::revoked_or_expired_after_pending_open_refuses_before_callback",
+    "source::tests::pending::pending_metadata_activates_exactly_the_same_held_handle",
+    "source::tests::pending::oversized_paths_are_refused_before_any_source_request",
+    "source::tests::pending::expired_or_retired_attempt_does_not_open_a_remote_handle",
+    "source::tests::pending::empty_absolute_root_is_not_a_relative_dot_request",
+    "source::tests::pending::callback_refusal_preserves_durable_error_and_discards_stale_success",
+    "source::tests::pending::a_matching_binding_still_needs_current_activation_authority",
+    "source::tests::key_auth::untrusted_host_or_mismatched_authority_does_not_receive_a_key_offer",
+    "source::tests::key_auth::supplied_key_authenticates_once_with_a_verified_authority",
+    "source::tests::key_auth::same_host_rekey_keeps_the_authenticated_session",
+    "source::tests::key_auth::rejected_key_ends_the_attempt_without_password_or_subsystem_fallback",
+    "source::tests::key_auth::async_protected_key_broker_requires_current_grant_before_actual_offer",
+    "source::tests::invalid_positive_interval_refuses_before_data_and_retires_scope",
+    "source::refused_read_keeps_wire_failure_as_detail_under_the_binding_error",
+    "source::only_an_authorized_held_data_read_exposes_the_distinct_timeout",
+)
+
+
 class CliOptInAttendanceTests(unittest.TestCase):
     def setUp(self):
         directory = TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.report = Path(directory.name) / "junit.xml"
 
-    def write_report(self, cases, siblings=()):
+    def write_report(self, cases, siblings=(), *, owner="exacopy-cli"):
         statuses = {"skipped": "0", "failures": "0", "errors": "0"}
-        suites = (("exacopy-cli", cases), *siblings)
+        suites = ((owner, cases), *siblings)
         root = ElementTree.Element(
             "testsuites", name="nextest-run", tests=str(sum(len(names) for _, names in suites)), **statuses,
         )
@@ -279,6 +302,34 @@ class CliOptInAttendanceTests(unittest.TestCase):
         self.write_xml(root)
         with self.assertRaisesRegex(ValueError, "lacks a successful execution record"):
             check_attendance(self.report, "windows-sftp-capture")
+
+    def test_sftp_source_requires_every_case_from_the_adapter_library(self):
+        owner = "exacopy-sftp"
+        xml = self.write_report(SFTP_SOURCE_EXPECTED, owner=owner)
+        self.assertEqual(check_attendance(self.report, "sftp-source"), sorted(SFTP_SOURCE_EXPECTED))
+        xml[0][0].set("classname", "exacopy-cli")
+        self.write_xml(xml)
+        with self.assertRaisesRegex(ValueError, "expected a named exacopy-sftp testcase"):
+            check_attendance(self.report, "sftp-source")
+        self.write_report(SFTP_SOURCE_EXPECTED)
+        with self.assertRaisesRegex(ValueError, "expected the exacopy-sftp unit-test suite"):
+            check_attendance(self.report, "sftp-source")
+        xml = self.write_report(SFTP_SOURCE_EXPECTED, owner=owner)
+        ElementTree.SubElement(xml[0][0], "skipped")
+        self.write_xml(xml)
+        with self.assertRaisesRegex(ValueError, "lacks a successful execution record"):
+            check_attendance(self.report, "sftp-source")
+        for missing in SFTP_SOURCE_EXPECTED:
+            with self.subTest(missing=missing):
+                self.write_report([case for case in SFTP_SOURCE_EXPECTED if case != missing], owner=owner)
+                with self.assertRaisesRegex(ValueError, f"required testcases missing: {missing}$"):
+                    check_attendance(self.report, "sftp-source")
+        self.write_report([*SFTP_SOURCE_EXPECTED, "source::unrelated"], owner=owner)
+        with self.assertRaisesRegex(ValueError, "unexpected sftp-source testcases"):
+            check_attendance(self.report, "sftp-source")
+        self.write_report([*SFTP_SOURCE_EXPECTED, SFTP_SOURCE_EXPECTED[0]], owner=owner)
+        with self.assertRaisesRegex(ValueError, "duplicate testcase"):
+            check_attendance(self.report, "sftp-source")
 
     def test_incomplete_session_record_cannot_satisfy_remote_attendance(self):
         root = self.write_report(REMOTE_EXPECTED)

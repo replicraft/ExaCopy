@@ -337,6 +337,13 @@ fn admits_only_the_exact_repaired_transport_edges() {
 			&["ring"][..],
 			Some(UNIX_FIXTURES),
 		),
+		(
+			"russh",
+			"=0.65.4",
+			"exacopy-sftp",
+			&["ring"][..],
+			Some(WINDOWS_FIXTURE),
+		),
 	] {
 		fixture.write(&format!("local-deps/{name}/Cargo.toml"), "");
 		let path = fixture.root().join("local-deps").join(name);
@@ -373,7 +380,7 @@ fn admits_only_the_exact_repaired_transport_edges() {
 		let mut wrong = dependency.clone();
 		wrong.target = Some("cfg(windows)".parse().unwrap());
 		assert!(!allowed_transport_sibling(&root, consumer, &wrong));
-		if consumer != "exacopy-cli" {
+		if kind.is_none() {
 			wrong.target = Some(WINDOWS_FIXTURE.parse().unwrap());
 			assert!(!allowed_transport_sibling(&root, consumer, &wrong));
 		}

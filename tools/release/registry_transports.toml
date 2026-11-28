@@ -23,7 +23,7 @@ name = "exacopy-sftp"
 source_name = "exacopy-sftp"
 path = "crates/adapters/exacopy-sftp"
 description = "SFTP capabilities for ExaCopy"
-manifest_sha256 = "ec6f436d78ca90120eabec82a801cc8038d5bfe34fd354633497caf9e19630d5"
+manifest_sha256 = "f85d7e57a10d19f1b13a6076b8eff439271a16c1cdcefbe2ee1dadf1873aa5f7"
 features = ["experimental-sftp"]
 
 [[packages]]
