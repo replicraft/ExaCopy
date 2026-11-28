@@ -36,6 +36,13 @@ pub(crate) struct RemoteOptions {
 	pub(crate) qualification_trust: PathBuf,
 	pub(crate) metadata: RemoteMetadata,
 	pub(crate) format: Format,
+	pub(crate) job_path_display: JobPathDisplay,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum JobPathDisplay {
+	Redacted,
+	Reveal,
 }
 
 pub(crate) enum RemoteMetadata {

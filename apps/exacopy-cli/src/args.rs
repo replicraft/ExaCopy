@@ -11,7 +11,9 @@ pub(crate) use parser::parse;
 #[cfg(all(target_os = "linux", feature = "experimental-verified-prefix-resume"))]
 pub(crate) use remote::RemoteResumeStrategy;
 #[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
-pub(crate) use remote::{RemoteCommand, RemoteMetadata, RemoteOptions, RemoteRequest};
+pub(crate) use remote::{
+	JobPathDisplay, RemoteCommand, RemoteMetadata, RemoteOptions, RemoteRequest,
+};
 
 pub(crate) enum Command {
 	Help(String),

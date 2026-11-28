@@ -3,10 +3,7 @@ use exacopy_journal::remote_download::finalization_policy::SftpDataOnlyV1;
 use std::ffi::{OsStr, OsString};
 
 use clap::builder::PossibleValuesParser;
-use clap::{Arg, ArgMatches, Command as Cli};
-
-#[cfg(feature = "experimental-verified-prefix-resume")]
-use clap::ArgAction;
+use clap::{Arg, ArgAction, ArgMatches, Command as Cli};
 
 use super::{
 	OPERAND_ORDER, PROFILE, directory_option, operand, output_format, path, path_option,
@@ -15,7 +12,9 @@ use super::{
 
 #[cfg(feature = "experimental-verified-prefix-resume")]
 use crate::args::RemoteResumeStrategy;
-use crate::args::{Command, RemoteCommand, RemoteMetadata, RemoteOptions, RemoteRequest};
+use crate::args::{
+	Command, JobPathDisplay, RemoteCommand, RemoteMetadata, RemoteOptions, RemoteRequest,
+};
 
 pub(super) const GET: &str = "get";
 pub(super) const REMOTE_RESUME: &str = "remote-resume";
@@ -23,6 +22,7 @@ const SSH_PROFILE: &str = "ssh-profile";
 const QUALIFICATION: &str = "destination-qualification";
 const QUALIFICATION_TRUST: &str = "qualification-trust";
 const METADATA: &str = "metadata";
+const SHOW_JOB_PATH: &str = "show-job-path";
 #[cfg(feature = "experimental-verified-prefix-resume")]
 const STRATEGY: &str = "strategy";
 #[cfg(feature = "experimental-verified-prefix-resume")]
@@ -122,6 +122,12 @@ fn options(cli: Cli) -> Cli {
 				.help("Accept the SFTP data-only metadata policy and its reported omissions."),
 		)
 		.arg(output_format())
+		.arg(
+			Arg::new(SHOW_JOB_PATH)
+				.long(SHOW_JOB_PATH)
+				.action(ArgAction::SetTrue)
+				.help("Show the retained local job path and its exact bytes in text output."),
+		)
 }
 
 pub(super) fn is_remote(command: &str) -> bool {
@@ -184,6 +190,11 @@ fn read_options(args: &mut ArgMatches) -> Option<RemoteOptions> {
 			qualification_trust: path(args, QUALIFICATION_TRUST)?,
 			metadata: RemoteMetadata::SftpDataOnlyV1,
 			format: selected_format(args),
+			job_path_display: if args.get_flag(SHOW_JOB_PATH) {
+				JobPathDisplay::Reveal
+			} else {
+				JobPathDisplay::Redacted
+			},
 		}),
 		_ => None,
 	}

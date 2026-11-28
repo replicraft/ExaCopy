@@ -11,9 +11,8 @@ use exacopy_journal::remote_download::finalization::{
 use exacopy_journal::remote_download::finalization_policy::SftpDataOnlyV1;
 use exacopy_transfer::remote_finalization::CommittedRemoteReceipt;
 use serde::Serialize;
-use uuid::Uuid;
 
-use crate::args::Format;
+use crate::args::{Format, JobPathDisplay};
 #[cfg(feature = "experimental-ssh-wireguard")]
 use crate::assembly::linux::remote_download::RemoteRouteCloseError;
 
@@ -91,25 +90,11 @@ enum Outcome {
 	Failed { error: RemoteFailure },
 }
 
+mod job;
 mod receipt;
+
+use job::JobReport;
 use receipt::PublishedReceipt;
-
-#[derive(Serialize)]
-struct JobReport {
-	job_id: String,
-	job_directory: String,
-	job_directory_bytes_hex: String,
-}
-
-impl From<RemoteJob> for JobReport {
-	fn from(job: RemoteJob) -> Self {
-		Self {
-			job_id: Uuid::from_bytes(*job.id.as_bytes()).to_string(),
-			job_directory: job.directory.to_string_lossy().into_owned(),
-			job_directory_bytes_hex: encode_hex(job.directory.as_os_str().as_encoded_bytes()),
-		}
-	}
-}
 
 #[derive(Serialize)]
 struct RemoteFailure {
@@ -251,6 +236,20 @@ impl RemoteOutcome {
 	pub(crate) fn write(
 		&self,
 		format: Format,
+		job_path_display: JobPathDisplay,
+		stdout: &mut impl io::Write,
+		stderr: &mut impl io::Write,
+	) -> u8 {
+		match self.try_write(format, job_path_display, stdout, stderr) {
+			Ok(()) => self.exit_code(),
+			Err(_) => self.failed_output(job_path_display, stderr),
+		}
+	}
+
+	fn try_write(
+		&self,
+		format: Format,
+		job_path_display: JobPathDisplay,
 		stdout: &mut impl io::Write,
 		stderr: &mut impl io::Write,
 	) -> io::Result<()> {
@@ -288,7 +287,7 @@ impl RemoteOutcome {
 						"Metadata omissions: {}",
 						receipt.omissions.join(", ")
 					)?;
-					write_job(stdout, &receipt.job)?;
+					receipt.job.write(stdout, job_path_display)?;
 					writeln!(stdout, "Receipt digest {}.", receipt.receipt_digest)?;
 					stdout.flush()
 				}
@@ -296,7 +295,7 @@ impl RemoteOutcome {
 					writeln!(stderr, "exacopy: {}", error.message)?;
 					write_publication(stderr, error.publication)?;
 					if let Some(job) = &error.job {
-						write_job(stderr, job)?;
+						job.write(stderr, job_path_display)?;
 					}
 					stderr.flush()
 				}
@@ -304,7 +303,7 @@ impl RemoteOutcome {
 		}
 	}
 
-	pub(crate) fn failed_output(&self, stderr: &mut impl io::Write) -> u8 {
+	fn failed_output(&self, job_path_display: JobPathDisplay, stderr: &mut impl io::Write) -> u8 {
 		let _result = writeln!(
 			stderr,
 			"exacopy: could not write the remote download result"
@@ -316,13 +315,13 @@ impl RemoteOutcome {
 					"The file was published with metadata omissions. Receipt digest {}.",
 					receipt.receipt_digest,
 				);
-				let _result = write_job(stderr, &receipt.job);
+				let _result = receipt.job.write(stderr, job_path_display);
 				4
 			}
 			Outcome::Failed { error } => {
 				let _result = write_publication(stderr, error.publication);
 				if let Some(job) = &error.job {
-					let _result = write_job(stderr, job);
+					let _result = job.write(stderr, job_path_display);
 				}
 				error.code.exit_code()
 			}
@@ -433,24 +432,6 @@ fn checked_receipt(receipt: &CommittedRemoteReceipt, job: JournalJobId) -> Optio
 
 fn digest_hex(bytes: &[u8; 32]) -> String {
 	blake3::Hash::from_bytes(*bytes).to_hex().to_string()
-}
-
-fn encode_hex(bytes: &[u8]) -> String {
-	const HEX: &[u8; 16] = b"0123456789abcdef";
-	let mut result = String::with_capacity(bytes.len() * 2);
-	for &byte in bytes {
-		result.push(char::from(HEX[usize::from(byte >> 4)]));
-		result.push(char::from(HEX[usize::from(byte & 0x0f)]));
-	}
-	result
-}
-
-fn write_job(output: &mut impl io::Write, job: &JobReport) -> io::Result<()> {
-	writeln!(
-		output,
-		"Job {} retained in {:?}. Directory bytes in hex: {}.",
-		job.job_id, job.job_directory, job.job_directory_bytes_hex,
-	)
 }
 
 fn write_publication(

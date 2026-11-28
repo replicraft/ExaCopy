@@ -148,6 +148,7 @@ fn get_preserves_raw_absolute_ssh_and_native_operand_bytes() {
 				qualification_trust,
 				metadata,
 				format,
+				job_path_display,
 			},
 	} = remote(
 		["get".into(), source.clone(), target.clone()]
@@ -170,6 +171,7 @@ fn get_preserves_raw_absolute_ssh_and_native_operand_bytes() {
 	assert_eq!(qualification_trust, PathBuf::from(GRANTS[7]));
 	assert!(matches!(metadata, RemoteMetadata::SftpDataOnlyV1));
 	assert!(matches!(format, Format::Json));
+	assert!(matches!(job_path_display, JobPathDisplay::Redacted));
 }
 
 #[test]
@@ -180,11 +182,73 @@ fn resume_uses_only_retained_job_and_explicit_grants() {
 	};
 	assert_eq!(job, PathBuf::from("-job"));
 	assert!(matches!(remote.options.format, Format::Human));
+	assert!(matches!(
+		remote.options.job_path_display,
+		JobPathDisplay::Redacted
+	));
 	for option in ["--source-root", "--source", "--target"] {
 		let parsed = parse(
 			args(&["recover", "remote-resume", "job"]).chain([option.into(), "other".into()]),
 		);
 		assert!(parsed.is_err(), "accepted an override for {option}");
+	}
+}
+
+#[test]
+fn both_commands_accept_explicit_job_path_display_with_escaped_operands() {
+	let flag = "--show-job-path";
+	let get = remote(args(&["get", "--", "secret-source", "-secret-target"]).chain([flag.into()]));
+	let RemoteRequest::Get { source, target } = get.request else {
+		panic!("expected get");
+	};
+	assert_eq!(source, OsStr::new("secret-source"));
+	assert_eq!(target, Path::new("-secret-target"));
+	assert!(matches!(
+		get.options.job_path_display,
+		JobPathDisplay::Reveal
+	));
+
+	let resume = remote(
+		args(&["recover", "remote-resume", "--", "-secret-job"])
+			.chain(["--format", "json", flag].map(OsString::from)),
+	);
+	let RemoteRequest::Resume { job, .. } = resume.request else {
+		panic!("expected remote resume");
+	};
+	assert_eq!(job, Path::new("-secret-job"));
+	assert!(matches!(resume.options.format, Format::Json));
+	assert!(matches!(
+		resume.options.job_path_display,
+		JobPathDisplay::Reveal
+	));
+
+	let unrelated = ["diff", "secret-left", "secret-right", flag];
+	assert!(parse(unrelated.into_iter().map(OsString::from)).is_err());
+}
+
+#[test]
+fn job_path_display_does_not_supply_a_grant_or_bypass_duplicate_checks() {
+	let flag = "--show-job-path";
+	for operands in [
+		&["get", "secret-source", "secret-target"][..],
+		&["recover", "remote-resume", "secret-job"][..],
+	] {
+		let without_profile_value = operands
+			.iter()
+			.copied()
+			.chain(["--profile", flag])
+			.chain(GRANTS[2..].iter().copied())
+			.map(OsString::from);
+		let Err(missing_error) = parse(without_profile_value) else {
+			panic!("accepted job path flag in place of the owner grant");
+		};
+		assert!(!missing_error.contains("secret-"));
+
+		let duplicates = args(operands).chain([flag.into(), flag.into()]);
+		let Err(conflict_error) = parse(duplicates) else {
+			panic!("accepted duplicate path display flags");
+		};
+		assert!(!conflict_error.contains("secret-"));
 	}
 }
 

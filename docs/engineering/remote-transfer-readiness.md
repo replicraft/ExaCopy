@@ -1,5 +1,16 @@
 # Remote transfer release readiness
 
+## Remote report privacy
+
+Foreground download and resume text show the retained job UUID by default.
+The operator can opt in to the local path and its exact bytes with
+`--show-job-path`, including in text fallback after a report-write failure.
+Explicit JSON stdout includes the versioned recovery locators and remains an
+operator result for protected custody. This addresses default path disclosure
+in these remote CLI text outputs. R-174/A-174 acceptance remains open for the
+broader structured diagnostic contract, including effect phase, range context
+where relevant, safe next actions, and privacy coverage across operations.
+
 ## Exact published testing archive
 
 The [v0.1.0-preview.2 Linux testing release](../releases/v0.1.0-preview.2.md)

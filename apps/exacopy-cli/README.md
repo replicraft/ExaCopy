@@ -434,8 +434,16 @@ Successful byte-zero publication includes a committed receipt and reports
 qualification digests, exact stream length and BLAKE3, and the retained job
 pathname with its original bytes in hex. It distinguishes observed file
 and directory barriers from the required process-crash qualification.
-Power-loss durability remains outside the profile. Human-readable output
-is the default.
+Power-loss durability remains outside the profile.
+
+Human-readable output is the default. It shows the retained job UUID while
+redacting the directory and its raw bytes. Add `--show-job-path` after the
+operands to display the local job path and its exact bytes in text output.
+This option also applies to stderr if writing a report fails. The selected
+`--format json` stdout result is a sensitive artifact. It includes the
+path and its exact bytes whenever it identifies a retained job, including
+in error results. Keep it in protected storage and separate from diagnostic
+logs. Selecting JSON by itself leaves stderr diagnostics redacted.
 
 The default-off Linux `experimental-verified-prefix-resume` feature adds a
 first witnessed continuation of a clean original capture. It requires explicit
@@ -454,9 +462,12 @@ original qualified executable and current matching native facts, the protected
 report, and both qualification/trust pairs. It loads no private owner key and
 opens no SSH connection. A version 1.0 report lacks the required archive selection.
 
-Select the reported retained job to resume. The command authenticates its
-signed scope and checks the current authority again. Clean pre-intent
-history can start a fresh attempt with a newly authenticated session,
+Pass the retained directory as `JOB` to `recover remote-resume`. For a
+new download, join the original target's parent with `.exacopy-<job UUID>`
+using the UUID in the human result. A resume invocation already supplies
+the path. The command authenticates its signed scope and checks the current
+authority again. Clean pre-intent history can start a fresh attempt
+with a newly authenticated session,
 reading from byte zero into a new private stage. Prior private attempts
 remain available as evidence. Resume uses the recorded source, route and
 destination. If a clean pre-intent job's target is already occupied, resume
@@ -494,8 +505,8 @@ confirmed cancellation can exit 10. Pending effects or uncertain evidence
 can still require exit 9. The `publication` field may be `not_published`,
 `publication_uncertain` or `published`, including when completed evidence
 needs reconciliation. If writing the final report fails after publication,
-the CLI attempts to report the retained receipt and job on stderr and exits
-4.
+the CLI attempts to report the retained receipt digest and job UUID on
+stderr and exits 4.
 
 | Exit | Outcome |
 | --- | --- |

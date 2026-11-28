@@ -79,11 +79,12 @@ pub(crate) fn run_with_output(
 		#[cfg(all(target_os = "linux", feature = "experimental-ssh-capture"))]
 		Command::Remote(remote) => {
 			let outcome = crate::remote::execute(&remote);
-			let code = match outcome.write(remote.options.format, &mut stdout, &mut stderr) {
-				Ok(()) => outcome.exit_code(),
-				Err(_) => outcome.failed_output(&mut stderr),
-			};
-			ExitCode::from(code)
+			ExitCode::from(outcome.write(
+				remote.options.format,
+				remote.options.job_path_display,
+				&mut stdout,
+				&mut stderr,
+			))
 		}
 		#[cfg(all(target_os = "linux", feature = "experimental-linux-public-apply"))]
 		Command::InspectPublicStage(command) => ExitCode::from(crate::public_stage_inspect::run(
