@@ -67,7 +67,7 @@ APFS_CASES = {
     "apfs_inspect::report::tests::apfs_inspection_keeps_reconciliation_separate_from_history_and_receipt",
     "assembly::macos::job::tests::cli_inspection::apfs_inspect_dispatch_binds_the_independent_selection_and_preserves_the_job",
 }
-APFS_DEFAULT_CASE = "args::parser::tests::inspect_apfs_is_hidden_without_the_exact_target_and_feature"
+APFS_DEFAULT_CASE = "args::parser::recovery::tests::inspect_apfs_is_hidden_without_the_exact_target_and_feature"
 REQUIRED_CASES = {
     "remote": {REMOTE_CASE, REMOTE_PREFLIGHT_CASE} | SSH_SESSION_CASES,
     "public-stage": PUBLIC_STAGE_CASES,

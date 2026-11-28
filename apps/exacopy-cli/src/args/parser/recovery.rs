@@ -14,6 +14,11 @@ use crate::args::{Command, RecoveryAction, RecoveryCommand, SourceRecoveryAction
 
 #[cfg(all(target_os = "macos", feature = "experimental-apfs-copy"))]
 mod apfs;
+#[cfg(all(
+	test,
+	not(all(target_os = "macos", feature = "experimental-apfs-copy"))
+))]
+mod tests;
 
 const INSPECT: &str = "inspect";
 const FINISH: &str = "finish";
