@@ -12,7 +12,7 @@ use exacopy_endpoint::linux_job::JobWorkspace;
 use exacopy_journal::frame::{ChainHead, FrameKind};
 use exacopy_journal::{
 	DurableJournal, DurableJournalError, LinuxFileIdentity, OwnerDigest, OwnerTimestamp,
-	PublicApplyIntent,
+	PublicApplyIntent, SyncedFrame,
 };
 use exacopy_model::{CopyBinding, CopyEffect, CopyEvent};
 
@@ -144,9 +144,23 @@ where
 	J::Segment: JournalSegment,
 	A: CheckedApplyAuthority,
 {
-	let execute =
-		prepare_checked_public_plan::<S, D, J, A>(roots, request, selection, authority, scratch)?;
+	let execute = prepare_checked_public_plan::<S, D, J, A>(
+		roots,
+		request,
+		selection,
+		authority,
+		scratch,
+		|closeout: CheckedChildCloseout<'_, 'name>| CheckedApply {
+			receipt: *closeout.receipt,
+			terminal: closeout.terminal.head(),
+		},
+	)?;
 	execute()
+}
+
+struct CheckedChildCloseout<'held, 'name> {
+	receipt: &'held PublicApplyReceipt<'name>,
+	terminal: &'held SyncedFrame,
 }
 
 struct AdmittedApply<'name, Source> {
@@ -164,6 +178,7 @@ fn prepare_checked_public_plan<'root, 'name, S, D, J, A>(
 	selection: PublicApplyIntentSelection,
 	authority: &A,
 	scratch: &mut [u8],
+	finish: impl for<'held> FnOnce(CheckedChildCloseout<'held, 'name>) -> CheckedApply<'name>,
 ) -> PreparedResult<'root, S, D, J, A, impl FnOnce() -> ApplyResult<'root, 'name, S, D, J, A>>
 where
 	S: ExactSourceRoot<Source: CopySource<Identity = J::Identity, Metadata = J::Metadata>>,
@@ -194,6 +209,7 @@ where
 				binding,
 				admitted,
 			},
+			finish,
 		)
 	})
 }
@@ -205,6 +221,7 @@ fn execute_checked_public_plan<'root, 'name, S, D, J, A>(
 	authority: &A,
 	scratch: &mut [u8],
 	preflight: AdmittedApply<'name, S::Source>,
+	finish: impl for<'held> FnOnce(CheckedChildCloseout<'held, 'name>) -> CheckedApply<'name>,
 ) -> ApplyResult<'root, 'name, S, D, J, A>
 where
 	S: ExactSourceRoot<Source: CopySource<Identity = J::Identity, Metadata = J::Metadata>>,
@@ -389,10 +406,11 @@ where
 		})?;
 	closeout::model_observation(&mut session, binding, CopyEvent::ReceiptRecorded)
 		.map_err(Published)?;
-	Ok(CheckedApply {
-		receipt: finished.receipt,
-		terminal: finished.terminal.head(),
-	})
+	// Project success before the original job, receipt and published target are dropped.
+	Ok(finish(CheckedChildCloseout {
+		receipt: &finished.receipt,
+		terminal: &finished.terminal,
+	}))
 }
 
 fn observe_current<R, S, P, C, A: CheckedApplyAuthority>(
