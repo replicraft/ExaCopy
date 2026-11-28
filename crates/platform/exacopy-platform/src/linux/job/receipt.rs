@@ -17,6 +17,9 @@ use super::super::source::{
 use super::super::stage::{FILE_MODE, check_named_file};
 use super::{JobDirectory, RECEIPT, ReceiptDirectory, StageError};
 
+#[cfg(test)]
+mod tests;
+
 // Fits both registered local copy receipt formats independently of their codecs.
 const MAX_RECEIPT_BYTES: usize = 1024;
 
