@@ -27,7 +27,7 @@ mod metadata;
 	unsafe_code,
 	reason = "verified Windows object query and single handle-relative no-replace rename"
 )]
-mod native;
+pub(in crate::windows) mod native;
 mod reopen;
 
 pub use destination::{

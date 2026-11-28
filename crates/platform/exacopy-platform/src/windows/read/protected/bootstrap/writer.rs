@@ -22,7 +22,7 @@ use super::{
 /// remain no-ops, and invalid write bounds may be refused before native work.
 /// These outcomes do not reestablish usable custody.
 pub struct WindowsBootstrapFreshSegment<'name> {
-	records: WindowsBootstrapRecords<'name>,
+	pub(super) records: WindowsBootstrapRecords<'name>,
 	cursor: usize,
 	retired: Cell<bool>,
 }
@@ -44,13 +44,27 @@ impl<'name> WindowsBootstrapFreshSegment<'name> {
 		expected: WindowsBootstrapRoleObservations,
 		layout: WindowsBootstrapLayout<'name>,
 	) -> Result<Self, Error> {
+		Self::open_for_scope(root_path, expected, layout, false)
+	}
+
+	pub(super) fn open_for_scope(
+		root_path: &'name [u16],
+		expected: WindowsBootstrapRoleObservations,
+		layout: WindowsBootstrapLayout<'name>,
+		capture_job: bool,
+	) -> Result<Self, Error> {
 		let root = WindowsBootstrapRootSelection {
 			volume_guid: expected.root.volume_guid(),
 			volume_serial: expected.root.volume_serial(),
 			file_id: expected.root.file_id(),
 		};
-		let records =
-			WindowsBootstrapRecords::open_with_access(root_path, root, layout, Some(expected))?;
+		let records = WindowsBootstrapRecords::open_with_access(
+			root_path,
+			root,
+			layout,
+			Some(expected),
+			capture_job,
+		)?;
 		records.owner.eof()?;
 		records.segment.eof()?;
 		records.recheck()?;
@@ -61,7 +75,7 @@ impl<'name> WindowsBootstrapFreshSegment<'name> {
 		})
 	}
 
-	fn check(&self) -> io::Result<()> {
+	pub(super) fn check(&self) -> io::Result<()> {
 		if self.retired.get() {
 			return Err(io::Error::other("Windows bootstrap segment retired"));
 		}

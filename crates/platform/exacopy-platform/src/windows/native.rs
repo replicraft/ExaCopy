@@ -138,6 +138,22 @@ pub(super) fn open_relative_entry_observed(
 	request: RelativeFileOpen,
 	kind: Kind,
 ) -> Result<(OwnedHandle, usize), Refusal> {
+	// SAFETY: The default open passes no descriptor.
+	unsafe { open_relative_entry_with_descriptor(parent, name, request, kind, None) }
+}
+
+/// # Safety
+///
+/// A supplied descriptor must be a complete, aligned self-relative Windows
+/// security descriptor whose offsets and component lengths fit in the slice.
+/// It must remain initialized and readable throughout the synchronous open.
+pub(super) unsafe fn open_relative_entry_with_descriptor(
+	parent: BorrowedHandle<'_>,
+	name: WindowsComponent<'_>,
+	request: RelativeFileOpen,
+	kind: Kind,
+	descriptor: Option<&[u32]>,
+) -> Result<(OwnedHandle, usize), Refusal> {
 	let kind = match kind {
 		Kind::Directory => FILE_DIRECTORY_FILE,
 		Kind::RegularFile => FILE_NON_DIRECTORY_FILE,
@@ -157,13 +173,14 @@ pub(super) fn open_relative_entry_observed(
 		RootDirectory: parent.as_raw_handle(),
 		ObjectName: &mut native_name,
 		Attributes: request.attributes,
-		SecurityDescriptor: null_mut(),
+		SecurityDescriptor: descriptor.map_or(null_mut(), |data| data.as_ptr().cast_mut().cast()),
 		SecurityQualityOfService: null_mut(),
 	};
 	let mut handle = null_mut();
 	let mut status_block = IO_STATUS_BLOCK::default();
 	// SAFETY: The borrowed parent stays live and all arguments point to initialized storage
-	// that lives through the synchronous call. The counted, admitted name has one component.
+	// that lives through the synchronous call. If present, the aligned caller-approved
+	// self-relative creation descriptor also stays live. The name has one component.
 	// The open uses a scoped disposition and opens the named entry itself on a reparse point.
 	let status = unsafe {
 		NtCreateFile(

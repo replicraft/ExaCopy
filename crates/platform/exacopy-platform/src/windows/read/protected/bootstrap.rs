@@ -12,11 +12,15 @@ use super::{
 
 const MAX_RECORD_BYTES: usize = 4096;
 
+mod capture_stage;
 mod record;
 mod writer;
 
 use record::{MetadataPin, Record};
 
+pub use capture_stage::{
+	WindowsCaptureStageError, WindowsCaptureStageScope, WindowsCaptureStageWriter,
+};
 pub use writer::WindowsBootstrapFreshSegment;
 
 /// Expected native kind of a held fixture or provisioned bootstrap role.
@@ -115,6 +119,7 @@ pub struct WindowsBootstrapRecords<'name> {
 	layout: WindowsBootstrapLayout<'name>,
 	root: Directory,
 	job: Directory,
+	capture_job: bool,
 	journal: Directory,
 	owner: Record,
 	segment: Record,
@@ -134,7 +139,7 @@ impl<'name> WindowsBootstrapRecords<'name> {
 		expected: WindowsBootstrapRootSelection,
 		layout: WindowsBootstrapLayout<'name>,
 	) -> Result<Self, Error> {
-		Self::open_with_access(root_path, expected, layout, None)
+		Self::open_with_access(root_path, expected, layout, None, false)
 	}
 
 	fn open_with_access(
@@ -142,6 +147,7 @@ impl<'name> WindowsBootstrapRecords<'name> {
 		expected: WindowsBootstrapRootSelection,
 		layout: WindowsBootstrapLayout<'name>,
 		fresh_roles: Option<WindowsBootstrapRoleObservations>,
+		capture_job: bool,
 	) -> Result<Self, Error> {
 		for length in [layout.owner_bytes, layout.first_segment_bytes] {
 			if length == 0 || length > MAX_RECORD_BYTES {
@@ -174,7 +180,11 @@ impl<'name> WindowsBootstrapRecords<'name> {
 		{
 			return Err(Error::Changed);
 		}
-		let job = open_directory(&root, layout.job, &subject, acl::Role::Private)?;
+		let job = if capture_job {
+			capture_stage::open_job_for_capture(&root, layout.job, &subject)?
+		} else {
+			open_directory(&root, layout.job, &subject, acl::Role::Private)?
+		};
 		let journal = open_directory(&job, layout.journal, &subject, acl::Role::Private)?;
 		let owner = MetadataPin::open(
 			&job,
@@ -227,6 +237,7 @@ impl<'name> WindowsBootstrapRecords<'name> {
 			layout,
 			root,
 			job,
+			capture_job,
 			journal,
 			owner,
 			segment,
@@ -298,7 +309,11 @@ impl<'name> WindowsBootstrapRecords<'name> {
 			check_directory(parent, child, name)?;
 		}
 		check_directory(last(&self.ancestors)?, &self.root, self.path.leaf)?;
-		check_directory(&self.root, &self.job, self.layout.job)?;
+		if self.capture_job {
+			capture_stage::check_capture_job(&self.root, &self.job, self.layout.job)?;
+		} else {
+			check_directory(&self.root, &self.job, self.layout.job)?;
+		}
 		check_directory(&self.job, &self.journal, self.layout.journal)?;
 		self.owner.check(&self.job, self.layout.owner)?;
 		self.segment

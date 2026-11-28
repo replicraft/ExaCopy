@@ -31,7 +31,7 @@ struct ObjectBasic {
 	reserved: [u32; 10],
 }
 
-pub(super) fn require_access(
+pub(in crate::windows) fn require_access(
 	parent: BorrowedHandle<'_>,
 	required: u32,
 ) -> Result<(), WindowsPublicationError> {
@@ -80,7 +80,7 @@ pub(super) fn require_fixed_ntfs(
 	Ok(())
 }
 
-pub(super) fn require_case_insensitive(
+pub(in crate::windows) fn require_case_insensitive(
 	parent: BorrowedHandle<'_>,
 ) -> Result<(), WindowsPublicationError> {
 	let mut info = FILE_CASE_SENSITIVE_INFO::default();

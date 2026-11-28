@@ -27,7 +27,7 @@ mod error;
 	reason = "bounded handle observations and consuming Windows handle close"
 )]
 mod handles;
-mod publication;
+pub(super) mod publication;
 
 use handles::{Stamp, close_writer, stamp};
 
@@ -45,7 +45,7 @@ pub use publication::{
 pub const MAX_WINDOWS_STAGE_IO_BYTES: usize = 4 * 1024 * 1024;
 
 // NtCreateFile's FILE_CREATED and FILE_OPENED values in IO_STATUS_BLOCK.Information.
-const FILE_CREATED_INFORMATION: usize = 2;
+pub(in crate::windows) const FILE_CREATED_INFORMATION: usize = 2;
 const FILE_OPENED_INFORMATION: usize = 1;
 const READ_ACCESS: u32 = FILE_READ_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE;
 
@@ -84,20 +84,38 @@ impl<'root> WindowsStageDirectory<'root> {
 		name: WindowsComponent<'stage>,
 		length: u64,
 	) -> Result<WindowsStageWriter<'stage>, WindowsStageError> {
+		self.create_with(name, length, |request| self.open(name, request))
+	}
+
+	#[cfg(feature = "experimental-windows-read")]
+	pub(super) fn create_protected<'stage>(
+		&'stage self,
+		name: WindowsComponent<'stage>,
+		length: u64,
+		descriptor: &super::capture_creation::CreationDescriptor,
+	) -> Result<WindowsStageWriter<'stage>, WindowsStageError> {
+		self.create_with(name, length, |request| {
+			descriptor.create(self.handle, name, request, Kind::RegularFile)
+		})
+	}
+
+	fn create_with<'stage>(
+		&'stage self,
+		name: WindowsComponent<'stage>,
+		length: u64,
+		open: impl FnOnce(RelativeFileOpen) -> Result<OwnedHandle, Refusal>,
+	) -> Result<WindowsStageWriter<'stage>, WindowsStageError> {
 		if length > MAX_FILE_LENGTH {
 			return Err(WindowsStageError::InvalidExtent);
 		}
 		self.check()?;
-		let handle = match self.open(
-			name,
-			RelativeFileOpen {
-				access: GENERIC_WRITE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
-				share: FILE_SHARE_READ,
-				disposition: FILE_CREATE,
-				attributes: OBJ_DONT_REPARSE,
-				expected_result: Some(FILE_CREATED_INFORMATION),
-			},
-		) {
+		let handle = match open(RelativeFileOpen {
+			access: GENERIC_WRITE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+			share: FILE_SHARE_READ,
+			disposition: FILE_CREATE,
+			attributes: OBJ_DONT_REPARSE,
+			expected_result: Some(FILE_CREATED_INFORMATION),
+		}) {
 			Ok(handle) => handle,
 			Err(Refusal::OpenFailed(STATUS_OBJECT_NAME_COLLISION)) => {
 				return Err(WindowsStageError::Occupied);

@@ -15,9 +15,12 @@ use exacopy_journal::{DurableJournal, JournalJobId};
 use exacopy_platform::ProtectedSnapshotError;
 use exacopy_platform::windows::{
 	WindowsBootstrapFreshSegment, WindowsBootstrapLayout, WindowsBootstrapRoleKind,
-	WindowsBootstrapRoleObservations, WindowsComponent, WindowsStageIdentity,
-	observe_windows_bootstrap_role_identity,
+	WindowsBootstrapRoleObservations, WindowsCaptureStageScope, WindowsComponent,
+	WindowsStageIdentity, observe_windows_bootstrap_role_identity,
 };
+
+#[path = "fixture/capture_stage.rs"]
+mod capture_stage;
 
 const FILE_SHARE_READ_WRITE: u32 = 0x0000_0003;
 const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
@@ -246,7 +249,7 @@ pub(super) fn populate(
 			assert_eq!(observe_roles(&owner, &segment), original);
 			drop(owner);
 			drop(segment);
-			append_original_prepared(root, job, original, &bytes.first_segment);
+			append_original_prepared(root, drive, job, original, &bytes.first_segment);
 		}
 		SegmentPopulation::CopiedCounterexample => {
 			segment
@@ -261,6 +264,7 @@ pub(super) fn populate(
 
 fn append_original_prepared(
 	root: &Path,
+	drive: u8,
 	job: JournalJobId,
 	roles: WindowsBootstrapRoleObservations,
 	encoded: &[u8; FIRST_SEGMENT_BYTES],
@@ -288,6 +292,10 @@ fn append_original_prepared(
 		WindowsBootstrapFreshSegment::open_provisioned(&root_units, different, layout),
 		Err(ProtectedSnapshotError::Changed)
 	));
+	let capture = WindowsCaptureStageScope::open_provisioned(&root_units, roles, layout)
+		.expect("admit scoped stage creation in the original bootstrap job");
+	capture_stage::check(&capture, root, drive, job);
+	drop(capture);
 	let mut original = WindowsBootstrapFreshSegment::open_provisioned(&root_units, roles, layout)
 		.expect("admit the exact original empty segment");
 	assert!(matches!(

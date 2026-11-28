@@ -6,6 +6,12 @@ mod component;
 
 pub use component::{MAX_WINDOWS_COMPONENT_UNITS, WindowsComponent, WindowsNameError};
 
+#[cfg(all(
+	target_os = "windows",
+	feature = "experimental-windows-read",
+	feature = "experimental-windows-copy"
+))]
+mod capture_creation;
 #[cfg(all(target_os = "windows", feature = "experimental-windows-copy"))]
 mod identity;
 #[cfg(all(target_os = "windows", test, feature = "experimental-windows-copy"))]
@@ -71,5 +77,6 @@ pub(crate) use read::protected as protected_snapshot;
 pub use read::protected::bootstrap::{
 	WindowsBootstrapFreshSegment, WindowsBootstrapLayout, WindowsBootstrapRecords,
 	WindowsBootstrapRoleKind, WindowsBootstrapRoleObservations, WindowsBootstrapRootSelection,
-	WindowsBootstrapSegment, observe_windows_bootstrap_role_identity,
+	WindowsBootstrapSegment, WindowsCaptureStageError, WindowsCaptureStageScope,
+	WindowsCaptureStageWriter, observe_windows_bootstrap_role_identity,
 };

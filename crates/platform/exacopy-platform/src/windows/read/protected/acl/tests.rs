@@ -79,3 +79,30 @@ fn rejects_null_truncated_overlapping_and_unrecognized_dacl_semantics() {
 	let empty = security(USER, true, &[]);
 	assert!(approve(&empty, USER, Role::Private).is_ok());
 }
+
+#[cfg(feature = "experimental-windows-copy")]
+#[test]
+fn creation_descriptor_satisfies_private_acl_for_only_selected_user() {
+	use crate::windows::capture_creation::CreationDescriptor;
+
+	const OTHER: &[u8] = &[1, 2, 0, 0, 0, 0, 0, 5, 21, 0, 0, 0, 64, 0, 0, 0];
+	let descriptor = CreationDescriptor::private_for_sid(USER).unwrap();
+	let bytes = descriptor.bytes();
+	assert!(approve(&bytes, USER, Role::Private).is_ok());
+	assert_eq!(
+		approve(&bytes, OTHER, Role::Private),
+		Err(Error::Unprotected)
+	);
+
+	// Refuse a forged trustee even if the correct owner SID remains intact.
+	let mut wrong_trustee = bytes.clone();
+	let trailer = wrong_trustee.len() - OTHER.len();
+	wrong_trustee[trailer..].copy_from_slice(OTHER);
+	assert_eq!(
+		approve(&wrong_trustee, USER, Role::Private),
+		Err(Error::Unprotected)
+	);
+	for length in 0..bytes.len() {
+		assert!(approve(&bytes[..length], USER, Role::Private).is_err());
+	}
+}
