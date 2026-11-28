@@ -5,10 +5,9 @@ use std::os::windows::fs::OpenOptionsExt as _;
 
 use super::{
 	FILE_FLAG_OPEN_REPARSE_POINT, File, JournalJobId, OpenOptions, OsString, Path,
-	WindowsBootstrapRoleKind, WindowsCaptureStageScope, WindowsComponent, directory,
-	job_directory_name, observe,
+	WindowsBootstrapRoleKind, WindowsComponent, directory, job_directory_name, observe,
 };
-use exacopy_platform::windows::WindowsCaptureStageError;
+use exacopy_platform::windows::{WindowsCaptureStageError, WindowsCaptureStageScope};
 
 const TARGET: &str = "owned-capture-target";
 const TARGET_ALIAS: &str = "OWNED-CAPTURE-TARGET";
