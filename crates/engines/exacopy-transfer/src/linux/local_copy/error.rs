@@ -61,6 +61,8 @@ pub enum CopyError<R, S, P> {
 	},
 	/// An already-published copy's receipt could not be constructed.
 	Receipt(ReceiptError),
+	/// An already-published copy's synchronized receipt commitment failed journal readback.
+	ReceiptJournalReadback(DurableJournalError),
 	/// An already-published copy's receipt namespace or directory barrier failed.
 	ReceiptNamespace(S),
 	/// An already-published copy's receipt could not be written or synchronized.
@@ -123,6 +125,10 @@ impl<R: fmt::Display, S: fmt::Display, P: fmt::Display> fmt::Display for CopyErr
 				formatter,
 				"could not construct the published copy's receipt ({error})"
 			),
+			Self::ReceiptJournalReadback(error) => write!(
+				formatter,
+				"could not confirm the published copy's receipt commitment ({error})"
+			),
 			Self::ReceiptNamespace(error) => write!(
 				formatter,
 				"could not synchronize the receipt namespace ({error})"
@@ -151,7 +157,7 @@ impl<R: Error + 'static, S: Error + 'static, P: Error + 'static> Error for CopyE
 			Self::Stage(error) => Some(error),
 			Self::Verification(error) => Some(error),
 			Self::Timestamp(error) => Some(error),
-			Self::Journal { source, .. } => Some(source),
+			Self::Journal { source, .. } | Self::ReceiptJournalReadback(source) => Some(source),
 			Self::PublicationRecord(error) => Some(error),
 			Self::Publication { source, .. } => Some(source),
 			Self::Receipt(error) => Some(error),

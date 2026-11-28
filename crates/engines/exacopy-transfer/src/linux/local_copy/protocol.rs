@@ -34,6 +34,7 @@ pub(in crate::linux) enum ProtocolError<R, S, P> {
 		recording: Option<DurableJournalError>,
 	},
 	Receipt(ReceiptError),
+	ReceiptJournalReadback(DurableJournalError),
 	ReceiptNamespace(S),
 	ReceiptIo(io::Error),
 }
@@ -191,8 +192,11 @@ pub(super) fn persist_receipt<R, P, J: FreshReceiptWorkspace>(
 		durability.head(),
 	)
 	.map_err(ProtocolError::Record)?;
-	let _ = append(journal, FrameKind::ReceiptCommitted, &committed.encode())?;
+	let synced = append(journal, FrameKind::ReceiptCommitted, &committed.encode())?;
 	checkpoint(CopyCheckpoint::ReceiptCommitted);
+	journal
+		.confirm_current_frame(&synced)
+		.map_err(ProtocolError::ReceiptJournalReadback)?;
 	held.read_exact_receipt(observed)
 		.map_err(ProtocolError::ReceiptNamespace)?;
 	if observed[..] != exact[..] {

@@ -223,6 +223,7 @@ impl<R, S, P> From<ProtocolError<R, S, P>> for CopyError<R, S, P> {
 				Self::Publication { source, recording }
 			}
 			ProtocolError::Receipt(error) => Self::Receipt(error),
+			ProtocolError::ReceiptJournalReadback(error) => Self::ReceiptJournalReadback(error),
 			ProtocolError::ReceiptNamespace(error) => Self::ReceiptNamespace(error),
 			ProtocolError::ReceiptIo(error) => Self::ReceiptIo(error),
 		}

@@ -272,3 +272,5 @@ fn conflicting_destination_capabilities_refuse_before_private_job_creation() {
 
 #[path = "receipt_readback.rs"]
 mod receipt_readback;
+#[path = "terminal_journal.rs"]
+mod terminal_journal;

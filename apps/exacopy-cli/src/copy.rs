@@ -138,6 +138,7 @@ fn copy_failure(error: LocalCopyError) -> CopyFailure {
 			..
 		}
 		| LocalCopyError::Receipt(_)
+		| LocalCopyError::ReceiptJournalReadback(_)
 		| LocalCopyError::ReceiptNamespace(_)
 		| LocalCopyError::ReceiptIo(_) => PublicationStatus::Published,
 		_ if matches!(code, ErrorKind::RecoveryRequired) => PublicationStatus::Uncertain,
@@ -306,6 +307,7 @@ mod tests {
 	fn confirmed_publication_remains_visible_when_closeout_fails() {
 		for cause in [
 			LocalCopyError::Receipt(ReceiptError::InvalidDurabilityFrame),
+			LocalCopyError::ReceiptJournalReadback(DurableJournalError::UnexpectedHead),
 			LocalCopyError::ReceiptNamespace(StageError::DirectoryBarrierFailed(Errno::IO.into())),
 			LocalCopyError::ReceiptIo(Errno::NOSPC.into()),
 			journal_sync_failure(FrameKind::PublishObserved),
