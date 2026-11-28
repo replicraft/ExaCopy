@@ -99,12 +99,21 @@ else
 fi
 kani_log=$(mktemp "${EXACOPY_VERIFICATION_SCRATCH:-${TMPDIR:-/tmp}}/exacopy-endpoint-kani.XXXXXX")
 trap 'rm -f "$kani_log"' EXIT
-kani_status=0
 # Leave reachability and unwinding checks enabled. The outer evidence recorder
 # also bounds this entire gate, including compilation and all harnesses.
+set +e
 CARGO_NET_OFFLINE=true "${cargo[@]}" kani --package exacopy-endpoint --lib --exact \
 	"${harnesses[@]}" --output-format regular -Z unstable-options \
-	--harness-timeout "$harness_timeout" 2>&1 | tee "$kani_log" || kani_status=$?
+	--harness-timeout "$harness_timeout" 2>&1 | tee "$kani_log"
+pipeline_status=("${PIPESTATUS[@]}")
+set -e
+kani_status=${pipeline_status[0]}
+log_status=${pipeline_status[1]}
+if (( log_status != 0 )); then
+	printf 'Could not retain the retry Kani log (tee exit %s, Kani exit %s).\n' \
+		"$log_status" "$kani_status" >&2
+	exit "$log_status"
+fi
 
 if [[ "$(LC_ALL=C shasum -a 256 Cargo.lock)" != "$lock_before" ]]; then
 	printf 'Cargo.lock changed during retry Kani verification.\n' >&2
@@ -136,8 +145,11 @@ check_minisat_solver() {
 }
 
 if [[ -n "$mutation" ]]; then
-	if (( kani_status == 0 )) ||
-		! grep -Fxq 'Complete - 0 successfully verified harnesses, 1 failures, 1 total.' "$kani_log" ||
+	if (( kani_status != 1 )); then
+		printf 'Retry mutation %s requires Kani exit 1, observed %s.\n' "$mutation" "$kani_status" >&2
+		exit 1
+	fi
+	if ! grep -Fxq 'Complete - 0 successfully verified harnesses, 1 failures, 1 total.' "$kani_log" ||
 		! awk -v harness="$harness" -v assertion="$assertion" '
 			/^Checking harness .*\.\.\.$/ {
 				seen++

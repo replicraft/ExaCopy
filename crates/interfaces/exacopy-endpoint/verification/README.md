@@ -24,7 +24,7 @@ The health case samples elapsed whole seconds from zero to sixty and the instant
 
 Each patch in `verification/kani/mutations/` alters one scheduler guard. Apply one patch at a time from the workspace root of a disposable checkout of this integrated revision. The checker does not change tracked source and refuses a mutation run unless `src/connection_retry.rs` has the exact selected mutated SHA-256. Retain raw output and the exit status from each run. Remove the disposable checkout when the evidence is retained. Run the clean gate independently.
 
-For each patch, use `git apply --unidiff-zero crates/interfaces/exacopy-endpoint/verification/kani/mutations/ID.patch` in the disposable workspace, then `crates/interfaces/exacopy-endpoint/verification/check.sh mutation ID`. The mutation gate requires an actual failed assertion in the only selected harness. A successful mutant, a failed unwinding assertion, or a setup, compilation, timeout or tool failure invalidates the control.
+For each patch, use `git apply --unidiff-zero crates/interfaces/exacopy-endpoint/verification/kani/mutations/ID.patch` in the disposable workspace, then `crates/interfaces/exacopy-endpoint/verification/check.sh mutation ID`. The gate requires the log writer to exit successfully. The mutation gate also requires Kani exit 1, the one-harness failure summary and the named failed assertion. A successful mutant, a failed unwinding assertion, or a setup, compilation, timeout, tool or log-write failure invalidates the control.
 
 | ID | Input that must expose the change | Target assertion |
 | --- | --- | --- |
