@@ -58,9 +58,8 @@ fn final_refusal_and_late_incumbent_leave_the_exact_private_stage() {
 			if conflict {
 				assert!(matches!(
 					attempt,
-					Err(CheckedRenameFailure::Conflict(CheckedStageError::Rename(
-						PublishError::Conflict
-					)))
+					Err(CheckedRenameFailure::Conflict(CheckedStageError::Rename(cause)))
+						if matches!(cause.as_ref(), PublishError::Conflict)
 				));
 				assert_ne!(identity(&target), initial);
 				assert_eq!(fs::read(target).unwrap(), b"incumbent");
@@ -221,38 +220,35 @@ fn settlement_attempts_both_original_barriers_even_after_ambiguous_return_or_fai
 					barriers,
 				}) if !ambiguous && incomplete => (observation, barriers),
 				Err(CheckedRenameFailure::Uncertain {
-					cause: CheckedStageError::Rename(PublishError::Uncertain(_)),
+					cause: CheckedStageError::Rename(cause),
 					observation,
 					barriers,
-				}) if ambiguous => (observation, barriers),
+				}) if ambiguous && matches!(cause.as_ref(), PublishError::Uncertain(_)) => {
+					(observation, barriers)
+				}
 				unexpected => panic!("unexpected settlement: {unexpected:?}"),
 			};
 			match (observation_drift, observation) {
-				(false, None)
-				| (true, Some(CheckedStageError::Custody(StageError::MetadataMismatch))) => {}
+				(false, None) => {}
+				(true, Some(CheckedStageError::Custody(cause)))
+					if matches!(cause.as_ref(), StageError::MetadataMismatch) => {}
 				unexpected => panic!("unexpected post-rename observation: {unexpected:?}"),
 			}
+			let barriers = match barriers.as_ref() {
+				None => None,
+				Some(CheckedStageError::Barriers(cause)) => Some(cause.as_ref()),
+				unexpected => panic!("unexpected barrier error type: {unexpected:?}"),
+			};
 			match (stage_error, destination_error, barriers) {
 				(None, None, None) => {}
-				(
-					Some(expected),
-					None,
-					Some(CheckedStageError::Barriers(DirectoryBarriersError::Stage(cause))),
-				)
-				| (
-					None,
-					Some(expected),
-					Some(CheckedStageError::Barriers(DirectoryBarriersError::Destination(cause))),
-				) => {
+				(Some(expected), None, Some(DirectoryBarriersError::Stage(cause)))
+				| (None, Some(expected), Some(DirectoryBarriersError::Destination(cause))) => {
 					assert_eq!(cause.raw_os_error(), Some(expected.raw_os_error()));
 				}
 				(
 					Some(expected_stage),
 					Some(expected_destination),
-					Some(CheckedStageError::Barriers(DirectoryBarriersError::Both {
-						stage,
-						destination,
-					})),
+					Some(DirectoryBarriersError::Both { stage, destination }),
 				) => {
 					assert_eq!(stage.raw_os_error(), Some(expected_stage.raw_os_error()));
 					assert_eq!(

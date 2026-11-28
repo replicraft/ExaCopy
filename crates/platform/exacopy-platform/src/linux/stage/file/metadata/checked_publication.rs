@@ -25,13 +25,27 @@ mod tests;
 #[non_exhaustive]
 pub enum CheckedStageError {
 	/// The original stage or namespace refused readiness or observation.
-	Custody(StageError),
+	Custody(Box<StageError>),
 	/// The supplied model permit names another attempt.
 	Binding,
 	/// The exact submitted no-replace result.
-	Rename(PublishError),
+	Rename(Box<PublishError>),
 	/// A separately recorded failure of one or both original-directory barriers.
-	Barriers(DirectoryBarriersError),
+	Barriers(Box<DirectoryBarriersError>),
+}
+
+impl CheckedStageError {
+	fn custody(cause: StageError) -> Self {
+		Self::Custody(Box::new(cause))
+	}
+
+	fn rename(cause: PublishError) -> Self {
+		Self::Rename(Box::new(cause))
+	}
+
+	fn barriers(cause: DirectoryBarriersError) -> Self {
+		Self::Barriers(Box::new(cause))
+	}
 }
 
 impl fmt::Display for CheckedStageError {
@@ -52,10 +66,10 @@ impl fmt::Display for CheckedStageError {
 impl Error for CheckedStageError {
 	fn source(&self) -> Option<&(dyn Error + 'static)> {
 		match self {
-			Self::Custody(cause) => Some(cause),
+			Self::Custody(cause) => Some(cause.as_ref()),
 			Self::Binding => None,
-			Self::Rename(cause) => Some(cause),
-			Self::Barriers(cause) => Some(cause),
+			Self::Rename(cause) => Some(cause.as_ref()),
+			Self::Barriers(cause) => Some(cause.as_ref()),
 		}
 	}
 }
@@ -112,7 +126,7 @@ impl<'stage> ClosedStage<'stage> {
 		}
 		let (before, facts) = self
 			.checked_readiness()
-			.map_err(|cause| Failure::Preflight(CheckedStageError::Custody(cause)))?;
+			.map_err(|cause| Failure::Preflight(CheckedStageError::custody(cause)))?;
 		let names = self.checked_names();
 		let fence = final_check().map_err(Failure::Refused)?;
 		let guard = enter(fence, facts).map_err(Failure::Admission)?;
@@ -122,12 +136,12 @@ impl<'stage> ClosedStage<'stage> {
 		let ambiguous = match rename {
 			Ok(()) => None,
 			Err(cause @ PublishError::Conflict) => {
-				return Err(Failure::Conflict(CheckedStageError::Rename(cause)));
+				return Err(Failure::Conflict(CheckedStageError::rename(cause)));
 			}
 			Err(cause @ PublishError::Unsupported(_)) => {
-				return Err(Failure::NotPerformed(CheckedStageError::Rename(cause)));
+				return Err(Failure::NotPerformed(CheckedStageError::rename(cause)));
 			}
-			Err(cause) => Some(CheckedStageError::Rename(cause)),
+			Err(cause) => Some(CheckedStageError::rename(cause)),
 		};
 
 		// Neither expiry nor a failed observation stops settlement of a submitted rename.
@@ -142,8 +156,8 @@ impl<'stage> ClosedStage<'stage> {
 		if let Some(cause) = ambiguous {
 			return Err(Failure::Uncertain {
 				cause,
-				observation: observation.err().map(CheckedStageError::Custody),
-				barriers: barriers.err().map(CheckedStageError::Barriers),
+				observation: observation.err().map(CheckedStageError::custody),
+				barriers: barriers.err().map(CheckedStageError::barriers),
 			});
 		}
 		match (observation, barriers) {
@@ -152,8 +166,8 @@ impl<'stage> ClosedStage<'stage> {
 				settled,
 			}),
 			(observation, barriers) => Err(Failure::PublishedIncomplete {
-				observation: observation.err().map(CheckedStageError::Custody),
-				barriers: barriers.err().map(CheckedStageError::Barriers),
+				observation: observation.err().map(CheckedStageError::custody),
+				barriers: barriers.err().map(CheckedStageError::barriers),
 			}),
 		}
 	}
@@ -167,8 +181,8 @@ impl HeldCheckedPublication for NativePublishedStage<'_> {
 		let current = self
 			.stage
 			.observe_renamed(&names, &self.settled)
-			.map_err(CheckedStageError::Custody)?;
-		check_same_metadata(&self.settled, &current).map_err(CheckedStageError::Custody)?;
+			.map_err(CheckedStageError::custody)?;
+		check_same_metadata(&self.settled, &current).map_err(CheckedStageError::custody)?;
 		Ok(PublishedFacts {
 			target: self.stage.identity().into(),
 			stage_directory: self.stage.location.directory.identity().into(),
