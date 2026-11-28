@@ -311,7 +311,9 @@ fn admits_only_the_exact_repaired_transport_edges() {
 	let fixture = Fixture::new();
 	fixture.write("ExaCopy/Cargo.toml", "");
 	let root = fixture.root().join("ExaCopy");
-	for (name, version, consumer, features, kind) in [
+	const UNIX_FIXTURES: &str = r#"cfg(any(target_os = "linux", target_os = "macos"))"#;
+	const WINDOWS_FIXTURE: &str = r#"cfg(target_os = "windows")"#;
+	for (name, version, consumer, features, target) in [
 		("boringtun", "=0.7.1", "exacopy-wireguard", &[][..], None),
 		("russh", "=0.65.4", "exacopy-ssh", &["ring"][..], None),
 		(
@@ -319,19 +321,26 @@ fn admits_only_the_exact_repaired_transport_edges() {
 			"=0.65.4",
 			"exacopy-cli",
 			&["ring"][..],
-			Some("dev"),
+			Some(WINDOWS_FIXTURE),
+		),
+		(
+			"russh",
+			"=0.65.4",
+			"exacopy-cli",
+			&["ring"][..],
+			Some(UNIX_FIXTURES),
 		),
 		(
 			"russh",
 			"=0.65.4",
 			"exacopy-sftp",
 			&["ring"][..],
-			Some("dev"),
+			Some(UNIX_FIXTURES),
 		),
 	] {
 		fixture.write(&format!("local-deps/{name}/Cargo.toml"), "");
 		let path = fixture.root().join("local-deps").join(name);
-		let target = kind.map(|_| r#"cfg(any(target_os = "linux", target_os = "macos"))"#);
+		let kind = target.map(|_| "dev");
 		let dependency: Dependency = serde_json::from_value(serde_json::json!({
 			"name": name, "req": version, "kind": kind, "optional": kind.is_none(),
 			"uses_default_features": false, "features": features, "target": target, "path": path,
@@ -362,7 +371,19 @@ fn admits_only_the_exact_repaired_transport_edges() {
 		assert!(!allowed_transport_sibling(&root, consumer, &wrong));
 
 		let mut wrong = dependency.clone();
-		wrong.target = Some(r#"cfg(target_os = "windows")"#.parse().unwrap());
+		wrong.target = Some("cfg(windows)".parse().unwrap());
+		assert!(!allowed_transport_sibling(&root, consumer, &wrong));
+		if consumer != "exacopy-cli" {
+			wrong.target = Some(WINDOWS_FIXTURE.parse().unwrap());
+			assert!(!allowed_transport_sibling(&root, consumer, &wrong));
+		}
+
+		let mut wrong = dependency.clone();
+		wrong.uses_default_features = true;
+		assert!(!allowed_transport_sibling(&root, consumer, &wrong));
+
+		let mut wrong = dependency.clone();
+		wrong.rename = Some("substitute".into());
 		assert!(!allowed_transport_sibling(&root, consumer, &wrong));
 
 		let mut wrong = dependency;

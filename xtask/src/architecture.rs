@@ -360,6 +360,7 @@ fn allowed_apfs_sibling(
 
 fn allowed_transport_sibling(root: &Path, consumer: &str, dependency: &Dependency) -> bool {
 	const UNIX_FIXTURES: &str = r#"cfg(any(target_os = "linux", target_os = "macos"))"#;
+	const WINDOWS_FIXTURE: &str = r#"cfg(target_os = "windows")"#;
 	let target = dependency.target.as_ref().map(ToString::to_string);
 	let (version, features, optional): (&str, &[&str], bool) = match (
 		dependency.name.as_str(),
@@ -374,7 +375,10 @@ fn allowed_transport_sibling(root: &Path, consumer: &str, dependency: &Dependenc
 			"exacopy-cli" | "exacopy-sftp",
 			DependencyKind::Development,
 			Some(UNIX_FIXTURES),
-		) => ("=0.65.4", &["ring"], false),
+		)
+		| ("russh", "exacopy-cli", DependencyKind::Development, Some(WINDOWS_FIXTURE)) => {
+			("=0.65.4", &["ring"], false)
+		}
 		_ => return false,
 	};
 	if dependency.req.to_string() != version
