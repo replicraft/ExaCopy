@@ -77,7 +77,7 @@ lock_before=$(LC_ALL=C shasum -a 256 Cargo.lock)
 CARGO_NET_OFFLINE=true "${cargo[@]}" metadata --locked --format-version 1 \
 	--filter-platform "$target" > /dev/null
 
-# Require the exact six selected harnesses and all 15 cover goals.
+# Require the exact seven selected harnesses and all 16 cover goals.
 plans=(
 	kani_checks::connection_retry::permanent_and_uncertain_failures_never_redial=2
 	kani_checks::connection_retry::transient_backoff_is_bounded_and_claims_only_the_due_generation=1
@@ -85,6 +85,7 @@ plans=(
 	kani_checks::connection_retry::reconnect_requires_current_route_ssh_and_source_and_fences_retired_work=4
 	kani_checks::connection_retry::penalty_resets_only_after_current_verified_activity_and_health=3
 	kani_checks::connection_retry::clock_rollback_and_unrepresentable_wake_are_terminal=2
+	kani_checks::jitter_oracle::narrow_jitter_oracle_matches_widened_formula=1
 )
 harnesses=()
 harness_timeout=600s
@@ -164,6 +165,6 @@ if ! grep -Fxq "Complete - ${#plans[@]} successfully verified harnesses, 0 failu
 			exit wrong
 		}
 	' "$kani_log"; then
-	printf 'Retry Kani verification requires all six selected harnesses and fifteen covered goals.\n' >&2
+	printf 'Retry Kani verification requires all seven selected harnesses and sixteen covered goals.\n' >&2
 	exit 1
 fi

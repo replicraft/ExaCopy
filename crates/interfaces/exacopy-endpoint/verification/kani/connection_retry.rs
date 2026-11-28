@@ -9,6 +9,8 @@ use crate::connection_retry::{
 	SourceEpoch, TransientFailure, VerifiedHealth,
 };
 
+use super::jitter_oracle::{UPPER_MS, scaled_jitter_ms};
+
 const OWNER: RetryOwner = RetryOwner::new(NonZeroU128::MIN);
 const EPOCH: SourceEpoch = SourceEpoch::new(NonZeroU64::MIN);
 const TICK: Duration = Duration::from_nanos(1);
@@ -62,10 +64,7 @@ fn permanent_and_uncertain_failures_never_redial() {
 #[kani::proof]
 #[kani::unwind(12)]
 fn transient_backoff_is_bounded_and_claims_only_the_due_generation() {
-	// Independent literal policy windows through the first two capped retries.
-	const UPPER_MS: [u64; 8] = [1_000, 2_000, 4_000, 8_000, 16_000, 32_000, 60_000, 60_000];
 	const EXPECTED_NEXT_GENERATION: u64 = 9;
-	const SAMPLE_SPACE: u128 = 1 << u32::BITS;
 	let mut supervisor = RetrySupervisor::new(OWNER, Duration::MAX);
 	let mut now = Duration::ZERO;
 	for (index, ceiling_ms) in UPPER_MS.into_iter().enumerate() {
@@ -89,9 +88,8 @@ fn transient_backoff_is_bounded_and_claims_only_the_due_generation() {
 		let minimum_ms = ceiling_ms / 2;
 		let minimum = Duration::from_millis(minimum_ms);
 		let maximum = Duration::from_millis(ceiling_ms);
-		let inclusive_width = u128::from(ceiling_ms - minimum_ms + 1);
-		let scaled = u64::try_from(u128::from(sample) * inclusive_width / SAMPLE_SPACE)
-			.expect("jitter offset fits in the policy window");
+		let inclusive_width = ceiling_ms - minimum_ms + 1;
+		let scaled = scaled_jitter_ms(sample, inclusive_width);
 		kani::assert(
 			wake_at == now + Duration::from_millis(minimum_ms + scaled),
 			"every sample maps proportionally into the inclusive equal-jitter window",
