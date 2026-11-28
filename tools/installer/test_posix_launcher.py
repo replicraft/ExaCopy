@@ -7,6 +7,7 @@ from pathlib import Path
 import platform
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -326,6 +327,79 @@ def test_launcher(temporary, release):
     case.assert_selection(new)
 
 
+def test_v1_history_fence(temporary, release):
+    case = Installation(temporary, release, "separate history fence owner home")
+    old, new = case.original_version, case.next_version
+    case.run("install", "establish a signed v1 store for history fence checks", old)
+    case.assert_selection(old)
+    history = case.store / ".high-water"
+    lock = case.store / ".lifecycle-lock"
+    original = history.read_bytes()
+    (case.home / "incumbent").write_bytes(b"untouched fixture incumbent\x00")
+
+    def snapshot():
+        entries = {}
+        for path in case.home.rglob("*"):
+            node = path.lstat()
+            content = None
+            if stat.S_ISLNK(node.st_mode):
+                content = path.readlink()
+            elif stat.S_ISREG(node.st_mode):
+                content = path.read_bytes()
+            # A transient lifecycle lock can alter its parent's directory times.
+            entries[path.relative_to(case.home)] = (
+                node.st_dev, node.st_ino, node.st_mode, node.st_nlink, content,
+            )
+        return entries
+
+    def release_tuple(directory):
+        manifest = (directory / "release.manifest").read_bytes()
+        fields = dict(line.split("=", 1) for line in manifest.decode("ascii").splitlines())
+        signature = (directory / "release.sig").read_bytes()
+        return "|".join((fields["sequence"], fields["version"], sha256(manifest).hexdigest(),
+                         fields["sha256"], sha256(signature).hexdigest()))
+
+    # Proposal-shaped refusal fixtures. The compatibility digests are synthetic
+    # labels and confer no authority to a v2 controller.
+    floor = release_tuple(case.executable(old).parent)
+    candidate = release_tuple(Path(release["directory"]) / "launcher-upgrade")
+    owner = sha256((case.store / ".owner").read_bytes()).hexdigest()
+    selector = case.launcher.lstat()
+    _, _, manifest_hash, artifact_hash, _ = floor.split("|")
+    state = (f"owner_sha256={owner}\nhigh_water={floor}\n"
+             f"selection={old}|{manifest_hash}|{artifact_hash}|{selector.st_dev}:{selector.st_ino}\n")
+    extra = (f"candidate={candidate}\ncompatibility_sha256={'a' * 64}\n"
+             f"compatibility_signature_sha256={'b' * 64}\n")
+    requests = (("install", new, ()), ("uninstall", old, ("--quiesced",)))
+    for phase, suffix, lines in (("pending", extra, 8), ("settled", "", 5)):
+        marker = (f"schema=exacopy-posix-install-state-v2\nstate={phase}\n" + state + suffix).encode("ascii")
+        assert marker.count(b"\n") == lines and len(marker) <= 1024
+        history.write_bytes(marker)
+        assert stat.S_IMODE(history.stat().st_mode) == 0o600
+
+        lock.mkdir(mode=0o700)
+        held = snapshot()
+        for action, version, options in requests:
+            case.run(action, f"{phase} history checks the existing lifecycle lock first ({action})",
+                     version, *options, error="lifecycle lock is held")
+            assert snapshot() == held
+        lock.rmdir()
+        quiet = snapshot()
+        for action, version, options in requests:
+            for mode in ((), ("--dry-run",)):
+                output = case.run(action, f"refuse {phase} history ({action}, {mode or 'mutating'})",
+                                  version, *options, *mode, error="invalid release sequence record")
+                assert not output and not lock.exists()
+                assert snapshot() == quiet
+        case.assert_selection(old)
+
+    history.write_bytes(original)
+    case.run("uninstall", "withdraw the original with restored v1 history", old, "--quiesced")
+    assert not case.executable(old).exists() and not case.launcher.is_symlink()
+    case.run("install", "admit the same signed upgrade with restored v1 history", new)
+    case.assert_selection(new)
+
+
 def main():
     if os.geteuid() == 0:
         raise SystemExit("run as an unprivileged user")
@@ -339,6 +413,7 @@ def main():
             "--target", release_target(), "--artifact", synthetic_artifact, "--launcher-upgrade",
         ], text=True, timeout=30))
         test_launcher(temporary, release)
+        test_v1_history_fence(temporary, release)
 
 
 if __name__ == "__main__":
