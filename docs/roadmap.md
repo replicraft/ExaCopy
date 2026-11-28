@@ -6,11 +6,11 @@ uninstallation. Independent work can proceed in parallel where the safety
 dependencies allow it. GUI remains last, after these CLI operations.
 Backup, repositories, and deduplication are deferred.
 
-The latest inspected native cohort at `5bf8537` passed 1,431 Linux, 946
-macOS, and 808 Windows default tests, all three strict Clippy jobs, and the
+The latest inspected native cohort at `c5e0e06` passed 1,437 Linux, 952
+macOS, and 814 Windows default tests, all three strict Clippy jobs, and the
 declared feature matrices. These results do not qualify public retained-range
 reuse, restart recovery, or power-loss durability.
-[Exact native cohort](https://github.com/replicraft/ExaCopy/actions/runs/46158242551)
+[Exact native cohort](https://github.com/replicraft/ExaCopy/actions/runs/46163107297)
 
 The inspected pre-P-085 cohort at `7e97fd2` passed 64 formal evidence records
 and 97 Miri checks. Independent Lean, TLC and Rust obligation checks passed.
@@ -61,13 +61,25 @@ and the contract marker test passed within the 952-test macOS default suite.
 Strict Clippy failed because the new integration target lacked crate
 documentation; `970e2d3` adds it. The same revision includes `c68da35`, which
 binds preview, preparation and signed export history custody to the original
-policy record. The existing whole-ext4 managed-sync fixture passed at
-`970e2d3`, including cleanup; its default suites remain pending. The later
-two-store regression and private checked-preflight extraction await CI. These changes
+policy record. At `c5e0e06`, the whole-ext4 fixture passed the two-store
+regression, and all three default suites and strict Clippy passed. The exact
+`564432e` formal cohort also passed P-086's single golden-record Rust check:
+66 evidence records passed, with only the two existing Kani failures;
+97 Miri checks passed. P-086 establishes this byte specimen, not native spend.
+These changes
 provide neither a native activation issuer nor managed execution authority.
 [Claim contract](architecture/managed-activation-claim.md) ·
 [Recorded failure and test results](https://github.com/replicraft/ExaCopy/actions/runs/46161680845) ·
-[Record custody fixture](https://github.com/replicraft/ExaCopy/actions/runs/46162515256)
+[Record custody fixture](https://github.com/replicraft/ExaCopy/actions/runs/46163107393)
+
+At `3d2c588`, the owned ext4 fixture exercised the complete checked transfer
+engine with real native adapters and synthetic component authority. One case
+confirmed the returned receipt and kind-18 physical EOF. The second refused
+receipt commit after publication and preserved exact receipt and journal
+bytes, ending at kind 9. Both ran inside the existing single selector;
+fixture cleanup passed. Positive independently enrolled SDK execution,
+managed activation and process-crash qualification remain open.
+[Checked component result](https://github.com/replicraft/ExaCopy/actions/runs/46164684842)
 
 Local work remains source-only at the maintainer's request. Automatic CI
 provides the runtime results above. The sections below retain earlier outcomes

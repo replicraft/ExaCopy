@@ -100,8 +100,8 @@ after that final model event, while the original job, receipt, journal and
 published target remain held. The callback borrows the checked receipt and
 terminal token and produces the same detached public result. It exposes no
 native handle, writer or managed authority. Its source extraction preserves
-the existing checks and their order; positive native attendance of this path
-still requires separate evidence.
+the existing checks and their order. Its native component attendance is
+recorded below; independently enrolled SDK success remains open.
 
 Source controls cover grant poisoning, expiry, rollback, scope and reuse;
 original-record rebinding; refused native mutations; metadata preservation;
@@ -111,9 +111,12 @@ the real SDK with absent enrollment, spent approval and revoked approval.
 Its checked-transfer component controls use the real native adapters and
 fixture-only synthetic authority. They check the returned receipt and matching
 kind-18 EOF on success, and retention of the exact target, receipt and
-kind-9 journal when the receipt-commit gate refuses. Both controls are
-source-defined pending their own hosted run. They do not establish positive
-SDK enrollment, process-crash or power-loss qualification.
+kind-9 journal when the receipt-commit gate refuses. At `3d2c588`, both
+components passed inside the existing single selected ext4 test. The runner
+verified all 26 selected source fingerprints, 13 process drains and owned
+fixture cleanup. They do not establish positive SDK enrollment, process-crash
+or power-loss qualification.
+[Exact component run](https://github.com/replicraft/ExaCopy/actions/runs/46164684842)
 
 At `3b9ef5f`, hosted native tests and strict lint passed on Linux, macOS and
 Windows. Linux executed eight grant, nine journal and six native component
