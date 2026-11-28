@@ -1,4 +1,4 @@
-//! Explicitly provisioned Windows bootstrap fixture with no CLI activation.
+//! Explicitly provisioned Windows bootstrap fixture.
 #![cfg(target_os = "windows")]
 
 use std::fmt::Write as _;
@@ -8,6 +8,7 @@ use std::os::windows::ffi::OsStrExt as _;
 use std::path::Path;
 
 use ed25519_dalek::{SigningKey, VerifyingKey};
+use exacopy_cli::assembly::windows::{WindowsBootstrapRefusal, inspect_bootstrap};
 use exacopy_journal::frame::{ChainHead, FrameReader};
 use exacopy_journal::windows_bootstrap::{
 	FIRST_SEGMENT_BYTES, FIRST_SEGMENT_NAME, JOURNAL_DIRECTORY_NAME, OWNER_BYTES, OWNER_FILE_NAME,
@@ -140,6 +141,20 @@ fn inspect_fixture(
 	assert_eq!(boundary.head(), original.head());
 	assert_eq!(boundary.head().sequence(), 1);
 	assert_eq!(boundary.end_offset(), FIRST_SEGMENT_BYTES as u64);
+
+	drop(records);
+	let observed = inspect_bootstrap(root, expected)
+		.expect("product assembly must observe the same signed bootstrap");
+	assert_eq!(observed.boundary(), boundary);
+	assert_eq!(observed.owner_digest(), historical.owner_digest());
+	assert!(matches!(
+		inspect_bootstrap(root, &wrong_key),
+		Err(WindowsBootstrapRefusal::History(
+			WindowsBootstrapInspectionError::Owner(WindowsBootstrapOwnerError::Owner(
+				OwnerError::UntrustedKey
+			))
+		))
+	));
 	boundary
 }
 

@@ -14,3 +14,12 @@ pub(crate) mod ssh_session;
 	any(target_os = "linux", target_os = "macos")
 ))]
 pub mod remote_ssh;
+
+#[cfg(all(
+	target_os = "windows",
+	any(
+		feature = "experimental-windows-bootstrap-inspect",
+		feature = "windows-bootstrap-fixture"
+	)
+))]
+pub mod windows;
