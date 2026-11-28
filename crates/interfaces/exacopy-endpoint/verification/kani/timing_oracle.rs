@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use crate::connection_retry::retry_timing;
 
-use super::jitter_oracle::{UPPER_MS, expected_delay_nanos};
+use super::jitter_oracle::{UPPER_MS, expected_delay_nanos, scaled_jitter_ms};
 
 pub(crate) fn timing_matches_wide_bounds(
 	now: Duration,
@@ -21,18 +21,65 @@ pub(crate) fn timing_matches_wide_bounds(
 	let Some((wake, next_ceiling)) = timing else {
 		return false;
 	};
-	let expected_ceiling = match ceiling_ms {
+	let Some(expected_ceiling) = expected_next_ceiling(ceiling_ms) else {
+		return false;
+	};
+	wake.subsec_nanos() < 1_000_000_000
+		&& wake.as_nanos() == due_nanos.min(grant_expires_at.as_nanos())
+		&& next_ceiling == expected_ceiling
+}
+
+fn expected_next_ceiling(ceiling_ms: u64) -> Option<u64> {
+	Some(match ceiling_ms {
 		1_000 => 2_000,
 		2_000 => 4_000,
 		4_000 => 8_000,
 		8_000 => 16_000,
 		16_000 => 32_000,
 		32_000 | 60_000 => 60_000,
-		_ => return false,
+		_ => return None,
+	})
+}
+
+pub(super) fn add_millisecond_delay(now: Duration, delay_ms: u64) -> Option<Duration> {
+	const NANOS_PER_SECOND: u32 = 1_000_000_000;
+	const MILLIS_PER_SECOND: u32 = 1_000;
+	const NANOS_PER_MILLI: u32 = 1_000_000;
+
+	let delay_ms = u32::try_from(delay_ms).expect("policy delays fit in u32");
+	let delay_seconds = u64::from(delay_ms / MILLIS_PER_SECOND);
+	let delay_nanos = (delay_ms % MILLIS_PER_SECOND) * NANOS_PER_MILLI;
+	let nanos = now.subsec_nanos() + delay_nanos;
+	let (carry, subsec_nanos) = if nanos >= NANOS_PER_SECOND {
+		(1, nanos - NANOS_PER_SECOND)
+	} else {
+		(0, nanos)
 	};
-	wake.subsec_nanos() < 1_000_000_000
-		&& wake.as_nanos() == due_nanos.min(grant_expires_at.as_nanos())
-		&& next_ceiling == expected_ceiling
+	let seconds = now
+		.as_secs()
+		.checked_add(delay_seconds)?
+		.checked_add(carry)?;
+	Some(Duration::new(seconds, subsec_nanos))
+}
+
+pub(super) fn exact_wake(now: Duration, ceiling_ms: u64, sample: u32) -> Option<Duration> {
+	let minimum_ms = ceiling_ms / 2;
+	let inclusive_width = ceiling_ms - minimum_ms + 1;
+	let delay_ms = minimum_ms + scaled_jitter_ms(sample, inclusive_width);
+	add_millisecond_delay(now, delay_ms)
+}
+
+pub(crate) fn timing_matches_by_parts(
+	now: Duration,
+	grant_expires_at: Duration,
+	ceiling_ms: u64,
+	sample: u32,
+	timing: Option<(Duration, u64)>,
+) -> bool {
+	let Some(next) = expected_next_ceiling(ceiling_ms) else {
+		return false;
+	};
+	timing == exact_wake(now, ceiling_ms, sample).map(|due| (due.min(grant_expires_at), next))
 }
 
 fn normalized_duration() -> Duration {

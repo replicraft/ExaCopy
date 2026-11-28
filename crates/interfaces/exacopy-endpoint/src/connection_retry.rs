@@ -381,7 +381,7 @@ pub(crate) fn equal_jitter(ceiling_ms: u64, sample: u32) -> Duration {
 #[cfg_attr(
 	kani,
 	kani::ensures(|timing| {
-		crate::kani_checks::timing_matches_wide_bounds(now, grant_expires_at, ceiling_ms, sample, *timing)
+		crate::kani_checks::timing_matches_by_parts(now, grant_expires_at, ceiling_ms, sample, *timing)
 	})
 )]
 pub(crate) fn retry_timing(

@@ -121,3 +121,15 @@ The independent [98c291b snapshot](https://github.com/replicraft/ExaCopy/actions
 has SHA-256 `8717b360c77a7d2b67c368de150f43827da941b76821609e622013fa991a2c01`.
 Its raw member is `exacopy-evs/141fd60f-26b9-462a-8f47-b0e13da1f37b.log`,
 with SHA-256 `00ee723d79dc4142ec154b66371969e8b81dda4dc292ac4c7d3faacacba6087a`.
+
+The current timing postcondition expresses the same wake through normalized
+seconds and subseconds. For a delay of `1000q + r` milliseconds, it adds `q`
+seconds and `r × 10^6` nanoseconds, carries at most once, and checks both
+nonnegative seconds additions before clipping to the lease. The real timing
+harness still requires the original wide-nanosecond assertion as well as this
+postcondition over both complete normalized duration inputs. The clean history
+compares native duration values through all eight losses and nine starts.
+The concrete cap and mutation histories retain the original nanosecond
+assertions and execute the real timing function without substitution. Solvers,
+budgets, ten harnesses and twenty-two covers are unchanged. The new encoding's
+proof and performance results remain pending hosted execution.

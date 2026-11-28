@@ -12,22 +12,22 @@ case "$mutation" in
 	lease-clipping)
 		harness='kani_checks::connection_retry::lease_and_revocation_bound_waiting_and_redial'
 		assertion='the lease clips the jittered wake exactly at expiry'
-		expected_source='47a9c0d01b9d2f06f54afcc1fc149cb7b2e1570061ba74824d389379fac9fd11'
+		expected_source='91af76f1c415e9b521c3458bb9d8787922b8036847d279a3a0cbf9b4c431283c'
 		;;
 	source-fence)
 		harness='kani_checks::connection_retry::reconnect_requires_current_route_ssh_and_source_and_fences_retired_work'
 		assertion='every independent observation must refer to the current attempt'
-		expected_source='831ec0e55eecbcd0576ae798394d9e3a7c7d6872fb9df1012008a67b1e97cfe3'
+		expected_source='ae768c66922ce3823d610bf1687d9edf042f7c07d8512dfcb8347c8cfb574947'
 		;;
 	health-activity)
 		harness='kani_checks::connection_retry::penalty_resets_only_after_current_verified_activity_and_health'
 		assertion='reset requires both qualifying activity and the full healthy duration'
-		expected_source='1f1ee051139094d22c8d0231728faeb2d903a49a597969d04b8a23d7ebfa32bd'
+		expected_source='f60b7f4460a8a6fe1d2391b1a57a529c501dfb7cd169fa0b4b01f482a0d44992'
 		;;
 	inclusive-jitter)
 		harness='kani_checks::connection_retry::concrete_transient_backoff_is_bounded_and_claims_only_the_due_generation'
 		assertion='every sample maps proportionally into the inclusive equal-jitter window'
-		expected_source='4e14d9dcbe7e7f20ba60bbb7445448d8cc33d564e9c0540890b2639444c08818'
+		expected_source='5379abfbaa793e5d0c655e61e623cf22f41914e00959ac47209f147a3417084e'
 		;;
 	*) printf 'Unknown retry mutation: %s\n' "$mutation" >&2; exit 2 ;;
 esac
