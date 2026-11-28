@@ -40,6 +40,17 @@ pub enum DurableJournalError {
 	},
 	/// The caller supplied a stale head to the held writer. The segment was not inspected.
 	StaleExpectedHead,
+	/// The requested suffix storage or sequence bounds were invalid before I/O.
+	InvalidSuffixRequest,
+	/// The selected start token was absent or had a different frame kind.
+	SuffixAnchorNotFound,
+	/// Literal suffix bytes exceeded the caller storage, bounded to 4096 bytes.
+	SuffixTooLarge,
+	/// A physical byte was observed after the confirmed terminal suffix frame.
+	TrailingSuffixData {
+		/// First unexpected byte offset, without asserting the complete file length.
+		offset: u64,
+	},
 	/// The reread verified head differed from the supplied head.
 	UnexpectedHead,
 	/// An existing frame could not be read or verified.
@@ -88,6 +99,17 @@ impl fmt::Display for DurableJournalError {
 			}
 			Self::StaleExpectedHead => {
 				formatter.write_str("expected head differs from the writer's current head")
+			}
+			Self::InvalidSuffixRequest => formatter.write_str("invalid journal suffix request"),
+			Self::SuffixAnchorNotFound => {
+				formatter.write_str("journal suffix anchor was not found")
+			}
+			Self::SuffixTooLarge => formatter.write_str("journal suffix exceeded bounded output"),
+			Self::TrailingSuffixData { offset } => {
+				write!(
+					formatter,
+					"journal has data after the confirmed suffix at byte {offset}"
+				)
 			}
 			Self::UnexpectedHead => {
 				formatter.write_str("journal head differs from the expected head")

@@ -1,5 +1,6 @@
 use crate::frame::AppendStartError;
 mod error;
+mod suffix;
 
 #[cfg(test)]
 mod tests;
