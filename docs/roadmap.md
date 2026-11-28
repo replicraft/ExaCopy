@@ -81,6 +81,15 @@ fixture cleanup passed. Positive independently enrolled SDK execution,
 managed activation and process-crash qualification remain open.
 [Checked component result](https://github.com/replicraft/ExaCopy/actions/runs/46164684842)
 
+At `917e2ad`, the default-off combined Linux SDK adds read-only managed
+recreate preparation: exact origin matching under original exclusive
+custody, independently selected native role commitments, and conditional
+approval production and verification. Its separate combined-feature native
+lane and refusal controls are source-defined; execution results are pending.
+The live issuer, independently current selection, durable spend, child
+provenance and action replay remain open.
+[Preparation contract](architecture/managed-recreate-preparation.md)
+
 Local work remains source-only at the maintainer's request. Automatic CI
 provides the runtime results above. The sections below retain earlier outcomes
 and failures with their original revisions.

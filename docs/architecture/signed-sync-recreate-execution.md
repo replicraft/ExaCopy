@@ -7,7 +7,9 @@ an independent managed activation and an owner-private action journal.
 This document records the selected design direction. The execution frontend,
 effect capabilities and action records are pending. The bounded model below
 records a separate design prerequisite.
-Exact wire and replay contracts remain subject to separate selection.
+The [read-only preparation SDK](managed-recreate-preparation.md) now defines
+the conditional approval wire and exact prepared origin. Live replay and
+execution admission remain separate work.
 
 The [signed recreate export](signed-sync-recreate-export.md) remains a review
 artifact. Action page kind 257 (`0x0101`) is permanently review-only. Its null
@@ -72,8 +74,10 @@ job. Pin its directory, named segment, native identity and initial
 accepted boundary. A named-custody adapter must supply `DurableJournal`
 with bounded append, barrier, reread and EOF observations. Replacement
 slots, uncertain prefixes and prior unresolved intent refuse fresh
-admission. The exact layout, prepared anchor and lock order remain
-implementation contract decisions. [Durable journal](../../crates/storage/exacopy-journal/src/durable.rs)
+admission. The read-only preparation contract selects the fixed first
+segment, kind-45 origin and profile-SH, parent-EX, slot-EX lock order.
+Writable append custody and its failure contract remain unimplemented.
+[Durable journal](../../crates/storage/exacopy-journal/src/durable.rs)
 
 ## Prior intent and held closeout
 
@@ -93,11 +97,13 @@ creation. A reported head alone cannot open this gate. [Frame allocations](../..
 The checked child keeps its own exact intent, exclusive no-replace
 publication, barriers and v2 terminal validation. At the final rename
 gate, recheck the original managed scope, current predecessor and held
-kind-27 confirmation under the live guards. Extend the child success
-boundary to lend the exact v2 receipt and terminal journal evidence
+kind-27 confirmation under the live guards. The engine's private success
+projection now lends the exact v2 receipt and terminal journal evidence
 while the original child owner, job, journal and receipt are still held.
-The current `CheckedApply` returns values after completion. It is
-insufficient as the proposed custody capability. Under the original
+Its native component fixture uses synthetic authority; the managed caller
+and its effect capability remain pending. The public `CheckedApply`
+returns detached values after completion and supplies no custody.
+Under the original
 managed and ledger guards, append kind 28 to the same ledger. Bind the
 actual child and verified v2 receipt to the exact accepted kind-27
 predecessor. Independently confirm the new frame and physical EOF. Only
@@ -146,14 +152,14 @@ still pending.
   contents and separate chain positions cannot prove that an ordinary
   child arose from the managed intent. An unresolved cut stays
   reconciliation-only.
-- **Wire, scope and issuer.** Select exact canonical activation and host
-  selection schemas, identifiers, version and required-feature handling.
-  Specify kind-27/28 payloads, signed and hashed commitments, bounds and
-  replay grammar for the already reserved journal discriminants. Select
-  a real independent activation producer and the consuming foreground
-  entry point. Define the prepared ledger anchor and revocation/lock
-  ordering. Keep these decisions distinct from kind 257's immutable
-  review contract.
+- **Live issuer and replay.** The read-only SDK defines canonical host,
+  grant, executable-parent and signed activation artifacts, including
+  independent digest confirmation and role separation. It also matches
+  the independently selected prepared origin. Specify kind-27/28 payloads,
+  bounds and replay grammar for the already reserved discriminants, then
+  compose the operational issuer and consuming foreground entry point.
+  Select writable custody and revocation ordering. Keep these decisions
+  distinct from kind 257's immutable review contract.
 
 The first profile requires both a source correspondence argument and
 actual native qualification. Test the missing or unconfirmed prior
