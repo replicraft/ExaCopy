@@ -1,6 +1,11 @@
 use std::cell::Cell;
 use std::fs;
 use std::io::ErrorKind;
+use std::os::unix::fs::MetadataExt as _;
+use std::path::Path;
+use std::time::{Duration, UNIX_EPOCH};
+
+use exacopy_endpoint::ReadView;
 
 use super::{Fixture, PREFIX, inventory, issued_tail, selection};
 use crate::linux::{StageError, SuffixEffect, SuffixError};
@@ -72,6 +77,82 @@ fn zero_tail_refuses_target_that_appears_at_continuation_admission() {
 	));
 	assert_eq!(fs::read(fixture.target()).unwrap(), b"incumbent");
 	assert_eq!(fs::read(fixture.stage()).unwrap(), PREFIX);
+}
+
+#[test]
+fn positive_tail_reopen_refuses_late_native_changes() {
+	const INCUMBENT: &[u8] = b"independent late incumbent";
+	for change_stage_stamp in [true, false] {
+		let fixture = Fixture::new();
+		let stage = fixture.stage();
+		let target = fixture.target();
+		let source = fixture.scratch.path("independent-source");
+		let source_bytes = [PREFIX, b"follow-on source bytes"].concat();
+		super::super::private_file(&source, &source_bytes);
+		let source_before = fs::symlink_metadata(&source).unwrap();
+		let live_source = fs::read(&source).unwrap();
+		let source_end = u64::try_from(live_source.len()).unwrap();
+		let end = PREFIX.len() as u64;
+		let set_stage_mtime = |time| {
+			fs::File::open(&stage)
+				.unwrap()
+				.set_times(fs::FileTimes::new().set_modified(time))
+				.unwrap();
+		};
+		set_stage_mtime(UNIX_EPOCH);
+		let stage_before = fs::symlink_metadata(&stage).unwrap();
+		let lease = fixture.lease();
+		let inventory = inventory(&lease);
+		let expected = selection(&inventory);
+		let reader = lease.read_retained_prefix(&inventory, expected).unwrap();
+		let mut compared = [0; PREFIX.len()];
+		reader.read_exact_at(0, &mut compared).unwrap();
+		assert_eq!(compared, live_source[..PREFIX.len()]);
+		let synced = reader.sync_adopted(end, |_, _| Ok::<_, ()>(())).unwrap();
+
+		let mut admitted = false;
+		let mut incumbent = None;
+		let result = synced.open_suffix_writer(source_end, |actual, extent| {
+			assert_eq!(actual, expected);
+			assert_eq!(extent, end..source_end);
+			admitted = true;
+			if change_stage_stamp {
+				set_stage_mtime(UNIX_EPOCH + Duration::from_secs(4));
+				assert_ne!(
+					fs::symlink_metadata(&stage).unwrap().mtime(),
+					stage_before.mtime()
+				);
+			} else {
+				super::super::private_file(&target, INCUMBENT);
+				incumbent = Some(fs::symlink_metadata(&target).unwrap());
+			}
+			Ok::<_, ()>(())
+		});
+		assert!(admitted);
+		assert!(matches!(
+			result,
+			Err(SuffixError::Observation(StageError::IdentityChanged))
+		));
+		assert_same_file(&stage, &stage_before, PREFIX);
+		assert_same_file(&source, &source_before, &source_bytes);
+		if change_stage_stamp {
+			assert_eq!(
+				fs::symlink_metadata(&target).unwrap_err().kind(),
+				ErrorKind::NotFound
+			);
+		} else {
+			assert_same_file(&target, &incumbent.unwrap(), INCUMBENT);
+		}
+	}
+}
+
+fn assert_same_file(path: &Path, before: &fs::Metadata, expected: &[u8]) {
+	let after = fs::symlink_metadata(path).unwrap();
+	assert!(after.is_file());
+	assert_eq!((after.dev(), after.ino()), (before.dev(), before.ino()));
+	assert_eq!(after.mode(), before.mode());
+	assert_eq!((after.uid(), after.gid()), (before.uid(), before.gid()));
+	assert_eq!(fs::read(path).unwrap(), expected);
 }
 
 #[test]
