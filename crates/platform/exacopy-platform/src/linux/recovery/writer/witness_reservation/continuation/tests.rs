@@ -157,7 +157,7 @@ fn check_live_continuation(admission: Admission) {
 	let mut observed_prefix = [0; PREFIX.len()];
 	let mut observed_source = [0; PREFIX.len()];
 	stage.read_exact_at(0, &mut observed_prefix).unwrap();
-	source.read_exact_at(0, &mut observed_source).unwrap();
+	source.read_exact_at(&mut observed_source, 0).unwrap();
 	assert_eq!(observed_prefix, observed_source);
 	assert_eq!(&observed_prefix, PREFIX);
 	let before = Head {
@@ -306,7 +306,7 @@ fn check_live_continuation(admission: Admission) {
 	}
 	stage.recheck_observation().unwrap();
 	stage.read_exact_at(0, &mut observed_prefix).unwrap();
-	source.read_exact_at(0, &mut observed_source).unwrap();
+	source.read_exact_at(&mut observed_source, 0).unwrap();
 	assert_eq!(&observed_prefix, PREFIX);
 	assert_eq!(&observed_source, PREFIX);
 	assert_eq!(source.metadata().unwrap().len(), staged_extent);
