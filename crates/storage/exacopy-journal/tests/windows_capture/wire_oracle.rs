@@ -61,7 +61,9 @@ impl PreparedFields {
 		body[186..194].copy_from_slice(&self.epoch.to_le_bytes());
 		body[194..202].copy_from_slice(&self.extent.to_le_bytes());
 		body[202..204].copy_from_slice(&u16::try_from(target.len()).unwrap().to_le_bytes());
-		for (position, unit) in body[204..].chunks_exact_mut(2).zip(target) {
+		let (units, remainder) = body[204..].as_chunks_mut::<2>();
+		assert!(remainder.is_empty());
+		for (position, unit) in units.iter_mut().zip(target) {
 			position.copy_from_slice(&unit.to_le_bytes());
 		}
 		body
