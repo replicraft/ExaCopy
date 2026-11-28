@@ -81,7 +81,11 @@ fn choose<T: Copy>(variants: &[T]) -> T {
 }
 
 fn any_phase() -> Phase {
-	use Phase::*;
+	use Phase::{
+		Bootstrap, Claimed, CommitStarted, Copying, Durable, IntentStarted, Issued, Metadata,
+		Observed, Owner, Prepared, Qualified, RenameReady, RenameStarted, Sealed, Settled, Stage,
+		Verified,
+	};
 	choose(&[
 		Issued,
 		Claimed,
