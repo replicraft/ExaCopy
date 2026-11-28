@@ -249,7 +249,25 @@ fn independent_windows_capture_wire_requires_exact_selected_history() {
 
 	let first_two = [prepared.as_slice(), &first_range].concat();
 	let expected = inspect(first_two.as_slice(), &selected, fixture.roles).unwrap();
+	// Preserve the canonical range body and enclosing predecessor while changing
+	// only the signature's domain or signer.
+	for (domain, key) in [(PREPARED_DOMAIN, &fixture.key), (RANGE_DOMAIN, &other_key)] {
+		let wrong_signature = frame(
+			&signed_payload(&body, domain, key),
+			RANGE_KIND,
+			3,
+			second_digest,
+		);
+		let wire = [first_two.as_slice(), &wrong_signature].concat();
+		let refusal = inspect(wire.as_slice(), &selected, fixture.roles).unwrap_err();
+		assert_eq!(refusal.prefix, Some(expected));
+		assert!(matches!(refusal.source, Error::Signature));
+	}
+
+	let mut wrong_version = body;
+	wrong_version[1] = 1;
 	for invalid in [
+		wrong_version,
 		range_body([0xff; 32], second_digest, 2, BLOCK, 19, [0x25; 32]),
 		range_body(first_digest, first_digest, 2, BLOCK, 19, [0x25; 32]),
 		range_body(first_digest, second_digest, 1, BLOCK, 19, [0x25; 32]),
