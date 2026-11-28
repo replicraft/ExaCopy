@@ -113,7 +113,8 @@ impl<'selection> PreparedManagedActionView<'_, 'selection> {
 		let stat = fs::fstat(profile).map_err(|cause| system(cause.into()))?;
 		let identity = FileIdentity::from_stat(&stat);
 		let ordinary_mount =
-			NonZeroU64::new(mount_id(profile).map_err(system)?).ok_or_else(changed)?;
+			NonZeroU64::new(mount_id(profile).map_err(|cause| system(cause.into()))?)
+				.ok_or_else(changed)?;
 		let unique_mount =
 			unique_mount_id(profile).map_err(|cause| system(io::Error::other(cause)))?;
 		if identity != self.slot.record.store.identity()

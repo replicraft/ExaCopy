@@ -327,3 +327,11 @@ The AWS and Azure test mounts had `nobarrier` and `data=writeback`.
 The passing controls cover the observed managed read-only scope and
 private Init slot, with synthetic signed history and cooperative writers.
 Process-crash and power-loss qualification remain open.
+
+The [prepared SDK integration at `917e2ad`](https://github.com/replicraft/ExaCopy/actions/runs/46178114327)
+stopped during compilation with E0631: the native role query supplied an
+`Errno` to an error mapper requiring `std::io::Error`. No native fixture
+cases ran, and the dependent combined-feature preparation job was skipped.
+The runner confirmed removal of its owned work directory. The correction
+converts the original native error explicitly; it establishes no runtime
+result until a subsequent integrated run executes.
