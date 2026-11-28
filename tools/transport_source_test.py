@@ -44,21 +44,57 @@ class PinnedTransportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exact transitive"):
             verify(layout | {"workspace": {"dependencies": {"russh-util": source}}}, "0.52.0")
 
-    def test_utility_repair_binds_new_manifest_without_relabeling_registry_preimage(self):
+    def test_only_manifest_repairs_require_separate_manifest_hashes(self):
+        project = Path(__file__).resolve().parents[1]
+        pinned = (project / transport_source.PIN).read_text(encoding="utf-8")
+        pins = transport_source.read_pins(project)
         with tempfile.TemporaryDirectory() as work:
-            root = Path(work)
-            published = b"published manifest"
-            repaired = b"repaired manifest"
-            pin = {
-                "normalized_manifest_sha256": sha256(published).hexdigest(),
-                "repaired_manifest_sha256": sha256(repaired).hexdigest(),
-            }
-            manifest = root / "Cargo.toml"
-            manifest.write_bytes(repaired)
-            transport_source.verify_repaired_manifest(root, "russh-util", pin)
-            manifest.write_bytes(published)
-            with self.assertRaisesRegex(ValueError, "repaired manifest"):
-                transport_source.verify_repaired_manifest(root, "russh-util", pin)
+            source = Path(work)
+            path = source / transport_source.PIN
+            path.parent.mkdir(parents=True)
+            for name in ("boringtun", "russh-util"):
+                digest = pins[name]["repaired_manifest_sha256"]
+                field = f'repaired_manifest_sha256 = "{digest}"'
+                without_field = pinned.replace(field + "\n", "", 1)
+                self.assertNotEqual(without_field, pinned)
+                with self.subTest(name=name):
+                    path.write_text(without_field, encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, f"invalid {name} source pin"):
+                        transport_source.read_pins(source)
+            extra_field = f'repaired_manifest_sha256 = "{"a" * 64}"'
+            path.write_text(
+                pinned.replace("[russh]\n", f"[russh]\n{extra_field}\n", 1),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "invalid russh source pin"):
+                transport_source.read_pins(source)
+
+    def test_manifest_repairs_distinguish_publisher_and_installed_bytes(self):
+        with tempfile.TemporaryDirectory() as work:
+            manifest = Path(work) / "Cargo.toml"
+            for name in ("boringtun", "russh-util"):
+                version, _, _, license_name, repository = transport_source.POLICY[name]
+                published = (
+                    f'[package]\nname = "{name}"\nversion = "{version}"\n'
+                    f'license = "{license_name}"\nrepository = "{repository}"\n'
+                ).encode()
+                repaired = published + b"\n# Manifest repair\n"
+                upstream = "1" * 40
+                vcs = {"git": {"sha1": upstream}}
+                pin = {
+                    "version": version, "license": license_name, "upstream_repository": repository,
+                    "upstream_commit": upstream, "normalized_manifest_sha256": sha256(published).hexdigest(),
+                    "repaired_manifest_sha256": sha256(repaired).hexdigest(),
+                }
+                with self.subTest(name=name):
+                    transport_source.verify_package_metadata(published, vcs, name, pin)
+                    with self.assertRaisesRegex(ValueError, "normalized manifest"):
+                        transport_source.verify_package_metadata(repaired, vcs, name, pin)
+                    manifest.write_bytes(repaired)
+                    transport_source.verify_repaired_manifest(manifest.parent, name, pin)
+                    manifest.write_bytes(published)
+                    with self.assertRaisesRegex(ValueError, "repaired manifest"):
+                        transport_source.verify_repaired_manifest(manifest.parent, name, pin)
 
     def test_modified_path_never_matches_a_registry_component(self):
         with tempfile.TemporaryDirectory() as work:

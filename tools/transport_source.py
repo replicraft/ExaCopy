@@ -21,6 +21,7 @@ PIN = Path("specs/dependencies/transport-source.toml")
 INPUTS = PIN.with_suffix("")
 SIBLINGS = Path("local-deps")
 RUSSH_UTILITY = "russh-util"
+REPAIRED_MANIFESTS = {"boringtun", RUSSH_UTILITY}
 POLICY = {
     "boringtun": ("0.7.1", "exacopy-wireguard", [], "BSD-3-Clause", "https://github.com/cloudflare/boringtun"),
     "russh": ("0.65.4", "exacopy-ssh", ["ring"], "Apache-2.0", "https://github.com/warp-tech/russh"),
@@ -84,7 +85,7 @@ def read_pins(source):
                "repair_patch_sha256", "attribution_patch_sha256"}
     for name, pin in entries.items():
         version, _, _, license_name, repository = POLICY[name]
-        package_digests = digests | {"repaired_manifest_sha256"} if name == RUSSH_UTILITY else digests
+        package_digests = digests | {"repaired_manifest_sha256"} if name in REPAIRED_MANIFESTS else digests
         if (
             not isinstance(pin, dict) or pin.keys() != package_digests | {"version", "upstream_repository", "upstream_commit", "license",
                                      "license_file", "repair_patch", "attribution_patch", "base", "repair"}

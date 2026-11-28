@@ -41,6 +41,17 @@ class TransportProjectionTests(unittest.TestCase):
         self.assertFalse(self.record["registry_publication_verified"])
         self.assertTrue(self.record["external_companion"]["canonical_registry_archive_required"])
 
+    def test_boringtun_projection_excludes_optional_device_router_dependencies(self):
+        name = "exacopy-boringtun"
+        manifest = base.toml(self.files[f"{name}/Cargo.toml"])
+        receipt = next(entry for entry in self.record["transport_forks"] if entry["name"] == name)
+        device_dependencies = {"ip_network", "ip_network_table", "socket2", "thiserror"}
+        self.assertEqual(manifest.get("features", {}), {})
+        for scope in (manifest, *manifest.get("target", {}).values()):
+            for kind in ("dependencies", "build-dependencies"):
+                self.assertTrue(device_dependencies.isdisjoint(scope.get(kind, {})))
+        self.assertTrue(device_dependencies.isdisjoint(receipt["dependencies"]))
+
     def test_platform_projection_preserves_exact_optional_target_edges(self):
         cli = base.toml(self.files["exacopy/Cargo.toml"])
         platform = base.toml(self.files["exacopy-platform/Cargo.toml"])

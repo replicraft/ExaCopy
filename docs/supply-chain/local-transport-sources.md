@@ -23,9 +23,13 @@ registry compression bytes.
 The pin and retained repair and license inputs are in
 [`specs/dependencies`](../../specs/dependencies/transport-source.toml).
 
-The BoringTun and Russh package manifests retain their original registry
-normalization. The Russh utility modifies only the Wasm clock dependency in
-its manifest. The workspace patch binds the utility to the exact local
+The source pins retain each publisher's original normalized-manifest hash.
+Russh's installed manifest matches that published input. BoringTun's repaired
+manifest makes `ip_network` and `ip_network_table` optional under its existing
+`device` feature; ExaCopy selects the tunnel core with that feature disabled.
+The Russh utility modifies only the Wasm clock dependency in its manifest.
+Separate repaired-manifest hashes bind both local manifest changes. The
+workspace patch binds the utility to the exact local
 source as a transitive dependency of the admitted Russh package. The checkout is made from the pinned published archive, the reviewed
 behavioral repair, a separate modification notice patch, and the pinned
 upstream license. The reconstructed commit identities
@@ -36,7 +40,10 @@ are local provenance records and are not upstream release commits.
 - BoringTun 0.7.1 adds transport key and operation attribution, age/counter
   observations, and a bounded session-retention seam. Existing cryptographic
   primitives and the reviewed caller's route and generation limits remain
-  separate invariants.
+  separate invariants. Its device feature retains both address-table
+  dependencies and their existing versions. The manifest change removes
+  those dependencies only from consumers that do not enable that feature;
+  it supplies no safety finding or audit for the device implementation.
 - Russh 0.65.4 adds an application callback for the verified host key on
   rekey, before installing the new encryption keys. The caller remains
   responsible for applying its exact verified key policy. The selected
@@ -62,6 +69,11 @@ are local provenance records and are not upstream release commits.
   when Cargo's path-source rows carry no registry source. A base finding
   fails the gate pending a disposition tied to the exact repaired commit.
   A passing upstream scan provides no audit of the repair.
+- The required Cargo Vet check is unchanged. The dependency job also retains
+  its complete, unfiltered resolve graph as JSON. Compare that graph and the
+  locked production inventory before claiming that a feature-scoped dependency
+  has left the selected build. Removing an unused dependency does not award
+  an audit to its version or alter existing audit findings.
 - Default CLI release artifacts do not activate these transports. Build
   provenance records the verified path manifests needed by Cargo metadata.
   An SBOM includes a repaired source only if Cargo reports compiling it.

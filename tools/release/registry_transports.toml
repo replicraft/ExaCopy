@@ -1,5 +1,5 @@
 # Only the reviewed runtime features enter this opt-in profile.
-transport_pins_sha256 = "95b7e72187aa57d94be336c40380b7e4242519c157f33feeda8406dc2186c0ba"
+transport_pins_sha256 = "f7ab9d6a6a2d4f627f4274b9252fd34dede9a81f2b2c8c1f2a605801c66596bb"
 
 [existing_features]
 exacopy = [

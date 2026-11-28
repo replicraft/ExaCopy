@@ -39,9 +39,6 @@ getrandom = "Read system entropy for macOS stage identities and WireGuard key an
 hex = "Hexadecimal representations used internally by BoringTun."
 hmac = "HMAC interface used for WireGuard BLAKE2s key derivation and OpenSSH version-1 hashed hostname matching."
 inout = "Borrowed buffer interfaces for the RustCrypto transform APIs."
-ip_network = "IP prefix representations for BoringTun's table dependency."
-ip_network_table = "Prefix lookups in BoringTun's broader crate; the fixed-peer adapter uses its own exact address pair."
-ip_network_table-deps-treebitmap = "Tree bitmap implementation of the prefix table dependency."
 itoa = "Format integer fields in CLI JSON output."
 libc = "Expose macOS ABI types, flags, and functions needed by the native adapter and OS wrappers."
 linux-raw-sys = "Provide Linux syscall ABI definitions for rustix."
@@ -833,13 +830,13 @@ review_gaps = []
 
 # The locked archive identifies upstream commit 051c9d47dc9c5cb36e461b7d36dcd673820dc98b.
 [assessment."boringtun@0.7.1"]
-archive_sha256 = "31a6d8a2bf14f9490112e05c4aac38de2c35282bdef5f971d28db6ca7dcc0b56"
-release_observation = "The exact repaired local Git archive is ea14f16348ae16fbc56290abc2170328691f9046, with tree 3ccc0cb434857a1a9d97b33ee6d9212de341e260. It applies the reviewed boringtun repair and retains the upstream license plus separately pinned modification notices on the locked published archive. The package version and registry-normalized manifest are unchanged."
+archive_sha256 = "18f33ad3e1dfd2561c255cf8956144fa7bc235d2bc7ca7bab8da9c03a09ee360"
+release_observation = "The exact repaired local Git archive is 7f9a3e0e2cfdd91062d87ce5c163ac8a0226fc3a, with tree d6aa90ce63f66fea787d6c5404404df41a0c3912. It applies the reviewed boringtun repair and retains the upstream license plus separately pinned modification notices on the locked published archive. The published package version and normalized-manifest hash are retained. The separately pinned repaired manifest makes the two address-table dependencies optional under the existing device feature. The tunnel-only consumer requests no device features."
 security_history = "The recorded RustSec snapshot lists no BoringTun package advisory. The exact source review found missing transport counter rejection and incoming ephemeral-key shared-secret validation upstream. The selected adapter checks the transport counter ceiling and performs a bounded X25519 contributory preflight through the existing library API. This mitigation does not extend to other BoringTun consumers."
 unsafe_exposure = "The selected noise paths use Ring native transport AEAD, RustCrypto and X25519 backends and the upstream target-specific clock. The adapter selects no device, FFI, JNI or mock-clock features. Review the selected transitive native code and build inputs independently."
 resource_limits = "One peer and caller-owned bounded datagram buffers cap accepted packet sizes. Each admitted transport key is fenced at 120 seconds and the conservative operation ceiling. At most eight key windows are retained. Only a newer selected, confirmed key can renew the route epoch, with at least five seconds between renewals; retained old traffic cannot replenish its work budget. Incoming handshakes remain bounded to 256 per active epoch. BoringTun may queue internally generated empty control entries within its 256-entry cap."
 adversarial_inputs = "The candidate expects peer-bound sender provenance and checks the configured outer endpoint, incoming transport counter and authenticated inner source and destination. Session and control outputs convey no transport, route, DNS or SSH authority."
-verification = "The repair and selected consumer passed key attribution, replay, stale-output, per-key age/budget, and rollover fixtures. One TCP flow survives actual provider key replacement in IPv4 and IPv6 tests; these wrapper clocks are simulated. Independent Go interoperability covers the existing userspace UDP path. Full native application continuation and platform qualification remain separate."
+verification = "Before the device-dependency manifest change, the repair and selected consumer passed key attribution, replay, stale-output, per-key age/budget, and rollover fixtures. One TCP flow survives actual provider key replacement in IPv4 and IPv6 tests; these wrapper clocks are simulated. Independent Go interoperability covers the existing userspace UDP path. The manifest-only dependency change requires fresh locked resolution and native consumer evidence. Full native application continuation and platform qualification remain separate."
 replacement = "Preserve WireGuard wire compatibility, trusted key inputs, authenticated peer identity and generation-bound refusal. Any replacement requires a new protocol backend review and native acceptance evidence."
 review_gaps = ["Whole-version upstream transport-counter and incoming ephemeral validation remain unguarded for other consumers; selected wrapper mitigations do not award an audit. Exact transitive source admission remains open.", "Independent route and socket confinement, sustained lifecycle, interoperability and native Linux and Windows qualification"]
 

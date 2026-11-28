@@ -9,10 +9,11 @@ license = "BSD-3-Clause"
 license_file = "LICENSE.md"
 license_sha256 = "6dbef24708bad8c727bd80cca58ba8aa1637cdcb2cc6e9a31ea49235717e9391"
 normalized_manifest_sha256 = "affa0ace664dac9ae168499ff71c2005bd17bfeb4b87ce322c020116ae0f3426"
-repair_patch_sha256 = "3b5708e37cfa8de7a3e87f6a7d0c25b7811ecb4520b111de48563b45b5bbf84c"
+repaired_manifest_sha256 = "3219a703613059c66054b06d0899d0610927af3582280b36375b1bca6fb53c0a"
+repair_patch_sha256 = "d8ef2a10527e3b05b595d2304fc2fb339b12ba296981fdc0fd0d739a5ce2ee3f"
 repair_patch = "boringtun-0.7.1-transport-key-api.patch"
 attribution_patch = "boringtun-modification-notice.patch"
-attribution_patch_sha256 = "736efe721857e9df1a35d40472c06c4f804aff57eaaa3c56db3618fb04df9800"
+attribution_patch_sha256 = "9a7319da9c5e4e88df2ddec02853b3cfd0a5c67bfd0935b13004e22396d442c2"
 
 [boringtun.base]
 commit = "496258f46a5897ba849d606ced503a53c9e6c6b7"
@@ -20,9 +21,9 @@ tree = "b5559f162d77369fc931d19b6def79cb74c183b4"
 archive_sha256 = "e19608a83a8500a358befd1a4cb140024c686713135093a6efd0ba7e8954b45d"
 
 [boringtun.repair]
-commit = "ea14f16348ae16fbc56290abc2170328691f9046"
-tree = "3ccc0cb434857a1a9d97b33ee6d9212de341e260"
-archive_sha256 = "31a6d8a2bf14f9490112e05c4aac38de2c35282bdef5f971d28db6ca7dcc0b56"
+commit = "7f9a3e0e2cfdd91062d87ce5c163ac8a0226fc3a"
+tree = "d6aa90ce63f66fea787d6c5404404df41a0c3912"
+archive_sha256 = "18f33ad3e1dfd2561c255cf8956144fa7bc235d2bc7ca7bab8da9c03a09ee360"
 
 [russh]
 version = "0.65.4"
