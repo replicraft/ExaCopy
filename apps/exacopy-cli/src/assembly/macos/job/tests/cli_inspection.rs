@@ -72,6 +72,7 @@ fn apfs_inspect_dispatch_binds_the_independent_selection_and_preserves_the_job()
 	assert_eq!(report["historical_status"], "incomplete");
 	assert_eq!(report["journal_sequence"], "2");
 	assert_eq!(report["journal_offset"], before[2].2.len().to_string());
+	assert_eq!(report["journal_head_digest"], hex(&journal_head.digest()));
 	assert_eq!(report["journal_tail"], "clean");
 	assert_eq!(report["receipt"]["status"], "missing");
 	assert!(report["stage_directory"].is_object());
@@ -181,15 +182,30 @@ fn apfs_inspect_dispatch_binds_the_independent_selection_and_preserves_the_job()
 	let suffix = writer.into_inner();
 	for offset in [VERSION_OFFSET, KIND_OFFSET] {
 		let mut unsupported = suffix.clone();
-		unsupported[offset..offset + 2].copy_from_slice(&u16::MAX.to_le_bytes());
-		let bytes = [before[2].2.as_slice(), unsupported.as_slice()].concat();
-		fs::write(&segment, &bytes).unwrap();
-		let retained = files(&paths);
-		assert_eq!(retained[2].2, bytes);
-		assert_refused(invoke(selected.clone(), 9), "E_APFS_JOURNAL_UNSUPPORTED");
-		assert_eq!(files(&paths), retained);
-		assert_eq!(inventory(&job), names);
-		assert_eq!(files(&[source.clone(), incumbent.clone()]), outside);
+		// Keep the supported low byte and make the discriminator incompatible only
+		// when both bytes are present.
+		unsupported[offset + 1] = 0xff;
+		let discriminator_end = offset + std::mem::size_of::<u16>();
+		for length in [discriminator_end - 1, discriminator_end, unsupported.len()] {
+			let bytes = [before[2].2.as_slice(), &unsupported[..length]].concat();
+			fs::write(&segment, &bytes).unwrap();
+			let retained = files(&paths);
+			assert_eq!(retained[2].2, bytes);
+			let inspected = invoke(selected.clone(), 9);
+			if length < discriminator_end {
+				assert_eq!(inspected["result"], "inspected");
+				assert_eq!(inspected["journal_tail"], "torn");
+				assert_eq!(inspected["torn_bytes"], length.to_string());
+				for field in ["journal_sequence", "journal_offset", "journal_head_digest"] {
+					assert_eq!(inspected[field], report[field]);
+				}
+			} else {
+				assert_refused(inspected, "E_APFS_JOURNAL_UNSUPPORTED");
+			}
+			assert_eq!(files(&paths), retained);
+			assert_eq!(inventory(&job), names);
+			assert_eq!(files(&[source.clone(), incumbent.clone()]), outside);
+		}
 	}
 
 	let mut damaged = suffix;
@@ -241,8 +257,19 @@ fn invoke(args: Vec<OsString>, expected: u8) -> Value {
 fn assert_refused(report: Value, code: &str) {
 	assert_eq!(report["result"], "refused");
 	assert_eq!(report["code"], code);
-	assert!(report.get("journal_offset").is_none());
-	assert!(report.get("target").is_none());
+	for field in [
+		"journal_sequence",
+		"journal_offset",
+		"journal_head_digest",
+		"journal_tail",
+		"torn_bytes",
+		"receipt",
+		"stage_directory",
+		"stage",
+		"target",
+	] {
+		assert!(report.get(field).is_none(), "refusal leaked {field}");
+	}
 }
 
 fn files(paths: &[PathBuf]) -> Vec<(u64, u64, Vec<u8>)> {
