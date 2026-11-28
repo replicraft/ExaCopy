@@ -18,6 +18,7 @@ pub use admission::JobDirectoryCreationError;
 mod capabilities;
 mod checkpoint;
 mod journal_names;
+mod receipt;
 
 pub use checkpoint::CheckpointDirectory;
 pub(super) use checkpoint::{CHECKPOINTS, check_page_length, checkpoint_page_name};

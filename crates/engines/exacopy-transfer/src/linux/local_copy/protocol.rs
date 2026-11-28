@@ -1,9 +1,9 @@
-use std::io::{self, Write as _};
+use std::io;
 
 use exacopy_endpoint::JournalSegment;
 use exacopy_endpoint::linux_publication::{
-	ExclusivePublication, PublicationFailure, ReceiptDirectory as _, ReceiptRecord as _,
-	ReceiptWorkspace,
+	ExclusivePublication, FreshReceiptError, FreshReceiptWorkspace, HeldFreshReceipt as _,
+	PublicationFailure,
 };
 use exacopy_journal::frame::FrameKind;
 use exacopy_journal::{
@@ -16,7 +16,9 @@ use exacopy_model::{CopyBinding, CopyEffect, CopyEvent, CopySession, PublishNoCl
 
 use crate::linux_staging::{StageFailure, observe};
 
-use super::super::{CopyCheckpoint, CopyReceipt, LocalCopyPlan};
+use super::super::{
+	CopyCheckpoint, CopyReceipt, LocalCopyPlan, MAX_COPY_RECEIPT_BYTES, ReceiptError,
+};
 use super::records::SealEvidence;
 
 #[derive(Debug)]
@@ -31,6 +33,7 @@ pub(in crate::linux) enum ProtocolError<R, S, P> {
 		source: P,
 		recording: Option<DurableJournalError>,
 	},
+	Receipt(ReceiptError),
 	ReceiptNamespace(S),
 	ReceiptIo(io::Error),
 }
@@ -153,7 +156,7 @@ impl Publication<'_, '_> {
 	}
 }
 
-pub(super) fn persist_receipt<R, P, J: ReceiptWorkspace>(
+pub(super) fn persist_receipt<R, P, J: FreshReceiptWorkspace>(
 	job: &J,
 	journal: &mut DurableJournal<impl JournalSegment>,
 	context: PublishIntentContext,
@@ -161,31 +164,43 @@ pub(super) fn persist_receipt<R, P, J: ReceiptWorkspace>(
 	durability: &SyncedFrame,
 	checkpoint: fn(CopyCheckpoint),
 ) -> Result<(), ProtocolError<R, J::Error, P>> {
+	let exact = receipt.encode();
+	let held = job
+		.seal_fresh_receipt(&exact)
+		.map_err(|error| match error {
+			FreshReceiptError::Namespace(error) => ProtocolError::ReceiptNamespace(error),
+			FreshReceiptError::Io(error) => ProtocolError::ReceiptIo(error),
+			_ => ProtocolError::ReceiptIo(io::Error::other("unrecognized fresh receipt failure")),
+		})?;
+	checkpoint(CopyCheckpoint::ReceiptSynced);
+
+	let mut bytes = [0; MAX_COPY_RECEIPT_BYTES];
+	let observed = &mut bytes[..exact.len()];
+	held.read_exact_receipt(observed)
+		.map_err(ProtocolError::ReceiptNamespace)?;
+	if observed[..] != exact[..] {
+		return Err(ProtocolError::ReceiptIo(io::Error::new(
+			io::ErrorKind::InvalidData,
+			"receipt read-back differs from the canonical copy receipt",
+		)));
+	}
+	let decoded = CopyReceipt::decode(observed).map_err(ProtocolError::Receipt)?;
 	let committed = ReceiptCommitted::new(
 		context,
-		ReceiptDigest::from_bytes(receipt.digest()),
+		ReceiptDigest::from_bytes(decoded.digest()),
 		durability.head(),
 	)
 	.map_err(ProtocolError::Record)?;
-	let receipts = job
-		.create_receipt_directory()
-		.map_err(ProtocolError::ReceiptNamespace)?;
-	let mut artifact = receipts
-		.create_receipt_record()
-		.map_err(ProtocolError::ReceiptNamespace)?;
-	artifact
-		.write_all(&receipt.encode())
-		.map_err(ProtocolError::ReceiptIo)?;
-	artifact.sync_all().map_err(ProtocolError::ReceiptIo)?;
-	drop(artifact);
-	receipts
-		.sync_directory()
-		.map_err(ProtocolError::ReceiptNamespace)?;
-	job.sync_directory()
-		.map_err(ProtocolError::ReceiptNamespace)?;
-	checkpoint(CopyCheckpoint::ReceiptSynced);
 	let _ = append(journal, FrameKind::ReceiptCommitted, &committed.encode())?;
 	checkpoint(CopyCheckpoint::ReceiptCommitted);
+	held.read_exact_receipt(observed)
+		.map_err(ProtocolError::ReceiptNamespace)?;
+	if observed[..] != exact[..] {
+		return Err(ProtocolError::ReceiptIo(io::Error::new(
+			io::ErrorKind::InvalidData,
+			"committed receipt read-back differs from the canonical copy receipt",
+		)));
+	}
 	Ok(())
 }
 

@@ -4,6 +4,7 @@ use exacopy_endpoint::linux_copy::{
 	CopyDestinationView, CopySource, CopySourceRoot, CopyWorkspace, PublishableStageDirectory as _,
 };
 use exacopy_endpoint::linux_job::{JobBootstrapRoot, JobWorkspace};
+use exacopy_endpoint::linux_publication::FreshReceiptWorkspace;
 use exacopy_endpoint::linux_staging::StageReader as _;
 use exacopy_endpoint::{JournalSegment, ReadView as _};
 use exacopy_journal::{OwnerProfileId, OwnerTimestamp, OwnerToken};
@@ -72,7 +73,9 @@ where
 	S: CopySourceRoot<Source: CopySource<Identity = J::Identity, Metadata = J::Metadata>>,
 	D: CopyDestinationView
 		+ JobBootstrapRoot<'root, Job = J, Error = <D as CopyDestinationView>::Error>,
-	J: CopyWorkspace + JobWorkspace<Error = <D as CopyDestinationView>::Error>,
+	J: CopyWorkspace
+		+ JobWorkspace<Error = <D as CopyDestinationView>::Error>
+		+ FreshReceiptWorkspace<Error = <D as CopyDestinationView>::Error>,
 	J::Segment: JournalSegment,
 {
 	let file = preflight_source::<S, D, J>(&planning, plan, scratch.len())?;
@@ -219,6 +222,7 @@ impl<R, S, P> From<ProtocolError<R, S, P>> for CopyError<R, S, P> {
 			ProtocolError::Publication { source, recording } => {
 				Self::Publication { source, recording }
 			}
+			ProtocolError::Receipt(error) => Self::Receipt(error),
 			ProtocolError::ReceiptNamespace(error) => Self::ReceiptNamespace(error),
 			ProtocolError::ReceiptIo(error) => Self::ReceiptIo(error),
 		}

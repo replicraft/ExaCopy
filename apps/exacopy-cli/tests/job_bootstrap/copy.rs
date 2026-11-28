@@ -269,3 +269,6 @@ fn conflicting_destination_capabilities_refuse_before_private_job_creation() {
 		source_bytes
 	);
 }
+
+#[path = "receipt_readback.rs"]
+mod receipt_readback;
