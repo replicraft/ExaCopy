@@ -61,10 +61,13 @@ and the contract marker test passed within the 952-test macOS default suite.
 Strict Clippy failed because the new integration target lacked crate
 documentation; `970e2d3` adds it. The same revision includes `c68da35`, which
 binds preview, preparation and signed export history custody to the original
-policy record. Their automatic CI results remain pending. These changes
+policy record. The existing whole-ext4 managed-sync fixture passed at
+`970e2d3`, including cleanup; its default suites remain pending. The later
+two-store regression and private checked-preflight extraction await CI. These changes
 provide neither a native activation issuer nor managed execution authority.
 [Claim contract](architecture/managed-activation-claim.md) ·
-[Recorded failure and test results](https://github.com/replicraft/ExaCopy/actions/runs/46161680845)
+[Recorded failure and test results](https://github.com/replicraft/ExaCopy/actions/runs/46161680845) ·
+[Record custody fixture](https://github.com/replicraft/ExaCopy/actions/runs/46162515256)
 
 Local work remains source-only at the maintainer's request. Automatic CI
 provides the runtime results above. The sections below retain earlier outcomes
