@@ -17,6 +17,9 @@ pub fn run(args: impl Iterator<Item = OsString>) -> ExitCode {
 
 pub(crate) fn run_with_output(
 	args: impl Iterator<Item = OsString>,
+	#[cfg(all(target_os = "linux", feature = "experimental-linux-managed-sync"))]
+	mut stdout: io::StdoutLock<'_>,
+	#[cfg(not(all(target_os = "linux", feature = "experimental-linux-managed-sync")))]
 	mut stdout: impl Write,
 	mut stderr: impl Write,
 ) -> ExitCode {
