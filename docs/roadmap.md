@@ -55,6 +55,17 @@ baseline activation remain open.
 [Signed proposal contract](architecture/signed-sync-recreate-export.md) ·
 [Exact managed-sync result](https://github.com/replicraft/ExaCopy/actions/runs/46148802537)
 
+The private managed activation claim now has a fixed 496-byte codec and
+independent binding and refusal controls. At `564432e`, all five codec tests
+and the contract marker test passed within the 952-test macOS default suite.
+Strict Clippy failed because the new integration target lacked crate
+documentation; `970e2d3` adds it. The same revision includes `c68da35`, which
+binds preview, preparation and signed export history custody to the original
+policy record. Their automatic CI results remain pending. These changes
+provide neither a native activation issuer nor managed execution authority.
+[Claim contract](architecture/managed-activation-claim.md) ·
+[Recorded failure and test results](https://github.com/replicraft/ExaCopy/actions/runs/46161680845)
+
 Local work remains source-only at the maintainer's request. Automatic CI
 provides the runtime results above. The sections below retain earlier outcomes
 and failures with their original revisions.
