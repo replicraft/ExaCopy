@@ -38,7 +38,9 @@ pub enum DurableJournalError {
 		/// Observed cursor position in bytes.
 		actual: u64,
 	},
-	/// The verified head differed from the supplied head.
+	/// The caller supplied a stale head to the held writer. The segment was not inspected.
+	StaleExpectedHead,
+	/// The reread verified head differed from the supplied head.
 	UnexpectedHead,
 	/// An existing frame could not be read or verified.
 	ReadFrame(FrameReadError),
@@ -83,6 +85,9 @@ impl fmt::Display for DurableJournalError {
 					formatter,
 					"journal cursor is at byte {actual}, expected {expected}"
 				)
+			}
+			Self::StaleExpectedHead => {
+				formatter.write_str("expected head differs from the writer's current head")
 			}
 			Self::UnexpectedHead => {
 				formatter.write_str("journal head differs from the expected head")

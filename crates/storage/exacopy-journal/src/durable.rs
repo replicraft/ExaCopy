@@ -82,38 +82,53 @@ impl<S: JournalSegment> DurableJournal<S> {
 			});
 		}
 		check_length(&segment, expected_end)?;
-		segment.rewind().map_err(DurableJournalError::Inspect)?;
-		let (head, end) = {
-			// Read at most one byte past the bounded expected length to observe EOF there.
-			let bytes = (&mut segment).take(expected_end + 1);
-			let mut reader = FrameReader::new(BufReader::new(bytes), ChainHead::start());
-			while reader
-				.next_frame()
-				.map_err(DurableJournalError::ReadFrame)?
-				.is_some()
-			{}
-			(reader.head(), reader.offset())
-		};
-		if end != expected_end {
-			return Err(DurableJournalError::UnexpectedLength {
-				expected: expected_end,
-				actual: end,
-			});
-		}
+		let head = reread_boundary(&mut segment, expected_end)?;
 		if head != expected_head {
 			return Err(DurableJournalError::UnexpectedHead);
 		}
-		segment
-			.seek(SeekFrom::Start(end))
-			.map_err(DurableJournalError::Inspect)?;
-		check_segment(&mut segment, end)?;
+		restore_boundary(&mut segment, expected_end)?;
 		let guard = enter().map_err(DurableJournalError::Admission)?;
 		segment.sync().map_err(DurableJournalError::Sync)?;
 		drop(guard);
 		Ok(Self {
 			writer: Some(FrameWriter::new(segment, head)),
-			end,
+			end: expected_end,
 		})
+	}
+
+	/// Rereads the held segment through the expected current synced frame and exact EOF.
+	/// Success restores the append cursor. This operation performs no writes or barriers.
+	/// It checks the envelope chain on this descriptor. The caller owns namespace identity,
+	/// owner authentication, semantic replay and native durability qualification.
+	/// # Errors
+	/// Refuses an unexpected stored head or barrier without I/O or retiring the writer.
+	/// Inspection, read, chain and cursor failures after a match retire the writer.
+	pub fn confirm_current_frame(
+		&mut self,
+		expected: &SyncedFrame,
+	) -> Result<(), DurableJournalError> {
+		let mut writer = self.writer.take().ok_or(DurableJournalError::Retired)?;
+		if writer.head() != expected.head() {
+			self.writer = Some(writer);
+			return Err(DurableJournalError::StaleExpectedHead);
+		}
+		if expected.barrier() != S::BARRIER {
+			self.writer = Some(writer);
+			return Err(DurableJournalError::UnexpectedBarrier {
+				expected: expected.barrier(),
+				actual: S::BARRIER,
+			});
+		}
+
+		let segment = writer.sink_mut();
+		check_segment(segment, self.end)?;
+		let head = reread_boundary(segment, self.end)?;
+		if head != expected.head() {
+			return Err(DurableJournalError::UnexpectedHead);
+		}
+		restore_boundary(segment, self.end)?;
+		self.writer = Some(writer);
+		Ok(())
 	}
 
 	/// Appends a complete frame and returns evidence of a successful file barrier.
@@ -271,6 +286,39 @@ impl SyncedFrame {
 	pub const fn barrier(&self) -> JournalFileBarrier {
 		self.barrier
 	}
+}
+
+// The caller supplies a boundary already limited to MAX_FIRST_SEGMENT_BYTES. A single extra
+// byte differentiates true EOF from reaching the limit, even with the buffered reader.
+fn reread_boundary(
+	segment: &mut impl JournalSegment,
+	expected_end: u64,
+) -> Result<ChainHead, DurableJournalError> {
+	segment.rewind().map_err(DurableJournalError::Inspect)?;
+	let bytes = segment.take(expected_end + 1);
+	let mut reader = FrameReader::new(BufReader::new(bytes), ChainHead::start());
+	while reader
+		.next_frame()
+		.map_err(DurableJournalError::ReadFrame)?
+		.is_some()
+	{}
+	if reader.offset() != expected_end {
+		return Err(DurableJournalError::UnexpectedLength {
+			expected: expected_end,
+			actual: reader.offset(),
+		});
+	}
+	Ok(reader.head())
+}
+
+fn restore_boundary(
+	segment: &mut impl JournalSegment,
+	end: u64,
+) -> Result<(), DurableJournalError> {
+	segment
+		.seek(SeekFrom::Start(end))
+		.map_err(DurableJournalError::Inspect)?;
+	check_segment(segment, end)
 }
 
 fn frame_end(offset: u64, payload_bytes: usize) -> Option<u64> {

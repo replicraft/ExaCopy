@@ -171,6 +171,13 @@ impl RecordedSeal<'_> {
 		self.seal.verification
 	}
 
+	pub(super) fn confirm_journal(
+		&self,
+		journal: &mut DurableJournal<impl JournalSegment>,
+	) -> Result<(), DurableJournalError> {
+		journal.confirm_current_frame(&self.metadata)
+	}
+
 	pub(super) const fn heads(&self) -> (ChainHead, ChainHead) {
 		(self.verification.head(), self.metadata.head())
 	}
