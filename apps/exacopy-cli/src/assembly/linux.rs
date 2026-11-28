@@ -22,7 +22,7 @@ pub use public_stage::{
 	AppliedPublicPlanError, LiveQualificationError, LocalApplyGrant, LocalApplyGrantError,
 	LocalApplyHostSelection, LocalApplyIssuer, LocalApplyQualificationEnrollment,
 	LocalApplyRootSelection, QualifiedPublicApplyProposalError, apply_qualified_public_plan,
-	stage_qualified_public_apply,
+	reconcile_public_apply, stage_qualified_public_apply,
 };
 mod recovery;
 #[cfg(all(

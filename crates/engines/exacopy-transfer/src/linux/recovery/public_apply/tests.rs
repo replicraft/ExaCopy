@@ -11,6 +11,7 @@ use crate::linux::JournalReplayError;
 use super::*;
 
 mod fixture;
+mod reconcile;
 
 use fixture::{
 	Artifact, BYTES, Fixture, OTHER, STAGE, journal_payloads, name, owner, plan, profile_id,

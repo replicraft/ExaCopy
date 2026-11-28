@@ -2,9 +2,19 @@ use std::fs;
 use std::os::unix::fs::MetadataExt as _;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use exacopy_journal::{ApplyQualificationDigest, OwnerTimestamp};
+use super::super::reconcile::reconcile_public_apply;
+use exacopy_endpoint::linux_recovery::ApplyContinuity;
+use exacopy_journal::{
+	ApplyCrashProfile, ApplyProcessCrashEnvironment, ApplyQualification, ApplyQualificationDigest,
+	OwnerTimestamp, PlanDigest,
+};
 use exacopy_plan::{PlanBody, UnixTimestamp};
 use exacopy_transfer::linux::{CopyProfile, PublicApplyStageRequest};
+use exacopy_transfer::linux::{
+	InspectionError, JournalTail, PublicApplyArchivedPhase, PublicApplyAssessment,
+	PublicApplyCurrentName, PublicApplyHistory, PublicApplyReceiptObservation,
+	PublicApplyReconcileSelection, PublicApplyReconciliation, RecoveryProfile,
+};
 use exacopy_transfer::public_plan::admit_single_file_plan;
 
 use super::super::checked::{
@@ -131,4 +141,79 @@ pub(super) fn assert_unenrolled_grant_refused(
 	let after = fs::symlink_metadata(fixture.source()).unwrap();
 	assert_eq!((source.dev(), source.ino()), (after.dev(), after.ino()));
 	assert_eq!(fs::read(fixture.source()).unwrap(), APPROVED);
+	assert_archived_preintent(fixture, roots, request, scratch);
+}
+
+fn assert_archived_preintent(
+	fixture: &Fixture,
+	roots: CopyRoots<'_>,
+	request: PublicApplyStageRequest<'_, '_, '_>,
+	scratch: &mut [u8],
+) {
+	let PublicApplyStageRequest {
+		approved,
+		private_plan,
+		profile,
+		..
+	} = request;
+	let attempt = private_plan.attempt();
+	let staged = super::super::stage(roots, request, scratch).unwrap();
+	let key = profile.signer.verifying_key();
+	let source = fs::symlink_metadata(fixture.source()).unwrap();
+	let stage = fs::symlink_metadata(fixture.stage(attempt)).unwrap();
+	let segment = fs::symlink_metadata(fixture.journal(attempt)).unwrap();
+	let selected = || PublicApplyReconcileSelection {
+		profile: RecoveryProfile {
+			id: profile.id,
+			verifying_key: &key,
+		},
+		approved,
+		private_plan: private_plan.digest(),
+		destination: private_plan.destination().root,
+		job_name: attempt.job_name,
+		qualification: ApplyQualification {
+			record: ApplyQualificationDigest::from_bytes([0xf1; 32]),
+			profile: ApplyCrashProfile::Arm64UbuntuExt4FixtureV1,
+			environment: ApplyProcessCrashEnvironment {
+				boot_id: [0xf2; 16],
+				mount_namespace: 17,
+				unique_mount: 29,
+				device: private_plan.destination().root.identity.device(),
+			},
+		},
+	};
+	// The fixture supplies a finite protected pre-intent cut and no continuity
+	// capability. It does not simulate current qualification or a publication.
+	let PublicApplyReconciliation::Authenticated { evidence, history } =
+		reconcile_public_apply(roots.destination, None, selected(), scratch).unwrap()
+	else {
+		panic!("expected authenticated pre-intent observations");
+	};
+	assert_eq!(evidence.owner_digest, staged.owner_digest);
+	assert!(matches!(*history, PublicApplyHistory::Journal {
+		phase: PublicApplyArchivedPhase::PreIntent,
+		tail: JournalTail::Clean,
+		continuity: ApplyContinuity::Unqualified,
+		stage: PublicApplyCurrentName::RecordedIdentityNumbersUnverified,
+		target: PublicApplyCurrentName::Absent,
+		receipt: PublicApplyReceiptObservation::Absent,
+		assessment: PublicApplyAssessment::PreIntent,
+		boundary,
+	} if boundary.offset == segment.len()));
+	let mut wrong = selected();
+	wrong.private_plan = PlanDigest::from_bytes([0xf3; 32]);
+	assert!(matches!(
+		reconcile_public_apply(roots.destination, None, wrong, scratch),
+		Err(InspectionError::OwnerBinding)
+	));
+	let after = fs::symlink_metadata(fixture.stage(attempt)).unwrap();
+	assert_eq!(
+		(stage.dev(), stage.ino(), stage.atime(), stage.atime_nsec()),
+		(after.dev(), after.ino(), after.atime(), after.atime_nsec())
+	);
+	let after = fs::symlink_metadata(fixture.source()).unwrap();
+	assert_eq!((source.dev(), source.ino()), (after.dev(), after.ino()));
+	assert_eq!(fs::read(fixture.stage(attempt)).unwrap(), APPROVED);
+	assert_eq!(fs::read(fixture.source()).unwrap(), APPROVED);
+	assert!(!fixture.target().try_exists().unwrap());
 }

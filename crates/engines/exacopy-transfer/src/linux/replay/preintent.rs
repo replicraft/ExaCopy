@@ -73,6 +73,14 @@ impl<R: Read> Scan<R> {
 								&& seal.length.get() == prepared.source.length(),
 						)?;
 						self.summary.sealed = Some(seal);
+						self.seal_boundary = Some(self.summary.boundary);
+						if let ReplayOwner::PublicApply(_, _, limit) = owner {
+							limit.set(
+								self.summary.boundary.offset
+									+ super::public_apply::MAX_PUBLIC_APPLY_SUFFIX_BYTES as u64
+									+ 1,
+							);
+						}
 						Next::Verify(seal)
 					}
 					Next::Verify(seal) => {
@@ -109,6 +117,19 @@ impl<R: Read> Scan<R> {
 						Next::Intent(verification_frame, verification, frame)
 					}
 					Next::Intent(verification_frame, verification, metadata) => {
+						if let ReplayOwner::PublicApply(owner, qualification, _) = owner {
+							return self.replay_public_suffix(
+								PublicationFrames {
+									verification: verification_frame,
+									metadata,
+									intent: frame,
+								},
+								plan,
+								owner,
+								qualification,
+								verification,
+							);
+						}
 						let ReplayOwner::Legacy(owner) = owner else {
 							return Err(JournalReplayError::UnexpectedRecord {
 								expected: None,
@@ -182,6 +203,7 @@ impl<R: Read> Scan<R> {
 		self.summary.latest_epoch = context.epoch;
 		self.summary.recovery_stage_directory = Some(recorded.stage_directory);
 		self.summary.sealed = None;
+		self.seal_boundary = None;
 		self.summary.verification = None;
 		self.summary.verification_head = None;
 		self.summary.metadata = None;

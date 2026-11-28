@@ -18,7 +18,7 @@ use super::{
 #[cfg(test)]
 mod tests;
 
-const STAGE_DIRECTORIES: [OwnerStateDirectory; 4] = [
+pub(super) const STAGE_DIRECTORIES: [OwnerStateDirectory; 4] = [
 	OwnerStateDirectory::Checkpoints,
 	OwnerStateDirectory::Journal,
 	OwnerStateDirectory::Receipts,

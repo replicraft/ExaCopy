@@ -15,6 +15,7 @@ mod checked;
 mod grant;
 #[cfg(any(test, feature = "experimental-linux-public-apply"))]
 mod qualification;
+mod reconcile;
 #[cfg(feature = "experimental-linux-public-apply")]
 pub use checked::{AppliedPublicPlanError, LiveQualificationError, apply_qualified_public_plan};
 #[cfg(feature = "experimental-linux-public-apply")]
@@ -27,6 +28,8 @@ pub use qualification::{
 	LocalApplyQualificationEnrollment, QualifiedPublicApplyProposalError,
 	stage_qualified_public_apply,
 };
+#[cfg(feature = "experimental-linux-public-apply")]
+pub use reconcile::reconcile_public_apply;
 
 #[cfg(test)]
 mod tests;

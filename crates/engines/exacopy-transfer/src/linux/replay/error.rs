@@ -2,8 +2,8 @@ use std::{error::Error, fmt};
 
 use exacopy_journal::frame::{FrameKind, FrameReadError};
 use exacopy_journal::{
-	IntentError, PreparedError, PublicationRecordError, RecoveryRecordError,
-	VerificationRecordError,
+	IntentError, PreparedError, PublicApplyIntentError, PublicationRecordError,
+	RecoveryRecordError, VerificationRecordError,
 };
 
 /// A local journal prefix that cannot be used as compatible recovery evidence.
@@ -16,6 +16,8 @@ pub enum JournalReplayError {
 	Frame(FrameReadError),
 	/// The segment exceeds the local single-segment profile's byte limit.
 	SegmentTooLarge,
+	/// Checked public history after its accepted seal exceeds the suffix byte limit.
+	PublicSuffixTooLarge,
 	/// An incomplete suffix follows a committed receipt.
 	TrailingAfterReceipt,
 	/// A complete frame was not the next record allowed for this journal.
@@ -41,6 +43,8 @@ pub enum JournalReplayError {
 	Verification(VerificationRecordError),
 	/// The publication intent payload was refused.
 	Intent(IntentError),
+	/// Mandatory checked-public intent was refused.
+	PublicIntent(PublicApplyIntentError),
 	/// A publication observation, barrier, or receipt payload or binding was refused.
 	Publication(PublicationRecordError),
 	/// A recovery start or decision payload or link was refused.
@@ -54,6 +58,9 @@ impl fmt::Display for JournalReplayError {
 			Self::Frame(error) => write!(formatter, "journal frame refused ({error})"),
 			Self::SegmentTooLarge => {
 				formatter.write_str("local journal exceeds the segment byte limit")
+			}
+			Self::PublicSuffixTooLarge => {
+				formatter.write_str("checked public journal suffix exceeds its byte limit")
 			}
 			Self::TrailingAfterReceipt => {
 				formatter.write_str("incomplete record follows the final receipt")
@@ -96,6 +103,7 @@ impl Error for JournalReplayError {
 			Self::Prepared(error) => Some(error),
 			Self::Verification(error) => Some(error),
 			Self::Intent(error) => Some(error),
+			Self::PublicIntent(error) => Some(error),
 			Self::Publication(error) => Some(error),
 			Self::Recovery(error) => Some(error),
 			_ => None,

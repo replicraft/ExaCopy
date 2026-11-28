@@ -45,7 +45,8 @@ pub use process_crash::{
 pub use recovery::{
 	ActiveWitnessReservation, ContinuationReservationError, FreshRecoveryStage,
 	PendingProtectedWitness, PendingWitnessReservation, ProtectedWitnessEffect,
-	ProtectedWitnessError, RecoveredWitnessJournal, RecoveredWitnessJournalError, RecoveryFile,
+	ProtectedWitnessError, PublicApplyRecoveryNames, PublicApplyRecoveryRecords,
+	PublicApplyRecoveryView, RecoveredWitnessJournal, RecoveredWitnessJournalError, RecoveryFile,
 	RecoveryInventory, RecoveryJob, RecoveryReadLease, RecoveryReceiptDirectory,
 	RecoveryStageAnchor, RecoveryStageDirectory, RecoveryWriteLease, ReservedContinuationRequest,
 	ReservedJournalRead, RetainedPrefixRead, RetainedPrefixSelection, RetainedStage,

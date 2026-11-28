@@ -90,6 +90,17 @@ fn independent_v2_commit_checks_the_complete_terminal_suffix() {
 	let (journal, bytes) = vector!("valid");
 	let selected = selection();
 	PublicApplyReceipt::validate_commit(journal.as_slice(), &bytes, selected).unwrap();
+	let exact = ChainHead::after(
+		10,
+		hex("9690f004b607869379282d8211a47aba82bceb353ed35d19a5de496fbb1f07f8")
+			.try_into()
+			.unwrap(),
+	)
+	.unwrap();
+	assert_eq!(
+		PublicApplyReceipt::validate_commit_boundary(journal.as_slice(), &bytes, selected).unwrap(),
+		exact,
+	);
 
 	let mut reader = FrameReader::new(journal.as_slice(), selected.seal);
 	let verification = reader.next_frame().unwrap().unwrap();

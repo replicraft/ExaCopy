@@ -20,12 +20,16 @@ use super::stage::{CHILD_RESOLVE, DestinationRoot, StageError, check_private_chi
 mod anchor;
 mod artifacts;
 mod lease;
+mod public_apply;
 mod terminal;
 mod witnessed_names;
 mod writer;
 
 pub use anchor::RecoveryStageAnchor;
 pub use lease::RecoveryReadLease;
+pub use public_apply::{
+	PublicApplyRecoveryNames, PublicApplyRecoveryRecords, PublicApplyRecoveryView,
+};
 pub use terminal::{
 	WitnessedPublicPins, WitnessedPublicSelection, WitnessedPublishedArtifacts,
 	WitnessedPublishedSelection, WitnessedReceiptLocation, WitnessedTerminalArtifacts,

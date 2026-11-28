@@ -4,6 +4,8 @@ use std::error::Error;
 use std::fmt;
 use std::io;
 
+use exacopy_endpoint::linux_job::JobFileIdentity;
+use exacopy_endpoint::linux_recovery::ApplyRecoveryEnvironment;
 use rustix::io::Errno;
 
 use super::mount_observation::ProcMounts;
@@ -83,6 +85,34 @@ impl<'root> ProcessCrashEligibility<'root> {
 	#[must_use]
 	pub const fn profile_id(&self) -> ProcessCrashProfileId {
 		ProcessCrashProfileId::Arm64UbuntuExt4FixtureV1
+	}
+
+	pub(super) fn recheck_for_apply_inspection(
+		&self,
+		source: JobFileIdentity,
+		destination: &DestinationRoot,
+		expected: ApplyRecoveryEnvironment,
+	) -> Result<(), ProcessCrashProfileError> {
+		if !std::ptr::eq(self.destination, destination)
+			|| JobFileIdentity::from(self.source.identity()) != source
+		{
+			return Err(ProcessCrashProfileError::EnvironmentChanged);
+		}
+		let observed = self.recheck_observed()?;
+		if (
+			observed.boot_id,
+			observed.mount_namespace,
+			observed.unique_mount,
+			observed.device,
+		) != (
+			expected.boot_id,
+			expected.mount_namespace,
+			expected.unique_mount,
+			expected.device,
+		) {
+			return Err(ProcessCrashProfileError::EnvironmentChanged);
+		}
+		Ok(())
 	}
 
 	/// Re-observes the original roots and environment before publication intent.

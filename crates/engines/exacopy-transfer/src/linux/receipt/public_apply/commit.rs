@@ -140,6 +140,14 @@ impl PublicApplyReceipt<'_> {
 		receipt_bytes: &[u8],
 		selected: PublicApplyCommitSelection<'_>,
 	) -> Result<(), PublicApplyCommitError> {
+		Self::validate_commit_boundary(input, receipt_bytes, selected).map(|_| ())
+	}
+
+	pub(in crate::linux) fn validate_commit_boundary(
+		input: impl Read,
+		receipt_bytes: &[u8],
+		selected: PublicApplyCommitSelection<'_>,
+	) -> Result<ChainHead, PublicApplyCommitError> {
 		use PublicApplyCommitError as Error;
 
 		if selected.seal == ChainHead::start() {
@@ -202,7 +210,8 @@ impl PublicApplyReceipt<'_> {
 		if reader.offset() > MAX_COMMIT_SUFFIX_BYTES {
 			return Err(Error::TrailingOrOversize);
 		}
-		check_eof(&mut input)
+		check_eof(&mut input)?;
+		Ok(committed.head())
 	}
 }
 

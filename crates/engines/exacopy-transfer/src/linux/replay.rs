@@ -1,24 +1,29 @@
 //! Read-only replay of the fixed single-file publication journal.
 
-use std::io::Read;
+use std::cell::Cell;
+use std::io::{Read, Take};
 
 use exacopy_journal::frame::{ChainHead, Frame, FrameKind, FrameReadError, FrameReader};
 use exacopy_journal::{
-	DurabilityRecorded, EntryPrepared, JobPrepared, JournalContext, JournalEntryId, JournalEpoch,
-	LinuxFileIdentity, LiveSourceView, MAX_FIRST_SEGMENT_BYTES, MetadataRecorded, OwnerDigest,
-	OwnerManifest, OwnerRecord, OwnerStateDirectory, PublicApplyOwnerRecord, PublishIntentContext,
-	PublishObserved, RangeCheckpoint, ReceiptCommitted, SourceInodeMetadata, SourceMeasurementId,
-	StageSealed, VerificationRecorded,
+	ApplyQualification, DurabilityRecorded, EntryPrepared, JobPrepared, JournalContext,
+	JournalEntryId, JournalEpoch, LinuxFileIdentity, LiveSourceView, MAX_FIRST_SEGMENT_BYTES,
+	MetadataRecorded, OwnerDigest, OwnerManifest, OwnerRecord, OwnerStateDirectory,
+	PublicApplyOwnerRecord, PublishIntentContext, PublishObserved, RangeCheckpoint,
+	ReceiptCommitted, SourceInodeMetadata, SourceMeasurementId, StageSealed, VerificationRecorded,
 };
 
 use super::LocalCopyPlan;
 
 mod error;
 mod preintent;
+mod public_apply;
 mod ranges;
 mod suffix;
 
 pub use error::JournalReplayError;
+pub(super) use public_apply::{
+	MAX_PUBLIC_APPLY_SUFFIX_BYTES, PublicApplyReplay, replay_public_apply,
+};
 
 #[cfg(test)]
 mod tests;
@@ -136,6 +141,14 @@ pub(super) fn replay_public_stage(
 	check_public_stage_plan(plan, owner)?;
 	let binding = owner.manifest().binding;
 	let summary = replay_bound_journal(reader, plan, ReplayOwner::PublicStage(owner))?;
+	check_public_stream(&summary, binding)?;
+	Ok(summary)
+}
+
+fn check_public_stream(
+	summary: &JournalReplay,
+	binding: exacopy_journal::PublicApplyBinding,
+) -> Result<(), JournalReplayError> {
 	if let Some(verification) = summary.verification {
 		require_binding(
 			FrameKind::VerificationRecorded,
@@ -145,7 +158,7 @@ pub(super) fn replay_public_stage(
 				&& verification.stage().digest.as_bytes() == binding.stream_digest.as_bytes(),
 		)?;
 	}
-	Ok(summary)
+	Ok(())
 }
 
 pub(super) fn check_public_stage_plan(
@@ -172,20 +185,25 @@ pub(super) fn check_public_stage_plan(
 enum ReplayOwner<'owner> {
 	Legacy(&'owner OwnerRecord),
 	PublicStage(&'owner PublicApplyOwnerRecord),
+	PublicApply(
+		&'owner PublicApplyOwnerRecord,
+		ApplyQualification,
+		&'owner Cell<u64>,
+	),
 }
 
 impl<'owner> ReplayOwner<'owner> {
 	fn manifest(self) -> &'owner OwnerManifest {
 		match self {
 			Self::Legacy(owner) => owner.manifest(),
-			Self::PublicStage(owner) => &owner.manifest().owner,
+			Self::PublicStage(owner) | Self::PublicApply(owner, _, _) => &owner.manifest().owner,
 		}
 	}
 
 	fn digest(self) -> OwnerDigest {
 		match self {
 			Self::Legacy(owner) => owner.digest(),
-			Self::PublicStage(owner) => owner.digest(),
+			Self::PublicStage(owner) | Self::PublicApply(owner, _, _) => owner.digest(),
 		}
 	}
 }
@@ -195,11 +213,20 @@ fn replay_bound_journal(
 	plan: &LocalCopyPlan<'_>,
 	owner: ReplayOwner<'_>,
 ) -> Result<JournalReplay, JournalReplayError> {
+	Ok(scan_bound_journal(reader, plan, owner)?.summary)
+}
+
+fn scan_bound_journal<R: Read>(
+	reader: R,
+	plan: &LocalCopyPlan<'_>,
+	owner: ReplayOwner<'_>,
+) -> Result<Scan<Take<R>>, JournalReplayError> {
 	check_owner_plan(plan, owner.manifest())?;
 	let context = plan.context();
 
 	let mut scan = Scan {
 		reader: FrameReader::new(reader.take(MAX_LOCAL_JOURNAL_BYTES + 1), ChainHead::start()),
+		seal_boundary: None,
 		summary: JournalReplay {
 			boundary: JournalBoundary {
 				head: ChainHead::start(),
@@ -231,7 +258,7 @@ fn replay_bound_journal(
 		},
 	};
 	scan.replay(plan, owner, context)?;
-	Ok(scan.summary)
+	Ok(scan)
 }
 
 fn check_owner_plan(
@@ -256,6 +283,7 @@ fn check_owner_plan(
 }
 
 struct Scan<R> {
+	seal_boundary: Option<JournalBoundary>,
 	reader: FrameReader<R>,
 	summary: JournalReplay,
 }

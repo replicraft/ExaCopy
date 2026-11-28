@@ -18,6 +18,7 @@ mod finish;
 mod lease;
 mod observations;
 mod public_apply;
+mod public_reconcile;
 mod resume;
 mod retry;
 mod source;
@@ -37,6 +38,11 @@ use observations::{
 pub use public_apply::{
 	AuthenticatedPublicStage, PublicStageHistory, PublicStageInspection, PublicStageObservation,
 	inspect_public_stage_with_job,
+};
+pub use public_reconcile::{
+	PublicApplyArchivedPhase, PublicApplyAssessment, PublicApplyCurrentName, PublicApplyHistory,
+	PublicApplyReceiptObservation, PublicApplyReconcileSelection, PublicApplyReconciliation,
+	reconcile_public_apply_with_lease,
 };
 pub use resume::resume_with_lease;
 pub use retry::{RecoverySource, SourceRecoveryFailure, retry_with_lease};
