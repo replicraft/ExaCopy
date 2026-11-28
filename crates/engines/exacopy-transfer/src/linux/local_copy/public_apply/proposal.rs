@@ -14,7 +14,7 @@ use crate::copy_planning::linux_baseline_metadata_policy_digest;
 use crate::linux_staging::check_source;
 
 use super::super::{CopyCheckpoint, CopyError, PlanningRoots, check_absent, records::RecordedSeal};
-use super::{HeldStage, PublicApplyStageRequest, stage_with_seal, timestamp_tuple};
+use super::{HeldStage, PublicApplyStageRequest, StageFinish, stage_with_seal, timestamp_tuple};
 
 #[cfg(test)]
 mod tests;
@@ -101,8 +101,6 @@ where
 	J: CopyWorkspace + JobWorkspace<Error = <D as CopyDestinationView>::Error>,
 	J::Segment: JournalSegment,
 {
-	use PublicApplyIntentPreparationError as Error;
-
 	check_selection(&request, selection)?;
 	let request = &request;
 	stage_with_seal(
@@ -114,21 +112,55 @@ where
 			let admitted = check_current(request, selection, observe(), request.profile.created)?;
 			Ok((admitted, observe))
 		},
-		|(admitted, mut observe),
-		 source: &S::Source,
-		 owner: OwnerDigest,
-		 recorded: RecordedSeal<'_>,
-		 _held: HeldStage<'_, '_, '_, J>| {
-			check_source(source).map_err(|error| Error::Stage(CopyError::SourcePolicy(error)))?;
-			check_absent(
-				roots.destination,
-				request.private_plan.destination().component,
-			)
-			.map_err(Error::Stage)?;
-			let now = check_current(request, selection, observe(), admitted)?;
-			propose(request, selection, now, owner, &recorded)
+		ProposeAtSeal {
+			request,
+			destination: roots.destination,
+			selection,
 		},
 	)
+}
+
+struct ProposeAtSeal<'call, 'request, 'bundle, 'name, 'root, D> {
+	request: &'call PublicApplyStageRequest<'request, 'bundle, 'name>,
+	destination: &'root D,
+	selection: PublicApplyIntentSelection,
+}
+
+impl<'name, S, D, J, O>
+	StageFinish<S, J, (OwnerTimestamp, O), PublicApplyIntent<'name>, IntentFailure<S::Error, D, J>>
+	for ProposeAtSeal<'_, '_, '_, 'name, '_, D>
+where
+	S: CopySource,
+	D: CopyDestinationView,
+	J: CopyWorkspace,
+	O: FnMut() -> Option<PublicApplyIntentObservation>,
+{
+	fn finish<'finish, 'stage, 'job>(
+		self,
+		(admitted, mut observe): (OwnerTimestamp, O),
+		source: &S,
+		owner: OwnerDigest,
+		recorded: RecordedSeal<'_>,
+		_held: HeldStage<'finish, 'stage, 'job, J>,
+	) -> Result<PublicApplyIntent<'name>, IntentFailure<S::Error, D, J>>
+	where
+		J: 'job,
+		'job: 'stage,
+		'stage: 'finish,
+	{
+		use PublicApplyIntentPreparationError as Error;
+
+		let Self {
+			request,
+			destination,
+			selection,
+		} = self;
+		check_source(source).map_err(|error| Error::Stage(CopyError::SourcePolicy(error)))?;
+		check_absent(destination, request.private_plan.destination().component)
+			.map_err(Error::Stage)?;
+		let now = check_current(request, selection, observe(), admitted)?;
+		propose(request, selection, now, owner, &recorded)
+	}
 }
 
 fn check_selection<R, S, P>(

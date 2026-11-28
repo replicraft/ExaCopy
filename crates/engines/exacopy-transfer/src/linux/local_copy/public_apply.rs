@@ -88,11 +88,7 @@ where
 		scratch,
 		checkpoint,
 		|| Ok(()),
-		|(),
-		 _source: &S::Source,
-		 owner_digest: OwnerDigest,
-		 _recorded: RecordedSeal<'_>,
-		 _held: HeldStage<'_, '_, '_, J>| { Ok(PublicApplyStage { owner_digest }) },
+		KeepPrivateStage,
 	)
 }
 
@@ -110,19 +106,50 @@ type HeldStage<'finish, 'stage, 'job, J> = (
 	&'finish mut DurableJournal<<J as JobWorkspace>::Segment>,
 );
 
+// The nested stage borrows must refer to the same actual job and stage lifetimes, including
+// inside the invariant Option slot. A generic method ties them at the coordinator call.
+trait StageFinish<S, J: CopyWorkspace, A, T, E> {
+	fn finish<'finish, 'stage, 'job>(
+		self,
+		admission: A,
+		source: &S,
+		owner: OwnerDigest,
+		recorded: RecordedSeal<'_>,
+		held: HeldStage<'finish, 'stage, 'job, J>,
+	) -> Result<T, E>
+	where
+		J: 'job,
+		'job: 'stage,
+		'stage: 'finish;
+}
+
+struct KeepPrivateStage;
+
+impl<S, J: CopyWorkspace, E> StageFinish<S, J, (), PublicApplyStage, E> for KeepPrivateStage {
+	fn finish<'finish, 'stage, 'job>(
+		self,
+		(): (),
+		_source: &S,
+		owner_digest: OwnerDigest,
+		_recorded: RecordedSeal<'_>,
+		_held: HeldStage<'finish, 'stage, 'job, J>,
+	) -> Result<PublicApplyStage, E>
+	where
+		J: 'job,
+		'job: 'stage,
+		'stage: 'finish,
+	{
+		Ok(PublicApplyStage { owner_digest })
+	}
+}
+
 fn stage_with_seal<'root, S, D, J, A, T, E>(
 	roots: PlanningRoots<'root, S, D>,
 	request: &PublicApplyStageRequest<'_, '_, '_>,
 	scratch: &mut [u8],
 	checkpoint: fn(CopyCheckpoint),
 	before_bootstrap: impl FnOnce() -> Result<A, E>,
-	finish: impl FnOnce(
-		A,
-		&S::Source,
-		OwnerDigest,
-		RecordedSeal<'_>,
-		HeldStage<'_, '_, '_, J>,
-	) -> Result<T, E>,
+	finish: impl StageFinish<S::Source, J, A, T, E>,
 ) -> Result<T, E>
 where
 	S: CopySourceRoot<Source: CopySource<Identity = J::Identity, Metadata = J::Metadata>>,
@@ -200,7 +227,7 @@ where
 		.map_err(CopyError::from)?;
 	checkpoint(CopyCheckpoint::StageSealed);
 	let mut stage = Some(stage);
-	finish(
+	finish.finish(
 		admission,
 		&file,
 		owner_digest,
