@@ -1,5 +1,6 @@
 //! Bounded operation contracts shared by storage adapters.
 #![forbid(unsafe_code)]
+#![cfg_attr(kani, feature(proc_macro_hygiene, stmt_expr_attributes))]
 
 pub mod connection_retry;
 mod journal_segment;

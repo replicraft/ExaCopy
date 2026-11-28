@@ -365,3 +365,27 @@ pub(crate) fn equal_jitter(ceiling_ms: u64, sample: u32) -> Duration {
 	let random_ms = (u64::from(sample) * (half + 1)) >> u32::BITS;
 	Duration::from_millis(half + random_ms)
 }
+
+#[cfg(kani)]
+impl RetrySupervisor {
+	pub(crate) fn matches_history_boundary(
+		&self,
+		owner: RetryOwner,
+		generation: u64,
+		ceiling_ms: u64,
+		waiting: Option<Duration>,
+		last_observation: Duration,
+	) -> bool {
+		let phase_matches = match (self.phase, waiting) {
+			(Phase::Ready, None) => true,
+			(Phase::Waiting(actual), Some(expected)) => actual == expected,
+			_ => false,
+		};
+		self.owner == owner
+			&& self.grant_expires_at == Duration::MAX
+			&& self.generation == generation
+			&& self.next_backoff_ms == ceiling_ms
+			&& self.last_observation == last_observation
+			&& phase_matches
+	}
+}

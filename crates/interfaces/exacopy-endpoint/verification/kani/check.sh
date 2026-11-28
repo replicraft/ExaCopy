@@ -12,22 +12,22 @@ case "$mutation" in
 	lease-clipping)
 		harness='kani_checks::connection_retry::lease_and_revocation_bound_waiting_and_redial'
 		assertion='the lease clips the jittered wake exactly at expiry'
-		expected_source='b199c66a4e2a3a1e00fcb5628d67d2be1dcb7076381ba465d5c910c024f512ac'
+		expected_source='8b7a38617b8097e5da236807b55adf43a0c399b78c0e7bc76709dd18fca5baac'
 		;;
 	source-fence)
 		harness='kani_checks::connection_retry::reconnect_requires_current_route_ssh_and_source_and_fences_retired_work'
 		assertion='every independent observation must refer to the current attempt'
-		expected_source='0a425f483ce893d106b9f46f4ae0a030d18f210b0d7a5b613ff259d9d251074f'
+		expected_source='15b83e6cbe91160dade0a5276d81732f7136032e1fba5acc29d420daf1268a68'
 		;;
 	health-activity)
 		harness='kani_checks::connection_retry::penalty_resets_only_after_current_verified_activity_and_health'
 		assertion='reset requires both qualifying activity and the full healthy duration'
-		expected_source='2c72b3622c9ee4d7356c78d4a84d563c24722e39227966e2b985ae77218265f7'
+		expected_source='dd9a2b5e55f99179344c52f8d6776178359cb65040f8f276c8a4e492641c4cb3'
 		;;
 	inclusive-jitter)
 		harness='kani_checks::connection_retry::concrete_transient_backoff_is_bounded_and_claims_only_the_due_generation'
 		assertion='every sample maps proportionally into the inclusive equal-jitter window'
-		expected_source='ca32605f65e6f7d3ecbee5949aa8aa5bd0a7ad4d8ef2fe214a72782d7f6c6d80'
+		expected_source='34e1d63ad9732f049dcc93a4a6dff218f1a802f53006467336a4180261d46043'
 		;;
 	*) printf 'Unknown retry mutation: %s\n' "$mutation" >&2; exit 2 ;;
 esac
@@ -77,10 +77,11 @@ lock_before=$(LC_ALL=C shasum -a 256 Cargo.lock)
 CARGO_NET_OFFLINE=true "${cargo[@]}" metadata --locked --format-version 1 \
 	--filter-platform "$target" > /dev/null
 
-# Require the exact eight selected harnesses and all 17 cover goals.
+# Require the exact nine selected harnesses and all 18 cover goals.
 plans=(
 	kani_checks::connection_retry::permanent_and_uncertain_failures_never_redial=2
 	kani_checks::connection_retry::transient_backoff_is_bounded_and_claims_only_the_due_generation=1
+	kani_checks::connection_retry::concrete_capped_waits_reach_the_ninth_generation=1
 	kani_checks::connection_retry::lease_and_revocation_bound_waiting_and_redial=3
 	kani_checks::connection_retry::reconnect_requires_current_route_ssh_and_source_and_fences_retired_work=4
 	kani_checks::connection_retry::penalty_resets_only_after_current_verified_activity_and_health=3
@@ -89,11 +90,13 @@ plans=(
 	kani_checks::jitter_oracle::real_equal_jitter_matches_the_exact_delay=1
 )
 harnesses=()
+loop_contracts=()
 harness_timeout=600s
 if [[ -n "$mutation" ]]; then
 	harness_timeout=120s
 	harnesses=(--harness "$harness")
 else
+	loop_contracts=(-Z loop-contracts)
 	for plan in "${plans[@]}"; do
 		harnesses+=(--harness "${plan%=*}")
 	done
@@ -105,7 +108,7 @@ trap 'rm -f "$kani_log"' EXIT
 set +e
 CARGO_NET_OFFLINE=true "${cargo[@]}" kani --package exacopy-endpoint --lib --exact \
 	"${harnesses[@]}" --output-format regular -Z unstable-options \
-	-Z function-contracts -Z stubbing --no-assert-contracts \
+	-Z function-contracts -Z stubbing --no-assert-contracts "${loop_contracts[@]}" \
 	--harness-timeout "$harness_timeout" 2>&1 | tee "$kani_log"
 pipeline_status=("${PIPESTATUS[@]}")
 set -e
@@ -229,7 +232,7 @@ if ! grep -Fxq "Complete - ${#plans[@]} successfully verified harnesses, 0 failu
 			exit wrong
 		}
 	' "$kani_log"; then
-	printf 'Retry Kani verification requires all eight selected harnesses and seventeen covered goals.\n' >&2
+	printf 'Retry Kani verification requires all nine selected harnesses and eighteen covered goals.\n' >&2
 	exit 1
 fi
 check_minisat_solver \
@@ -237,3 +240,60 @@ check_minisat_solver \
 	kani_checks::jitter_oracle::narrow_jitter_oracle_matches_widened_formula
 check_contract_stubs \
 	kani_checks::connection_retry::transient_backoff_is_bounded_and_claims_only_the_due_generation
+
+# The aggregate success alone cannot establish that Kani used the annotated
+# loop or checked its actual writes. Require the generated properties, with
+# write locations bound to the three loop-carried assignments in this source.
+history_file=verification/kani/connection_retry/transient_history.rs
+read -r supervisor_line now_line row_line < <(awk '
+	/^[[:space:]]*supervisor = next_supervisor;$/ { supervisor = NR; supervisor_count++ }
+	/^[[:space:]]*now = wake_at;$/ { now = NR; now_count++ }
+	/^[[:space:]]*row \+= 1;$/ { row = NR; row_count++ }
+	END {
+		if (supervisor_count != 1 || now_count != 1 || row_count != 1 ||
+		    supervisor >= now || now >= row) exit 1
+		print supervisor, now, row
+	}
+' "$kani_dir/../../$history_file")
+if ! awk -v history=kani_checks::connection_retry::transient_backoff_is_bounded_and_claims_only_the_due_generation \
+	-v source="$history_file" -v supervisor="$supervisor_line" -v now="$now_line" -v row="$row_line" '
+	function at_location(line, path, start) {
+		path = source ":" line
+		start = index($0, path)
+		return start && substr($0, start + length(path)) ~ /^(:| in function |$)/
+	}
+	/^Checking harness .*\.\.\.$/ {
+		active = ($0 == "Checking harness " history "...")
+	}
+	active && /^Check [0-9]+:/ { property = $0 }
+	active && /- Status: SUCCESS$/ { success = NR }
+	active && success == NR - 1 && /- Description: "/ {
+		description = $0
+		sub(/^[[:space:]]*- Description: "/, "", description)
+		sub(/"$/, "", description)
+		if (property ~ /\.assigns\.[0-9]+$/ && description ~ /^Check that .* is assignable$/)
+			write = NR
+		if (description !~ / for loop .*check_inductive_history[^ ]*\.[0-9]+$/) next
+		loop = description
+		sub(/^.* for loop /, "", loop)
+		if (property ~ /\.loop_invariant_base\.[0-9]+$/ &&
+		    description ~ /^Check invariant before entry for loop /) entry[loop]++
+		if (property ~ /\.loop_invariant_step\.[0-9]+$/ &&
+		    description ~ /^Check invariant after step for loop /) step[loop]++
+		if (property ~ /\.loop_decreases\.[0-9]+$/ &&
+		    description ~ /^Check variant decreases after step for loop /) rank[loop]++
+	}
+	active && write == NR - 1 && /- Location: / {
+		if (at_location(supervisor)) supervisor_checked++
+		if (at_location(now)) now_checked++
+		if (at_location(row)) row_checked++
+	}
+	END {
+		for (loop in entry)
+			if (step[loop] && rank[loop]) complete++
+		exit !(complete == 1 && supervisor_checked && now_checked && row_checked)
+	}
+' "$kani_log"; then
+	printf '%s\n' 'Expected checked retry loop invariant, scalar rank and all three carried writes.' >&2
+	exit 1
+fi

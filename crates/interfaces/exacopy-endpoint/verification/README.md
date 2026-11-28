@@ -1,8 +1,8 @@
 # Endpoint retry verification
 
-P-020 includes the bounded endpoint scheduler checks in this crate. The six scheduler harnesses invoke the production `RetrySupervisor` with an injected monotonic clock, fixed grant expiry and typed attempt observations. They exercise no credentials, transport, or filesystem operations. Durable job identity and effect recovery belong to the managing application and journal. This packet supplies no extracted Lean or full P-020 evidence.
+P-020 includes the bounded endpoint scheduler checks in this crate. The seven scheduler harnesses invoke the production `RetrySupervisor` with an injected monotonic clock, fixed grant expiry and typed attempt observations. They exercise no credentials, transport, or filesystem operations. Durable job identity and effect recovery belong to the managing application and journal. This packet supplies no extracted Lean or full P-020 evidence.
 
-Run `verification/check.sh kani` from the endpoint crate or invoke its workspace-relative path. The dispatcher uses the shared pinned Kani, compiler and CBMC lock. It runs eight exact harness names and requires all seventeen cover goals with unwinding checks enabled. The crate manifest links the principal history harness. The same gate requires the five scheduler companions, the arithmetic equivalence lemma, and the real jitter contract proof. The clean Kani invocation gives each selected harness up to 600 seconds. The standard evidence recorder keeps a 900-second limit for the entire clean gate, including setup, and treats a timeout as failure. The four mutation controls run separately with a 120-second limit each.
+Run `verification/check.sh kani` from the endpoint crate or invoke its workspace-relative path. The dispatcher uses the shared pinned Kani, compiler and CBMC lock. It runs nine exact harness names and requires all eighteen cover goals with unwinding checks enabled. The crate manifest links the principal history harness. The same gate requires a separate concrete cap witness, the five scheduler companions, the arithmetic equivalence lemma, and the real jitter contract proof. The clean Kani invocation gives each selected harness up to 600 seconds. The standard evidence recorder keeps a 900-second limit for the entire clean gate, including setup, and treats a timeout as failure. The four mutation controls run separately with a 120-second limit each.
 
 ## Retained gate results
 
@@ -31,11 +31,11 @@ The transient history and arithmetic lemma select MiniSAT 2.2.1 from the existin
 
 The history checks still use eight fresh full-width samples and the actual cumulative schedule through nine starts. Each exact delay now uses a `u64` product in the independent literal-window oracle. Its largest numerator is `(2^32 - 1) × 30,001 < 2^47`. A separate harness checks the same history helper against the original `u128` quotient for every literal window under an arbitrary `u32` sample, with one interior-sample cover after all comparisons. The composed history still calls the real supervisor. Its sole verified replacement is the pure jitter function. The separate real-function harness checks the exact returned duration for every full-width sample at all seven distinct literal ceilings. The composed history checks the ceiling precondition at the actual calls. Clean evidence requires both the concrete contract proof and the original wide-oracle equivalence together with the original history and its companions.
 
-The inclusive-jitter mutation gate runs the same history body through its concrete entry point. The selected mutated production function runs directly. Ordinary harness calls also use their original functions. Kani’s `--no-assert-contracts` disables automatic contract wrappers on those ordinary calls, while the explicit contract proof and verified replacement remain active in their owning harnesses. The log gate rejects other substitutions and requires the exact verified-jitter banner for the composed history. The contract, composed history and concrete mutation remain unverified.
+The inclusive-jitter mutation gate runs the same row checks in a concrete, unannotated full history. The selected mutated production function runs directly. Ordinary harness calls also use their original functions. Kani’s `--no-assert-contracts` disables automatic contract wrappers on those ordinary calls, while the explicit contract proof and verified replacement remain active in their owning harnesses. The log gate rejects other substitutions and requires the exact verified-jitter banner for the composed history. The contract, composed history and concrete mutation remain unverified.
 
 The current encoding compares the contract return and four history timing predicates through exact `Duration::as_nanos()` values. For valid normalized durations this is injective and preserves order. It removes expected `Duration::from_millis` normalization and repeated addition from the oracle while retaining all real supervisor operations, eight independent full-width samples, nine starts, exact early polling, cumulative feedback and the cap cover. Nanosecond sums fit `u128` without narrowing. The independent wide/narrow arithmetic lemma and real-callee proof are unchanged. The first hosted run of this encoding timed out as recorded above. The complete gate remains unverified under the same time limits.
 
-The composed history draws an independent selector for one of its eight rows. It retains the selected row’s observed timing and sample, then checks its exact proportional mapping after the ninth start. The selector cannot alter any supervisor input or control flow. Kani must satisfy the exact mapping for every combination of the eight unrestricted samples and all eight row choices. The same run still checks every row’s generation, overlap refusal, timing bounds, endpoint cases, and early poll. A missing selected observation, unexpected supervisor result, or assertion failure rejects the proof. The concrete inclusive-jitter mutation continues checking the mapping inline at every row. The proof gates and time limits remain the same. Its first hosted run timed out as recorded above.
+The previous selected-row encoding draws an independent selector for one of its eight rows. It retains the selected row’s observed timing and sample, then checks its exact proportional mapping after the ninth start. The selector cannot alter any supervisor input or control flow. Kani must satisfy the exact mapping for every combination of the eight unrestricted samples and all eight row choices. The same run still checks every row’s generation, overlap refusal, timing bounds, endpoint cases, and early poll. A missing selected observation, unexpected supervisor result, or assertion failure rejects the proof. The concrete inclusive-jitter mutation continues checking the mapping inline at every row. Its first hosted run timed out as recorded above.
 
 The health case samples elapsed whole seconds from zero to sixty and the instant one nanosecond before the threshold. The lease case independently evaluates the same jitter sample using an ample lease, checks the exact minimum, and requires a strict `unclipped > expiry` cover. The stale-admission case uses stale attempts from both the same and another owner.
 
@@ -53,3 +53,23 @@ For each patch, use `git apply --unidiff-zero crates/interfaces/exacopy-endpoint
 | `inclusive-jitter` | Maximum u32 sample in the first 1,000 ms window | `every sample maps proportionally into the inclusive equal-jitter window` |
 
 Mutation controls require their own retained assertion failures.
+
+The inductive history checks the same per-row predicates at every loop step. An
+immutable array represents all eight independent full-width samples. Each step
+executes the real supervisor methods in order and supplies the observed wake to
+the next step. The invariant checks the actual owner, fixed grant expiry,
+generation, next backoff ceiling, phase and last clock observation. Independent
+literal tables bound the row index and cumulative time. The inferred frame must
+admit the three carried assignments, and the integer rank decreases from eight
+to zero. The gate requires successful generated invariant entry and preservation,
+rank, and write checks. A missing transform or missing write evidence fails the
+gate. Explicit `loop_modifies` is omitted because the pinned tool does not support
+it together with the scalar rank. [Kani loop-contract limitations](https://github.com/model-checking/kani/blob/kani-0.68.0/docs/src/reference/experimental/loop-contracts.md#limitations)
+
+The cap predicate after the contracted loop describes an abstract exit. The
+owning gate also requires a separate unannotated and unstubbed run from the real
+constructor through the exact capped wakes at 61,500 and 91,500 ms and the ninth
+start. The inclusive-jitter mutation still executes all eight concrete steps with
+arbitrary full-width samples and every exact assertion inline. Budgets and solver
+choices for the existing harnesses are unchanged. The inductive history and its
+instrumentation are pending hosted verification.
