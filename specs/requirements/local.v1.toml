@@ -305,7 +305,7 @@ requirement_ids = ["R-008", "R-009", "R-011", "R-027", "R-028", "R-045", "R-154"
 acceptance_ids = ["A-008", "A-009", "A-011", "A-027", "A-028", "A-045", "A-154", "A-194"]
 invariant_ids = ["INV-002", "INV-003", "INV-006", "INV-009", "INV-019", "INV-020"]
 scope = "Linux admits one new-name rename using RENAME_NOREPLACE and checks a late incumbent, both affected directory barriers, final identity and committed receipt."
-limits = "Native tests and fault injection exercise namespace and barrier semantics. The CLI reports unconfirmed durability and the Linux private receipt supplies a subset of the proposed public schema."
+limits = "Native tests and fault injection exercise namespace and barrier semantics. The ordinary Linux producer checks bounded canonical same-inode receipt readback through EOF before kind 18 and rechecks the receipt before success under the original job lease. This leaves power-loss durability unconfirmed and keeps the existing private receipt encoding."
 
 [[coverage.evidence]]
 owner = "exacopy-platform"
@@ -327,6 +327,14 @@ level = "native"
 state = "defined"
 path = "apps/exacopy-cli/tests/job_bootstrap/copy.rs"
 target = "journaled_copy_persists_a_receipt_bound_to_verified_bytes_and_observed_publication"
+
+[[coverage.evidence]]
+owner = "exacopy-cli"
+level = "native"
+state = "defined"
+path = "apps/exacopy-cli/tests/job_bootstrap/receipt_readback.rs"
+target = "copy_refuses_a_same_byte_receipt_rebind_without_altering_the_public_result"
+detail = "The ordinary producer refuses a distinct receipt inode containing the same bytes at both the synced and committed checkpoints. The fixture checks preserved objects and the last committed journal phase. Hosted attendance remains to be verified."
 
 [[coverage.evidence]]
 owner = "exacopy-cli"
