@@ -345,18 +345,12 @@ where
 	let record = store
 		.read(pin.identity.selection_id)
 		.map_err(Failure::Store)?;
-	with_held_history_view(
-		store,
-		pin,
-		&record,
-		&key,
-		false,
-		|baseline, current, key, _| observe(baseline, current, key),
-	)
+	with_held_history_view(pin, &record, &key, false, |baseline, current, key, _| {
+		observe(baseline, current, key)
+	})
 }
 
 fn with_held_history_view<T, E>(
-	store: &SyncProfileStore,
 	pin: &ManagedPolicyPin,
 	record: &SyncProfileStoreRecord<'_>,
 	key: &VerifyingKey,
@@ -381,16 +375,15 @@ where
 	let lease = roots
 		.acquire_managed_history_lease(scope)
 		.map_err(Failure::Managed)?;
-	let history = store
+	let history = record
 		.open_history(raw_path(&policy.history.path))
 		.map_err(Failure::Store)?;
 	if native_object(history.read_root().identity())? != policy.history.directory {
 		return Err(Failure::Selection.into());
 	}
 	let recheck_custody = || {
-		record.recheck().map_err(Failure::Store)?;
-		store
-			.check_disjoint(&history, &roots)
+		record
+			.recheck_history_scope(&history, &roots)
 			.map_err(Failure::Store)
 	};
 	recheck_custody()?;

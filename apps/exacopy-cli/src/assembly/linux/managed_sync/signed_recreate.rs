@@ -79,7 +79,6 @@ pub(crate) fn export_recreate_acknowledged(
 				.read_for_export(pin.identity.selection_id)
 				.map_err(|_| Error::Custody)?;
 			with_held_history_view(
-				store,
 				pin,
 				profile.record(),
 				&key,

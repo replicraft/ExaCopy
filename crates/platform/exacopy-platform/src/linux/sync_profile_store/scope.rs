@@ -5,7 +5,10 @@ use std::path::Path;
 
 use rustix::fs::{self, FileType, Mode, OFlags};
 
-use super::{DIRECTORY, FileIdentity, MountObservations, SyncProfileStore, SyncProfileStoreError};
+use super::{
+	DIRECTORY, FileIdentity, MountObservations, SyncProfileStore, SyncProfileStoreError,
+	SyncProfileStoreRecord,
+};
 use crate::linux::{ReadRoot, SyncPreviewRoots};
 
 const MAX_ANCESTORS: usize = 256;
@@ -66,6 +69,31 @@ impl SyncProfileHistory {
 			return Err(SyncProfileStoreError::Changed);
 		}
 		Ok(())
+	}
+}
+
+impl SyncProfileStoreRecord<'_> {
+	/// Opens selected history through the store borrowed by this original record.
+	///
+	/// # Errors
+	/// Refuses unprotected, aliased or unavailable history paths.
+	pub fn open_history(&self, path: &Path) -> Result<SyncProfileHistory, SyncProfileStoreError> {
+		self.store.open_history(path)
+	}
+
+	/// Rechecks the original record and its profile/history/live-root separation.
+	///
+	/// Uses the record's original store without acquiring another profile lease.
+	///
+	/// # Errors
+	/// Refuses changed record custody, overlapping roles or unsupported ancestry.
+	pub fn recheck_history_scope(
+		&self,
+		history: &SyncProfileHistory,
+		roots: &SyncPreviewRoots<'_>,
+	) -> Result<(), SyncProfileStoreError> {
+		self.recheck()?;
+		self.store.check_disjoint(history, roots)
 	}
 }
 
