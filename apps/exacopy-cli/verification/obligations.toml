@@ -23,3 +23,25 @@ assumptions = [
 ]
 gates = ["rust"]
 rust = { file = "src/assembly/linux/remote_continued/original/outcome.rs", test = "assembly::linux::remote_continued::original::outcome::tests::confirmed_native_result_without_receipt_is_never_success", features = ["experimental-verified-prefix-resume"], oracle = "A positive native observation without the exact committed receipt remains published but unconfirmed. Unknown native effects remain uncertain, and a recorded native conflict remains distinct. Success is supplied only by the separately checked complete receipt path." }
+
+[[obligation]]
+id = "P-082"
+requirement_ids = ["R-015", "R-155"]
+source = "src/assembly/linux/public_stage/grant/effects.rs"
+symbols = ["GrantPhase::admit", "bounded"]
+assumptions = [
+    "The Linux x86-64 harness covers one admission decision on an explicitly constructed private grant phase. It does not establish that every supplied phase and payload is reachable in an invocation.",
+    "The input roles and windows describe the requested step, not an independently approved action or actual native effect. Host selection, issuer, clock, mutex, revocation, original native custody, rename settlement and verified receipt ordering are separate obligations.",
+]
+gates = ["kani"]
+
+[obligation.kani]
+harness = "kani_checks::local_apply::grant_phase_matches_closed_effect_relation"
+file = "verification/kani/local_apply.rs"
+unwind_bound = 40
+features = ["experimental-linux-public-apply"]
+model_bounds = [
+    "One symbolic step over all 18 private phase labels and every typed request variant, role and record. Offsets, counts, extents, buffer limits, checkpoint ordinals, owner bytes, native identities and representable chain heads use their full input widths.",
+    "The same dispatcher also requires kani_checks::local_apply::grant_window_matches_full_width_interval with unwind bound 1 over full x86-64 u64 offset, usize count and u64 maximum inputs.",
+]
+oracle = "Compare the actual private phase result and retained payload with an independent effect-oriented relation and compare the actual bounded interval with widened arithmetic. Require both exact harnesses, three assertions, nineteen reachable covers, enabled unwinding assertions and the exact owner-selected feature profile."

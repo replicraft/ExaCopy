@@ -10,6 +10,9 @@ use exacopy_transfer::linux::{MAX_LOCAL_COPY_PLAN_BYTES, MAX_PUBLIC_APPLY_RECEIP
 
 use super::{ClockSample, GrantClock, LocalApplyGrantError, QualificationWindow};
 
+#[cfg(kani)]
+pub(crate) mod phase_proof;
+
 pub(super) struct GrantState {
 	phase: GrantPhase,
 	retired: Option<LocalApplyGrantError>,

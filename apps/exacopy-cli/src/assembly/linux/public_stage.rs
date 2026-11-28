@@ -13,6 +13,8 @@ use super::{CopyRoots, LocalCopyError};
 
 mod checked;
 mod grant;
+#[cfg(kani)]
+pub(crate) use grant::phase_proof;
 #[cfg(any(test, feature = "experimental-linux-public-apply"))]
 mod qualification;
 mod reconcile;

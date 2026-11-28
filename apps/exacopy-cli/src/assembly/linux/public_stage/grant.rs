@@ -20,6 +20,8 @@ use super::qualification::LocalApplyQualificationEnrollment;
 
 mod clock;
 mod effects;
+#[cfg(kani)]
+pub(crate) use effects::phase_proof;
 mod scope;
 #[cfg(test)]
 mod tests;

@@ -54,4 +54,8 @@ mod windows_bootstrap_inspect;
 #[cfg(all(target_os = "linux", feature = "experimental-verified-prefix-resume"))]
 mod witness_archive;
 
+#[cfg(kani)]
+#[path = "../verification/kani/mod.rs"]
+mod kani_checks;
+
 pub use command::run;

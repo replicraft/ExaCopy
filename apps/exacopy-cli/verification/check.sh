@@ -7,8 +7,12 @@ case ${1:-rust} in
         cd "$repo"
         exec cargo nextest run --locked -p exacopy-cli --profile ci --no-tests fail
         ;;
+    kani)
+        shift
+        exec "$verification_dir/kani/check.sh" "$@"
+        ;;
     *)
-        printf '%s\n' 'usage: check.sh [rust]' >&2
+        printf '%s\n' 'usage: check.sh [rust|kani]' >&2
         exit 2
         ;;
 esac
