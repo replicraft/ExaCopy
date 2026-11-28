@@ -11,6 +11,17 @@ use exacopy_journal::{DurableJournal, DurableJournalError};
 use super::wire_oracle::{RANGE_DOMAIN, RANGE_KIND, SINGLE_TARGET, range_body, signed_payload};
 use super::{BLOCK, Fixture, digest, frame, identity};
 
+#[derive(Debug)]
+struct TerminalProbeRefused;
+
+impl std::fmt::Display for TerminalProbeRefused {
+	fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		formatter.write_str("fixture terminal probe refused")
+	}
+}
+
+impl std::error::Error for TerminalProbeRefused {}
+
 #[derive(Default)]
 struct Observations {
 	written: RefCell<Vec<u8>>,
@@ -19,6 +30,7 @@ struct Observations {
 	replay_bytes: RefCell<Option<Vec<u8>>>,
 	eof_reads: Cell<u32>,
 	refuse_readback: Cell<bool>,
+	refuse_eof: Cell<bool>,
 }
 
 impl Observations {
@@ -59,6 +71,12 @@ impl Read for Segment<'_> {
 		};
 		if count == 0 && !buffer.is_empty() {
 			self.facts.eof_reads.set(self.facts.eof_reads.get() + 1);
+			if self.facts.refuse_eof.get() {
+				return Err(io::Error::new(
+					io::ErrorKind::PermissionDenied,
+					TerminalProbeRefused,
+				));
+			}
 		}
 		Ok(count)
 	}
@@ -250,11 +268,12 @@ fn terminal_replay_requires_input_eof_and_the_exact_live_boundary() {
 	assert_eq!(alternate.head().sequence(), 2);
 	assert_ne!(alternate.head().digest(), digest(&tail));
 
-	for (replace, decline, expected_extent) in [
-		(false, false, EXTENT),
-		(true, false, EXTENT),
-		(false, false, EXTENT + 1),
-		(false, true, EXTENT),
+	for (replace, failure, expected_extent) in [
+		(false, ReadFailure::None, EXTENT),
+		(true, ReadFailure::None, EXTENT),
+		(false, ReadFailure::None, EXTENT + 1),
+		(false, ReadFailure::BeforeAnyFrame, EXTENT),
+		(false, ReadFailure::TerminalProbe, EXTENT),
 	] {
 		let facts = Observations::default();
 		let writer = DurableJournal::from_new_segment(Segment {
@@ -289,10 +308,28 @@ fn terminal_replay_requires_input_eof_and_the_exact_live_boundary() {
 		if replace {
 			*facts.replay_bytes.borrow_mut() = Some(replacement.clone());
 		}
-		facts.refuse_readback.set(decline);
+		facts
+			.refuse_readback
+			.set(matches!(failure, ReadFailure::BeforeAnyFrame));
+		facts
+			.refuse_eof
+			.set(matches!(failure, ReadFailure::TerminalProbe));
 
 		let result = live.inspect_current(&selected, fixture.roles, expected_extent);
-		if decline {
+		if matches!(failure, ReadFailure::TerminalProbe) {
+			let refusal = result.unwrap_err();
+			assert_eq!(facts.eof_reads.get(), prior_eof_reads + 1);
+			assert_eq!(refusal.prefix, Some(confirmed));
+			let Error::Terminal(cause) = refusal.source else {
+				panic!("expected the original terminal probe failure");
+			};
+			assert_eq!(cause.kind(), io::ErrorKind::PermissionDenied);
+			assert!(
+				cause
+					.get_ref()
+					.is_some_and(|inner| inner.is::<TerminalProbeRefused>())
+			);
+		} else if matches!(failure, ReadFailure::BeforeAnyFrame) {
 			let refusal = result.unwrap_err();
 			assert!(refusal.prefix.is_none());
 			assert!(matches!(refusal.source, Error::Read(_)));
@@ -310,4 +347,10 @@ fn terminal_replay_requires_input_eof_and_the_exact_live_boundary() {
 		assert_eq!(facts.syncs.get(), 2);
 		assert!(!facts.active_guard.get());
 	}
+}
+
+enum ReadFailure {
+	None,
+	BeforeAnyFrame,
+	TerminalProbe,
 }
