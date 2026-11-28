@@ -6,6 +6,30 @@ uninstallation. Independent work can proceed in parallel where the safety
 dependencies allow it. GUI remains last, after these CLI operations.
 Backup, repositories, and deduplication are deferred.
 
+The latest integrated native cohort at `2f8d567` passed 1,407 Linux, 938
+macOS, and 800 Windows default tests, with all three strict Clippy jobs
+passing. Linux also passed 173 SSH/WireGuard cases and 192 verified-prefix
+resume component cases. These component results do not qualify public retained
+range reuse, restart recovery, or power-loss durability.
+[Exact native cohort](https://github.com/replicraft/ExaCopy/actions/runs/46140123678)
+
+The same revision passed fresh extraction and kernel checks for the range and
+grant-time Lean theorems. P-020 retry contract composition remains unverified;
+its prerequisite-first run must finish before claiming that gate. Platform
+coverage is 8,006/10,030 lines (79.8205%), below the unchanged 85% requirement.
+Model coverage passes at 1,041/1,056 lines and 457/482 branches.
+[Exact coverage result](https://github.com/replicraft/ExaCopy/actions/runs/46140123596)
+
+Managed sync now accepts an optional reviewed create-new Plan expiry, bound
+into its canonical bytes before hashing. The exact `2f8d567` production ext4
+fixture passed, including the CLI expiry binding control. Approval remains a
+separate step; successor persistence and baseline activation remain open.
+[Exact managed-sync result](https://github.com/replicraft/ExaCopy/actions/runs/46140123730)
+
+Local work remains source-only at the maintainer's request. Automatic CI
+provides the runtime results above. The sections below retain earlier outcomes
+and failures with their original revisions.
+
 | Priority | Current scope and acceptance dependency |
 | --- | --- |
 | SSH/SFTP and WireGuard | The unsigned Linux x64 [preview.2 archive](releases/v0.1.0-preview.2.md) at `59c26be` passed seven direct OpenSSH cases and seven independent kernel WireGuard cases plus carrier-down with the same held ELF under synthetic fixture authority. The exact hosted Linux lanes at `204bdb0` and `33714f4` each passed 146 selected remote CLI cases and 57 SSH/SFTP package cases, including the three read-health/backoff controls. The later `6be7dc3` password path rechecks route and grant after broker acquisition. Both new regressions passed on Linux, macOS, and Windows in the [exact `6be7dc3` cohort](https://github.com/replicraft/ExaCopy/actions/runs/45979711519). At `5c374b0`, the application-owned SSH refactor passed 154 selected Linux remote CLI cases and 59 Linux, 59 macOS, and 58 Windows in-process SSH package cases. [Exact `5c374b0` native CI](https://github.com/replicraft/ExaCopy/actions/runs/45984371580). Require explicit credentials, verified server identity, and bounded SFTP capabilities. Bind the embedded route and any future private DNS to the approved profile revision and refuse direct fallback. Qualify transport, remote filesystem, and route behavior separately. Production deployment and native same-invocation embedded redial remain open. [Remote readiness](engineering/remote-transfer-readiness.md) |
