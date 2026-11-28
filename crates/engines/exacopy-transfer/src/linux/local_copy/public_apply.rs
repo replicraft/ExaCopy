@@ -88,7 +88,11 @@ where
 		scratch,
 		checkpoint,
 		|| Ok(()),
-		|(), _, owner_digest, _, _held| Ok(PublicApplyStage { owner_digest }),
+		|(),
+		 _source: &S::Source,
+		 owner_digest: OwnerDigest,
+		 _recorded: RecordedSeal<'_>,
+		 _held: HeldStage<'_, '_, '_, J>| { Ok(PublicApplyStage { owner_digest }) },
 	)
 }
 

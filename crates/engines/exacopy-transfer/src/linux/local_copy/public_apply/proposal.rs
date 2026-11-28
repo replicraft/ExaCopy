@@ -14,7 +14,7 @@ use crate::copy_planning::linux_baseline_metadata_policy_digest;
 use crate::linux_staging::check_source;
 
 use super::super::{CopyCheckpoint, CopyError, PlanningRoots, check_absent, records::RecordedSeal};
-use super::{PublicApplyStageRequest, stage_with_seal, timestamp_tuple};
+use super::{HeldStage, PublicApplyStageRequest, stage_with_seal, timestamp_tuple};
 
 #[cfg(test)]
 mod tests;
@@ -114,7 +114,11 @@ where
 			let admitted = check_current(request, selection, observe(), request.profile.created)?;
 			Ok((admitted, observe))
 		},
-		|(admitted, mut observe), source, owner, recorded, _held| {
+		|(admitted, mut observe),
+		 source: &S::Source,
+		 owner: OwnerDigest,
+		 recorded: RecordedSeal<'_>,
+		 _held: HeldStage<'_, '_, '_, J>| {
 			check_source(source).map_err(|error| Error::Stage(CopyError::SourcePolicy(error)))?;
 			check_absent(
 				roots.destination,
