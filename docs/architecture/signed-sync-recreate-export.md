@@ -77,3 +77,5 @@ their required native fixture.
 Separate parent approval, durable kind-27/28 associations, current-baseline
 selection, successor persistence, restart reconciliation and P-028 publication
 barriers remain open. This supplies no new Kani or power-loss qualification.
+The [execution design](signed-sync-recreate-execution.md) records the required
+capabilities and unresolved admission and restart decisions.
