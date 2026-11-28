@@ -77,6 +77,7 @@ pub(crate) use read::protected as protected_snapshot;
 pub use read::protected::bootstrap::{
 	WindowsBootstrapFreshSegment, WindowsBootstrapLayout, WindowsBootstrapRecords,
 	WindowsBootstrapRoleKind, WindowsBootstrapRoleObservations, WindowsBootstrapRootSelection,
-	WindowsBootstrapSegment, WindowsCaptureStageError, WindowsCaptureStageScope,
-	WindowsCaptureStageWriter, observe_windows_bootstrap_role_identity,
+	WindowsBootstrapSegment, WindowsCaptureBootstrapScope, WindowsCaptureBootstrapSegment,
+	WindowsCaptureStageError, WindowsCaptureStageScope, WindowsCaptureStageWriter,
+	observe_windows_bootstrap_role_identity,
 };

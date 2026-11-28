@@ -23,8 +23,7 @@ use crate::windows::{
 use super::super::{FILE_METADATA_ACCESS, FILE_OPENED_INFORMATION, observe_leaf};
 use super::{
 	Binding, DIRECTORY_ACCESS, Directory, Error, Kind, WindowsBootstrapFreshSegment,
-	WindowsBootstrapLayout, WindowsBootstrapRoleObservations, WindowsComponent, acl,
-	named_identity, refused, security,
+	WindowsComponent, acl, named_identity, refused, security,
 };
 
 const STAGE_DIRECTORY: [u16; 5] = [115, 116, 97, 103, 101];
@@ -80,9 +79,9 @@ impl std::error::Error for WindowsCaptureStageError {
 	}
 }
 
-/// Creates one protected private stage inside the original fresh bootstrap job.
+/// Creates one protected private stage after confirming the original bootstrap append.
 pub struct WindowsCaptureStageScope<'name> {
-	bootstrap: WindowsBootstrapFreshSegment<'name>,
+	pub(super) bootstrap: WindowsBootstrapFreshSegment<'name>,
 }
 
 impl fmt::Debug for WindowsCaptureStageScope<'_> {
@@ -93,27 +92,10 @@ impl fmt::Debug for WindowsCaptureStageScope<'_> {
 	}
 }
 
-impl<'name> WindowsCaptureStageScope<'name> {
-	/// Acquires the independently selected fresh job with bounded child-creation rights.
-	///
-	/// The caller supplies the original provisioned identity set under the
-	/// protected actor contract of [WindowsBootstrapFreshSegment]. This separate
-	/// acquisition grants child creation only in that exact job.
-	///
-	/// # Errors
-	/// Refuses changed roles, unsupported custody or unavailable native rights.
-	pub fn open_provisioned(
-		root: &'name [u16],
-		expected: WindowsBootstrapRoleObservations,
-		layout: WindowsBootstrapLayout<'name>,
-	) -> Result<Self, Error> {
-		let bootstrap = WindowsBootstrapFreshSegment::open_for_scope(root, expected, layout, true)?;
-		Ok(Self { bootstrap })
-	}
-
+impl WindowsCaptureStageScope<'_> {
 	/// Creates the fixed protected stage directory and its one fresh leaf.
 	///
-	/// This requires the original live fresh bootstrap custody and independently
+	/// This requires the original live bootstrap custody and independently
 	/// selected target. The issuer must already grant controlled creation in
 	/// that job and exclude retained namespace, data and security mutation
 	/// capabilities. The caller selects and maintains the exact relative target;

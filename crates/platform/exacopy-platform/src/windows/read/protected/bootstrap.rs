@@ -12,12 +12,14 @@ use super::{
 
 const MAX_RECORD_BYTES: usize = 4096;
 
+mod capture_bootstrap;
 mod capture_stage;
 mod record;
 mod writer;
 
 use record::{MetadataPin, Record};
 
+pub use capture_bootstrap::{WindowsCaptureBootstrapScope, WindowsCaptureBootstrapSegment};
 pub use capture_stage::{
 	WindowsCaptureStageError, WindowsCaptureStageScope, WindowsCaptureStageWriter,
 };

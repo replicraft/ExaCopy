@@ -15,13 +15,14 @@ use exacopy_journal::{DurableJournal, JournalJobId};
 use exacopy_platform::ProtectedSnapshotError;
 use exacopy_platform::windows::{
 	WindowsBootstrapFreshSegment, WindowsBootstrapLayout, WindowsBootstrapRoleKind,
-	WindowsBootstrapRoleObservations, WindowsCaptureStageScope, WindowsComponent,
-	WindowsStageIdentity, observe_windows_bootstrap_role_identity,
+	WindowsBootstrapRoleObservations, WindowsCaptureBootstrapScope, WindowsCaptureBootstrapSegment,
+	WindowsComponent, WindowsStageIdentity, observe_windows_bootstrap_role_identity,
 };
 
 #[path = "fixture/capture_stage.rs"]
 mod capture_stage;
 
+const ERROR_SHARING_VIOLATION: i32 = 32;
 const FILE_SHARE_READ_WRITE: u32 = 0x0000_0003;
 const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
 const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
@@ -249,7 +250,7 @@ pub(super) fn populate(
 			assert_eq!(observe_roles(&owner, &segment), original);
 			drop(owner);
 			drop(segment);
-			append_original_prepared(root, drive, job, original, &bytes.first_segment);
+			append_original_prepared(root, drive, job, original, &bytes);
 		}
 		SegmentPopulation::CopiedCounterexample => {
 			segment
@@ -267,8 +268,9 @@ fn append_original_prepared(
 	drive: u8,
 	job: JournalJobId,
 	roles: WindowsBootstrapRoleObservations,
-	encoded: &[u8; FIRST_SEGMENT_BYTES],
+	bytes: &WindowsBootstrapBytes,
 ) {
+	let encoded = &bytes.first_segment;
 	let mut frames = FrameReader::new(encoded.as_slice(), ChainHead::start());
 	let prepared = frames.next_frame().unwrap().unwrap();
 	assert_eq!(prepared.kind(), FrameKind::JobPrepared);
@@ -292,45 +294,85 @@ fn append_original_prepared(
 		WindowsBootstrapFreshSegment::open_provisioned(&root_units, different, layout),
 		Err(ProtectedSnapshotError::Changed)
 	));
-	let capture = WindowsCaptureStageScope::open_provisioned(&root_units, roles, layout)
-		.expect("admit scoped stage creation in the original bootstrap job");
-	capture_stage::check(&capture, root, drive, job);
-	drop(capture);
-	let mut original = WindowsBootstrapFreshSegment::open_provisioned(&root_units, roles, layout)
-		.expect("admit the exact original empty segment");
+	drop(
+		WindowsBootstrapFreshSegment::open_provisioned(&root_units, roles, layout)
+			.expect("legacy acquisition still admits the original empty segment"),
+	);
+	let open_capture =
+		|| WindowsCaptureBootstrapScope::open_provisioned(&root_units, roles, layout);
+	let mut wrong_owner = bytes.owner;
+	wrong_owner[0] ^= 1;
 	assert!(matches!(
-		WindowsBootstrapFreshSegment::open_provisioned(&root_units, roles, layout),
-		Err(ProtectedSnapshotError::Busy)
+		open_capture().unwrap().append_first_segment(&wrong_owner, encoded, |_| {
+			panic!("a mismatched original owner reached bootstrap append")
+		}),
+		Err(error) if error.kind() == io::ErrorKind::InvalidData
+	));
+	assert!(matches!(
+		open_capture().unwrap().append_first_segment(&bytes.owner, encoded, |_| Ok(())),
+		Err(error) if error.kind() == io::ErrorKind::InvalidData
 	));
 	assert_eq!(
-		original.seek(SeekFrom::Start(1)).unwrap_err().kind(),
+		std::fs::metadata(first_segment_path(root, job))
+			.unwrap()
+			.len(),
+		0
+	);
+	let original = open_capture().expect("admit the exact original empty segment for capture");
+	assert!(matches!(open_capture(), Err(ProtectedSnapshotError::Busy)));
+	let capture = original
+		.append_first_segment(&bytes.owner, encoded, |segment| {
+			append_prepared(segment, &prepared)
+		})
+		.expect("confirm canonical first frame on the original held segment");
+	let selected_segment = first_segment_path(root, job);
+	assert_segment_exclusive(&selected_segment);
+	capture_stage::check(&capture, root, drive, job);
+	assert_segment_exclusive(&selected_segment);
+	drop(capture);
+	assert_eq!(std::fs::read(selected_segment).unwrap(), encoded);
+	assert!(matches!(
+		WindowsBootstrapFreshSegment::open_provisioned(&root_units, roles, layout),
+		Err(ProtectedSnapshotError::Changed)
+	));
+}
+
+fn assert_segment_exclusive(path: &Path) {
+	assert_eq!(
+		OpenOptions::new()
+			.read(true)
+			.share_mode(FILE_SHARE_READ_WRITE)
+			.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+			.open(path)
+			.unwrap_err()
+			.raw_os_error(),
+		Some(ERROR_SHARING_VIOLATION)
+	);
+}
+
+fn append_prepared(
+	mut segment: WindowsCaptureBootstrapSegment<'_, '_>,
+	prepared: &exacopy_journal::frame::Frame,
+) -> io::Result<()> {
+	assert_eq!(
+		segment.seek(SeekFrom::Start(1)).unwrap_err().kind(),
 		io::ErrorKind::InvalidInput
 	);
 	assert_eq!(
-		original
+		segment
 			.write(&[0; FIRST_SEGMENT_BYTES + 1])
 			.unwrap_err()
 			.kind(),
 		io::ErrorKind::InvalidInput
 	);
-	let mut journal = DurableJournal::from_new_segment(original)
-		.expect("confirm original empty native segment and cursor");
+	let mut journal = DurableJournal::from_new_segment(segment).map_err(io::Error::other)?;
 	let written = journal
 		.append(FrameKind::JobPrepared, prepared.payload())
-		.expect("append and flush the canonical prepared frame");
+		.map_err(io::Error::other)?;
 	assert_eq!(written.head(), prepared.head());
 	journal
 		.confirm_current_frame(&written)
-		.expect("confirm exact held frame and physical EOF");
-	drop(journal);
-	assert_eq!(
-		std::fs::read(first_segment_path(root, job)).unwrap(),
-		encoded
-	);
-	assert!(matches!(
-		WindowsBootstrapFreshSegment::open_provisioned(&root_units, roles, layout),
-		Err(ProtectedSnapshotError::Changed)
-	));
+		.map_err(io::Error::other)
 }
 
 pub(super) fn first_segment_path(root: &Path, job: JournalJobId) -> PathBuf {
