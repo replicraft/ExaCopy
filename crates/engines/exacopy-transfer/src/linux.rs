@@ -23,8 +23,9 @@ pub use plan::{
 	PlanAttempt, SourcePlanBinding,
 };
 pub use receipt::{
-	CopyReceipt, MAX_COPY_RECEIPT_BYTES, MAX_PUBLIC_APPLY_RECEIPT_BYTES, PublicApplyReceipt,
-	PublicApplyReceiptError, ReceiptError, ReceiptEvidence,
+	CopyReceipt, MAX_COPY_RECEIPT_BYTES, MAX_PUBLIC_APPLY_RECEIPT_BYTES, PublicApplyCommitError,
+	PublicApplyCommitSelection, PublicApplyReceipt, PublicApplyReceiptError, ReceiptError,
+	ReceiptEvidence,
 };
 pub use recovery::{
 	AuthenticatedPublicStage, FinishFailure, FinishReceiptDirectory, InspectionError,

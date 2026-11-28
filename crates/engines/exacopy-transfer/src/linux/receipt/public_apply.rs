@@ -10,8 +10,11 @@ use minicbor::{Decoder, Encoder, encode};
 
 use super::{CopyReceipt, MAX_COPY_RECEIPT_BYTES, ReceiptError, read_array, read_fixed, read_key};
 
+mod commit;
 #[cfg(test)]
 mod tests;
+
+pub use commit::{PublicApplyCommitError, PublicApplyCommitSelection};
 
 const VERSION: [u64; 3] = [2, 0, 1];
 const FIELDS: u64 = 5;

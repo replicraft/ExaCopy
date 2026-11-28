@@ -12,7 +12,8 @@ use minicbor::{Decoder, Encoder, encode};
 
 mod public_apply;
 pub use public_apply::{
-	MAX_PUBLIC_APPLY_RECEIPT_BYTES, PublicApplyReceipt, PublicApplyReceiptError,
+	MAX_PUBLIC_APPLY_RECEIPT_BYTES, PublicApplyCommitError, PublicApplyCommitSelection,
+	PublicApplyReceipt, PublicApplyReceiptError,
 };
 
 #[cfg(test)]
