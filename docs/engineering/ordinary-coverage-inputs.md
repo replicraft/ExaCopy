@@ -32,11 +32,20 @@ Separate witnessed coverage summaries remain separate.
 Canonical main pushes from the Coverage workflow retain a same-revision,
 owner-only report and test attendance. After cleaning the coverage build and
 counters, one expanded default build runs those same owner cases plus the 11
-Linux CLI job_bootstrap cases. The gate requires complete, successful JUnit
-attendance, the exact instrumented job_bootstrap object, and the same owner
+Linux CLI job_bootstrap and 17 linux_copy cases. The gate requires complete,
+successful JUnit attendance, the exact instrumented test objects, and the same owner
 file inventory and per-file line denominators. CLI source does not count
 toward the three owner thresholds. The owner-only report remains available
 if the expanded measurement is blocked.
+
+The linux_copy tests launch the built CLI. Admission holds both its linked
+image and launch alias and requires identical bytes. A separate export reads
+the original, pre-merge indexed profile using the held launch image and
+requires covered lines in the exact CLI main.rs. This establishes aggregate
+child execution in that profile; it does not attribute counters to each test.
+The diagnostic export is retained and rechecked but contributes no rows to
+the coverage gate. The expanded instrumented suite and any coverage gain
+remain unverified until the hosted campaign executes.
 
 The same campaign requests three separately admitted foreground groups:
 seven witnessed recovery components, six selected-stream publication cases,
