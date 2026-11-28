@@ -36,6 +36,8 @@ mod cli_format;
 mod cli_process;
 #[path = "managed_sync_production/history.rs"]
 mod history;
+#[path = "managed_sync_production/manual_recreate.rs"]
+mod manual_recreate;
 #[path = "managed_sync_production/post_creation.rs"]
 mod post_creation;
 #[path = "managed_sync_production/rig.rs"]
@@ -315,6 +317,8 @@ fn exercise(
 		assert_eq!(evidence.content_digest, *blake3::hash(content).as_bytes());
 	}
 	assert_live(live, [b"abc", b"xyz"])?;
+
+	manual_recreate::exercise(sandbox, &policy, live, &selection)?;
 
 	let cli_sha256 = cli::exercise(
 		sandbox,

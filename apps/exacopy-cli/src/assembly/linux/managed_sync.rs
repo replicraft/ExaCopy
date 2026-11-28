@@ -16,7 +16,7 @@ use exacopy_transfer::linux::sync_preview::{
 	FirstSyncPreview, HeldSyncPreview, HistoricalPreviewFailure, LiveSyncSelection, PreviewInput,
 	preview_with_history,
 };
-use exacopy_transfer::sync_genesis::SyncGenesisError;
+use exacopy_transfer::sync_genesis::{AuthenticatedSyncGenesis, SyncGenesisError};
 use zeroize::Zeroizing;
 
 use crate::profile::profile_id_for_key;
@@ -31,13 +31,20 @@ use crate::sync_preview::managed_policy::{
 mod acknowledgement;
 pub mod genesis;
 mod history;
+mod manual_recreate;
 mod scope;
 
 #[cfg(test)]
 mod tests;
 
 pub(crate) use acknowledgement::{
-	initialize_approved, inspect_profile_identity, preview_acknowledged,
+	initialize_approved, inspect_profile_identity, prepare_recreate_acknowledged,
+	preview_acknowledged,
+};
+
+pub use manual_recreate::{
+	ManualRecreateCandidate, ManualRecreateError, ManualRecreatePlanIds, ManualRecreateRoot,
+	prepare_manual_recreate,
 };
 
 use history::authenticate;
@@ -284,13 +291,20 @@ pub fn preview_managed_history(
 	selection: &ManagedSyncSelection,
 	scratch: &mut [u8],
 ) -> Result<FirstSyncPreview, ManagedSyncPreviewError> {
+	let store = selected_store(selection)?;
+	preview_held(&store, &selection.pin, scratch)
+}
+
+fn selected_store(
+	selection: &ManagedSyncSelection,
+) -> Result<SyncProfileStore, ManagedSyncPreviewError> {
 	type Failure = ManagedSyncPreviewError;
 
 	let store = SyncProfileStore::open(&selection.profile).map_err(Failure::Store)?;
 	if store.identity() != selection.profile_identity {
 		return Err(Failure::Selection);
 	}
-	preview_held(&store, &selection.pin, scratch)
+	Ok(store)
 }
 
 fn preview_held(
@@ -298,6 +312,24 @@ fn preview_held(
 	pin: &ManagedPolicyPin,
 	scratch: &mut [u8],
 ) -> Result<FirstSyncPreview, ManagedSyncPreviewError> {
+	with_history_view(store, pin, |baseline, current, _key| {
+		preview_with_history(baseline, current, scratch)
+			.map_err(|error| ManagedSyncPreviewError::Preview(Box::new(error)))
+	})
+}
+
+fn with_history_view<T, E>(
+	store: &SyncProfileStore,
+	pin: &ManagedPolicyPin,
+	observe: impl FnOnce(
+		&AuthenticatedSyncGenesis<'_, '_>,
+		&ManagedHistoryPreview<'_, '_, '_>,
+		&VerifyingKey,
+	) -> Result<T, E>,
+) -> Result<T, E>
+where
+	E: From<ManagedSyncPreviewError>,
+{
 	type Failure = ManagedSyncPreviewError;
 
 	let identity = &pin.identity;
@@ -314,7 +346,7 @@ fn preview_held(
 		.open_history(raw_path(&policy.history.path))
 		.map_err(Failure::Store)?;
 	if native_object(history.read_root().identity())? != policy.history.directory {
-		return Err(Failure::Selection);
+		return Err(Failure::Selection.into());
 	}
 	let recheck_custody = || {
 		record.recheck().map_err(Failure::Store)?;
@@ -341,10 +373,9 @@ fn preview_held(
 		identity,
 		recheck_custody: &recheck_custody,
 	};
-	let preview = preview_with_history(&baseline, &current, scratch)
-		.map_err(|error| Failure::Preview(Box::new(error)))?;
+	let observed = observe(&baseline, &current, &key)?;
 	recheck_custody()?;
-	Ok(preview)
+	Ok(observed)
 }
 
 fn verify_owner_identity(

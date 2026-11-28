@@ -4,6 +4,7 @@ use std::num::NonZeroU64;
 use std::path::Path;
 
 use ed25519_dalek::{SigningKey, VerifyingKey};
+use exacopy_model::{SyncConflict, SyncSide};
 use exacopy_platform::linux::{FileIdentity, OWNER_SEED_BYTES, SyncProfileStore};
 use exacopy_transfer::linux::sync_preview::FirstSyncPreview;
 
@@ -13,7 +14,11 @@ use crate::profile::profile_id_for_key;
 use crate::sync_preview::managed_ack::{MANAGED_ACK_BYTES, profile_path_digest, sign, verify};
 use crate::sync_preview::managed_policy::{ManagedPolicyPin, decode};
 
-use super::{ManagedSyncInit, ManagedSyncPreviewError as Failure, initialize, preview_held};
+use super::manual_recreate::prepare_held;
+use super::{
+	ManagedSyncInit, ManagedSyncPreviewError as Failure, ManualRecreateCandidate,
+	ManualRecreateError, ManualRecreatePlanIds, initialize, preview_held,
+};
 
 pub(crate) struct InspectedProfileIdentity {
 	pub(crate) physical: FileIdentity,
@@ -88,6 +93,43 @@ pub(crate) fn preview_acknowledged(
 	acknowledgement: &[u8],
 	scratch: &mut [u8],
 ) -> Result<(FirstSyncPreview, NonZeroU64), Failure> {
+	with_acknowledgement(
+		profile,
+		owner_key,
+		selection,
+		acknowledgement,
+		|store, pin| preview_held(store, pin, scratch),
+	)
+}
+
+pub(crate) fn prepare_recreate_acknowledged(
+	profile: &Path,
+	owner_key: [u8; 32],
+	selection: [u8; 16],
+	acknowledgement: &[u8],
+	(from, reviewed): (SyncSide, SyncConflict),
+	ids: ManualRecreatePlanIds,
+	scratch: &mut [u8],
+) -> Result<(ManualRecreateCandidate, NonZeroU64), ManualRecreateError> {
+	with_acknowledgement(
+		profile,
+		owner_key,
+		selection,
+		acknowledgement,
+		|store, pin| prepare_held(store, pin, from, reviewed, ids, scratch),
+	)
+}
+
+fn with_acknowledgement<T, E>(
+	profile: &Path,
+	owner_key: [u8; 32],
+	selection: [u8; 16],
+	acknowledgement: &[u8],
+	observe: impl FnOnce(&SyncProfileStore, &ManagedPolicyPin) -> Result<T, E>,
+) -> Result<(T, NonZeroU64), E>
+where
+	E: From<Failure>,
+{
 	let owner = VerifyingKey::from_bytes(&owner_key).map_err(|_| Failure::Acknowledgement)?;
 	let profile_digest = profile_path_digest(profile).map_err(|_| Failure::Selection)?;
 	let acknowledgement = verify(acknowledgement, &owner, profile_digest, selection)
@@ -97,9 +139,9 @@ pub(crate) fn preview_acknowledged(
 	if physical.device() != acknowledgement.device()
 		|| physical.inode() != acknowledgement.inode().get()
 	{
-		return Err(Failure::Selection);
+		return Err(Failure::Selection.into());
 	}
 	let pin = acknowledgement.pin();
-	let outcome = preview_held(&store, &pin, scratch)?;
+	let outcome = observe(&store, &pin)?;
 	Ok((outcome, pin.identity.revision))
 }
