@@ -149,6 +149,37 @@ and live policy pin the original boot, namespaces, mount and ordered roots.
 A changed boot or other selected scope refuses. Reprovision and authorize
 a new applicable scope explicitly.
 
+### Prepare one reviewed recreate plan
+
+Use the same independently selected profile, public owner key, selection and
+signed Init acknowledgement as for Preview. Supply the direction from the
+surviving side and the exact conflict reviewed by the operator.
+
+```sh
+exacopy sync-managed prepare-recreate --profile "$profile" --owner-key "$owner_key" \
+  --selection "$selection" --receipt-stdin --from "$survivor" \
+  --reviewed-conflict "$conflict" < "$new_acknowledgement"
+```
+
+Set `survivor` to `left` or `right` and `conflict` to
+`deletion-against-unchanged` or `edit-against-deletion`. The selected baseline
+must authenticate a common-present (`CommonPresent`) subject. Under the
+managed read lease the command reclassifies the conflict and checks that the
+chosen side contains the measured survivor and the other name is absent. Changed
+direction, conflict, scope or evidence can refuse preparation.
+
+JSON schema `exacopy.cli.managed_sync_recreate_plan` version `1.0` identifies
+the selected predecessor, ordered roots and observed survivor. It emits the
+unsigned child Plan digest and canonical body and entry-page bytes as lowercase
+hex. A prepared report sets `approval_required: true`, `authority: "none"`,
+`copy_started: false` and `baseline_advanced: false`. Exit `0` requires delivering
+the prepared report to stdout. Selection, classification, planning and output
+refusals use exit `2`.
+
+The predecessor identifies the selected authenticated history. The command makes
+no current-head assertion. It provides no parent action, approval ledger,
+publication permit, copy or other mutation, or baseline advancement.
+
 ### Approved request envelope
 
 Send compact ASCII JSON without whitespace, BOM, newline or trailing bytes.
@@ -196,7 +227,7 @@ signed P-063 history independently with a public fixture-only seed. The
 positive path checks the exact right-to-left incumbent copy candidate, both
 content digests and preserved live files.
 
-The same selected test checks eight controls.
+The previously executed revision of this selected test checked eight controls.
 
 1. A native root identity mismatch refuses Init before slot creation.
 2. A held exclusive live writer lock refuses Init before slot creation.
@@ -209,6 +240,13 @@ The same selected test checks eight controls.
    selection receipt, retains the empty private slot, and a retry preserves the
    same incumbent inode. The child checks unchanged seed, history and live bytes;
    its deadline, output bounds and cleanup must complete before success.
+
+The current source adds prepare-recreate controls under this same ignored native
+selector. It checks the unsigned child Plan and actual edited survivor, and
+refuses stale conflict, corrupted acknowledgement and an unwritable stdout
+descriptor. It checks preserved subject identities, bytes and directory
+inventories. The new controls require their own hosted execution. Normal Linux
+CI separately selects four non-ignored managed-recreate library tests.
 
 The ownership checker binds the manifest to the exact package, Cargo target,
 source, feature and selector. The runner binds the exact executable and test

@@ -140,6 +140,10 @@ a blocked preview or invalid invocation. Equal observations do not establish
 trusted history, and a copy candidate grants no action. Independent roots,
 subtree inventory and authenticated baseline selection remain open.
 
+The default-off Linux managed sync profile also supports one independently
+provisioned authenticated subject and an approval-required plan for a reviewed
+deletion conflict. [Managed sync and recreate planning](../../docs/engineering/linux-managed-sync-production.md#prepare-one-reviewed-recreate-plan)
+
 ## Create and verify a single-file manifest
 
 ```sh
