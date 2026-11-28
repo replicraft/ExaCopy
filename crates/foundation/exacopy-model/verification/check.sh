@@ -15,6 +15,7 @@ check_miri() (
 case ${1:-all} in
 	lean) exec "$verification_dir/lean-check.sh" ;;
 	kani) exec "$verification_dir/kani/check.sh" ;;
+	kani-grant-time) exec "$verification_dir/kani/check-grant-time.sh" kani ;;
 	tlc)
 		"$verification_dir/tla/check.sh"
 		python3 -B "$verification_dir/tla/check-sync.py"
@@ -26,13 +27,13 @@ case ${1:-all} in
 	miri) check_miri ;;
 	all)
 		status=0
-		for gate in lean kani tlc miri; do
+		for gate in lean kani kani-grant-time tlc miri; do
 			"$verification_dir/check.sh" "$gate" || status=1
 		done
 		exit "$status"
 		;;
 	*)
-		printf '%s\n' 'usage: check.sh [lean|kani|tlc|miri|all]' >&2
+		printf '%s\n' 'usage: check.sh [lean|kani|kani-grant-time|tlc|miri|all]' >&2
 		exit 2
 		;;
 esac

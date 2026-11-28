@@ -68,6 +68,11 @@ fn contains(window: UtcWindow, utc: (i64, u32)) -> bool {
 	!before(utc, window.starts_at) && before(utc, window.expires_at)
 }
 
-fn before(left: (i64, u32), right: (i64, u32)) -> bool {
+#[cfg_attr(kani, kani::requires(left.1 < 1_000_000_000 && right.1 < 1_000_000_000))]
+#[cfg_attr(
+	kani,
+	kani::ensures(|result| *result == crate::kani_checks::wide_utc_before(left, right))
+)]
+pub(crate) fn before(left: (i64, u32), right: (i64, u32)) -> bool {
 	left.0 < right.0 || (left.0 == right.0 && left.1 < right.1)
 }

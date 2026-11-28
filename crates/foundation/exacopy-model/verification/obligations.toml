@@ -131,4 +131,13 @@ assumptions = [
 ]
 gates = ["rust", "kani"]
 rust = { test = "grant_time::tests::grant_time_matches_wide_nanosecond_interval", file = "src/grant_time/tests.rs", oracle = "Compare the production result to a signed wide nanosecond interval oracle across representative signed extremes, equalities, rollover, and empty or reversed bounds." }
-kani = { harness = "kani_checks::grant_time::grant_time_matches_wide_nanosecond_specification", file = "verification/kani/grant_time.rs", unwind_bound = 1, model_bounds = ["One scalar call at every full-width signed seconds value and normalized unsigned subsecond value for each UTC component. All three monotonic classifications, both qualification-presence cases and ordered, equal or reversed windows are included."], oracle = "Compare the actual decision and refusal precedence against signed i128 nanoseconds in the intersection of applicable half-open intervals. Require qualification to never widen acceptance and reach all twelve covers. The shared model dispatcher also requires the unchanged range harness and its six covers in each obligation run." }
+[obligation.kani]
+harness = "kani_checks::grant_time::grant_time_matches_wide_nanosecond_specification"
+file = "verification/kani/grant_time.rs"
+runner = "verification/kani/check-grant-time.sh"
+unwind_bound = 1
+model_bounds = [
+    "One scalar decision over all signed i64 seconds and normalized u32 subseconds for each timestamp, all three monotonic classes, both qualification choices, and arbitrary window endpoints.",
+    "The same runner requires the full-width separately verified production comparator contract before accepting the composition evidence. Exactly that comparator may be substituted in the decision harness.",
+]
+oracle = "Run the actual comparator contract against exact signed i128 nanosecond ordering and check its four boundary covers. Invoke the real decision (with only that verified comparator) against the conjunction of selected half-open windows, exact refusal precedence and non-widening qualification. Require all twelve decision covers."

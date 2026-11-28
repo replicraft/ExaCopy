@@ -65,6 +65,13 @@ Keep proofs, extraction, models, harnesses and obligation ownership in
 and validates scoped results. Preserve the original log and minimized
 counterexample when a check fails.
 
+Kani links may name an owner-relative runner beneath their `verification/`
+directory. The recorder and validator check the same plain owned path and
+exact command. An omitted runner preserves the existing owner dispatcher.
+Every declared obligation remains required even when its runner is separate.
+The [grant clock evidence](../crates/foundation/exacopy-model/verification/GRANT_TIME.md)
+records the timeout that required isolating P-083 from the unchanged range gate.
+
 Rust and Kani links may select package-declared Cargo features in the owning
 ledger. A nonempty Kani selection passes the exact feature list with
 `--no-default-features` to its dispatcher and records the same ordered list

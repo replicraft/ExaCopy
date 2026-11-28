@@ -1,6 +1,10 @@
-//! Symbolic checks for the grant clock decision in P-083.
+//! Contracts and symbolic checks for the consumed grant clock decision.
 
-use crate::grant_time::{GrantTimeRefusal, MonotonicObservation, UtcWindow, check_grant_time};
+use crate::grant_time::{
+	GrantTimeRefusal, MonotonicObservation, UtcWindow, before, check_grant_time,
+};
+
+const NANOS_PER_SECOND: i128 = 1_000_000_000;
 
 fn normalized_utc() -> (i64, u32) {
 	let seconds = kani::any();
@@ -16,11 +20,48 @@ fn symbolic_window() -> UtcWindow {
 	}
 }
 
-fn wide((seconds, nanos): (i64, u32)) -> i128 {
-	i128::from(seconds) * 1_000_000_000 + i128::from(nanos)
+pub(crate) fn wide_utc_before(left: (i64, u32), right: (i64, u32)) -> bool {
+	let seconds = i128::from(left.0) - i128::from(right.0);
+	let nanos = i128::from(left.1) - i128::from(right.1);
+	// For normalized operands, |nanos| is strictly less than one second.
+	// Thus clamping a nonzero seconds difference to ±1 preserves the sign of
+	// the true wide nanosecond delta, including rollover and signed extremes.
+	let seconds_nanos = match seconds.cmp(&0) {
+		core::cmp::Ordering::Less => -NANOS_PER_SECOND,
+		core::cmp::Ordering::Equal => 0,
+		core::cmp::Ordering::Greater => NANOS_PER_SECOND,
+	};
+	seconds_nanos + nanos < 0
+}
+
+#[kani::proof_for_contract(crate::grant_time::before)]
+#[kani::unwind(1)]
+fn real_utc_before_matches_wide_nanosecond_order() {
+	let left = normalized_utc();
+	let right = normalized_utc();
+	let actual = before(left, right);
+	kani::assert(
+		actual == wide_utc_before(left, right),
+		"the real UTC comparator matches the exact wide delta order",
+	);
+	kani::cover!(
+		actual && left == (-1, 999_999_999) && right == (0, 0),
+		"minimum cross-epoch step orders by signed seconds"
+	);
+	kani::cover!(
+		actual && left.0 == right.0 && left.1 < right.1,
+		"equal seconds order by subsecond difference"
+	);
+	kani::cover!(!actual && left == right, "equal UTC does not regress");
+	kani::cover!(
+		!actual && left == (i64::MAX, 0) && right == (i64::MIN, 999_999_999),
+		"full signed seconds difference does not wrap"
+	);
 }
 
 #[kani::proof]
+#[kani::unwind(1)]
+#[kani::stub_verified(crate::grant_time::before)]
 fn grant_time_matches_wide_nanosecond_specification() {
 	use GrantTimeRefusal::{Expired, Regressed};
 	use MonotonicObservation as Mono;
@@ -37,27 +78,22 @@ fn grant_time_matches_wide_nanosecond_specification() {
 	let has_qualification: bool = kani::any();
 	let qualification = has_qualification.then_some(qualified);
 
-	// The wide domain represents every normalized UTC pair, including negative
-	// seconds. Use the interval intersection directly rather than tuple comparisons.
-	let now = wide(current);
-	let high_water = wide(previous);
-	let original_start = wide(original.starts_at);
-	let original_end = wide(original.expires_at);
-	let qualified_start = wide(qualified.starts_at);
-	let qualified_end = wide(qualified.expires_at);
-	let (start, end) = if has_qualification {
-		(
-			original_start.max(qualified_start),
-			original_end.min(qualified_end),
-		)
-	} else {
-		(original_start, original_end)
-	};
-	let expected = match monotonic {
-		Mono::Regressed => Err(Regressed),
-		_ if now < high_water => Err(Regressed),
-		Mono::Current if start <= now && now < end => Ok(()),
-		_ => Err(Expired),
+	// Intersect both half-open intervals by conjunction. Neither interval must
+	// have positive width, and the optional interval can overlap arbitrarily.
+	let utc_regressed = wide_utc_before(current, previous);
+	let before_original = wide_utc_before(current, original.starts_at);
+	let before_original_end = wide_utc_before(current, original.expires_at);
+	let before_qualified = wide_utc_before(current, qualified.starts_at);
+	let before_qualified_end = wide_utc_before(current, qualified.expires_at);
+	let original_valid = !before_original && before_original_end;
+	let qualification_valid = !before_qualified && before_qualified_end;
+	let in_order = monotonic == Mono::Current && !utc_regressed;
+	let clock_regressed = monotonic == Mono::Regressed || utc_regressed;
+	let accepted = in_order && original_valid && (!has_qualification || qualification_valid);
+	let expected = match (clock_regressed, accepted) {
+		(true, _) => Err(Regressed),
+		(false, true) => Ok(()),
+		(false, false) => Err(Expired),
 	};
 	let actual = check_grant_time(monotonic, current, previous, original, qualification);
 	let unqualified = check_grant_time(monotonic, current, previous, original, None);
@@ -70,8 +106,6 @@ fn grant_time_matches_wide_nanosecond_specification() {
 		"qualification cannot widen clock admission",
 	);
 
-	let original_valid = original_start <= now && now < original_end;
-	let in_order = monotonic == Mono::Current && now >= high_water;
 	kani::cover!(
 		actual.is_ok() && !has_qualification && current == (i64::MIN, 0),
 		"admit minimum signed UTC with no qualification"
@@ -79,29 +113,29 @@ fn grant_time_matches_wide_nanosecond_specification() {
 	kani::cover!(
 		actual.is_ok()
 			&& has_qualification
-			&& now == high_water
-			&& now == original_start
-			&& now == qualified_start,
+			&& current == previous
+			&& current == original.starts_at
+			&& current == qualified.starts_at,
 		"both UTC starts and the high-water are inclusive"
 	);
 	kani::cover!(
-		actual == Err(Expired) && in_order && now < original_start && !has_qualification,
+		actual == Err(Expired) && in_order && before_original && !has_qualification,
 		"refuse before original UTC start"
 	);
 	kani::cover!(
-		actual == Err(Expired) && in_order && now == original_end && !has_qualification,
+		actual == Err(Expired) && in_order && current == original.expires_at && !has_qualification,
 		"refuse at original UTC expiry"
 	);
 	kani::cover!(
-		actual == Err(Expired) && unqualified.is_ok() && has_qualification && now < qualified_start,
+		actual == Err(Expired) && unqualified.is_ok() && has_qualification && before_qualified,
 		"qualification alone refuses before its UTC start"
 	);
 	kani::cover!(
 		actual == Err(Expired)
 			&& unqualified.is_ok()
 			&& has_qualification
-			&& now == qualified_end
-			&& qualified_start < qualified_end,
+			&& current == qualified.expires_at
+			&& wide_utc_before(qualified.starts_at, qualified.expires_at),
 		"qualification alone refuses at its UTC expiry"
 	);
 	kani::cover!(
@@ -115,14 +149,14 @@ fn grant_time_matches_wide_nanosecond_specification() {
 	kani::cover!(
 		actual == Err(Regressed)
 			&& monotonic == Mono::Regressed
-			&& now >= high_water
-			&& now >= original_end,
+			&& !utc_regressed
+			&& !before_original_end,
 		"monotonic regression outranks original UTC expiry"
 	);
 	kani::cover!(
 		actual == Err(Expired)
 			&& monotonic == Mono::Expired
-			&& now >= high_water
+			&& !utc_regressed
 			&& original_valid
 			&& !has_qualification,
 		"monotonic expiry alone refuses"
@@ -138,8 +172,8 @@ fn grant_time_matches_wide_nanosecond_specification() {
 			&& in_order
 			&& original_valid
 			&& has_qualification
-			&& now == qualified_start
-			&& qualified_start == qualified_end,
+			&& current == qualified.starts_at
+			&& qualified.starts_at == qualified.expires_at,
 		"empty qualification interval cannot admit its boundary"
 	);
 	kani::cover!(
@@ -147,8 +181,8 @@ fn grant_time_matches_wide_nanosecond_specification() {
 			&& in_order
 			&& original_valid
 			&& has_qualification
-			&& qualified_end < now
-			&& now < qualified_start,
+			&& wide_utc_before(qualified.expires_at, current)
+			&& before_qualified,
 		"reversed qualification interval admits nothing"
 	);
 }
