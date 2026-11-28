@@ -112,35 +112,17 @@ where
 	Journal: InitialJournal<Segment = <Root::Job as JobWorkspace>::Segment>,
 	O: PreparedOwner,
 {
-	if request.owner_token.as_bytes() == request.context.job.as_bytes()
-		|| request.owner_token.as_bytes() == request.profile.as_bytes()
-	{
-		return Err(BootstrapFailure::Owner(OwnerError::InvalidToken));
-	}
+	validate_owner_token(request).map_err(BootstrapFailure::Owner)?;
 	let destination_identity = journal_identity(destination.identity());
 	let directory = destination
 		.create_job_directory(request.name)
 		.map_err(JobStep::CreateJob.failure())?;
-	let directories = if plan.is_some() {
-		vec![
-			OwnerStateDirectory::Checkpoints,
-			OwnerStateDirectory::Journal,
-			OwnerStateDirectory::Receipts,
-			OwnerStateDirectory::Stage,
-		]
-	} else {
-		vec![OwnerStateDirectory::Journal, OwnerStateDirectory::Stage]
-	};
-	let owner = sign(OwnerManifest {
-		token: request.owner_token,
-		job: request.context.job,
-		profile: request.profile,
-		created: request.created,
-		destination_device: destination_identity.device(),
-		state_root: journal_identity(directory.identity()),
-		plan_digest: request.context.plan_digest,
-		directories,
-	})
+	let owner = sign(owner_manifest(
+		request,
+		destination_identity,
+		directory.identity(),
+		plan.is_some(),
+	))
 	.map_err(BootstrapFailure::Owner)?;
 	let (owner_bytes, owner_digest) = owner.bytes_and_digest();
 	let mut record = directory
@@ -196,6 +178,43 @@ where
 		initial_frame,
 		journal,
 	})
+}
+
+fn validate_owner_token(request: JobBootstrap<'_>) -> Result<(), OwnerError> {
+	if request.owner_token.as_bytes() == request.context.job.as_bytes()
+		|| request.owner_token.as_bytes() == request.profile.as_bytes()
+	{
+		return Err(OwnerError::InvalidToken);
+	}
+	Ok(())
+}
+
+fn owner_manifest(
+	request: JobBootstrap<'_>,
+	destination: LinuxFileIdentity,
+	job: JobFileIdentity,
+	has_plan: bool,
+) -> OwnerManifest {
+	let directories = if has_plan {
+		vec![
+			OwnerStateDirectory::Checkpoints,
+			OwnerStateDirectory::Journal,
+			OwnerStateDirectory::Receipts,
+			OwnerStateDirectory::Stage,
+		]
+	} else {
+		vec![OwnerStateDirectory::Journal, OwnerStateDirectory::Stage]
+	};
+	OwnerManifest {
+		token: request.owner_token,
+		job: request.context.job,
+		profile: request.profile,
+		created: request.created,
+		destination_device: destination.device(),
+		state_root: journal_identity(job),
+		plan_digest: request.context.plan_digest,
+		directories,
+	}
 }
 
 fn journal_identity(identity: JobFileIdentity) -> LinuxFileIdentity {

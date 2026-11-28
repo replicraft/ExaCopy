@@ -11,11 +11,13 @@ use exacopy_endpoint::linux_staging::{
 use exacopy_journal::SourceMeasurementId;
 use exacopy_model::{CopyBinding, CopyEffect, CopyEvent, CopyPhase, CopySession};
 
+mod effects;
 mod error;
 
 #[cfg(test)]
 mod tests;
 
+use effects::{OrdinaryEffects, StageEffects};
 pub use error::{StageCopyError, StageFailure};
 
 const SPECIAL_MODE_BITS: u32 = 0o7000;
@@ -24,6 +26,8 @@ type StageResult<T, Source, Writer> = Result<
 	T,
 	StageCopyError<<Source as exacopy_endpoint::ReadView>::Error, <Writer as StageWriter>::Error>,
 >;
+type VerifiedResult<Source, Writer> =
+	StageResult<VerifiedStage<<Writer as StageWriter>::Reader>, Source, Writer>;
 type PreparedStage<Source, Writer> = Result<
 	(<Writer as StageWriter>::Reader, ObservedStreams),
 	StageFailure<<Source as exacopy_endpoint::ReadView>::Error, <Writer as StageWriter>::Error>,
@@ -126,13 +130,46 @@ pub fn stage_verified<'stage, S, D>(
 	records: Option<
 		&mut dyn StageRecords<S::Identity, S::Error, <D::Writer<'stage> as StageWriter>::Error>,
 	>,
-) -> StageResult<VerifiedStage<<D::Writer<'stage> as StageWriter>::Reader>, S, D::Writer<'stage>>
+) -> VerifiedResult<S, D::Writer<'stage>>
 where
 	S: StagingSource,
 	D: StagingDirectory<Identity = S::Identity, Metadata = S::Metadata>,
 {
+	stage_verified_with(
+		source,
+		directory,
+		request,
+		scratch,
+		records,
+		&OrdinaryEffects,
+	)
+}
+
+fn stage_verified_with<'stage, S, D, E>(
+	source: &S,
+	directory: &'stage D,
+	request: StageRequest<'_>,
+	scratch: &mut [u8],
+	records: Option<
+		&mut dyn StageRecords<S::Identity, S::Error, <E::Writer<'stage> as StageWriter>::Error>,
+	>,
+	effects: &E,
+) -> VerifiedResult<S, E::Writer<'stage>>
+where
+	S: StagingSource,
+	D: StagingDirectory<Identity = S::Identity, Metadata = S::Metadata>,
+	E: StageEffects<D>,
+{
 	let mut session = CopySession::new(request.binding);
-	let result = prepare(source, directory, request, scratch, &mut session, records);
+	let result = prepare(
+		source,
+		directory,
+		request,
+		scratch,
+		&mut session,
+		records,
+		effects,
+	);
 	match result {
 		Ok((stage, streams)) => Ok(VerifiedStage {
 			stage,
@@ -146,25 +183,27 @@ where
 	}
 }
 
-fn prepare<'stage, S, D>(
+fn prepare<'stage, S, D, E>(
 	source: &S,
 	directory: &'stage D,
 	request: StageRequest<'_>,
 	scratch: &mut [u8],
 	session: &mut CopySession,
 	records: Option<
-		&mut dyn StageRecords<S::Identity, S::Error, <D::Writer<'stage> as StageWriter>::Error>,
+		&mut dyn StageRecords<S::Identity, S::Error, <E::Writer<'stage> as StageWriter>::Error>,
 	>,
-) -> PreparedStage<S, D::Writer<'stage>>
+	effects: &E,
+) -> PreparedStage<S, E::Writer<'stage>>
 where
 	S: StagingSource,
 	D: StagingDirectory<Identity = S::Identity, Metadata = S::Metadata>,
+	E: StageEffects<D>,
 {
 	let source_length = source.length();
 	validate_stream_input(source_length, scratch.len()).map_err(StageFailure::Input)?;
 	check_source(source)?;
-	let mut writable = directory
-		.create_file(request.stage_name, request.target, request.binding)
+	let mut writable = effects
+		.create(directory, request)
 		.map_err(StageFailure::Stage)?;
 	if writable.identity() == source.identity() {
 		return Err(StageFailure::Alias);
@@ -173,7 +212,9 @@ where
 		.check_ownership(source.metadata())
 		.map_err(StageFailure::Stage)?;
 	let checkpoints = if let Some(records) = records {
-		directory.sync_directory().map_err(StageFailure::Stage)?;
+		effects
+			.sync_directory(directory)
+			.map_err(StageFailure::Stage)?;
 		let measurement = records.begin(writable.identity())?;
 		Some((records, measurement))
 	} else {
@@ -182,24 +223,32 @@ where
 	begin_stage_reads(session, request.binding)?;
 
 	let source_digest = if let Some((records, measurement)) = checkpoints {
-		copy_with_checkpoints(
+		copy_with_checkpoints::<S, D, E>(
 			source,
 			source_length,
 			&mut writable,
 			scratch,
 			records,
 			measurement,
+			effects,
 		)?
 	} else {
 		copy_and_measure_at(
 			source_length,
 			scratch,
 			|offset, bytes| source.read_exact_at(offset, bytes),
-			|offset, bytes| writable.write_all_at(offset, bytes),
+			|offset, bytes| effects.write(&mut writable, offset, bytes),
 		)
 		.map_err(StageFailure::Copy)?
 	};
-	flush_written_stage(&mut writable, source_length, session, request.binding)?;
+	flush_written_stage_with(
+		&mut writable,
+		source_length,
+		session,
+		request.binding,
+		|writer, length| effects.set_len(writer, length),
+		|writer| effects.flush(writer),
+	)?;
 	let stage = writable.close_writes().map_err(StageFailure::Stage)?;
 	let (stage_length, stage_digest) = verify_stage_readback(
 		&stage,
@@ -209,12 +258,14 @@ where
 		session,
 		request.binding,
 	)?;
-	let stage = complete_stage_metadata(
+	let stage = complete_stage_metadata_with(
 		stage,
 		source,
 		source.metadata().accessed_at(),
 		session,
 		request.binding,
+		|reader, metadata, accessed_at| effects.apply_metadata(reader, metadata, accessed_at),
+		|reader| effects.sync_sealed_stage(reader),
 	)?;
 	Ok((
 		stage,
@@ -227,29 +278,31 @@ where
 	))
 }
 
-fn copy_with_checkpoints<S, W>(
+fn copy_with_checkpoints<'stage, S, D, E>(
 	source: &S,
 	length: u64,
-	writer: &mut W,
+	writer: &mut E::Writer<'stage>,
 	scratch: &mut [u8],
-	records: &mut dyn StageRecords<S::Identity, S::Error, W::Error>,
+	records: &mut dyn StageRecords<S::Identity, S::Error, D::Error>,
 	measurement: SourceMeasurementId,
-) -> Result<ContentDigest, StageFailure<S::Error, W::Error>>
+	effects: &E,
+) -> Result<ContentDigest, StageFailure<S::Error, D::Error>>
 where
 	S: StagingSource,
-	W: StageWriter<Identity = S::Identity, Metadata = S::Metadata>,
+	D: StagingDirectory<Identity = S::Identity, Metadata = S::Metadata> + 'stage,
+	E: StageEffects<D>,
 {
 	copy_and_checkpoint_at(
 		length,
 		scratch,
 		|offset, bytes| source.read_exact_at(offset, bytes),
 		|offset, bytes, range| {
-			writer
-				.write_all_at(offset, bytes)
+			effects
+				.write(writer, offset, bytes)
 				.map_err(|source| StageFailure::Copy(CopyMeasureError::Write { offset, source }))?;
 			if let Some(range) = range {
 				source.recheck_metadata().map_err(StageFailure::Source)?;
-				writer.flush().map_err(StageFailure::Stage)?;
+				effects.flush(writer).map_err(StageFailure::Stage)?;
 				records.record(measurement, range)?;
 			}
 			Ok(())
@@ -280,9 +333,27 @@ pub(crate) fn flush_written_stage<R, W: StageWriter>(
 	session: &mut CopySession,
 	binding: CopyBinding,
 ) -> Result<(), StageFailure<R, W::Error>> {
-	writable.set_len(length).map_err(StageFailure::Stage)?;
+	flush_written_stage_with(
+		writable,
+		length,
+		session,
+		binding,
+		StageWriter::set_len,
+		StageWriter::flush,
+	)
+}
+
+fn flush_written_stage_with<R, W: StageWriter>(
+	writable: &mut W,
+	length: u64,
+	session: &mut CopySession,
+	binding: CopyBinding,
+	set_len: impl FnOnce(&mut W, u64) -> Result<(), W::Error>,
+	flush: impl FnOnce(&mut W) -> Result<(), W::Error>,
+) -> Result<(), StageFailure<R, W::Error>> {
+	set_len(writable, length).map_err(StageFailure::Stage)?;
 	observe(session, binding, CopyEvent::WritersJoined)?;
-	writable.flush().map_err(StageFailure::Stage)?;
+	flush(writable).map_err(StageFailure::Stage)?;
 	observe(session, binding, CopyEvent::DataFlushed)
 }
 
@@ -323,11 +394,37 @@ where
 	S: StagingSource,
 	R: StageReader<Identity = S::Identity, Metadata = S::Metadata>,
 {
+	complete_stage_metadata_with(
+		stage,
+		source,
+		accessed_at,
+		session,
+		binding,
+		StageReader::apply_metadata_with_access_time,
+		StageReader::sync_stage_directory,
+	)
+}
+
+fn complete_stage_metadata_with<S, R>(
+	stage: R,
+	source: &S,
+	accessed_at: <S::Metadata as SourceMetadata>::Timestamp,
+	session: &mut CopySession,
+	binding: CopyBinding,
+	apply: impl FnOnce(
+		R,
+		S::Metadata,
+		<S::Metadata as SourceMetadata>::Timestamp,
+	) -> Result<R, R::Error>,
+	sync: impl FnOnce(&R) -> Result<(), R::Error>,
+) -> Result<R, StageFailure<S::Error, R::Error>>
+where
+	S: StagingSource,
+	R: StageReader<Identity = S::Identity, Metadata = S::Metadata>,
+{
 	check_source(source)?;
-	let stage = stage
-		.apply_metadata_with_access_time(source.metadata(), accessed_at)
-		.map_err(StageFailure::Stage)?;
-	stage.sync_stage_directory().map_err(StageFailure::Stage)?;
+	let stage = apply(stage, source.metadata(), accessed_at).map_err(StageFailure::Stage)?;
+	sync(&stage).map_err(StageFailure::Stage)?;
 	check_source(source)?;
 	observe(session, binding, CopyEvent::MetadataReady)?;
 	observe(session, binding, CopyEvent::StageSealed)?;

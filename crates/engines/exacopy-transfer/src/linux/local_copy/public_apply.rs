@@ -159,29 +159,10 @@ where
 	J::Segment: JournalSegment,
 	E: From<StageFailure<S::Error, D, J>>,
 {
-	if !matches_admitted_binding(request, scratch.len()) {
-		return Err(CopyError::StalePlan.into());
-	}
+	let (file, evidence, copy_binding) = admit_stage::<S, D, J>(&roots, request, scratch.len())?;
 	let plan = request.private_plan;
-	let file = preflight_source::<S, D, J>(&roots, plan, scratch.len())?;
-	let context = plan.context();
 	let attempt = plan.attempt();
-	let copy_binding = CopyBinding::new(
-		JobId::try_from_bytes(*context.job.as_bytes()).map_err(|_| CopyError::StalePlan)?,
-		EntryId::new(1),
-		RunEpoch::new(context.epoch.get()),
-		StageId::from_bytes(*attempt.entry.as_bytes()),
-	);
-	let source = plan.source();
 	let destination = plan.destination();
-	let evidence = EntryEvidence::new(
-		file.copy_observation(),
-		source.file_identity,
-		file.length(),
-		context,
-		attempt.entry,
-		destination,
-	)?;
 	let admission = before_bootstrap()?;
 	let (job, mut journal, owner_digest) =
 		prepare_public_stage(roots.destination, plan, request.profile, request.binding)
@@ -240,6 +221,44 @@ where
 			&mut journal,
 		),
 	)
+}
+
+fn admit_stage<'root, 'name, S, D, J>(
+	roots: &PlanningRoots<'root, S, D>,
+	request: &PublicApplyStageRequest<'_, '_, 'name>,
+	scratch_len: usize,
+) -> Result<(S::Source, EntryEvidence<'name>, CopyBinding), StageFailure<S::Error, D, J>>
+where
+	S: CopySourceRoot<Source: CopySource<Identity = J::Identity, Metadata = J::Metadata>>,
+	D: CopyDestinationView
+		+ JobBootstrapRoot<'root, Job = J, Error = <D as CopyDestinationView>::Error>,
+	J: CopyWorkspace + JobWorkspace<Error = <D as CopyDestinationView>::Error>,
+	J::Segment: JournalSegment,
+{
+	if !matches_admitted_binding(request, scratch_len) {
+		return Err(CopyError::StalePlan);
+	}
+	let plan = request.private_plan;
+	let file = preflight_source::<S, D, J>(roots, plan, scratch_len)?;
+	let context = plan.context();
+	let attempt = plan.attempt();
+	let copy_binding = CopyBinding::new(
+		JobId::try_from_bytes(*context.job.as_bytes()).map_err(|_| CopyError::StalePlan)?,
+		EntryId::new(1),
+		RunEpoch::new(context.epoch.get()),
+		StageId::from_bytes(*attempt.entry.as_bytes()),
+	);
+	let source = plan.source();
+	let destination = plan.destination();
+	let evidence = EntryEvidence::new(
+		file.copy_observation(),
+		source.file_identity,
+		file.length(),
+		context,
+		attempt.entry,
+		destination,
+	)?;
+	Ok((file, evidence, copy_binding))
 }
 
 fn matches_admitted_binding(
