@@ -1,4 +1,4 @@
-"""Verify completed CLI unit tests in the pinned nextest JUnit report."""
+"""Verify completed opt-in unit tests in the pinned nextest JUnit report."""
 
 import argparse
 from pathlib import Path
@@ -6,6 +6,7 @@ from xml.etree import ElementTree
 
 MAX_REPORT_BYTES = 1024 * 1024
 CLI_SUITE = "exacopy-cli"
+PLATFORM_SUITE = "exacopy-platform"
 TRANSFER_SUITE = "exacopy-transfer"
 REMOTE_CASE = (
     "assembly::linux::remote_continued::tests::"
@@ -92,6 +93,40 @@ WINDOWS_BOOTSTRAP_CASES = {
 WINDOWS_BOOTSTRAP_DEFAULT_CASE = (
     "args::parser::recovery::tests::inspect_windows_bootstrap_is_hidden_without_the_exact_target_and_feature"
 )
+WINDOWS_SFTP_CAPTURE_CASES = {
+    CLI_SUITE: {
+        (
+            "assembly::windows_capture::selection::tests::"
+            "selected_scope_preserves_dns_basis_account_bytes_route_and_raw_path"
+        ),
+        (
+            "assembly::windows_capture::selection::tests::"
+            "full_supervisor_width_changes_commitment_and_same_numbers_cannot_enter"
+        ),
+        (
+            "assembly::windows_capture::progress::tests::"
+            "refused_append_reports_possible_changes_without_a_confirmed_boundary"
+        ),
+        (
+            "assembly::windows_capture::progress::tests::"
+            "dropped_capture_future_preserves_the_previously_confirmed_boundary"
+        ),
+    },
+    PLATFORM_SUITE: {
+        (
+            "windows::read::protected::bootstrap::capture_stage::authenticated::journal::tests::"
+            "exact_capture_limit_admits_one_final_byte_and_refuses_overflow"
+        ),
+        (
+            "windows::read::protected::bootstrap::capture_stage::authenticated::journal::tests::"
+            "dropping_a_partly_written_append_disallows_reuse_or_terminal_success"
+        ),
+        (
+            "windows::read::protected::bootstrap::capture_stage::authenticated::journal::tests::"
+            "next_append_starts_at_the_full_synchronized_predecessor"
+        ),
+    },
+}
 REQUIRED_CASES = {
     "remote": {REMOTE_CASE, REMOTE_PREFLIGHT_CASE} | SSH_SESSION_CASES,
     "public-stage": PUBLIC_STAGE_CASES,
@@ -101,6 +136,7 @@ REQUIRED_CASES = {
     "managed-sync-recreate": MANAGED_SYNC_RECREATE_CASES,
     "windows-bootstrap-inspect": WINDOWS_BOOTSTRAP_CASES,
     "windows-bootstrap-default": {WINDOWS_BOOTSTRAP_DEFAULT_CASE},
+    "windows-sftp-capture": WINDOWS_SFTP_CAPTURE_CASES[CLI_SUITE] | WINDOWS_SFTP_CAPTURE_CASES[PLATFORM_SUITE],
 }
 
 
@@ -119,7 +155,7 @@ def check_attendance(report, lane):
     root = ElementTree.fromstring(data, parser=ElementTree.XMLParser(target=NoDoctype()))
     if root.tag != "testsuites" or root.get("name") != "nextest-run":
         raise ValueError("expected a nextest JUnit report")
-    if lane not in ("apfs-copy", "apfs-default", "windows-bootstrap-default") and len(root) != 1:
+    if lane not in ("apfs-copy", "apfs-default", "windows-bootstrap-default", "windows-sftp-capture") and len(root) != 1:
         raise ValueError("expected one nextest JUnit suite")
 
     suites = {}
@@ -137,8 +173,17 @@ def check_attendance(report, lane):
 
     check_summary(root, sum(map(len, suites.values())))
     cases = {name: checked_cases(suite, name) for name, suite in suites.items()}
-    attended = cases[CLI_SUITE]
+    if lane == "windows-sftp-capture":
+        if cases.keys() != WINDOWS_SFTP_CAPTURE_CASES.keys():
+            raise ValueError("expected exactly the CLI and platform Windows SFTP capture unit-test suites")
+        for suite, expected in WINDOWS_SFTP_CAPTURE_CASES.items():
+            if missing := expected - cases[suite]:
+                raise ValueError(f"required {suite} testcases missing: {', '.join(sorted(missing))}")
+            if unexpected := cases[suite] - expected:
+                raise ValueError(f"unexpected {suite} testcases: {', '.join(sorted(unexpected))}")
+        return sorted(required)
 
+    attended = cases[CLI_SUITE]
     missing = required - attended
     if missing:
         raise ValueError(f"required testcases missing: {', '.join(sorted(missing))}")
@@ -180,7 +225,10 @@ def main():
     except (OSError, ValueError, LookupError, ElementTree.ParseError) as error:
         parser.exit(1, f"CLI {args.lane} attendance failed: {error}\n")
     for name in attended:
-        print(f"Passed {CLI_SUITE}::{name}")
+        suite = CLI_SUITE
+        if args.lane == "windows-sftp-capture" and name in WINDOWS_SFTP_CAPTURE_CASES[PLATFORM_SUITE]:
+            suite = PLATFORM_SUITE
+        print(f"Passed {suite}::{name}")
 
 
 if __name__ == "__main__":

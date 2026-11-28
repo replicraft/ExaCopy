@@ -264,6 +264,19 @@ jobs:
           }
           run_descriptor_case geometry windows::capture_creation::tests::creation_descriptor_bounds_every_sid_and_native_field
           run_descriptor_case private-acl windows::read::protected::acl::tests::creation_descriptor_satisfies_private_acl_for_only_selected_user
+      - name: Run opt-in Windows SFTP capture SDK unit controls
+        if: ${{ !cancelled() && steps.nextest.outcome == 'success' && runner.os == 'Windows' }}
+        env:
+          CARGO_TARGET_DIR: target/experimental-windows-bootstrap-inspect
+        run: |
+          report=target/nextest/ci-experimental-windows-sftp-capture/junit.xml
+          rm -f -- "$report"
+          bash .github/ci/capture.sh experimental-windows-sftp-capture cargo +1.100.0 nextest run --locked \
+            -p exacopy-cli -p exacopy-platform --lib --no-default-features --features exacopy-cli/experimental-windows-sftp-capture \
+            --profile ci-experimental-windows-sftp-capture --no-tests fail \
+            -E 'test(/^(assembly::windows_capture::(selection|progress)::tests::|windows::read::protected::bootstrap::capture_stage::authenticated::journal::tests::)/)'
+          bash .github/ci/capture.sh experimental-windows-sftp-capture-attendance \
+            python -B .github/ci/cli_opt_in_attendance.py windows-sftp-capture "$report"
       - name: Run doctests
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
         run: bash .github/ci/capture.sh doctest cargo +1.100.0 test --locked --workspace --all-features --doc
@@ -288,6 +301,7 @@ jobs:
             target/nextest/ci-experimental-windows-bootstrap-inspect/junit.xml
             target/nextest/ci-experimental-windows-capture-descriptor/junit-geometry.xml
             target/nextest/ci-experimental-windows-capture-descriptor/junit-private-acl.xml
+            target/nextest/ci-experimental-windows-sftp-capture/junit.xml
           if-no-files-found: error
           retention-days: 30
 

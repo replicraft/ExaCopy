@@ -85,6 +85,26 @@ WINDOWS_BOOTSTRAP_EXPECTED = (
 WINDOWS_BOOTSTRAP_DEFAULT_EXPECTED = (
     "args::parser::recovery::tests::inspect_windows_bootstrap_is_hidden_without_the_exact_target_and_feature"
 )
+WINDOWS_SFTP_CAPTURE_EXPECTED = (
+    "assembly::windows_capture::selection::tests::selected_scope_preserves_dns_basis_account_bytes_route_and_raw_path",
+    "assembly::windows_capture::selection::tests::full_supervisor_width_changes_commitment_and_same_numbers_cannot_enter",
+    "assembly::windows_capture::progress::tests::refused_append_reports_possible_changes_without_a_confirmed_boundary",
+    "assembly::windows_capture::progress::tests::dropped_capture_future_preserves_the_previously_confirmed_boundary",
+)
+WINDOWS_SFTP_PLATFORM_EXPECTED = (
+    (
+        "windows::read::protected::bootstrap::capture_stage::authenticated::journal::tests::"
+        "exact_capture_limit_admits_one_final_byte_and_refuses_overflow"
+    ),
+    (
+        "windows::read::protected::bootstrap::capture_stage::authenticated::journal::tests::"
+        "dropping_a_partly_written_append_disallows_reuse_or_terminal_success"
+    ),
+    (
+        "windows::read::protected::bootstrap::capture_stage::authenticated::journal::tests::"
+        "next_append_starts_at_the_full_synchronized_predecessor"
+    ),
+)
 
 
 class CliOptInAttendanceTests(unittest.TestCase):
@@ -214,6 +234,41 @@ class CliOptInAttendanceTests(unittest.TestCase):
         self.write_report((OTHER_CASE,), (("exacopy-cli::command", (WINDOWS_BOOTSTRAP_DEFAULT_EXPECTED,)),))
         with self.assertRaisesRegex(ValueError, f"required testcases missing: {WINDOWS_BOOTSTRAP_DEFAULT_EXPECTED}$"):
             check_attendance(self.report, "windows-bootstrap-default")
+
+    def test_windows_sftp_capture_requires_all_seven_cases_in_their_owning_suites(self):
+        cli = WINDOWS_SFTP_CAPTURE_EXPECTED
+        platform = WINDOWS_SFTP_PLATFORM_EXPECTED
+        self.write_report(cli, (("exacopy-platform", platform),))
+        self.assertEqual(check_attendance(self.report, "windows-sftp-capture"), sorted(cli + platform))
+        for owner, cases in (("exacopy-cli", cli), ("exacopy-platform", platform)):
+            for missing in cases:
+                with self.subTest(missing=missing):
+                    lookalike = missing.replace("::tests::", "::other_tests::")
+                    changed = tuple(lookalike if name == missing else name for name in cases)
+                    selected_cli, selected_platform = (changed, platform) if owner == "exacopy-cli" else (cli, changed)
+                    self.write_report(selected_cli, (("exacopy-platform", selected_platform),))
+                    with self.assertRaisesRegex(ValueError, f"required {owner} testcases missing: {missing}$"):
+                        check_attendance(self.report, "windows-sftp-capture")
+        self.write_report((platform[0], *cli[1:]), (("exacopy-platform", (cli[0], *platform[1:])),))
+        with self.assertRaisesRegex(ValueError, "required exacopy-cli testcases missing"):
+            check_attendance(self.report, "windows-sftp-capture")
+
+    def test_windows_sftp_capture_refuses_extra_suites_cases_and_unsuccessful_evidence(self):
+        cli = WINDOWS_SFTP_CAPTURE_EXPECTED
+        platform = WINDOWS_SFTP_PLATFORM_EXPECTED
+        for siblings in ((), (("exacopy-platform", platform), ("exacopy-cli::windows_sftp_capture", (OTHER_CASE,)))):
+            with self.subTest(siblings=siblings):
+                self.write_report(cli, siblings)
+                with self.assertRaisesRegex(ValueError, "expected exactly the CLI and platform"):
+                    check_attendance(self.report, "windows-sftp-capture")
+        self.write_report(cli, (("exacopy-platform", (*platform, OTHER_CASE)),))
+        with self.assertRaisesRegex(ValueError, "unexpected exacopy-platform testcases"):
+            check_attendance(self.report, "windows-sftp-capture")
+        root = self.write_report(cli, (("exacopy-platform", platform),))
+        ElementTree.SubElement(root[1][0], "skipped")
+        self.write_xml(root)
+        with self.assertRaisesRegex(ValueError, "lacks a successful execution record"):
+            check_attendance(self.report, "windows-sftp-capture")
 
     def test_incomplete_session_record_cannot_satisfy_remote_attendance(self):
         root = self.write_report(REMOTE_EXPECTED)
